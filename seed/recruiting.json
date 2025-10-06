@@ -1,0 +1,196 @@
+{
+  "recruiting": [
+    {
+      "team_id": "alabama",
+      "season": 2024,
+      "class_rank": 2,
+      "avg_rating": 92.5,
+      "commit_count": 25,
+      "five_stars": 3,
+      "four_stars": 15,
+      "three_stars": 7,
+      "top_players": [
+        {
+          "name": "Julian Sayin",
+          "position": "QB",
+          "rating": 95,
+          "stars": 5
+        },
+        {
+          "name": "Jaylen Mbakwe",
+          "position": "ATH",
+          "rating": 94,
+          "stars": 5
+        }
+      ]
+    },
+    {
+      "team_id": "georgia",
+      "season": 2024,
+      "class_rank": 1,
+      "avg_rating": 93.2,
+      "commit_count": 28,
+      "five_stars": 4,
+      "four_stars": 18,
+      "three_stars": 6,
+      "top_players": [
+        {
+          "name": "Dylan Raiola",
+          "position": "QB",
+          "rating": 96,
+          "stars": 5
+        },
+        {
+          "name": "Ellis Robinson IV",
+          "position": "CB",
+          "rating": 95,
+          "stars": 5
+        }
+      ]
+    },
+    {
+      "team_id": "ohio-state",
+      "season": 2024,
+      "class_rank": 3,
+      "avg_rating": 91.8,
+      "commit_count": 22,
+      "five_stars": 2,
+      "four_stars": 16,
+      "three_stars": 4,
+      "top_players": [
+        {
+          "name": "Jeremiah Smith",
+          "position": "WR",
+          "rating": 97,
+          "stars": 5
+        },
+        {
+          "name": "Mylan Graham",
+          "position": "WR",
+          "rating": 93,
+          "stars": 4
+        }
+      ]
+    },
+    {
+      "team_id": "michigan",
+      "season": 2024,
+      "class_rank": 8,
+      "avg_rating": 89.4,
+      "commit_count": 20,
+      "five_stars": 1,
+      "four_stars": 12,
+      "three_stars": 7,
+      "top_players": [
+        {
+          "name": "Jadyn Davis",
+          "position": "QB",
+          "rating": 92,
+          "stars": 4
+        },
+        {
+          "name": "Jordan Marshall",
+          "position": "RB",
+          "rating": 90,
+          "stars": 4
+        }
+      ]
+    },
+    {
+      "team_id": "clemson",
+      "season": 2024,
+      "class_rank": 12,
+      "avg_rating": 87.6,
+      "commit_count": 18,
+      "five_stars": 0,
+      "four_stars": 10,
+      "three_stars": 8,
+      "top_players": [
+        {
+          "name": "Bryce Lovett",
+          "position": "OL",
+          "rating": 88,
+          "stars": 4
+        },
+        {
+          "name": "Ricardo Jones",
+          "position": "S",
+          "rating": 87,
+          "stars": 4
+        }
+      ]
+    },
+    {
+      "team_id": "texas",
+      "season": 2024,
+      "class_rank": 5,
+      "avg_rating": 90.3,
+      "commit_count": 24,
+      "five_stars": 1,
+      "four_stars": 17,
+      "three_stars": 6,
+      "top_players": [
+        {
+          "name": "Colin Simmons",
+          "position": "EDGE",
+          "rating": 94,
+          "stars": 5
+        },
+        {
+          "name": "Kobe Black",
+          "position": "CB",
+          "rating": 92,
+          "stars": 4
+        }
+      ]
+    },
+    {
+      "team_id": "oregon",
+      "season": 2024,
+      "class_rank": 7,
+      "avg_rating": 88.9,
+      "commit_count": 21,
+      "five_stars": 0,
+      "four_stars": 14,
+      "three_stars": 7,
+      "top_players": [
+        {
+          "name": "Aydin Breland",
+          "position": "DL",
+          "rating": 91,
+          "stars": 4
+        },
+        {
+          "name": "Dante Moore",
+          "position": "QB",
+          "rating": 89,
+          "stars": 4
+        }
+      ]
+    },
+    {
+      "team_id": "florida-state",
+      "season": 2024,
+      "class_rank": 6,
+      "avg_rating": 89.1,
+      "commit_count": 23,
+      "five_stars": 1,
+      "four_stars": 15,
+      "three_stars": 7,
+      "top_players": [
+        {
+          "name": "KJ Bolden",
+          "position": "S",
+          "rating": 95,
+          "stars": 5
+        },
+        {
+          "name": "LJ McCray",
+          "position": "DL",
+          "rating": 92,
+          "stars": 4
+        }
+      ]
+    }
+  ]
+}

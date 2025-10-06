@@ -11,6 +11,15 @@
 - Team power ratings
 - Recent team performance (last 3 games)
 
+**Seed Mode Coverage**:
+- ✅ Game matchup from games.json (home_team_id, away_team_id)
+- ✅ Game date and time from games.json (converted to CST/CDT)
+- ✅ Venue and neutral site from games.json
+- ✅ Market close spreads/totals from market_lines.json
+- ⏳ Implied spreads (placeholder until M2 model)
+- ⏳ Edge detection (placeholder until M2 model)
+- ⏳ Confidence tiers (placeholder until M2 model)
+
 ## Game Detail Page
 **Purpose**: Detailed analysis of specific game with implied vs market comparison
 **Required Fields**:
@@ -23,6 +32,16 @@
 - Betting edge analysis
 - Confidence breakdown
 
+**Seed Mode Coverage**:
+- ✅ Team names and logos from teams.json
+- ✅ Market close spread/total from market_lines.json
+- ✅ Team statistics from team_game_stats.json (YPP, success rate, pace)
+- ✅ Recruiting talent index from recruiting.json
+- ✅ Game venue and location from games.json
+- ⏳ Team power ratings (placeholder until M2 model)
+- ⏳ Implied spread/total calculations (placeholder until M2 model)
+- ⏳ CLV analysis (placeholder until M2 model)
+
 ## Teams Page
 **Purpose**: Team rankings and performance analysis
 **Required Fields**:
@@ -33,6 +52,15 @@
 - Conference standings
 - Upcoming schedule
 - Team performance trends
+
+**Seed Mode Coverage**:
+- ✅ Team names, conferences from teams.json
+- ✅ Basic stat profiles from team_game_stats.json
+- ✅ Recruiting rankings from recruiting.json
+- ✅ Conference standings (calculated from games.json results)
+- ✅ Team colors and logos from teams.json
+- ⏳ Team power ratings (placeholder until M2 model)
+- ⏳ Historical trends (placeholder until M2 model)
 
 ## Backtests Page
 **Purpose**: Historical strategy performance analysis

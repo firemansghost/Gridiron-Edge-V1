@@ -1,110 +1,113 @@
 # Seed Data Plan
 
 ## Overview
-Seed data for one week (6-8 games) to enable UI development without API dependencies.
+Seed data for CFB 2024 Week 1 (7 games) to enable UI development without API dependencies. All data normalized to America/Chicago timezone.
 
-## Data Files
+## JSON Schemas
 
-### teams.json
+### teams.json Schema
 ```json
 {
   "teams": [
     {
-      "team_id": "alabama",
-      "name": "Alabama Crimson Tide",
-      "conference": "SEC",
-      "division": "West",
-      "logo_url": "https://example.com/logos/alabama.png",
-      "primary_color": "#9E1B32",
-      "secondary_color": "#FFFFFF"
-    },
-    {
-      "team_id": "georgia",
-      "name": "Georgia Bulldogs", 
-      "conference": "SEC",
-      "division": "East",
-      "logo_url": "https://example.com/logos/georgia.png",
-      "primary_color": "#BA0C2F",
-      "secondary_color": "#000000"
+      "team_id": "string (required, unique)",
+      "name": "string (required)",
+      "conference": "string (required)",
+      "division": "string (optional)",
+      "logo_url": "string (required)",
+      "primary_color": "string (required, hex)",
+      "secondary_color": "string (required, hex)",
+      "mascot": "string (optional)",
+      "city": "string (optional)",
+      "state": "string (optional)"
     }
   ]
 }
 ```
 
-### games.json
+### games.json Schema
 ```json
 {
   "games": [
     {
-      "game_id": "2024-alabama-georgia",
-      "home_team_id": "georgia",
-      "away_team_id": "alabama",
-      "season": 2024,
-      "week": 1,
-      "date": "2024-09-07T19:00:00-05:00",
-      "status": "scheduled",
-      "home_score": null,
-      "away_score": null,
-      "venue": "Sanford Stadium",
-      "city": "Athens, GA"
+      "game_id": "string (required, unique)",
+      "home_team_id": "string (required, FK to teams.team_id)",
+      "away_team_id": "string (required, FK to teams.team_id)",
+      "season": "integer (required)",
+      "week": "integer (required)",
+      "date": "string (required, ISO 8601 with timezone)",
+      "status": "string (required, enum: scheduled|in_progress|final)",
+      "home_score": "integer (optional)",
+      "away_score": "integer (optional)",
+      "venue": "string (required)",
+      "city": "string (required)",
+      "neutral_site": "boolean (required)",
+      "conference_game": "boolean (required)"
     }
   ]
 }
 ```
 
-### team_game_stats.json
+### team_game_stats.json Schema
 ```json
 {
   "team_game_stats": [
     {
-      "game_id": "2024-alabama-georgia",
-      "team_id": "alabama",
+      "game_id": "string (required, FK to games.game_id)",
+      "team_id": "string (required, FK to teams.team_id)",
       "offensive_stats": {
-        "points": 28,
-        "total_yards": 450,
-        "passing_yards": 320,
-        "rushing_yards": 130,
-        "turnovers": 1,
-        "third_down_conversions": 8,
-        "third_down_attempts": 15
+        "points": "integer (required)",
+        "total_yards": "integer (required)",
+        "passing_yards": "integer (required)",
+        "rushing_yards": "integer (required)",
+        "turnovers": "integer (required)",
+        "third_down_conversions": "integer (required)",
+        "third_down_attempts": "integer (required)",
+        "red_zone_attempts": "integer (optional)",
+        "red_zone_touchdowns": "integer (optional)",
+        "time_of_possession": "string (optional, MM:SS format)"
       },
       "defensive_stats": {
-        "points_allowed": 21,
-        "yards_allowed": 380,
-        "sacks": 3,
-        "interceptions": 1,
-        "fumbles_recovered": 0
+        "points_allowed": "integer (required)",
+        "yards_allowed": "integer (required)",
+        "sacks": "integer (required)",
+        "interceptions": "integer (required)",
+        "fumbles_recovered": "integer (required)",
+        "tackles_for_loss": "integer (optional)",
+        "pass_breakups": "integer (optional)"
       },
       "special_teams": {
-        "field_goals_made": 2,
-        "field_goals_attempted": 3,
-        "punt_returns": 2,
-        "kick_returns": 3
+        "field_goals_made": "integer (required)",
+        "field_goals_attempted": "integer (required)",
+        "punt_returns": "integer (optional)",
+        "kick_returns": "integer (optional)",
+        "punt_return_yards": "integer (optional)",
+        "kick_return_yards": "integer (optional)"
       }
     }
   ]
 }
 ```
 
-### recruiting.json
+### recruiting.json Schema
 ```json
 {
   "recruiting": [
     {
-      "team_id": "alabama",
-      "season": 2024,
-      "class_rank": 2,
-      "avg_rating": 92.5,
-      "commit_count": 25,
-      "five_stars": 3,
-      "four_stars": 15,
-      "three_stars": 7,
+      "team_id": "string (required, FK to teams.team_id)",
+      "season": "integer (required)",
+      "class_rank": "integer (required)",
+      "avg_rating": "number (required, 0-100)",
+      "commit_count": "integer (required)",
+      "five_stars": "integer (required)",
+      "four_stars": "integer (required)",
+      "three_stars": "integer (required)",
       "top_players": [
         {
-          "name": "Julian Sayin",
-          "position": "QB",
-          "rating": 95,
-          "stars": 5
+          "name": "string (required)",
+          "position": "string (required)",
+          "rating": "number (required, 0-100)",
+          "stars": "integer (required, 1-5)"
         }
       ]
     }
@@ -112,76 +115,99 @@ Seed data for one week (6-8 games) to enable UI development without API dependen
 }
 ```
 
-### market_lines.json
+### market_lines.json Schema
 ```json
 {
   "market_lines": [
     {
-      "game_id": "2024-alabama-georgia",
-      "line_type": "spread",
-      "line_value": -3.5,
-      "timestamp": "2024-09-07T12:00:00-05:00",
-      "source": "draftkings",
-      "closing_line": -4.0
-    },
-    {
-      "game_id": "2024-alabama-georgia", 
-      "line_type": "total",
-      "line_value": 52.5,
-      "timestamp": "2024-09-07T12:00:00-05:00",
-      "source": "draftkings",
-      "closing_line": 51.5
+      "game_id": "string (required, FK to games.game_id)",
+      "line_type": "string (required, enum: spread|total|moneyline)",
+      "line_value": "number (required)",
+      "timestamp": "string (required, ISO 8601 with timezone)",
+      "source": "string (required)",
+      "closing_line": "number (required)",
+      "book_name": "string (required)"
     }
   ]
 }
 ```
 
+## Seed Ingestion Plan
+
+### Single Command Execution
+```bash
+python -m jobs.seed.ingest --seed-dir /seed --validate --upsert
+```
+
+### Validation Rules
+1. **Schema Validation**: All JSON files must match their respective schemas
+2. **Foreign Key Validation**: 
+   - All team_id references must exist in teams.json
+   - All game_id references must exist in games.json
+   - home_team_id != away_team_id for all games
+3. **Data Range Validation**:
+   - Spreads: -60 to +60
+   - Totals: 25 to 100
+   - Recruiting ratings: 0 to 100
+   - Stars: 1 to 5
+4. **Date Format Validation**: All timestamps in ISO 8601 format with timezone
+5. **Enum Validation**: status, line_type, conference values must match allowed values
+
+### Upsert Behavior
+- **Primary Keys**: team_id, game_id, (game_id, team_id) for stats
+- **Conflict Resolution**: Update existing records, insert new ones
+- **Logging**: Count of records inserted/updated per table
+- **Error Handling**: Log validation errors, continue processing valid records
+
+## Data Quality Gates
+
+### Minimum Viable Fields
+- **teams**: team_id, name, conference, logo_url, primary_color, secondary_color
+- **games**: game_id, home_team_id, away_team_id, season, week, date, status, venue, city
+- **team_game_stats**: game_id, team_id, offensive_stats.points, defensive_stats.points_allowed
+- **recruiting**: team_id, season, class_rank, avg_rating, commit_count
+- **market_lines**: game_id, line_type, line_value, timestamp, source, closing_line
+
+### Validation Checks
+- **Duplicate IDs**: No duplicate primary keys within each file
+- **Invalid Enums**: status in [scheduled, in_progress, final], line_type in [spread, total, moneyline]
+- **Date Format**: ISO 8601 with timezone (America/Chicago)
+- **Numeric Ranges**: Spreads -60 to +60, totals 25-100, ratings 0-100
+- **Required Fields**: All required fields must be present and non-null
+
 ## UI Rendering Requirements
 
-### Home Page Fields
-- Team names and logos
-- Game dates and times
-- Implied vs market spreads
-- Edge confidence tiers (A/B/C)
-- Recent team performance
+### Home Page Fields (Seed Mode)
+- Team names and logos from teams.json
+- Game dates and times from games.json (converted to CST/CDT display)
+- Venue and neutral site flags from games.json
+- Market close spreads/totals from market_lines.json
+- Note: "Top Edges" shows placeholder until M2 model implementation
 
-### Game Detail Page Fields
-- Team power ratings
-- Implied spread/total calculations
-- Market line comparison
-- Historical matchup data
-- Weather conditions (if available)
+### Game Detail Page Fields (Seed Mode)
+- Team names and logos from teams.json
+- Market close spread/total from market_lines.json
+- Team statistics from team_game_stats.json (YPP, success rate, pace)
+- Recruiting talent index from recruiting.json
+- Note: No implied lines until M2 model implementation
 
-### Teams Page Fields
-- Team power ratings
-- Recent game results
-- Recruiting rankings
-- Conference standings
-- Season statistics
+### Teams Page Fields (Seed Mode)
+- Team names, conferences from teams.json
+- Basic stat profiles from team_game_stats.json
+- Recruiting rankings from recruiting.json
+- Conference standings (calculated from games.json results)
 
-### Review Past Weeks Fields
-- Weekly P/L summary
-- Hit rate by confidence tier
-- CLV analysis
-- Strategy performance
-- As-of state preservation
+## Additional Fields for UI Coverage
 
-## Data Quality Requirements
+### Enhanced Team Data
+- mascot, city, state for richer team profiles
+- primary_color, secondary_color for UI theming
 
-### Completeness
-- All required fields populated
-- No null values for critical data
-- Consistent data types
-- Proper timestamp formatting
+### Enhanced Game Data
+- neutral_site, conference_game flags for game context
+- venue, city for location display
 
-### Accuracy
-- Realistic statistical values
-- Consistent team identifiers
-- Proper game relationships
-- Valid market line formats
-
-### Usability
-- Data supports all planned UI pages
-- Sufficient variety for testing
-- Edge cases represented
-- Performance data included
+### Enhanced Market Data
+- book_name for source attribution
+- closing_line for CLV calculations
+- timestamp for as-of state preservation

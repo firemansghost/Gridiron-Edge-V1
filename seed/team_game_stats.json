@@ -1,0 +1,136 @@
+{
+  "team_game_stats": [
+    {
+      "game_id": "2024-alabama-western-kentucky",
+      "team_id": "alabama",
+      "offensive_stats": {
+        "points": 45,
+        "total_yards": 520,
+        "passing_yards": 380,
+        "rushing_yards": 140,
+        "turnovers": 1,
+        "third_down_conversions": 8,
+        "third_down_attempts": 12,
+        "red_zone_attempts": 6,
+        "red_zone_touchdowns": 5,
+        "time_of_possession": "32:15"
+      },
+      "defensive_stats": {
+        "points_allowed": 7,
+        "yards_allowed": 180,
+        "sacks": 4,
+        "interceptions": 2,
+        "fumbles_recovered": 1,
+        "tackles_for_loss": 8,
+        "pass_breakups": 5
+      },
+      "special_teams": {
+        "field_goals_made": 1,
+        "field_goals_attempted": 1,
+        "punt_returns": 3,
+        "kick_returns": 2,
+        "punt_return_yards": 45,
+        "kick_return_yards": 38
+      }
+    },
+    {
+      "game_id": "2024-alabama-western-kentucky",
+      "team_id": "western-kentucky",
+      "offensive_stats": {
+        "points": 7,
+        "total_yards": 180,
+        "passing_yards": 120,
+        "rushing_yards": 60,
+        "turnovers": 3,
+        "third_down_conversions": 3,
+        "third_down_attempts": 15,
+        "red_zone_attempts": 1,
+        "red_zone_touchdowns": 1,
+        "time_of_possession": "27:45"
+      },
+      "defensive_stats": {
+        "points_allowed": 45,
+        "yards_allowed": 520,
+        "sacks": 1,
+        "interceptions": 0,
+        "fumbles_recovered": 0,
+        "tackles_for_loss": 2,
+        "pass_breakups": 3
+      },
+      "special_teams": {
+        "field_goals_made": 0,
+        "field_goals_attempted": 0,
+        "punt_returns": 2,
+        "kick_returns": 3,
+        "punt_return_yards": 12,
+        "kick_return_yards": 55
+      }
+    },
+    {
+      "game_id": "2024-georgia-clemson",
+      "team_id": "georgia",
+      "offensive_stats": {
+        "points": 24,
+        "total_yards": 380,
+        "passing_yards": 220,
+        "rushing_yards": 160,
+        "turnovers": 2,
+        "third_down_conversions": 6,
+        "third_down_attempts": 14,
+        "red_zone_attempts": 4,
+        "red_zone_touchdowns": 3,
+        "time_of_possession": "31:20"
+      },
+      "defensive_stats": {
+        "points_allowed": 17,
+        "yards_allowed": 320,
+        "sacks": 3,
+        "interceptions": 1,
+        "fumbles_recovered": 1,
+        "tackles_for_loss": 6,
+        "pass_breakups": 4
+      },
+      "special_teams": {
+        "field_goals_made": 1,
+        "field_goals_attempted": 2,
+        "punt_returns": 2,
+        "kick_returns": 1,
+        "punt_return_yards": 18,
+        "kick_return_yards": 22
+      }
+    },
+    {
+      "game_id": "2024-georgia-clemson",
+      "team_id": "clemson",
+      "offensive_stats": {
+        "points": 17,
+        "total_yards": 320,
+        "passing_yards": 180,
+        "rushing_yards": 140,
+        "turnovers": 2,
+        "third_down_conversions": 5,
+        "third_down_attempts": 16,
+        "red_zone_attempts": 3,
+        "red_zone_touchdowns": 2,
+        "time_of_possession": "28:40"
+      },
+      "defensive_stats": {
+        "points_allowed": 24,
+        "yards_allowed": 380,
+        "sacks": 2,
+        "interceptions": 1,
+        "fumbles_recovered": 0,
+        "tackles_for_loss": 4,
+        "pass_breakups": 3
+      },
+      "special_teams": {
+        "field_goals_made": 1,
+        "field_goals_attempted": 1,
+        "punt_returns": 1,
+        "kick_returns": 2,
+        "punt_return_yards": 8,
+        "kick_return_yards": 35
+      }
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "teams": [
+    {
+      "team_id": "alabama",
+      "name": "Alabama Crimson Tide",
+      "conference": "SEC",
+      "division": "West",
+      "logo_url": "https://example.com/logos/alabama.png",
+      "primary_color": "#9E1B32",
+      "secondary_color": "#FFFFFF",
+      "mascot": "Crimson Tide",
+      "city": "Tuscaloosa",
+      "state": "AL"
+    },
+    {
+      "team_id": "georgia",
+      "name": "Georgia Bulldogs",
+      "conference": "SEC", 
+      "division": "East",
+      "logo_url": "https://example.com/logos/georgia.png",
+      "primary_color": "#BA0C2F",
+      "secondary_color": "#000000",
+      "mascot": "Bulldogs",
+      "city": "Athens",
+      "state": "GA"
+    },
+    {
+      "team_id": "ohio-state",
+      "name": "Ohio State Buckeyes",
+      "conference": "Big Ten",
+      "division": "East",
+      "logo_url": "https://example.com/logos/ohio-state.png",
+      "primary_color": "#BB0000",
+      "secondary_color": "#808080",
+      "mascot": "Buckeyes",
+      "city": "Columbus",
+      "state": "OH"
+    },
+    {
+      "team_id": "michigan",
+      "name": "Michigan Wolverines",
+      "conference": "Big Ten",
+      "division": "East", 
+      "logo_url": "https://example.com/logos/michigan.png",
+      "primary_color": "#00274C",
+      "secondary_color": "#FFCB05",
+      "mascot": "Wolverines",
+      "city": "Ann Arbor",
+      "state": "MI"
+    },
+    {
+      "team_id": "clemson",
+      "name": "Clemson Tigers",
+      "conference": "ACC",
+      "division": "Atlantic",
+      "logo_url": "https://example.com/logos/clemson.png",
+      "primary_color": "#F66733",
+      "secondary_color": "#522D80",
+      "mascot": "Tigers",
+      "city": "Clemson",
+      "state": "SC"
+    },
+    {
+      "team_id": "texas",
+      "name": "Texas Longhorns",
+      "conference": "Big 12",
+      "division": null,
+      "logo_url": "https://example.com/logos/texas.png",
+      "primary_color": "#BF5700",
+      "secondary_color": "#FFFFFF",
+      "mascot": "Longhorns",
+      "city": "Austin",
+      "state": "TX"
+    },
+    {
+      "team_id": "oregon",
+      "name": "Oregon Ducks",
+      "conference": "Pac-12",
+      "division": null,
+      "logo_url": "https://example.com/logos/oregon.png",
+      "primary_color": "#154733",
+      "secondary_color": "#FEE123",
+      "mascot": "Ducks",
+      "city": "Eugene",
+      "state": "OR"
+    },
+    {
+      "team_id": "florida-state",
+      "name": "Florida State Seminoles",
+      "conference": "ACC",
+      "division": "Atlantic",
+      "logo_url": "https://example.com/logos/florida-state.png",
+      "primary_color": "#782F40",
+      "secondary_color": "#B8860B",
+      "mascot": "Seminoles",
+      "city": "Tallahassee",
+      "state": "FL"
+    }
+  ]
+}

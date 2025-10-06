@@ -9,12 +9,29 @@
 **Definition of Done**: All docs exist with real content; monorepo structure complete
 
 ## Milestone 1 - Data Pipeline Foundation
-**Purpose**: Build core ETL pipeline for data ingestion and storage
-**Success**: Automated data ingestion from all sources; clean data in Postgres
-**Out of Scope**: Power rating calculations; UI development
-**Risks**: Data source API changes; rate limiting; data quality issues
-**Inputs**: Data source APIs; database schema
-**Definition of Done**: All data sources connected; historical data loaded; ETL jobs running
+**Purpose**: Lock down JSON data shapes (seed files) and seed ingestion plan that mirrors final database tables
+**Success**: Complete seed data contracts with realistic CFB 2024 Week 1 data; UI can render Home, Teams, and Game Detail pages
+**Out of Scope**: Production ETL code; API adapters; power rating calculations
+**Risks**: Schema changes; data quality issues; UI rendering gaps
+**Inputs**: Database schema from M0; UI requirements
+**Definition of Done**: 
+- /seed/ folder exists with 5 JSON files and realistic example rows for CFB 2024 Week 1
+- /docs/seed.md includes JSON schemas, ingestion plan, and validation rules
+- /docs/ui.md updated to confirm seed coverage for Home, Teams, and Game Detail
+- All dates/times normalized to America/Chicago
+- No runtime adapter/ETL/model code introduced
+
+### Branch & PR Instructions
+- **Branch Name**: `m1-data-contracts-seed`
+- **PR Title**: "M1: Data contracts and seed files for CFB 2024 Week 1"
+- **Acceptance Criteria**:
+  - [ ] /seed/ folder with 5 JSON files created
+  - [ ] Realistic CFB 2024 Week 1 data in all files
+  - [ ] JSON schemas documented in /docs/seed.md
+  - [ ] Seed ingestion plan documented
+  - [ ] UI coverage confirmed in /docs/ui.md
+  - [ ] All timestamps in America/Chicago timezone
+  - [ ] No production code beyond documentation
 
 ## Milestone 2 - Power Rating Engine
 **Purpose**: Implement core power rating algorithm with opponent adjustment
