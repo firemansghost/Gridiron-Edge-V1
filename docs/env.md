@@ -1,74 +1,73 @@
 # Environment Variables & Secrets Policy
 
-## Required Environment Variables
+## Environment Variables Reference
 
-### Database
-- `DATABASE_URL` - Supabase Postgres connection string
-  - Format: `postgresql://user:password@host:port/database`
-  - Required for: Web app, ETL jobs
+| Variable | Web App | Jobs/ETL | Where to Set | Description |
+|----------|---------|----------|--------------|-------------|
+| `APP_ENV` | ✅ | ✅ | Vercel Project Env, Local `.env.local`/`.env` | Application environment (development/preview/production) |
+| `TZ` | ✅ | ✅ | Vercel Project Env, Local `.env.local`/`.env` | Timezone (America/Chicago) |
+| `MODEL_VERSION` | ✅ | ✅ | Vercel Project Env, Local `.env.local`/`.env` | Model version for as-of state tracking |
+| `DATASOURCES_CONFIG_PATH` | ❌ | ✅ | Vercel Project Env, Local `.env` | Path to datasources configuration |
+| `DATABASE_URL` | ✅ | ✅ | Vercel Project Env, Local `.env` | Pooled Postgres connection string |
+| `SHADOW_DATABASE_URL` | ❌ | ✅ | Vercel Project Env, Local `.env` | Shadow DB for migrations |
+| `SUPABASE_URL` | ✅ | ✅ | Vercel Project Env, Local `.env.local`/`.env` | Supabase project URL |
+| `SUPABASE_ANON_KEY` | ✅ | ❌ | Vercel Project Env, Local `.env.local` | Public browser key (RLS enforced) |
+| `SUPABASE_SERVICE_ROLE_KEY` | ❌ | ✅ | GitHub Actions/Render/Fly secrets, Local `.env` | Service role key (SERVER ONLY) |
+| `ODDS_API_KEY` | ❌ | ✅ | GitHub Actions/Render/Fly secrets, Local `.env` | Sports betting data API |
+| `WEATHER_API_KEY` | ❌ | ✅ | GitHub Actions/Render/Fly secrets, Local `.env` | Weather data API |
+| `RECRUITING_API_KEY` | ❌ | ✅ | GitHub Actions/Render/Fly secrets, Local `.env` | Recruiting data API |
 
-### Application Environment
-- `APP_ENV` - Application environment
-  - Values: `development`, `preview`, `production`
-  - Required for: Web app, ETL jobs
-  - Default: `development`
+## Security & Roles
 
-### Timezone
-- `TZ` - System timezone
-  - Value: `America/Chicago`
-  - Required for: All components
-  - Used for: Timestamp normalization, scheduling
+### Critical Security Rules
+- **Never expose `SUPABASE_SERVICE_ROLE_KEY`** to the browser or any `NEXT_PUBLIC_` variable
+- **Prefer pooled `DATABASE_URL`** (pgBouncer, transaction mode) for Vercel serverless
+- **Plan for two DB roles**: read-only for web, read-write for jobs (future milestone)
 
-### Model Configuration
-- `MODEL_VERSION` - Current model version
-  - Format: `v1.0`, `v1.1`, etc.
-  - Required for: ETL jobs, web app
-  - Used for: As-of state tracking
+### Database Connection Strategy
+- **Web App**: Uses `DATABASE_URL` from Vercel Project Environment Variables
+- **ETL Jobs**: Uses `DATABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` for full access
+- **Connection Pooling**: Use pooled connection strings for serverless environments
 
-### Data Sources Configuration
-- `DATASOURCES_CONFIG_PATH` - Path to datasources configuration
-  - Format: `/config/datasources.yml`
-  - Required for: ETL jobs
-  - Contains: API endpoints, rate limits, data mappings
+## Vercel Environment Setup
 
-## API Keys & Secrets
-
-### Sports Data APIs
-- `SPORTS_REFERENCE_API_KEY` - Sports Reference API access
-- `ESPN_API_KEY` - ESPN API access (if used)
-- `COLLEGE_FOOTBALL_DATA_API_KEY` - College Football Data API
-
-### Betting Data APIs
-- `ODDS_API_KEY` - The Odds API for market lines
-- `BETTING_API_KEY` - Alternative betting data source
-
-### Weather Data
-- `WEATHER_API_KEY` - Weather data for game conditions
-- `OPENWEATHER_API_KEY` - OpenWeatherMap API key
-
-### Recruiting Data
-- `RIVALS_API_KEY` - Rivals.com recruiting data
-- `247SPORTS_API_KEY` - 247Sports recruiting data
-
-## Secrets Policy
+### Required Environment Variables in Vercel
+1. Go to Vercel → Project → Settings → Environment Variables
+2. Add the following variables:
+   - `DATABASE_URL` (use **pooled** connection string)
+   - `APP_ENV`
+   - `TZ`
+   - `MODEL_VERSION`
+   - `SUPABASE_URL`
+3. Only add `SUPABASE_ANON_KEY` if the browser ever calls supabase-js
+4. **Never add `SUPABASE_SERVICE_ROLE_KEY`** to Vercel if any value might reach the client
+5. Put `SUPABASE_SERVICE_ROLE_KEY` only in **server job runners** (GitHub Actions/Render/Fly)
 
 ### Vercel Environment Groups
-- **Web App Group**: `gridiron-edge-web`
-  - Contains: `DATABASE_URL`, `APP_ENV`, `TZ`, `MODEL_VERSION`
-  - Access: Vercel dashboard, team members with appropriate permissions
-  - Rotation: Quarterly or on security incident
+- **Web App**: Use Vercel Project Environment Variables
+- **Jobs**: Use separate environment (GitHub Actions/Render/Fly) with job-specific secrets
 
-### GitHub Actions Secrets
-- **Jobs Group**: `gridiron-edge-jobs`
-  - Contains: All API keys, database access, job-specific configs
-  - Access: Repository secrets, limited to maintainers
-  - Rotation: Monthly for API keys, quarterly for database access
+## Local Development Setup
 
-### Alternative: Render/Fly Environment
-- **Jobs Environment**: Platform-specific environment variables
-  - Contains: Same as GitHub Actions secrets
-  - Access: Platform dashboard with team access controls
-  - Rotation: Same schedule as GitHub Actions
+### Root Environment (for tooling)
+```bash
+cp .env.example .env
+# Fill in secrets locally (never commit this file)
+```
+
+### Web App Environment
+```bash
+cp .env.example apps/web/.env.local
+# Fill only web-safe values (SUPABASE_ANON_KEY, SUPABASE_URL)
+# Never include SUPABASE_SERVICE_ROLE_KEY or DATABASE_URL
+```
+
+### ETL Jobs Environment
+```bash
+cp .env.example apps/jobs/.env
+# Fill server-only keys for local ETL testing
+# Include DATABASE_URL and SUPABASE_SERVICE_ROLE_KEY for full access
+```
 
 ## Environment-Specific Configuration
 
@@ -86,6 +85,28 @@
 - Full API access with monitoring
 - Production database with backups
 - Model version: Semantic versioning (v1.0, v1.1, etc.)
+
+## Prisma Database Management
+
+### Prisma Scripts
+- `npm run db:migrate:deploy` - Deploy migrations to production
+- `npm run db:migrate:dev` - Create and apply migrations in development
+- `npm run db:generate` - Generate Prisma client
+- `npm run db:studio` - Open Prisma Studio for database management
+- `npm run db:seed` - Seed database with initial data
+- `npm run db:reset` - Reset database and apply all migrations
+
+### Migration Workflow
+1. **Development**: Use `prisma migrate dev` for interactive development
+2. **Production**: Use `prisma migrate deploy` via GitHub Actions
+3. **Client Generation**: Run `prisma generate` after schema changes
+4. **Verification**: Use `prisma studio` to verify data integrity
+
+### Database Connection Strategy
+- **Web App**: Uses `DATABASE_URL` from Vercel Project Environment Variables
+- **ETL Jobs**: Uses `DATABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` for full access
+- **Migrations**: Uses `DATABASE_URL` and `SHADOW_DATABASE_URL` for schema changes
+- **Connection Pooling**: Use pooled connection strings for serverless environments
 
 ## Security Best Practices
 
