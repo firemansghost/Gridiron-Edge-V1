@@ -1,0 +1,276 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+// =============================================================================
+// Core Tables
+// =============================================================================
+
+model Team {
+  id          String   @id
+  name        String
+  conference  String
+  division    String?
+  logoUrl     String   @map("logo_url")
+  primaryColor String  @map("primary_color")
+  secondaryColor String @map("secondary_color")
+  mascot      String?
+  city        String?
+  state       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  homeGames   Game[] @relation("HomeTeam")
+  awayGames   Game[] @relation("AwayTeam")
+  teamGameStats TeamGameStat[]
+  recruiting  Recruiting[]
+  powerRatings PowerRating[]
+
+  @@map("teams")
+  @@index([conference, division])
+  @@index([name])
+}
+
+model Game {
+  id             String    @id
+  homeTeamId      String    @map("home_team_id")
+  awayTeamId      String    @map("away_team_id")
+  season          Int
+  week            Int
+  date            DateTime
+  status          GameStatus
+  homeScore       Int?      @map("home_score")
+  awayScore       Int?      @map("away_score")
+  venue           String
+  city            String
+  neutralSite     Boolean   @default(false) @map("neutral_site")
+  conferenceGame  Boolean   @default(false) @map("conference_game")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  homeTeam        Team      @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam        Team      @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  teamGameStats   TeamGameStat[]
+  marketLines     MarketLine[]
+  matchupOutputs  MatchupOutput[]
+  bets            Bet[]
+
+  @@map("games")
+  @@index([season, week])
+  @@index([homeTeamId, season])
+  @@index([awayTeamId, season])
+  @@index([date])
+}
+
+model TeamGameStat {
+  id              String   @id @default(cuid())
+  gameId          String   @map("game_id")
+  teamId          String   @map("team_id")
+  offensiveStats  Json     @map("offensive_stats")
+  defensiveStats  Json     @map("defensive_stats")
+  specialTeams    Json     @map("special_teams")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  game            Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  team            Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@map("team_game_stats")
+  @@index([teamId, season])
+  @@index([gameId])
+  @@unique([gameId, teamId])
+}
+
+model Recruiting {
+  id          String   @id @default(cuid())
+  teamId      String   @map("team_id")
+  season      Int
+  classRank   Int      @map("class_rank")
+  avgRating   Float    @map("avg_rating")
+  commitCount Int      @map("commit_count")
+  fiveStars   Int      @map("five_stars")
+  fourStars   Int      @map("four_stars")
+  threeStars  Int      @map("three_stars")
+  topPlayers  Json     @map("top_players")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@map("recruiting")
+  @@index([teamId, season])
+  @@index([season, classRank])
+}
+
+model MarketLine {
+  id          String     @id @default(cuid())
+  gameId      String     @map("game_id")
+  lineType    LineType   @map("line_type")
+  lineValue   Float      @map("line_value")
+  timestamp   DateTime
+  source      String
+  closingLine Float      @map("closing_line")
+  bookName    String     @map("book_name")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  // Relations
+  game        Game       @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@map("market_lines")
+  @@index([gameId, lineType])
+  @@index([timestamp])
+  @@index([season, week])
+}
+
+model PowerRating {
+  id            String   @id @default(cuid())
+  teamId        String   @map("team_id")
+  season        Int
+  week          Int
+  rating        Float
+  modelVersion  String   @map("model_version")
+  features      Json
+  confidence    Float
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  team          Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@map("power_ratings")
+  @@index([teamId, season])
+  @@index([season, week])
+  @@index([modelVersion])
+  @@index([rating(sort: Desc)])
+}
+
+model MatchupOutput {
+  id                String   @id @default(cuid())
+  gameId            String   @map("game_id")
+  impliedSpread     Float    @map("implied_spread")
+  impliedTotal      Float    @map("implied_total")
+  marketSpread      Float    @map("market_spread")
+  marketTotal       Float    @map("market_total")
+  edgeConfidence    EdgeConfidence @map("edge_confidence")
+  modelVersion      String   @map("model_version")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  game              Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@map("matchup_outputs")
+  @@index([gameId])
+  @@index([season, week])
+  @@index([edgeConfidence])
+  @@index([modelVersion])
+}
+
+model Bet {
+  id          String   @id @default(cuid())
+  gameId      String   @map("game_id")
+  betType     BetType  @map("bet_type")
+  lineAtBet   Float    @map("line_at_bet")
+  closingLine Float    @map("closing_line")
+  amount      Float
+  result      BetResult?
+  pnl         Float?
+  clv         Float?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@map("bets")
+  @@index([gameId])
+  @@index([betType])
+  @@index([result])
+  @@index([createdAt])
+}
+
+model Ruleset {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  parameters  Json
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  strategyRuns StrategyRun[]
+
+  @@map("rulesets")
+  @@index([active])
+  @@index([name])
+}
+
+model StrategyRun {
+  id          String   @id @default(cuid())
+  rulesetId  String   @map("ruleset_id")
+  startDate  DateTime @map("start_date")
+  endDate    DateTime @map("end_date")
+  totalBets  Int      @map("total_bets")
+  winRate    Float    @map("win_rate")
+  roi        Float
+  clv        Float
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  ruleset    Ruleset  @relation(fields: [rulesetId], references: [id], onDelete: Cascade)
+
+  @@map("strategy_runs")
+  @@index([rulesetId])
+  @@index([startDate])
+  @@index([roi(sort: Desc)])
+}
+
+// =============================================================================
+// Enums
+// =============================================================================
+
+enum GameStatus {
+  scheduled
+  in_progress
+  final
+}
+
+enum LineType {
+  spread
+  total
+  moneyline
+}
+
+enum EdgeConfidence {
+  A
+  B
+  C
+}
+
+enum BetType {
+  spread
+  total
+  moneyline
+}
+
+enum BetResult {
+  win
+  loss
+  push
+}

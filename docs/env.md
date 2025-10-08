@@ -86,6 +86,28 @@ cp .env.example apps/jobs/.env
 - Production database with backups
 - Model version: Semantic versioning (v1.0, v1.1, etc.)
 
+## Prisma Database Management
+
+### Prisma Scripts
+- `npm run db:migrate:deploy` - Deploy migrations to production
+- `npm run db:migrate:dev` - Create and apply migrations in development
+- `npm run db:generate` - Generate Prisma client
+- `npm run db:studio` - Open Prisma Studio for database management
+- `npm run db:seed` - Seed database with initial data
+- `npm run db:reset` - Reset database and apply all migrations
+
+### Migration Workflow
+1. **Development**: Use `prisma migrate dev` for interactive development
+2. **Production**: Use `prisma migrate deploy` via GitHub Actions
+3. **Client Generation**: Run `prisma generate` after schema changes
+4. **Verification**: Use `prisma studio` to verify data integrity
+
+### Database Connection Strategy
+- **Web App**: Uses `DATABASE_URL` from Vercel Project Environment Variables
+- **ETL Jobs**: Uses `DATABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` for full access
+- **Migrations**: Uses `DATABASE_URL` and `SHADOW_DATABASE_URL` for schema changes
+- **Connection Pooling**: Use pooled connection strings for serverless environments
+
 ## Security Best Practices
 
 ### Secret Rotation

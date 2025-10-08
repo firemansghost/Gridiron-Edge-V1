@@ -1,0 +1,29 @@
+{
+  "name": "gridiron-edge",
+  "version": "1.0.0",
+  "description": "College football analytics platform for power ratings, implied spreads, and betting edge identification",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:generate": "prisma generate",
+    "db:studio": "prisma studio",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:reset": "prisma migrate reset --force",
+    "db:push": "prisma db push",
+    "db:pull": "prisma db pull"
+  },
+  "devDependencies": {
+    "@prisma/client": "^5.7.1",
+    "prisma": "^5.7.1",
+    "tsx": "^4.6.2",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "packageManager": "npm@10.0.0"
+}
