@@ -11,9 +11,10 @@ on:
 jobs:
   migrate:
     runs-on: ubuntu-latest
+    timeout-minutes: 7
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}   # pooled pgBouncer URL (6543)
-      DIRECT_URL:   ${{ secrets.DIRECT_URL }}     # direct URL (5432)
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIRECT_URL:   ${{ secrets.DIRECT_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,24 +24,25 @@ jobs:
         with:
           node-version: "20"
 
-      # Quick diagnostics (no secrets printed)
+      - name: Prisma version (fast)
+        run: npx -y prisma@latest -v
+
       - name: Show targets (redacted)
         run: |
-          echo "Pooled host: aws-1-us-east-2.pooler.supabase.com:6543"
-          echo "Direct host: aws-1-us-east-2.pooler.supabase.com:5432"
+          echo "Pooled: aws-1-us-east-2.pooler.supabase.com:6543"
+          echo "Direct: aws-1-us-east-2.pooler.supabase.com:5432"
           echo "DATABASE_URL set? ${{ secrets.DATABASE_URL != '' }}"
           echo "DIRECT_URL set?   ${{ secrets.DIRECT_URL != '' }}"
 
-      # Short wait loops to avoid cold-start hiccups
       - name: Wait for pooled (6543)
         shell: bash
         run: |
           set -e
           for i in {1..12}; do
             if timeout 5 bash -lc "echo > /dev/tcp/aws-1-us-east-2.pooler.supabase.com/6543"; then
-              echo "Pooled port reachable"; break
+              echo "Pooled reachable"; break
             fi
-            echo "Waiting for pooled... ($i/12)"; sleep 5
+            echo "Waiting pooled... ($i/12)"; sleep 5
           done
 
       - name: Wait for direct (5432)
@@ -49,12 +51,19 @@ jobs:
           set -e
           for i in {1..12}; do
             if timeout 5 bash -lc "echo > /dev/tcp/aws-1-us-east-2.pooler.supabase.com/5432"; then
-              echo "Direct port reachable"; break
+              echo "Direct reachable"; break
             fi
-            echo "Waiting for direct... ($i/12)"; sleep 5
+            echo "Waiting direct... ($i/12)"; sleep 5
           done
 
-      # Use npx directly; no npm install step to avoid long installs
+      - name: List migrations (should exist, or deploy will no-op)
+        run: |
+          ls -la prisma || true
+          ls -la prisma/migrations || true
+
+      - name: Prisma migrate status (non-fatal)
+        run: npx -y prisma@latest migrate status --schema=prisma/schema.prisma || true
+
       - name: Prisma migrate deploy
         run: npx -y prisma@latest migrate deploy --schema=prisma/schema.prisma
 
