@@ -11,10 +11,9 @@ on:
 jobs:
   migrate:
     runs-on: ubuntu-latest
-    # These envs are pulled from GitHub Actions SECRETS (set them in Repo -> Settings -> Secrets and variables -> Actions)
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      SHADOW_DATABASE_URL: ${{ secrets.SHADOW_DATABASE_URL }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}   # pooled pgBouncer URL (6543)
+      DIRECT_URL:   ${{ secrets.DIRECT_URL }}     # direct URL (5432)
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,38 +23,40 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install deps (or noop)
+      # Quick diagnostics (no secrets printed)
+      - name: Show targets (redacted)
         run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install --no-audit --no-fund
-          fi
+          echo "Pooled host: aws-1-us-east-2.pooler.supabase.com:6543"
+          echo "Direct host: aws-1-us-east-2.pooler.supabase.com:5432"
+          echo "DATABASE_URL set? ${{ secrets.DATABASE_URL != '' }}"
+          echo "DIRECT_URL set?   ${{ secrets.DIRECT_URL != '' }}"
 
-      # Optional: show target host (no secrets printed)
-      - name: Show target host (redacted)
-        run: |
-          echo "Target: db.tccqmxcaledmlkybjqef.supabase.co:5432"
-          echo "DATABASE_URL is set (value masked by GitHub): ${{ secrets.DATABASE_URL != '' }}"
-
-      # Wait for Supabase Postgres to accept TCP on 5432 (handles cold start)
-      - name: Wait for Supabase Postgres (5432)
+      # Short wait loops to avoid cold-start hiccups
+      - name: Wait for pooled (6543)
         shell: bash
         run: |
           set -e
-          HOST="db.tccqmxcaledmlkybjqef.supabase.co"
-          PORT=5432
           for i in {1..12}; do
-            if timeout 5 bash -lc "echo > /dev/tcp/$HOST/$PORT"; then
-              echo "DB port reachable"
-              break
+            if timeout 5 bash -lc "echo > /dev/tcp/aws-1-us-east-2.pooler.supabase.com/6543"; then
+              echo "Pooled port reachable"; break
             fi
-            echo "Waiting for DB... ($i/12)"
-            sleep 5
+            echo "Waiting for pooled... ($i/12)"; sleep 5
           done
 
+      - name: Wait for direct (5432)
+        shell: bash
+        run: |
+          set -e
+          for i in {1..12}; do
+            if timeout 5 bash -lc "echo > /dev/tcp/aws-1-us-east-2.pooler.supabase.com/5432"; then
+              echo "Direct port reachable"; break
+            fi
+            echo "Waiting for direct... ($i/12)"; sleep 5
+          done
+
+      # Use npx directly; no npm install step to avoid long installs
       - name: Prisma migrate deploy
-        run: npx prisma migrate deploy --schema=prisma/schema.prisma
+        run: npx -y prisma@latest migrate deploy --schema=prisma/schema.prisma
 
       - name: Prisma generate (optional)
-        run: npx prisma generate --schema=prisma/schema.prisma
+        run: npx -y prisma@latest generate --schema=prisma/schema.prisma
