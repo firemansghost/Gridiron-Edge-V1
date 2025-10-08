@@ -1,48 +1,38 @@
 name: Prisma Migrate
 
 on:
+  workflow_dispatch:
   push:
-    branches: [main]
+    branches: ["main"]
     paths:
-      - 'prisma/**'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'prisma/**'
+      - "prisma/**"
+      - ".github/workflows/prisma-migrate.yml"
 
 jobs:
   migrate:
     runs-on: ubuntu-latest
-    
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SHADOW_DATABASE_URL: ${{ secrets.SHADOW_DATABASE_URL }}
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          cache: 'npm'
+          node-version: "20"
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install deps (or noop if none)
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-audit --no-fund
+          fi
 
-      - name: Generate Prisma Client
-        run: npm run db:generate
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - name: Prisma migrate deploy
+        run: npx prisma migrate deploy --schema=prisma/schema.prisma
 
-      - name: Run Prisma Migrate Deploy
-        run: npm run db:migrate:deploy
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SHADOW_DATABASE_URL: ${{ secrets.SHADOW_DATABASE_URL }}
-
-      - name: Verify Migration
-        run: npx prisma db execute --stdin
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        stdin: |
-          SELECT table_name FROM information_schema.tables 
-          WHERE table_schema = 'public' 
-          ORDER BY table_name;
+      - name: Prisma generate (optional)
+        run: npx prisma generate --schema=prisma/schema.prisma
