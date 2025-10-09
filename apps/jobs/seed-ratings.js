@@ -23,6 +23,28 @@ const CONFIDENCE_THRESHOLDS = {
 };
 
 /**
+ * Normalize team ID to handle mismatches
+ */
+function normalizeId(str) {
+  if (!str) return '';
+  return str
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, ''); // Remove leading/trailing dashes
+}
+
+/**
+ * Title case a string for display names
+ */
+function titleCase(str) {
+  return str
+    .split('-')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+/**
  * Load seed data from JSON files
  */
 function loadSeedData() {
@@ -227,10 +249,16 @@ function computeImpliedLines(games, ratings, marketLines) {
 async function upsertTeams(teams) {
   console.log('Upserting teams...');
   let teamsInserted = 0;
+  const teamIds = new Set();
   
   for (const team of teams) {
+    const normalizedId = normalizeId(team.team_id || team.id || team.name);
+    if (!normalizedId) continue;
+    
+    teamIds.add(normalizedId);
+    
     await prisma.team.upsert({
-      where: { id: team.team_id },
+      where: { id: normalizedId },
       update: {
         name: team.name,
         conference: team.conference,
@@ -243,7 +271,7 @@ async function upsertTeams(teams) {
         state: team.state || null
       },
       create: {
-        id: team.team_id,
+        id: normalizedId,
         name: team.name,
         conference: team.conference,
         division: team.division || null,
@@ -259,22 +287,68 @@ async function upsertTeams(teams) {
   }
   
   console.log(`✅ Upserted ${teamsInserted} teams`);
-  return teamsInserted;
+  return { teamsInserted, teamIds };
 }
 
 /**
  * Upsert games from seed data
  */
-async function upsertGames(games) {
+async function upsertGames(games, existingTeamIds) {
   console.log('Upserting games...');
   let gamesInserted = 0;
   
   for (const game of games) {
+    const homeId = normalizeId(game.home_team_id);
+    const awayId = normalizeId(game.away_team_id);
+    
+    // Check if teams exist, auto-stub if missing
+    if (!existingTeamIds.has(homeId)) {
+      console.log(`[Stubbed] Inserted missing team: ${homeId}`);
+      await prisma.team.upsert({
+        where: { id: homeId },
+        update: {},
+        create: {
+          id: homeId,
+          name: titleCase(homeId),
+          conference: 'Independent',
+          division: null,
+          logoUrl: null,
+          primaryColor: null,
+          secondaryColor: null,
+          mascot: null,
+          city: null,
+          state: null
+        }
+      });
+      existingTeamIds.add(homeId);
+    }
+    
+    if (!existingTeamIds.has(awayId)) {
+      console.log(`[Stubbed] Inserted missing team: ${awayId}`);
+      await prisma.team.upsert({
+        where: { id: awayId },
+        update: {},
+        create: {
+          id: awayId,
+          name: titleCase(awayId),
+          conference: 'Independent',
+          division: null,
+          logoUrl: null,
+          primaryColor: null,
+          secondaryColor: null,
+          mascot: null,
+          city: null,
+          state: null
+        }
+      });
+      existingTeamIds.add(awayId);
+    }
+    
     await prisma.game.upsert({
       where: { id: game.game_id },
       update: {
-        homeTeamId: game.home_team_id,
-        awayTeamId: game.away_team_id,
+        homeTeamId: homeId,
+        awayTeamId: awayId,
         season: game.season,
         week: game.week,
         date: new Date(game.date),
@@ -288,8 +362,8 @@ async function upsertGames(games) {
       },
       create: {
         id: game.game_id,
-        homeTeamId: game.home_team_id,
-        awayTeamId: game.away_team_id,
+        homeTeamId: homeId,
+        awayTeamId: awayId,
         season: game.season,
         week: game.week,
         date: new Date(game.date),
@@ -321,10 +395,10 @@ async function main() {
     console.log(`Loaded ${teams.length} teams, ${games.length} games`);
     
     // Step 1: Upsert teams first (required for foreign keys)
-    const teamsInserted = await upsertTeams(teams);
+    const { teamsInserted, teamIds } = await upsertTeams(teams);
     
     // Step 2: Upsert games (requires teams to exist)
-    const gamesInserted = await upsertGames(games);
+    const gamesInserted = await upsertGames(games, teamIds);
     
     // Step 3: Compute power ratings
     const ratings = computePowerRatings(teams, teamGameStats);
