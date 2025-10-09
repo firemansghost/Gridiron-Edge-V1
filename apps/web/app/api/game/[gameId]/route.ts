@@ -4,11 +4,12 @@
  * Returns detailed game information including factor breakdown from components_json.
  */
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 
-const prisma = new PrismaClient();
-
-export async function GET(request, { params }) {
+export async function GET(
+  request: Request,
+  { params }: { params: { gameId: string } }
+) {
   try {
     const { gameId } = params;
 
@@ -74,12 +75,12 @@ export async function GET(request, { params }) {
     });
 
     // Extract factor breakdown from components
-    const getFactorBreakdown = (rating) => {
+    const getFactorBreakdown = (rating: any) => {
       if (!rating?.features) return [];
       
       const factors = Object.entries(rating.features)
-        .filter(([key, value]) => key !== 'talent_index' && key !== 'pace') // Skip unused factors
-        .map(([key, value]) => ({
+        .filter(([key, value]: [string, any]) => key !== 'talent_index' && key !== 'pace') // Skip unused factors
+        .map(([key, value]: [string, any]) => ({
           factor: key,
           zScore: value.z_score,
           weight: value.weight,
@@ -167,11 +168,9 @@ export async function GET(request, { params }) {
       { 
         success: false, 
         error: 'Failed to fetch game detail',
-        details: error.message 
+        details: error instanceof Error ? error.message : 'Unknown error'
       },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }

@@ -7,11 +7,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { SlateData } from '@/types';
 
 export default function HomePage() {
-  const [slate, setSlate] = useState(null);
+  const [slate, setSlate] = useState<SlateData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchSlate();
@@ -28,13 +29,13 @@ export default function HomePage() {
         setError(data.error || 'Failed to fetch slate data');
       }
     } catch (err) {
-      setError('Network error: ' + err.message);
+      setError('Network error: ' + (err instanceof Error ? err.message : 'Unknown error'));
     } finally {
       setLoading(false);
     }
   };
 
-  const getConfidenceColor = (confidence) => {
+  const getConfidenceColor = (confidence: string) => {
     switch (confidence) {
       case 'A': return 'text-green-600 bg-green-100';
       case 'B': return 'text-yellow-600 bg-yellow-100';
@@ -43,7 +44,7 @@ export default function HomePage() {
     }
   };
 
-  const formatEdge = (edge) => {
+  const formatEdge = (edge: number) => {
     return edge >= 1.0 ? `+${edge.toFixed(1)}` : edge.toFixed(1);
   };
 
@@ -83,26 +84,26 @@ export default function HomePage() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Gridiron Edge</h1>
           <p className="text-gray-600 mt-2">
-            Week {slate.week} • {slate.season} Season • Model {slate.modelVersion}
+            Week {slate?.week} • {slate?.season} Season • Model {slate?.modelVersion}
           </p>
         </div>
 
         {/* Summary Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-white p-4 rounded-lg shadow">
-            <div className="text-2xl font-bold text-blue-600">{slate.summary.totalGames}</div>
+            <div className="text-2xl font-bold text-blue-600">{slate?.summary?.totalGames || 0}</div>
             <div className="text-sm text-gray-600">Total Games</div>
           </div>
           <div className="bg-white p-4 rounded-lg shadow">
-            <div className="text-2xl font-bold text-green-600">{slate.summary.confidenceBreakdown.A}</div>
+            <div className="text-2xl font-bold text-green-600">{slate?.summary?.confidenceBreakdown?.A || 0}</div>
             <div className="text-sm text-gray-600">Tier A Edges</div>
           </div>
           <div className="bg-white p-4 rounded-lg shadow">
-            <div className="text-2xl font-bold text-yellow-600">{slate.summary.confidenceBreakdown.B}</div>
+            <div className="text-2xl font-bold text-yellow-600">{slate?.summary?.confidenceBreakdown?.B || 0}</div>
             <div className="text-sm text-gray-600">Tier B Edges</div>
           </div>
           <div className="bg-white p-4 rounded-lg shadow">
-            <div className="text-2xl font-bold text-red-600">{slate.summary.confidenceBreakdown.C}</div>
+            <div className="text-2xl font-bold text-red-600">{slate?.summary?.confidenceBreakdown?.C || 0}</div>
             <div className="text-sm text-gray-600">Tier C Edges</div>
           </div>
         </div>
@@ -138,7 +139,7 @@ export default function HomePage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {slate.games.map((game) => (
+                {slate?.games?.map((game) => (
                   <tr key={game.gameId} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">

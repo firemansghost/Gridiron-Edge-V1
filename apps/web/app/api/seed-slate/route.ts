@@ -5,9 +5,7 @@
  * Reads from database (Prisma client) to prove end-to-end wiring.
  */
 
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 export async function GET() {
   try {
@@ -102,11 +100,9 @@ export async function GET() {
       { 
         success: false, 
         error: 'Failed to fetch seed slate data',
-        details: error.message 
+        details: error instanceof Error ? error.message : 'Unknown error'
       },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }
