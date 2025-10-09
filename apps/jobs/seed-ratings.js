@@ -222,6 +222,94 @@ function computeImpliedLines(games, ratings, marketLines) {
 }
 
 /**
+ * Upsert teams from seed data
+ */
+async function upsertTeams(teams) {
+  console.log('Upserting teams...');
+  let teamsInserted = 0;
+  
+  for (const team of teams) {
+    await prisma.team.upsert({
+      where: { id: team.team_id },
+      update: {
+        name: team.name,
+        conference: team.conference,
+        division: team.division || null,
+        logoUrl: team.logo_url || null,
+        primaryColor: team.primary_color || null,
+        secondaryColor: team.secondary_color || null,
+        mascot: team.mascot || null,
+        city: team.city || null,
+        state: team.state || null
+      },
+      create: {
+        id: team.team_id,
+        name: team.name,
+        conference: team.conference,
+        division: team.division || null,
+        logoUrl: team.logo_url || null,
+        primaryColor: team.primary_color || null,
+        secondaryColor: team.secondary_color || null,
+        mascot: team.mascot || null,
+        city: team.city || null,
+        state: team.state || null
+      }
+    });
+    teamsInserted++;
+  }
+  
+  console.log(`✅ Upserted ${teamsInserted} teams`);
+  return teamsInserted;
+}
+
+/**
+ * Upsert games from seed data
+ */
+async function upsertGames(games) {
+  console.log('Upserting games...');
+  let gamesInserted = 0;
+  
+  for (const game of games) {
+    await prisma.game.upsert({
+      where: { id: game.game_id },
+      update: {
+        homeTeamId: game.home_team_id,
+        awayTeamId: game.away_team_id,
+        season: game.season,
+        week: game.week,
+        date: new Date(game.date),
+        status: game.status || 'scheduled',
+        homeScore: game.home_score || null,
+        awayScore: game.away_score || null,
+        venue: game.venue || 'TBD',
+        city: game.city || 'TBD',
+        neutralSite: game.neutral_site || false,
+        conferenceGame: game.conference_game || false
+      },
+      create: {
+        id: game.game_id,
+        homeTeamId: game.home_team_id,
+        awayTeamId: game.away_team_id,
+        season: game.season,
+        week: game.week,
+        date: new Date(game.date),
+        status: game.status || 'scheduled',
+        homeScore: game.home_score || null,
+        awayScore: game.away_score || null,
+        venue: game.venue || 'TBD',
+        city: game.city || 'TBD',
+        neutralSite: game.neutral_site || false,
+        conferenceGame: game.conference_game || false
+      }
+    });
+    gamesInserted++;
+  }
+  
+  console.log(`✅ Upserted ${gamesInserted} games`);
+  return gamesInserted;
+}
+
+/**
  * Main execution function
  */
 async function main() {
@@ -232,13 +320,19 @@ async function main() {
     const { teams, games, teamGameStats, marketLines } = loadSeedData();
     console.log(`Loaded ${teams.length} teams, ${games.length} games`);
     
-    // Compute power ratings
+    // Step 1: Upsert teams first (required for foreign keys)
+    const teamsInserted = await upsertTeams(teams);
+    
+    // Step 2: Upsert games (requires teams to exist)
+    const gamesInserted = await upsertGames(games);
+    
+    // Step 3: Compute power ratings
     const ratings = computePowerRatings(teams, teamGameStats);
     
-    // Compute implied lines
+    // Step 4: Compute implied lines
     const impliedLines = computeImpliedLines(games, ratings, marketLines);
     
-    // Upsert power ratings
+    // Step 5: Upsert power ratings
     console.log('Upserting power ratings...');
     for (const [teamId, ratingData] of Object.entries(ratings)) {
       const team = teams.find(t => t.team_id === teamId);
@@ -270,7 +364,7 @@ async function main() {
       });
     }
     
-    // Upsert matchup outputs
+    // Step 6: Upsert matchup outputs (requires games to exist)
     console.log('Upserting matchup outputs...');
     for (const line of impliedLines) {
       await prisma.matchupOutput.upsert({
@@ -304,6 +398,8 @@ async function main() {
     }
     
     console.log('✅ M3 seed ratings job completed successfully!');
+    console.log(`- Upserted ${teamsInserted} teams`);
+    console.log(`- Upserted ${gamesInserted} games`);
     console.log(`- Generated ${Object.keys(ratings).length} power ratings`);
     console.log(`- Generated ${impliedLines.length} implied lines`);
     console.log(`- Model version: ${MODEL_VERSION}`);
