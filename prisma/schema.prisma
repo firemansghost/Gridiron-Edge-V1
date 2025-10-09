@@ -155,6 +155,7 @@ model PowerRating {
   // Relations
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
+  @@unique([teamId, season, week, modelVersion])
   @@index([teamId, season])
   @@index([season, week])
   @@index([modelVersion])
