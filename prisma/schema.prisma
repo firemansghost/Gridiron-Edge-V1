@@ -20,9 +20,9 @@ model Team {
   name           String
   conference     String
   division       String?
-  logoUrl        String   @map("logo_url")
-  primaryColor   String   @map("primary_color")
-  secondaryColor String   @map("secondary_color")
+  logoUrl        String?  @map("logo_url")
+  primaryColor   String?  @map("primary_color")
+  secondaryColor String?  @map("secondary_color")
   mascot         String?
   city           String?
   state          String?
@@ -155,7 +155,8 @@ model PowerRating {
   // Relations
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
-  @@unique([teamId, season, week, modelVersion])
+  @@unique([teamId, season, week, modelVersion]) // <-- needed for upsert
+  // Indexes & constraints
   @@index([teamId, season])
   @@index([season, week])
   @@index([modelVersion])
