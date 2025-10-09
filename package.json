@@ -14,13 +14,16 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma migrate reset --force",
     "db:push": "prisma db push",
-    "db:pull": "prisma db pull"
+    "db:pull": "prisma db pull",
+    "seed:ratings": "node apps/jobs/seed-ratings.js",
+    "test:ratings": "jest apps/jobs/__tests__/seed-ratings.test.js"
   },
   "devDependencies": {
     "@prisma/client": "^5.7.1",
     "prisma": "^5.7.1",
     "tsx": "^4.6.2",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "jest": "^29.7.0"
   },
   "engines": {
     "node": ">=18.0.0"
