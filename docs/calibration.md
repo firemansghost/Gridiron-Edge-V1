@@ -105,6 +105,29 @@ implied_total = (home_offensive_rating + away_offensive_rating) * 1.2
 - Performance degradation monitoring
 - Regular model retraining schedule
 
+## M3 Seed-Mode Assumptions
+
+### Seed-Only Features
+- **Constant HFA**: 2.0 points for all teams (no conference-specific adjustments)
+- **Fixed Weights**: ypp_off=0.3, ypp_def=0.3, success_off=0.2, success_def=0.2
+- **Seed-Only Z-Scores**: Computed only from seed week data (not full season)
+- **Fixed Thresholds**: A≥4.0 pts, B≥3.0 pts, C≥2.0 pts edge
+- **Simple Totals**: Base 45 + pace adjustment (not sophisticated)
+
+### Seed Data Limitations
+- **Single Week**: Only CFB 2024 Week 1 data available
+- **Basic Stats**: No EPA, success rate, or advanced metrics
+- **No Recruiting**: Talent index defaults to 0
+- **No Weather**: No environmental factors considered
+- **No Injuries**: No injury adjustments
+
+### M3 Implementation Notes
+- **Linear Regression**: Simple weighted combination of z-scored features
+- **No Opponent Adjustment**: Raw stats only (no SOS correction)
+- **Constant Pace**: Not used in v1 calculations
+- **Market Data**: Uses closing lines from seed market_lines.json
+- **Model Version**: v0.0.1 for all calculations
+
 ## V1 Limitations
 
 ### Missing Features

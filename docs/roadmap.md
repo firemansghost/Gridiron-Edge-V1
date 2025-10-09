@@ -41,6 +41,26 @@
 **Inputs**: Team stats; game results; recruiting data
 **Definition of Done**: Power ratings calculated; validation against historical games; performance benchmarks
 
+## Milestone 3 - Linear Ratings and Seed UI
+**Purpose**: Deliver minimal vertical slice with linear ratings, implied lines, and basic UI
+**Success**: End-to-end flow from seed data → ratings → implied lines → API → UI
+**Out of Scope**: External data providers; advanced UI features; authentication
+**Risks**: Data quality; UI complexity; performance issues
+**Inputs**: Seed JSON files; Prisma database; Next.js app
+**Definition of Done**: 
+- Ratings job populates power_ratings and matchup_outputs for seed week with model_version=v0.0.1
+- Server route returns seeded slate with implied vs market and confidence tier
+- Home and Game Detail pages render from database via API routes
+- Tests for z-score, mapping, and tiering pass locally
+- Documentation updated with M3 constants and assumptions
+
+**M3 Implementation Details**:
+- **Jobs**: Node.js script loads seed JSONs, computes linear ratings using z-scored features (ypp_off, ypp_def, success_off, success_def), outputs to power_ratings and matchup_outputs
+- **API**: Next.js server routes return seed slate data and game details from Prisma database
+- **UI**: Minimal Home page (slate table) and Game Detail page (factor breakdown) using Tailwind
+- **Constants**: HFA=2.0 pts, Confidence thresholds A≥4.0, B≥3.0, C≥2.0 pts
+- **Model**: Linear regression with simple feature weights, constant HFA, seed-only z-scores
+
 ## Milestone 3 - Implied Lines & Edge Detection
 **Purpose**: Convert power ratings to implied spreads/totals and identify betting edges
 **Success**: Implied lines within 3 points of market 70% of the time; edge detection working

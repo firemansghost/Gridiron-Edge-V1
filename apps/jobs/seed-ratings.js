@@ -1,0 +1,324 @@
+#!/usr/bin/env node
+
+/**
+ * M3 Seed Ratings Job
+ * 
+ * Computes linear power ratings from seed data and generates implied lines.
+ * Uses simple z-scoring and constant HFA for v1.
+ */
+
+const fs = require('fs');
+const path = require('path');
+const { PrismaClient } = require('@prisma/client');
+
+const prisma = new PrismaClient();
+
+// M3 Constants
+const MODEL_VERSION = 'v0.0.1';
+const HFA = 2.0; // Home field advantage in points
+const CONFIDENCE_THRESHOLDS = {
+  A: 4.0, // ≥ 4.0 pts edge
+  B: 3.0, // ≥ 3.0 pts edge  
+  C: 2.0  // ≥ 2.0 pts edge
+};
+
+/**
+ * Load seed data from JSON files
+ */
+function loadSeedData() {
+  const seedDir = path.join(process.cwd(), 'seed');
+  
+  const teams = JSON.parse(fs.readFileSync(path.join(seedDir, 'teams.json'), 'utf8')).teams;
+  const games = JSON.parse(fs.readFileSync(path.join(seedDir, 'games.json'), 'utf8')).games;
+  const teamGameStats = JSON.parse(fs.readFileSync(path.join(seedDir, 'team_game_stats.json'), 'utf8')).team_game_stats;
+  const marketLines = JSON.parse(fs.readFileSync(path.join(seedDir, 'market_lines.json'), 'utf8')).market_lines;
+  
+  return { teams, games, teamGameStats, marketLines };
+}
+
+/**
+ * Compute z-scores for a dataset
+ */
+function computeZScores(values) {
+  const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+  const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
+  const stdDev = Math.sqrt(variance);
+  
+  return values.map(val => stdDev === 0 ? 0 : (val - mean) / stdDev);
+}
+
+/**
+ * Extract team features from game stats
+ */
+function extractTeamFeatures(teamId, teamGameStats) {
+  const teamStats = teamGameStats.filter(stat => stat.team_id === teamId);
+  
+  if (teamStats.length === 0) {
+    return {
+      ypp_off: 0,
+      ypp_def: 0,
+      success_off: 0,
+      success_def: 0,
+      pace: 0,
+      talent_index: 0
+    };
+  }
+  
+  const stats = teamStats[0];
+  const off = stats.offensive_stats;
+  const def = stats.defensive_stats;
+  
+  // Calculate yards per play (YPP)
+  const totalPlays = (off.passing_yards + off.rushing_yards) / 4.5; // Rough estimate
+  const ypp_off = totalPlays > 0 ? off.total_yards / totalPlays : 0;
+  const ypp_def = totalPlays > 0 ? def.yards_allowed / totalPlays : 0;
+  
+  // Calculate success rate (simplified)
+  const success_off = off.third_down_conversions / Math.max(off.third_down_attempts, 1);
+  const success_def = 1 - (def.third_down_conversions || 0) / Math.max(def.third_down_attempts || 1, 1);
+  
+  // Calculate pace (plays per game estimate)
+  const pace = totalPlays || 60; // Default to 60 plays
+  
+  return {
+    ypp_off,
+    ypp_def: -ypp_def, // Defensive YPP enters negatively
+    success_off,
+    success_def,
+    pace,
+    talent_index: 0 // Default for seed mode
+  };
+}
+
+/**
+ * Compute linear power ratings
+ */
+function computePowerRatings(teams, teamGameStats) {
+  console.log('Computing power ratings...');
+  
+  // Extract features for all teams
+  const teamFeatures = {};
+  teams.forEach(team => {
+    teamFeatures[team.team_id] = extractTeamFeatures(team.team_id, teamGameStats);
+  });
+  
+  // Collect all feature values for z-scoring
+  const featureArrays = {
+    ypp_off: [],
+    ypp_def: [],
+    success_off: [],
+    success_def: [],
+    pace: [],
+    talent_index: []
+  };
+  
+  Object.values(teamFeatures).forEach(features => {
+    Object.keys(featureArrays).forEach(key => {
+      featureArrays[key].push(features[key]);
+    });
+  });
+  
+  // Compute z-scores for each feature
+  const zScores = {};
+  Object.keys(featureArrays).forEach(feature => {
+    zScores[feature] = computeZScores(featureArrays[feature]);
+  });
+  
+  // Create team-to-zscore mapping
+  const teamZScores = {};
+  const teamIds = Object.keys(teamFeatures);
+  teamIds.forEach((teamId, index) => {
+    teamZScores[teamId] = {};
+    Object.keys(zScores).forEach(feature => {
+      teamZScores[teamId][feature] = zScores[feature][index];
+    });
+  });
+  
+  // Compute ratings using simple linear combination
+  const weights = {
+    ypp_off: 0.3,
+    ypp_def: 0.3,
+    success_off: 0.2,
+    success_def: 0.2,
+    pace: 0.0, // Not used in v1
+    talent_index: 0.0 // Not used in v1
+  };
+  
+  const ratings = {};
+  Object.keys(teamZScores).forEach(teamId => {
+    let rating = 0;
+    const components = {};
+    
+    Object.keys(weights).forEach(feature => {
+      const contribution = teamZScores[teamId][feature] * weights[feature];
+      rating += contribution;
+      components[feature] = {
+        z_score: teamZScores[teamId][feature],
+        weight: weights[feature],
+        contribution
+      };
+    });
+    
+    ratings[teamId] = {
+      rating,
+      components
+    };
+  });
+  
+  return ratings;
+}
+
+/**
+ * Compute implied lines for games
+ */
+function computeImpliedLines(games, ratings, marketLines) {
+  console.log('Computing implied lines...');
+  
+  const impliedLines = [];
+  
+  games.forEach(game => {
+    const homeRating = ratings[game.home_team_id]?.rating || 0;
+    const awayRating = ratings[game.away_team_id]?.rating || 0;
+    
+    const ratingDiff = homeRating - awayRating;
+    const impliedSpread = ratingDiff + (game.neutral_site ? 0 : HFA);
+    
+    // Simple total calculation (pace + efficiency proxy)
+    const homePace = ratings[game.home_team_id]?.components?.pace?.z_score || 0;
+    const awayPace = ratings[game.away_team_id]?.components?.pace?.z_score || 0;
+    const impliedTotal = 45 + (homePace + awayPace) * 2; // Base 45 + pace adjustment
+    
+    // Find market lines for this game
+    const gameMarketLines = marketLines.filter(line => line.game_id === game.game_id);
+    const spreadLine = gameMarketLines.find(line => line.line_type === 'spread');
+    const totalLine = gameMarketLines.find(line => line.line_type === 'total');
+    
+    const marketSpread = spreadLine?.closing_line || 0;
+    const marketTotal = totalLine?.closing_line || 45;
+    
+    // Compute edge and confidence
+    const spreadEdge = Math.abs(impliedSpread - marketSpread);
+    const totalEdge = Math.abs(impliedTotal - marketTotal);
+    const maxEdge = Math.max(spreadEdge, totalEdge);
+    
+    let confidence = 'C';
+    if (maxEdge >= CONFIDENCE_THRESHOLDS.A) confidence = 'A';
+    else if (maxEdge >= CONFIDENCE_THRESHOLDS.B) confidence = 'B';
+    
+    impliedLines.push({
+      gameId: game.game_id,
+      season: game.season,
+      week: game.week,
+      impliedSpread,
+      impliedTotal,
+      marketSpread,
+      marketTotal,
+      edgeConfidence: confidence,
+      modelVersion: MODEL_VERSION
+    });
+  });
+  
+  return impliedLines;
+}
+
+/**
+ * Main execution function
+ */
+async function main() {
+  try {
+    console.log('Starting M3 seed ratings job...');
+    
+    // Load seed data
+    const { teams, games, teamGameStats, marketLines } = loadSeedData();
+    console.log(`Loaded ${teams.length} teams, ${games.length} games`);
+    
+    // Compute power ratings
+    const ratings = computePowerRatings(teams, teamGameStats);
+    
+    // Compute implied lines
+    const impliedLines = computeImpliedLines(games, ratings, marketLines);
+    
+    // Upsert power ratings
+    console.log('Upserting power ratings...');
+    for (const [teamId, ratingData] of Object.entries(ratings)) {
+      const team = teams.find(t => t.team_id === teamId);
+      if (!team) continue;
+      
+      await prisma.powerRating.upsert({
+        where: {
+          teamId_season_week_modelVersion: {
+            teamId,
+            season: 2024,
+            week: 1,
+            modelVersion: MODEL_VERSION
+          }
+        },
+        update: {
+          rating: ratingData.rating,
+          features: ratingData.components,
+          confidence: Math.abs(ratingData.rating)
+        },
+        create: {
+          teamId,
+          season: 2024,
+          week: 1,
+          rating: ratingData.rating,
+          modelVersion: MODEL_VERSION,
+          features: ratingData.components,
+          confidence: Math.abs(ratingData.rating)
+        }
+      });
+    }
+    
+    // Upsert matchup outputs
+    console.log('Upserting matchup outputs...');
+    for (const line of impliedLines) {
+      await prisma.matchupOutput.upsert({
+        where: {
+          gameId_modelVersion: {
+            gameId: line.gameId,
+            modelVersion: MODEL_VERSION
+          }
+        },
+        update: {
+          season: line.season,
+          week: line.week,
+          impliedSpread: line.impliedSpread,
+          impliedTotal: line.impliedTotal,
+          marketSpread: line.marketSpread,
+          marketTotal: line.marketTotal,
+          edgeConfidence: line.edgeConfidence
+        },
+        create: {
+          gameId: line.gameId,
+          season: line.season,
+          week: line.week,
+          impliedSpread: line.impliedSpread,
+          impliedTotal: line.impliedTotal,
+          marketSpread: line.marketSpread,
+          marketTotal: line.marketTotal,
+          edgeConfidence: line.edgeConfidence,
+          modelVersion: MODEL_VERSION
+        }
+      });
+    }
+    
+    console.log('✅ M3 seed ratings job completed successfully!');
+    console.log(`- Generated ${Object.keys(ratings).length} power ratings`);
+    console.log(`- Generated ${impliedLines.length} implied lines`);
+    console.log(`- Model version: ${MODEL_VERSION}`);
+    
+  } catch (error) {
+    console.error('❌ Error in seed ratings job:', error);
+    process.exit(1);
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+// Run if called directly
+if (require.main === module) {
+  main();
+}
+
+module.exports = { main, computeZScores, computePowerRatings, computeImpliedLines };
