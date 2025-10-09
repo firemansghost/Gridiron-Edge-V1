@@ -181,6 +181,7 @@ model MatchupOutput {
   // Relations
   game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
 
+  @@unique([gameId, modelVersion])
   @@index([gameId])
   @@index([season, week])
   @@index([edgeConfidence])
