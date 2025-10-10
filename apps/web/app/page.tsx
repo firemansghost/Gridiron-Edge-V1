@@ -105,9 +105,16 @@ export default function HomePage() {
               Review Previous Weeks
             </a>
           </div>
-          <p className="text-gray-600 mt-2">
-            Week {slate?.week} • {slate?.season} Season • Model {slate?.modelVersion}
-          </p>
+          <div className="flex items-center gap-3 mt-2">
+            <p className="text-gray-600">
+              Week {slate?.week} • {slate?.season} Season • Model {slate?.modelVersion}
+            </p>
+            {slate?.games?.some(game => game.homeScore !== null && game.awayScore !== null) && (
+              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                Final
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Summary Stats */}

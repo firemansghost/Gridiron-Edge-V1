@@ -28,6 +28,11 @@ export interface Game {
   totalPick: 'Over' | 'Under' | null;
   totalPickLabel: string | null;
   totalEdgePts: number;
+  
+  // Game results (if available)
+  homeScore: number | null;
+  awayScore: number | null;
+  status: string;
 }
 
 export interface SlateData {

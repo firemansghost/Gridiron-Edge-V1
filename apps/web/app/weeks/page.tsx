@@ -67,6 +67,7 @@ interface WeekResponse {
       winRate: number;
       roi: number;
     } | null;
+    avgClv: number | null;
   };
 }
 
@@ -107,6 +108,34 @@ function WeeksPageContent() {
       setError('Network error: ' + (err instanceof Error ? err.message : 'Unknown error'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const downloadCSV = async () => {
+    try {
+      const params = new URLSearchParams();
+      if (season) params.set('season', season);
+      if (week) params.set('week', week);
+      if (confidence) params.set('confidence', confidence);
+      if (market) params.set('market', market);
+      
+      const response = await fetch(`/api/weeks/csv?${params.toString()}`);
+      
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `week-${week}-${season}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } else {
+        setError('Failed to download CSV');
+      }
+    } catch (err) {
+      setError('Error downloading CSV: ' + (err instanceof Error ? err.message : 'Unknown error'));
     }
   };
 
@@ -164,12 +193,20 @@ function WeeksPageContent() {
                 Week {data?.week} • {data?.season} Season
               </p>
             </div>
-            <a 
-              href="/"
-              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-            >
-              ← Back to Current Week
-            </a>
+            <div className="flex gap-3">
+              <button
+                onClick={downloadCSV}
+                className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+              >
+                📥 Download CSV
+              </button>
+              <a 
+                href="/"
+                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+              >
+                ← Back to Current Week
+              </a>
+            </div>
           </div>
         </div>
 
@@ -366,6 +403,14 @@ function WeeksPageContent() {
                           {(data.summary.roi.roi * 100).toFixed(1)}%
                         </span>
                       </div>
+                      {data.summary.avgClv !== null && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-gray-600">Avg CLV</span>
+                          <span className={`text-sm font-semibold ${data.summary.avgClv >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {data.summary.avgClv >= 0 ? '+' : ''}{data.summary.avgClv.toFixed(1)}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="text-sm text-gray-500">No spread picks with sufficient edge</div>
