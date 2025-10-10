@@ -122,6 +122,14 @@
 - Performance trends over time
 - Drill-through to specific weeks
 
+**M4 Implementation (Seed-Mode)**:
+- **Filters**: Season, Week, Confidence (A/B/C), Market (spread/total)
+- **Table Columns**: Matchup, Kickoff (CT), Model Line, Pick (Spread), Pick (Total), Market Close, Edges, Confidence
+- **Summary Card**: Confidence tier counts (A/B/C), ROI analysis if scores available
+- **ROI Calculation**: Simple win/loss/push tracking at -110 odds for spread picks
+- **No Results Message**: "No results yet — scores not seeded" when scores missing
+- **Deep Linking**: /weeks?season=2024&week=1 for seed week
+
 ## Methodology/Settings Page
 **Purpose**: System configuration and methodology explanation
 **Required Fields**:

@@ -1,0 +1,398 @@
+/**
+ * M4 Review Previous Weeks Page
+ * 
+ * Shows historical week data with filters and profitability analysis.
+ */
+
+'use client';
+
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+
+interface WeekData {
+  gameId: string;
+  matchup: string;
+  kickoff: string;
+  venue: string;
+  neutralSite: boolean;
+  marketSpread: number;
+  marketTotal: number;
+  impliedSpread: number;
+  impliedTotal: number;
+  spreadEdge: number;
+  totalEdge: number;
+  maxEdge: number;
+  favoredSide: 'home' | 'away';
+  favoredTeamId: string;
+  favoredTeamName: string;
+  modelSpreadPick: {
+    teamId: string;
+    teamName: string;
+    line: number;
+  };
+  spreadPickLabel: string;
+  spreadEdgePts: number;
+  totalPick: 'Over' | 'Under' | null;
+  totalPickLabel: string | null;
+  totalEdgePts: number;
+  confidence: string;
+  modelVersion: string;
+  homeScore: number | null;
+  awayScore: number | null;
+  status: string;
+}
+
+interface WeekResponse {
+  success: boolean;
+  season: number;
+  week: number;
+  filters: {
+    confidence: string | null;
+    market: string | null;
+  };
+  games: WeekData[];
+  summary: {
+    totalGames: number;
+    confidenceBreakdown: {
+      A: number;
+      B: number;
+      C: number;
+    };
+    hasResults: boolean;
+    roi: {
+      wins: number;
+      losses: number;
+      pushes: number;
+      totalBets: number;
+      winRate: number;
+      roi: number;
+    } | null;
+  };
+}
+
+function WeeksPageContent() {
+  const searchParams = useSearchParams();
+  const [data, setData] = useState<WeekResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Filter states
+  const [season, setSeason] = useState(searchParams.get('season') || '2024');
+  const [week, setWeek] = useState(searchParams.get('week') || '1');
+  const [confidence, setConfidence] = useState(searchParams.get('confidence') || '');
+  const [market, setMarket] = useState(searchParams.get('market') || '');
+
+  useEffect(() => {
+    fetchWeekData();
+  }, [season, week, confidence, market]);
+
+  const fetchWeekData = async () => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams();
+      if (season) params.set('season', season);
+      if (week) params.set('week', week);
+      if (confidence) params.set('confidence', confidence);
+      if (market) params.set('market', market);
+      
+      const response = await fetch(`/api/weeks?${params.toString()}`);
+      const result = await response.json();
+      
+      if (result.success) {
+        setData(result);
+      } else {
+        setError(result.error || 'Failed to fetch week data');
+      }
+    } catch (err) {
+      setError('Network error: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getConfidenceColor = (confidence: string) => {
+    switch (confidence) {
+      case 'A': return 'text-green-600 bg-green-100';
+      case 'B': return 'text-yellow-600 bg-yellow-100';
+      case 'C': return 'text-red-600 bg-red-100';
+      default: return 'text-gray-600 bg-gray-100';
+    }
+  };
+
+  const formatEdge = (edge: number) => {
+    return edge >= 1.0 ? `+${edge.toFixed(1)}` : edge.toFixed(1);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading week data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-600 text-6xl mb-4">⚠️</div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Error Loading Week Data</h1>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <button 
+            onClick={fetchWeekData}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Review Previous Weeks</h1>
+              <p className="text-gray-600 mt-2">
+                Week {data?.week} • {data?.season} Season
+              </p>
+            </div>
+            <a 
+              href="/"
+              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              ← Back to Current Week
+            </a>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+          {/* Main Content */}
+          <div className="lg:col-span-3">
+            {/* Filters */}
+            <div className="bg-white p-6 rounded-lg shadow mb-8">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Filters</h3>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Season</label>
+                  <select
+                    value={season}
+                    onChange={(e) => setSeason(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="2024">2024</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Week</label>
+                  <select
+                    value={week}
+                    onChange={(e) => setWeek(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="1">Week 1</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Confidence</label>
+                  <select
+                    value={confidence}
+                    onChange={(e) => setConfidence(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">All</option>
+                    <option value="A">Tier A</option>
+                    <option value="B">Tier B</option>
+                    <option value="C">Tier C</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Market</label>
+                  <select
+                    value={market}
+                    onChange={(e) => setMarket(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">All</option>
+                    <option value="spread">Spread Only</option>
+                    <option value="total">Total Only</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Games Table */}
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Week {data?.week} Games ({data?.games?.length || 0} games)
+                </h2>
+              </div>
+              
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Matchup
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Kickoff (CT)
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Model Line
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Pick (Spread)
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Pick (Total)
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Market Close
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Edges
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Confidence
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {data?.games?.map((game) => (
+                      <tr key={game.gameId} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900">
+                            {game.matchup}
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            {game.venue} {game.neutralSite && '(Neutral)'}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {game.kickoff}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <div className="font-medium">{game.spreadPickLabel}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <div className="font-medium">{game.spreadPickLabel}</div>
+                          <div className="text-xs text-gray-500">edge +{game.spreadEdgePts.toFixed(1)}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <div className="font-medium">{game.totalPickLabel || '—'}</div>
+                          {game.totalPickLabel && (
+                            <div className="text-xs text-gray-500">edge +{game.totalEdgePts.toFixed(1)}</div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <div>Spread: {game.marketSpread > 0 ? '+' : ''}{game.marketSpread.toFixed(1)}</div>
+                          <div>Total: {game.marketTotal.toFixed(1)}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <div>Spread: +{game.spreadEdge.toFixed(1)}</div>
+                          <div>Total: +{game.totalEdge.toFixed(1)}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getConfidenceColor(game.confidence)}`}>
+                            {game.confidence}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* Summary Card */}
+          <div className="lg:col-span-1">
+            <div className="bg-white p-6 rounded-lg shadow">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Summary</h3>
+              
+              {/* Confidence Breakdown */}
+              <div className="mb-6">
+                <h4 className="text-md font-medium text-gray-900 mb-3">Confidence Tiers</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Tier A</span>
+                    <span className="text-lg font-semibold text-green-600">{data?.summary?.confidenceBreakdown?.A || 0}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Tier B</span>
+                    <span className="text-lg font-semibold text-yellow-600">{data?.summary?.confidenceBreakdown?.B || 0}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Tier C</span>
+                    <span className="text-lg font-semibold text-red-600">{data?.summary?.confidenceBreakdown?.C || 0}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* ROI Analysis */}
+              <div>
+                <h4 className="text-md font-medium text-gray-900 mb-3">Performance</h4>
+                {data?.summary?.hasResults ? (
+                  data.summary.roi ? (
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">Wins</span>
+                        <span className="text-sm font-semibold text-green-600">{data.summary.roi.wins}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">Losses</span>
+                        <span className="text-sm font-semibold text-red-600">{data.summary.roi.losses}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">Pushes</span>
+                        <span className="text-sm font-semibold text-gray-600">{data.summary.roi.pushes}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">Win Rate</span>
+                        <span className="text-sm font-semibold text-gray-900">{(data.summary.roi.winRate * 100).toFixed(1)}%</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">ROI</span>
+                        <span className={`text-sm font-semibold ${data.summary.roi.roi >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {(data.summary.roi.roi * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-500">No spread picks with sufficient edge</div>
+                  )
+                ) : (
+                  <div className="text-sm text-gray-500">No results yet — scores not seeded</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function WeeksPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    }>
+      <WeeksPageContent />
+    </Suspense>
+  );
+}

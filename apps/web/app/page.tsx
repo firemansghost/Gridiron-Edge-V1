@@ -82,20 +82,28 @@ export default function HomePage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
-          <div className="flex items-center gap-4">
-            <h1 className="text-3xl font-bold text-gray-900">Gridiron Edge</h1>
-            <div className="relative group">
-              <button className="text-gray-400 hover:text-gray-600">
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
-                </svg>
-              </button>
-              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10">
-                Spread: Home minus Away (negative = home favored)<br/>
-                Edge: |Model - Market| points
-                <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <h1 className="text-3xl font-bold text-gray-900">Gridiron Edge</h1>
+              <div className="relative group">
+                <button className="text-gray-400 hover:text-gray-600">
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                  </svg>
+                </button>
+                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10">
+                  Spread: Home minus Away (negative = home favored)<br/>
+                  Edge: |Model - Market| points
+                  <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
+                </div>
               </div>
             </div>
+            <a 
+              href="/weeks?season=2024&week=1"
+              className="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm"
+            >
+              Review Previous Weeks
+            </a>
           </div>
           <p className="text-gray-600 mt-2">
             Week {slate?.week} • {slate?.season} Season • Model {slate?.modelVersion}
