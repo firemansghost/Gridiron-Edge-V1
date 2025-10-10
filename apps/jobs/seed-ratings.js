@@ -78,7 +78,14 @@ function loadSeedData() {
   const games = JSON.parse(fs.readFileSync(path.join(seedDir, 'games.json'), 'utf8')).games;
   const teamGameStats = JSON.parse(fs.readFileSync(path.join(seedDir, 'team_game_stats.json'), 'utf8')).team_game_stats;
   const marketLines = JSON.parse(fs.readFileSync(path.join(seedDir, 'market_lines.json'), 'utf8')).market_lines;
-  const scores = JSON.parse(fs.readFileSync(path.join(seedDir, 'scores.json'), 'utf8'));
+  
+  // Load scores if available
+  let scores = null;
+  try {
+    scores = JSON.parse(fs.readFileSync(path.join(seedDir, 'scores.json'), 'utf8'));
+  } catch (error) {
+    console.log('No scores file found, skipping score updates');
+  }
   
   return { teams, games, teamGameStats, marketLines, scores };
 }
@@ -416,7 +423,7 @@ async function main() {
     console.log('Starting M3 seed ratings job...');
     
     // Load seed data
-    const { teams, games, teamGameStats, marketLines } = loadSeedData();
+    const { teams, games, teamGameStats, marketLines, scores } = loadSeedData();
     console.log(`Loaded ${teams.length} teams, ${games.length} games`);
     
     // Step 1: Upsert teams first (required for foreign keys)
@@ -426,7 +433,7 @@ async function main() {
     const gamesInserted = await upsertGames(games, teamIds);
     
     // Step 2.5: Upsert scores (requires games to exist)
-    const scoresUpdated = await upsertScores(scores);
+    const scoresUpdated = scores ? await upsertScores(scores) : 0;
     
     // Step 3: Compute power ratings
     const ratings = computePowerRatings(teams, teamGameStats);
