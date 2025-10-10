@@ -211,3 +211,32 @@ python -m jobs.seed.ingest --seed-dir /seed --validate --upsert
 - book_name for source attribution
 - closing_line for CLV calculations
 - timestamp for as-of state preservation
+
+## M5 Mock Provider Data
+
+### Mock Data Directory Structure
+```
+/data/
+├── teams.json
+├── schedules-2024-week-1.json
+├── schedules-2024-week-2.json
+├── market-lines-2024-week-1.json
+└── market-lines-2024-week-2.json
+```
+
+### Mock Provider Usage
+1. **Drop files in `/data/` directory** following the naming convention
+2. **Run ingestion**: `npm run ingest -- mock --season 2024 --weeks 1-2`
+3. **Data flows**: Mock files → Adapter → Database → Ratings Pipeline
+
+### File Naming Convention
+- **Teams**: `teams.json` (season-agnostic)
+- **Schedules**: `schedules-{season}-week-{week}.json`
+- **Market Lines**: `market-lines-{season}-week-{week}.json`
+
+### Mock Data Format
+The mock provider expects the same JSON schemas as the seed files, but with slightly different field names to match the adapter interface:
+
+**Teams**: `id` instead of `team_id`
+**Games**: `id`, `homeTeamId`, `awayTeamId` instead of `game_id`, `home_team_id`, `away_team_id`
+**Market Lines**: `gameId`, `lineType`, `openingLine`, `closingLine` instead of `game_id`, `line_type`, `opening_line`, `closing_line`
