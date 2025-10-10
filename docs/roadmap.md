@@ -69,13 +69,27 @@
 **Inputs**: Power ratings; market lines; confidence thresholds
 **Definition of Done**: Implied lines generated; edge detection working; confidence tiers assigned
 
-## Milestone 4 - Core Web Interface
-**Purpose**: Build essential UI pages for viewing ratings, edges, and game details
-**Success**: Users can view all data; responsive design; fast loading
-**Out of Scope**: Advanced analytics; user accounts; betting integration
-**Risks**: UI complexity; performance issues; mobile responsiveness
-**Inputs**: Design requirements; data models; user feedback
-**Definition of Done**: All core pages functional; mobile responsive; performance targets met
+## Milestone 4 - Review Previous Weeks & Profitability (Seed-Mode)
+**Purpose**: Build historical week review with profitability tracking for seed data
+**Success**: Users can review past weeks with filters, see ROI analysis, and track performance
+**Out of Scope**: Real betting integration; advanced analytics; user accounts
+**Risks**: ROI calculation accuracy; data quality; UI complexity
+**Inputs**: Seed week data; pick helpers from M3.5; profitability requirements
+**Definition of Done**: 
+- /weeks page renders with filters (season, week, confidence, market)
+- Table shows matchup, kickoff, model line, picks, market close, edges, confidence
+- Summary card shows A/B/C counts and ROI if scores exist (else friendly note)
+- /api/weeks returns correct JSON with pick helpers
+- Home page links to /weeks for seed week
+- Documentation updated with M4 fields and DoD
+
+**M4 Implementation Details**:
+- **Filters**: Season (2024), Week (1), Confidence (A/B/C), Market (spread/total)
+- **Table**: Matchup, Kickoff (CT), Model Line, Pick (Spread), Pick (Total), Market Close, Edges, Confidence
+- **Summary**: Confidence tier counts, ROI analysis with win/loss/push at -110 odds
+- **ROI Logic**: Compare model picks to closing market, track wins/losses/pushes
+- **No Results**: "No results yet — scores not seeded" when scores missing
+- **Deep Link**: /weeks?season=2024&week=1 from Home page
 
 ## Milestone 5 - Betting Integration & Tracking
 **Purpose**: Enable bet logging and performance tracking
