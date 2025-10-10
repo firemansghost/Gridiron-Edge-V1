@@ -33,16 +33,32 @@ Create these environment variables in Vercel → Project → Settings → Enviro
 - Service role keys should only be used in server-side job runners (GitHub Actions/Render/Fly)
 
 ### Local Development
+
+#### Web App (Next.js)
 ```bash
-# Web app
+# From repo root - using npm workspaces
+npm run dev --workspace apps/web
+
+# Or from web directory
 cd apps/web
 npm install
 npm run dev
+```
 
-# ETL jobs
+#### ETL Jobs (Python)
+```bash
 cd apps/jobs
 pip install -r requirements.txt
 python -m jobs.etl.main
+```
+
+#### Database Operations
+```bash
+# From repo root
+npm run db:generate    # Generate Prisma client
+npm run db:migrate:dev # Run migrations in development
+npm run db:studio     # Open Prisma Studio
+npm run seed:ratings  # Run seed job
 ```
 
 ## Project Structure
