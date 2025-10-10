@@ -1,15 +1,24 @@
 # Data Source Adapters
 
-## DataSourceAdapter Contract
+## M5 DataSourceAdapter Interface
 
-### Base Interface
-```python
-class DataSourceAdapter:
-    def fetch_team_stats(self, season: int, week: int) -> List[TeamStats]
-    def fetch_recruiting_data(self, season: int) -> List[RecruitingData]
-    def fetch_schedules(self, season: int) -> List[Game]
-    def fetch_market_lines(self, game_ids: List[str]) -> List[MarketLine]
+### Base Interface (TypeScript)
+```typescript
+interface DataSourceAdapter {
+  getTeams(season: number): Promise<Team[]>;
+  getSchedules(season: number, weeks: number[]): Promise<Game[]>;
+  getMarketLines(season: number, weeks: number[]): Promise<MarketLine[]>;
+  getName(): string;
+  isAvailable(): Promise<boolean>;
+}
 ```
+
+### Mock Adapter (M5 Implementation)
+- **Provider**: Local file system
+- **Data**: Teams, schedules, market lines from JSON files
+- **Rate Limit**: None (local files)
+- **Authentication**: None
+- **Usage**: `npm run ingest -- mock --season 2024 --weeks 1-2`
 
 ### Configuration via datasources.yml
 ```yaml

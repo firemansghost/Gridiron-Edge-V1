@@ -17,6 +17,7 @@
     "db:pull": "prisma db pull",
     "seed:ratings": "node apps/jobs/seed-ratings.js",
     "test:ratings": "jest apps/jobs/__tests__/seed-ratings.test.js",
+    "ingest": "node apps/jobs/ingest.js",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "postinstall": "npm run prisma:generate"
   },
@@ -25,7 +26,8 @@
     "prisma": "6.17.0",
     "tsx": "^4.6.2",
     "typescript": "^5.3.3",
-    "jest": "^29.7.0"
+    "jest": "^29.7.0",
+    "js-yaml": "^4.1.0"
   },
   "engines": {
     "node": ">=18.0.0"

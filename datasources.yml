@@ -1,0 +1,52 @@
+# M5 Data Sources Configuration
+# 
+# Defines available data source adapters and their configurations.
+# Each adapter can be enabled/disabled and configured independently.
+
+adapters:
+  mock:
+    provider: "mock"
+    enabled: true
+    config:
+      dataPath: "./data"
+      fileFormats:
+        teams: "teams.json"
+        schedules: "schedules-{season}-week-{week}.json"
+        marketLines: "market-lines-{season}-week-{week}.json"
+      defaultBook: "VegasInsider"
+      
+  # Future adapters (disabled for now)
+  espn:
+    provider: "espn"
+    enabled: false
+    config:
+      apiKey: ""
+      baseUrl: "https://site.api.espn.com/apis/site/v2/sports/football/college-football"
+      
+  oddsApi:
+    provider: "odds-api"
+    enabled: false
+    config:
+      apiKey: ""
+      baseUrl: "https://api.the-odds-api.com/v4"
+      regions: ["us"]
+      markets: ["spreads", "totals"]
+      oddsFormat: "american"
+      
+  sportsReference:
+    provider: "sports-reference"
+    enabled: false
+    config:
+      baseUrl: "https://www.sports-reference.com"
+      rateLimit: 1000  # ms between requests
+
+# Default adapter to use when none specified
+defaultAdapter: "mock"
+
+# Global settings
+settings:
+  maxRetries: 3
+  timeout: 30000  # 30 seconds
+  rateLimit: 1000  # 1 second between requests
+  cacheEnabled: true
+  cacheTtl: 3600  # 1 hour in seconds

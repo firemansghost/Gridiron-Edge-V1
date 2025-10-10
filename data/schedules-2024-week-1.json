@@ -1,0 +1,64 @@
+{
+  "games": [
+    {
+      "id": "game-1",
+      "homeTeamId": "georgia",
+      "awayTeamId": "alabama",
+      "season": 2024,
+      "week": 1,
+      "date": "2024-08-31T19:00:00Z",
+      "status": "final",
+      "venue": "Mercedes-Benz Stadium",
+      "city": "Atlanta",
+      "neutralSite": true,
+      "conferenceGame": false,
+      "homeScore": 24,
+      "awayScore": 17
+    },
+    {
+      "id": "game-2",
+      "homeTeamId": "ohio-state",
+      "awayTeamId": "michigan",
+      "season": 2024,
+      "week": 1,
+      "date": "2024-08-31T15:30:00Z",
+      "status": "final",
+      "venue": "Ohio Stadium",
+      "city": "Columbus",
+      "neutralSite": false,
+      "conferenceGame": true,
+      "homeScore": 31,
+      "awayScore": 28
+    },
+    {
+      "id": "game-3",
+      "homeTeamId": "clemson",
+      "awayTeamId": "notre-dame",
+      "season": 2024,
+      "week": 1,
+      "date": "2024-09-01T12:00:00Z",
+      "status": "final",
+      "venue": "Memorial Stadium",
+      "city": "Clemson",
+      "neutralSite": false,
+      "conferenceGame": false,
+      "homeScore": 14,
+      "awayScore": 21
+    },
+    {
+      "id": "game-4",
+      "homeTeamId": "oklahoma",
+      "awayTeamId": "texas",
+      "season": 2024,
+      "week": 1,
+      "date": "2024-09-01T16:00:00Z",
+      "status": "final",
+      "venue": "Cotton Bowl",
+      "city": "Dallas",
+      "neutralSite": true,
+      "conferenceGame": true,
+      "homeScore": 35,
+      "awayScore": 10
+    }
+  ]
+}

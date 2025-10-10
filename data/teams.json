@@ -1,0 +1,73 @@
+{
+  "teams": [
+    {
+      "id": "alabama",
+      "name": "Alabama Crimson Tide",
+      "conference": "SEC",
+      "division": "West",
+      "logoUrl": "https://example.com/logos/alabama.png",
+      "primaryColor": "#9E1B32",
+      "secondaryColor": "#FFFFFF"
+    },
+    {
+      "id": "georgia",
+      "name": "Georgia Bulldogs",
+      "conference": "SEC",
+      "division": "East",
+      "logoUrl": "https://example.com/logos/georgia.png",
+      "primaryColor": "#DA020E",
+      "secondaryColor": "#000000"
+    },
+    {
+      "id": "ohio-state",
+      "name": "Ohio State Buckeyes",
+      "conference": "Big Ten",
+      "division": "East",
+      "logoUrl": "https://example.com/logos/ohio-state.png",
+      "primaryColor": "#BB0000",
+      "secondaryColor": "#808080"
+    },
+    {
+      "id": "michigan",
+      "name": "Michigan Wolverines",
+      "conference": "Big Ten",
+      "division": "East",
+      "logoUrl": "https://example.com/logos/michigan.png",
+      "primaryColor": "#00274C",
+      "secondaryColor": "#FFCB05"
+    },
+    {
+      "id": "clemson",
+      "name": "Clemson Tigers",
+      "conference": "ACC",
+      "division": "Atlantic",
+      "logoUrl": "https://example.com/logos/clemson.png",
+      "primaryColor": "#F66733",
+      "secondaryColor": "#522D80"
+    },
+    {
+      "id": "notre-dame",
+      "name": "Notre Dame Fighting Irish",
+      "conference": "Independent",
+      "logoUrl": "https://example.com/logos/notre-dame.png",
+      "primaryColor": "#0C2340",
+      "secondaryColor": "#C99700"
+    },
+    {
+      "id": "oklahoma",
+      "name": "Oklahoma Sooners",
+      "conference": "Big 12",
+      "logoUrl": "https://example.com/logos/oklahoma.png",
+      "primaryColor": "#841617",
+      "secondaryColor": "#FDF9C4"
+    },
+    {
+      "id": "texas",
+      "name": "Texas Longhorns",
+      "conference": "Big 12",
+      "logoUrl": "https://example.com/logos/texas.png",
+      "primaryColor": "#BF5700",
+      "secondaryColor": "#FFFFFF"
+    }
+  ]
+}
