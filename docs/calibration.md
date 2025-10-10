@@ -114,6 +114,13 @@ implied_total = (home_offensive_rating + away_offensive_rating) * 1.2
 - **Fixed Thresholds**: A≥4.0 pts, B≥3.0 pts, C≥2.0 pts edge
 - **Simple Totals**: Base 45 + pace adjustment (not sophisticated)
 
+### Spread Sign Convention (M3.5)
+- **Home Minus Away**: Negative spread = home team favored
+- **Model Line Format**: "Team -3.0" or "Team +3.0" (favored team with line)
+- **Edge Calculation**: |Model Spread - Market Spread| points
+- **Rounding**: Lines rounded to nearest 0.5 (e.g., 48.6126 → 48.5)
+- **HFA Points**: 2.0 points added to home team in model calculations
+
 ### Seed Data Limitations
 - **Single Week**: Only CFB 2024 Week 1 data available
 - **Basic Stats**: No EPA, success rate, or advanced metrics

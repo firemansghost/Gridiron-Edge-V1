@@ -13,6 +13,21 @@ export interface Game {
   maxEdge: number;
   confidence: string;
   modelVersion: string;
+  
+  // New explicit pick fields
+  favoredSide: 'home' | 'away';
+  favoredTeamId: string;
+  favoredTeamName: string;
+  modelSpreadPick: {
+    teamId: string;
+    teamName: string;
+    line: number;
+  };
+  spreadPickLabel: string;
+  spreadEdgePts: number;
+  totalPick: 'Over' | 'Under' | null;
+  totalPickLabel: string | null;
+  totalEdgePts: number;
 }
 
 export interface SlateData {
@@ -28,5 +43,9 @@ export interface SlateData {
       B: number;
       C: number;
     };
+  };
+  signConvention: {
+    spread: string;
+    hfaPoints: number;
   };
 }

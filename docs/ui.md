@@ -11,14 +11,21 @@
 - Team power ratings
 - Recent team performance (last 3 games)
 
+**New Explicit Pick Fields (M3.5)**:
+- Model Line: Spread pick with favored team and line (e.g., "Alabama -3.0")
+- Pick (Spread): Model recommendation with edge points
+- Pick (Total): Over/Under recommendation with edge points
+- Sign Convention: Home minus Away (negative = home favored)
+- Edge Points: |Model - Market| for both spread and total
+
 **Seed Mode Coverage**:
 - ✅ Game matchup from games.json (home_team_id, away_team_id)
 - ✅ Game date and time from games.json (converted to CST/CDT)
 - ✅ Venue and neutral site from games.json
 - ✅ Market close spreads/totals from market_lines.json
-- ⏳ Implied spreads (placeholder until M2 model)
-- ⏳ Edge detection (placeholder until M2 model)
-- ⏳ Confidence tiers (placeholder until M2 model)
+- ✅ Implied spreads from M3 model computation
+- ✅ Edge detection with explicit pick labels
+- ✅ Confidence tiers (A/B/C) with edge thresholds
 
 ## Game Detail Page
 **Purpose**: Detailed analysis of specific game with implied vs market comparison
@@ -32,15 +39,23 @@
 - Betting edge analysis
 - Confidence breakdown
 
+**New Model vs Market Card (M3.5)**:
+- Model Line (Spread): Explicit pick with favored team and line
+- Market Line (Spread): Market perspective (e.g., "Alabama -30.0")
+- Model Total: Implied total rounded to 0.5
+- Market Total: Existing market total
+- Recommended Picks: Spread and Total with edge points and confidence tier
+- Sign Convention: Home minus Away with HFA = 2.0 points
+
 **Seed Mode Coverage**:
 - ✅ Team names and logos from teams.json
 - ✅ Market close spread/total from market_lines.json
 - ✅ Team statistics from team_game_stats.json (YPP, success rate, pace)
 - ✅ Recruiting talent index from recruiting.json
 - ✅ Game venue and location from games.json
-- ⏳ Team power ratings (placeholder until M2 model)
-- ⏳ Implied spread/total calculations (placeholder until M2 model)
-- ⏳ CLV analysis (placeholder until M2 model)
+- ✅ Team power ratings from M3 model computation
+- ✅ Implied spread/total calculations from M3 model
+- ✅ CLV analysis with explicit pick recommendations
 
 ## Teams Page
 **Purpose**: Team rankings and performance analysis
