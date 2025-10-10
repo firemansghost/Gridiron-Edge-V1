@@ -225,29 +225,16 @@ async function upsertMarketLines(marketLines) {
   for (const line of marketLines) {
     const gameId = normalizeId(line.gameId);
 
-    await prisma.marketLine.upsert({
-      where: {
-        gameId_lineType: {
-          gameId,
-          lineType: line.lineType
-        }
-      },
-      update: {
-        season: line.season || 2024,
-        week: line.week || 1,
-        openingLine: line.openingLine,
-        closingLine: line.closingLine,
-        timestamp: line.timestamp,
-        bookName: line.bookName
-      },
-      create: {
+    await prisma.marketLine.create({
+      data: {
         gameId,
         season: line.season || 2024,
         week: line.week || 1,
         lineType: line.lineType,
-        openingLine: line.openingLine,
+        lineValue: line.openingLine,
         closingLine: line.closingLine,
         timestamp: line.timestamp,
+        source: line.bookName,
         bookName: line.bookName
       }
     });

@@ -16,7 +16,7 @@
       "week": 1,
       "lineType": "total",
       "openingLine": 45.5,
-      "closingLine": 44.5,
+      "closingLine": 43.5,
       "timestamp": "2024-08-31T18:30:00Z",
       "bookName": "VegasInsider"
     },
@@ -36,7 +36,7 @@
       "week": 1,
       "lineType": "total",
       "openingLine": 52.0,
-      "closingLine": 51.5,
+      "closingLine": 49.5,
       "timestamp": "2024-08-31T15:00:00Z",
       "bookName": "VegasInsider"
     },
@@ -66,7 +66,7 @@
       "week": 1,
       "lineType": "spread",
       "openingLine": -10.0,
-      "closingLine": -9.5,
+      "closingLine": -7.5,
       "timestamp": "2024-09-01T15:30:00Z",
       "bookName": "VegasInsider"
     },
@@ -76,7 +76,7 @@
       "week": 1,
       "lineType": "total",
       "openingLine": 55.0,
-      "closingLine": 54.5,
+      "closingLine": 51.5,
       "timestamp": "2024-09-01T15:30:00Z",
       "bookName": "VegasInsider"
     }

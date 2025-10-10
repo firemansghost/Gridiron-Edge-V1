@@ -6,7 +6,7 @@
       "line_value": -28.5,
       "timestamp": "2024-08-31T18:00:00-05:00",
       "source": "draftkings",
-      "closing_line": -30.0,
+      "closing_line": -25.0,
       "book_name": "DraftKings"
     },
     {
@@ -15,7 +15,7 @@
       "line_value": 52.5,
       "timestamp": "2024-08-31T18:00:00-05:00",
       "source": "draftkings",
-      "closing_line": 50.5,
+      "closing_line": 48.5,
       "book_name": "DraftKings"
     },
     {
@@ -24,7 +24,7 @@
       "line_value": -6.5,
       "timestamp": "2024-08-31T18:30:00-05:00",
       "source": "betmgm",
-      "closing_line": -7.0,
+      "closing_line": -3.5,
       "book_name": "BetMGM"
     },
     {
@@ -33,7 +33,7 @@
       "line_value": 44.5,
       "timestamp": "2024-08-31T18:30:00-05:00",
       "source": "betmgm",
-      "closing_line": 43.5,
+      "closing_line": 42.5,
       "book_name": "BetMGM"
     },
     {
@@ -42,7 +42,7 @@
       "line_value": -35.0,
       "timestamp": "2024-09-01T11:00:00-05:00",
       "source": "caesars",
-      "closing_line": -37.5,
+      "closing_line": -32.5,
       "book_name": "Caesars"
     },
     {
@@ -51,7 +51,7 @@
       "line_value": 48.5,
       "timestamp": "2024-09-01T11:00:00-05:00",
       "source": "caesars",
-      "closing_line": 46.5,
+      "closing_line": 46.0,
       "book_name": "Caesars"
     },
     {
@@ -60,7 +60,7 @@
       "line_value": -32.5,
       "timestamp": "2024-09-01T14:30:00-05:00",
       "source": "fanduel",
-      "closing_line": -34.0,
+      "closing_line": -29.0,
       "book_name": "FanDuel"
     },
     {
@@ -69,7 +69,7 @@
       "line_value": 50.5,
       "timestamp": "2024-09-01T14:30:00-05:00",
       "source": "fanduel",
-      "closing_line": 49.0,
+      "closing_line": 48.0,
       "book_name": "FanDuel"
     },
     {
@@ -78,7 +78,7 @@
       "line_value": -28.0,
       "timestamp": "2024-09-01T18:00:00-05:00",
       "source": "draftkings",
-      "closing_line": -29.5,
+      "closing_line": -25.5,
       "book_name": "DraftKings"
     },
     {
@@ -87,7 +87,7 @@
       "line_value": 51.5,
       "timestamp": "2024-09-01T18:00:00-05:00",
       "source": "draftkings",
-      "closing_line": 50.0,
+      "closing_line": 49.0,
       "book_name": "DraftKings"
     },
     {
@@ -96,7 +96,7 @@
       "line_value": -42.5,
       "timestamp": "2024-09-01T19:00:00-05:00",
       "source": "betmgm",
-      "closing_line": -44.0,
+      "closing_line": -38.0,
       "book_name": "BetMGM"
     },
     {
@@ -105,7 +105,7 @@
       "line_value": 55.5,
       "timestamp": "2024-09-01T19:00:00-05:00",
       "source": "betmgm",
-      "closing_line": 54.0,
+      "closing_line": 52.0,
       "book_name": "BetMGM"
     },
     {
@@ -114,7 +114,7 @@
       "line_value": -3.5,
       "timestamp": "2024-09-02T18:00:00-05:00",
       "source": "caesars",
-      "closing_line": -4.0,
+      "closing_line": -1.5,
       "book_name": "Caesars"
     },
     {
@@ -123,7 +123,7 @@
       "line_value": 47.5,
       "timestamp": "2024-09-02T18:00:00-05:00",
       "source": "caesars",
-      "closing_line": 46.5,
+      "closing_line": 45.5,
       "book_name": "Caesars"
     }
   ]
