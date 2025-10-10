@@ -1,0 +1,37 @@
+[
+  {
+    "game_id": "game-1",
+    "home_score": 24,
+    "away_score": 17
+  },
+  {
+    "game_id": "game-2", 
+    "home_score": 31,
+    "away_score": 28
+  },
+  {
+    "game_id": "game-3",
+    "home_score": 14,
+    "away_score": 21
+  },
+  {
+    "game_id": "game-4",
+    "home_score": 35,
+    "away_score": 10
+  },
+  {
+    "game_id": "game-5",
+    "home_score": 28,
+    "away_score": 24
+  },
+  {
+    "game_id": "game-6",
+    "home_score": 17,
+    "away_score": 20
+  },
+  {
+    "game_id": "game-7",
+    "home_score": 42,
+    "away_score": 7
+  }
+]

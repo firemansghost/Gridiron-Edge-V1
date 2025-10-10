@@ -45,6 +45,30 @@ function titleCase(str) {
 }
 
 /**
+ * Upsert game scores
+ */
+async function upsertScores(scores) {
+  let scoresUpdated = 0;
+  
+  for (const score of scores) {
+    const gameId = normalizeId(score.game_id);
+    
+    await prisma.game.updateMany({
+      where: { id: gameId },
+      data: {
+        homeScore: score.home_score,
+        awayScore: score.away_score,
+        status: 'final'
+      }
+    });
+    
+    scoresUpdated++;
+  }
+  
+  return scoresUpdated;
+}
+
+/**
  * Load seed data from JSON files
  */
 function loadSeedData() {
@@ -54,8 +78,9 @@ function loadSeedData() {
   const games = JSON.parse(fs.readFileSync(path.join(seedDir, 'games.json'), 'utf8')).games;
   const teamGameStats = JSON.parse(fs.readFileSync(path.join(seedDir, 'team_game_stats.json'), 'utf8')).team_game_stats;
   const marketLines = JSON.parse(fs.readFileSync(path.join(seedDir, 'market_lines.json'), 'utf8')).market_lines;
+  const scores = JSON.parse(fs.readFileSync(path.join(seedDir, 'scores.json'), 'utf8'));
   
-  return { teams, games, teamGameStats, marketLines };
+  return { teams, games, teamGameStats, marketLines, scores };
 }
 
 /**
@@ -400,6 +425,9 @@ async function main() {
     // Step 2: Upsert games (requires teams to exist)
     const gamesInserted = await upsertGames(games, teamIds);
     
+    // Step 2.5: Upsert scores (requires games to exist)
+    const scoresUpdated = await upsertScores(scores);
+    
     // Step 3: Compute power ratings
     const ratings = computePowerRatings(teams, teamGameStats);
     
@@ -474,6 +502,7 @@ async function main() {
     console.log('✅ M3 seed ratings job completed successfully!');
     console.log(`- Upserted ${teamsInserted} teams`);
     console.log(`- Upserted ${gamesInserted} games`);
+    console.log(`- Updated ${scoresUpdated} game scores`);
     console.log(`- Generated ${Object.keys(ratings).length} power ratings`);
     console.log(`- Generated ${impliedLines.length} implied lines`);
     console.log(`- Model version: ${MODEL_VERSION}`);

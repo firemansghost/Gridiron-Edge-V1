@@ -103,6 +103,35 @@ export async function GET(request: Request) {
       const spreadEdgePts = Math.abs(impliedSpread - marketSpread);
       const totalEdgePts = Math.abs(impliedTotal - marketTotal);
 
+      // Calculate result and CLV if scores exist
+      let resultSpread = null;
+      let clvSpread = null;
+      
+      if (game.homeScore !== null && game.awayScore !== null) {
+        const actualSpread = game.homeScore - game.awayScore;
+        const modelLine = spreadPick.modelSpreadPick.line;
+        const marketLine = marketSpread;
+        
+        // Determine result: W/L/Push
+        const modelPickWon = (actualSpread > modelLine && actualSpread > marketLine) ||
+                            (actualSpread < modelLine && actualSpread < marketLine);
+        const push = Math.abs(actualSpread - modelLine) < 0.5;
+        
+        if (push) {
+          resultSpread = 'Push';
+        } else if (modelPickWon) {
+          resultSpread = 'Win';
+        } else {
+          resultSpread = 'Loss';
+        }
+        
+        // Calculate CLV (Closing Line Value)
+        // Higher absolute edge vs closing line is positive CLV
+        const modelEdge = Math.abs(impliedSpread - marketSpread);
+        const closingEdge = Math.abs(actualSpread - marketSpread);
+        clvSpread = modelEdge - closingEdge; // Positive if model had better edge
+      }
+
       return {
         gameId: game.id,
         matchup: `${game.awayTeam.name} @ ${game.homeTeam.name}`,
@@ -138,7 +167,11 @@ export async function GET(request: Request) {
         // Game results (if available)
         homeScore: game.homeScore,
         awayScore: game.awayScore,
-        status: game.status
+        status: game.status,
+        
+        // Result and CLV (if scores exist)
+        resultSpread,
+        clvSpread
       };
     });
 
@@ -151,15 +184,18 @@ export async function GET(request: Request) {
         C: weekData.filter(g => g.confidence === 'C').length
       },
       hasResults: weekData.some(g => g.homeScore !== null && g.awayScore !== null),
-      roi: null as any
+      roi: null as any,
+      avgClv: null as number | null
     };
 
-    // Calculate ROI if scores are available
+    // Calculate ROI and CLV if scores are available
     if (summary.hasResults) {
       const spreadPicks = weekData.filter(g => g.spreadEdgePts >= 2.0);
       let wins = 0;
       let losses = 0;
       let pushes = 0;
+      let totalClv = 0;
+      let clvCount = 0;
 
       spreadPicks.forEach(game => {
         if (game.homeScore !== null && game.awayScore !== null) {
@@ -179,12 +215,19 @@ export async function GET(request: Request) {
           } else {
             losses++;
           }
+          
+          // Accumulate CLV
+          if (game.clvSpread !== null) {
+            totalClv += game.clvSpread;
+            clvCount++;
+          }
         }
       });
 
       const totalBets = wins + losses;
       const winRate = totalBets > 0 ? wins / totalBets : 0;
       const roi = totalBets > 0 ? (wins * 0.909 - losses) / totalBets : 0; // -110 odds
+      const avgClv = clvCount > 0 ? totalClv / clvCount : 0;
 
       summary.roi = {
         wins,
@@ -194,6 +237,7 @@ export async function GET(request: Request) {
         winRate,
         roi
       };
+      summary.avgClv = avgClv;
     }
 
     return Response.json({
