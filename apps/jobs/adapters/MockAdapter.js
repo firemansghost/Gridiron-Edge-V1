@@ -38,6 +38,18 @@ class MockAdapter {
     return data.teams || data;
   }
 
+  async getTeamBranding() {
+    const filePath = path.join(this.dataPath, 'teams-branding.json');
+    
+    if (!fs.existsSync(filePath)) {
+      console.log('No team branding file found, skipping branding updates');
+      return [];
+    }
+
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    return data;
+  }
+
   async getSchedules(season, weeks) {
     const games = [];
 

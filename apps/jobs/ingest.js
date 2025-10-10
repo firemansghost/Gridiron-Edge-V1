@@ -246,6 +246,50 @@ async function upsertMarketLines(marketLines) {
 }
 
 /**
+ * Upsert team branding data
+ */
+async function upsertTeamBranding(teamBranding) {
+  let upserted = 0;
+
+  for (const branding of teamBranding) {
+    const teamId = normalizeId(branding.id);
+
+    // Only update non-null fields
+    const updateData = {};
+    if (branding.name) updateData.name = branding.name;
+    if (branding.conference) updateData.conference = branding.conference;
+    if (branding.division !== null) updateData.division = branding.division;
+    if (branding.city) updateData.city = branding.city;
+    if (branding.state) updateData.state = branding.state;
+    if (branding.mascot) updateData.mascot = branding.mascot;
+    if (branding.logoUrl) updateData.logoUrl = branding.logoUrl;
+    if (branding.primaryColor) updateData.primaryColor = branding.primaryColor;
+    if (branding.secondaryColor) updateData.secondaryColor = branding.secondaryColor;
+
+    await prisma.team.upsert({
+      where: { id: teamId },
+      update: updateData,
+      create: {
+        id: teamId,
+        name: branding.name || titleCase(teamId),
+        conference: branding.conference || 'Independent',
+        division: branding.division,
+        city: branding.city,
+        state: branding.state,
+        mascot: branding.mascot,
+        logoUrl: branding.logoUrl,
+        primaryColor: branding.primaryColor,
+        secondaryColor: branding.secondaryColor
+      }
+    });
+
+    upserted++;
+  }
+
+  return upserted;
+}
+
+/**
  * Main ingestion function
  */
 async function main() {
@@ -305,6 +349,10 @@ async function main() {
     const marketLines = await adapter.getMarketLines(options.season, options.weeks);
     console.log(`   Found ${marketLines.length} market lines`);
 
+    console.log('📥 Fetching team branding...');
+    const teamBranding = await adapter.getTeamBranding();
+    console.log(`   Found ${teamBranding.length} team branding entries`);
+
     // Upsert data to database
     console.log('💾 Upserting teams...');
     const { upserted: teamsUpserted, teamIds } = await upsertTeams(teams);
@@ -317,6 +365,10 @@ async function main() {
     console.log('💾 Upserting market lines...');
     const marketLinesUpserted = await upsertMarketLines(marketLines);
     console.log(`   Upserted ${marketLinesUpserted} market lines`);
+
+    console.log('💾 Upserting team branding...');
+    const teamBrandingUpserted = await upsertTeamBranding(teamBranding);
+    console.log(`   Upserted ${teamBrandingUpserted} team branding entries`);
 
     console.log('✅ Data ingestion completed successfully!');
 

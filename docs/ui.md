@@ -26,6 +26,7 @@
 - ✅ Implied spreads from M3 model computation
 - ✅ Edge detection with explicit pick labels
 - ✅ Confidence tiers (A/B/C) with edge thresholds
+- ✅ Team logos with fallbacks (colored circles with first letter)
 
 ## Game Detail Page
 **Purpose**: Detailed analysis of specific game with implied vs market comparison
@@ -171,3 +172,12 @@
 - Color contrast compliance
 - Alt text for images
 - Focus management
+
+## Team Logo Fallbacks
+**Purpose**: Handle missing or broken team logos gracefully
+**Implementation**:
+- If `logoUrl` is missing or fails to load, display colored circle with team's first letter
+- Use `primaryColor` for background, white text
+- Fallback to neutral gray (#6B7280) if colors are missing
+- Size variants: sm (24px), md (32px), lg (48px)
+- Applied to Home page matchup display and Game Detail pages

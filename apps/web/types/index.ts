@@ -1,3 +1,16 @@
+export interface Team {
+  id: string;
+  name: string;
+  conference: string;
+  division?: string | null;
+  city?: string | null;
+  state?: string | null;
+  mascot?: string | null;
+  logoUrl?: string | null;
+  primaryColor?: string | null;
+  secondaryColor?: string | null;
+}
+
 export interface Game {
   gameId: string;
   matchup: string;
@@ -13,6 +26,10 @@ export interface Game {
   maxEdge: number;
   confidence: string;
   modelVersion: string;
+  
+  // Team information
+  homeTeam: Team;
+  awayTeam: Team;
   
   // New explicit pick fields
   favoredSide: 'home' | 'away';

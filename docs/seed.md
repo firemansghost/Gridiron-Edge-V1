@@ -218,6 +218,7 @@ python -m jobs.seed.ingest --seed-dir /seed --validate --upsert
 ```
 /data/
 ├── teams.json
+├── teams-branding.json
 ├── schedules-2024-week-1.json
 ├── schedules-2024-week-2.json
 ├── market-lines-2024-week-1.json
@@ -231,8 +232,27 @@ python -m jobs.seed.ingest --seed-dir /seed --validate --upsert
 
 ### File Naming Convention
 - **Teams**: `teams.json` (season-agnostic)
+- **Team Branding**: `teams-branding.json` (team metadata and branding)
 - **Schedules**: `schedules-{season}-week-{week}.json`
 - **Market Lines**: `market-lines-{season}-week-{week}.json`
+
+### Team Branding Schema
+```json
+[
+  {
+    "id": "team-id",
+    "name": "Full Team Name",
+    "conference": "Conference Name",
+    "division": "Division Name or null",
+    "city": "City Name",
+    "state": "State Code",
+    "mascot": "Mascot Name",
+    "logoUrl": "https://example.com/logos/team.png",
+    "primaryColor": "#HEX_COLOR",
+    "secondaryColor": "#HEX_COLOR"
+  }
+]
+```
 
 ### Mock Data Format
 The mock provider expects the same JSON schemas as the seed files, but with slightly different field names to match the adapter interface:
