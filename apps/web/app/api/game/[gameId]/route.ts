@@ -5,6 +5,7 @@
  */
 
 import { prisma } from '@/lib/prisma';
+import { computeSpreadPick, computeTotalPick } from '@/lib/pick-helpers';
 
 export async function GET(
   request: Request,
@@ -43,6 +44,27 @@ export async function GET(
     const matchupOutput = game.matchupOutputs[0];
     const spreadLine = game.marketLines.find(line => line.lineType === 'spread');
     const totalLine = game.marketLines.find(line => line.lineType === 'total');
+
+    const impliedSpread = matchupOutput?.impliedSpread || 0;
+    const impliedTotal = matchupOutput?.impliedTotal || 45;
+    const marketSpread = spreadLine?.closingLine || 0;
+    const marketTotal = totalLine?.closingLine || 45;
+
+    // Compute spread pick details
+    const spreadPick = computeSpreadPick(
+      impliedSpread,
+      game.homeTeam.name,
+      game.awayTeam.name,
+      game.homeTeamId,
+      game.awayTeamId
+    );
+
+    // Compute total pick details
+    const totalPick = computeTotalPick(impliedTotal, marketTotal);
+
+    // Calculate edge points
+    const spreadEdgePts = Math.abs(impliedSpread - marketSpread);
+    const totalEdgePts = Math.abs(impliedTotal - marketTotal);
 
     // Get power ratings for both teams
     const homeRating = await prisma.powerRating.findFirst({
@@ -110,26 +132,35 @@ export async function GET(
       
       // Market data
       market: {
-        spread: spreadLine?.closingLine || 0,
-        total: totalLine?.closingLine || 45,
+        spread: marketSpread,
+        total: marketTotal,
         source: spreadLine?.bookName || 'Unknown'
       },
       
       // Implied data
       implied: {
-        spread: matchupOutput?.impliedSpread || 0,
-        total: matchupOutput?.impliedTotal || 45,
+        spread: impliedSpread,
+        total: impliedTotal,
         confidence: matchupOutput?.edgeConfidence || 'C'
       },
       
       // Edge analysis
       edge: {
-        spreadEdge: matchupOutput ? Math.abs(matchupOutput.impliedSpread - (spreadLine?.closingLine || 0)) : 0,
-        totalEdge: matchupOutput ? Math.abs(matchupOutput.impliedTotal - (totalLine?.closingLine || 45)) : 0,
-        maxEdge: matchupOutput ? Math.max(
-          Math.abs(matchupOutput.impliedSpread - (spreadLine?.closingLine || 0)),
-          Math.abs(matchupOutput.impliedTotal - (totalLine?.closingLine || 45))
-        ) : 0
+        spreadEdge: spreadEdgePts,
+        totalEdge: totalEdgePts,
+        maxEdge: Math.max(spreadEdgePts, totalEdgePts)
+      },
+
+      // New explicit pick fields
+      picks: {
+        spread: {
+          ...spreadPick,
+          edgePts: spreadEdgePts
+        },
+        total: {
+          ...totalPick,
+          edgePts: totalEdgePts
+        }
       },
       
       // Power ratings
@@ -157,6 +188,12 @@ export async function GET(
           B: 3.0,
           C: 2.0
         }
+      },
+
+      // Sign convention
+      signConvention: {
+        spread: 'home_minus_away',
+        hfaPoints: 2.0
       }
     };
 

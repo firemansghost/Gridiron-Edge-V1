@@ -11,9 +11,9 @@ import { useParams } from 'next/navigation';
 
 export default function GameDetailPage() {
   const params = useParams();
-  const [game, setGame] = useState(null);
+  const [game, setGame] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (params.gameId) {
@@ -32,13 +32,13 @@ export default function GameDetailPage() {
         setError(data.error || 'Failed to fetch game detail');
       }
     } catch (err) {
-      setError('Network error: ' + err.message);
+      setError('Network error: ' + (err instanceof Error ? err.message : 'Unknown error'));
     } finally {
       setLoading(false);
     }
   };
 
-  const getConfidenceColor = (confidence) => {
+  const getConfidenceColor = (confidence: string) => {
     switch (confidence) {
       case 'A': return 'text-green-600 bg-green-100';
       case 'B': return 'text-yellow-600 bg-yellow-100';
@@ -47,7 +47,7 @@ export default function GameDetailPage() {
     }
   };
 
-  const formatEdge = (edge) => {
+  const formatEdge = (edge: number) => {
     return edge >= 1.0 ? `+${edge.toFixed(1)}` : edge.toFixed(1);
   };
 
@@ -109,48 +109,66 @@ export default function GameDetailPage() {
           </div>
         )}
 
-        {/* Market vs Implied Comparison */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-          {/* Market Data */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Market Close</h3>
-            <div className="space-y-4">
-              <div>
-                <div className="text-sm text-gray-500">Spread</div>
-                <div className="text-2xl font-bold text-gray-900">
-                  {game.market.spread > 0 ? '+' : ''}{game.market.spread.toFixed(1)}
+        {/* Model vs Market Card */}
+        <div className="bg-white p-6 rounded-lg shadow mb-8">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Model vs Market</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Spread Comparison */}
+            <div>
+              <h4 className="text-md font-medium text-gray-900 mb-3">Spread</h4>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <div className="text-sm text-gray-500">Model Line</div>
+                  <div className="text-lg font-semibold text-gray-900">{game.picks?.spread?.spreadPickLabel}</div>
+                </div>
+                <div className="flex justify-between items-center">
+                  <div className="text-sm text-gray-500">Market Line</div>
+                  <div className="text-lg font-semibold text-gray-900">
+                    {game.market.spread > 0 ? '+' : ''}{game.market.spread.toFixed(1)}
+                  </div>
+                </div>
+                <div className="flex justify-between items-center">
+                  <div className="text-sm text-gray-500">Edge</div>
+                  <div className="text-sm font-medium text-blue-600">+{game.picks?.spread?.edgePts?.toFixed(1)} pts</div>
                 </div>
               </div>
-              <div>
-                <div className="text-sm text-gray-500">Total</div>
-                <div className="text-2xl font-bold text-gray-900">{game.market.total.toFixed(1)}</div>
-              </div>
-              <div>
-                <div className="text-sm text-gray-500">Source</div>
-                <div className="text-sm text-gray-900">{game.market.source}</div>
+            </div>
+
+            {/* Total Comparison */}
+            <div>
+              <h4 className="text-md font-medium text-gray-900 mb-3">Total</h4>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <div className="text-sm text-gray-500">Model Total</div>
+                  <div className="text-lg font-semibold text-gray-900">{game.implied.total.toFixed(1)}</div>
+                </div>
+                <div className="flex justify-between items-center">
+                  <div className="text-sm text-gray-500">Market Total</div>
+                  <div className="text-lg font-semibold text-gray-900">{game.market.total.toFixed(1)}</div>
+                </div>
+                <div className="flex justify-between items-center">
+                  <div className="text-sm text-gray-500">Edge</div>
+                  <div className="text-sm font-medium text-blue-600">+{game.picks?.total?.edgePts?.toFixed(1)} pts</div>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Implied Data */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Implied Lines</h3>
-            <div className="space-y-4">
-              <div>
-                <div className="text-sm text-gray-500">Spread</div>
-                <div className="text-2xl font-bold text-gray-900">
-                  {game.implied.spread > 0 ? '+' : ''}{game.implied.spread.toFixed(1)}
-                </div>
+          {/* Recommended Picks */}
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <h4 className="text-md font-medium text-gray-900 mb-3">Recommended Picks</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <div className="text-sm text-gray-500">Spread Pick</div>
+                <div className="text-lg font-semibold text-gray-900">{game.picks?.spread?.spreadPickLabel}</div>
+                <div className="text-sm text-blue-600">Edge: +{game.picks?.spread?.edgePts?.toFixed(1)} pts</div>
               </div>
-              <div>
-                <div className="text-sm text-gray-500">Total</div>
-                <div className="text-2xl font-bold text-gray-900">{game.implied.total.toFixed(1)}</div>
-              </div>
-              <div>
-                <div className="text-sm text-gray-500">Confidence</div>
-                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getConfidenceColor(game.implied.confidence)}`}>
-                  {game.implied.confidence}
-                </span>
+              <div className="bg-green-50 p-4 rounded-lg">
+                <div className="text-sm text-gray-500">Total Pick</div>
+                <div className="text-lg font-semibold text-gray-900">{game.picks?.total?.totalPickLabel || 'No edge'}</div>
+                {game.picks?.total?.totalPickLabel && (
+                  <div className="text-sm text-green-600">Edge: +{game.picks?.total?.edgePts?.toFixed(1)} pts</div>
+                )}
               </div>
             </div>
           </div>
@@ -214,7 +232,7 @@ export default function GameDetailPage() {
           <div className="bg-white p-6 rounded-lg shadow">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">{game.ratings.home.team} - Top Factors</h3>
             <div className="space-y-3">
-              {game.ratings.home.factors.map((factor, index) => (
+              {game.ratings.home.factors.map((factor: any, index: number) => (
                 <div key={index} className="flex justify-between items-center">
                   <div className="text-sm text-gray-900 capitalize">{factor.factor.replace('_', ' ')}</div>
                   <div className="text-sm text-gray-600">
@@ -229,7 +247,7 @@ export default function GameDetailPage() {
           <div className="bg-white p-6 rounded-lg shadow">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">{game.ratings.away.team} - Top Factors</h3>
             <div className="space-y-3">
-              {game.ratings.away.factors.map((factor, index) => (
+              {game.ratings.away.factors.map((factor: any, index: number) => (
                 <div key={index} className="flex justify-between items-center">
                   <div className="text-sm text-gray-900 capitalize">{factor.factor.replace('_', ' ')}</div>
                   <div className="text-sm text-gray-600">

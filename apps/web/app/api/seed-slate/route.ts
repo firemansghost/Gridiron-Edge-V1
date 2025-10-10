@@ -6,6 +6,7 @@
  */
 
 import { prisma } from '@/lib/prisma';
+import { computeSpreadPick, computeTotalPick } from '@/lib/pick-helpers';
 
 export async function GET() {
   try {
@@ -47,6 +48,27 @@ export async function GET() {
         hour12: true
       });
 
+      const impliedSpread = matchupOutput?.impliedSpread || 0;
+      const impliedTotal = matchupOutput?.impliedTotal || 45;
+      const marketSpread = spreadLine?.closingLine || 0;
+      const marketTotal = totalLine?.closingLine || 45;
+
+      // Compute spread pick details
+      const spreadPick = computeSpreadPick(
+        impliedSpread,
+        game.homeTeam.name,
+        game.awayTeam.name,
+        game.homeTeamId,
+        game.awayTeamId
+      );
+
+      // Compute total pick details
+      const totalPick = computeTotalPick(impliedTotal, marketTotal);
+
+      // Calculate edge points
+      const spreadEdgePts = Math.abs(impliedSpread - marketSpread);
+      const totalEdgePts = Math.abs(impliedTotal - marketTotal);
+
       return {
         gameId: game.id,
         matchup: `${game.awayTeam.name} @ ${game.homeTeam.name}`,
@@ -55,20 +77,23 @@ export async function GET() {
         neutralSite: game.neutralSite,
         
         // Market data
-        marketSpread: spreadLine?.closingLine || 0,
-        marketTotal: totalLine?.closingLine || 45,
+        marketSpread,
+        marketTotal,
         
         // Implied data
-        impliedSpread: matchupOutput?.impliedSpread || 0,
-        impliedTotal: matchupOutput?.impliedTotal || 45,
+        impliedSpread,
+        impliedTotal,
         
-        // Edge analysis
-        spreadEdge: matchupOutput ? Math.abs(matchupOutput.impliedSpread - (spreadLine?.closingLine || 0)) : 0,
-        totalEdge: matchupOutput ? Math.abs(matchupOutput.impliedTotal - (totalLine?.closingLine || 45)) : 0,
-        maxEdge: matchupOutput ? Math.max(
-          Math.abs(matchupOutput.impliedSpread - (spreadLine?.closingLine || 0)),
-          Math.abs(matchupOutput.impliedTotal - (totalLine?.closingLine || 45))
-        ) : 0,
+        // Edge analysis (keep existing for backward compatibility)
+        spreadEdge: spreadEdgePts,
+        totalEdge: totalEdgePts,
+        maxEdge: Math.max(spreadEdgePts, totalEdgePts),
+        
+        // New explicit pick fields
+        ...spreadPick,
+        spreadEdgePts,
+        ...totalPick,
+        totalEdgePts,
         
         // Confidence tier
         confidence: matchupOutput?.edgeConfidence || 'C',
@@ -91,6 +116,10 @@ export async function GET() {
           B: slate.filter(g => g.confidence === 'B').length,
           C: slate.filter(g => g.confidence === 'C').length
         }
+      },
+      signConvention: {
+        spread: 'home_minus_away',
+        hfaPoints: 2.0
       }
     });
 
