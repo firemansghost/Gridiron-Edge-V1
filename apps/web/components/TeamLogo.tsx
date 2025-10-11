@@ -6,6 +6,7 @@ interface TeamLogoProps {
   primaryColor?: string | null;
   size?: 'sm' | 'md' | 'lg';
   className?: string;
+  teamId?: string;
 }
 
 export function TeamLogo({ 
@@ -13,7 +14,8 @@ export function TeamLogo({
   logoUrl, 
   primaryColor = '#6B7280', 
   size = 'md',
-  className = '' 
+  className = '',
+  teamId
 }: TeamLogoProps) {
   const sizeClasses = {
     sm: 'w-6 h-6 text-xs',
@@ -23,21 +25,64 @@ export function TeamLogo({
 
   const sizeClass = sizeClasses[size];
 
-  // If we have a logo URL, try to use it
-  if (logoUrl && logoUrl !== 'https://example.com/logos/team.png') {
+  // Try local logo first, then external URL, then fallback
+  const localLogoPath = teamId ? `/logos/${teamId}.png` : null;
+  const hasExternalLogo = logoUrl && logoUrl !== 'https://example.com/logos/team.png';
+
+  if (localLogoPath || hasExternalLogo) {
     return (
-      <img
-        src={logoUrl}
-        alt={`${teamName} logo`}
-        className={`${sizeClass} rounded-full object-cover ${className}`}
-        onError={(e) => {
-          // If image fails to load, replace with fallback
-          const target = e.target as HTMLImageElement;
-          target.style.display = 'none';
-          const fallback = target.nextElementSibling as HTMLElement;
-          if (fallback) fallback.style.display = 'flex';
-        }}
-      />
+      <div className="relative">
+        {/* Try local logo first */}
+        {localLogoPath && (
+          <img
+            src={localLogoPath}
+            alt={`${teamName} logo`}
+            className={`${sizeClass} rounded-full object-cover ${className}`}
+            onError={(e) => {
+              // If local logo fails, try external URL
+              const target = e.target as HTMLImageElement;
+              target.style.display = 'none';
+              const externalImg = target.nextElementSibling as HTMLImageElement;
+              if (externalImg && hasExternalLogo) {
+                externalImg.style.display = 'block';
+              } else {
+                // If no external logo or it also fails, show fallback
+                const fallback = target.parentElement?.nextElementSibling as HTMLElement;
+                if (fallback) fallback.style.display = 'flex';
+              }
+            }}
+          />
+        )}
+        
+        {/* External logo fallback */}
+        {hasExternalLogo && (
+          <img
+            src={logoUrl}
+            alt={`${teamName} logo`}
+            className={`${sizeClass} rounded-full object-cover ${className}`}
+            style={{ display: localLogoPath ? 'none' : 'block' }}
+            onError={(e) => {
+              // If external logo also fails, show fallback
+              const target = e.target as HTMLImageElement;
+              target.style.display = 'none';
+              const fallback = target.parentElement?.nextElementSibling as HTMLElement;
+              if (fallback) fallback.style.display = 'flex';
+            }}
+          />
+        )}
+        
+        {/* Fallback circle (hidden by default) */}
+        <div
+          className={`${sizeClass} rounded-full flex items-center justify-center text-white font-bold ${className}`}
+          style={{ 
+            backgroundColor: primaryColor || '#6B7280',
+            display: 'none'
+          }}
+          title={teamName}
+        >
+          {teamName.charAt(0).toUpperCase()}
+        </div>
+      </div>
     );
   }
 
