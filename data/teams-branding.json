@@ -1,0 +1,74 @@
+[
+  {
+    "id": "western-kentucky",
+    "name": "Western Kentucky Hilltoppers",
+    "conference": "C-USA",
+    "division": null,
+    "city": "Bowling Green",
+    "state": "KY",
+    "mascot": "Big Red",
+    "logoUrl": "https://example.com/logos/wku.png",
+    "primaryColor": "#BA0C2F",
+    "secondaryColor": "#000000"
+  },
+  {
+    "id": "akron",
+    "name": "Akron Zips",
+    "conference": "MAC",
+    "division": "East",
+    "city": "Akron",
+    "state": "OH",
+    "mascot": "Zippy",
+    "logoUrl": "https://example.com/logos/akron.png",
+    "primaryColor": "#041E42",
+    "secondaryColor": "#A89968"
+  },
+  {
+    "id": "eastern-michigan",
+    "name": "Eastern Michigan Eagles",
+    "conference": "MAC",
+    "division": "West",
+    "city": "Ypsilanti",
+    "state": "MI",
+    "mascot": "Swoop",
+    "logoUrl": "https://example.com/logos/emu.png",
+    "primaryColor": "#006633",
+    "secondaryColor": "#FFFFFF"
+  },
+  {
+    "id": "colorado-state",
+    "name": "Colorado State Rams",
+    "conference": "Mountain West",
+    "division": null,
+    "city": "Fort Collins",
+    "state": "CO",
+    "mascot": "CAM the Ram",
+    "logoUrl": "https://example.com/logos/csu.png",
+    "primaryColor": "#1E4D2B",
+    "secondaryColor": "#C8C372"
+  },
+  {
+    "id": "portland-state",
+    "name": "Portland State Vikings",
+    "conference": "Big Sky (FCS)",
+    "division": null,
+    "city": "Portland",
+    "state": "OR",
+    "mascot": "Victor E. Viking",
+    "logoUrl": "https://example.com/logos/psu.png",
+    "primaryColor": "#154734",
+    "secondaryColor": "#FFFFFF"
+  },
+  {
+    "id": "duke",
+    "name": "Duke Blue Devils",
+    "conference": "ACC",
+    "division": null,
+    "city": "Durham",
+    "state": "NC",
+    "mascot": "Blue Devil",
+    "logoUrl": "https://example.com/logos/duke.png",
+    "primaryColor": "#001A57",
+    "secondaryColor": "#FFFFFF"
+  }
+]

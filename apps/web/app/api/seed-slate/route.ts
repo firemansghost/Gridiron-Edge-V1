@@ -76,6 +76,32 @@ export async function GET() {
         venue: game.venue,
         neutralSite: game.neutralSite,
         
+        // Team information
+        homeTeam: {
+          id: game.homeTeam.id,
+          name: game.homeTeam.name,
+          conference: game.homeTeam.conference,
+          division: game.homeTeam.division,
+          city: game.homeTeam.city,
+          state: game.homeTeam.state,
+          mascot: game.homeTeam.mascot,
+          logoUrl: game.homeTeam.logoUrl,
+          primaryColor: game.homeTeam.primaryColor,
+          secondaryColor: game.homeTeam.secondaryColor
+        },
+        awayTeam: {
+          id: game.awayTeam.id,
+          name: game.awayTeam.name,
+          conference: game.awayTeam.conference,
+          division: game.awayTeam.division,
+          city: game.awayTeam.city,
+          state: game.awayTeam.state,
+          mascot: game.awayTeam.mascot,
+          logoUrl: game.awayTeam.logoUrl,
+          primaryColor: game.awayTeam.primaryColor,
+          secondaryColor: game.awayTeam.secondaryColor
+        },
+        
         // Market data
         marketSpread,
         marketTotal,
@@ -99,7 +125,12 @@ export async function GET() {
         confidence: matchupOutput?.edgeConfidence || 'C',
         
         // Model info
-        modelVersion: matchupOutput?.modelVersion || 'v0.0.1'
+        modelVersion: matchupOutput?.modelVersion || 'v0.0.1',
+        
+        // Game results (if available)
+        homeScore: game.homeScore,
+        awayScore: game.awayScore,
+        status: game.status
       };
     });
 

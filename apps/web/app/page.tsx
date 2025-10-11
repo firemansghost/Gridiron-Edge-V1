@@ -8,6 +8,7 @@
 
 import { useState, useEffect } from 'react';
 import { SlateData } from '@/types';
+import { TeamLogo } from '@/components/TeamLogo';
 
 export default function HomePage() {
   const [slate, setSlate] = useState<SlateData | null>(null);
@@ -177,10 +178,32 @@ export default function HomePage() {
                 {slate?.games?.map((game) => (
                   <tr key={game.gameId} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        {game.matchup}
+                      <div className="flex items-center space-x-3">
+                        <div className="flex items-center space-x-2">
+                          <TeamLogo 
+                            teamName={game.awayTeam.name}
+                            logoUrl={game.awayTeam.logoUrl}
+                            primaryColor={game.awayTeam.primaryColor}
+                            size="sm"
+                          />
+                          <span className="text-sm font-medium text-gray-900">
+                            {game.awayTeam.name}
+                          </span>
+                        </div>
+                        <span className="text-gray-400">@</span>
+                        <div className="flex items-center space-x-2">
+                          <TeamLogo 
+                            teamName={game.homeTeam.name}
+                            logoUrl={game.homeTeam.logoUrl}
+                            primaryColor={game.homeTeam.primaryColor}
+                            size="sm"
+                          />
+                          <span className="text-sm font-medium text-gray-900">
+                            {game.homeTeam.name}
+                          </span>
+                        </div>
                       </div>
-                      <div className="text-sm text-gray-500">
+                      <div className="text-sm text-gray-500 mt-1">
                         {game.venue} {game.neutralSite && '(Neutral)'}
                       </div>
                     </td>
