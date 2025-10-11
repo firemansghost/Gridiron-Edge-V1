@@ -184,6 +184,7 @@ export default function HomePage() {
                             teamName={game.awayTeam.name}
                             logoUrl={game.awayTeam.logoUrl}
                             primaryColor={game.awayTeam.primaryColor}
+                            teamId={game.awayTeam.id}
                             size="sm"
                           />
                           <span className="text-sm font-medium text-gray-900">
@@ -196,6 +197,7 @@ export default function HomePage() {
                             teamName={game.homeTeam.name}
                             logoUrl={game.homeTeam.logoUrl}
                             primaryColor={game.homeTeam.primaryColor}
+                            teamId={game.homeTeam.id}
                             size="sm"
                           />
                           <span className="text-sm font-medium text-gray-900">

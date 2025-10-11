@@ -7,7 +7,7 @@
     "city": "Bowling Green",
     "state": "KY",
     "mascot": "Big Red",
-    "logoUrl": "https://example.com/logos/wku.png",
+    "logoUrl": "/logos/western-kentucky.png",
     "primaryColor": "#BA0C2F",
     "secondaryColor": "#000000"
   },
@@ -19,7 +19,7 @@
     "city": "Akron",
     "state": "OH",
     "mascot": "Zippy",
-    "logoUrl": "https://example.com/logos/akron.png",
+    "logoUrl": "/logos/akron.png",
     "primaryColor": "#041E42",
     "secondaryColor": "#A89968"
   },
@@ -31,7 +31,7 @@
     "city": "Ypsilanti",
     "state": "MI",
     "mascot": "Swoop",
-    "logoUrl": "https://example.com/logos/emu.png",
+    "logoUrl": "/logos/eastern-michigan.png",
     "primaryColor": "#006633",
     "secondaryColor": "#FFFFFF"
   },
@@ -43,7 +43,7 @@
     "city": "Fort Collins",
     "state": "CO",
     "mascot": "CAM the Ram",
-    "logoUrl": "https://example.com/logos/csu.png",
+    "logoUrl": "/logos/colorado-state.png",
     "primaryColor": "#1E4D2B",
     "secondaryColor": "#C8C372"
   },
@@ -55,7 +55,7 @@
     "city": "Portland",
     "state": "OR",
     "mascot": "Victor E. Viking",
-    "logoUrl": "https://example.com/logos/psu.png",
+    "logoUrl": "/logos/portland-state.png",
     "primaryColor": "#154734",
     "secondaryColor": "#FFFFFF"
   },
@@ -67,7 +67,7 @@
     "city": "Durham",
     "state": "NC",
     "mascot": "Blue Devil",
-    "logoUrl": "https://example.com/logos/duke.png",
+    "logoUrl": "/logos/duke.png",
     "primaryColor": "#001A57",
     "secondaryColor": "#FFFFFF"
   }
