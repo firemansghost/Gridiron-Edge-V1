@@ -139,6 +139,18 @@ export async function GET(request: Request) {
       return {
         gameId: game.id,
         matchup: `${game.awayTeam.name} @ ${game.homeTeam.name}`,
+        homeTeam: {
+          id: game.homeTeam.id,
+          name: game.homeTeam.name,
+          logoUrl: game.homeTeam.logoUrl,
+          primaryColor: game.homeTeam.primaryColor,
+        },
+        awayTeam: {
+          id: game.awayTeam.id,
+          name: game.awayTeam.name,
+          logoUrl: game.awayTeam.logoUrl,
+          primaryColor: game.awayTeam.primaryColor,
+        },
         kickoff: kickoffTime,
         venue: game.venue,
         neutralSite: game.neutralSite,

@@ -4,7 +4,7 @@ interface TeamLogoProps {
   teamName: string;
   logoUrl?: string | null;
   primaryColor?: string | null;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
   className?: string;
   teamId?: string;
 }
@@ -20,7 +20,8 @@ export function TeamLogo({
   const sizeClasses = {
     sm: 'w-6 h-6 text-xs',
     md: 'w-8 h-8 text-sm',
-    lg: 'w-12 h-12 text-lg'
+    lg: 'w-12 h-12 text-lg',
+    xl: 'w-24 h-24 text-3xl'
   };
 
   const sizeClass = sizeClasses[size];
