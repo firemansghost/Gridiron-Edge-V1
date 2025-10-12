@@ -43,6 +43,9 @@ export function HeaderNav() {
             <Link href="/strategies" className={linkClass('/strategies')}>
               Strategies
             </Link>
+            <Link href="/backtests" className={linkClass('/backtests')}>
+              Backtests
+            </Link>
           </div>
 
           {/* Right: Data Mode Badge */}
@@ -62,6 +65,9 @@ export function HeaderNav() {
             </Link>
             <Link href="/strategies" className={linkClass('/strategies')}>
               Strategies
+            </Link>
+            <Link href="/backtests" className={linkClass('/backtests')}>
+              Backtests
             </Link>
           </div>
         </div>
