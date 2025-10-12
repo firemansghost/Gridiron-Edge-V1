@@ -159,16 +159,64 @@ season,week,gameId,matchup,betType,pickLabel,line,marketLine,edge,confidence,pri
 - Avg CLV: Mean of all CLV values
 - Max Drawdown: Largest peak-to-valley decline in equity
 
-## Strategies Page
+## Strategies Page (`/strategies`)
 **Purpose**: Strategy configuration and management
-**Required Fields**:
-- Active strategy list
-- Strategy parameters and rules
-- Performance metrics per strategy
-- Strategy activation/deactivation
-- Parameter optimization tools
-- Strategy comparison
-- Risk management settings
+
+**Features**:
+- **Ruleset List**: View all betting strategy rulesets
+- **Create New**: Button to create new ruleset (`/strategies/new`)
+- **Edit**: Link to edit existing ruleset (`/strategies/[id]/edit`)
+- **Run**: Link to execute ruleset (`/strategies/run`)
+- **Past Runs**: Table of historical strategy executions
+- **Active/Inactive Toggle**: Show/hide inactive rulesets
+
+**Ruleset Card**:
+- Name and description
+- Active status indicator
+- Created/updated timestamps
+- Action buttons (Run, Edit)
+
+**Past Runs Table**:
+- Ruleset name
+- Date range (start/end)
+- Total bets
+- Win rate
+- ROI
+- CLV
+- Link to run details
+
+## Edit Ruleset Page (`/strategies/[id]/edit`)
+**Purpose**: Modify existing betting strategy ruleset
+**Route**: `/strategies/[id]/edit`
+
+**Form Fields**:
+- **Name**: Ruleset name (required)
+- **Description**: Optional description
+- **Min Spread Edge**: Minimum points edge for spread bets
+- **Min Total Edge**: Minimum points edge for total bets
+- **Confidence Tiers**: Checkboxes for A/B/C
+- **Max Games Per Week**: Optional game limit
+- **Include Teams**: Comma-separated team IDs to include
+- **Exclude Teams**: Comma-separated team IDs to exclude
+- **Active**: Toggle to enable/disable ruleset
+
+**API Integration**:
+- `GET /api/strategies/rulesets/[id]`: Fetch ruleset data to prefill form
+- `PUT /api/strategies/rulesets/[id]`: Save changes
+
+**Validation**:
+- Name is required
+- Numeric fields validated (edge, max games)
+- Team IDs trimmed and filtered
+
+**Actions**:
+- **Cancel**: Return to `/strategies` without saving
+- **Save Changes**: Update ruleset and redirect to `/strategies`
+
+**Error Handling**:
+- Red error banner for API failures
+- Field-level validation
+- Network error messages
 
 ## My Bets Page
 **Purpose**: Personal betting tracking and performance
