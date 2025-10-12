@@ -4,7 +4,30 @@
  * Walk-forward backtest with adjustable parameters and detailed reporting.
  * 
  * Usage:
- *   npm run backtest -- --season 2024 --weeks 1-1 --minEdge 2.0 --confidence A,B --bet spread,total --price -110 --kelly 0.5
+ *   npm run backtest -- --season 2024 --weeks 1-1 --minEdge 2.0 --confidence A,B --bet both --price -110 --kelly 0.5 --verbose
+ * 
+ * Flags:
+ *   --season      Season or range (e.g., "2024" or "2022-2024")
+ *   --weeks       Week range (e.g., "1-1" or "1-14")
+ *   --minEdge     Minimum edge threshold (default: 0)
+ *   --confidence  Confidence tiers to include (e.g., "A,B" or omit for all)
+ *   --bet         Bet types: "spread", "total", or "both" (default: "both")
+ *   --price       Betting price, e.g., -110 (default: -110)
+ *   --kelly       Kelly fraction (0 = flat, 0.5 = half-Kelly, default: 0)
+ *   --model       Model version (e.g., "v0.0.1" or omit for latest)
+ *   --verbose     Enable detailed logging (funnel counts, summaries)
+ *   --injuries    Apply injury adjustments: "on" or "off" (default: off)
+ *   --weather     Apply weather adjustments: "on" or "off" (default: off)
+ * 
+ * Examples:
+ *   # All bets with any edge, verbose logging
+ *   npm run backtest -- --season 2024 --weeks 1-1 --minEdge 0 --verbose
+ * 
+ *   # High-confidence only, spread bets, 2.5pt minimum edge
+ *   npm run backtest -- --season 2024 --weeks 1-1 --confidence A,B --bet spread --minEdge 2.5
+ * 
+ *   # Union of spread + total bets with half-Kelly
+ *   npm run backtest -- --season 2024 --weeks 1-1 --bet both --kelly 0.5 --verbose
  */
 
 const { PrismaClient } = require('@prisma/client');
@@ -22,13 +45,15 @@ function parseArgs() {
     season: '2024',
     weeks: '1-1',
     market: 'closing',
-    minEdge: 2.0,
-    confidence: ['A', 'B', 'C'],
+    minEdge: null, // Will default to 0 if not provided
+    confidence: null, // Will default to all if not provided
     bet: ['spread', 'total'],
     price: -110,
     kelly: 0,
     injuries: false,
     weather: false,
+    model: null, // Will default to latest if not provided
+    verbose: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -57,7 +82,12 @@ function parseArgs() {
         i++;
         break;
       case '--bet':
-        params.bet = nextArg.split(',').map(b => b.trim().toLowerCase());
+        const betArg = nextArg.toLowerCase();
+        if (betArg === 'both') {
+          params.bet = ['spread', 'total'];
+        } else {
+          params.bet = nextArg.split(',').map(b => b.trim().toLowerCase());
+        }
         i++;
         break;
       case '--price':
@@ -76,7 +106,24 @@ function parseArgs() {
         params.weather = nextArg === 'on';
         i++;
         break;
+      case '--model':
+        params.model = nextArg;
+        i++;
+        break;
+      case '--verbose':
+        params.verbose = true;
+        break;
     }
+  }
+
+  // Apply defaults
+  if (params.minEdge === null) {
+    params.minEdge = 0;
+    if (params.verbose) console.log('ℹ️  --minEdge not specified, defaulting to 0');
+  }
+  if (params.confidence === null) {
+    params.confidence = ['A', 'B', 'C'];
+    if (params.verbose) console.log('ℹ️  --confidence not specified, including all tiers');
   }
 
   return params;
@@ -191,6 +238,23 @@ async function runBacktest(params) {
       console.log(`\n📊 Processing ${season} Week ${week}...`);
 
       // Fetch games for this week
+      // Determine which model version to use
+      let modelVersion = params.model;
+      if (!modelVersion) {
+        // Find the latest model version available
+        const latestMatchup = await prisma.matchupOutput.findFirst({
+          where: { season, week },
+          orderBy: { modelVersion: 'desc' },
+          select: { modelVersion: true },
+        });
+        modelVersion = latestMatchup?.modelVersion || 'v0.0.1';
+        if (params.verbose) {
+          console.log(`   Using model version: ${modelVersion} (latest available)`);
+        }
+      } else if (params.verbose) {
+        console.log(`   Using model version: ${modelVersion} (specified)`);
+      }
+
       const games = await prisma.game.findMany({
         where: { season, week },
         include: {
@@ -198,18 +262,37 @@ async function runBacktest(params) {
           awayTeam: true,
           marketLines: true,
           matchupOutputs: {
-            where: { modelVersion: 'v0.0.1' },
+            where: { modelVersion },
           },
         },
         orderBy: { date: 'asc' },
       });
 
-      console.log(`   Found ${games.length} games`);
+      if (params.verbose) {
+        console.log(`   📊 Found ${games.length} games for ${season} Week ${week}`);
+      } else {
+        console.log(`   Found ${games.length} games`);
+      }
+
+      // Verbose logging: track funnel counts
+      let funnelCounts = {
+        totalMatchups: 0,
+        withModelOutput: 0,
+        afterConfidenceFilter: 0,
+        spreadQualified: 0,
+        totalQualified: 0,
+        unionBets: 0,
+        withScores: 0,
+        pending: 0,
+      };
 
       // Process each game
       for (const game of games) {
+        funnelCounts.totalMatchups++;
+
         const matchupOutput = game.matchupOutputs[0];
         if (!matchupOutput) continue;
+        funnelCounts.withModelOutput++;
 
         const spreadLine = game.marketLines.find(l => l.lineType === 'spread');
         const totalLine = game.marketLines.find(l => l.lineType === 'total');
@@ -227,16 +310,22 @@ async function runBacktest(params) {
         if (!params.confidence.includes(matchupOutput.edgeConfidence)) {
           continue;
         }
+        funnelCounts.afterConfidenceFilter++;
 
-        // Check spread bet
+        // Determine if scores are available
+        const hasScores = game.homeScore !== null && game.awayScore !== null;
+
+        // Check spread bet (UNION logic: evaluate independently)
         if (params.bet.includes('spread') && spreadEdge >= params.minEdge) {
+          funnelCounts.spreadQualified++;
+          
           const favoredSide = impliedSpread < 0 ? 'home' : 'away';
           const favoredTeam = favoredSide === 'home' ? game.homeTeam.name : game.awayTeam.name;
           const line = Math.abs(impliedSpread);
           
           const stake = calculateKellyStake(spreadEdge, params.price, params.kelly);
           const betResult = determineBetResult('spread', favoredSide, line, game.homeScore, game.awayScore);
-          const pnl = betResult.pnl * stake;
+          const pnl = betResult.result === 'PENDING' ? 0 : betResult.pnl * stake;
           const clv = spreadEdge; // Simplified CLV
 
           bets.push({
@@ -258,16 +347,25 @@ async function runBacktest(params) {
             homeScore: game.homeScore,
             awayScore: game.awayScore,
           });
+
+          funnelCounts.unionBets++;
+          if (hasScores) {
+            funnelCounts.withScores++;
+          } else {
+            funnelCounts.pending++;
+          }
         }
 
-        // Check total bet
+        // Check total bet (UNION logic: evaluate independently)
         if (params.bet.includes('total') && totalEdge >= params.minEdge) {
+          funnelCounts.totalQualified++;
+          
           const overUnder = impliedTotal > marketTotal ? 'over' : 'under';
           const line = impliedTotal;
           
           const stake = calculateKellyStake(totalEdge, params.price, params.kelly);
           const betResult = determineBetResult('total', overUnder, marketTotal, game.homeScore, game.awayScore);
-          const pnl = betResult.pnl * stake;
+          const pnl = betResult.result === 'PENDING' ? 0 : betResult.pnl * stake;
           const clv = totalEdge;
 
           bets.push({
@@ -289,15 +387,44 @@ async function runBacktest(params) {
             homeScore: game.homeScore,
             awayScore: game.awayScore,
           });
+
+          funnelCounts.unionBets++;
+          if (hasScores) {
+            funnelCounts.withScores++;
+          } else {
+            funnelCounts.pending++;
+          }
         }
+      }
+
+      // Verbose logging: show funnel
+      if (params.verbose) {
+        console.log(`   📉 Funnel:`);
+        console.log(`      Total matchups: ${funnelCounts.totalMatchups}`);
+        console.log(`      With model output: ${funnelCounts.withModelOutput}`);
+        console.log(`      After confidence filter (${params.confidence.join(',')}): ${funnelCounts.afterConfidenceFilter}`);
+        if (params.bet.includes('spread')) {
+          console.log(`      Spread edge ≥ ${params.minEdge}: ${funnelCounts.spreadQualified}`);
+        }
+        if (params.bet.includes('total')) {
+          console.log(`      Total edge ≥ ${params.minEdge}: ${funnelCounts.totalQualified}`);
+        }
+        console.log(`      Union bets written: ${funnelCounts.unionBets}`);
+        console.log(`      With scores: ${funnelCounts.withScores}`);
+        console.log(`      Pending (no scores): ${funnelCounts.pending}`);
       }
     }
   }
 
-  console.log(`\n✅ Processed ${bets.length} total bets`);
+  if (params.verbose) {
+    console.log(`\n✅ Processed ${bets.length} total opportunities (bets written to CSV)`);
+  } else {
+    console.log(`\n✅ Processed ${bets.length} total bets`);
+  }
 
   // Calculate summary statistics
   const completedBets = bets.filter(b => b.result !== 'PENDING');
+  const pendingBets = bets.filter(b => b.result === 'PENDING');
   const wins = completedBets.filter(b => b.result === 'WIN').length;
   const losses = completedBets.filter(b => b.result === 'LOSS').length;
   const pushes = completedBets.filter(b => b.result === 'PUSH').length;
@@ -328,11 +455,29 @@ async function runBacktest(params) {
     C: bets.filter(b => b.confidence === 'C').length,
   };
 
+  // Bet type breakdown
+  const betTypeBreakdown = {
+    spread: bets.filter(b => b.betType === 'spread').length,
+    total: bets.filter(b => b.betType === 'total').length,
+  };
+
   const summary = {
-    parameters: params,
-    totalBets: bets.length,
-    completedBets: completedBets.length,
-    pendingBets: bets.length - completedBets.length,
+    filters: {
+      season: params.season,
+      weeks: params.weeks,
+      model: params.model || 'latest',
+      minEdge: params.minEdge,
+      confidence: params.confidence,
+      betTypes: params.bet,
+      market: params.market,
+      price: params.price,
+      kelly: params.kelly,
+      injuries: params.injuries,
+      weather: params.weather,
+    },
+    opportunities: bets.length, // All bets written to CSV
+    settled: completedBets.length, // Bets with scores
+    pending: pendingBets.length, // Bets without scores
     wins,
     losses,
     pushes,
@@ -344,8 +489,21 @@ async function runBacktest(params) {
     avgStake: avgStake.toFixed(2),
     maxDrawdown: maxDrawdown.toFixed(2),
     confidenceBreakdown,
+    betTypeBreakdown,
     timestamp: new Date().toISOString(),
   };
+
+  if (params.verbose) {
+    console.log(`\n📊 Summary:`);
+    console.log(`   Opportunities: ${summary.opportunities}`);
+    console.log(`   Settled: ${summary.settled}`);
+    console.log(`   Pending: ${summary.pending}`);
+    console.log(`   Win/Loss/Push: ${wins}/${losses}/${pushes}`);
+    console.log(`   Hit Rate: ${summary.hitRate} (excludes pending)`);
+    console.log(`   ROI: ${summary.roi} (excludes pending)`);
+    console.log(`   Confidence: A=${confidenceBreakdown.A}, B=${confidenceBreakdown.B}, C=${confidenceBreakdown.C}`);
+    console.log(`   Bet Types: Spread=${betTypeBreakdown.spread}, Total=${betTypeBreakdown.total}`);
+  }
 
   return { bets, summary };
 }
@@ -468,9 +626,9 @@ async function main() {
     console.log('\n' + '='.repeat(60));
     console.log('📊 BACKTEST SUMMARY');
     console.log('='.repeat(60));
-    console.log(`Total Bets:        ${summary.totalBets}`);
-    console.log(`Completed:         ${summary.completedBets}`);
-    console.log(`Pending:           ${summary.pendingBets}`);
+    console.log(`Opportunities:     ${summary.opportunities}`);
+    console.log(`Settled:           ${summary.settled}`);
+    console.log(`Pending:           ${summary.pending}`);
     console.log(`Hit Rate:          ${summary.hitRate}`);
     console.log(`ROI:               ${summary.roi}`);
     console.log(`Total Profit:      ${summary.totalProfit} units`);
