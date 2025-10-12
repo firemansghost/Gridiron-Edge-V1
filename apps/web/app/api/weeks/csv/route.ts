@@ -3,6 +3,8 @@
  * 
  * Exports filtered week data as CSV for download.
  */
+export const dynamic = 'force-dynamic';
+export const revalidate = 0; // no caching; always run on server
 
 import { prisma } from '@/lib/prisma';
 import { computeSpreadPick, computeTotalPick } from '@/lib/pick-helpers';
