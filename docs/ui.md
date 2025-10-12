@@ -18,6 +18,12 @@
 - Sign Convention: Home minus Away (negative = home favored)
 - Edge Points: |Model - Market| for both spread and total
 
+**M6 Adjustment Toggles**:
+- Injuries Toggle: Enable/disable injury-based spread adjustments
+- Weather Toggle: Enable/disable weather-based spread/total adjustments
+- Both toggles update confidence tiers and edges in real-time
+- Adjustments applied server-side via API query parameters
+
 **Seed Mode Coverage**:
 - ✅ Game matchup from games.json (home_team_id, away_team_id)
 - ✅ Game date and time from games.json (converted to CST/CDT)

@@ -50,6 +50,21 @@ export interface Game {
   homeScore: number | null;
   awayScore: number | null;
   status: string;
+  
+  // M6 Adjustments
+  adjustments?: {
+    injuryAdjPts: number;
+    weatherAdjPts: number;
+    totalAdjPts: number;
+    breakdown: {
+      injuries: string[];
+      weather: string[];
+    };
+  } | null;
+  adjustmentsEnabled?: {
+    injuries: boolean;
+    weather: boolean;
+  };
 }
 
 export interface SlateData {

@@ -7,8 +7,19 @@
 
 import { prisma } from '@/lib/prisma';
 import { computeSpreadPick, computeTotalPick } from '@/lib/pick-helpers';
+import { 
+  applyAdjustments, 
+  calculateConfidenceTier,
+  getMockInjuries,
+  getMockWeather 
+} from '@/lib/adjustment-helpers';
+import { NextRequest } from 'next/server';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  // Get adjustment toggles from query params
+  const searchParams = request.nextUrl.searchParams;
+  const injuriesOn = searchParams.get('injuries') === 'on';
+  const weatherOn = searchParams.get('weather') === 'on';
   try {
     // Get this week's games (seed week 1, 2024)
     const games = await prisma.game.findMany({
@@ -48,10 +59,33 @@ export async function GET() {
         hour12: true
       });
 
-      const impliedSpread = matchupOutput?.impliedSpread || 0;
-      const impliedTotal = matchupOutput?.impliedTotal || 45;
+      const baseImpliedSpread = matchupOutput?.impliedSpread || 0;
+      const baseImpliedTotal = matchupOutput?.impliedTotal || 45;
       const marketSpread = spreadLine?.closingLine || 0;
       const marketTotal = totalLine?.closingLine || 45;
+
+      // Apply adjustments if enabled
+      let impliedSpread = baseImpliedSpread;
+      let impliedTotal = baseImpliedTotal;
+      let adjustments = null;
+
+      if (injuriesOn || weatherOn) {
+        const injuries = injuriesOn ? getMockInjuries(game.id) : [];
+        const weather = weatherOn ? getMockWeather(game.id) : null;
+        
+        const adjustmentResult = applyAdjustments(
+          baseImpliedSpread,
+          baseImpliedTotal,
+          game.homeTeamId,
+          game.awayTeamId,
+          injuries,
+          weather
+        );
+
+        impliedSpread = adjustmentResult.impliedSpreadAdj;
+        impliedTotal = adjustmentResult.impliedTotalAdj;
+        adjustments = adjustmentResult.adjustments;
+      }
 
       // Compute spread pick details
       const spreadPick = computeSpreadPick(
@@ -65,9 +99,13 @@ export async function GET() {
       // Compute total pick details
       const totalPick = computeTotalPick(impliedTotal, marketTotal);
 
-      // Calculate edge points
+      // Calculate edge points (using adjusted values)
       const spreadEdgePts = Math.abs(impliedSpread - marketSpread);
       const totalEdgePts = Math.abs(impliedTotal - marketTotal);
+
+      // Recalculate confidence based on adjusted edge
+      const maxEdge = Math.max(spreadEdgePts, totalEdgePts);
+      const confidence = calculateConfidenceTier(maxEdge);
 
       return {
         gameId: game.id,
@@ -121,11 +159,18 @@ export async function GET() {
         ...totalPick,
         totalEdgePts,
         
-        // Confidence tier
-        confidence: matchupOutput?.edgeConfidence || 'C',
+        // Confidence tier (adjusted)
+        confidence,
         
         // Model info
         modelVersion: matchupOutput?.modelVersion || 'v0.0.1',
+        
+        // Adjustments (M6)
+        adjustments,
+        adjustmentsEnabled: {
+          injuries: injuriesOn,
+          weather: weatherOn,
+        },
         
         // Game results (if available)
         homeScore: game.homeScore,

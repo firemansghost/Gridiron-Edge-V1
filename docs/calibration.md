@@ -153,6 +153,95 @@ implied_total = (home_offensive_rating + away_offensive_rating) * 1.2
 ### Future Enhancements (V2+)
 - Add EPA and success rate when available
 - Implement pace adjustments
-- Add weather factors
-- Include injury adjustments
+- Connect to real-time injury and weather APIs
 - Implement situational adjustments
+
+## M6 Lite Adjustments (Server-Side Heuristics)
+
+### Purpose
+Apply optional injury and weather adjustments to improve model accuracy without requiring external API integrations yet. These are computed in the API layer using mock data for demonstration.
+
+### Injury Adjustments
+
+**Position-Based Impact (to spread):**
+- **QB out**: -2.5 pts to affected team
+- **QB questionable**: -1.25 pts
+- **OL/DL out**: -1.0 pts
+- **WR/RB out**: -0.75 pts
+- **DB out**: -0.5 pts
+
+**Rationale:**
+- Quarterback is the most impactful position
+- Line injuries compound (multiple injuries = cumulative effect)
+- Skill position players have moderate impact
+- Conservative estimates to avoid over-adjustment
+
+### Weather Adjustments
+
+**Wind Impact:**
+- Wind ≥ 15 mph: -1.5 to -3.0 pts on total
+- Favors run-heavy teams slightly (+0.5 spread adjustment)
+- Formula: `-1.5 - (windMph - 15) * 0.1`, max -3.0
+
+**Precipitation:**
+- Rain: -1.0 pts to total
+- Snow: -2.0 pts to total
+
+**Temperature:**
+- < 20°F: -1.5 pts to total
+
+**Rationale:**
+- High wind reduces passing efficiency, lowering scoring
+- Precipitation makes ball handling and footing difficult
+- Extreme cold reduces offensive efficiency
+- Run-heavy teams less affected by weather
+
+### Confidence Thresholds (M6 Tuned)
+
+**Updated tiers based on adjusted edge:**
+- **A Tier**: ≥ 3.5 pts edge
+- **B Tier**: ≥ 2.5 pts edge  
+- **C Tier**: ≥ 1.5 pts edge
+
+**Changes from M3:**
+- Raised A threshold from 3.0 to 3.5 (tighter threshold)
+- Raised B threshold from 2.0 to 2.5
+- Raised C threshold from 1.5 to 2.0
+
+**Rationale:**
+- Adjustments can amplify edge, so higher thresholds maintain quality
+- More conservative A/B tier assignments
+- Better ROI expectation for top-tier picks
+
+### Usage
+
+**API Query Parameters:**
+- `?injuries=on` - Enable injury adjustments
+- `?weather=on` - Enable weather adjustments
+- Both can be toggled independently
+
+**Response Fields:**
+- `impliedSpreadAdj` - Adjusted spread
+- `impliedTotalAdj` - Adjusted total
+- `adjustments.injuryAdjPts` - Injury impact on spread
+- `adjustments.weatherAdjPts` - Weather impact on spread/total
+- `adjustments.totalAdjPts` - Combined adjustment
+- `adjustments.breakdown` - Human-readable explanation
+
+### Limitations
+
+- **Mock data only**: Currently using hardcoded examples
+- **No player names**: Position-based only, no specific player tracking
+- **No team style detection**: Assumes balanced offense for weather adjustments
+- **No venue-specific factors**: Weather applied uniformly
+- **No injury clusters**: Multiple injuries on same unit not specially weighted
+
+### Future Improvements (V3+)
+
+- Integrate real injury reports API
+- Connect to weather forecast API
+- Add team offensive style detection (pass/run heavy)
+- Implement venue-specific wind/weather patterns
+- Track specific player impact beyond position
+- Add injury cluster penalties (e.g., multiple OL out)
+- Historical weather game analysis for calibration
