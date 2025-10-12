@@ -187,3 +187,72 @@
 - Fallback to neutral gray (#6B7280) if colors are missing
 - Size variants: sm (24px), md (32px), lg (48px)
 - Applied to Home page matchup display and Game Detail pages
+
+## Strategies Pages (M6)
+
+### /strategies (List Page)
+**Purpose**: Manage betting strategy rulesets and view past runs
+**Features**:
+- **Rulesets Tab**: List all created rulesets with parameters preview
+  - Name, description, status (active/inactive)
+  - Parameter summary: min edges, confidence tiers, limits
+  - Actions: Run, Edit
+  - Create New Ruleset button
+- **Past Runs Tab**: Historical strategy execution results
+  - Ruleset name, period, total bets, win rate, ROI, CLV
+  - Sortable by date and performance metrics
+
+### /strategies/new (Create Ruleset)
+**Purpose**: Create new betting strategy ruleset
+**Fields**:
+- **Basic Info**: Name (required), description (optional)
+- **Edge Thresholds**: 
+  - Min Spread Edge (pts)
+  - Min Total Edge (pts)
+- **Confidence Tiers**: Checkboxes for A/B/C tiers
+- **Limits**: Max games per week (optional)
+- **Team Filters**:
+  - Include only teams (comma-separated IDs)
+  - Exclude teams (comma-separated IDs)
+
+**Ruleset Parameters JSON**:
+```json
+{
+  "minSpreadEdge": 2.0,
+  "minTotalEdge": 2.0,
+  "confidenceIn": ["A", "B"],
+  "maxGamesPerWeek": 5,
+  "includeTeams": ["alabama", "ohio-state"],
+  "excludeTeams": ["fcs-teams"]
+}
+```
+
+### /strategies/run (Run Screen)
+**Purpose**: Execute ruleset against a specific week
+**Query Parameters**:
+- `rulesetId`: Ruleset to execute
+- `season`: Season year (default: 2024)
+- `week`: Week number (default: 1)
+
+**Display**:
+- **Summary Cards**: Total bets, avg edge, confidence breakdown
+- **Ruleset Parameters**: Display active filters
+- **Qualifying Games Table**: 
+  - Matchup, kickoff, spread/total picks
+  - Edges for spread and total
+  - Confidence tier badges
+- **Save Button**: Persist run to strategy_runs table
+
+**Filtering Logic**:
+1. Fetch games for season/week
+2. Calculate edges (implied vs market)
+3. Apply min edge thresholds (OR logic)
+4. Apply confidence filter
+5. Apply team include/exclude filters
+6. Sort by max edge descending
+7. Apply max games limit (if set)
+
+**Saved Run Data**:
+- `rulesetId`, `startDate`, `endDate`
+- `totalBets`, `avgEdge`
+- `winRate`, `roi`, `clv` (placeholders in seed mode)

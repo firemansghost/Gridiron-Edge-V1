@@ -105,7 +105,14 @@
 **Out of Scope**: Real-time strategy execution; advanced ML models
 **Risks**: Data quality; backtesting accuracy; overfitting
 **Inputs**: Historical data; strategy definitions; performance metrics
-**Definition of Done**: Backtesting working; strategy performance tracked; optimization tools available
+**Definition of Done**: 
+- ✅ M6 Lite Adjustments: Injuries/weather server-side heuristics with toggles
+- ✅ M6 Rules Engine: Create/edit rulesets with JSON-like builder
+- ✅ M6 Run Screen: Execute ruleset against week, save to strategy_runs
+- ✅ /strategies pages with rulesets and past runs tabs
+- ✅ API routes for rulesets CRUD and run execution
+- ✅ Documentation: /docs/ui.md strategies pages, /docs/calibration.md adjustments
+- Future: Real backtesting with historical results; performance optimization
 
 ## Milestone 7 - Production Optimization
 **Purpose**: Optimize for production scale and reliability
