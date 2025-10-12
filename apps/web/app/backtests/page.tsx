@@ -58,24 +58,154 @@ export default function BacktestsPage() {
   const [summary, setSummary] = useState<SummaryStats | null>(null);
   const [sortConfig, setSortConfig] = useState<{ key: keyof BacktestRow; direction: 'asc' | 'desc' } | null>(null);
   const [filterConfidence, setFilterConfidence] = useState<string>('');
+  const [error, setError] = useState<string>('');
+  const [parseInfo, setParseInfo] = useState<string>('');
+  const [skippedRows, setSkippedRows] = useState<number>(0);
+
+  // Header normalization map
+  const normalizeHeader = (header: string): string => {
+    const normalized = header.trim().toLowerCase();
+    const headerMap: { [key: string]: string } = {
+      'bettype': 'betType',
+      'bet_type': 'betType',
+      'marketline': 'marketLine',
+      'market_line': 'marketLine',
+      'picklabel': 'pickLabel',
+      'pick_label': 'pickLabel',
+      'homescore': 'homeScore',
+      'home_score': 'homeScore',
+      'awayscore': 'awayScore',
+      'away_score': 'awayScore',
+      'gameid': 'gameId',
+      'game_id': 'gameId',
+      'p/l': 'pnl',
+      'pl': 'pnl',
+      'conf': 'confidence',
+    };
+    
+    return headerMap[normalized] || normalized;
+  };
+
+  const parseCSV = (file: File) => {
+    setError('');
+    setParseInfo('');
+    setSkippedRows(0);
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      dynamicTyping: false, // We'll handle type coercion manually
+      delimiter: undefined, // Auto-detect
+      transformHeader: (h: string) => normalizeHeader(h),
+      complete: (results) => {
+        try {
+          const rawRows = results.data as any[];
+          
+          if (rawRows.length === 0) {
+            setError('No rows parsed. Please check your CSV format.');
+            return;
+          }
+
+          // Validate required columns
+          const requiredColumns = ['gameId', 'betType', 'pickLabel', 'edge', 'confidence'];
+          const firstRow = rawRows[0];
+          const missingColumns = requiredColumns.filter(col => !(col in firstRow));
+          
+          if (missingColumns.length > 0) {
+            setError(`Missing required columns: ${missingColumns.join(', ')}`);
+            return;
+          }
+
+          // Process and validate rows
+          const validRows: BacktestRow[] = [];
+          let skipped = 0;
+
+          rawRows.forEach((row, index) => {
+            // Skip rows without gameId
+            if (!row.gameId || String(row.gameId).trim() === '') {
+              skipped++;
+              return;
+            }
+
+            // Coerce numeric fields
+            const coerceNumber = (val: any): string => {
+              if (val === null || val === undefined || val === '') return '';
+              const num = parseFloat(String(val).trim());
+              return isNaN(num) ? '' : String(num);
+            };
+
+            // Trim string fields
+            const trimString = (val: any): string => {
+              return val ? String(val).trim() : '';
+            };
+
+            validRows.push({
+              season: trimString(row.season),
+              week: trimString(row.week),
+              gameId: trimString(row.gameId),
+              matchup: trimString(row.matchup),
+              betType: trimString(row.betType),
+              pickLabel: trimString(row.pickLabel),
+              line: coerceNumber(row.line),
+              marketLine: coerceNumber(row.marketLine),
+              edge: coerceNumber(row.edge),
+              confidence: trimString(row.confidence),
+              price: coerceNumber(row.price),
+              stake: coerceNumber(row.stake),
+              result: trimString(row.result),
+              pnl: coerceNumber(row.pnl),
+              clv: coerceNumber(row.clv),
+              homeScore: coerceNumber(row.homeScore),
+              awayScore: coerceNumber(row.awayScore),
+            });
+          });
+
+          if (validRows.length === 0) {
+            setError('No valid rows found after parsing. Check that your CSV has data rows with gameId.');
+            return;
+          }
+
+          console.debug('CSV Parsing Success - First 3 rows:', validRows.slice(0, 3));
+          
+          setData(validRows);
+          calculateSummary(validRows);
+          setParseInfo(`Parsed ${validRows.length} rows`);
+          
+          if (skipped > 0) {
+            setSkippedRows(skipped);
+          }
+        } catch (err) {
+          setError('Error processing CSV: ' + (err instanceof Error ? err.message : 'Unknown error'));
+        }
+      },
+      error: (error) => {
+        setError('Error parsing CSV: ' + error.message);
+      },
+    });
+  };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    parseCSV(file);
+  };
 
-    Papa.parse(file, {
-      header: true,
-      complete: (results) => {
-        const rows = results.data as BacktestRow[];
-        // Filter out empty rows
-        const validRows = rows.filter(row => row.gameId && row.gameId.trim() !== '');
-        setData(validRows);
-        calculateSummary(validRows);
-      },
-      error: (error) => {
-        alert('Error parsing CSV: ' + error.message);
-      },
-    });
+  const handleDemoLoad = async () => {
+    setError('');
+    setParseInfo('Loading demo...');
+    
+    try {
+      const response = await fetch('/demo/backtest_sample.csv');
+      if (!response.ok) throw new Error('Failed to load demo file');
+      
+      const text = await response.text();
+      const blob = new Blob([text], { type: 'text/csv' });
+      const file = new File([blob], 'demo.csv', { type: 'text/csv' });
+      parseCSV(file);
+    } catch (err) {
+      setError('Failed to load demo: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      setParseInfo('');
+    }
   };
 
   const calculateSummary = (rows: BacktestRow[]) => {
@@ -222,33 +352,79 @@ export default function BacktestsPage() {
             <p className="text-gray-600 mt-1">Upload and analyze backtest CSV reports</p>
           </div>
 
+          {/* Error Banner */}
+          {error && (
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-8">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm text-red-700 font-medium">CSV Parsing Error</p>
+                  <p className="text-sm text-red-600 mt-1">{error}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Upload Section */}
           <div className="bg-white rounded-lg shadow p-6 mb-8">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Upload Backtest CSV</h2>
-            <div className="flex items-center gap-4">
-              <label className="flex-1">
-                <input
-                  type="file"
-                  accept=".csv"
-                  onChange={handleFileUpload}
-                  className="block w-full text-sm text-gray-500
-                    file:mr-4 file:py-2 file:px-4
-                    file:rounded file:border-0
-                    file:text-sm file:font-semibold
-                    file:bg-blue-50 file:text-blue-700
-                    hover:file:bg-blue-100
-                    cursor-pointer"
-                />
-              </label>
-              {data.length > 0 && (
-                <span className="text-sm text-gray-600">
-                  {data.length} bets loaded
-                </span>
-              )}
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center gap-4">
+                <label className="flex-1">
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={handleFileUpload}
+                    className="block w-full text-sm text-gray-500
+                      file:mr-4 file:py-2 file:px-4
+                      file:rounded file:border-0
+                      file:text-sm file:font-semibold
+                      file:bg-blue-50 file:text-blue-700
+                      hover:file:bg-blue-100
+                      cursor-pointer"
+                  />
+                </label>
+              </div>
+              
+              {/* Parse info and warnings */}
+              <div className="flex flex-col gap-2">
+                {parseInfo && (
+                  <div className="text-sm text-green-600 font-medium">
+                    ✓ {parseInfo}
+                  </div>
+                )}
+                {skippedRows > 0 && (
+                  <div className="text-sm text-yellow-600 bg-yellow-50 px-3 py-2 rounded">
+                    ⚠ Skipped {skippedRows} invalid row{skippedRows > 1 ? 's' : ''} (missing gameId or empty)
+                  </div>
+                )}
+              </div>
+
+              {/* Demo and Template buttons */}
+              <div className="flex items-center gap-4 pt-2 border-t border-gray-200">
+                <button
+                  onClick={handleDemoLoad}
+                  className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm font-medium"
+                >
+                  📊 Load Demo CSV
+                </button>
+                <a
+                  href="/demo/backtest_header.csv"
+                  download="backtest_header.csv"
+                  className="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm font-medium"
+                >
+                  📥 Download Header Template
+                </a>
+              </div>
+
+              <p className="text-xs text-gray-500">
+                Upload a CSV file from /reports/backtest_*.csv or try the demo
+              </p>
             </div>
-            <p className="text-xs text-gray-500 mt-2">
-              Upload a CSV file from /reports/backtest_*.csv
-            </p>
           </div>
 
           {data.length > 0 && summary && (
@@ -504,13 +680,21 @@ export default function BacktestsPage() {
             </>
           )}
 
-          {data.length === 0 && (
+          {data.length === 0 && !error && (
             <div className="text-center py-12">
               <div className="text-gray-400 text-6xl mb-4">📊</div>
               <h3 className="text-lg font-medium text-gray-900 mb-2">No Data Loaded</h3>
               <p className="text-gray-600 mb-6">
-                Upload a backtest CSV to view analysis and charts
+                Upload a backtest CSV to view analysis and charts, or try the demo
               </p>
+              <div className="flex justify-center gap-4 mb-6">
+                <button
+                  onClick={handleDemoLoad}
+                  className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+                >
+                  📊 Try Demo
+                </button>
+              </div>
               <div className="text-sm text-gray-500">
                 Run a backtest with: <code className="bg-gray-100 px-2 py-1 rounded">npm run backtest</code>
               </div>

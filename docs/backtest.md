@@ -277,3 +277,85 @@ Ideal equity curve:
    - Don't optimize on same data used for validation
    - Use early weeks to calibrate, later weeks to test
    - Avoid overfitting to historical quirks
+
+---
+
+## Viewer CSV Format
+
+The backtest viewer (`/backtests` page) accepts CSV files from `/reports/backtest_*.csv`. The CSV must include the following columns:
+
+### Required Columns
+
+| Column | Type | Description | Example |
+|--------|------|-------------|---------|
+| `gameId` | string | Unique game identifier | `game-1` |
+| `betType` | string | Type of bet (spread/total) | `spread` |
+| `pickLabel` | string | Human-readable pick | `Alabama -30.0` |
+| `edge` | number | Points edge vs market | `1.50` |
+| `confidence` | string | Tier (A/B/C) | `A` |
+
+### Optional Columns
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `season` | number | Season year |
+| `week` | number | Week number |
+| `matchup` | string | Matchup string |
+| `line` | number | Model line |
+| `marketLine` | number | Market closing line |
+| `price` | number | American odds |
+| `stake` | number | Bet size |
+| `result` | string | WIN/LOSS/PUSH/PENDING |
+| `pnl` | number | Profit/loss |
+| `clv` | number | Closing line value |
+| `homeScore` | number | Final home score |
+| `awayScore` | number | Final away score |
+
+### Header Normalization
+
+The viewer automatically normalizes common header variants:
+- `bettype`, `bet_type` → `betType`
+- `marketline`, `market_line` → `marketLine`
+- `picklabel`, `pick_label` → `pickLabel`
+- `homescore`, `home_score` → `homeScore`
+- `awayscore`, `away_score` → `awayScore`
+- `gameid`, `game_id` → `gameId`
+- `p/l`, `pl` → `pnl`
+- `conf` → `confidence`
+
+### Common Pitfalls
+
+**1. Excel CSV Encoding**
+- Excel may add BOM (Byte Order Mark) or use non-standard line endings
+- Solution: Save as "CSV UTF-8 (Comma delimited)" or use Text Editor
+
+**2. Commas in Fields**
+- Matchup strings with commas (e.g., "Team A, Team B @ Team C") can break parsing
+- Solution: Ensure fields are properly quoted or replace commas with " vs "
+
+**3. Missing Headers**
+- The first row must contain column headers
+- Headers are case-insensitive and will be normalized
+
+**4. Empty Rows**
+- Empty rows or rows with blank `gameId` are automatically skipped
+- A warning will show if any rows were skipped
+
+**5. Numeric Parsing**
+- All numeric fields are coerced (invalid values → empty string)
+- NaN values won't cause errors but will display as "—" in the table
+
+### Example CSV
+
+```csv
+season,week,gameId,matchup,betType,pickLabel,line,marketLine,edge,confidence,price,stake,result,pnl,clv,homeScore,awayScore
+2024,1,game-1,Away @ Home,spread,Home -30.0,-30.0,-28.5,1.50,C,-110,1.00,WIN,0.91,1.50,63,0
+2024,1,game-1,Away @ Home,total,Over 56.5,56.5,58.0,1.50,C,-110,1.00,LOSS,-1.00,1.50,63,0
+```
+
+### Testing Your CSV
+
+1. **Download Header Template**: Click "Download Header Template" on the viewer page
+2. **Load Demo**: Click "Load Demo CSV" to see a working example
+3. **Validate**: Upload your CSV and check for error messages
+4. **Debug**: Check browser console for first 3 parsed rows if issues persist
