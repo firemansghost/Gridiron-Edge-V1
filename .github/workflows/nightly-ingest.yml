@@ -1,0 +1,89 @@
+name: Nightly Ingest + Ratings
+
+on:
+  # Run every night at 7:00 UTC (2:00 AM CST / 1:00 AM CDT)
+  schedule:
+    - cron: '0 7 * * *'
+  # Allow manual trigger for testing
+  workflow_dispatch:
+
+jobs:
+  ingest-and-rate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      TZ: America/Chicago
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Cache node_modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.npm
+            node_modules
+            apps/*/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify database connection
+        run: |
+          echo "🔍 Checking database connectivity..."
+          echo "DATABASE_URL set? ${{ secrets.DATABASE_URL != '' }}"
+          echo "DIRECT_URL set? ${{ secrets.DIRECT_URL != '' }}"
+
+      - name: Wait for pooled connection (6543)
+        shell: bash
+        run: |
+          set -e
+          for i in {1..12}; do
+            if timeout 5 bash -lc "echo > /dev/tcp/aws-1-us-east-2.pooler.supabase.com/6543"; then
+              echo "✅ Pooled connection reachable"
+              break
+            fi
+            echo "⏳ Waiting for pooled connection... ($i/12)"
+            sleep 5
+          done
+
+      - name: Generate Prisma Client
+        run: npm run prisma:generate
+
+      - name: Run mock data ingest
+        run: |
+          echo "📥 Starting mock data ingest for 2024 Week 1..."
+          npm run ingest -- mock --season 2024 --weeks 1
+          echo "✅ Mock data ingest complete"
+
+      - name: Run seed ratings calculation
+        run: |
+          echo "📊 Starting ratings calculation..."
+          npm run seed:ratings
+          echo "✅ Ratings calculation complete"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "============================================"
+          echo "📊 NIGHTLY INGEST + RATINGS SUMMARY"
+          echo "============================================"
+          echo "Time (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')"
+          echo "Time (CST/CDT): $(TZ=America/Chicago date '+%Y-%m-%d %H:%M:%S %Z')"
+          echo "Season: 2024"
+          echo "Week: 1"
+          echo "Status: ${{ job.status }}"
+          echo "============================================"
+
