@@ -15,6 +15,18 @@ import { Footer } from '@/components/Footer';
 interface WeekData {
   gameId: string;
   matchup: string;
+  homeTeam: {
+    id: string;
+    name: string;
+    logoUrl?: string | null;
+    primaryColor?: string | null;
+  };
+  awayTeam: {
+    id: string;
+    name: string;
+    logoUrl?: string | null;
+    primaryColor?: string | null;
+  };
   kickoff: string;
   venue: string;
   neutralSite: boolean;
@@ -315,14 +327,20 @@ function WeeksPageContent() {
                     {data?.games?.map((game) => (
                       <tr key={game.gameId} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <Link href={`/game/${game.gameId}`} className="block hover:text-blue-600 transition-colors">
-                            <div className="text-sm font-medium text-gray-900">
-                              {game.matchup}
-                            </div>
-                            <div className="text-sm text-gray-500">
+                          <div className="text-sm font-medium text-gray-900">
+                            <Link href={`/team/${game.awayTeam.id}`} className="hover:text-blue-600 transition-colors">
+                              {game.awayTeam.name}
+                            </Link>
+                            <span className="text-gray-400 mx-1">@</span>
+                            <Link href={`/team/${game.homeTeam.id}`} className="hover:text-blue-600 transition-colors">
+                              {game.homeTeam.name}
+                            </Link>
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            <Link href={`/game/${game.gameId}`} className="hover:text-blue-600 transition-colors">
                               {game.venue} {game.neutralSite && '(Neutral)'}
-                            </div>
-                          </Link>
+                            </Link>
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {game.kickoff}

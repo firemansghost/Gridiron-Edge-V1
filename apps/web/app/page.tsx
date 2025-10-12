@@ -241,38 +241,38 @@ export default function HomePage() {
                 {slate?.games?.map((game) => (
                   <tr key={game.gameId} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <Link href={`/game/${game.gameId}`} className="block hover:text-blue-600 transition-colors">
-                        <div className="flex items-center space-x-3">
-                          <div className="flex items-center space-x-2">
-                            <TeamLogo 
-                              teamName={game.awayTeam.name}
-                              logoUrl={game.awayTeam.logoUrl}
-                              primaryColor={game.awayTeam.primaryColor}
-                              teamId={game.awayTeam.id}
-                              size="sm"
-                            />
-                            <span className="text-sm font-medium text-gray-900">
-                              {game.awayTeam.name}
-                            </span>
-                          </div>
-                          <span className="text-gray-400">@</span>
-                          <div className="flex items-center space-x-2">
-                            <TeamLogo 
-                              teamName={game.homeTeam.name}
-                              logoUrl={game.homeTeam.logoUrl}
-                              primaryColor={game.homeTeam.primaryColor}
-                              teamId={game.homeTeam.id}
-                              size="sm"
-                            />
-                            <span className="text-sm font-medium text-gray-900">
-                              {game.homeTeam.name}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="text-sm text-gray-500 mt-1">
+                      <div className="flex items-center space-x-3">
+                        <Link href={`/team/${game.awayTeam.id}`} className="flex items-center space-x-2 hover:text-blue-600 transition-colors">
+                          <TeamLogo 
+                            teamName={game.awayTeam.name}
+                            logoUrl={game.awayTeam.logoUrl}
+                            primaryColor={game.awayTeam.primaryColor}
+                            teamId={game.awayTeam.id}
+                            size="sm"
+                          />
+                          <span className="text-sm font-medium text-gray-900">
+                            {game.awayTeam.name}
+                          </span>
+                        </Link>
+                        <span className="text-gray-400">@</span>
+                        <Link href={`/team/${game.homeTeam.id}`} className="flex items-center space-x-2 hover:text-blue-600 transition-colors">
+                          <TeamLogo 
+                            teamName={game.homeTeam.name}
+                            logoUrl={game.homeTeam.logoUrl}
+                            primaryColor={game.homeTeam.primaryColor}
+                            teamId={game.homeTeam.id}
+                            size="sm"
+                          />
+                          <span className="text-sm font-medium text-gray-900">
+                            {game.homeTeam.name}
+                          </span>
+                        </Link>
+                      </div>
+                      <div className="text-sm text-gray-500 mt-1">
+                        <Link href={`/game/${game.gameId}`} className="hover:text-blue-600 transition-colors">
                           {game.venue} {game.neutralSite && '(Neutral)'}
-                        </div>
-                      </Link>
+                        </Link>
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {game.kickoff}

@@ -85,25 +85,43 @@
 - ✅ Implied spread/total calculations from M3 model
 - ✅ CLV analysis with explicit pick recommendations
 
-## Teams Page
-**Purpose**: Team rankings and performance analysis
-**Required Fields**:
-- Team power ratings (current and historical)
-- Recent game results and scores
-- Season statistics (offensive/defensive)
-- Recruiting rankings and trends
-- Conference standings
-- Upcoming schedule
-- Team performance trends
+## Team Detail Page (`/team/[id]`)
+**Purpose**: Individual team profile with branding, ratings, and recent games
+**Route**: `/team/[id]?season=YYYY&week=N` (optional filters)
 
-**Seed Mode Coverage**:
-- ✅ Team names, conferences from teams.json
-- ✅ Basic stat profiles from team_game_stats.json
-- ✅ Recruiting rankings from recruiting.json
-- ✅ Conference standings (calculated from games.json results)
-- ✅ Team colors and logos from teams.json
-- ⏳ Team power ratings (placeholder until M2 model)
-- ⏳ Historical trends (placeholder until M2 model)
+**Team Card**:
+- Team logo (large, 96x96px)
+- Team name (header)
+- Conference and division
+- Mascot
+- Location (city, state)
+- Team colors (visual swatches with hex codes)
+- Color gradient header using primary + secondary colors
+
+**Power Rating Card**:
+- Current rating (large display)
+- Season and week context
+- Model version
+- Falls back to "No rating data available" if missing
+
+**Recent Games List** (last 5 games):
+- Opponent name (linkable)
+- Home vs Away indicator (vs / @)
+- Date and venue
+- Final score (if available) or status
+- Each game links to Game Detail page
+
+**Data Sources**:
+- Team info from `teams` table
+- Latest power rating from `power_ratings` (most recent or filtered by season/week)
+- Recent games from `games` table with team joins
+
+**Linking**:
+- All team names throughout the app link to `/team/[id]`
+- Home page: Team names in matchup cells
+- Weeks page: Team names in matchup text
+- Game Detail: Team names in matchup header
+- Click team name → view team profile
 
 ## Backtests Page
 **Purpose**: Historical strategy performance analysis
