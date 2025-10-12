@@ -28,6 +28,10 @@ apps/jobs/.env
 .DS_Store
 Thumbs.db
 
+# Reports
+/reports/*
+!/reports/.gitkeep
+
 # Build outputs
 .next/
 out/
