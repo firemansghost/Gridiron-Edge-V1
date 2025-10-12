@@ -7,9 +7,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { SlateData } from '@/types';
 import { TeamLogo } from '@/components/TeamLogo';
 import { DataModeBadge } from '@/components/DataModeBadge';
+import { HeaderNav } from '@/components/HeaderNav';
+import { Footer } from '@/components/Footer';
 
 export default function HomePage() {
   const [slate, setSlate] = useState<SlateData | null>(null);
@@ -86,13 +89,15 @@ export default function HomePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <HeaderNav />
+      <div className="flex-1">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <h1 className="text-3xl font-bold text-gray-900">Gridiron Edge</h1>
+              <h1 className="text-3xl font-bold text-gray-900">This Week</h1>
               <div className="relative group">
                 <button className="text-gray-400 hover:text-gray-600">
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
@@ -106,18 +111,17 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
-            <a 
+            <Link 
               href="/weeks?season=2024&week=1"
               className="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm"
             >
               Review Previous Weeks
-            </a>
+            </Link>
           </div>
           <div className="flex items-center gap-3 mt-2">
             <p className="text-gray-600">
               Week {slate?.week} • {slate?.season} Season • Model {slate?.modelVersion}
             </p>
-            <DataModeBadge />
             {slate?.games?.some(game => game.homeScore !== null && game.awayScore !== null) && (
               <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                 Final
@@ -177,6 +181,29 @@ export default function HomePage() {
             <h2 className="text-lg font-semibold text-gray-900">This Week's Slate</h2>
           </div>
           
+          {(!slate?.games || slate.games.length === 0) ? (
+            <div className="px-6 py-12 text-center">
+              <div className="text-gray-400 text-5xl mb-4">📋</div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No Games Available</h3>
+              <p className="text-gray-600 mb-6">
+                There are no games for this week. Check out previous weeks or explore strategies.
+              </p>
+              <div className="flex justify-center gap-4">
+                <Link 
+                  href="/weeks"
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  View Previous Weeks
+                </Link>
+                <Link 
+                  href="/strategies"
+                  className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
+                >
+                  Explore Strategies
+                </Link>
+              </div>
+            </div>
+          ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -205,42 +232,47 @@ export default function HomePage() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Confidence
                   </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Action
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {slate?.games?.map((game) => (
                   <tr key={game.gameId} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center space-x-3">
-                        <div className="flex items-center space-x-2">
-                          <TeamLogo 
-                            teamName={game.awayTeam.name}
-                            logoUrl={game.awayTeam.logoUrl}
-                            primaryColor={game.awayTeam.primaryColor}
-                            teamId={game.awayTeam.id}
-                            size="sm"
-                          />
-                          <span className="text-sm font-medium text-gray-900">
-                            {game.awayTeam.name}
-                          </span>
+                      <Link href={`/game/${game.gameId}`} className="block hover:text-blue-600 transition-colors">
+                        <div className="flex items-center space-x-3">
+                          <div className="flex items-center space-x-2">
+                            <TeamLogo 
+                              teamName={game.awayTeam.name}
+                              logoUrl={game.awayTeam.logoUrl}
+                              primaryColor={game.awayTeam.primaryColor}
+                              teamId={game.awayTeam.id}
+                              size="sm"
+                            />
+                            <span className="text-sm font-medium text-gray-900">
+                              {game.awayTeam.name}
+                            </span>
+                          </div>
+                          <span className="text-gray-400">@</span>
+                          <div className="flex items-center space-x-2">
+                            <TeamLogo 
+                              teamName={game.homeTeam.name}
+                              logoUrl={game.homeTeam.logoUrl}
+                              primaryColor={game.homeTeam.primaryColor}
+                              teamId={game.homeTeam.id}
+                              size="sm"
+                            />
+                            <span className="text-sm font-medium text-gray-900">
+                              {game.homeTeam.name}
+                            </span>
+                          </div>
                         </div>
-                        <span className="text-gray-400">@</span>
-                        <div className="flex items-center space-x-2">
-                          <TeamLogo 
-                            teamName={game.homeTeam.name}
-                            logoUrl={game.homeTeam.logoUrl}
-                            primaryColor={game.homeTeam.primaryColor}
-                            teamId={game.homeTeam.id}
-                            size="sm"
-                          />
-                          <span className="text-sm font-medium text-gray-900">
-                            {game.homeTeam.name}
-                          </span>
+                        <div className="text-sm text-gray-500 mt-1">
+                          {game.venue} {game.neutralSite && '(Neutral)'}
                         </div>
-                      </div>
-                      <div className="text-sm text-gray-500 mt-1">
-                        {game.venue} {game.neutralSite && '(Neutral)'}
-                      </div>
+                      </Link>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {game.kickoff}
@@ -273,19 +305,30 @@ export default function HomePage() {
                         {game.confidence}
                       </span>
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <Link 
+                        href={`/game/${game.gameId}`}
+                        className="text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        View →
+                      </Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          )}
         </div>
 
-        {/* Footer */}
+        {/* Info Footer */}
         <div className="mt-8 text-center text-sm text-gray-500">
           <p>M3 Seed Mode • Linear Ratings • Constant HFA = 2.0 pts</p>
           <p>Confidence Tiers: A ≥ 4.0 pts, B ≥ 3.0 pts, C ≥ 2.0 pts</p>
         </div>
+        </div>
       </div>
+      <Footer />
     </div>
   );
 }
