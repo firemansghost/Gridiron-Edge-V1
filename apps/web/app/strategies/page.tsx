@@ -8,6 +8,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { DataModeBadge } from '@/components/DataModeBadge';
 
 interface Ruleset {
   id: string;
@@ -86,7 +87,10 @@ export default function StrategiesPage() {
         <div className="mb-8">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Betting Strategies</h1>
+              <div className="flex items-center gap-3">
+                <h1 className="text-3xl font-bold text-gray-900">Betting Strategies</h1>
+                <DataModeBadge />
+              </div>
               <p className="text-gray-600 mt-1">Create and run rules-based betting strategies</p>
             </div>
             <Link

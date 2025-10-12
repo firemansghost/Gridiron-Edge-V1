@@ -9,6 +9,7 @@
 import { useState, useEffect } from 'react';
 import { SlateData } from '@/types';
 import { TeamLogo } from '@/components/TeamLogo';
+import { DataModeBadge } from '@/components/DataModeBadge';
 
 export default function HomePage() {
   const [slate, setSlate] = useState<SlateData | null>(null);
@@ -116,6 +117,7 @@ export default function HomePage() {
             <p className="text-gray-600">
               Week {slate?.week} • {slate?.season} Season • Model {slate?.modelVersion}
             </p>
+            <DataModeBadge />
             {slate?.games?.some(game => game.homeScore !== null && game.awayScore !== null) && (
               <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                 Final
