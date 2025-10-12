@@ -1,0 +1,10 @@
+season,week,gameId,matchup,betType,pickLabel,line,marketLine,edge,confidence,price,stake,result,pnl,clv,homeScore,awayScore
+2024,1,game-1,Western Kentucky @ Alabama,spread,Alabama -30.0,-30.0,-28.5,1.50,C,-110,1.00,WIN,0.91,1.50,63,0
+2024,1,game-1,Western Kentucky @ Alabama,total,Over 56.5,56.5,58.0,1.50,C,-110,1.00,LOSS,-1.00,1.50,63,0
+2024,1,game-2,Akron @ Ohio State,spread,Ohio State -52.5,-52.5,-48.5,4.00,A,-110,1.50,WIN,1.36,4.00,52,6
+2024,1,game-3,Eastern Michigan @ Washington,spread,Washington -17.5,-17.5,-16.0,1.50,C,-110,1.00,WIN,0.91,1.50,30,9
+2024,1,game-4,Colorado State @ Texas,spread,Texas -21.0,-21.0,-18.5,2.50,B,-110,1.25,LOSS,-1.25,2.50,38,13
+2024,1,game-5,Portland State @ Wisconsin,spread,Wisconsin -41.5,-41.5,-39.0,2.50,B,-110,1.25,WIN,1.14,2.50,28,0
+2024,1,game-6,Duke @ Northwestern,spread,Northwestern -3.5,-3.5,-2.5,1.00,C,-110,1.00,PUSH,0.00,1.00,24,10
+2024,1,game-7,USC @ LSU,spread,USC +4.5,4.5,6.5,2.00,B,-110,1.00,WIN,0.91,2.00,27,20
+
