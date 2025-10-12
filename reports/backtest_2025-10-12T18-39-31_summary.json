@@ -1,0 +1,38 @@
+{
+  "parameters": {
+    "season": "2024",
+    "weeks": "1",
+    "market": "closing",
+    "minEdge": 2,
+    "confidence": [
+      "A",
+      "B"
+    ],
+    "bet": [
+      "both"
+    ],
+    "price": -110,
+    "kelly": 0,
+    "injuries": false,
+    "weather": false
+  },
+  "totalBets": 0,
+  "completedBets": 0,
+  "pendingBets": 0,
+  "wins": 0,
+  "losses": 0,
+  "pushes": 0,
+  "hitRate": "0.00%",
+  "totalRisked": "0.00",
+  "totalProfit": "0.00",
+  "roi": "0.00%",
+  "avgClv": "0.00",
+  "avgStake": "0.00",
+  "maxDrawdown": "0.00",
+  "confidenceBreakdown": {
+    "A": 0,
+    "B": 0,
+    "C": 0
+  },
+  "timestamp": "2025-10-12T18:39:31.460Z"
+}

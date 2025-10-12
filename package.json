@@ -18,6 +18,7 @@
     "seed:ratings": "node apps/jobs/seed-ratings.js",
     "test:ratings": "jest apps/jobs/__tests__/seed-ratings.test.js",
     "ingest": "node apps/jobs/ingest.js",
+    "backtest": "node apps/jobs/backtest.js",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "postinstall": "npm run prisma:generate"
   },
