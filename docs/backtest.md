@@ -19,13 +19,20 @@ npm run backtest -- [options]
 | `--season` | string | `2024` | Single season (`2024`) or range (`2022-2024`) |
 | `--weeks` | string | `1-1` | Week range (`1-13`) or list (`1,3,6`) |
 | `--market` | string | `closing` | Market line type (closing only for now) |
-| `--minEdge` | float | `2.0` | Minimum edge in points to qualify a bet |
-| `--confidence` | string | `A,B,C` | Confidence tiers to include (comma-separated) |
-| `--bet` | string | `spread,total` | Bet types to include (`spread`, `total`, or `both`) |
+| `--minEdge` | float | `0` | Minimum edge in points to qualify a bet (default: 0) |
+| `--confidence` | string | `all` | Confidence tiers to include (e.g., `A,B` or omit for all) |
+| `--bet` | string | `both` | Bet types: `spread`, `total`, or `both` (UNION logic) |
 | `--price` | int | `-110` | American odds price (e.g., `-110`) |
 | `--kelly` | float | `0` | Kelly fraction (0 = flat 1 unit, 0.5 = half Kelly) |
+| `--model` | string | `latest` | Model version (e.g., `v0.0.1` or omit for latest available) |
+| `--verbose` | flag | `false` | Enable detailed logging (funnel counts, summaries) |
 | `--injuries` | string | `off` | Enable injury adjustments (`on` or `off`) |
 | `--weather` | string | `off` | Enable weather adjustments (`on` or `off`) |
+
+**Notes:**
+- **UNION Selection:** When `--bet both` is used, the CLI evaluates spread and total bets independently. A game with both a qualifying spread edge AND a qualifying total edge will generate TWO bets (not just one).
+- **Default Behavior:** If `--minEdge` is omitted, it defaults to 0 (all edges qualify). If `--confidence` is omitted, all tiers (A/B/C) are included.
+- **Pending Bets:** All qualifying bets are written to the CSV, even if scores are missing. Pending bets have `result=PENDING`, `pnl=0`, and are excluded from ROI/hit-rate calculations but included in opportunity counts.
 
 ## Examples
 
@@ -63,32 +70,68 @@ npm run backtest -- --season 2024 --weeks 1-4 --bet both --minEdge 2.0 --confide
 - Flat stakes across all confidence tiers
 - Chronological equity curve over 4 weeks
 
+### Example 4: Verbose Mode with All Edges
+
+```bash
+npm run backtest -- --season 2024 --weeks 1-1 --minEdge 0 --verbose
+```
+
+**Expected Output:**
+- Shows detailed funnel counts at each stage:
+  - Total matchups found
+  - After model output filter
+  - After confidence filter
+  - Spread/total edge qualifications
+  - Union bets written
+  - Games with/without scores
+- Includes comprehensive summary with opportunities, settled, and pending counts
+
+### Example 5: Specific Model Version
+
+```bash
+npm run backtest -- --season 2024 --weeks 1-1 --model v0.0.1 --minEdge 2.5 --confidence A --verbose
+```
+
+**Expected Output:**
+- Uses only model version `v0.0.1` outputs
+- Shows model version in verbose logging
+- Only A-tier bets with 2.5+ edge
+
 ## Walk-Forward Protocol
 
 The backtest follows a strict walk-forward approach:
 
 1. **For each (season, week) in range:**
    - Fetch games from database for that week
+   - Determine model version (use specified `--model` or latest available)
    - Pull `matchup_outputs` for model lines (implied spread/total)
    - Pull `market_lines` for closing lines
    - Apply M6 adjustments if flags are ON
 
-2. **Filter qualifying bets:**
-   - Check edge >= `minEdge` (spread OR total)
-   - Check confidence in allowed tiers
-   - Check bet type matches filter
+2. **Filter qualifying bets (UNION logic):**
+   - Check confidence tier in allowed list (or all if omitted)
+   - **For spread:** Check spread edge >= `minEdge`
+   - **For total:** Check total edge >= `minEdge`
+   - If both qualify for a single game, BOTH bets are written (union, not intersection)
 
 3. **Calculate stake:**
    - If `kelly=0`: flat 1 unit
-   - Else: Kelly fraction capped at 5 units max
+   - Else: Kelly fraction based on edge and price, capped at 5 units max
 
 4. **Determine result:**
    - If `home_score` and `away_score` exist: compute W/L/Push
-   - Else: mark as PENDING (excluded from ROI)
+   - Else: mark as `PENDING` and set `pnl=0`
+   - **PENDING bets are written to CSV** but excluded from ROI/hit-rate denominators
 
 5. **Track metrics:**
-   - Per-bet: result, P/L, CLV, edge, confidence
-   - Cumulative: equity, drawdown, ROI
+   - Per-bet: result, P/L, CLV, edge, confidence, bet type
+   - Summary: opportunities (all bets), settled (with scores), pending (without scores)
+   - Cumulative: equity, drawdown, ROI (calculated only on settled bets)
+
+6. **Verbose logging (if `--verbose` flag):**
+   - Funnel counts: total matchups → model output → confidence filter → edge qualifications → union bets
+   - Scores status: games with scores vs. pending
+   - Summary: opportunities, settled, pending, W/L/Push, ROI, confidence/bet-type breakdowns
 
 ## Outputs
 
@@ -110,10 +153,22 @@ Per-bet rows with columns:
 Aggregate statistics:
 ```json
 {
-  "parameters": { ... },
-  "totalBets": 15,
-  "completedBets": 15,
-  "pendingBets": 0,
+  "filters": {
+    "season": "2024",
+    "weeks": "1-1",
+    "model": "v0.0.1",
+    "minEdge": 2.0,
+    "confidence": ["A", "B", "C"],
+    "betTypes": ["spread", "total"],
+    "market": "closing",
+    "price": -110,
+    "kelly": 0,
+    "injuries": false,
+    "weather": false
+  },
+  "opportunities": 18,
+  "settled": 15,
+  "pending": 3,
   "wins": 9,
   "losses": 5,
   "pushes": 1,
@@ -124,9 +179,18 @@ Aggregate statistics:
   "avgClv": "2.45",
   "avgStake": "1.00",
   "maxDrawdown": "2.50",
-  "confidenceBreakdown": { "A": 5, "B": 8, "C": 2 }
+  "confidenceBreakdown": { "A": 6, "B": 9, "C": 3 },
+  "betTypeBreakdown": { "spread": 10, "total": 8 },
+  "timestamp": "2024-10-12T12:34:56.789Z"
 }
 ```
+
+**New Fields:**
+- `filters`: Echo of all input parameters for reproducibility
+- `opportunities`: Total bets written to CSV (including pending)
+- `settled`: Bets with scores (used in ROI/hit-rate calculations)
+- `pending`: Bets without scores (excluded from performance metrics)
+- `betTypeBreakdown`: Count of spread vs. total bets
 
 ### 3. Chart Data JSON Files
 
