@@ -183,7 +183,7 @@ export default function StrategiesPage() {
                         Run
                       </Link>
                       <Link
-                        href={`/strategies/edit/${ruleset.id}`}
+                        href={`/strategies/${ruleset.id}/edit`}
                         className="px-3 py-1 bg-gray-50 text-gray-600 rounded hover:bg-gray-100 text-sm font-medium"
                       >
                         Edit
