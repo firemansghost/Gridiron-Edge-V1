@@ -13,9 +13,13 @@ import {
   getMockInjuries,
   getMockWeather 
 } from '@/lib/adjustment-helpers';
+import { logDataMode } from '@/lib/data-mode';
 import { NextRequest } from 'next/server';
 
 export async function GET(request: NextRequest) {
+  // Log data mode
+  const dataMode = logDataMode('API: /api/seed-slate');
+  
   // Get adjustment toggles from query params
   const searchParams = request.nextUrl.searchParams;
   const injuriesOn = searchParams.get('injuries') === 'on';
