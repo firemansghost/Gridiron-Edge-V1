@@ -59,7 +59,26 @@ npm run db:generate    # Generate Prisma client
 npm run db:migrate:dev # Run migrations in development
 npm run db:studio     # Open Prisma Studio
 npm run seed:ratings  # Run seed job
+npm run ingest -- mock --season 2024 --weeks 1  # Ingest mock data
 ```
+
+### Automated Jobs
+
+#### Nightly Ingest + Ratings
+A GitHub Actions workflow runs automatically every night at **7:00 UTC** (2:00 AM CST / 1:00 AM CDT):
+- Ingests fresh mock data for 2024 Week 1
+- Recalculates power ratings and matchup outputs
+- Keeps the demo environment up-to-date
+
+**Manual Trigger:**
+Navigate to **Actions → Nightly Ingest + Ratings → Run workflow** in GitHub to trigger manually.
+
+**Secrets Required:**
+- `DATABASE_URL` - Pooled Supabase connection string
+- `DIRECT_URL` - Direct Supabase connection string
+
+**View Logs:**
+Check the **Actions** tab in GitHub to see execution logs and summaries.
 
 ## Project Structure
 - `/apps/web` - Next.js frontend

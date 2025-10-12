@@ -49,9 +49,30 @@
 ## Jobs Runner Configuration
 
 ### GitHub Actions
-- **Schedule**: Daily at 6 AM CT for data ingestion
-- **Environment**: Separate secrets for API keys and database access
-- **Monitoring**: Job status notifications via Slack/email
+
+#### Nightly Ingest + Ratings
+- **Workflow**: `.github/workflows/nightly-ingest.yml`
+- **Schedule**: Daily at 7:00 UTC (2:00 AM CST / 1:00 AM CDT)
+- **Trigger**: Automatic via cron, or manual via workflow_dispatch
+- **Steps**:
+  1. Checkout repository
+  2. Setup Node.js with npm caching
+  3. Install dependencies
+  4. Generate Prisma Client
+  5. Run mock data ingest (`npm run ingest -- mock --season 2024 --weeks 1`)
+  6. Run ratings calculation (`npm run seed:ratings`)
+  7. Log summary with timestamps
+- **Secrets Required**: `DATABASE_URL`, `DIRECT_URL`
+- **Timeout**: 15 minutes
+- **Environment**: Ubuntu latest, Node 20, America/Chicago timezone
+- **Monitoring**: View logs in GitHub Actions tab
+
+#### Prisma Migrations
+- **Workflow**: `.github/workflows/prisma-migrate.yml`
+- **Trigger**: Push to main (when `prisma/**` changes), or manual
+- **Steps**: Migrate deploy + Prisma generate
+- **Secrets Required**: `DATABASE_URL`, `DIRECT_URL`
+- **Timeout**: 7 minutes
 
 ### Alternative: Render/Fly
 - **Cron Jobs**: Scheduled Python scripts
