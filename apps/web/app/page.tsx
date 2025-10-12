@@ -14,14 +14,20 @@ export default function HomePage() {
   const [slate, setSlate] = useState<SlateData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [injuriesOn, setInjuriesOn] = useState(false);
+  const [weatherOn, setWeatherOn] = useState(false);
 
   useEffect(() => {
     fetchSlate();
-  }, []);
+  }, [injuriesOn, weatherOn]);
 
   const fetchSlate = async () => {
     try {
-      const response = await fetch('/api/seed-slate');
+      const params = new URLSearchParams();
+      if (injuriesOn) params.append('injuries', 'on');
+      if (weatherOn) params.append('weather', 'on');
+      
+      const response = await fetch(`/api/seed-slate?${params.toString()}`);
       const data = await response.json();
       
       if (data.success) {
@@ -115,6 +121,31 @@ export default function HomePage() {
                 Final
               </span>
             )}
+          </div>
+          
+          {/* M6 Adjustment Toggles */}
+          <div className="flex items-center gap-4 mt-3">
+            <span className="text-sm font-medium text-gray-700">Adjustments:</span>
+            <button
+              onClick={() => setInjuriesOn(!injuriesOn)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                injuriesOn 
+                  ? 'bg-blue-500 text-white' 
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              Injuries {injuriesOn ? 'ON' : 'OFF'}
+            </button>
+            <button
+              onClick={() => setWeatherOn(!weatherOn)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                weatherOn 
+                  ? 'bg-blue-500 text-white' 
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              Weather {weatherOn ? 'ON' : 'OFF'}
+            </button>
           </div>
         </div>
 
