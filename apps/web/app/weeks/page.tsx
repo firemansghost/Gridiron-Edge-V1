@@ -8,6 +8,9 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { HeaderNav } from '@/components/HeaderNav';
+import { Footer } from '@/components/Footer';
 
 interface WeekData {
   gameId: string;
@@ -182,9 +185,11 @@ function WeeksPageContent() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <HeaderNav />
+      <div className="flex-1">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between">
             <div>
@@ -301,18 +306,23 @@ function WeeksPageContent() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Confidence
                       </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Action
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {data?.games?.map((game) => (
                       <tr key={game.gameId} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">
-                            {game.matchup}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            {game.venue} {game.neutralSite && '(Neutral)'}
-                          </div>
+                          <Link href={`/game/${game.gameId}`} className="block hover:text-blue-600 transition-colors">
+                            <div className="text-sm font-medium text-gray-900">
+                              {game.matchup}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              {game.venue} {game.neutralSite && '(Neutral)'}
+                            </div>
+                          </Link>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {game.kickoff}
@@ -342,6 +352,14 @@ function WeeksPageContent() {
                           <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getConfidenceColor(game.confidence)}`}>
                             {game.confidence}
                           </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          <Link 
+                            href={`/game/${game.gameId}`}
+                            className="text-blue-600 hover:text-blue-800 font-medium"
+                          >
+                            View →
+                          </Link>
                         </td>
                       </tr>
                     ))}
@@ -422,7 +440,9 @@ function WeeksPageContent() {
             </div>
           </div>
         </div>
+        </div>
       </div>
+      <Footer />
     </div>
   );
 }

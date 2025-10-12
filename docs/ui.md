@@ -1,5 +1,26 @@
 # UI Page Requirements
 
+## Navigation & Layout
+
+**Header Navigation (All Pages)**:
+- **Logo/Title**: "Gridiron Edge" (left, links to home)
+- **Navigation Links** (center):
+  - This Week (/)
+  - Weeks (/weeks)
+  - Strategies (/strategies)
+- **Data Mode Badge** (right): Shows active data mode (SEED/MOCK/REAL)
+- **Active Link Styling**: Highlighted for current page
+- **Mobile-Friendly**: Collapses to stacked layout on small screens
+
+**Footer (All Pages)**:
+- **Links**: GitHub repo, Docs (/docs), Disclaimer (/disclaimer)
+- **Copyright**: Educational disclaimer notice
+
+**Linkable Elements**:
+- **Matchup Cells**: Clickable, navigate to Game Detail page
+- **View Actions**: "View →" link at end of each table row
+- **Empty States**: Friendly message with links to /strategies and /weeks when no games available
+
 ## Home Page - Top Edges
 **Purpose**: Display highest confidence betting edges for current week
 **Required Fields**:

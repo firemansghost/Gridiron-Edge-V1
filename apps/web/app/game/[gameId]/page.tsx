@@ -8,6 +8,9 @@
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
+import { HeaderNav } from '@/components/HeaderNav';
+import { Footer } from '@/components/Footer';
 
 export default function GameDetailPage() {
   const params = useParams();
@@ -81,9 +84,11 @@ export default function GameDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <HeaderNav />
+      <div className="flex-1">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between">
             <div>
@@ -278,14 +283,16 @@ export default function GameDetailPage() {
 
         {/* Back Link */}
         <div className="mt-8">
-          <a 
+          <Link 
             href="/"
             className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
           >
             ← Back to Slate
-          </a>
+          </Link>
+        </div>
         </div>
       </div>
+      <Footer />
     </div>
   );
 }
