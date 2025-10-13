@@ -42,7 +42,7 @@ adapters:
       
   sgo:
     provider: "sgo"
-    enabled: false
+    enabled: true
     config:
       baseUrl: "https://api.sportsgameodds.com/v2"
       league: "NCAAF"

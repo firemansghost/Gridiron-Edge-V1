@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import { DataSourceAdapter, AdapterConfig, DataSourcesConfig } from './DataSourceAdapter';
 import { MockAdapter } from './MockAdapter';
+import { SportsGameOddsAdapter } from './SportsGameOddsAdapter';
 
 export class AdapterFactory {
   private config: DataSourcesConfig;
@@ -35,15 +36,11 @@ export class AdapterFactory {
 
     switch (adapterConfig.provider) {
       case 'mock':
-        return new MockAdapter(adapterConfig.config);
+        return new MockAdapter(adapterConfig.config as any);
       
-      // Live data adapters (to be implemented)
+      // Live data adapters
       case 'sgo':
-        throw new Error(
-          'SportsGameOdds adapter not yet implemented.\n' +
-          'To add: create apps/jobs/adapters/SportsGameOddsAdapter.ts\n' +
-          'Set SGO_API_KEY environment variable when ready.'
-        );
+        return new SportsGameOddsAdapter(adapterConfig.config as any);
       
       case 'weather-vc':
         throw new Error(

@@ -72,11 +72,15 @@ Examples:
 
 Available adapters:
   mock             Mock data source (reads from /data/ directory)
-  sgo              SportsGameOdds API (not yet implemented)
+  sgo              SportsGameOdds API (odds only, requires SGO_API_KEY)
   weatherVc        Visual Crossing Weather API (not yet implemented)
   espn             ESPN API (not yet implemented)
   oddsApi          Odds API (not yet implemented)
   sportsReference  Sports Reference (not yet implemented)
+
+Notes:
+  - SGO adapter only provides odds/lines, not schedules or teams
+  - For full ingestion, run mock/cfbd adapter first, then sgo for odds
 `);
 }
 
