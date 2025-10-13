@@ -31,6 +31,14 @@ Create these environment variables in Vercel → Project → Settings → Enviro
 - `SUPABASE_URL` - Set to `https://tccqmxcaledmlkybjqef.supabase.co`
 - `SUPABASE_ANON_KEY` - Only add if the browser will use supabase-js
 
+### Optional: Live Data Adapters
+For real-time data ingestion (not required for demo/mock data):
+
+- `SGO_API_KEY` - SportsGameOdds API key for real-time odds and lines
+- `VISUALCROSSING_API_KEY` - Visual Crossing Weather API key for game-time weather data
+
+These are only needed when using the `sgo` or `weather-vc` adapters. See `datasources.yml` for configuration.
+
 ### Security Notes
 - **Never add `SUPABASE_SERVICE_ROLE_KEY`** to Vercel environment variables
 - Use **pooled** connection strings for `DATABASE_URL` (pgBouncer, transaction mode)

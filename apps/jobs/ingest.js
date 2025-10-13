@@ -72,8 +72,11 @@ Examples:
 
 Available adapters:
   mock             Mock data source (reads from /data/ directory)
+  sgo              SportsGameOdds API (not yet implemented)
+  weatherVc        Visual Crossing Weather API (not yet implemented)
   espn             ESPN API (not yet implemented)
-  odds-api         Odds API (not yet implemented)
+  oddsApi          Odds API (not yet implemented)
+  sportsReference  Sports Reference (not yet implemented)
 `);
 }
 

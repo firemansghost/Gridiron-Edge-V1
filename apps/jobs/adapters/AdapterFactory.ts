@@ -37,6 +37,21 @@ export class AdapterFactory {
       case 'mock':
         return new MockAdapter(adapterConfig.config);
       
+      // Live data adapters (to be implemented)
+      case 'sgo':
+        throw new Error(
+          'SportsGameOdds adapter not yet implemented.\n' +
+          'To add: create apps/jobs/adapters/SportsGameOddsAdapter.ts\n' +
+          'Set SGO_API_KEY environment variable when ready.'
+        );
+      
+      case 'weather-vc':
+        throw new Error(
+          'Visual Crossing weather adapter not yet implemented.\n' +
+          'To add: create apps/jobs/adapters/VisualCrossingAdapter.ts\n' +
+          'Set VISUALCROSSING_API_KEY environment variable when ready.'
+        );
+      
       // Future adapters
       case 'espn':
         throw new Error('ESPN adapter not yet implemented');

@@ -39,6 +39,28 @@ adapters:
     config:
       baseUrl: "https://www.sports-reference.com"
       rateLimit: 1000  # ms between requests
+      
+  sgo:
+    provider: "sgo"
+    enabled: false
+    config:
+      baseUrl: "https://api.sportsgameodds.com/v2"
+      league: "NCAAF"
+      books:
+        - consensus
+        - pinnacle
+        - draftkings
+        - fanduel
+      timeoutMs: 20000
+      
+  weatherVc:
+    provider: "weather-vc"
+    enabled: false
+    config:
+      baseUrl: "https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline"
+      units: "us"      # 'us' = F, mph
+      include: "hours" # to get hourly along the game time
+      timeoutMs: 20000
 
 # Default adapter to use when none specified
 defaultAdapter: "mock"
