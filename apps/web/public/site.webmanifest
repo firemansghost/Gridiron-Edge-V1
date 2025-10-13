@@ -1,0 +1,17 @@
+{
+  "name": "Gridiron Edge",
+  "short_name": "Gridiron Edge",
+  "description": "College football analytics platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1e40af",
+  "theme_color": "#1e40af",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
+
