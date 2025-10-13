@@ -13,6 +13,7 @@ import { TeamLogo } from '@/components/TeamLogo';
 import { DataModeBadge } from '@/components/DataModeBadge';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
+import { SkeletonTable } from '@/components/SkeletonRow';
 
 export default function HomePage() {
   const [slate, setSlate] = useState<SlateData | null>(null);
@@ -59,16 +60,7 @@ export default function HomePage() {
     return edge >= 1.0 ? `+${edge.toFixed(1)}` : edge.toFixed(1);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading seed slate...</p>
-        </div>
-      </div>
-    );
-  }
+  // Removed old full-page loading spinner - now shows skeleton in-place
 
   if (error) {
     return (
@@ -238,7 +230,10 @@ export default function HomePage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {slate?.games?.map((game) => (
+                {loading ? (
+                  <SkeletonTable rows={5} columns={9} />
+                ) : (
+                  slate?.games?.map((game) => (
                   <tr key={game.gameId} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center space-x-3">
@@ -314,7 +309,8 @@ export default function HomePage() {
                       </Link>
                     </td>
                   </tr>
-                ))}
+                  ))
+                )}
               </tbody>
             </table>
           </div>
