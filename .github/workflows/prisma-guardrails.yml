@@ -1,0 +1,43 @@
+name: Prisma Schema Guardrails
+
+on:
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  validate-schema:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 📦 Install deps (no scripts)
+        run: |
+          npm ci --ignore-scripts
+
+      - name: 🧹 Prisma format
+        run: npx prisma format --schema=prisma/schema.prisma
+
+      # Provide dummy envs so prisma validate doesn't fail on env("...") lookups.
+      # Validation does NOT connect to the DB; it just needs the variables to exist.
+      - name: 🔍 Validate Prisma schema
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/postgres
+          DIRECT_URL:   postgresql://user:pass@localhost:5432/postgres
+        run: npx prisma validate --schema=prisma/schema.prisma
+
+      # If the schema file changed, require a migration in the same PR
+      - name: 🚦 Require migration when schema changes
+        run: |
+          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^prisma/schema.prisma$'; then
+            if ! git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^prisma/migrations/'; then
+              echo "::error::Detected changes to prisma/schema.prisma but no prisma/migrations/* were added. Run: npx prisma migrate dev --name <reason> and commit the migration."
+              exit 1
+            fi
+          fi
