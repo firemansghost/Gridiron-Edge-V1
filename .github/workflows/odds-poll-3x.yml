@@ -25,8 +25,8 @@ jobs:
       - run: npm ci
       - run: npm run prisma:generate
 
-      - name: Poll odds for current week (spread + total)
+      - name: Poll odds for current week (spread + total + moneyline)
         run: |
-          echo "📈 Polling odds (3x daily)..."
-          # Wire your CLI once the adapter lands; placeholder for now:
-          node apps/jobs/ingest.js odds --season 2024 --weeks 1 --markets spread,total
+          echo "📈 Polling odds (3x daily) using SGO adapter..."
+          npm run ingest -- sgo --season 2024 --weeks 1
+          echo "✅ Odds poll complete"
