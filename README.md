@@ -8,6 +8,7 @@ College football analytics platform for power ratings, implied spreads, and bett
 1. Import this repository to Vercel
 2. Set environment variables in Vercel dashboard:
    - `DATABASE_URL` (use **pooled** Supabase connection string)
+   - `NEXT_PUBLIC_SITE_URL` (e.g., `https://gridiron-edge-v1.vercel.app`)
    - `APP_ENV=production`
    - `TZ=America/Chicago`
    - `MODEL_VERSION=v1.0`
@@ -21,6 +22,9 @@ College football analytics platform for power ratings, implied spreads, and bett
 Create these environment variables in Vercel → Project → Settings → Environment Variables:
 
 - `DATABASE_URL` - Use the **pooled** Postgres connection string from Supabase
+- `NEXT_PUBLIC_SITE_URL` - Your deployed site URL (e.g., `https://gridiron-edge-v1.vercel.app`)
+  - Used for Open Graph metadata and absolute URLs
+  - **Important:** Must match your actual Vercel deployment URL
 - `APP_ENV` - Set to `production` for production deployments
 - `TZ` - Set to `America/Chicago`
 - `MODEL_VERSION` - Set to `v1.0` (or current model version)
