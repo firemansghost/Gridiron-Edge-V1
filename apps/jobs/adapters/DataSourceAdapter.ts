@@ -33,7 +33,7 @@ export interface Game {
 
 export interface MarketLine {
   gameId: string;
-  lineType: 'spread' | 'total';
+  lineType: 'spread' | 'total' | 'moneyline';
   openingLine: number;
   closingLine: number;
   timestamp: Date;

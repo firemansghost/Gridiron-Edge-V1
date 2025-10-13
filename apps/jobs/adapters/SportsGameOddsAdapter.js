@@ -42,7 +42,7 @@ class SportsGameOddsAdapter {
         return [];
     }
     /**
-     * Fetch market lines (spreads & totals) from SGO API
+     * Fetch market lines (spreads, totals, moneylines) from SGO API
      */
     async getMarketLines(season, weeks) {
         const allLines = [];
@@ -51,10 +51,11 @@ class SportsGameOddsAdapter {
             try {
                 const lines = await this.fetchOddsForWeek(season, week);
                 allLines.push(...lines);
-                // Count spreads vs totals
+                // Count spreads, totals, and moneylines
                 const spreads = lines.filter(l => l.lineType === 'spread').length;
                 const totals = lines.filter(l => l.lineType === 'total').length;
-                console.log(`   ✅ Upserted ${spreads} spreads, ${totals} totals (sgo)`);
+                const moneylines = lines.filter(l => l.lineType === 'moneyline').length;
+                console.log(`   ✅ Upserted ${spreads} spreads, ${totals} totals, ${moneylines} moneylines (sgo)`);
             }
             catch (error) {
                 console.error(`   ❌ Error fetching SGO odds for week ${week}:`, error.message);
@@ -150,7 +151,7 @@ class SportsGameOddsAdapter {
         return bookMap[normalized] || normalized;
     }
     /**
-     * Parse a market (spread or total) into MarketLine objects
+     * Parse a market (spread, total, or moneyline) into MarketLine objects
      */
     parseMarket(market, gameId, season, week, bookName, commenceTime) {
         const lines = [];
@@ -163,6 +164,9 @@ class SportsGameOddsAdapter {
         }
         else if (marketKey.includes('total') || marketKey.includes('over_under')) {
             lineType = 'total';
+        }
+        else if (marketKey.includes('h2h') || marketKey === 'moneyline') {
+            lineType = 'moneyline';
         }
         if (!lineType) {
             return lines; // Skip unknown market types
@@ -203,6 +207,26 @@ class SportsGameOddsAdapter {
                     season,
                     week,
                 });
+            }
+        }
+        else if (lineType === 'moneyline') {
+            // Moneyline: has home and away outcomes with American odds (price)
+            // We'll store both home and away moneylines as separate rows
+            for (const outcome of outcomes) {
+                const price = outcome.price;
+                if (price !== undefined && price !== null) {
+                    // Store the American odds as the line value
+                    lines.push({
+                        gameId,
+                        lineType: 'moneyline',
+                        openingLine: Number(price),
+                        closingLine: Number(price),
+                        timestamp,
+                        bookName,
+                        season,
+                        week,
+                    });
+                }
             }
         }
         return lines;

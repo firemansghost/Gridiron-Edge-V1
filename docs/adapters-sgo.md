@@ -2,7 +2,7 @@
 
 ## Overview
 
-The SportsGameOdds adapter fetches real-time NCAAF spreads and totals from the SportsGameOdds API.
+The SportsGameOdds adapter fetches real-time NCAAF spreads, totals, and moneylines from the SportsGameOdds API.
 
 **Important:** This adapter only provides odds/lines. It does NOT provide schedules or team data. You must run another adapter (like `mock` or `cfbd`) first to populate games and teams.
 
@@ -56,8 +56,8 @@ npm run ingest -- sgo --season 2024 --weeks 1
 
 1. Fetches odds for the specified season and week(s)
 2. Matches odds to existing games in the database
-3. Inserts market lines for each book and market type (spread, total)
-4. Logs summary: "Upserted X spreads, Y totals (sgo)"
+3. Inserts market lines for each book and market type (spread, total, moneyline)
+4. Logs summary: "Upserted X spreads, Y totals, Z moneylines (sgo)"
 
 ### What Gets Inserted
 
@@ -66,8 +66,8 @@ For each game and book, the adapter creates `market_lines` rows with:
 - `gameId` - Matched from existing games table
 - `season` - Season year
 - `week` - Week number
-- `lineType` - "spread" or "total"
-- `lineValue` - The line value (spread or total points)
+- `lineType` - "spread", "total", or "moneyline"
+- `lineValue` - The line value (spread points, total points, or moneyline odds in American format)
 - `closingLine` - Same as lineValue (SGO may not distinguish opening/closing)
 - `timestamp` - API update time or current time
 - `bookName` - Book name (e.g., "pinnacle", "draftkings")
