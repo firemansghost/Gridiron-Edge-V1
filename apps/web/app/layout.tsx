@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://gridiron-edge-v1.vercel.app'),
   title: {
     default: 'Gridiron Edge',
     template: '%s | Gridiron Edge',
@@ -12,7 +13,6 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    url: 'https://gridiron-edge.vercel.app',
     siteName: 'Gridiron Edge',
     title: 'Gridiron Edge - College Football Analytics',
     description: 'Data-driven college football analytics with power ratings, implied spreads, and betting edge identification.',
