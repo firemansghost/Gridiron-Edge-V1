@@ -11,6 +11,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
+import { SkeletonTable } from '@/components/SkeletonRow';
 
 interface WeekData {
   gameId: string;
@@ -167,16 +168,7 @@ function WeeksPageContent() {
     return edge >= 1.0 ? `+${edge.toFixed(1)}` : edge.toFixed(1);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading week data...</p>
-        </div>
-      </div>
-    );
-  }
+  // Removed old full-page loading spinner - now shows skeleton in-place
 
   if (error) {
     return (
@@ -324,7 +316,10 @@ function WeeksPageContent() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {data?.games?.map((game) => (
+                    {loading ? (
+                      <SkeletonTable rows={5} columns={11} />
+                    ) : (
+                      data?.games?.map((game) => (
                       <tr key={game.gameId} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm font-medium text-gray-900">
@@ -380,7 +375,8 @@ function WeeksPageContent() {
                           </Link>
                         </td>
                       </tr>
-                    ))}
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
