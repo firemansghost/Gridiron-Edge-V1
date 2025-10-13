@@ -1,0 +1,28 @@
+name: Weather Daily
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+jobs:
+  weather:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIRECT_URL:   ${{ secrets.DIRECT_URL }}
+      OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
+      VISUALCROSSING_API_KEY: ${{ secrets.VISUALCROSSING_API_KEY }}
+      TZ: America/Chicago
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npm run prisma:generate
+      - name: Fetch/update weather
+        run: |
+          echo "⛅ Updating weather (daily)..."
+          # Wire your CLI once the adapter lands; placeholder for now:
+          node apps/jobs/ingest.js weather --season 2024 --weeks 1

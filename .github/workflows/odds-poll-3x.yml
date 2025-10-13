@@ -1,0 +1,32 @@
+name: Odds Poll (3x daily)
+
+on:
+  schedule:
+    - cron: '0 7,15,23 * * *'
+  workflow_dispatch:
+
+jobs:
+  poll-odds:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIRECT_URL:   ${{ secrets.DIRECT_URL }}
+      # pick one provider's key to require; it's ok if you set both
+      SGO_API_KEY:  ${{ secrets.SGO_API_KEY }}
+      ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+      SGO_BASE_URL: https://api.sportsgameodds.com
+      ODDS_BASE_URL: https://api.the-odds-api.com
+      TZ: America/Chicago
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npm run prisma:generate
+
+      - name: Poll odds for current week (spread + total)
+        run: |
+          echo "📈 Polling odds (3x daily)..."
+          # Wire your CLI once the adapter lands; placeholder for now:
+          node apps/jobs/ingest.js odds --season 2024 --weeks 1 --markets spread,total
