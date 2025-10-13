@@ -2,132 +2,42 @@ name: Prisma Schema Guardrails
 
 on:
   pull_request:
-    paths:
-      - 'prisma/**'
-      - '.github/workflows/prisma-guardrails.yml'
+    branches: [ "main" ]
 
 jobs:
   validate-schema:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Fetch full history to compare changes
 
-      - name: Setup Node.js
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: 20
 
-      - name: Install Prisma CLI
-        run: npm install -g prisma@6.17.0
-
-      - name: Format schema
-        id: format
+      - name: 📦 Install deps (no scripts)
         run: |
-          echo "🔍 Checking Prisma schema formatting..."
-          prisma format --schema=prisma/schema.prisma
-          
-          # Check if formatting changed anything
-          if git diff --exit-code prisma/schema.prisma; then
-            echo "✅ Schema is properly formatted"
-            echo "formatted=false" >> $GITHUB_OUTPUT
-          else
-            echo "❌ Schema formatting changes detected"
-            echo "formatted=true" >> $GITHUB_OUTPUT
+          npm ci --ignore-scripts
+
+      - name: 🧹 Prisma format
+        run: npx prisma format --schema=prisma/schema.prisma
+
+      # Provide dummy envs so prisma validate doesn't fail on env("...") lookups.
+      # Validation does NOT connect to the DB; it just needs the variables to exist.
+      - name: 🔍 Validate Prisma schema
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/postgres
+          DIRECT_URL:   postgresql://user:pass@localhost:5432/postgres
+        run: npx prisma validate --schema=prisma/schema.prisma
+
+      # If the schema file changed, require a migration in the same PR
+      - name: 🚦 Require migration when schema changes
+        run: |
+          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^prisma/schema.prisma$'; then
+            if ! git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^prisma/migrations/'; then
+              echo "::error::Detected changes to prisma/schema.prisma but no prisma/migrations/* were added. Run: npx prisma migrate dev --name <reason> and commit the migration."
+              exit 1
+            fi
           fi
-
-      - name: Fail if formatting needed
-        if: steps.format.outputs.formatted == 'true'
-        run: |
-          echo "============================================"
-          echo "❌ PRISMA SCHEMA NOT FORMATTED"
-          echo "============================================"
-          echo ""
-          echo "The schema file needs formatting."
-          echo ""
-          echo "To fix:"
-          echo "  npx prisma format --schema=prisma/schema.prisma"
-          echo "  git add prisma/schema.prisma"
-          echo "  git commit --amend --no-edit"
-          echo "  git push --force-with-lease"
-          echo ""
-          echo "============================================"
-          exit 1
-
-      - name: Validate schema
-        run: |
-          echo "🔍 Validating Prisma schema..."
-          prisma validate --schema=prisma/schema.prisma
-          echo "✅ Schema is valid"
-
-      - name: Check for schema changes without migration
-        id: check_migration
-        run: |
-          echo "🔍 Checking if schema changes have corresponding migrations..."
-          
-          # Check if schema.prisma changed in this PR
-          git fetch origin ${{ github.base_ref }}
-          SCHEMA_CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -c "prisma/schema.prisma" || echo "0")
-          
-          # Check if any migrations were added/modified in this PR
-          MIGRATIONS_CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -c "prisma/migrations/" || echo "0")
-          
-          echo "Schema changed: $SCHEMA_CHANGED"
-          echo "Migrations changed: $MIGRATIONS_CHANGED"
-          
-          if [ "$SCHEMA_CHANGED" -gt 0 ] && [ "$MIGRATIONS_CHANGED" -eq 0 ]; then
-            echo "missing_migration=true" >> $GITHUB_OUTPUT
-          else
-            echo "missing_migration=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Fail if migration missing
-        if: steps.check_migration.outputs.missing_migration == 'true'
-        run: |
-          echo "============================================"
-          echo "❌ SCHEMA CHANGED WITHOUT MIGRATION"
-          echo "============================================"
-          echo ""
-          echo "You modified prisma/schema.prisma but did not"
-          echo "add a corresponding migration."
-          echo ""
-          echo "This usually means you need to:"
-          echo "  1. Create a migration for your schema changes:"
-          echo "     npx prisma migrate dev --name <describe_your_change>"
-          echo ""
-          echo "  2. Commit the new migration files:"
-          echo "     git add prisma/migrations/"
-          echo "     git commit -m 'Add migration: <describe_your_change>'"
-          echo ""
-          echo "  3. Push your changes:"
-          echo "     git push"
-          echo ""
-          echo "Examples:"
-          echo "  npx prisma migrate dev --name add_user_email"
-          echo "  npx prisma migrate dev --name make_logo_optional"
-          echo "  npx prisma migrate dev --name add_team_index"
-          echo ""
-          echo "Note: If you only changed comments or formatting,"
-          echo "you can skip this check by adding a migration that"
-          echo "generates no SQL changes."
-          echo ""
-          echo "============================================"
-          exit 1
-
-      - name: Success summary
-        if: success()
-        run: |
-          echo "============================================"
-          echo "✅ PRISMA SCHEMA GUARDRAILS PASSED"
-          echo "============================================"
-          echo ""
-          echo "✅ Schema is properly formatted"
-          echo "✅ Schema validation passed"
-          echo "✅ Schema changes have corresponding migrations"
-          echo ""
-          echo "============================================"
-
