@@ -73,13 +73,14 @@ Examples:
 Available adapters:
   mock             Mock data source (reads from /data/ directory)
   sgo              SportsGameOdds API (odds only, requires SGO_API_KEY)
-  weatherVc        Visual Crossing Weather API (not yet implemented)
+  weatherVc        Visual Crossing Weather API (logs only, requires VISUALCROSSING_API_KEY)
   espn             ESPN API (not yet implemented)
   oddsApi          Odds API (not yet implemented)
   sportsReference  Sports Reference (not yet implemented)
 
 Notes:
   - SGO adapter only provides odds/lines, not schedules or teams
+  - Weather adapters only log data, do not write to database (no weather table yet)
   - For full ingestion, run mock/cfbd adapter first, then sgo for odds
 `);
 }
@@ -341,6 +342,15 @@ async function main() {
     // Check if adapter is available
     if (!(await adapter.isAvailable())) {
       throw new Error(`Adapter '${options.adapter}' is not available`);
+    }
+
+    // Special handling for weather adapters (they don't follow standard flow)
+    if (options.adapter === 'weatherVc' || adapter.getName() === 'VisualCrossing') {
+      if (typeof adapter.fetchWeatherForGames === 'function') {
+        await adapter.fetchWeatherForGames(options.season, options.weeks);
+        console.log('✅ Weather fetch completed!');
+        return; // Skip standard ingestion flow
+      }
     }
 
     // Fetch data from adapter

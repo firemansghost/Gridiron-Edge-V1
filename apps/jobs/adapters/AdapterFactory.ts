@@ -10,6 +10,7 @@ import path from 'path';
 import { DataSourceAdapter, AdapterConfig, DataSourcesConfig } from './DataSourceAdapter';
 import { MockAdapter } from './MockAdapter';
 import { SportsGameOddsAdapter } from './SportsGameOddsAdapter';
+import { VisualCrossingAdapter } from './VisualCrossingAdapter';
 
 export class AdapterFactory {
   private config: DataSourcesConfig;
@@ -43,11 +44,7 @@ export class AdapterFactory {
         return new SportsGameOddsAdapter(adapterConfig.config as any);
       
       case 'weather-vc':
-        throw new Error(
-          'Visual Crossing weather adapter not yet implemented.\n' +
-          'To add: create apps/jobs/adapters/VisualCrossingAdapter.ts\n' +
-          'Set VISUALCROSSING_API_KEY environment variable when ready.'
-        );
+        return new VisualCrossingAdapter(adapterConfig.config as any);
       
       // Future adapters
       case 'espn':

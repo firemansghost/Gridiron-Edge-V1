@@ -55,7 +55,7 @@ adapters:
       
   weatherVc:
     provider: "weather-vc"
-    enabled: false
+    enabled: true
     config:
       baseUrl: "https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline"
       units: "us"      # 'us' = F, mph

@@ -23,6 +23,6 @@ jobs:
       - run: npm run prisma:generate
       - name: Fetch/update weather
         run: |
-          echo "⛅ Updating weather (daily)..."
-          # Wire your CLI once the adapter lands; placeholder for now:
-          node apps/jobs/ingest.js weather --season 2024 --weeks 1
+          echo "⛅ Fetching weather data from Visual Crossing..."
+          npm run ingest -- weatherVc --season 2024 --weeks 1
+          echo "✅ Weather fetch complete"
