@@ -22,6 +22,7 @@ jobs:
       DATA_MODE: mock
       TZ: America/Chicago
       SGO_API_KEY: ${{ secrets.SGO_API_KEY }}
+      VISUALCROSSING_API_KEY: ${{ secrets.VISUALCROSSING_API_KEY }}
     
     steps:
       - name: Checkout repository
@@ -59,11 +60,25 @@ jobs:
 
       - name: Fetch real odds from SGO (optional)
         if: ${{ env.SGO_API_KEY != '' }}
-        continue-on-error: true
         run: |
-          echo "📈 Fetching real odds from SGO..."
+          echo "📈 Fetching odds from SGO..."
           npm run ingest -- sgo --season 2024 --weeks 1
-          echo "✅ Real odds fetched"
+          echo "✅ SGO odds fetched"
+
+      - name: Skip SGO (no API key)
+        if: ${{ env.SGO_API_KEY == '' }}
+        run: echo "⚠️  SGO_API_KEY not set; skipping odds update."
+
+      - name: Fetch weather via Visual Crossing (optional)
+        if: ${{ env.VISUALCROSSING_API_KEY != '' }}
+        run: |
+          echo "⛅ Updating weather..."
+          npm run ingest -- weatherVc --season 2024 --weeks 1
+          echo "✅ Weather data fetched"
+
+      - name: Skip weather (no API key)
+        if: ${{ env.VISUALCROSSING_API_KEY == '' }}
+        run: echo "⚠️  VISUALCROSSING_API_KEY not set; skipping weather update."
 
       - name: Run seed ratings calculation
         run: |
@@ -82,4 +97,10 @@ jobs:
           echo "Season: 2024"
           echo "Week: 1"
           echo "Status: ${{ job.status }}"
+          echo ""
+          echo "Steps executed:"
+          echo "  ✅ Mock data ingest (schedules, teams, lines)"
+          echo "  📈 SGO odds (optional, enabled: ${{ env.SGO_API_KEY != '' }})"
+          echo "  ⛅ Weather data (optional, enabled: ${{ env.VISUALCROSSING_API_KEY != '' }})"
+          echo "  📊 Ratings + implied lines"
           echo "============================================"
