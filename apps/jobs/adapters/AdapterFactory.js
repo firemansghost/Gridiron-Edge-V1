@@ -13,6 +13,7 @@ const js_yaml_1 = __importDefault(require("js-yaml"));
 const fs_1 = __importDefault(require("fs"));
 const MockAdapter_1 = require("./MockAdapter");
 const SportsGameOddsAdapter_1 = require("./SportsGameOddsAdapter");
+const VisualCrossingAdapter_1 = require("./VisualCrossingAdapter");
 class AdapterFactory {
     constructor(configPath = 'datasources.yml') {
         const configFile = fs_1.default.readFileSync(configPath, 'utf8');
@@ -37,9 +38,7 @@ class AdapterFactory {
             case 'sgo':
                 return new SportsGameOddsAdapter_1.SportsGameOddsAdapter(adapterConfig.config);
             case 'weather-vc':
-                throw new Error('Visual Crossing weather adapter not yet implemented.\n' +
-                    'To add: create apps/jobs/adapters/VisualCrossingAdapter.ts\n' +
-                    'Set VISUALCROSSING_API_KEY environment variable when ready.');
+                return new VisualCrossingAdapter_1.VisualCrossingAdapter(adapterConfig.config);
             // Future adapters
             case 'espn':
                 throw new Error('ESPN adapter not yet implemented');
