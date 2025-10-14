@@ -83,3 +83,37 @@ export function getLineValue(
   return null;
 }
 
+/**
+ * Pick the best moneyline from a list of market lines
+ * Uses the same selection logic as pickMarketLine (prefers SGO, then latest)
+ * 
+ * @param lines - Array of market lines to choose from
+ * @returns The best moneyline, or null if none found
+ */
+export function pickMoneyline<T extends MarketLineInput>(lines: T[]): T | null {
+  return pickMarketLine(lines, 'moneyline');
+}
+
+/**
+ * Convert American odds to implied probability
+ * Does not remove vigorish/juice
+ * 
+ * @param american - American odds (negative for favorite, positive for underdog)
+ * @returns Implied probability as a decimal (0-1), or null if input is null
+ * 
+ * @example
+ * americanToProb(-180) // 0.643 (64.3% implied probability)
+ * americanToProb(+150) // 0.400 (40.0% implied probability)
+ */
+export function americanToProb(american?: number | null): number | null {
+  if (american == null) return null;
+  
+  // Positive odds (underdog): probability = 100 / (odds + 100)
+  if (american > 0) {
+    return 100 / (american + 100);
+  }
+  
+  // Negative odds (favorite): probability = |odds| / (|odds| + 100)
+  return (-american) / ((-american) + 100);
+}
+

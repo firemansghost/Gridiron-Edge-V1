@@ -118,7 +118,7 @@ export default function GameDetailPage() {
         {/* Model vs Market Card */}
         <div className="bg-white p-6 rounded-lg shadow mb-8">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Model vs Market</h3>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Spread Comparison */}
             <div>
               <h4 className="text-md font-medium text-gray-900 mb-3">Spread</h4>
@@ -178,6 +178,43 @@ export default function GameDetailPage() {
                 </div>
               </div>
             </div>
+
+            {/* Moneyline */}
+            {game.market.moneyline?.price != null && (
+              <div>
+                <h4 className="text-md font-medium text-gray-900 mb-3">Moneyline</h4>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <div className="text-sm text-gray-500">Pick (ML)</div>
+                    <div className="text-lg font-semibold text-gray-900">{game.market.moneyline.pickLabel}</div>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <div className="text-sm text-gray-500">Market ML</div>
+                    <div className="flex items-center">
+                      <div className="text-lg font-semibold text-gray-900">
+                        {game.market.moneyline.price > 0 ? '+' : ''}{game.market.moneyline.price}
+                      </div>
+                      {game.market.moneyline.meta?.source && (
+                        <span 
+                          className="ml-2 text-xs rounded px-2 py-0.5 bg-blue-100 text-blue-700 font-medium"
+                          title={formatSourceTooltip(game.market.moneyline.meta.source, game.market.moneyline.meta.timestamp)}
+                        >
+                          ({abbrevSource(game.market.moneyline.meta.source)})
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <div className="text-sm text-gray-500">Implied Prob</div>
+                    <div className="text-sm font-medium text-gray-900">
+                      {game.market.moneyline.impliedProb != null 
+                        ? `${(game.market.moneyline.impliedProb * 100).toFixed(1)}%` 
+                        : '—'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Recommended Picks */}

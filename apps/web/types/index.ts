@@ -11,6 +11,19 @@ export interface Team {
   secondaryColor?: string | null;
 }
 
+export interface MarketMeta {
+  source?: string | null;
+  bookName?: string | null;
+  timestamp?: Date | string | null;
+}
+
+export interface MoneylineInfo {
+  price: number | null;       // American odds (e.g., -180, +150)
+  pickLabel: string | null;   // e.g., "Alabama ML"
+  impliedProb: number | null; // Implied probability (0-1, no vig removed)
+  meta?: MarketMeta | null;
+}
+
 export interface Game {
   gameId: string;
   matchup: string;
@@ -20,17 +33,10 @@ export interface Game {
   marketSpread: number;
   marketTotal: number;
   marketMeta?: {
-    spread?: {
-      source?: string | null;
-      bookName?: string | null;
-      timestamp?: Date | string | null;
-    } | null;
-    total?: {
-      source?: string | null;
-      bookName?: string | null;
-      timestamp?: Date | string | null;
-    } | null;
+    spread?: MarketMeta | null;
+    total?: MarketMeta | null;
   };
+  moneyline?: MoneylineInfo;
   impliedSpread: number;
   impliedTotal: number;
   spreadEdge: number;

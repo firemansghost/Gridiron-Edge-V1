@@ -13,6 +13,7 @@ import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import { SkeletonTable } from '@/components/SkeletonRow';
 import { abbrevSource, formatSourceTooltip } from '@/lib/market-badges';
+import { MoneylineInfo, MarketMeta } from '@/types';
 
 interface WeekData {
   gameId: string;
@@ -35,17 +36,10 @@ interface WeekData {
   marketSpread: number;
   marketTotal: number;
   marketMeta?: {
-    spread?: {
-      source?: string | null;
-      bookName?: string | null;
-      timestamp?: Date | string | null;
-    } | null;
-    total?: {
-      source?: string | null;
-      bookName?: string | null;
-      timestamp?: Date | string | null;
-    } | null;
+    spread?: MarketMeta | null;
+    total?: MarketMeta | null;
   };
+  moneyline?: MoneylineInfo;
   impliedSpread: number;
   impliedTotal: number;
   spreadEdge: number;
@@ -309,6 +303,9 @@ function WeeksPageContent() {
                         Model Line
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        ML
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Pick (Spread)
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -330,7 +327,7 @@ function WeeksPageContent() {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {loading ? (
-                      <SkeletonTable rows={5} columns={11} />
+                      <SkeletonTable rows={5} columns={12} />
                     ) : (
                       data?.games?.map((game) => (
                       <tr key={game.gameId} className="hover:bg-gray-50">
@@ -355,6 +352,25 @@ function WeeksPageContent() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           <div className="font-medium">{game.spreadPickLabel}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {game.moneyline?.price != null ? (
+                            <div className="flex items-center">
+                              <span className="font-medium">
+                                {game.moneyline.price > 0 ? '+' : ''}{game.moneyline.price}
+                              </span>
+                              {game.moneyline.meta?.source && (
+                                <span 
+                                  className="ml-2 text-xs rounded px-2 py-0.5 bg-blue-100 text-blue-700 font-medium"
+                                  title={formatSourceTooltip(game.moneyline.meta.source, game.moneyline.meta.timestamp)}
+                                >
+                                  ({abbrevSource(game.moneyline.meta.source)})
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           <div className="font-medium">{game.spreadPickLabel}</div>

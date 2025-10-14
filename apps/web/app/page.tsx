@@ -211,6 +211,9 @@ export default function HomePage() {
                     Market Close
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    ML
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Model Line
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -232,7 +235,7 @@ export default function HomePage() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {loading ? (
-                  <SkeletonTable rows={5} columns={9} />
+                  <SkeletonTable rows={5} columns={10} />
                 ) : (
                   slate?.games?.map((game) => (
                   <tr key={game.gameId} className="hover:bg-gray-50">
@@ -296,6 +299,25 @@ export default function HomePage() {
                           </span>
                         )}
                       </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {game.moneyline?.price != null ? (
+                        <div className="flex items-center">
+                          <span className="font-medium">
+                            {game.moneyline.price > 0 ? '+' : ''}{game.moneyline.price}
+                          </span>
+                          {game.moneyline.meta?.source && (
+                            <span 
+                              className="ml-2 text-xs rounded px-2 py-0.5 bg-blue-100 text-blue-700 font-medium"
+                              title={formatSourceTooltip(game.moneyline.meta.source, game.moneyline.meta.timestamp)}
+                            >
+                              ({abbrevSource(game.moneyline.meta.source)})
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       <div className="font-medium">{game.spreadPickLabel}</div>

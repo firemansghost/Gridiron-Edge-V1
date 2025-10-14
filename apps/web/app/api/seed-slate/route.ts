@@ -13,7 +13,7 @@ import {
   getMockInjuries,
   getMockWeather 
 } from '@/lib/adjustment-helpers';
-import { pickMarketLine, getLineValue } from '@/lib/market-line-helpers';
+import { pickMarketLine, getLineValue, pickMoneyline, americanToProb } from '@/lib/market-line-helpers';
 import { logDataMode } from '@/lib/data-mode';
 import { NextRequest } from 'next/server';
 
@@ -85,6 +85,30 @@ export async function GET(request: NextRequest) {
         bookName: totalLine.bookName ?? null,
         timestamp: totalLine.timestamp ?? null,
       } : null;
+
+      // Pick moneyline and extract metadata
+      const mlLine = pickMoneyline(game.marketLines);
+      const mlVal = getLineValue(mlLine); // American odds (negative favorite, positive dog)
+      const mlMeta = mlLine ? {
+        source: mlLine.source ?? null,
+        bookName: mlLine.bookName ?? null,
+        timestamp: mlLine.timestamp ?? null,
+      } : null;
+
+      // Determine moneyline pick label
+      let moneylinePickLabel: string | null = null;
+      if (mlVal != null) {
+        // Negative odds => that side is the favorite
+        const fav = mlVal < 0 ? game.homeTeam.name : game.awayTeam.name;
+        moneylinePickLabel = `${fav} ML`;
+      }
+
+      const moneyline = {
+        price: mlVal,
+        pickLabel: moneylinePickLabel,
+        impliedProb: americanToProb(mlVal),
+        meta: mlMeta
+      };
 
       // Apply adjustments if enabled
       let impliedSpread = baseImpliedSpread;
@@ -169,6 +193,7 @@ export async function GET(request: NextRequest) {
           spread: spreadMeta,
           total: totalMeta,
         },
+        moneyline,
         
         // Implied data
         impliedSpread,

@@ -11,7 +11,7 @@ export const revalidate = 0; // no caching; always run on server
 
 import { prisma } from '@/lib/prisma';
 import { computeSpreadPick, computeTotalPick } from '@/lib/pick-helpers';
-import { pickMarketLine, getLineValue } from '@/lib/market-line-helpers';
+import { pickMarketLine, getLineValue, pickMoneyline, americanToProb } from '@/lib/market-line-helpers';
 
 export async function GET(request: Request) {
   try {
@@ -113,6 +113,30 @@ export async function GET(request: Request) {
         timestamp: totalLine.timestamp ?? null,
       } : null;
 
+      // Pick moneyline and extract metadata
+      const mlLine = pickMoneyline(game.marketLines);
+      const mlVal = getLineValue(mlLine); // American odds (negative favorite, positive dog)
+      const mlMeta = mlLine ? {
+        source: mlLine.source ?? null,
+        bookName: mlLine.bookName ?? null,
+        timestamp: mlLine.timestamp ?? null,
+      } : null;
+
+      // Determine moneyline pick label
+      let moneylinePickLabel: string | null = null;
+      if (mlVal != null) {
+        // Negative odds => that side is the favorite
+        const fav = mlVal < 0 ? game.homeTeam.name : game.awayTeam.name;
+        moneylinePickLabel = `${fav} ML`;
+      }
+
+      const moneyline = {
+        price: mlVal,
+        pickLabel: moneylinePickLabel,
+        impliedProb: americanToProb(mlVal),
+        meta: mlMeta
+      };
+
       // Compute spread pick details
       const spreadPick = computeSpreadPick(
         impliedSpread,
@@ -184,6 +208,7 @@ export async function GET(request: Request) {
           spread: spreadMeta,
           total: totalMeta,
         },
+        moneyline,
         
         // Implied data
         impliedSpread,
