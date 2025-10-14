@@ -113,10 +113,20 @@ export class SportsGameOddsAdapter implements DataSourceAdapter {
    */
   private async fetchOddsForWeek(season: number, week: number): Promise<any[]> {
     const lines: any[] = [];
+    
+    // Counters for parsed lines
+    let spreads = 0;
+    let totals = 0;
+    let moneylines = 0;
+    
+    // Track unique market keys for logging (first 3 games only)
+    const marketKeysLogged = new Set<string>();
+    let gamesProcessed = 0;
 
     // SGO API endpoint structure (adjust based on actual API docs)
     // Example: GET /v2/odds?league=NCAAF&season=2024&week=1
-    const url = `${this.baseUrl}/odds?league=${this.config.league}&season=${season}&week=${week}`;
+    // Include markets parameter to explicitly request all market types
+    const url = `${this.baseUrl}/odds?league=${this.config.league}&season=${season}&week=${week}&markets=spreads,totals,h2h`;
 
     const response = await fetch(url, {
       method: 'GET',
@@ -143,6 +153,9 @@ export class SportsGameOddsAdapter implements DataSourceAdapter {
         continue;
       }
 
+      gamesProcessed++;
+      const logMarketKeys = gamesProcessed <= 3;
+
       // Process bookmakers
       const bookmakers = game.bookmakers || [];
       for (const bookmaker of bookmakers) {
@@ -153,9 +166,17 @@ export class SportsGameOddsAdapter implements DataSourceAdapter {
           continue;
         }
 
-        // Process markets (spreads, totals)
+        // Process markets (spreads, totals, moneylines)
         const markets = bookmaker.markets || [];
         for (const market of markets) {
+          const marketKey = market.key || 'unknown';
+          
+          // Log market keys for first 3 games
+          if (logMarketKeys && !marketKeysLogged.has(marketKey)) {
+            console.log(`   [SGO] Market key detected: "${marketKey}"`);
+            marketKeysLogged.add(marketKey);
+          }
+          
           const marketLines = this.parseMarket(
             market,
             gameId,
@@ -164,10 +185,21 @@ export class SportsGameOddsAdapter implements DataSourceAdapter {
             bookName,
             game.commence_time
           );
+          
+          // Count by type
+          for (const line of marketLines) {
+            if (line.lineType === 'spread') spreads++;
+            else if (line.lineType === 'total') totals++;
+            else if (line.lineType === 'moneyline') moneylines++;
+          }
+          
           lines.push(...marketLines);
         }
       }
     }
+
+    // Log parsed counts
+    console.log(`   [SGO] Parsed counts — spread: ${spreads}, total: ${totals}, moneyline: ${moneylines}`);
 
     return lines;
   }
@@ -221,6 +253,21 @@ export class SportsGameOddsAdapter implements DataSourceAdapter {
   }
 
   /**
+   * Check if a market key represents a moneyline market
+   */
+  private isMoneylineKey(key: string): boolean {
+    const k = key.toLowerCase();
+    return (
+      k === 'h2h' ||
+      k === 'moneyline' ||
+      k === 'ml' ||
+      k === 'moneyline_2way' ||
+      k === 'moneyline-2way' ||
+      k.includes('h2h')
+    );
+  }
+
+  /**
    * Parse a market (spread, total, or moneyline) into MarketLine objects
    */
   private parseMarket(
@@ -241,7 +288,7 @@ export class SportsGameOddsAdapter implements DataSourceAdapter {
       lineType = 'spread';
     } else if (marketKey.includes('total') || marketKey.includes('over_under')) {
       lineType = 'total';
-    } else if (marketKey.includes('h2h') || marketKey === 'moneyline') {
+    } else if (this.isMoneylineKey(marketKey)) {
       lineType = 'moneyline';
     }
 

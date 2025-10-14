@@ -51,6 +51,11 @@ adapters:
         - pinnacle
         - draftkings
         - fanduel
+      markets:
+        - spread
+        - total
+        - moneyline
+        - h2h
       timeoutMs: 20000
       
   weatherVc:
