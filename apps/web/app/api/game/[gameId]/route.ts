@@ -77,20 +77,20 @@ export async function GET(
       timestamp: mlLine.timestamp ?? null,
     } : null;
 
-    // Determine moneyline pick label
-    let moneylinePickLabel: string | null = null;
+    // Only create moneyline object if we have actual moneyline data
+    let moneyline = null;
     if (mlVal != null) {
-      // Negative odds => that side is the favorite
+      // Determine moneyline pick label
       const fav = mlVal < 0 ? game.homeTeam.name : game.awayTeam.name;
-      moneylinePickLabel = `${fav} ML`;
-    }
+      const moneylinePickLabel = `${fav} ML`;
 
-    const moneyline = {
-      price: mlVal,
-      pickLabel: moneylinePickLabel,
-      impliedProb: americanToProb(mlVal),
-      meta: mlMeta
-    };
+      moneyline = {
+        price: mlVal,
+        pickLabel: moneylinePickLabel,
+        impliedProb: americanToProb(mlVal),
+        meta: mlMeta
+      };
+    }
 
     // Compute spread pick details
     const spreadPick = computeSpreadPick(
