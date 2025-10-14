@@ -13,6 +13,7 @@ import {
   getMockInjuries,
   getMockWeather 
 } from '@/lib/adjustment-helpers';
+import { pickMarketLine, getLineValue } from '@/lib/market-line-helpers';
 import { logDataMode } from '@/lib/data-mode';
 import { NextRequest } from 'next/server';
 
@@ -49,8 +50,10 @@ export async function GET(request: NextRequest) {
     // Format response with implied vs market data
     const slate = games.map(game => {
       const matchupOutput = game.matchupOutputs[0];
-      const spreadLine = game.marketLines.find(line => line.lineType === 'spread');
-      const totalLine = game.marketLines.find(line => line.lineType === 'total');
+      
+      // Use helper to pick best market lines (prefers SGO, then latest)
+      const spreadLine = pickMarketLine(game.marketLines, 'spread');
+      const totalLine = pickMarketLine(game.marketLines, 'total');
       
       // Convert date to America/Chicago timezone
       const kickoffTime = new Date(game.date).toLocaleString('en-US', {
@@ -65,8 +68,10 @@ export async function GET(request: NextRequest) {
 
       const baseImpliedSpread = matchupOutput?.impliedSpread || 0;
       const baseImpliedTotal = matchupOutput?.impliedTotal || 45;
-      const marketSpread = spreadLine?.closingLine || 0;
-      const marketTotal = totalLine?.closingLine || 45;
+      
+      // Get line values (prefers closingLine, falls back to lineValue)
+      const marketSpread = getLineValue(spreadLine) || 0;
+      const marketTotal = getLineValue(totalLine) || 45;
 
       // Apply adjustments if enabled
       let impliedSpread = baseImpliedSpread;

@@ -11,6 +11,7 @@ export const revalidate = 0; // no caching; always run on server
 
 import { prisma } from '@/lib/prisma';
 import { computeSpreadPick, computeTotalPick } from '@/lib/pick-helpers';
+import { pickMarketLine, getLineValue } from '@/lib/market-line-helpers';
 
 export async function GET(request: Request) {
   try {
@@ -56,24 +57,30 @@ export async function GET(request: Request) {
     // Filter by market type if specified
     let filteredGames = games;
     if (market === 'spread') {
-      filteredGames = games.filter(game => 
-        game.matchupOutputs.some(output => 
-          Math.abs(output.impliedSpread - (game.marketLines.find(line => line.lineType === 'spread')?.closingLine || 0)) >= 2.0
-        )
-      );
+      filteredGames = games.filter(game => {
+        const spreadLine = pickMarketLine(game.marketLines, 'spread');
+        const marketSpread = getLineValue(spreadLine) || 0;
+        return game.matchupOutputs.some(output => 
+          Math.abs(output.impliedSpread - marketSpread) >= 2.0
+        );
+      });
     } else if (market === 'total') {
-      filteredGames = games.filter(game => 
-        game.matchupOutputs.some(output => 
-          Math.abs(output.impliedTotal - (game.marketLines.find(line => line.lineType === 'total')?.closingLine || 45)) >= 2.0
-        )
-      );
+      filteredGames = games.filter(game => {
+        const totalLine = pickMarketLine(game.marketLines, 'total');
+        const marketTotal = getLineValue(totalLine) || 45;
+        return game.matchupOutputs.some(output => 
+          Math.abs(output.impliedTotal - marketTotal) >= 2.0
+        );
+      });
     }
 
     // Format response with pick details
     const weekData = filteredGames.map(game => {
       const matchupOutput = game.matchupOutputs[0];
-      const spreadLine = game.marketLines.find(line => line.lineType === 'spread');
-      const totalLine = game.marketLines.find(line => line.lineType === 'total');
+      
+      // Use helper to pick best market lines (prefers SGO, then latest)
+      const spreadLine = pickMarketLine(game.marketLines, 'spread');
+      const totalLine = pickMarketLine(game.marketLines, 'total');
       
       // Convert date to America/Chicago timezone
       const kickoffTime = new Date(game.date).toLocaleString('en-US', {
@@ -88,8 +95,10 @@ export async function GET(request: Request) {
 
       const impliedSpread = matchupOutput?.impliedSpread || 0;
       const impliedTotal = matchupOutput?.impliedTotal || 45;
-      const marketSpread = spreadLine?.closingLine || 0;
-      const marketTotal = totalLine?.closingLine || 45;
+      
+      // Get line values (prefers closingLine, falls back to lineValue)
+      const marketSpread = getLineValue(spreadLine) || 0;
+      const marketTotal = getLineValue(totalLine) || 45;
 
       // Compute spread pick details
       const spreadPick = computeSpreadPick(
