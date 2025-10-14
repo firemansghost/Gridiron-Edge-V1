@@ -25,6 +25,12 @@ jobs:
       - run: npm ci
       - run: npm run prisma:generate
 
+      - name: Ensure schedules (mock, idempotent)
+        run: |
+          echo "🗓️ Ensuring schedules exist for 2024 Week 1..."
+          npm run ingest -- mock --season 2024 --weeks 1
+          echo "✅ Schedules ensured"
+
       - name: Poll odds for current week (spread + total + moneyline)
         run: |
           echo "📈 Polling odds (3x daily) using SGO adapter..."
