@@ -59,10 +59,15 @@ export function pickMarketLine<T extends MarketLineInput>(
 }
 
 /**
- * Extract the closing line value from a market line
- * Falls back to lineValue if closingLine is not available
+ * Extract the line value from a market line
+ * Prefers closingLine, falls back to lineValue
+ * 
+ * @param line - Market line object or null/undefined
+ * @returns The line value, or null if not available
  */
-export function getLineValue(line: MarketLineInput | null): number | null {
+export function getLineValue(
+  line?: { closingLine?: number | null; lineValue?: number | null } | null
+): number | null {
   if (!line) return null;
   
   // Prefer closingLine if available

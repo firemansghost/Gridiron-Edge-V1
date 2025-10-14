@@ -6,6 +6,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { computeSpreadPick, computeTotalPick } from '@/lib/pick-helpers';
+import { pickMarketLine, getLineValue } from '@/lib/market-line-helpers';
 
 export async function GET(
   request: Request,
@@ -42,13 +43,17 @@ export async function GET(
     }
 
     const matchupOutput = game.matchupOutputs[0];
-    const spreadLine = game.marketLines.find(line => line.lineType === 'spread');
-    const totalLine = game.marketLines.find(line => line.lineType === 'total');
+    
+    // Use helper to pick best market lines (prefers SGO, then latest)
+    const spreadLine = pickMarketLine(game.marketLines, 'spread');
+    const totalLine = pickMarketLine(game.marketLines, 'total');
 
     const impliedSpread = matchupOutput?.impliedSpread || 0;
     const impliedTotal = matchupOutput?.impliedTotal || 45;
-    const marketSpread = spreadLine?.closingLine || 0;
-    const marketTotal = totalLine?.closingLine || 45;
+    
+    // Get line values (prefers closingLine, falls back to lineValue)
+    const marketSpread = getLineValue(spreadLine) ?? 0;
+    const marketTotal = getLineValue(totalLine) ?? 45;
 
     // Compute spread pick details
     const spreadPick = computeSpreadPick(
