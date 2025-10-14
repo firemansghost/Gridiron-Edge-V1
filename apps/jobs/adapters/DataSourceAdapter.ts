@@ -40,6 +40,19 @@ export interface MarketLine {
   bookName: string;
 }
 
+export interface TeamBranding {
+  id: string;
+  name?: string;
+  conference?: string;
+  division?: string;
+  mascot?: string;
+  city?: string;
+  state?: string;
+  logoUrl?: string;
+  primaryColor?: string;
+  secondaryColor?: string;
+}
+
 export interface DataSourceAdapter {
   /**
    * Fetch team information for a given season
@@ -65,6 +78,12 @@ export interface DataSourceAdapter {
    * Check if this adapter is available/configured
    */
   isAvailable(): Promise<boolean>;
+
+  /**
+   * Fetch team branding data (optional)
+   * Not all adapters provide branding information
+   */
+  getTeamBranding?(): Promise<TeamBranding[]>;
 }
 
 export interface AdapterConfig {

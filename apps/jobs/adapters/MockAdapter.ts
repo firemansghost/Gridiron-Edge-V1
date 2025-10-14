@@ -5,9 +5,10 @@
  * Used for development and testing without external API dependencies.
  */
 
-import fs from 'fs';
+import fs from 'fs/promises';
+import { existsSync, readFileSync } from 'fs';
 import path from 'path';
-import { DataSourceAdapter, Team, Game, MarketLine } from './DataSourceAdapter';
+import { DataSourceAdapter, Team, Game, MarketLine, TeamBranding } from './DataSourceAdapter';
 
 export class MockAdapter implements DataSourceAdapter {
   private dataPath: string;
@@ -30,7 +31,7 @@ export class MockAdapter implements DataSourceAdapter {
 
   async isAvailable(): Promise<boolean> {
     try {
-      return fs.existsSync(this.dataPath);
+      return existsSync(this.dataPath);
     } catch {
       return false;
     }
@@ -39,11 +40,11 @@ export class MockAdapter implements DataSourceAdapter {
   async getTeams(season: number): Promise<Team[]> {
     const filePath = path.join(this.dataPath, this.fileFormats.teams);
     
-    if (!fs.existsSync(filePath)) {
+    if (!existsSync(filePath)) {
       throw new Error(`Teams file not found: ${filePath}`);
     }
 
-    const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const data = JSON.parse(readFileSync(filePath, 'utf8'));
     return data.teams || data;
   }
 
@@ -58,12 +59,12 @@ export class MockAdapter implements DataSourceAdapter {
           .replace('{week}', week.toString())
       );
 
-      if (!fs.existsSync(filePath)) {
+      if (!existsSync(filePath)) {
         console.warn(`Schedule file not found for season ${season}, week ${week}: ${filePath}`);
         continue;
       }
 
-      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      const data = JSON.parse(readFileSync(filePath, 'utf8'));
       const weekGames = data.games || data;
       
       // Convert date strings to Date objects
@@ -89,12 +90,12 @@ export class MockAdapter implements DataSourceAdapter {
           .replace('{week}', week.toString())
       );
 
-      if (!fs.existsSync(filePath)) {
+      if (!existsSync(filePath)) {
         console.warn(`Market lines file not found for season ${season}, week ${week}: ${filePath}`);
         continue;
       }
 
-      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      const data = JSON.parse(readFileSync(filePath, 'utf8'));
       const weekLines = data.marketLines || data;
       
       // Convert timestamp strings to Date objects
@@ -107,5 +108,21 @@ export class MockAdapter implements DataSourceAdapter {
     }
 
     return marketLines;
+  }
+
+  async getTeamBranding(): Promise<TeamBranding[]> {
+    try {
+      const filePath = path.join(process.cwd(), 'data', 'teams-branding.json');
+      const data = await fs.readFile(filePath, 'utf8');
+      const parsed = JSON.parse(data);
+      return parsed.teams || parsed || [];
+    } catch (error: any) {
+      if (error.code === 'ENOENT') {
+        console.warn('[MockAdapter] team branding file not found, skipping.');
+        return [];
+      }
+      console.warn('[MockAdapter] Error reading team branding:', error.message);
+      return [];
+    }
   }
 }

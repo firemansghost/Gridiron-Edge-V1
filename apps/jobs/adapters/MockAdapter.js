@@ -10,7 +10,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MockAdapter = void 0;
-const fs_1 = __importDefault(require("fs"));
+const promises_1 = __importDefault(require("fs/promises"));
+const fs_1 = require("fs");
 const path_1 = __importDefault(require("path"));
 class MockAdapter {
     constructor(config) {
@@ -23,7 +24,7 @@ class MockAdapter {
     }
     async isAvailable() {
         try {
-            return fs_1.default.existsSync(this.dataPath);
+            return (0, fs_1.existsSync)(this.dataPath);
         }
         catch {
             return false;
@@ -31,10 +32,10 @@ class MockAdapter {
     }
     async getTeams(season) {
         const filePath = path_1.default.join(this.dataPath, this.fileFormats.teams);
-        if (!fs_1.default.existsSync(filePath)) {
+        if (!(0, fs_1.existsSync)(filePath)) {
             throw new Error(`Teams file not found: ${filePath}`);
         }
-        const data = JSON.parse(fs_1.default.readFileSync(filePath, 'utf8'));
+        const data = JSON.parse((0, fs_1.readFileSync)(filePath, 'utf8'));
         return data.teams || data;
     }
     async getSchedules(season, weeks) {
@@ -43,11 +44,11 @@ class MockAdapter {
             const filePath = path_1.default.join(this.dataPath, this.fileFormats.schedules
                 .replace('{season}', season.toString())
                 .replace('{week}', week.toString()));
-            if (!fs_1.default.existsSync(filePath)) {
+            if (!(0, fs_1.existsSync)(filePath)) {
                 console.warn(`Schedule file not found for season ${season}, week ${week}: ${filePath}`);
                 continue;
             }
-            const data = JSON.parse(fs_1.default.readFileSync(filePath, 'utf8'));
+            const data = JSON.parse((0, fs_1.readFileSync)(filePath, 'utf8'));
             const weekGames = data.games || data;
             // Convert date strings to Date objects
             const processedGames = weekGames.map((game) => ({
@@ -64,11 +65,11 @@ class MockAdapter {
             const filePath = path_1.default.join(this.dataPath, this.fileFormats.marketLines
                 .replace('{season}', season.toString())
                 .replace('{week}', week.toString()));
-            if (!fs_1.default.existsSync(filePath)) {
+            if (!(0, fs_1.existsSync)(filePath)) {
                 console.warn(`Market lines file not found for season ${season}, week ${week}: ${filePath}`);
                 continue;
             }
-            const data = JSON.parse(fs_1.default.readFileSync(filePath, 'utf8'));
+            const data = JSON.parse((0, fs_1.readFileSync)(filePath, 'utf8'));
             const weekLines = data.marketLines || data;
             // Convert timestamp strings to Date objects
             const processedLines = weekLines.map((line) => ({
@@ -78,6 +79,22 @@ class MockAdapter {
             marketLines.push(...processedLines);
         }
         return marketLines;
+    }
+    async getTeamBranding() {
+        try {
+            const filePath = path_1.default.join(process.cwd(), 'data', 'teams-branding.json');
+            const data = await promises_1.default.readFile(filePath, 'utf8');
+            const parsed = JSON.parse(data);
+            return parsed.teams || parsed || [];
+        }
+        catch (error) {
+            if (error.code === 'ENOENT') {
+                console.warn('[MockAdapter] team branding file not found, skipping.');
+                return [];
+            }
+            console.warn('[MockAdapter] Error reading team branding:', error.message);
+            return [];
+        }
     }
 }
 exports.MockAdapter = MockAdapter;

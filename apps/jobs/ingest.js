@@ -366,10 +366,6 @@ async function main() {
     const marketLines = await adapter.getMarketLines(options.season, options.weeks);
     console.log(`   Found ${marketLines.length} market lines`);
 
-    console.log('📥 Fetching team branding...');
-    const teamBranding = await adapter.getTeamBranding();
-    console.log(`   Found ${teamBranding.length} team branding entries`);
-
     // Upsert data to database
     console.log('💾 Upserting teams...');
     const { upserted: teamsUpserted, teamIds } = await upsertTeams(teams);
@@ -383,9 +379,39 @@ async function main() {
     const marketLinesUpserted = await upsertMarketLines(marketLines);
     console.log(`   Upserted ${marketLinesUpserted} market lines`);
 
-    console.log('💾 Upserting team branding...');
-    const teamBrandingUpserted = await upsertTeamBranding(teamBranding);
-    console.log(`   Upserted ${teamBrandingUpserted} team branding entries`);
+    // Branding (optional)
+    if (typeof adapter.getTeamBranding === 'function') {
+      console.log('📥 Fetching team branding...');
+      const teamBranding = await adapter.getTeamBranding();
+      console.log(`   Found ${teamBranding.length} team branding entries`);
+      
+      console.log('💾 Upserting team branding...');
+      let brandingCount = 0;
+      for (const b of teamBranding) {
+        try {
+          await prisma.team.update({
+            where: { id: b.id },
+            data: {
+              name: b.name ?? undefined,
+              conference: b.conference ?? undefined,
+              division: b.division ?? undefined,
+              mascot: b.mascot ?? undefined,
+              city: b.city ?? undefined,
+              state: b.state ?? undefined,
+              logoUrl: b.logoUrl ?? null,
+              primaryColor: b.primaryColor ?? null,
+              secondaryColor: b.secondaryColor ?? null,
+            },
+          });
+          brandingCount++;
+        } catch (err) {
+          // Ignore missing teams
+        }
+      }
+      console.log(`   Upserted ${brandingCount} team branding entries`);
+    } else {
+      console.log('⏭️  Adapter has no getTeamBranding(); skipping branding step.');
+    }
 
     console.log('✅ Data ingestion completed successfully!');
 
