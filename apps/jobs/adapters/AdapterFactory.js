@@ -14,6 +14,7 @@ const fs_1 = __importDefault(require("fs"));
 const MockAdapter_1 = require("./MockAdapter");
 const SportsGameOddsAdapter_1 = require("./SportsGameOddsAdapter");
 const VisualCrossingAdapter_1 = require("./VisualCrossingAdapter");
+const CFBDAdapter_1 = require("./CFBDAdapter");
 class AdapterFactory {
     constructor(configPath = 'datasources.yml') {
         const configFile = fs_1.default.readFileSync(configPath, 'utf8');
@@ -39,6 +40,8 @@ class AdapterFactory {
                 return new SportsGameOddsAdapter_1.SportsGameOddsAdapter(adapterConfig.config);
             case 'weather-vc':
                 return new VisualCrossingAdapter_1.VisualCrossingAdapter(adapterConfig.config);
+            case 'cfbd':
+                return new CFBDAdapter_1.CFBDAdapter(adapterConfig.config);
             // Future adapters
             case 'espn':
                 throw new Error('ESPN adapter not yet implemented');

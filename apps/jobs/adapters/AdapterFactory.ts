@@ -11,6 +11,7 @@ import { DataSourceAdapter, AdapterConfig, DataSourcesConfig } from './DataSourc
 import { MockAdapter } from './MockAdapter';
 import { SportsGameOddsAdapter } from './SportsGameOddsAdapter';
 import { VisualCrossingAdapter } from './VisualCrossingAdapter';
+import { CFBDAdapter } from './CFBDAdapter';
 
 export class AdapterFactory {
   private config: DataSourcesConfig;
@@ -45,6 +46,9 @@ export class AdapterFactory {
       
       case 'weather-vc':
         return new VisualCrossingAdapter(adapterConfig.config as any);
+      
+      case 'cfbd':
+        return new CFBDAdapter(adapterConfig.config as any);
       
       // Future adapters
       case 'espn':

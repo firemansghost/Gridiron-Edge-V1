@@ -21,6 +21,7 @@ jobs:
       DIRECT_URL: ${{ secrets.DIRECT_URL }}
       DATA_MODE: mock
       TZ: America/Chicago
+      CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
       SGO_API_KEY: ${{ secrets.SGO_API_KEY }}
       VISUALCROSSING_API_KEY: ${{ secrets.VISUALCROSSING_API_KEY }}
     
@@ -52,9 +53,17 @@ jobs:
       - name: Generate Prisma Client
         run: npm run prisma:generate
 
-      - name: Run mock data ingest
+      - name: Ingest schedules via CFBD (optional)
+        if: ${{ env.CFBD_API_KEY != '' }}
         run: |
-          echo "📥 Starting mock data ingest for 2024 Week 1..."
+          echo "🗓️ Ingesting real schedules from CFBD..."
+          npm run ingest -- cfbd --season 2024 --weeks 1
+          echo "✅ CFBD schedules ingested"
+
+      - name: Fallback - Ensure mock schedules (if no CFBD key)
+        if: ${{ env.CFBD_API_KEY == '' }}
+        run: |
+          echo "📥 Using mock data (no CFBD_API_KEY)..."
           npm run ingest -- mock --season 2024 --weeks 1
           echo "✅ Mock data ingest complete"
 
@@ -99,7 +108,8 @@ jobs:
           echo "Status: ${{ job.status }}"
           echo ""
           echo "Steps executed:"
-          echo "  ✅ Mock data ingest (schedules, teams, lines)"
+          echo "  🗓️ CFBD schedules (optional, enabled: ${{ env.CFBD_API_KEY != '' }})"
+          echo "  📥 Mock fallback (enabled: ${{ env.CFBD_API_KEY == '' }})"
           echo "  📈 SGO odds (optional, enabled: ${{ env.SGO_API_KEY != '' }})"
           echo "  ⛅ Weather data (optional, enabled: ${{ env.VISUALCROSSING_API_KEY != '' }})"
           echo "  📊 Ratings + implied lines"

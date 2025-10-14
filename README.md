@@ -34,6 +34,10 @@ Create these environment variables in Vercel → Project → Settings → Enviro
 ### Optional: Live Data Adapters
 For real-time data ingestion (not required for demo/mock data):
 
+**Schedules:**
+- `CFBD_API_KEY` - CollegeFootballData API key for real NCAAF schedules with venue/city details
+- `CFBD_BASE_URL` - CFBD API base URL (optional, defaults to config in datasources.yml)
+
 **Odds & Lines:**
 - `SGO_API_KEY` - SportsGameOdds API key for real-time odds and lines
 - `SGO_BASE_URL` - SportsGameOdds API base URL (optional, defaults to config in datasources.yml)
@@ -44,7 +48,7 @@ For real-time data ingestion (not required for demo/mock data):
 - `VISUALCROSSING_API_KEY` - Visual Crossing Weather API key for game-time weather data
 - `OPENWEATHER_API_KEY` - OpenWeather API key (alternative/backup weather source)
 
-These are only needed when using the `sgo`, `weather-vc`, or other live data adapters. See `datasources.yml` for configuration.
+These are only needed when using the `cfbd`, `sgo`, `weather-vc`, or other live data adapters. See `datasources.yml` for configuration.
 
 ### Security Notes
 - **Never add `SUPABASE_SERVICE_ROLE_KEY`** to Vercel environment variables

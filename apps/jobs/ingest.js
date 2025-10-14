@@ -72,6 +72,7 @@ Examples:
 
 Available adapters:
   mock             Mock data source (reads from /data/ directory)
+  cfbd             CollegeFootballData API (schedules only, requires CFBD_API_KEY)
   sgo              SportsGameOdds API (odds only, requires SGO_API_KEY)
   weatherVc        Visual Crossing Weather API (logs only, requires VISUALCROSSING_API_KEY)
   espn             ESPN API (not yet implemented)
@@ -79,9 +80,10 @@ Available adapters:
   sportsReference  Sports Reference (not yet implemented)
 
 Notes:
+  - CFBD adapter provides real schedules with venue/city details
   - SGO adapter only provides odds/lines, not schedules or teams
   - Weather adapters only log data, do not write to database (no weather table yet)
-  - For full ingestion, run mock/cfbd adapter first, then sgo for odds
+  - For full ingestion, run cfbd adapter first, then sgo for odds, then weatherVc
 `);
 }
 

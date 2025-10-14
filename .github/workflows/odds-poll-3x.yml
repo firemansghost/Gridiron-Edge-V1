@@ -12,7 +12,7 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       DIRECT_URL:   ${{ secrets.DIRECT_URL }}
-      # pick one provider's key to require; it's ok if you set both
+      CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
       SGO_API_KEY:  ${{ secrets.SGO_API_KEY }}
       ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
       SGO_BASE_URL: https://api.sportsgameodds.com
@@ -25,11 +25,19 @@ jobs:
       - run: npm ci
       - run: npm run prisma:generate
 
-      - name: Ensure schedules (mock, idempotent)
+      - name: Ingest schedules via CFBD (optional)
+        if: ${{ env.CFBD_API_KEY != '' }}
         run: |
-          echo "🗓️ Ensuring schedules exist for 2024 Week 1..."
+          echo "🗓️ Ingesting real schedules from CFBD..."
+          npm run ingest -- cfbd --season 2024 --weeks 1
+          echo "✅ CFBD schedules ingested"
+
+      - name: Fallback - Ensure mock schedules (if no CFBD key)
+        if: ${{ env.CFBD_API_KEY == '' }}
+        run: |
+          echo "🗓️ Using mock schedules (no CFBD_API_KEY)..."
           npm run ingest -- mock --season 2024 --weeks 1
-          echo "✅ Schedules ensured"
+          echo "✅ Mock schedules ensured"
 
       - name: Poll odds for current week (spread + total + moneyline)
         run: |

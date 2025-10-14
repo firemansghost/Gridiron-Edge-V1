@@ -61,6 +61,14 @@ adapters:
       units: "us"      # 'us' = F, mph
       include: "hours" # to get hourly along the game time
       timeoutMs: 20000
+      
+  cfbd:
+    provider: "cfbd"
+    enabled: true
+    config:
+      baseUrl: "https://api.collegefootballdata.com"
+      division: "fbs"
+      timeoutMs: 20000
 
 # Default adapter to use when none specified
 defaultAdapter: "mock"
