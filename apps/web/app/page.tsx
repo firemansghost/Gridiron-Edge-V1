@@ -14,6 +14,7 @@ import { DataModeBadge } from '@/components/DataModeBadge';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import { SkeletonTable } from '@/components/SkeletonRow';
+import { abbrevSource, formatSourceTooltip } from '@/lib/market-badges';
 
 export default function HomePage() {
   const [slate, setSlate] = useState<SlateData | null>(null);
@@ -273,8 +274,28 @@ export default function HomePage() {
                       {game.kickoff}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      <div>Spread: {game.marketSpread > 0 ? '+' : ''}{game.marketSpread.toFixed(1)}</div>
-                      <div>Total: {game.marketTotal.toFixed(1)}</div>
+                      <div className="flex items-center">
+                        <span>Spread: {game.marketSpread > 0 ? '+' : ''}{game.marketSpread.toFixed(1)}</span>
+                        {game.marketMeta?.spread?.source && (
+                          <span 
+                            className="ml-2 text-xs rounded px-2 py-0.5 bg-blue-100 text-blue-700 font-medium"
+                            title={formatSourceTooltip(game.marketMeta.spread.source, game.marketMeta.spread.timestamp)}
+                          >
+                            ({abbrevSource(game.marketMeta.spread.source)})
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center">
+                        <span>Total: {game.marketTotal.toFixed(1)}</span>
+                        {game.marketMeta?.total?.source && (
+                          <span 
+                            className="ml-2 text-xs rounded px-2 py-0.5 bg-blue-100 text-blue-700 font-medium"
+                            title={formatSourceTooltip(game.marketMeta.total.source, game.marketMeta.total.timestamp)}
+                          >
+                            ({abbrevSource(game.marketMeta.total.source)})
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       <div className="font-medium">{game.spreadPickLabel}</div>

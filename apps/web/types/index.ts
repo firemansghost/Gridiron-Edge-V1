@@ -19,6 +19,18 @@ export interface Game {
   neutralSite: boolean;
   marketSpread: number;
   marketTotal: number;
+  marketMeta?: {
+    spread?: {
+      source?: string | null;
+      bookName?: string | null;
+      timestamp?: Date | string | null;
+    } | null;
+    total?: {
+      source?: string | null;
+      bookName?: string | null;
+      timestamp?: Date | string | null;
+    } | null;
+  };
   impliedSpread: number;
   impliedTotal: number;
   spreadEdge: number;

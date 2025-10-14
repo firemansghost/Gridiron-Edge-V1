@@ -11,6 +11,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
+import { abbrevSource, formatSourceTooltip } from '@/lib/market-badges';
 
 export default function GameDetailPage() {
   const params = useParams();
@@ -128,8 +129,18 @@ export default function GameDetailPage() {
                 </div>
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-gray-500">Market Line</div>
-                  <div className="text-lg font-semibold text-gray-900">
-                    {game.market.spread > 0 ? '+' : ''}{game.market.spread.toFixed(1)}
+                  <div className="flex items-center">
+                    <div className="text-lg font-semibold text-gray-900">
+                      {game.market.spread > 0 ? '+' : ''}{game.market.spread.toFixed(1)}
+                    </div>
+                    {game.market.meta?.spread?.source && (
+                      <span 
+                        className="ml-2 text-xs rounded px-2 py-0.5 bg-blue-100 text-blue-700 font-medium"
+                        title={formatSourceTooltip(game.market.meta.spread.source, game.market.meta.spread.timestamp)}
+                      >
+                        ({abbrevSource(game.market.meta.spread.source)})
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="flex justify-between items-center">
@@ -149,7 +160,17 @@ export default function GameDetailPage() {
                 </div>
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-gray-500">Market Total</div>
-                  <div className="text-lg font-semibold text-gray-900">{game.market.total.toFixed(1)}</div>
+                  <div className="flex items-center">
+                    <div className="text-lg font-semibold text-gray-900">{game.market.total.toFixed(1)}</div>
+                    {game.market.meta?.total?.source && (
+                      <span 
+                        className="ml-2 text-xs rounded px-2 py-0.5 bg-blue-100 text-blue-700 font-medium"
+                        title={formatSourceTooltip(game.market.meta.total.source, game.market.meta.total.timestamp)}
+                      >
+                        ({abbrevSource(game.market.meta.total.source)})
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-gray-500">Edge</div>

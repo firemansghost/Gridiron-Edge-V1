@@ -12,6 +12,7 @@ import Link from 'next/link';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import { SkeletonTable } from '@/components/SkeletonRow';
+import { abbrevSource, formatSourceTooltip } from '@/lib/market-badges';
 
 interface WeekData {
   gameId: string;
@@ -33,6 +34,18 @@ interface WeekData {
   neutralSite: boolean;
   marketSpread: number;
   marketTotal: number;
+  marketMeta?: {
+    spread?: {
+      source?: string | null;
+      bookName?: string | null;
+      timestamp?: Date | string | null;
+    } | null;
+    total?: {
+      source?: string | null;
+      bookName?: string | null;
+      timestamp?: Date | string | null;
+    } | null;
+  };
   impliedSpread: number;
   impliedTotal: number;
   spreadEdge: number;
@@ -354,8 +367,28 @@ function WeeksPageContent() {
                           )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          <div>Spread: {game.marketSpread > 0 ? '+' : ''}{game.marketSpread.toFixed(1)}</div>
-                          <div>Total: {game.marketTotal.toFixed(1)}</div>
+                          <div className="flex items-center">
+                            <span>Spread: {game.marketSpread > 0 ? '+' : ''}{game.marketSpread.toFixed(1)}</span>
+                            {game.marketMeta?.spread?.source && (
+                              <span 
+                                className="ml-2 text-xs rounded px-2 py-0.5 bg-blue-100 text-blue-700 font-medium"
+                                title={formatSourceTooltip(game.marketMeta.spread.source, game.marketMeta.spread.timestamp)}
+                              >
+                                ({abbrevSource(game.marketMeta.spread.source)})
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center">
+                            <span>Total: {game.marketTotal.toFixed(1)}</span>
+                            {game.marketMeta?.total?.source && (
+                              <span 
+                                className="ml-2 text-xs rounded px-2 py-0.5 bg-blue-100 text-blue-700 font-medium"
+                                title={formatSourceTooltip(game.marketMeta.total.source, game.marketMeta.total.timestamp)}
+                              >
+                                ({abbrevSource(game.marketMeta.total.source)})
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           <div>Spread: +{game.spreadEdge.toFixed(1)}</div>

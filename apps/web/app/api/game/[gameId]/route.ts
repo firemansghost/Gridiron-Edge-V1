@@ -55,6 +55,19 @@ export async function GET(
     const marketSpread = getLineValue(spreadLine) ?? 0;
     const marketTotal = getLineValue(totalLine) ?? 45;
 
+    // Extract market metadata for source badges
+    const spreadMeta = spreadLine ? {
+      source: spreadLine.source ?? null,
+      bookName: spreadLine.bookName ?? null,
+      timestamp: spreadLine.timestamp ?? null,
+    } : null;
+
+    const totalMeta = totalLine ? {
+      source: totalLine.source ?? null,
+      bookName: totalLine.bookName ?? null,
+      timestamp: totalLine.timestamp ?? null,
+    } : null;
+
     // Compute spread pick details
     const spreadPick = computeSpreadPick(
       impliedSpread,
@@ -139,7 +152,11 @@ export async function GET(
       market: {
         spread: marketSpread,
         total: marketTotal,
-        source: spreadLine?.bookName || 'Unknown'
+        source: spreadLine?.bookName || 'Unknown',
+        meta: {
+          spread: spreadMeta,
+          total: totalMeta,
+        }
       },
       
       // Implied data

@@ -73,6 +73,19 @@ export async function GET(request: NextRequest) {
       const marketSpread = getLineValue(spreadLine) || 0;
       const marketTotal = getLineValue(totalLine) || 45;
 
+      // Extract market metadata for source badges
+      const spreadMeta = spreadLine ? {
+        source: spreadLine.source ?? null,
+        bookName: spreadLine.bookName ?? null,
+        timestamp: spreadLine.timestamp ?? null,
+      } : null;
+
+      const totalMeta = totalLine ? {
+        source: totalLine.source ?? null,
+        bookName: totalLine.bookName ?? null,
+        timestamp: totalLine.timestamp ?? null,
+      } : null;
+
       // Apply adjustments if enabled
       let impliedSpread = baseImpliedSpread;
       let impliedTotal = baseImpliedTotal;
@@ -152,6 +165,10 @@ export async function GET(request: NextRequest) {
         // Market data
         marketSpread,
         marketTotal,
+        marketMeta: {
+          spread: spreadMeta,
+          total: totalMeta,
+        },
         
         // Implied data
         impliedSpread,
