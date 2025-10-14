@@ -25,6 +25,11 @@ export default function NewRulesetPage() {
   const [maxGamesPerWeek, setMaxGamesPerWeek] = useState('');
   const [includeTeams, setIncludeTeams] = useState('');
   const [excludeTeams, setExcludeTeams] = useState('');
+  const [markets, setMarkets] = useState({
+    spread: true,
+    total: true,
+    moneyline: false,
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,10 +42,16 @@ export default function NewRulesetPage() {
       if (confidenceB) confidenceIn.push('B');
       if (confidenceC) confidenceIn.push('C');
 
+      const selectedMarkets = [];
+      if (markets.spread) selectedMarkets.push('spread');
+      if (markets.total) selectedMarkets.push('total');
+      if (markets.moneyline) selectedMarkets.push('moneyline');
+
       const ruleset = {
         name,
         description: description || null,
         parameters: {
+          markets: selectedMarkets,
           minSpreadEdge: parseFloat(minSpreadEdge) || 0,
           minTotalEdge: parseFloat(minTotalEdge) || 0,
           confidenceIn: confidenceIn.length > 0 ? confidenceIn : ['A', 'B', 'C'],
@@ -151,6 +162,46 @@ export default function NewRulesetPage() {
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                 />
               </div>
+            </div>
+          </div>
+
+          {/* Markets */}
+          <div className="border-t pt-6">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">Markets</h3>
+            <div className="space-y-2">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={markets.spread}
+                  onChange={(e) => setMarkets({...markets, spread: e.target.checked})}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="ml-2 text-sm text-gray-700">
+                  Spread - Point spread betting
+                </span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={markets.total}
+                  onChange={(e) => setMarkets({...markets, total: e.target.checked})}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="ml-2 text-sm text-gray-700">
+                  Total - Over/Under betting
+                </span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={markets.moneyline}
+                  onChange={(e) => setMarkets({...markets, moneyline: e.target.checked})}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="ml-2 text-sm text-gray-700">
+                  Moneyline - Win/loss betting
+                </span>
+              </label>
             </div>
           </div>
 

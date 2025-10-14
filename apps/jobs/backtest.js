@@ -11,7 +11,7 @@
  *   --weeks       Week range (e.g., "1-1" or "1-14")
  *   --minEdge     Minimum edge threshold (default: 0)
  *   --confidence  Confidence tiers to include (e.g., "A,B" or omit for all)
- *   --bet         Bet types: "spread", "total", or "both" (default: "both")
+ *   --bet         Bet types: "spread", "total", "moneyline", or "both"/"all" (default: "both")
  *   --price       Betting price, e.g., -110 (default: -110)
  *   --kelly       Kelly fraction (0 = flat, 0.5 = half-Kelly, default: 0)
  *   --model       Model version (e.g., "v0.0.1" or omit for latest)
@@ -26,8 +26,11 @@
  *   # High-confidence only, spread bets, 2.5pt minimum edge
  *   npm run backtest -- --season 2024 --weeks 1-1 --confidence A,B --bet spread --minEdge 2.5
  * 
- *   # Union of spread + total bets with half-Kelly
- *   npm run backtest -- --season 2024 --weeks 1-1 --bet both --kelly 0.5 --verbose
+ *   # Union of spread + total + moneyline bets with half-Kelly
+ *   npm run backtest -- --season 2024 --weeks 1-1 --bet all --kelly 0.5 --verbose
+ * 
+ *   # Moneyline bets only
+ *   npm run backtest -- --season 2024 --weeks 1-1 --bet moneyline --verbose
  */
 
 const { PrismaClient } = require('@prisma/client');
@@ -84,7 +87,9 @@ function parseArgs() {
       case '--bet':
         const betArg = nextArg.toLowerCase();
         if (betArg === 'both') {
-          params.bet = ['spread', 'total'];
+          params.bet = ['spread', 'total', 'moneyline'];
+        } else if (betArg === 'all') {
+          params.bet = ['spread', 'total', 'moneyline'];
         } else {
           params.bet = nextArg.split(',').map(b => b.trim().toLowerCase());
         }
@@ -214,6 +219,18 @@ function determineBetResult(betType, teamSide, line, homeScore, awayScore) {
 
     const win = (teamSide === 'over' && diff > 0) || (teamSide === 'under' && diff < 0);
     return { result: win ? 'WIN' : 'LOSS', pnl: win ? 1 : -1 };
+  } else if (betType === 'moneyline') {
+    // teamSide is 'home' or 'away'
+    // For moneyline, we just need to know who won the game
+    const homeWon = homeScore > awayScore;
+    const awayWon = awayScore > homeScore;
+    
+    if (homeScore === awayScore) {
+      return { result: 'PUSH', pnl: 0 };
+    }
+    
+    const win = (teamSide === 'home' && homeWon) || (teamSide === 'away' && awayWon);
+    return { result: win ? 'WIN' : 'LOSS', pnl: win ? 1 : -1 };
   }
 
   return { result: 'UNKNOWN', pnl: 0 };
@@ -281,6 +298,7 @@ async function runBacktest(params) {
         afterConfidenceFilter: 0,
         spreadQualified: 0,
         totalQualified: 0,
+        moneylineQualified: 0,
         unionBets: 0,
         withScores: 0,
         pending: 0,
@@ -395,6 +413,58 @@ async function runBacktest(params) {
             funnelCounts.pending++;
           }
         }
+
+        // Check moneyline bet (UNION logic: evaluate independently)
+        if (params.bet.includes('moneyline')) {
+          // Find moneyline market line
+          const moneylineLine = game.marketLines.find(l => l.lineType === 'moneyline');
+          
+          // For moneyline, we include if price exists (no edge threshold required)
+          if (moneylineLine && moneylineLine.closingLine !== null) {
+            funnelCounts.moneylineQualified++;
+            
+            // Determine which team is favored based on the moneyline price
+            const mlPrice = moneylineLine.closingLine;
+            const favoredSide = mlPrice < 0 ? 'home' : 'away';
+            const favoredTeam = favoredSide === 'home' ? game.homeTeam.name : game.awayTeam.name;
+            
+            // For moneyline, we use a simple edge calculation (implied prob vs 50%)
+            // For now, we'll use a simple approach: include all moneylines
+            const moneylineEdge = 0; // No edge threshold for ML in first pass
+            
+            const stake = calculateKellyStake(moneylineEdge, mlPrice, params.kelly);
+            const betResult = determineBetResult('moneyline', favoredSide, 0, game.homeScore, game.awayScore);
+            const pnl = betResult.result === 'PENDING' ? 0 : betResult.pnl * stake;
+            const clv = moneylineEdge; // Simplified CLV
+
+            bets.push({
+              gameId: game.id,
+              season,
+              week,
+              matchup: `${game.awayTeam.name} @ ${game.homeTeam.name}`,
+              betType: 'moneyline',
+              pickLabel: `${favoredTeam} ML`,
+              line: mlPrice,
+              marketLine: mlPrice,
+              price: mlPrice,
+              stake,
+              edge: moneylineEdge,
+              confidence: matchupOutput.edgeConfidence,
+              clv,
+              result: betResult.result,
+              pnl,
+              homeScore: game.homeScore,
+              awayScore: game.awayScore,
+            });
+
+            funnelCounts.unionBets++;
+            if (hasScores) {
+              funnelCounts.withScores++;
+            } else {
+              funnelCounts.pending++;
+            }
+          }
+        }
       }
 
       // Verbose logging: show funnel
@@ -408,6 +478,9 @@ async function runBacktest(params) {
         }
         if (params.bet.includes('total')) {
           console.log(`      Total edge ≥ ${params.minEdge}: ${funnelCounts.totalQualified}`);
+        }
+        if (params.bet.includes('moneyline')) {
+          console.log(`      Moneyline available: ${funnelCounts.moneylineQualified}`);
         }
         console.log(`      Union bets written: ${funnelCounts.unionBets}`);
         console.log(`      With scores: ${funnelCounts.withScores}`);

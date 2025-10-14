@@ -7,6 +7,8 @@
 import { prisma } from '@/lib/prisma';
 import { NextRequest, NextResponse } from 'next/server';
 import { computeSpreadPick, computeTotalPick } from '@/lib/pick-helpers';
+import { pickMoneyline, getLineValue, americanToProb } from '@/lib/market-line-helpers';
+import { abbrevSource } from '@/lib/market-badges';
 
 export async function GET(request: NextRequest) {
   try {
@@ -35,6 +37,9 @@ export async function GET(request: NextRequest) {
     }
 
     const params = ruleset.parameters as any;
+    
+    // Default markets to spread and total if not specified
+    const markets = params.markets || ['spread', 'total'];
 
     // Fetch games for the week
     const games = await prisma.game.findMany({
@@ -66,21 +71,44 @@ export async function GET(request: NextRequest) {
 
       const spreadLine = game.marketLines.find(line => line.lineType === 'spread');
       const totalLine = game.marketLines.find(line => line.lineType === 'total');
+      const moneylineLine = pickMoneyline(game.marketLines);
 
       const impliedSpread = matchupOutput.impliedSpread || 0;
       const impliedTotal = matchupOutput.impliedTotal || 45;
       const marketSpread = spreadLine?.closingLine || 0;
       const marketTotal = totalLine?.closingLine || 45;
+      const moneylinePrice = getLineValue(moneylineLine);
 
       const spreadEdge = Math.abs(impliedSpread - marketSpread);
       const totalEdge = Math.abs(impliedTotal - marketTotal);
-      const maxEdge = Math.max(spreadEdge, totalEdge);
+      
+      // Calculate max edge across selected markets
+      const edges = [];
+      if (markets.includes('spread')) edges.push(spreadEdge);
+      if (markets.includes('total')) edges.push(totalEdge);
+      if (markets.includes('moneyline') && moneylinePrice != null) {
+        // For moneyline, we'll use a simple approach: include if available
+        edges.push(0); // No edge calculation for ML in first pass
+      }
+      const maxEdge = edges.length > 0 ? Math.max(...edges) : 0;
 
       // Apply filters
       let qualifies = true;
 
-      // Min edge thresholds
-      if (spreadEdge < (params.minSpreadEdge || 0) && totalEdge < (params.minTotalEdge || 0)) {
+      // Min edge thresholds - check if any selected market meets threshold
+      let meetsEdgeThreshold = false;
+      if (markets.includes('spread') && spreadEdge >= (params.minSpreadEdge || 0)) {
+        meetsEdgeThreshold = true;
+      }
+      if (markets.includes('total') && totalEdge >= (params.minTotalEdge || 0)) {
+        meetsEdgeThreshold = true;
+      }
+      if (markets.includes('moneyline') && moneylinePrice != null) {
+        // For moneyline, include if available (no edge threshold for now)
+        meetsEdgeThreshold = true;
+      }
+      
+      if (!meetsEdgeThreshold) {
         qualifies = false;
       }
 
@@ -126,6 +154,22 @@ export async function GET(request: NextRequest) {
 
         const totalPick = computeTotalPick(impliedTotal, marketTotal);
 
+        // Moneyline data
+        let moneylineData = null;
+        if (markets.includes('moneyline') && moneylinePrice != null) {
+          const favoredTeam = moneylinePrice < 0 ? game.homeTeam.name : game.awayTeam.name;
+          const moneylinePickLabel = `${favoredTeam} ML`;
+          const impliedProb = americanToProb(moneylinePrice);
+          const moneylineSource = moneylineLine?.source ? abbrevSource(moneylineLine.source) : '';
+
+          moneylineData = {
+            price: moneylinePrice,
+            pickLabel: moneylinePickLabel,
+            impliedProb,
+            source: moneylineSource,
+          };
+        }
+
         qualifyingGames.push({
           gameId: game.id,
           matchup: `${game.awayTeam.name} @ ${game.homeTeam.name}`,
@@ -136,6 +180,7 @@ export async function GET(request: NextRequest) {
           confidence: matchupOutput.edgeConfidence,
           spreadPickLabel: spreadPick.spreadPickLabel,
           totalPickLabel: totalPick.totalPickLabel,
+          moneyline: moneylineData,
         });
       }
     }

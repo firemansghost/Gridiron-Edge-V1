@@ -303,7 +303,13 @@ export default function HomePage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {game.moneyline?.price != null ? (
                         <div className="flex items-center">
-                          <span className="font-medium">
+                          <span 
+                            className="font-medium cursor-help"
+                            title={game.moneyline.impliedProb != null 
+                              ? `Implied prob: ${(game.moneyline.impliedProb * 100).toFixed(1)}%` 
+                              : ''
+                            }
+                          >
                             {game.moneyline.price > 0 ? '+' : ''}{game.moneyline.price}
                           </span>
                           {game.moneyline.meta?.source && (

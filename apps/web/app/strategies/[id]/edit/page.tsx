@@ -17,6 +17,7 @@ interface Ruleset {
   name: string;
   description: string | null;
   parameters: {
+    markets?: string[];
     minSpreadEdge?: number;
     minTotalEdge?: number;
     confidenceIn?: ('A' | 'B' | 'C')[];
@@ -45,6 +46,11 @@ export default function EditRulesetPage() {
   const [includeTeams, setIncludeTeams] = useState('');
   const [excludeTeams, setExcludeTeams] = useState('');
   const [active, setActive] = useState(true);
+  const [markets, setMarkets] = useState({
+    spread: true,
+    total: true,
+    moneyline: false,
+  });
 
   useEffect(() => {
     if (params.id) {
@@ -73,6 +79,14 @@ export default function EditRulesetPage() {
         setIncludeTeams(p.includeTeams?.join(', ') || '');
         setExcludeTeams(p.excludeTeams?.join(', ') || '');
         setActive(ruleset.active);
+        
+        // Load markets
+        const marketsList = p.markets || ['spread', 'total'];
+        setMarkets({
+          spread: marketsList.includes('spread'),
+          total: marketsList.includes('total'),
+          moneyline: marketsList.includes('moneyline'),
+        });
       } else {
         setError(data.error || 'Failed to load ruleset');
       }
@@ -100,7 +114,13 @@ export default function EditRulesetPage() {
       if (confidenceB) confidenceIn.push('B');
       if (confidenceC) confidenceIn.push('C');
 
+      const selectedMarkets = [];
+      if (markets.spread) selectedMarkets.push('spread');
+      if (markets.total) selectedMarkets.push('total');
+      if (markets.moneyline) selectedMarkets.push('moneyline');
+
       const parameters = {
+        markets: selectedMarkets,
         minSpreadEdge: minSpreadEdge ? parseFloat(minSpreadEdge) : undefined,
         minTotalEdge: minTotalEdge ? parseFloat(minTotalEdge) : undefined,
         confidenceIn: confidenceIn.length > 0 ? confidenceIn : undefined,
@@ -237,6 +257,48 @@ export default function EditRulesetPage() {
                   className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   placeholder="e.g., 3.0"
                 />
+              </div>
+            </div>
+
+            {/* Markets */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Markets
+              </label>
+              <div className="space-y-2">
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={markets.spread}
+                    onChange={(e) => setMarkets({...markets, spread: e.target.checked})}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="ml-2 text-sm text-gray-700">
+                    Spread - Point spread betting
+                  </span>
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={markets.total}
+                    onChange={(e) => setMarkets({...markets, total: e.target.checked})}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="ml-2 text-sm text-gray-700">
+                    Total - Over/Under betting
+                  </span>
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={markets.moneyline}
+                    onChange={(e) => setMarkets({...markets, moneyline: e.target.checked})}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="ml-2 text-sm text-gray-700">
+                    Moneyline - Win/loss betting
+                  </span>
+                </label>
               </div>
             </div>
 

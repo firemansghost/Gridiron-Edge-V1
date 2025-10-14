@@ -20,6 +20,12 @@ interface QualifyingGame {
   confidence: string;
   spreadPickLabel: string;
   totalPickLabel: string | null;
+  moneyline?: {
+    price: number;
+    pickLabel: string;
+    impliedProb: number;
+    source: string;
+  } | null;
 }
 
 interface RunResult {
@@ -221,6 +227,7 @@ function StrategyRunContent() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Kickoff</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Spread Pick</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Pick</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Moneyline</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Spread Edge</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Edge</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Confidence</th>
@@ -238,6 +245,22 @@ function StrategyRunContent() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {game.totalPickLabel || '—'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {game.moneyline ? (
+                        <div className="flex items-center">
+                          <span className="font-medium">
+                            {game.moneyline.price > 0 ? '+' : ''}{game.moneyline.price}
+                          </span>
+                          {game.moneyline.source && (
+                            <span className="ml-1 text-xs text-gray-500">
+                              ({game.moneyline.source})
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        '—'
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       +{game.spreadEdge.toFixed(1)}

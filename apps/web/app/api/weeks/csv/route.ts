@@ -8,6 +8,8 @@ export const revalidate = 0; // no caching; always run on server
 
 import { prisma } from '@/lib/prisma';
 import { computeSpreadPick, computeTotalPick } from '@/lib/pick-helpers';
+import { pickMoneyline, getLineValue, americanToProb } from '@/lib/market-line-helpers';
+import { abbrevSource } from '@/lib/market-badges';
 
 export async function GET(request: Request) {
   try {
@@ -77,6 +79,19 @@ export async function GET(request: Request) {
       const marketSpread = spreadLine?.closingLine || 0;
       const marketTotal = totalLine?.closingLine || 45;
 
+      // Get moneyline data using our helpers
+      const mlLine = pickMoneyline(game.marketLines);
+      const mlPrice = getLineValue(mlLine);
+      const mlSource = mlLine?.source ? abbrevSource(mlLine.source) : '';
+      const mlImpliedProb = americanToProb(mlPrice);
+      
+      // Determine moneyline pick label
+      let mlPickLabel = '';
+      if (mlPrice != null) {
+        const fav = mlPrice < 0 ? game.homeTeam.name : game.awayTeam.name;
+        mlPickLabel = `${fav} ML`;
+      }
+
       // Compute spread pick details
       const spreadPick = computeSpreadPick(
         impliedSpread,
@@ -139,6 +154,10 @@ export async function GET(request: Request) {
         'Market Close Total': marketTotal.toFixed(1),
         'Spread Edge': spreadEdgePts.toFixed(1),
         'Total Edge': totalEdgePts.toFixed(1),
+        'Moneyline Price': mlPrice != null ? (mlPrice > 0 ? '+' : '') + mlPrice : '',
+        'Moneyline Pick': mlPickLabel,
+        'Moneyline Implied Prob': mlImpliedProb != null ? (mlImpliedProb * 100).toFixed(1) + '%' : '',
+        'Moneyline Source': mlSource,
         'Confidence': matchupOutput?.edgeConfidence || 'C',
         'Result': resultSpread,
         'CLV': clvSpread,

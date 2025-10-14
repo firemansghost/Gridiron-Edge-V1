@@ -191,7 +191,13 @@ export default function GameDetailPage() {
                   <div className="flex justify-between items-center">
                     <div className="text-sm text-gray-500">Market ML</div>
                     <div className="flex items-center">
-                      <div className="text-lg font-semibold text-gray-900">
+                      <div 
+                        className="text-lg font-semibold text-gray-900 cursor-help"
+                        title={game.market.moneyline.impliedProb != null 
+                          ? `Implied prob: ${(game.market.moneyline.impliedProb * 100).toFixed(1)}%` 
+                          : ''
+                        }
+                      >
                         {game.market.moneyline.price > 0 ? '+' : ''}{game.market.moneyline.price}
                       </div>
                       {game.market.moneyline.meta?.source && (
