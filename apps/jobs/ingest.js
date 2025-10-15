@@ -240,25 +240,38 @@ async function upsertGames(games, existingTeamIds) {
  */
 async function upsertMarketLines(marketLines) {
   let upserted = 0;
+  let skipped = 0;
 
   for (const line of marketLines) {
     const gameId = normalizeId(line.gameId);
 
-    await prisma.marketLine.create({
-      data: {
-        gameId,
-        season: line.season || 2024,
-        week: line.week || 1,
-        lineType: line.lineType,
-        lineValue: line.lineValue || line.openingLine, // Support both field names
-        closingLine: line.closingLine,
-        timestamp: line.timestamp,
-        source: line.source || line.bookName, // Prefer source, fallback to bookName
-        bookName: line.bookName
+    try {
+      await prisma.marketLine.create({
+        data: {
+          gameId,
+          season: line.season || 2024,
+          week: line.week || 1,
+          lineType: line.lineType,
+          lineValue: line.lineValue !== undefined ? line.lineValue : line.openingLine, // Support both field names (handle 0)
+          closingLine: line.closingLine,
+          timestamp: line.timestamp,
+          source: line.source || line.bookName, // Prefer source, fallback to bookName
+          bookName: line.bookName
+        }
+      });
+      upserted++;
+    } catch (error) {
+      // Skip lines for games that don't exist (foreign key constraint)
+      if (errMsg(error).includes('Foreign key constraint')) {
+        skipped++;
+      } else {
+        throw error; // Re-throw other errors
       }
-    });
+    }
+  }
 
-    upserted++;
+  if (skipped > 0) {
+    console.log(`   ⚠️  Skipped ${skipped} lines (game not found in database)`);
   }
 
   return upserted;

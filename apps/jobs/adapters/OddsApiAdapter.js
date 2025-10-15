@@ -8,8 +8,73 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OddsApiAdapter = void 0;
+const client_1 = require("@prisma/client");
+const prisma = new client_1.PrismaClient();
+// Team name aliases for common variations
+const TEAM_ALIASES = {
+    'arizona wildcats': 'arizona',
+    'houston cougars': 'houston',
+    'utsa roadrunners': 'utsa',
+    'miami fl': 'miami-fl',
+    'miami florida': 'miami-fl',
+    'miami hurricanes': 'miami-fl',
+    'pitt': 'pittsburgh',
+    'pitt panthers': 'pittsburgh',
+    'ole miss': 'mississippi',
+    'ole miss rebels': 'mississippi',
+    'ucf': 'central-florida',
+    'ucf knights': 'central-florida',
+    'unlv rebels': 'unlv',
+    'appalachian st': 'appalachian-state',
+    'texas a&m': 'texas-a-m',
+    'texas a&m aggies': 'texas-a-m',
+    'louisiana-lafayette': 'louisiana',
+    'louisiana monroe': 'ul-monroe',
+    'ul monroe': 'ul-monroe',
+    'uab': 'uab',
+    'uab blazers': 'uab',
+    'usc': 'usc',
+    'usc trojans': 'usc',
+    'smu': 'smu',
+    'smu mustangs': 'smu',
+    'tcu': 'tcu',
+    'tcu horned frogs': 'tcu',
+    'byu': 'byu',
+    'byu cougars': 'byu',
+    'nc state': 'nc-state',
+    'nc state wolfpack': 'nc-state',
+    'florida state': 'florida-state',
+    'florida state seminoles': 'florida-state',
+    'ohio state': 'ohio-state',
+    'ohio state buckeyes': 'ohio-state',
+    'penn state': 'penn-state',
+    'penn state nittany lions': 'penn-state',
+    'iowa state': 'iowa-state',
+    'iowa state cyclones': 'iowa-state',
+    'kansas state': 'kansas-state',
+    'kansas state wildcats': 'kansas-state',
+    'oklahoma state': 'oklahoma-state',
+    'oklahoma state cowboys': 'oklahoma-state',
+    'oregon state': 'oregon-state',
+    'oregon state beavers': 'oregon-state',
+    'washington state': 'washington-state',
+    'washington state cougars': 'washington-state',
+    'arizona state': 'arizona-state',
+    'arizona state sun devils': 'arizona-state',
+    'michigan state': 'michigan-state',
+    'michigan state spartans': 'michigan-state',
+    'mississippi state': 'mississippi-state',
+    'mississippi state bulldogs': 'mississippi-state',
+};
 class OddsApiAdapter {
     constructor(config) {
+        this.teamIndex = null;
+        this.matchStats = {
+            exactSlug: 0,
+            alias: 0,
+            fuzzy: 0,
+            failed: 0
+        };
         this.config = config;
         // Check for API key
         this.apiKey = process.env.ODDS_API_KEY || '';
@@ -20,6 +85,104 @@ class OddsApiAdapter {
         // Use env override or config
         this.baseUrl = process.env.ODDS_API_BASE_URL || config.baseUrl;
         console.log(`[ODDSAPI] Base URL: ${this.baseUrl}`);
+    }
+    /**
+     * Normalize team name for matching
+     */
+    normalizeName(name) {
+        return name
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, '') // Remove punctuation
+            .replace(/\b(university|univ|state|college|the|football)\b/g, '') // Remove common words
+            .replace(/\s+/g, ' ') // Collapse whitespace
+            .trim();
+    }
+    /**
+     * Slugify team name for ID matching
+     */
+    slugifyTeam(name) {
+        return this.normalizeName(name)
+            .replace(/\s+/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '');
+    }
+    /**
+     * Build team index from database
+     */
+    async buildTeamIndex() {
+        if (this.teamIndex)
+            return; // Already built
+        const teams = await prisma.team.findMany({
+            select: { id: true, name: true, mascot: true }
+        });
+        const byId = {};
+        const bySlug = {};
+        const allTeams = [];
+        for (const team of teams) {
+            byId[team.id] = team;
+            bySlug[this.slugifyTeam(team.name)] = team.id;
+            // Also index by name + mascot if mascot exists
+            if (team.mascot) {
+                const withMascot = this.slugifyTeam(`${team.name} ${team.mascot}`);
+                if (!bySlug[withMascot]) {
+                    bySlug[withMascot] = team.id;
+                }
+            }
+            allTeams.push(team);
+        }
+        this.teamIndex = { byId, bySlug, allTeams };
+        console.log(`   [ODDSAPI] Built team index with ${allTeams.length} teams`);
+    }
+    /**
+     * Calculate Jaccard similarity between two strings (token-based)
+     */
+    jaccardSimilarity(str1, str2) {
+        const tokens1 = new Set(str1.split(/\s+/));
+        const tokens2 = new Set(str2.split(/\s+/));
+        const intersection = new Set([...tokens1].filter(x => tokens2.has(x)));
+        const union = new Set([...tokens1, ...tokens2]);
+        return union.size === 0 ? 0 : intersection.size / union.size;
+    }
+    /**
+     * Resolve Odds API team name to CFBD team ID
+     */
+    resolveTeamId(oddsTeamName) {
+        if (!this.teamIndex) {
+            throw new Error('Team index not built. Call buildTeamIndex() first.');
+        }
+        const normalized = this.normalizeName(oddsTeamName);
+        const slugged = this.slugifyTeam(oddsTeamName);
+        // 1. Exact slug match
+        if (this.teamIndex.bySlug[slugged]) {
+            this.matchStats.exactSlug++;
+            return this.teamIndex.bySlug[slugged];
+        }
+        // 2. Alias map lookup
+        if (TEAM_ALIASES[normalized]) {
+            const aliasTarget = TEAM_ALIASES[normalized];
+            if (this.teamIndex.bySlug[aliasTarget]) {
+                this.matchStats.alias++;
+                return this.teamIndex.bySlug[aliasTarget];
+            }
+        }
+        // 3. Fuzzy matching with high threshold
+        let bestMatch = null;
+        const threshold = 0.75; // High threshold for safety
+        for (const team of this.teamIndex.allTeams) {
+            const teamNormalized = this.normalizeName(team.name);
+            const score = this.jaccardSimilarity(normalized, teamNormalized);
+            if (score >= threshold && (!bestMatch || score > bestMatch.score)) {
+                bestMatch = { id: team.id, score };
+            }
+        }
+        if (bestMatch) {
+            this.matchStats.fuzzy++;
+            return bestMatch.id;
+        }
+        // 4. Failed to match
+        this.matchStats.failed++;
+        console.warn(`   [ODDSAPI] ⚠️  Failed to match team: "${oddsTeamName}" (normalized: "${normalized}")`);
+        return null;
     }
     getName() {
         return 'TheOddsAPI';
@@ -45,12 +208,20 @@ class OddsApiAdapter {
      * Fetch market lines (spreads, totals, moneylines) from The Odds API
      */
     async getMarketLines(season, weeks, options) {
+        // Build team index from database for matching
+        await this.buildTeamIndex();
+        // Reset match stats
+        this.matchStats = { exactSlug: 0, alias: 0, fuzzy: 0, failed: 0 };
         const allLines = [];
+        let eventsProcessed = 0;
+        let gamesMatched = 0;
         for (const week of weeks) {
             console.log(`📥 Fetching Odds API odds for ${season} Week ${week}...`);
             try {
-                const lines = await this.fetchOddsForWeek(season, week, options);
+                const { lines, eventCount, matchedCount } = await this.fetchOddsForWeek(season, week, options);
                 allLines.push(...lines);
+                eventsProcessed += eventCount;
+                gamesMatched += matchedCount;
                 // Count spreads, totals, and moneylines
                 const spreads = lines.filter(l => l.lineType === 'spread').length;
                 const totals = lines.filter(l => l.lineType === 'total').length;
@@ -63,6 +234,14 @@ class OddsApiAdapter {
                 // Continue with other weeks
             }
         }
+        // Log matching statistics
+        console.log(`   [ODDSAPI] Team matching stats:`);
+        console.log(`     Events processed: ${eventsProcessed}`);
+        console.log(`     Games matched: ${gamesMatched}`);
+        console.log(`     Exact slug matches: ${this.matchStats.exactSlug}`);
+        console.log(`     Alias matches: ${this.matchStats.alias}`);
+        console.log(`     Fuzzy matches: ${this.matchStats.fuzzy}`);
+        console.log(`     Failed matches: ${this.matchStats.failed}`);
         return allLines;
     }
     /**
@@ -75,7 +254,6 @@ class OddsApiAdapter {
      * Fetch odds for a specific week
      */
     async fetchOddsForWeek(season, week, options) {
-        const lines = [];
         // Determine if we need historical data
         const isHistorical = season < new Date().getFullYear() || options?.startDate;
         if (isHistorical && options?.startDate) {
@@ -94,6 +272,8 @@ class OddsApiAdapter {
      */
     async fetchLiveOdds(season, week) {
         const lines = [];
+        let eventCount = 0;
+        let matchedCount = 0;
         // Build URL for NCAAF live odds
         const markets = this.config.markets.join(',');
         const url = `${this.baseUrl}/sports/americanfootball_ncaaf/odds?apiKey=${this.apiKey}&regions=us&markets=${markets}&oddsFormat=american`;
@@ -113,11 +293,15 @@ class OddsApiAdapter {
                 throw new Error(`Odds API error: ${response.status} ${response.statusText}`);
             }
             const events = await response.json();
+            eventCount = events.length;
             console.log(`   [ODDSAPI] Found ${events.length} events`);
-            // Parse each event's odds
+            // Parse each event's odds with team matching
             for (const event of events) {
                 const eventLines = this.parseEventOdds(event, season, week);
-                lines.push(...eventLines);
+                if (eventLines.length > 0) {
+                    lines.push(...eventLines);
+                    matchedCount++;
+                }
             }
         }
         catch (error) {
@@ -126,7 +310,7 @@ class OddsApiAdapter {
             }
             throw error;
         }
-        return lines;
+        return { lines, eventCount, matchedCount };
     }
     /**
      * Fetch historical odds from The Odds API
@@ -137,6 +321,8 @@ class OddsApiAdapter {
         // In a production scenario, you would use:
         // GET /v4/historical/sports/americanfootball_ncaaf/odds?date={timestamp}&regions=us&markets={markets}
         const lines = [];
+        let matchedCount = 0;
+        let eventCount = 0;
         const markets = this.config.markets.join(',');
         const url = `${this.baseUrl}/sports/americanfootball_ncaaf/odds?apiKey=${this.apiKey}&regions=us&markets=${markets}&oddsFormat=american`;
         console.log(`   [ODDSAPI] URL: ${url.replace(this.apiKey, 'HIDDEN')}`);
@@ -166,11 +352,15 @@ class OddsApiAdapter {
                 end.setDate(end.getDate() + 7); // Add 7 days if no end date
                 return eventDate >= start && eventDate <= end;
             });
+            eventCount = filteredEvents.length;
             console.log(`   [ODDSAPI] Found ${events.length} total events, ${filteredEvents.length} in date range`);
-            // Parse each event's odds
+            // Parse each event's odds with team matching
             for (const event of filteredEvents) {
                 const eventLines = this.parseEventOdds(event, season, week);
-                lines.push(...eventLines);
+                if (eventLines.length > 0) {
+                    lines.push(...eventLines);
+                    matchedCount++;
+                }
             }
         }
         catch (error) {
@@ -179,17 +369,23 @@ class OddsApiAdapter {
             }
             throw error;
         }
-        return lines;
+        return { lines, eventCount, matchedCount };
     }
     /**
      * Parse event odds into MarketLine objects
      */
     parseEventOdds(event, season, week) {
         const lines = [];
-        // Create a stable gameId from team names (match CFBD format)
-        const homeTeam = event.home_team.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-        const awayTeam = event.away_team.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-        const gameId = `${season}-wk${week}-${awayTeam}-${homeTeam}`;
+        // Resolve team names to CFBD team IDs
+        const homeTeamId = this.resolveTeamId(event.home_team);
+        const awayTeamId = this.resolveTeamId(event.away_team);
+        // Skip if either team couldn't be matched
+        if (!homeTeamId || !awayTeamId) {
+            console.warn(`   [ODDSAPI] Skipping event: ${event.away_team} @ ${event.home_team} (team matching failed)`);
+            return [];
+        }
+        // Create gameId using matched team IDs (match CFBD format)
+        const gameId = `${season}-wk${week}-${awayTeamId}-${homeTeamId}`;
         for (const bookmaker of event.bookmakers) {
             const bookName = bookmaker.title || bookmaker.key;
             const timestamp = new Date(bookmaker.last_update);
@@ -219,7 +415,7 @@ class OddsApiAdapter {
                 else if (market.key === 'spreads') {
                     // Spread
                     for (const outcome of market.outcomes) {
-                        if (outcome.point !== undefined) {
+                        if (outcome.point !== undefined && outcome.point !== null) {
                             lines.push({
                                 gameId,
                                 season,
@@ -237,7 +433,7 @@ class OddsApiAdapter {
                 else if (market.key === 'totals') {
                     // Total
                     for (const outcome of market.outcomes) {
-                        if (outcome.point !== undefined) {
+                        if (outcome.point !== undefined && outcome.point !== null) {
                             lines.push({
                                 gameId,
                                 season,
