@@ -15,6 +15,9 @@ const { main: runRatings } = require('./seed-ratings');
 
 const prisma = new PrismaClient();
 
+// Safe error message helper for JS runtime (no TypeScript casts)
+const errMsg = (e) => (e && e instanceof Error) ? e.message : String(e);
+
 /**
  * Parse command line arguments
  */
@@ -412,7 +415,7 @@ async function main() {
         console.log(`   Upserted ${fallbackUpserted} fallback market lines (oddsapi)`);
         marketLinesUpserted += fallbackUpserted;
       } catch (error) {
-        console.error('   ❌ Odds API fallback failed:', (error as Error).message);
+        console.error('   ❌ Odds API fallback failed:', errMsg(error));
       }
     }
 
