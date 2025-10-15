@@ -238,6 +238,12 @@ export class CFBDAdapter implements DataSourceAdapter {
    * Map CFBD game to our Game interface
    */
   private mapCFBDGameToGame(cfbdGame: CFBDGame, venueMap: Map<string, CFBDVenue>): Game | null {
+    // Filter out non-FBS games
+    if (cfbdGame.homeClassification !== 'fbs' || cfbdGame.awayClassification !== 'fbs') {
+      console.log(`   [CFBD] Skipping non-FBS game: ${cfbdGame.homeTeam} (${cfbdGame.homeClassification}) vs ${cfbdGame.awayTeam} (${cfbdGame.awayClassification})`);
+      return null;
+    }
+
     // Normalize team IDs
     const homeTeamId = this.normalizeTeamId(cfbdGame.homeTeam);
     const awayTeamId = this.normalizeTeamId(cfbdGame.awayTeam);

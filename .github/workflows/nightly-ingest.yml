@@ -5,26 +5,27 @@ on:
   schedule:
     - cron: '0 7 * * *'
   # Allow manual trigger for testing (adds the Run workflow button in GitHub UI)
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      week:
+        description: 'CFB week to ingest'
+        required: true
+        default: '8'
 
 concurrency:
-  group: nightly-ingest
-  cancel-in-progress: false
+  group: nightly-ingest-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  ingest-and-rate:
+  ingest-schedules:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
-      # Use direct connection in CI for reliability
       DATABASE_URL: ${{ secrets.DIRECT_URL }}
       DIRECT_URL: ${{ secrets.DIRECT_URL }}
-      DATA_MODE: mock
       TZ: America/Chicago
       CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
-      SGO_API_KEY: ${{ secrets.SGO_API_KEY }}
-      ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
-      VISUALCROSSING_API_KEY: ${{ secrets.VISUALCROSSING_API_KEY }}
+      POLL_WEEK: ${{ github.event.inputs.week || '8' }}
     
     steps:
       - name: Checkout repository
@@ -36,18 +37,6 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      # Optional: you can keep this cache step; it's mostly redundant with setup-node's npm cache
-      - name: Cache node_modules
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.npm
-            node_modules
-            apps/*/node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
-
       - name: Install dependencies
         run: npm ci
 
@@ -58,46 +47,124 @@ jobs:
         if: ${{ env.CFBD_API_KEY != '' }}
         run: |
           echo "🗓️ Ingesting real schedules from CFBD..."
-          # 2025 season, weeks 1-15 (rolling)
-          npm run ingest -- cfbd --season 2025 --weeks 1-15
+          npm run ingest -- cfbd --season 2025 --weeks $POLL_WEEK
           echo "✅ CFBD schedules ingested"
 
       - name: Fallback - Ensure mock schedules (if no CFBD key)
         if: ${{ env.CFBD_API_KEY == '' }}
         run: |
           echo "📥 Using mock data (no CFBD_API_KEY)..."
-          npm run ingest -- mock --season 2025 --weeks 1
+          npm run ingest -- mock --season 2025 --weeks $POLL_WEEK
           echo "✅ Mock data ingest complete"
+
+  ingest-odds:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: ingest-schedules
+    env:
+      DATABASE_URL: ${{ secrets.DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      TZ: America/Chicago
+      SGO_API_KEY: ${{ secrets.SGO_API_KEY }}
+      ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+      POLL_WEEK: ${{ github.event.inputs.week || '8' }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run prisma:generate
 
       - name: Fetch odds from Odds API (primary)
         if: ${{ env.ODDS_API_KEY != '' }}
         run: |
           echo "📈 Fetching odds from Odds API..."
-          # Live 2025 season - no date range needed for current data
-          npm run ingest -- oddsapi --season 2025 --weeks 1-15
+          npm run ingest -- oddsapi --season 2025 --weeks $POLL_WEEK
           echo "✅ Odds API odds fetched"
 
       - name: Fallback - Fetch odds from SGO (if Odds API unavailable)
         if: ${{ env.ODDS_API_KEY == '' && env.SGO_API_KEY != '' }}
         run: |
           echo "📈 Fetching odds from SGO (fallback)..."
-          npm run ingest -- sgo --season 2025 --weeks 1-15
+          npm run ingest -- sgo --season 2025 --weeks $POLL_WEEK
           echo "✅ SGO odds fetched"
 
       - name: Skip odds (no API keys)
         if: ${{ env.ODDS_API_KEY == '' && env.SGO_API_KEY == '' }}
         run: echo "⚠️  No odds API keys set; skipping odds update."
 
+  ingest-weather:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: ingest-schedules
+    env:
+      DATABASE_URL: ${{ secrets.DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      TZ: America/Chicago
+      VISUALCROSSING_API_KEY: ${{ secrets.VISUALCROSSING_API_KEY }}
+      POLL_WEEK: ${{ github.event.inputs.week || '8' }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run prisma:generate
+
       - name: Fetch weather via Visual Crossing (optional)
         if: ${{ env.VISUALCROSSING_API_KEY != '' }}
         run: |
           echo "⛅ Updating weather..."
-          npm run ingest -- weatherVc --season 2024 --weeks 1
+          npm run ingest -- weatherVc --season 2025 --weeks $POLL_WEEK
           echo "✅ Weather data fetched"
 
       - name: Skip weather (no API key)
         if: ${{ env.VISUALCROSSING_API_KEY == '' }}
         run: echo "⚠️  VISUALCROSSING_API_KEY not set; skipping weather update."
+
+  calculate-ratings:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [ingest-schedules, ingest-odds]
+    env:
+      DATABASE_URL: ${{ secrets.DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      TZ: America/Chicago
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run prisma:generate
 
       - name: Run seed ratings calculation
         run: |
@@ -113,14 +180,15 @@ jobs:
           echo "============================================"
           echo "Time (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')"
           echo "Time (CST/CDT): $(TZ=America/Chicago date '+%Y-%m-%d %H:%M:%S %Z')"
-          echo "Season: 2024"
-          echo "Week: 1"
+          echo "Season: 2025"
+          echo "Week: 8"
           echo "Status: ${{ job.status }}"
           echo ""
           echo "Steps executed:"
           echo "  🗓️ CFBD schedules (optional, enabled: ${{ env.CFBD_API_KEY != '' }})"
           echo "  📥 Mock fallback (enabled: ${{ env.CFBD_API_KEY == '' }})"
-          echo "  📈 SGO odds (optional, enabled: ${{ env.SGO_API_KEY != '' }})"
+          echo "  📈 Odds API (primary, enabled: ${{ env.ODDS_API_KEY != '' }})"
+          echo "  📈 SGO odds (fallback, enabled: ${{ env.SGO_API_KEY != '' }})"
           echo "  ⛅ Weather data (optional, enabled: ${{ env.VISUALCROSSING_API_KEY != '' }})"
           echo "  📊 Ratings + implied lines"
           echo "============================================"

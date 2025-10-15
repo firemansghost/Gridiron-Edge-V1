@@ -4,11 +4,20 @@ on:
   schedule:
     - cron: '0 7,15,23 * * *'
   workflow_dispatch:
+    inputs:
+      week:
+        description: 'CFB week to poll'
+        required: true
+        default: '8'
+
+concurrency:
+  group: odds-poll-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   poll-odds:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       DIRECT_URL:   ${{ secrets.DIRECT_URL }}
@@ -18,6 +27,7 @@ jobs:
       SGO_BASE_URL: https://api.sportsgameodds.com
       ODDS_BASE_URL: https://api.the-odds-api.com
       TZ: America/Chicago
+      POLL_WEEK: ${{ github.event.inputs.week || '8' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -29,28 +39,28 @@ jobs:
         if: ${{ env.CFBD_API_KEY != '' }}
         run: |
           echo "🗓️ Ingesting real schedules from CFBD..."
-          # 2025 season, weeks 1-15 (rolling)
-          npm run ingest -- cfbd --season 2025 --weeks 1-15
+          # 2025 season, single week only
+          npm run ingest -- cfbd --season 2025 --weeks $POLL_WEEK
           echo "✅ CFBD schedules ingested"
 
       - name: Fallback - Ensure mock schedules (if no CFBD key)
         if: ${{ env.CFBD_API_KEY == '' }}
         run: |
           echo "🗓️ Using mock schedules (no CFBD_API_KEY)..."
-          npm run ingest -- mock --season 2025 --weeks 1
+          npm run ingest -- mock --season 2025 --weeks $POLL_WEEK
           echo "✅ Mock schedules ensured"
 
       - name: Poll odds from Odds API (primary)
         if: ${{ env.ODDS_API_KEY != '' }}
         run: |
           echo "📈 Polling odds (3x daily) from Odds API..."
-          # Live 2025 season - no date range needed for current data
-          npm run ingest -- oddsapi --season 2025 --weeks 1-15
+          # Live 2025 season - single week only
+          npm run ingest -- oddsapi --season 2025 --weeks $POLL_WEEK
           echo "✅ Odds API poll complete"
 
       - name: Fallback - Poll odds from SGO (if Odds API unavailable)
         if: ${{ env.ODDS_API_KEY == '' && env.SGO_API_KEY != '' }}
         run: |
           echo "📈 Polling odds from SGO (fallback)..."
-          npm run ingest -- sgo --season 2025 --weeks 1-15
+          npm run ingest -- sgo --season 2025 --weeks $POLL_WEEK
           echo "✅ SGO poll complete"

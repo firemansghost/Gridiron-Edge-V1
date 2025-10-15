@@ -113,36 +113,99 @@ function normalizeId(str) {
  */
 async function upsertTeams(teams) {
   let upserted = 0;
+  let deduplicated = 0;
   const teamIds = new Set();
 
+  // Step 1: In-memory de-duplication
+  const dedupMap = new Map();
+  
   for (const team of teams) {
     const teamId = normalizeId(team.id);
     teamIds.add(teamId);
-
-    await prisma.team.upsert({
-      where: { id: teamId },
-      update: {
-        name: team.name,
-        conference: team.conference,
-        division: team.division || null,
-        logoUrl: team.logoUrl || null,
-        primaryColor: team.primaryColor || null,
-        secondaryColor: team.secondaryColor || null
-      },
-      create: {
+    
+    // Create dedup key: id
+    const dedupKey = teamId;
+    
+    // Keep only the latest record per key (if duplicates appear)
+    const existing = dedupMap.get(dedupKey);
+    if (!existing || new Date(team.updatedAt || 0) > new Date(existing.updatedAt || 0)) {
+      dedupMap.set(dedupKey, {
         id: teamId,
         name: team.name,
         conference: team.conference,
         division: team.division || null,
         logoUrl: team.logoUrl || null,
         primaryColor: team.primaryColor || null,
-        secondaryColor: team.secondaryColor || null
-      }
-    });
-
-    upserted++;
+        secondaryColor: team.secondaryColor || null,
+        mascot: team.mascot || null,
+        city: team.city || null,
+        state: team.state || null
+      });
+    } else {
+      deduplicated++;
+    }
   }
 
+  console.log(`   [DEDUP] Removed ${deduplicated} duplicate teams, ${dedupMap.size} unique teams remaining`);
+
+  // Step 2: Chunked upserts (500 records per batch)
+  const chunkSize = 500;
+  const uniqueTeams = Array.from(dedupMap.values());
+  
+  for (let i = 0; i < uniqueTeams.length; i += chunkSize) {
+    const chunk = uniqueTeams.slice(i, i + chunkSize);
+    
+    try {
+      await prisma.team.createMany({
+        data: chunk,
+        skipDuplicates: true // Skip duplicates at DB level
+      });
+      upserted += chunk.length;
+    } catch (error) {
+      // If chunk fails, try individual records to identify problematic ones
+      console.warn(`   ⚠️  Team chunk upsert failed, trying individual records...`);
+      
+      for (const team of chunk) {
+        try {
+          await prisma.team.create({
+            data: team
+          });
+          upserted++;
+        } catch (teamError) {
+          console.warn(`   ⚠️  Skipped team due to error: ${errMsg(teamError)}`);
+        }
+      }
+    }
+  }
+
+  // Step 3: Light update pass for mutable fields (small batches)
+  const updateChunkSize = 100;
+  for (let i = 0; i < uniqueTeams.length; i += updateChunkSize) {
+    const updateChunk = uniqueTeams.slice(i, i + updateChunkSize);
+    
+    for (const team of updateChunk) {
+      try {
+        await prisma.team.updateMany({
+          where: { id: team.id },
+          data: {
+            name: team.name,
+            conference: team.conference,
+            division: team.division,
+            city: team.city,
+            state: team.state,
+            mascot: team.mascot,
+            logoUrl: team.logoUrl,
+            primaryColor: team.primaryColor,
+            secondaryColor: team.secondaryColor
+          }
+        });
+      } catch (error) {
+        // Skip update errors gracefully
+      }
+    }
+  }
+
+  console.log(`   ✅ Upserted ${upserted} teams in chunks of ${chunkSize}`);
   return { upserted, teamIds };
 }
 
@@ -151,68 +214,23 @@ async function upsertTeams(teams) {
  */
 async function upsertGames(games, existingTeamIds) {
   let upserted = 0;
+  let deduplicated = 0;
 
+  // Step 1: In-memory de-duplication
+  const dedupMap = new Map();
+  
   for (const game of games) {
     const gameId = normalizeId(game.id);
     const homeId = normalizeId(game.homeTeamId);
     const awayId = normalizeId(game.awayTeamId);
-
-    // Check if teams exist, create stubs if needed
-    if (!existingTeamIds.has(homeId)) {
-      await prisma.team.upsert({
-        where: { id: homeId },
-        update: {},
-        create: {
-          id: homeId,
-          name: homeId.split('-').map(word => 
-            word.charAt(0).toUpperCase() + word.slice(1)
-          ).join(' '),
-          conference: 'Independent',
-          division: null,
-          logoUrl: null,
-          primaryColor: null,
-          secondaryColor: null
-        }
-      });
-      existingTeamIds.add(homeId);
-    }
-
-    if (!existingTeamIds.has(awayId)) {
-      await prisma.team.upsert({
-        where: { id: awayId },
-        update: {},
-        create: {
-          id: awayId,
-          name: awayId.split('-').map(word => 
-            word.charAt(0).toUpperCase() + word.slice(1)
-          ).join(' '),
-          conference: 'Independent',
-          division: null,
-          logoUrl: null,
-          primaryColor: null,
-          secondaryColor: null
-        }
-      });
-      existingTeamIds.add(awayId);
-    }
-
-    await prisma.game.upsert({
-      where: { id: gameId },
-      update: {
-        homeTeamId: homeId,
-        awayTeamId: awayId,
-        season: game.season,
-        week: game.week,
-        date: game.date,
-        status: game.status,
-        venue: game.venue,
-        city: game.city,
-        neutralSite: game.neutralSite,
-        conferenceGame: game.conferenceGame,
-        homeScore: game.homeScore || null,
-        awayScore: game.awayScore || null
-      },
-      create: {
+    
+    // Create dedup key: id
+    const dedupKey = gameId;
+    
+    // Keep only the latest record per key (if duplicates appear)
+    const existing = dedupMap.get(dedupKey);
+    if (!existing || new Date(game.updatedAt || 0) > new Date(existing.updatedAt || 0)) {
+      dedupMap.set(dedupKey, {
         id: gameId,
         homeTeamId: homeId,
         awayTeamId: awayId,
@@ -226,12 +244,114 @@ async function upsertGames(games, existingTeamIds) {
         conferenceGame: game.conferenceGame,
         homeScore: game.homeScore || null,
         awayScore: game.awayScore || null
-      }
-    });
-
-    upserted++;
+      });
+    } else {
+      deduplicated++;
+    }
   }
 
+  console.log(`   [DEDUP] Removed ${deduplicated} duplicate games, ${dedupMap.size} unique games remaining`);
+
+  // Step 2: Ensure teams exist (create stubs if needed)
+  const teamsToCreate = new Set();
+  const uniqueGames = Array.from(dedupMap.values());
+  
+  for (const game of uniqueGames) {
+    if (!existingTeamIds.has(game.homeTeamId)) {
+      teamsToCreate.add(game.homeTeamId);
+    }
+    if (!existingTeamIds.has(game.awayTeamId)) {
+      teamsToCreate.add(game.awayTeamId);
+    }
+  }
+
+  // Create missing teams in chunks
+  if (teamsToCreate.size > 0) {
+    const teamChunks = Array.from(teamsToCreate).reduce((chunks, teamId, index) => {
+      const chunkIndex = Math.floor(index / 100);
+      if (!chunks[chunkIndex]) chunks[chunkIndex] = [];
+      chunks[chunkIndex].push({
+        id: teamId,
+        name: teamId.split('-').map(word => 
+          word.charAt(0).toUpperCase() + word.slice(1)
+        ).join(' '),
+        conference: 'Independent',
+        division: null,
+        logoUrl: null,
+        primaryColor: null,
+        secondaryColor: null
+      });
+      return chunks;
+    }, []);
+
+    for (const teamChunk of teamChunks) {
+      try {
+        await prisma.team.createMany({
+          data: teamChunk,
+          skipDuplicates: true
+        });
+        teamChunk.forEach(team => existingTeamIds.add(team.id));
+      } catch (error) {
+        console.warn(`   ⚠️  Team creation chunk failed: ${errMsg(error)}`);
+      }
+    }
+  }
+
+  // Step 3: Chunked upserts for games (500 records per batch)
+  const chunkSize = 500;
+  
+  for (let i = 0; i < uniqueGames.length; i += chunkSize) {
+    const chunk = uniqueGames.slice(i, i + chunkSize);
+    
+    try {
+      await prisma.game.createMany({
+        data: chunk,
+        skipDuplicates: true // Skip duplicates at DB level
+      });
+      upserted += chunk.length;
+    } catch (error) {
+      // If chunk fails, try individual records to identify problematic ones
+      console.warn(`   ⚠️  Game chunk upsert failed, trying individual records...`);
+      
+      for (const game of chunk) {
+        try {
+          await prisma.game.create({
+            data: game
+          });
+          upserted++;
+        } catch (gameError) {
+          console.warn(`   ⚠️  Skipped game due to error: ${errMsg(gameError)}`);
+        }
+      }
+    }
+  }
+
+  // Step 4: Light update pass for mutable fields (small batches)
+  const updateChunkSize = 100;
+  for (let i = 0; i < uniqueGames.length; i += updateChunkSize) {
+    const updateChunk = uniqueGames.slice(i, i + updateChunkSize);
+    
+    for (const game of updateChunk) {
+      try {
+        await prisma.game.updateMany({
+          where: { id: game.id },
+          data: {
+            date: game.date,
+            venue: game.venue,
+            neutralSite: game.neutralSite,
+            conferenceGame: game.conferenceGame,
+            homeScore: game.homeScore,
+            awayScore: game.awayScore,
+            status: game.status
+          }
+        });
+      } catch (error) {
+        // Skip update errors gracefully
+      }
+    }
+  }
+
+  console.log(`   ✅ Upserted ${upserted} games in chunks of ${chunkSize}`);
   return upserted;
 }
 
@@ -241,31 +361,70 @@ async function upsertGames(games, existingTeamIds) {
 async function upsertMarketLines(marketLines) {
   let upserted = 0;
   let skipped = 0;
+  let deduplicated = 0;
 
+  // Step 1: In-memory de-duplication
+  const dedupMap = new Map();
+  
   for (const line of marketLines) {
     const gameId = normalizeId(line.gameId);
-
-    try {
-      await prisma.marketLine.create({
-        data: {
-          gameId,
-          season: line.season || 2024,
-          week: line.week || 1,
-          lineType: line.lineType,
-          lineValue: line.lineValue !== undefined ? line.lineValue : line.openingLine, // Support both field names (handle 0)
-          closingLine: line.closingLine,
-          timestamp: line.timestamp,
-          source: line.source || line.bookName, // Prefer source, fallback to bookName
-          bookName: line.bookName
-        }
+    
+    // Create dedup key: gameId + lineType + bookName + source + timestamp
+    const dedupKey = `${gameId}|${line.lineType}|${line.bookName || ''}|${line.source || ''}|${line.timestamp || ''}`;
+    
+    // Keep only the latest record per key (if duplicates appear)
+    const existing = dedupMap.get(dedupKey);
+    if (!existing || new Date(line.timestamp) > new Date(existing.timestamp)) {
+      dedupMap.set(dedupKey, {
+        gameId,
+        season: line.season || 2024,
+        week: line.week || 1,
+        lineType: line.lineType,
+        lineValue: line.lineValue !== undefined ? line.lineValue : line.openingLine,
+        closingLine: line.closingLine,
+        timestamp: line.timestamp,
+        source: line.source || line.bookName,
+        bookName: line.bookName
       });
-      upserted++;
+    } else {
+      deduplicated++;
+    }
+  }
+
+  console.log(`   [DEDUP] Removed ${deduplicated} duplicate lines, ${dedupMap.size} unique lines remaining`);
+
+  // Step 2: Chunked upserts (500 records per batch)
+  const chunkSize = 500;
+  const uniqueLines = Array.from(dedupMap.values());
+  
+  for (let i = 0; i < uniqueLines.length; i += chunkSize) {
+    const chunk = uniqueLines.slice(i, i + chunkSize);
+    
+    try {
+      await prisma.marketLine.createMany({
+        data: chunk,
+        skipDuplicates: true // Skip duplicates at DB level
+      });
+      upserted += chunk.length;
     } catch (error) {
-      // Skip lines for games that don't exist (foreign key constraint)
-      if (errMsg(error).includes('Foreign key constraint')) {
-        skipped++;
-      } else {
-        throw error; // Re-throw other errors
+      // If chunk fails, try individual records to identify problematic ones
+      console.warn(`   ⚠️  Chunk upsert failed, trying individual records...`);
+      
+      for (const line of chunk) {
+        try {
+          await prisma.marketLine.create({
+            data: line
+          });
+          upserted++;
+        } catch (lineError) {
+          // Skip lines for games that don't exist (foreign key constraint)
+          if (errMsg(lineError).includes('Foreign key constraint')) {
+            skipped++;
+          } else {
+            console.warn(`   ⚠️  Skipped line due to error: ${errMsg(lineError)}`);
+            skipped++;
+          }
+        }
       }
     }
   }
@@ -274,6 +433,7 @@ async function upsertMarketLines(marketLines) {
     console.log(`   ⚠️  Skipped ${skipped} lines (game not found in database)`);
   }
 
+  console.log(`   ✅ Upserted ${upserted} market lines in chunks of ${chunkSize}`);
   return upserted;
 }
 
@@ -350,6 +510,12 @@ async function main() {
       console.error('Error: Weeks are required');
       showHelp();
       process.exit(1);
+    }
+
+    // CI safety guard: trim excessive week ranges in GitHub Actions
+    if (process.env.GITHUB_ACTIONS === 'true' && options.weeks.length > 2) {
+      console.warn(`[CI GUARD] Too many weeks requested in CI (${options.weeks.length}); trimming to first week only: ${options.weeks[0]}`);
+      options.weeks = [options.weeks[0]];
     }
 
     console.log(`🚀 Starting data ingestion...`);

@@ -486,23 +486,35 @@ export class OddsApiAdapter implements DataSourceAdapter {
    */
   private async fetchOddsForWeek(season: number, week: number, options?: { startDate?: string; endDate?: string }): Promise<{lines: any[], eventCount: number, matchedCount: number}> {
     // Determine if we need historical data
-    const isHistorical = season < new Date().getFullYear() || options?.startDate;
+    const currentYear = new Date().getFullYear();
+    const currentWeek = this.getCurrentCFBWeek();
+    const isHistorical = season < currentYear || (season === currentYear && week < currentWeek);
     
     if (isHistorical && options?.startDate) {
-      // Use historical endpoint
+      // Use historical endpoint for past weeks
       console.log(`   [ODDSAPI] Using historical data endpoint for ${season} week ${week}`);
       return await this.fetchHistoricalOdds(season, week, options.startDate, options.endDate);
     } else {
-      // Use live odds endpoint
+      // Use live odds endpoint for current week
       console.log(`   [ODDSAPI] Using live odds endpoint for ${season} week ${week}`);
-      return await this.fetchLiveOdds(season, week);
+      console.log(`   [ODDSAPI] Note: Filtering by date range (${options?.startDate || 'N/A'} to ${options?.endDate || 'N/A'}) may not work on free tier`);
+      return await this.fetchLiveOdds(season, week, options);
     }
+  }
+
+  /**
+   * Get current CFB week (simplified - in production this would be more sophisticated)
+   */
+  private getCurrentCFBWeek(): number {
+    // For now, hardcode to week 8 (as per the workflow changes)
+    // In production, this would calculate based on the actual CFB calendar
+    return 8;
   }
 
   /**
    * Fetch live odds from The Odds API
    */
-  private async fetchLiveOdds(season: number, week: number): Promise<{lines: any[], eventCount: number, matchedCount: number}> {
+  private async fetchLiveOdds(season: number, week: number, options?: { startDate?: string; endDate?: string }): Promise<{lines: any[], eventCount: number, matchedCount: number}> {
     const lines: any[] = [];
     let eventCount = 0;
     let matchedCount = 0;
