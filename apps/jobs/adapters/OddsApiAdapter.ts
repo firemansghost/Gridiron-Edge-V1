@@ -13,25 +13,47 @@ const prisma = new PrismaClient();
 
 // Team name aliases for common variations
 const TEAM_ALIASES: Record<string, string> = {
+  // Basic mascot removal (some teams need explicit mapping)
   'arizona wildcats': 'arizona',
   'houston cougars': 'houston',
   'utsa roadrunners': 'utsa',
+  
+  // Miami variations
   'miami fl': 'miami-fl',
   'miami florida': 'miami-fl',
   'miami hurricanes': 'miami-fl',
+  
+  // Pitt/Pittsburgh
   'pitt': 'pittsburgh',
   'pitt panthers': 'pittsburgh',
+  
+  // Ole Miss
   'ole miss': 'mississippi',
   'ole miss rebels': 'mississippi',
+  
+  // UCF
   'ucf': 'central-florida',
   'ucf knights': 'central-florida',
+  
+  // UNLV
   'unlv rebels': 'unlv',
-  'appalachian st': 'appalachian-state',
-  'texas a&m': 'texas-a-m',
-  'texas a&m aggies': 'texas-a-m',
+  
+  // Appalachian State
+  'appalachian st': 'app-state',
+  'appalachian mountaineers': 'app-state',
+  
+  // Texas A&M
+  'texas am': 'texas-a-m',
+  'texas am aggies': 'texas-a-m',
+  
+  // Louisiana variants
   'louisiana-lafayette': 'louisiana',
+  'louisiana ragin cajuns': 'louisiana',
   'louisiana monroe': 'ul-monroe',
   'ul monroe': 'ul-monroe',
+  'ul monroe warhawks': 'ul-monroe',
+  
+  // Other abbreviations
   'uab': 'uab',
   'uab blazers': 'uab',
   'usc': 'usc',
@@ -42,6 +64,11 @@ const TEAM_ALIASES: Record<string, string> = {
   'tcu horned frogs': 'tcu',
   'byu': 'byu',
   'byu cougars': 'byu',
+  'umass': 'massachusetts',
+  'umass minutemen': 'massachusetts',
+  'unc': 'north-carolina',
+  
+  // State schools
   'nc state': 'nc-state',
   'nc state wolfpack': 'nc-state',
   'florida state': 'florida-state',
@@ -49,7 +76,7 @@ const TEAM_ALIASES: Record<string, string> = {
   'ohio state': 'ohio-state',
   'ohio state buckeyes': 'ohio-state',
   'penn state': 'penn-state',
-  'penn state nittany lions': 'penn-state',
+  'penn nittany lions': 'penn-state',
   'iowa state': 'iowa-state',
   'iowa state cyclones': 'iowa-state',
   'kansas state': 'kansas-state',
@@ -61,11 +88,32 @@ const TEAM_ALIASES: Record<string, string> = {
   'washington state': 'washington-state',
   'washington state cougars': 'washington-state',
   'arizona state': 'arizona-state',
-  'arizona state sun devils': 'arizona-state',
+  'arizona sun devils': 'arizona-state',
   'michigan state': 'michigan-state',
   'michigan state spartans': 'michigan-state',
   'mississippi state': 'mississippi-state',
   'mississippi state bulldogs': 'mississippi-state',
+  'san jose state': 'san-jose-state',
+  'san jose spartans': 'san-jose-state',
+  'kent state': 'kent-state',
+  'kent golden flashes': 'kent-state',
+  
+  // Unique mascots that need mapping
+  'delaware blue hens': 'delaware',
+  'california golden bears': 'california',
+  'hawaii rainbow warriors': 'hawaii',
+  'minnesota golden gophers': 'minnesota',
+  'nevada wolf pack': 'nevada',
+  'north carolina tar heels': 'north-carolina',
+  'rutgers scarlet knights': 'rutgers',
+  'texas tech red raiders': 'texas-tech',
+  'tulane green wave': 'tulane',
+  'tulsa golden hurricane': 'tulsa',
+  'north texas mean green': 'north-texas',
+  'southern mississippi golden eagles': 'southern-mississippi',
+  'marshall thundering herd': 'marshall',
+  'army black knights': 'army',
+  'georgia tech yellow jackets': 'georgia-tech',
 };
 
 interface OddsApiConfig {
@@ -76,8 +124,21 @@ interface OddsApiConfig {
 
 interface TeamIndex {
   byId: Record<string, any>;
-  bySlug: Record<string, string>;
+  byNameSlug: Record<string, string>;
+  byMascotSlug: Record<string, string>;
+  byNameMascotSlug: Record<string, string>;
   allTeams: Array<{id: string, name: string, mascot: string | null}>;
+}
+
+interface MatchStats {
+  p0_exactId: number;
+  p1_nameSlug: number;
+  p2_alias: number;
+  p3_stripMascot: number;
+  p4_nameMascot: number;
+  p5_fuzzy: number;
+  failed: number;
+  unmatchedNames: Set<string>;
 }
 
 interface OddsApiEvent {
@@ -108,11 +169,15 @@ export class OddsApiAdapter implements DataSourceAdapter {
   private apiKey: string;
   private baseUrl: string;
   private teamIndex: TeamIndex | null = null;
-  private matchStats = {
-    exactSlug: 0,
-    alias: 0,
-    fuzzy: 0,
-    failed: 0
+  private matchStats: MatchStats = {
+    p0_exactId: 0,
+    p1_nameSlug: 0,
+    p2_alias: 0,
+    p3_stripMascot: 0,
+    p4_nameMascot: 0,
+    p5_fuzzy: 0,
+    failed: 0,
+    unmatchedNames: new Set()
   };
 
   constructor(config: OddsApiConfig) {
@@ -155,7 +220,7 @@ export class OddsApiAdapter implements DataSourceAdapter {
   }
 
   /**
-   * Build team index from database
+   * Build team index from database with mascot awareness
    */
   private async buildTeamIndex(): Promise<void> {
     if (this.teamIndex) return; // Already built
@@ -165,25 +230,34 @@ export class OddsApiAdapter implements DataSourceAdapter {
     });
 
     const byId: Record<string, any> = {};
-    const bySlug: Record<string, string> = {};
+    const byNameSlug: Record<string, string> = {};
+    const byMascotSlug: Record<string, string> = {};
+    const byNameMascotSlug: Record<string, string> = {};
     const allTeams: Array<{id: string, name: string, mascot: string | null}> = [];
 
     for (const team of teams) {
       byId[team.id] = team;
-      bySlug[this.slugifyTeam(team.name)] = team.id;
       
-      // Also index by name + mascot if mascot exists
+      // Index by name slug
+      const nameSlug = this.slugifyTeam(team.name);
+      byNameSlug[nameSlug] = team.id;
+      
+      // Index by mascot slug (if exists)
       if (team.mascot) {
-        const withMascot = this.slugifyTeam(`${team.name} ${team.mascot}`);
-        if (!bySlug[withMascot]) {
-          bySlug[withMascot] = team.id;
+        const mascotSlug = this.slugifyTeam(team.mascot);
+        if (!byMascotSlug[mascotSlug]) {
+          byMascotSlug[mascotSlug] = team.id;
         }
+        
+        // Index by name + mascot combo
+        const comboSlug = this.slugifyTeam(`${team.name} ${team.mascot}`);
+        byNameMascotSlug[comboSlug] = team.id;
       }
       
       allTeams.push(team);
     }
 
-    this.teamIndex = { byId, bySlug, allTeams };
+    this.teamIndex = { byId, byNameSlug, byMascotSlug, byNameMascotSlug, allTeams };
     console.log(`   [ODDSAPI] Built team index with ${allTeams.length} teams`);
   }
 
@@ -201,7 +275,7 @@ export class OddsApiAdapter implements DataSourceAdapter {
   }
 
   /**
-   * Resolve Odds API team name to CFBD team ID
+   * Multi-pass team name resolution with mascot awareness
    */
   private resolveTeamId(oddsTeamName: string): string | null {
     if (!this.teamIndex) {
@@ -211,42 +285,74 @@ export class OddsApiAdapter implements DataSourceAdapter {
     const normalized = this.normalizeName(oddsTeamName);
     const slugged = this.slugifyTeam(oddsTeamName);
 
-    // 1. Exact slug match
-    if (this.teamIndex.bySlug[slugged]) {
-      this.matchStats.exactSlug++;
-      return this.teamIndex.bySlug[slugged];
+    // P0: Exact ID match (rare but cheap)
+    if (this.teamIndex.byId[oddsTeamName]) {
+      this.matchStats.p0_exactId++;
+      return oddsTeamName;
     }
 
-    // 2. Alias map lookup
+    // P1: Exact name slug match
+    if (this.teamIndex.byNameSlug[slugged]) {
+      this.matchStats.p1_nameSlug++;
+      return this.teamIndex.byNameSlug[slugged];
+    }
+
+    // P2: Alias → name slug
     if (TEAM_ALIASES[normalized]) {
       const aliasTarget = TEAM_ALIASES[normalized];
-      if (this.teamIndex.bySlug[aliasTarget]) {
-        this.matchStats.alias++;
-        return this.teamIndex.bySlug[aliasTarget];
+      const aliasSlug = this.slugifyTeam(aliasTarget);
+      if (this.teamIndex.byNameSlug[aliasSlug]) {
+        this.matchStats.p2_alias++;
+        return this.teamIndex.byNameSlug[aliasSlug];
       }
     }
 
-    // 3. Fuzzy matching with high threshold
+    // P3: Strip trailing word (likely mascot)
+    // Try removing last word and see if remaining matches a team name
+    const tokens = normalized.split(/\s+/);
+    if (tokens.length >= 2) {
+      const allButLast = tokens.slice(0, -1).join(' ');
+      const nameSlug = this.slugifyTeam(allButLast);
+      
+      if (this.teamIndex.byNameSlug[nameSlug]) {
+        this.matchStats.p3_stripMascot++;
+        return this.teamIndex.byNameSlug[nameSlug];
+      }
+    }
+
+    // P4: Name + Mascot combo
+    if (this.teamIndex.byNameMascotSlug[slugged]) {
+      this.matchStats.p4_nameMascot++;
+      return this.teamIndex.byNameMascotSlug[slugged];
+    }
+
+    // P5: Conservative fuzzy matching (Jaccard ≥ 0.9)
     let bestMatch: {id: string, score: number} | null = null;
-    const threshold = 0.75; // High threshold for safety
+    const threshold = 0.9; // Very high threshold for safety
 
     for (const team of this.teamIndex.allTeams) {
       const teamNormalized = this.normalizeName(team.name);
       const score = this.jaccardSimilarity(normalized, teamNormalized);
       
-      if (score >= threshold && (!bestMatch || score > bestMatch.score)) {
-        bestMatch = { id: team.id, score };
+      if (score >= threshold) {
+        if (!bestMatch || score > bestMatch.score) {
+          bestMatch = { id: team.id, score };
+        } else if (score === bestMatch.score) {
+          // Tie detected - reject for safety
+          bestMatch = null;
+          break;
+        }
       }
     }
 
     if (bestMatch) {
-      this.matchStats.fuzzy++;
+      this.matchStats.p5_fuzzy++;
       return bestMatch.id;
     }
 
-    // 4. Failed to match
+    // Failed to match
     this.matchStats.failed++;
-    console.warn(`   [ODDSAPI] ⚠️  Failed to match team: "${oddsTeamName}" (normalized: "${normalized}")`);
+    this.matchStats.unmatchedNames.add(oddsTeamName);
     return null;
   }
 
@@ -282,7 +388,16 @@ export class OddsApiAdapter implements DataSourceAdapter {
     await this.buildTeamIndex();
     
     // Reset match stats
-    this.matchStats = { exactSlug: 0, alias: 0, fuzzy: 0, failed: 0 };
+    this.matchStats = {
+      p0_exactId: 0,
+      p1_nameSlug: 0,
+      p2_alias: 0,
+      p3_stripMascot: 0,
+      p4_nameMascot: 0,
+      p5_fuzzy: 0,
+      failed: 0,
+      unmatchedNames: new Set()
+    };
     
     const allLines: any[] = [];
     let eventsProcessed = 0;
@@ -313,13 +428,50 @@ export class OddsApiAdapter implements DataSourceAdapter {
     // Log matching statistics
     console.log(`   [ODDSAPI] Team matching stats:`);
     console.log(`     Events processed: ${eventsProcessed}`);
-    console.log(`     Games matched: ${gamesMatched}`);
-    console.log(`     Exact slug matches: ${this.matchStats.exactSlug}`);
-    console.log(`     Alias matches: ${this.matchStats.alias}`);
-    console.log(`     Fuzzy matches: ${this.matchStats.fuzzy}`);
-    console.log(`     Failed matches: ${this.matchStats.failed}`);
+    console.log(`     Games matched: ${gamesMatched} (${Math.round(gamesMatched/eventsProcessed*100) || 0}%)`);
+    console.log(`     Match breakdown:`);
+    console.log(`       P0 (Exact ID): ${this.matchStats.p0_exactId}`);
+    console.log(`       P1 (Name slug): ${this.matchStats.p1_nameSlug}`);
+    console.log(`       P2 (Alias): ${this.matchStats.p2_alias}`);
+    console.log(`       P3 (Strip mascot): ${this.matchStats.p3_stripMascot}`);
+    console.log(`       P4 (Name+Mascot): ${this.matchStats.p4_nameMascot}`);
+    console.log(`       P5 (Fuzzy): ${this.matchStats.p5_fuzzy}`);
+    console.log(`     Failed: ${this.matchStats.failed}`);
+
+    // Write unmatched report if any
+    if (this.matchStats.unmatchedNames.size > 0) {
+      await this.writeUnmatchedReport(season, weeks[0], this.matchStats.unmatchedNames);
+    }
 
     return allLines;
+  }
+
+  /**
+   * Write unmatched teams report
+   */
+  private async writeUnmatchedReport(season: number, week: number, unmatched: Set<string>): Promise<void> {
+    try {
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      
+      const reportsDir = path.join(process.cwd(), 'reports');
+      await fs.mkdir(reportsDir, { recursive: true });
+      
+      const report = {
+        season,
+        week,
+        timestamp: new Date().toISOString(),
+        unmatched: Array.from(unmatched).sort()
+      };
+      
+      const reportPath = path.join(reportsDir, 'unmatched_oddsapi_teams.json');
+      await fs.writeFile(reportPath, JSON.stringify(report, null, 2), 'utf-8');
+      
+      console.log(`   [ODDSAPI] 📝 Wrote unmatched teams report: ${reportPath}`);
+      console.log(`   [ODDSAPI] ${unmatched.size} unmatched teams - review and add to TEAM_ALIASES`);
+    } catch (error) {
+      console.warn(`   [ODDSAPI] Failed to write unmatched report: ${(error as Error).message}`);
+    }
   }
 
   /**
@@ -482,7 +634,6 @@ export class OddsApiAdapter implements DataSourceAdapter {
 
     // Skip if either team couldn't be matched
     if (!homeTeamId || !awayTeamId) {
-      console.warn(`   [ODDSAPI] Skipping event: ${event.away_team} @ ${event.home_team} (team matching failed)`);
       return [];
     }
 
