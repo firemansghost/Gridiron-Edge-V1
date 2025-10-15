@@ -12,6 +12,7 @@ import { MockAdapter } from './MockAdapter';
 import { SportsGameOddsAdapter } from './SportsGameOddsAdapter';
 import { VisualCrossingAdapter } from './VisualCrossingAdapter';
 import { CFBDAdapter } from './CFBDAdapter';
+import { OddsApiAdapter } from './OddsApiAdapter';
 
 export class AdapterFactory {
   private config: DataSourcesConfig;
@@ -50,11 +51,14 @@ export class AdapterFactory {
       case 'cfbd':
         return new CFBDAdapter(adapterConfig.config as any);
       
+      case 'oddsapi':
+        return new OddsApiAdapter(adapterConfig.config as any);
+      
       // Future adapters
       case 'espn':
         throw new Error('ESPN adapter not yet implemented');
       case 'odds-api':
-        throw new Error('Odds API adapter not yet implemented');
+        throw new Error('Odds API adapter not yet implemented (use oddsapi)');
       case 'sports-reference':
         throw new Error('Sports Reference adapter not yet implemented');
       

@@ -44,7 +44,7 @@ adapters:
     provider: "sgo"
     enabled: true
     config:
-      baseUrl: "https://api.sportsgameodds.com/v2"
+      baseUrl: "https://api.sportsgameodds.com/v2/sports"
       league: "NCAAF"
       books:
         - consensus
@@ -74,6 +74,17 @@ adapters:
       baseUrl: "https://api.collegefootballdata.com"
       division: "fbs"
       timeoutMs: 20000
+      
+  oddsapi:
+    provider: "oddsapi"
+    enabled: true
+    config:
+      baseUrl: "https://api.the-odds-api.com/v4"
+      timeoutMs: 20000
+      markets:
+        - h2h
+        - spreads
+        - totals
 
 # Default adapter to use when none specified
 defaultAdapter: "mock"

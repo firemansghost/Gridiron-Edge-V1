@@ -23,6 +23,7 @@ jobs:
       TZ: America/Chicago
       CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
       SGO_API_KEY: ${{ secrets.SGO_API_KEY }}
+      ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
       VISUALCROSSING_API_KEY: ${{ secrets.VISUALCROSSING_API_KEY }}
     
     steps:
@@ -71,8 +72,11 @@ jobs:
         if: ${{ env.SGO_API_KEY != '' }}
         run: |
           echo "📈 Fetching odds from SGO..."
-          npm run ingest -- sgo --season 2024 --weeks 1
-          echo "✅ SGO odds fetched"
+          # For 2024 week 1 window (adjust for other weeks as needed)
+          START_DATE=2024-08-26
+          END_DATE=2024-09-02
+          npm run ingest -- sgo --season 2024 --weeks 1 --startDate $START_DATE --endDate $END_DATE
+          echo "✅ SGO odds fetched (fallback to Odds API if SGO returns 0)"
 
       - name: Skip SGO (no API key)
         if: ${{ env.SGO_API_KEY == '' }}

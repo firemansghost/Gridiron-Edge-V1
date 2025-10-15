@@ -17,21 +17,21 @@ interface CFBDGame {
   id: number;
   season: number;
   week: number;
-  season_type: string;
-  start_date: string;
-  neutral_site: boolean;
-  conference_game: boolean;
-  home_team: string;
-  home_id?: number;
-  home_conference?: string;
-  away_team: string;
-  away_id?: number;
-  away_conference?: string;
+  seasonType: string;
+  startDate: string;
+  neutralSite: boolean;
+  conferenceGame: boolean;
+  homeTeam: string;
+  homeId?: number;
+  homeConference?: string;
+  awayTeam: string;
+  awayId?: number;
+  awayConference?: string;
   venue?: string;
-  venue_id?: number;
+  venueId?: number;
   completed?: boolean;
-  home_points?: number;
-  away_points?: number;
+  homePoints?: number;
+  awayPoints?: number;
 }
 
 interface CFBDVenue {
@@ -129,10 +129,10 @@ export class CFBDAdapter implements DataSourceAdapter {
     url.searchParams.set('year', season.toString());
     url.searchParams.set('week', week.toString());
     url.searchParams.set('seasonType', 'regular');
+    url.searchParams.set('division', 'fbs');
     
-    if (this.config.division) {
-      url.searchParams.set('division', this.config.division);
-    }
+    // Log the full request URL
+    console.log(`   [CFBD] URL: ${url.toString()}`);
 
     // Make request
     const controller = new AbortController();
@@ -149,11 +149,28 @@ export class CFBDAdapter implements DataSourceAdapter {
 
       clearTimeout(timeout);
 
+      // Log HTTP status and error details if not 2xx
       if (!response.ok) {
+        const errorBody = await response.text();
+        console.error(`   [CFBD] HTTP ${response.status} ${response.statusText}`);
+        console.error(`   [CFBD] Error body: ${errorBody}`);
         throw new Error(`CFBD API error: ${response.status} ${response.statusText}`);
       }
 
       const data: CFBDGame[] = await response.json();
+      
+      // Log count of games returned
+      console.log(`   [CFBD] Parsed ${data.length} games for ${season} wk ${week}`);
+      
+      // Debug: Log first game structure
+      if (data.length > 0) {
+        console.log(`   [CFBD] First game structure:`, JSON.stringify(data[0], null, 2));
+      }
+      
+      // Warning if zero games returned
+      if (data.length === 0) {
+        console.warn(`   [CFBD] WARNING: 0 games returned for year=${season}, week=${week}, seasonType=regular, division=fbs`);
+      }
 
       // Fetch venue details for all games (to get city/state)
       const venueMap = await this.fetchVenues();
@@ -164,9 +181,11 @@ export class CFBDAdapter implements DataSourceAdapter {
           const game = this.mapCFBDGameToGame(cfbdGame, venueMap);
           if (game) {
             games.push(game);
+          } else {
+            console.warn(`   [CFBD] Skipping game ${cfbdGame.homeTeam} vs ${cfbdGame.awayTeam} - mapping returned null`);
           }
         } catch (error) {
-          console.warn(`   ⚠️  Skipping game ${cfbdGame.home_team} vs ${cfbdGame.away_team}:`, (error as Error).message);
+          console.warn(`   ⚠️  Skipping game ${cfbdGame.homeTeam} vs ${cfbdGame.awayTeam}:`, (error as Error).message);
         }
       }
 
@@ -220,10 +239,11 @@ export class CFBDAdapter implements DataSourceAdapter {
    */
   private mapCFBDGameToGame(cfbdGame: CFBDGame, venueMap: Map<string, CFBDVenue>): Game | null {
     // Normalize team IDs
-    const homeTeamId = this.normalizeTeamId(cfbdGame.home_team);
-    const awayTeamId = this.normalizeTeamId(cfbdGame.away_team);
+    const homeTeamId = this.normalizeTeamId(cfbdGame.homeTeam);
+    const awayTeamId = this.normalizeTeamId(cfbdGame.awayTeam);
 
     if (!homeTeamId || !awayTeamId) {
+      console.warn(`   [CFBD] Invalid team IDs: home="${homeTeamId}", away="${awayTeamId}" for ${cfbdGame.homeTeam} vs ${cfbdGame.awayTeam}`);
       return null;
     }
 
@@ -236,7 +256,7 @@ export class CFBDAdapter implements DataSourceAdapter {
       status = 'final';
     }
 
-    // Get venue details
+    // Get venue details (don't fail if venue is missing)
     let city = '';
     let venueName = cfbdGame.venue || '';
     
@@ -246,11 +266,15 @@ export class CFBDAdapter implements DataSourceAdapter {
         city = venueDetails.city || '';
         // Note: We don't have a 'state' field in the Game interface, but venue has it
         // The venue name will include location context
+      } else {
+        console.warn(`   [CFBD] Venue details not found for: ${venueName}`);
       }
+    } else {
+      console.warn(`   [CFBD] No venue specified for game: ${cfbdGame.homeTeam} vs ${cfbdGame.awayTeam}`);
     }
 
     // Parse date
-    const date = new Date(cfbdGame.start_date);
+    const date = new Date(cfbdGame.startDate);
 
     const game: Game = {
       id: gameId,
@@ -262,10 +286,10 @@ export class CFBDAdapter implements DataSourceAdapter {
       status,
       venue: venueName,
       city,
-      neutralSite: cfbdGame.neutral_site || false,
-      conferenceGame: cfbdGame.conference_game || false,
-      homeScore: cfbdGame.home_points,
-      awayScore: cfbdGame.away_points
+      neutralSite: cfbdGame.neutralSite || false,
+      conferenceGame: cfbdGame.conferenceGame || false,
+      homeScore: cfbdGame.homePoints,
+      awayScore: cfbdGame.awayPoints
     };
 
     return game;

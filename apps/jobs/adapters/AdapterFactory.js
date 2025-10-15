@@ -15,6 +15,7 @@ const MockAdapter_1 = require("./MockAdapter");
 const SportsGameOddsAdapter_1 = require("./SportsGameOddsAdapter");
 const VisualCrossingAdapter_1 = require("./VisualCrossingAdapter");
 const CFBDAdapter_1 = require("./CFBDAdapter");
+const OddsApiAdapter_1 = require("./OddsApiAdapter");
 class AdapterFactory {
     constructor(configPath = 'datasources.yml') {
         const configFile = fs_1.default.readFileSync(configPath, 'utf8');
@@ -42,11 +43,13 @@ class AdapterFactory {
                 return new VisualCrossingAdapter_1.VisualCrossingAdapter(adapterConfig.config);
             case 'cfbd':
                 return new CFBDAdapter_1.CFBDAdapter(adapterConfig.config);
+            case 'oddsapi':
+                return new OddsApiAdapter_1.OddsApiAdapter(adapterConfig.config);
             // Future adapters
             case 'espn':
                 throw new Error('ESPN adapter not yet implemented');
             case 'odds-api':
-                throw new Error('Odds API adapter not yet implemented');
+                throw new Error('Odds API adapter not yet implemented (use oddsapi)');
             case 'sports-reference':
                 throw new Error('Sports Reference adapter not yet implemented');
             default:

@@ -24,6 +24,8 @@ function parseArgs() {
     adapter: null,
     season: null,
     weeks: [],
+    startDate: null,
+    endDate: null,
     help: false
   };
 
@@ -42,6 +44,10 @@ function parseArgs() {
       } else {
         options.weeks = weekStr.split(',').map(Number);
       }
+    } else if (arg === '--startDate') {
+      options.startDate = args[++i];
+    } else if (arg === '--endDate') {
+      options.endDate = args[++i];
     } else if (!arg.startsWith('--')) {
       options.adapter = arg;
     }
@@ -365,8 +371,16 @@ async function main() {
     console.log(`   Found ${games.length} games`);
 
     console.log('📥 Fetching market lines...');
-    const marketLines = await adapter.getMarketLines(options.season, options.weeks);
+    const dateOptions = {};
+    if (options.startDate) dateOptions.startDate = options.startDate;
+    if (options.endDate) dateOptions.endDate = options.endDate;
+    const marketLines = await adapter.getMarketLines(options.season, options.weeks, Object.keys(dateOptions).length > 0 ? dateOptions : undefined);
     console.log(`   Found ${marketLines.length} market lines`);
+    
+    // Check if SGO returned zero lines
+    if (options.adapter === 'sgo' && marketLines.length === 0) {
+      console.warn('[SGO] No odds inserted. Will rely on fallback (if configured).');
+    }
 
     // Upsert data to database
     console.log('💾 Upserting teams...');
@@ -378,8 +392,29 @@ async function main() {
     console.log(`   Upserted ${gamesUpserted} games`);
 
     console.log('💾 Upserting market lines...');
-    const marketLinesUpserted = await upsertMarketLines(marketLines);
+    let marketLinesUpserted = await upsertMarketLines(marketLines);
     console.log(`   Upserted ${marketLinesUpserted} market lines`);
+    
+    // Automatic fallback to Odds API if SGO returned zero lines
+    if (options.adapter === 'sgo' && marketLinesUpserted === 0 && process.env.ODDS_API_KEY) {
+      console.warn('⚠️  SGO returned 0 market lines. Engaging Odds API fallback...');
+      
+      try {
+        const oddsApiFactory = new AdapterFactory();
+        const oddsApiAdapter = await oddsApiFactory.createAdapter('oddsapi');
+        
+        console.log('📥 Fetching market lines from Odds API...');
+        const fallbackMarketLines = await oddsApiAdapter.getMarketLines(options.season, options.weeks, Object.keys(dateOptions).length > 0 ? dateOptions : undefined);
+        console.log(`   Found ${fallbackMarketLines.length} market lines (oddsapi)`);
+        
+        console.log('💾 Upserting fallback market lines...');
+        const fallbackUpserted = await upsertMarketLines(fallbackMarketLines);
+        console.log(`   Upserted ${fallbackUpserted} fallback market lines (oddsapi)`);
+        marketLinesUpserted += fallbackUpserted;
+      } catch (error) {
+        console.error('   ❌ Odds API fallback failed:', (error as Error).message);
+      }
+    }
 
     // Branding (optional)
     if (typeof adapter.getTeamBranding === 'function') {
