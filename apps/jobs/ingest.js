@@ -250,10 +250,10 @@ async function upsertMarketLines(marketLines) {
         season: line.season || 2024,
         week: line.week || 1,
         lineType: line.lineType,
-        lineValue: line.openingLine,
+        lineValue: line.lineValue || line.openingLine, // Support both field names
         closingLine: line.closingLine,
         timestamp: line.timestamp,
-        source: line.bookName,
+        source: line.source || line.bookName, // Prefer source, fallback to bookName
         bookName: line.bookName
       }
     });

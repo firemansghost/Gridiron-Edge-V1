@@ -186,6 +186,10 @@ class OddsApiAdapter {
      */
     parseEventOdds(event, season, week) {
         const lines = [];
+        // Create a stable gameId from team names (match CFBD format)
+        const homeTeam = event.home_team.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        const awayTeam = event.away_team.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        const gameId = `${season}-wk${week}-${awayTeam}-${homeTeam}`;
         for (const bookmaker of event.bookmakers) {
             const bookName = bookmaker.title || bookmaker.key;
             const timestamp = new Date(bookmaker.last_update);
@@ -193,8 +197,9 @@ class OddsApiAdapter {
                 if (market.key === 'h2h') {
                     // Moneyline
                     for (const outcome of market.outcomes) {
-                        if (outcome.price !== undefined) {
+                        if (outcome.price !== undefined && outcome.price !== null) {
                             lines.push({
+                                gameId,
                                 season,
                                 week,
                                 lineType: 'moneyline',
@@ -205,6 +210,10 @@ class OddsApiAdapter {
                                 timestamp,
                             });
                         }
+                        else {
+                            // Debug: log missing price
+                            console.warn(`   [ODDSAPI] Skipping moneyline outcome with undefined/null price: ${JSON.stringify(outcome).slice(0, 100)}`);
+                        }
                     }
                 }
                 else if (market.key === 'spreads') {
@@ -212,6 +221,7 @@ class OddsApiAdapter {
                     for (const outcome of market.outcomes) {
                         if (outcome.point !== undefined) {
                             lines.push({
+                                gameId,
                                 season,
                                 week,
                                 lineType: 'spread',
@@ -229,6 +239,7 @@ class OddsApiAdapter {
                     for (const outcome of market.outcomes) {
                         if (outcome.point !== undefined) {
                             lines.push({
+                                gameId,
                                 season,
                                 week,
                                 lineType: 'total',
