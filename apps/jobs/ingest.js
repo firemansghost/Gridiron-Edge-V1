@@ -398,7 +398,28 @@ async function main() {
     let marketLinesUpserted = await upsertMarketLines(marketLines);
     console.log(`   Upserted ${marketLinesUpserted} market lines`);
     
-    // Automatic fallback to Odds API if SGO returned zero lines
+    // Automatic fallback: Odds API → SGO (for live 2025 data)
+    if (options.adapter === 'oddsapi' && marketLinesUpserted === 0 && process.env.SGO_API_KEY) {
+      console.warn('⚠️  Odds API returned 0 market lines. Engaging SGO fallback...');
+      
+      try {
+        const sgoFactory = new AdapterFactory();
+        const sgoAdapter = await sgoFactory.createAdapter('sgo');
+        
+        console.log('📥 Fetching market lines from SGO...');
+        const fallbackMarketLines = await sgoAdapter.getMarketLines(options.season, options.weeks, Object.keys(dateOptions).length > 0 ? dateOptions : undefined);
+        console.log(`   Found ${fallbackMarketLines.length} market lines (sgo)`);
+        
+        console.log('💾 Upserting fallback market lines...');
+        const fallbackUpserted = await upsertMarketLines(fallbackMarketLines);
+        console.log(`   Upserted ${fallbackUpserted} fallback market lines (sgo)`);
+        marketLinesUpserted += fallbackUpserted;
+      } catch (error) {
+        console.error('   ❌ SGO fallback failed:', errMsg(error));
+      }
+    }
+    
+    // Also support SGO → Odds API fallback (for historical data or if SGO is primary)
     if (options.adapter === 'sgo' && marketLinesUpserted === 0 && process.env.ODDS_API_KEY) {
       console.warn('⚠️  SGO returned 0 market lines. Engaging Odds API fallback...');
       

@@ -21,6 +21,7 @@
     "ingest": "node apps/jobs/ingest.js",
     "verify:ingest": "node apps/jobs/verify-ingest.js",
     "backtest": "node apps/jobs/backtest.js",
+    "backfill:oddsapi": "node apps/jobs/backfill-odds-oddsapi.js",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "postinstall": "npm run prisma:generate"
   },

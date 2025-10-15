@@ -58,29 +58,35 @@ jobs:
         if: ${{ env.CFBD_API_KEY != '' }}
         run: |
           echo "🗓️ Ingesting real schedules from CFBD..."
-          npm run ingest -- cfbd --season 2024 --weeks 1
+          # 2025 season, weeks 1-15 (rolling)
+          npm run ingest -- cfbd --season 2025 --weeks 1-15
           echo "✅ CFBD schedules ingested"
 
       - name: Fallback - Ensure mock schedules (if no CFBD key)
         if: ${{ env.CFBD_API_KEY == '' }}
         run: |
           echo "📥 Using mock data (no CFBD_API_KEY)..."
-          npm run ingest -- mock --season 2024 --weeks 1
+          npm run ingest -- mock --season 2025 --weeks 1
           echo "✅ Mock data ingest complete"
 
-      - name: Fetch real odds from SGO (optional)
-        if: ${{ env.SGO_API_KEY != '' }}
+      - name: Fetch odds from Odds API (primary)
+        if: ${{ env.ODDS_API_KEY != '' }}
         run: |
-          echo "📈 Fetching odds from SGO..."
-          # For 2024 week 1 window (adjust for other weeks as needed)
-          START_DATE=2024-08-26
-          END_DATE=2024-09-02
-          npm run ingest -- sgo --season 2024 --weeks 1 --startDate $START_DATE --endDate $END_DATE
-          echo "✅ SGO odds fetched (fallback to Odds API if SGO returns 0)"
+          echo "📈 Fetching odds from Odds API..."
+          # Live 2025 season - no date range needed for current data
+          npm run ingest -- oddsapi --season 2025 --weeks 1-15
+          echo "✅ Odds API odds fetched"
 
-      - name: Skip SGO (no API key)
-        if: ${{ env.SGO_API_KEY == '' }}
-        run: echo "⚠️  SGO_API_KEY not set; skipping odds update."
+      - name: Fallback - Fetch odds from SGO (if Odds API unavailable)
+        if: ${{ env.ODDS_API_KEY == '' && env.SGO_API_KEY != '' }}
+        run: |
+          echo "📈 Fetching odds from SGO (fallback)..."
+          npm run ingest -- sgo --season 2025 --weeks 1-15
+          echo "✅ SGO odds fetched"
+
+      - name: Skip odds (no API keys)
+        if: ${{ env.ODDS_API_KEY == '' && env.SGO_API_KEY == '' }}
+        run: echo "⚠️  No odds API keys set; skipping odds update."
 
       - name: Fetch weather via Visual Crossing (optional)
         if: ${{ env.VISUALCROSSING_API_KEY != '' }}
