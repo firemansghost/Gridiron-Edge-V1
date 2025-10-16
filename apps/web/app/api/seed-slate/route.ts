@@ -16,6 +16,7 @@ import {
 import { pickMarketLine, getLineValue, pickMoneyline, americanToProb } from '@/lib/market-line-helpers';
 import { logDataMode } from '@/lib/data-mode';
 import { getSeasonWeekFromParams } from '@/lib/season-week-helpers';
+import { getCurrentSeasonWeek } from '@/lib/current-week';
 import { NextRequest } from 'next/server';
 
 export async function GET(request: NextRequest) {
@@ -27,8 +28,17 @@ export async function GET(request: NextRequest) {
   const injuriesOn = searchParams.get('injuries') === 'on';
   const weatherOn = searchParams.get('weather') === 'on';
   
-  // Get season/week from params or use current
-  const { season, week } = getSeasonWeekFromParams(searchParams);
+  // Get season/week from params or auto-detect from database
+  let season: number, week: number;
+  if (searchParams.get('season') && searchParams.get('week')) {
+    const params = getSeasonWeekFromParams(searchParams);
+    season = params.season;
+    week = params.week;
+  } else {
+    const current = await getCurrentSeasonWeek(prisma);
+    season = current.season;
+    week = current.week;
+  }
   
   try {
     // Get this week's games
@@ -237,8 +247,8 @@ export async function GET(request: NextRequest) {
 
     return Response.json({
       success: true,
-      week: 1,
-      season: 2024,
+      week,
+      season,
       modelVersion: 'v0.0.1',
       games: slate,
       summary: {

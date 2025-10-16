@@ -13,14 +13,24 @@ import { prisma } from '@/lib/prisma';
 import { computeSpreadPick, computeTotalPick } from '@/lib/pick-helpers';
 import { pickMarketLine, getLineValue, pickMoneyline, americanToProb } from '@/lib/market-line-helpers';
 import { getSeasonWeekFromParams } from '@/lib/season-week-helpers';
+import { getCurrentSeasonWeek } from '@/lib/current-week';
 
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const searchParams = url.searchParams;
     
-    // Get season/week from params or use current
-    const { season, week } = getSeasonWeekFromParams(searchParams);
+    // Get season/week from params or auto-detect from database
+    let season: number, week: number;
+    if (searchParams.get('season') && searchParams.get('week')) {
+      const params = getSeasonWeekFromParams(searchParams);
+      season = params.season;
+      week = params.week;
+    } else {
+      const current = await getCurrentSeasonWeek(prisma);
+      season = current.season;
+      week = current.week;
+    }
     
     const confidence = searchParams.get('confidence') || '';
     const market = searchParams.get('market') || '';
