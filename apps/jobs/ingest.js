@@ -19,6 +19,55 @@ const prisma = new PrismaClient();
 const errMsg = (e) => (e && e instanceof Error) ? e.message : String(e);
 
 /**
+ * Calculate date range from CFBD games for historical odds
+ */
+async function calculateDateRangeFromGames(season, weeks) {
+  try {
+    console.log(`   [DATE RANGE] Querying games for ${season} weeks ${weeks.join(',')}...`);
+    
+    const games = await prisma.game.findMany({
+      where: {
+        season: season,
+        week: { in: weeks }
+      },
+      select: {
+        date: true
+      },
+      orderBy: {
+        date: 'asc'
+      }
+    });
+    
+    if (games.length === 0) {
+      console.warn(`   [DATE RANGE] No games found for ${season} weeks ${weeks.join(',')}`);
+      return null;
+    }
+    
+    const dates = games.map(g => new Date(g.date));
+    const minDate = new Date(Math.min(...dates));
+    const maxDate = new Date(Math.max(...dates));
+    
+    // Add 2 days buffer before and after
+    const startDate = new Date(minDate);
+    startDate.setDate(startDate.getDate() - 2);
+    
+    const endDate = new Date(maxDate);
+    endDate.setDate(endDate.getDate() + 2);
+    
+    console.log(`   [DATE RANGE] Found ${games.length} games from ${minDate.toISOString().split('T')[0]} to ${maxDate.toISOString().split('T')[0]}`);
+    console.log(`   [DATE RANGE] Date window: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
+    
+    return {
+      startDate: startDate.toISOString().split('T')[0],
+      endDate: endDate.toISOString().split('T')[0]
+    };
+  } catch (error) {
+    console.error(`   [DATE RANGE] Error calculating date range: ${errMsg(error)}`);
+    return null;
+  }
+}
+
+/**
  * Parse command line arguments
  */
 function parseArgs() {
@@ -393,6 +442,14 @@ async function upsertMarketLines(marketLines) {
 
   console.log(`   [DEDUP] Removed ${deduplicated} duplicate lines, ${dedupMap.size} unique lines remaining`);
 
+  // Debug: Log sample dedup keys and fields
+  if (dedupMap.size > 0) {
+    const sampleLine = Array.from(dedupMap.values())[0];
+    const sampleKey = `${sampleLine.gameId}|${sampleLine.lineType}|${sampleLine.bookName}|${sampleLine.source}|${sampleLine.timestamp}`;
+    console.log(`   [DEBUG] Sample dedup key: ${sampleKey}`);
+    console.log(`   [DEBUG] Sample line fields: gameId=${sampleLine.gameId}, season=${sampleLine.season}, week=${sampleLine.week}, lineType=${sampleLine.lineType}, lineValue=${sampleLine.lineValue}, timestamp=${sampleLine.timestamp}`);
+  }
+
   // Step 2: Chunked upserts (500 records per batch)
   const chunkSize = 500;
   const uniqueLines = Array.from(dedupMap.values());
@@ -401,11 +458,12 @@ async function upsertMarketLines(marketLines) {
     const chunk = uniqueLines.slice(i, i + chunkSize);
     
     try {
-      await prisma.marketLine.createMany({
+      const result = await prisma.marketLine.createMany({
         data: chunk,
         skipDuplicates: true // Skip duplicates at DB level
       });
-      upserted += chunk.length;
+      console.log(`   [INSERT] Chunk ${Math.floor(i/chunkSize) + 1}: Attempted ${chunk.length}, inserted ${result.count}`);
+      upserted += result.count;
     } catch (error) {
       // If chunk fails, try individual records to identify problematic ones
       console.warn(`   ⚠️  Chunk upsert failed, trying individual records...`);
@@ -556,6 +614,18 @@ async function main() {
     const dateOptions = {};
     if (options.startDate) dateOptions.startDate = options.startDate;
     if (options.endDate) dateOptions.endDate = options.endDate;
+    
+    // For historical data, calculate date range from CFBD games if not provided
+    if (!options.startDate && !options.endDate && options.season < new Date().getFullYear()) {
+      console.log('   [DATE RANGE] Calculating date range from CFBD games for historical odds...');
+      const dateRange = await calculateDateRangeFromGames(options.season, options.weeks);
+      if (dateRange) {
+        dateOptions.startDate = dateRange.startDate;
+        dateOptions.endDate = dateRange.endDate;
+        console.log(`   [DATE RANGE] Using date window: ${dateRange.startDate} to ${dateRange.endDate}`);
+      }
+    }
+    
     const marketLines = await adapter.getMarketLines(options.season, options.weeks, Object.keys(dateOptions).length > 0 ? dateOptions : undefined);
     console.log(`   Found ${marketLines.length} market lines`);
     

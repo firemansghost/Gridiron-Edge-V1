@@ -268,8 +268,8 @@ export class OddsApiAdapter implements DataSourceAdapter {
     const tokens1 = new Set(str1.split(/\s+/));
     const tokens2 = new Set(str2.split(/\s+/));
     
-    const intersection = new Set([...tokens1].filter(x => tokens2.has(x)));
-    const union = new Set([...tokens1, ...tokens2]);
+    const intersection = new Set(Array.from(tokens1).filter(x => tokens2.has(x)));
+    const union = new Set([...Array.from(tokens1), ...Array.from(tokens2)]);
     
     return union.size === 0 ? 0 : intersection.size / union.size;
   }
@@ -405,6 +405,7 @@ export class OddsApiAdapter implements DataSourceAdapter {
 
     for (const week of weeks) {
       console.log(`📥 Fetching Odds API odds for ${season} Week ${week}...`);
+      console.log(`   [DEBUG] About to call fetchOddsForWeek with season=${season}, week=${week}, options=`, options);
       
       try {
         const { lines, eventCount, matchedCount } = await this.fetchOddsForWeek(season, week, options);
@@ -419,6 +420,20 @@ export class OddsApiAdapter implements DataSourceAdapter {
         
         console.log(`   [ODDSAPI] Parsed counts — spread: ${spreads}, total: ${totals}, moneyline: ${moneylines}`);
         console.log(`   ✅ Fetched ${spreads} spreads, ${totals} totals, ${moneylines} moneylines (oddsapi)`);
+        
+        // Debug: Log sample rows for each market type
+        if (spreads > 0) {
+          const sampleSpread = lines.find(l => l.lineType === 'spread');
+          console.log(`   [DEBUG] Sample spread: gameId=${sampleSpread.gameId}, lineValue=${sampleSpread.lineValue}, bookName=${sampleSpread.bookName}, timestamp=${sampleSpread.timestamp}`);
+        }
+        if (totals > 0) {
+          const sampleTotal = lines.find(l => l.lineType === 'total');
+          console.log(`   [DEBUG] Sample total: gameId=${sampleTotal.gameId}, lineValue=${sampleTotal.lineValue}, bookName=${sampleTotal.bookName}, timestamp=${sampleTotal.timestamp}`);
+        }
+        if (moneylines > 0) {
+          const sampleML = lines.find(l => l.lineType === 'moneyline');
+          console.log(`   [DEBUG] Sample moneyline: gameId=${sampleML.gameId}, lineValue=${sampleML.lineValue}, bookName=${sampleML.bookName}, timestamp=${sampleML.timestamp}`);
+        }
       } catch (error) {
         console.error(`   ❌ Error fetching Odds API odds for week ${week}:`, (error as Error).message);
         // Continue with other weeks
@@ -461,10 +476,10 @@ export class OddsApiAdapter implements DataSourceAdapter {
         season,
         week,
         timestamp: new Date().toISOString(),
-        unmatched: Array.from(unmatched).sort()
+        unmatched: Array.from(unmatched).sort().slice(0, 20) // First 20 for debugging
       };
       
-      const reportPath = path.join(reportsDir, 'unmatched_oddsapi_teams.json');
+      const reportPath = path.join(reportsDir, `unmatched_oddsapi_${season}_w${week}.json`);
       await fs.writeFile(reportPath, JSON.stringify(report, null, 2), 'utf-8');
       
       console.log(`   [ODDSAPI] 📝 Wrote unmatched teams report: ${reportPath}`);
@@ -490,9 +505,16 @@ export class OddsApiAdapter implements DataSourceAdapter {
     const currentWeek = this.getCurrentCFBWeek();
     const isHistorical = season < currentYear || (season === currentYear && week < currentWeek);
     
-    if (isHistorical && options?.startDate) {
+    console.log(`   [DEBUG] Historical check: season=${season}, currentYear=${currentYear}, week=${week}, currentWeek=${currentWeek}, isHistorical=${isHistorical}`);
+    
+    if (isHistorical) {
       // Use historical endpoint for past weeks
       console.log(`   [ODDSAPI] Using historical data endpoint for ${season} week ${week}`);
+      if (!options?.startDate) {
+        console.warn(`   [ODDSAPI] No startDate provided for historical data. Using current date as fallback.`);
+        const fallbackDate = new Date().toISOString().split('T')[0];
+        return await this.fetchHistoricalOdds(season, week, fallbackDate, options?.endDate);
+      }
       return await this.fetchHistoricalOdds(season, week, options.startDate, options.endDate);
     } else {
       // Use live odds endpoint for current week
@@ -568,20 +590,21 @@ export class OddsApiAdapter implements DataSourceAdapter {
    * Fetch historical odds from The Odds API
    */
   private async fetchHistoricalOdds(season: number, week: number, startDate: string, endDate?: string): Promise<{lines: any[], eventCount: number, matchedCount: number}> {
-    console.warn(`   [ODDSAPI] Historical endpoint requires a paid tier. Attempting to use live endpoint filtered by date...`);
-    
-    // For now, try the live endpoint - historical requires paid tier
-    // In a production scenario, you would use:
-    // GET /v4/historical/sports/americanfootball_ncaaf/odds?date={timestamp}&regions=us&markets={markets}
+    console.log(`   [ODDSAPI] Using historical endpoint for ${season} week ${week}`);
+    console.log(`   [ODDSAPI] Date window: ${startDate} to ${endDate || 'N/A'}`);
     
     const lines: any[] = [];
     let matchedCount = 0;
     let eventCount = 0;
     const markets = this.config.markets.join(',');
-    const url = `${this.baseUrl}/sports/americanfootball_ncaaf/odds?apiKey=${this.apiKey}&regions=us&markets=${markets}&oddsFormat=american`;
     
-    console.log(`   [ODDSAPI] URL: ${url.replace(this.apiKey, 'HIDDEN')}`);
-    console.warn(`   [ODDSAPI] Note: Filtering by date range (${startDate} to ${endDate}) may not work on free tier`);
+    // Use historical endpoint for past seasons
+    // Convert date to timestamp (ISO format)
+    const dateTimestamp = new Date(startDate).toISOString();
+    const url = `${this.baseUrl}/historical/sports/americanfootball_ncaaf/odds?apiKey=${this.apiKey}&regions=us&markets=${markets}&oddsFormat=american&date=${dateTimestamp}`;
+    
+    console.log(`   [ODDSAPI] Historical URL: ${url.replace(this.apiKey, 'HIDDEN')}`);
+    console.log(`   [ODDSAPI] Markets: ${markets}`);
 
     try {
       const response = await fetch(url, {
@@ -600,23 +623,11 @@ export class OddsApiAdapter implements DataSourceAdapter {
       }
 
       const events: OddsApiEvent[] = await response.json();
-      
-      // Filter events by date range if provided
-      const filteredEvents = events.filter(event => {
-        if (!startDate) return true;
-        const eventDate = new Date(event.commence_time);
-        const start = new Date(startDate);
-        const end = endDate ? new Date(endDate) : new Date(startDate);
-        end.setDate(end.getDate() + 7); // Add 7 days if no end date
-        
-        return eventDate >= start && eventDate <= end;
-      });
-      
-      eventCount = filteredEvents.length;
-      console.log(`   [ODDSAPI] Found ${events.length} total events, ${filteredEvents.length} in date range`);
+      eventCount = events.length;
+      console.log(`   [ODDSAPI] Found ${events.length} historical events`);
 
       // Parse each event's odds with team matching
-      for (const event of filteredEvents) {
+      for (const event of events) {
         const eventLines = this.parseEventOdds(event, season, week);
         if (eventLines.length > 0) {
           lines.push(...eventLines);
@@ -646,6 +657,7 @@ export class OddsApiAdapter implements DataSourceAdapter {
 
     // Skip if either team couldn't be matched
     if (!homeTeamId || !awayTeamId) {
+      console.log(`   [DEBUG] Team matching failed: Away="${event.away_team}" (${awayTeamId}), Home="${event.home_team}" (${homeTeamId})`);
       return [];
     }
 
