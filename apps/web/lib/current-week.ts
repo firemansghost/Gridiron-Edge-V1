@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 
 type SeasonWeek = { season: number; week: number };
 type WeekDates = Record<number, Date[]>; // week -> list of game dates
+type GameRow = { week: number | null; date: Date };
 
 function absDiff(a: Date, b: Date): number {
   return Math.abs(a.getTime() - b.getTime());
@@ -58,13 +59,10 @@ export async function getCurrentSeasonWeek(prisma: PrismaClient): Promise<Season
   });
   const season = latestSeasonRow?.season ?? now.getFullYear();
 
-  // 2) Gather weeks and their game startDates for that season (FBS only)
-  const games = await prisma.game.findMany({
-    where: {
-      season,
-      // If you have classification on team, use FBS filter via relations; else rely on what CFBD ingested.
-    },
-    select: { week: true, startDate: true },
+  // 2) Gather weeks and their game dates for that season (FBS already filtered at ingest)
+  const games: GameRow[] = await prisma.game.findMany({
+    where: { season },
+    select: { week: true, date: true }, // NOTE: `date`, not `startDate`
   });
 
   if (!games.length) {
@@ -76,8 +74,7 @@ export async function getCurrentSeasonWeek(prisma: PrismaClient): Promise<Season
   for (const g of games) {
     const wk = g.week ?? 1;
     if (!weekDates[wk]) weekDates[wk] = [];
-    // Normalize to Date
-    const d = g.startDate instanceof Date ? g.startDate : new Date(g.startDate as unknown as string);
+    const d = g.date instanceof Date ? g.date : new Date((g as unknown as { date: string }).date);
     if (!isNaN(d.getTime())) {
       weekDates[wk].push(d);
     }
