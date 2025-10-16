@@ -1,5 +1,6 @@
 import { Metadata } from 'next';
 import Link from 'next/link';
+import { DocsMeta } from '@/components/DocsMeta';
 
 export const metadata: Metadata = {
   title: 'Internal Documentation',
@@ -32,6 +33,12 @@ export default function DocsLayout({
             </span>
           </div>
         </div>
+        
+        {/* Meta information */}
+        <DocsMeta 
+          gitSha={process.env.NEXT_PUBLIC_GIT_SHA}
+          repoUrl={process.env.NEXT_PUBLIC_REPO_URL}
+        />
         
         {/* Content */}
         <div className="prose prose-lg max-w-none">
