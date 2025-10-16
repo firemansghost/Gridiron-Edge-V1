@@ -15,9 +15,11 @@ export function Footer() {
             >
               GitHub
             </a>
-            <Link href="/docs" className="text-gray-600 hover:text-blue-600 transition-colors">
-              Docs
-            </Link>
+            {process.env.NEXT_PUBLIC_SHOW_DOCS === 'true' && (
+              <Link href="/docs" className="text-gray-600 hover:text-blue-600 transition-colors">
+                Docs
+              </Link>
+            )}
             <Link href="/disclaimer" className="text-gray-600 hover:text-blue-600 transition-colors">
               Disclaimer
             </Link>

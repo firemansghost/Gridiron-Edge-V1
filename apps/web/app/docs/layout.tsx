@@ -1,6 +1,7 @@
 import { Metadata } from 'next';
 import Link from 'next/link';
 import { DocsMeta } from '@/components/DocsMeta';
+import { Breadcrumbs } from '@/components/Breadcrumbs';
 
 export const metadata: Metadata = {
   title: 'Internal Documentation',
@@ -32,6 +33,9 @@ export default function DocsLayout({
               Internal
             </span>
           </div>
+          
+          {/* Breadcrumbs */}
+          <Breadcrumbs />
         </div>
         
         {/* Meta information */}
