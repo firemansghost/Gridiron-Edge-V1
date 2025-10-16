@@ -106,7 +106,7 @@ export default function HomePage() {
               </div>
             </div>
             <Link 
-              href={`/weeks?season=${slate?.season || 2024}&week=${slate?.week || 1}`}
+              href={`/weeks?season=${slate?.season}&week=${slate?.week}`}
               className="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm"
             >
               Review Previous Weeks

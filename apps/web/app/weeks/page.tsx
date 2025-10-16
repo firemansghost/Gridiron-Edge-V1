@@ -102,7 +102,7 @@ function WeeksPageContent() {
   const [error, setError] = useState<string | null>(null);
   
   // Filter states
-  const [season, setSeason] = useState(searchParams.get('season') || '2024');
+  const [season, setSeason] = useState(searchParams.get('season') || new Date().getFullYear().toString());
   const [week, setWeek] = useState(searchParams.get('week') || '1');
   const [confidence, setConfidence] = useState(searchParams.get('confidence') || '');
   const [market, setMarket] = useState(searchParams.get('market') || '');
@@ -241,7 +241,9 @@ function WeeksPageContent() {
                     onChange={(e) => setSeason(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="2024">2024</option>
+                    <option value={new Date().getFullYear().toString()}>{new Date().getFullYear()}</option>
+                    <option value={(new Date().getFullYear() - 1).toString()}>{new Date().getFullYear() - 1}</option>
+                    <option value={(new Date().getFullYear() - 2).toString()}>{new Date().getFullYear() - 2}</option>
                   </select>
                 </div>
                 <div>
@@ -251,7 +253,9 @@ function WeeksPageContent() {
                     onChange={(e) => setWeek(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="1">Week 1</option>
+                    {Array.from({ length: 15 }, (_, i) => i + 1).map(w => (
+                      <option key={w} value={w.toString()}>Week {w}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
