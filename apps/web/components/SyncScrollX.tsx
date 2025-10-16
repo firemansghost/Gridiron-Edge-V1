@@ -69,10 +69,10 @@ export function SyncScrollX({ children }: SyncScrollXProps) {
 
   return (
     <div className="relative">
-      {/* Top scrollbar mirror */}
+      {/* Top scrollbar mirror - always visible */}
       <div 
         ref={topBarRef} 
-        className="h-4 overflow-x-auto mb-1 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100" 
+        className="h-4 overflow-x-auto mb-1 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 sticky top-0 z-20 bg-white" 
         aria-hidden="true"
       >
         <div ref={phantomRef} className="h-full" />

@@ -214,8 +214,8 @@ export default function HomePage() {
               </div>
             </div>
           ) : (
-          <div className="max-h-[70vh] overflow-y-auto">
-            <SyncScrollX>
+          <SyncScrollX>
+            <div className="max-h-[70vh] overflow-y-auto">
               <table className="min-w-[1200px] divide-y divide-gray-200">
                 <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
                   <tr>
@@ -380,8 +380,8 @@ export default function HomePage() {
                   )}
                 </tbody>
               </table>
-            </SyncScrollX>
-          </div>
+            </div>
+          </SyncScrollX>
           )}
         </div>
 
