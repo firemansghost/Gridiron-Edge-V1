@@ -110,3 +110,6 @@ Check the **Actions** tab in GitHub to see execution logs and summaries.
 
 ## Documentation
 See `/docs` directory for detailed architecture, data models, and implementation guides.
+
+### Docs
+- [Post-Run Expectations (CFBD → Odds API, Week N)](docs/runbook.md) - Database expectations, UI checks, and troubleshooting guide
