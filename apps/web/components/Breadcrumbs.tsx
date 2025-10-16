@@ -12,6 +12,7 @@ export function Breadcrumbs() {
     if (path === '/docs/runbook') return 'Runbook';
     if (path === '/docs/methodology') return 'Methodology';
     if (path === '/docs/status') return 'Status';
+    if (path === '/docs/changelog') return 'Changelog';
     return 'Documentation';
   };
 
