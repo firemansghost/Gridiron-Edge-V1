@@ -1,3 +1,5 @@
+import { CodeWithCopy } from '@/components/CodeWithCopy';
+
 export default function RunbookPage() {
   return (
     <>
@@ -26,9 +28,8 @@ export default function RunbookPage() {
           <h3 className="text-xl font-semibold text-gray-900 mb-4">
             Quick checks (paste into Supabase SQL):
           </h3>
-          <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto">
-            <pre className="text-sm">
-{`-- 1) Per-type counts by source
+          <CodeWithCopy 
+            code={`-- 1) Per-type counts by source
 select season, week, line_type, source, count(*) as rows
 from market_lines
 where season = 2025 and week = 8
@@ -69,8 +70,8 @@ from market_lines
 where season = 2025 and week = 8
 group by 1,2,3
 order by 1,2,3;`}
-            </pre>
-          </div>
+            language="sql"
+          />
         </section>
 
         <section>
