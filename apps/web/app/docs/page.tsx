@@ -11,6 +11,9 @@ import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 
 export default function DocsPage() {
+  // Controlled by NEXT_PUBLIC_SHOW_DOCS (string "true") at build time
+  const showInternalDocs = process.env.NEXT_PUBLIC_SHOW_DOCS === 'true';
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <HeaderNav />
@@ -24,27 +27,92 @@ export default function DocsPage() {
             </p>
           </div>
 
-          {/* Coming Soon Notice */}
-          <div className="bg-blue-50 border-l-4 border-blue-500 p-6 mb-8">
-            <div className="flex">
-              <div className="flex-shrink-0">
-                <svg className="h-6 w-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+          {showInternalDocs ? (
+            // Internal Documentation
+            <div className="space-y-8">
+              <div className="bg-green-50 border-l-4 border-green-500 p-6 mb-8">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <svg className="h-6 w-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-green-700 font-medium">
+                      Internal documentation is available!
+                    </p>
+                    <p className="text-sm text-green-600 mt-1">
+                      Access our runbook and methodology documentation below.
+                    </p>
+                  </div>
+                </div>
               </div>
-              <div className="ml-3">
-                <p className="text-sm text-blue-700 font-medium">
-                  Comprehensive documentation is coming soon!
-                </p>
-                <p className="text-sm text-blue-600 mt-1">
-                  In the meantime, check out the resources below to get started.
-                </p>
+
+              {/* Internal Documentation Links */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <Link
+                  href="/docs/runbook"
+                  className="block bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 border border-gray-200"
+                >
+                  <div className="flex items-start">
+                    <div className="flex-shrink-0">
+                      <svg className="h-8 w-8 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div className="ml-4">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">Runbook</h3>
+                      <p className="text-sm text-gray-600">
+                        Post-run expectations, verification steps, and troubleshooting guide
+                      </p>
+                    </div>
+                  </div>
+                </Link>
+
+                <Link
+                  href="/docs/methodology"
+                  className="block bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 border border-gray-200"
+                >
+                  <div className="flex items-start">
+                    <div className="flex-shrink-0">
+                      <svg className="h-8 w-8 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div className="ml-4">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">Methodology</h3>
+                      <p className="text-sm text-gray-600">
+                        Data sources, modeling approach, and system methodology
+                      </p>
+                    </div>
+                  </div>
+                </Link>
               </div>
             </div>
-          </div>
+          ) : (
+            // External Documentation (fallback)
+            <>
+              {/* Coming Soon Notice */}
+              <div className="bg-blue-50 border-l-4 border-blue-500 p-6 mb-8">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <svg className="h-6 w-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-blue-700 font-medium">
+                      Comprehensive documentation is coming soon!
+                    </p>
+                    <p className="text-sm text-blue-600 mt-1">
+                      In the meantime, check out the resources below to get started.
+                    </p>
+                  </div>
+                </div>
+              </div>
 
-          {/* Quick Links */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+              {/* Quick Links */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
             {/* Project README */}
             <a
               href="https://github.com/firemansghost/Gridiron-Edge-V1/blob/main/README.md"
@@ -218,7 +286,9 @@ export default function DocsPage() {
                 </a>
               </p>
             </div>
-          </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
       <Footer />
