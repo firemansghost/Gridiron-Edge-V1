@@ -105,12 +105,28 @@ export default function HomePage() {
               </div>
             </div>
             <Link 
-              href="/weeks?season=2024&week=1"
+              href={`/weeks?season=${slate?.season || 2024}&week=${slate?.week || 1}`}
               className="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm"
             >
               Review Previous Weeks
             </Link>
           </div>
+          
+          {/* Subheader with today's date and auto-selected season/week */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-2">
+            <div className="text-sm text-gray-500">
+              Today: {new Date().toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              })}
+            </div>
+            <div className="text-sm text-gray-500">
+              Showing: Season {slate?.season || '—'}, Week {slate?.week || '—'}
+            </div>
+          </div>
+          
           <div className="flex items-center gap-3 mt-2">
             <p className="text-gray-600">
               Week {slate?.week} • {slate?.season} Season • Model {slate?.modelVersion}
