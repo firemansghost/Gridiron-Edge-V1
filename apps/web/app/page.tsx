@@ -14,6 +14,7 @@ import { DataModeBadge } from '@/components/DataModeBadge';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import { SkeletonTable } from '@/components/SkeletonRow';
+import { SyncScrollX } from '@/components/SyncScrollX';
 import { abbrevSource, formatSourceTooltip } from '@/lib/market-badges';
 
 export default function HomePage() {
@@ -213,171 +214,173 @@ export default function HomePage() {
               </div>
             </div>
           ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Matchup
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Kickoff (CT)
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Market Close
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    ML
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Model Line
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Pick (Spread)
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Pick (Total)
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Max Edge
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Confidence
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Action
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {loading ? (
-                  <SkeletonTable rows={5} columns={10} />
-                ) : (
-                  slate?.games?.map((game) => (
-                  <tr key={game.gameId} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center space-x-3">
-                        <Link href={`/team/${game.awayTeam.id}`} className="flex items-center space-x-2 hover:text-blue-600 transition-colors">
-                          <TeamLogo 
-                            teamName={game.awayTeam.name}
-                            logoUrl={game.awayTeam.logoUrl}
-                            primaryColor={game.awayTeam.primaryColor}
-                            teamId={game.awayTeam.id}
-                            size="sm"
-                          />
-                          <span className="text-sm font-medium text-gray-900">
-                            {game.awayTeam.name}
-                          </span>
-                        </Link>
-                        <span className="text-gray-400">@</span>
-                        <Link href={`/team/${game.homeTeam.id}`} className="flex items-center space-x-2 hover:text-blue-600 transition-colors">
-                          <TeamLogo 
-                            teamName={game.homeTeam.name}
-                            logoUrl={game.homeTeam.logoUrl}
-                            primaryColor={game.homeTeam.primaryColor}
-                            teamId={game.homeTeam.id}
-                            size="sm"
-                          />
-                          <span className="text-sm font-medium text-gray-900">
-                            {game.homeTeam.name}
-                          </span>
-                        </Link>
-                      </div>
-                      <div className="text-sm text-gray-500 mt-1">
-                        <Link href={`/game/${game.gameId}`} className="hover:text-blue-600 transition-colors">
-                          {game.venue} {game.neutralSite && '(Neutral)'}
-                        </Link>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {game.kickoff}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      <div className="flex items-center">
-                        <span>Spread: {game.marketSpread > 0 ? '+' : ''}{game.marketSpread.toFixed(1)}</span>
-                        {game.marketMeta?.spread?.source && (
-                          <span 
-                            className="ml-2 text-xs rounded px-2 py-0.5 bg-blue-100 text-blue-700 font-medium"
-                            title={formatSourceTooltip(game.marketMeta.spread.source, game.marketMeta.spread.timestamp)}
-                          >
-                            ({abbrevSource(game.marketMeta.spread.source)})
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center">
-                        <span>Total: {game.marketTotal.toFixed(1)}</span>
-                        {game.marketMeta?.total?.source && (
-                          <span 
-                            className="ml-2 text-xs rounded px-2 py-0.5 bg-blue-100 text-blue-700 font-medium"
-                            title={formatSourceTooltip(game.marketMeta.total.source, game.marketMeta.total.timestamp)}
-                          >
-                            ({abbrevSource(game.marketMeta.total.source)})
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {game.moneyline?.price != null ? (
+          <div className="max-h-[70vh] overflow-y-auto">
+            <SyncScrollX>
+              <table className="min-w-[1200px] divide-y divide-gray-200">
+                <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Matchup
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Kickoff (CT)
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Market Close
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      ML
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Model Line
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Pick (Spread)
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Pick (Total)
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Max Edge
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Confidence
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Action
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {loading ? (
+                    <SkeletonTable rows={5} columns={10} />
+                  ) : (
+                    slate?.games?.map((game) => (
+                    <tr key={game.gameId} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center space-x-3">
+                          <Link href={`/team/${game.awayTeam.id}`} className="flex items-center space-x-2 hover:text-blue-600 transition-colors">
+                            <TeamLogo 
+                              teamName={game.awayTeam.name}
+                              logoUrl={game.awayTeam.logoUrl}
+                              primaryColor={game.awayTeam.primaryColor}
+                              teamId={game.awayTeam.id}
+                              size="sm"
+                            />
+                            <span className="text-sm font-medium text-gray-900">
+                              {game.awayTeam.name}
+                            </span>
+                          </Link>
+                          <span className="text-gray-400">@</span>
+                          <Link href={`/team/${game.homeTeam.id}`} className="flex items-center space-x-2 hover:text-blue-600 transition-colors">
+                            <TeamLogo 
+                              teamName={game.homeTeam.name}
+                              logoUrl={game.homeTeam.logoUrl}
+                              primaryColor={game.homeTeam.primaryColor}
+                              teamId={game.homeTeam.id}
+                              size="sm"
+                            />
+                            <span className="text-sm font-medium text-gray-900">
+                              {game.homeTeam.name}
+                            </span>
+                          </Link>
+                        </div>
+                        <div className="text-sm text-gray-500 mt-1">
+                          <Link href={`/game/${game.gameId}`} className="hover:text-blue-600 transition-colors">
+                            {game.venue} {game.neutralSite && '(Neutral)'}
+                          </Link>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {game.kickoff}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         <div className="flex items-center">
-                          <span 
-                            className="font-medium cursor-help"
-                            title={game.moneyline.impliedProb != null 
-                              ? `Implied prob: ${(game.moneyline.impliedProb * 100).toFixed(1)}%` 
-                              : ''
-                            }
-                          >
-                            {game.moneyline.price > 0 ? '+' : ''}{game.moneyline.price}
-                          </span>
-                          {game.moneyline.meta?.source && (
+                          <span>Spread: {game.marketSpread > 0 ? '+' : ''}{game.marketSpread.toFixed(1)}</span>
+                          {game.marketMeta?.spread?.source && (
                             <span 
                               className="ml-2 text-xs rounded px-2 py-0.5 bg-blue-100 text-blue-700 font-medium"
-                              title={formatSourceTooltip(game.moneyline.meta.source, game.moneyline.meta.timestamp)}
+                              title={formatSourceTooltip(game.marketMeta.spread.source, game.marketMeta.spread.timestamp)}
                             >
-                              ({abbrevSource(game.moneyline.meta.source)})
+                              ({abbrevSource(game.marketMeta.spread.source)})
                             </span>
                           )}
                         </div>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      <div className="font-medium">{game.spreadPickLabel}</div>
-                      <div className="text-xs text-gray-500">model line</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      <div className="font-medium">{game.spreadPickLabel}</div>
-                      <div className="text-xs text-gray-500">edge +{game.spreadEdgePts.toFixed(1)}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      <div className="font-medium">{game.totalPickLabel || '—'}</div>
-                      {game.totalPickLabel && (
-                        <div className="text-xs text-gray-500">edge +{game.totalEdgePts.toFixed(1)}</div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      <div className="font-medium">
-                        {formatEdge(game.maxEdge)} pts
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getConfidenceColor(game.confidence)}`}>
-                        {game.confidence}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <Link 
-                        href={`/game/${game.gameId}`}
-                        className="text-blue-600 hover:text-blue-800 font-medium"
-                      >
-                        View →
-                      </Link>
-                    </td>
-                  </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                        <div className="flex items-center">
+                          <span>Total: {game.marketTotal.toFixed(1)}</span>
+                          {game.marketMeta?.total?.source && (
+                            <span 
+                              className="ml-2 text-xs rounded px-2 py-0.5 bg-blue-100 text-blue-700 font-medium"
+                              title={formatSourceTooltip(game.marketMeta.total.source, game.marketMeta.total.timestamp)}
+                            >
+                              ({abbrevSource(game.marketMeta.total.source)})
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {game.moneyline?.price != null ? (
+                          <div className="flex items-center">
+                            <span 
+                              className="font-medium cursor-help"
+                              title={game.moneyline.impliedProb != null 
+                                ? `Implied prob: ${(game.moneyline.impliedProb * 100).toFixed(1)}%` 
+                                : ''
+                              }
+                            >
+                              {game.moneyline.price > 0 ? '+' : ''}{game.moneyline.price}
+                            </span>
+                            {game.moneyline.meta?.source && (
+                              <span 
+                                className="ml-2 text-xs rounded px-2 py-0.5 bg-blue-100 text-blue-700 font-medium"
+                                title={formatSourceTooltip(game.moneyline.meta.source, game.moneyline.meta.timestamp)}
+                              >
+                                ({abbrevSource(game.moneyline.meta.source)})
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <div className="font-medium">{game.spreadPickLabel}</div>
+                        <div className="text-xs text-gray-500">model line</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <div className="font-medium">{game.spreadPickLabel}</div>
+                        <div className="text-xs text-gray-500">edge +{game.spreadEdgePts.toFixed(1)}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <div className="font-medium">{game.totalPickLabel || '—'}</div>
+                        {game.totalPickLabel && (
+                          <div className="text-xs text-gray-500">edge +{game.totalEdgePts.toFixed(1)}</div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <div className="font-medium">
+                          {formatEdge(game.maxEdge)} pts
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getConfidenceColor(game.confidence)}`}>
+                          {game.confidence}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <Link 
+                          href={`/game/${game.gameId}`}
+                          className="text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                          View →
+                        </Link>
+                      </td>
+                    </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </SyncScrollX>
           </div>
           )}
         </div>

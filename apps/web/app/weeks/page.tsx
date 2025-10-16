@@ -12,6 +12,7 @@ import Link from 'next/link';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import { SkeletonTable } from '@/components/SkeletonRow';
+import { SyncScrollX } from '@/components/SyncScrollX';
 import { abbrevSource, formatSourceTooltip } from '@/lib/market-badges';
 import { MoneylineInfo, MarketMeta } from '@/types';
 
@@ -289,9 +290,10 @@ function WeeksPageContent() {
                 </h2>
               </div>
               
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+              <div className="max-h-[70vh] overflow-y-auto">
+                <SyncScrollX>
+                  <table className="min-w-[1200px] divide-y divide-gray-200">
+                    <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Matchup
@@ -433,7 +435,8 @@ function WeeksPageContent() {
                       ))
                     )}
                   </tbody>
-                </table>
+                  </table>
+                </SyncScrollX>
               </div>
             </div>
           </div>
