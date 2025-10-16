@@ -9,13 +9,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { computeSpreadPick, computeTotalPick } from '@/lib/pick-helpers';
 import { pickMoneyline, getLineValue, americanToProb } from '@/lib/market-line-helpers';
 import { abbrevSource } from '@/lib/market-badges';
+import { getSeasonWeekFromParams } from '@/lib/season-week-helpers';
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const rulesetId = searchParams.get('rulesetId');
-    const season = parseInt(searchParams.get('season') || '2024');
-    const week = parseInt(searchParams.get('week') || '1');
+    
+    // Get season/week from params or use current
+    const { season, week } = getSeasonWeekFromParams(searchParams);
 
     if (!rulesetId) {
       return NextResponse.json(

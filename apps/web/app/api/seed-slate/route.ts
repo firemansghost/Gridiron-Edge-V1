@@ -15,6 +15,7 @@ import {
 } from '@/lib/adjustment-helpers';
 import { pickMarketLine, getLineValue, pickMoneyline, americanToProb } from '@/lib/market-line-helpers';
 import { logDataMode } from '@/lib/data-mode';
+import { getSeasonWeekFromParams } from '@/lib/season-week-helpers';
 import { NextRequest } from 'next/server';
 
 export async function GET(request: NextRequest) {
@@ -25,12 +26,16 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const injuriesOn = searchParams.get('injuries') === 'on';
   const weatherOn = searchParams.get('weather') === 'on';
+  
+  // Get season/week from params or use current
+  const { season, week } = getSeasonWeekFromParams(searchParams);
+  
   try {
-    // Get this week's games (seed week 1, 2024)
+    // Get this week's games
     const games = await prisma.game.findMany({
       where: {
-        season: 2024,
-        week: 1
+        season,
+        week
       },
       include: {
         homeTeam: true,

@@ -10,13 +10,16 @@ import { prisma } from '@/lib/prisma';
 import { computeSpreadPick, computeTotalPick } from '@/lib/pick-helpers';
 import { pickMoneyline, getLineValue, americanToProb } from '@/lib/market-line-helpers';
 import { abbrevSource } from '@/lib/market-badges';
+import { getSeasonWeekFromParams } from '@/lib/season-week-helpers';
 
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const searchParams = url.searchParams;
-    const season = parseInt(searchParams.get('season') || '2024');
-    const week = parseInt(searchParams.get('week') || '1');
+    
+    // Get season/week from params or use current
+    const { season, week } = getSeasonWeekFromParams(searchParams);
+    
     const confidence = searchParams.get('confidence') || '';
     const market = searchParams.get('market') || '';
 
