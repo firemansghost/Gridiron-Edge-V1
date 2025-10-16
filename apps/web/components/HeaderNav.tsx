@@ -46,6 +46,11 @@ export function HeaderNav() {
             <Link href="/backtests" className={linkClass('/backtests')}>
               Backtests
             </Link>
+            {process.env.NEXT_PUBLIC_SHOW_DOCS === 'true' && (
+              <Link href="/docs" className={linkClass('/docs')}>
+                Docs
+              </Link>
+            )}
           </div>
 
           {/* Right: Data Mode Badge */}
@@ -69,6 +74,11 @@ export function HeaderNav() {
             <Link href="/backtests" className={linkClass('/backtests')}>
               Backtests
             </Link>
+            {process.env.NEXT_PUBLIC_SHOW_DOCS === 'true' && (
+              <Link href="/docs" className={linkClass('/docs')}>
+                Docs
+              </Link>
+            )}
           </div>
         </div>
       </div>
