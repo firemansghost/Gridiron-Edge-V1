@@ -1,0 +1,287 @@
+import { Metadata } from 'next';
+import { prisma } from '@/lib/prisma';
+
+export const metadata: Metadata = {
+  title: 'Database Status',
+  description: 'Live database status and sanity checks for Gridiron Edge',
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
+
+export default async function StatusPage() {
+  try {
+    // 1) Latest season/week present in games
+    const latestGame = await prisma.game.findFirst({
+      orderBy: [
+        { season: 'desc' },
+        { week: 'desc' },
+      ],
+      select: {
+        season: true,
+        week: true,
+      },
+    });
+
+    // 2) Counts for market_lines for the current (season, week) grouped by line_type and source
+    const currentSeason = latestGame?.season || 2025;
+    const currentWeek = latestGame?.week || 8;
+    
+    const marketLineCounts = await prisma.marketLine.groupBy({
+      by: ['lineType', 'source'],
+      where: {
+        season: currentSeason,
+        week: currentWeek,
+      },
+      _count: {
+        id: true,
+      },
+      orderBy: [
+        { lineType: 'asc' },
+        { source: 'asc' },
+      ],
+    });
+
+    // 3) Top 10 most-recent market_lines rows
+    const recentMarketLines = await prisma.marketLine.findMany({
+      take: 10,
+      orderBy: {
+        timestamp: 'desc',
+      },
+      select: {
+        gameId: true,
+        lineType: true,
+        lineValue: true,
+        closingLine: true,
+        bookName: true,
+        source: true,
+        timestamp: true,
+      },
+    });
+
+    // 4) Seed week quick check (2024, week 1)
+    const seedWeekCheck = await prisma.game.count({
+      where: {
+        season: 2024,
+        week: 1,
+      },
+    });
+
+    const seedWeekMarketLines = await prisma.marketLine.count({
+      where: {
+        season: 2024,
+        week: 1,
+      },
+    });
+
+    return (
+      <>
+        <h1 className="text-3xl font-bold text-gray-900 mb-8">
+          Database Status
+        </h1>
+        
+        <div className="space-y-8">
+          {/* Latest Season/Week */}
+          <section>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-4">
+              📊 Latest Data
+            </h2>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <h3 className="font-medium text-blue-900 mb-2">Latest FBS Games</h3>
+                  <p className="text-blue-800">
+                    Season: <span className="font-mono font-bold">{currentSeason}</span>
+                  </p>
+                  <p className="text-blue-800">
+                    Week: <span className="font-mono font-bold">{currentWeek}</span>
+                  </p>
+                </div>
+                <div>
+                  <h3 className="font-medium text-blue-900 mb-2">Seed Week Check</h3>
+                  <p className="text-blue-800">
+                    2024 Week 1 Games: <span className="font-mono font-bold">{seedWeekCheck}</span>
+                  </p>
+                  <p className="text-blue-800">
+                    2024 Week 1 Market Lines: <span className="font-mono font-bold">{seedWeekMarketLines}</span>
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Market Line Counts */}
+          <section>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-4">
+              📈 Market Lines by Type & Source
+            </h2>
+            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Line Type
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Source
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Count
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {marketLineCounts.length > 0 ? (
+                    marketLineCounts.map((item, index) => (
+                      <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="px-4 py-3 text-sm font-mono text-gray-900">
+                          {item.lineType}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900">
+                          {item.source}
+                        </td>
+                        <td className="px-4 py-3 text-sm font-mono text-gray-900">
+                          {item._count.id.toLocaleString()}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={3} className="px-4 py-8 text-center text-gray-500">
+                        No market lines found for season {currentSeason}, week {currentWeek}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          {/* Recent Market Lines */}
+          <section>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-4">
+              🕒 Recent Market Lines
+            </h2>
+            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Game ID
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Type
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Value
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Book
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Source
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Timestamp
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {recentMarketLines.length > 0 ? (
+                    recentMarketLines.map((line, index) => (
+                      <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="px-4 py-3 text-sm font-mono text-gray-900">
+                          {line.gameId}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900">
+                          {line.lineType}
+                        </td>
+                        <td className="px-4 py-3 text-sm font-mono text-gray-900">
+                          {line.closingLine ?? line.lineValue ?? 'N/A'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900">
+                          {line.bookName}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900">
+                          {line.source}
+                        </td>
+                        <td className="px-4 py-3 text-sm font-mono text-gray-500">
+                          {line.timestamp ? new Date(line.timestamp).toLocaleString() : 'N/A'}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                        No market lines found in database
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          {/* Summary */}
+          <section>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-4">
+              📋 Summary
+            </h2>
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                <div>
+                  <h3 className="font-medium text-gray-900 mb-2">Current Data</h3>
+                  <p className="text-gray-700">
+                    Latest: {currentSeason} Week {currentWeek}
+                  </p>
+                </div>
+                <div>
+                  <h3 className="font-medium text-gray-900 mb-2">Market Lines</h3>
+                  <p className="text-gray-700">
+                    {marketLineCounts.reduce((sum, item) => sum + item._count.id, 0).toLocaleString()} total
+                  </p>
+                </div>
+                <div>
+                  <h3 className="font-medium text-gray-900 mb-2">Seed Data</h3>
+                  <p className="text-gray-700">
+                    2024 W1: {seedWeekCheck} games, {seedWeekMarketLines} lines
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </>
+    );
+  } catch (error) {
+    return (
+      <>
+        <h1 className="text-3xl font-bold text-gray-900 mb-8">
+          Database Status
+        </h1>
+        
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg className="h-6 w-6 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 18.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-red-800">
+                Database Connection Error
+              </h3>
+              <div className="mt-2 text-sm text-red-700">
+                <p>Unable to connect to the database. Please check your connection and try again.</p>
+                <p className="mt-1 font-mono text-xs">
+                  Error: {error instanceof Error ? error.message : 'Unknown error'}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+}

@@ -49,7 +49,7 @@ export default function DocsPage() {
               </div>
 
               {/* Internal Documentation Links */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <Link
                   href="/docs/runbook"
                   className="block bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 border border-gray-200"
@@ -83,6 +83,25 @@ export default function DocsPage() {
                       <h3 className="text-lg font-semibold text-gray-900 mb-2">Methodology</h3>
                       <p className="text-sm text-gray-600">
                         Data sources, modeling approach, and system methodology
+                      </p>
+                    </div>
+                  </div>
+                </Link>
+
+                <Link
+                  href="/docs/status"
+                  className="block bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 border border-gray-200"
+                >
+                  <div className="flex items-start">
+                    <div className="flex-shrink-0">
+                      <svg className="h-8 w-8 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div className="ml-4">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">Status</h3>
+                      <p className="text-sm text-gray-600">
+                        Live database status and sanity checks for ingestion
                       </p>
                     </div>
                   </div>
