@@ -1,113 +1,94 @@
-/**
- * Current Week Detection
- * 
- * Auto-detects the current CFB season/week based on database content
- */
-
+// apps/web/lib/current-week.ts
 import { PrismaClient } from '@prisma/client';
 
-export interface SeasonWeek {
-  season: number;
-  week: number;
+type SeasonWeek = { season: number; week: number };
+type WeekDates = Record<number, Date[]>; // week -> list of game dates
+
+function absDiff(a: Date, b: Date): number {
+  return Math.abs(a.getTime() - b.getTime());
 }
 
-/**
- * Get the current season and week based on database content
- * 
- * Logic:
- * 1. Find the latest season that has any games
- * 2. For that season, find the week with games closest to now (within ±3-7 days)
- * 3. Fallback to the greatest week ≤ now, or smallest week if none
- */
+// Pick the week whose nearest game-time is closest to now
+function pickClosestWeek(weekDates: WeekDates, now: Date): number | null {
+  let bestWeek: number | null = null;
+  let bestDelta = Number.POSITIVE_INFINITY;
+
+  for (const weekStr of Object.keys(weekDates)) {
+    const week = Number(weekStr);
+    const dates = weekDates[week] || [];
+    if (dates.length === 0) continue;
+
+    // Closest date inside this week
+    let localBest = Number.POSITIVE_INFINITY;
+    for (const d of dates) {
+      const delta = absDiff(d, now);
+      if (delta < localBest) localBest = delta;
+    }
+
+    if (localBest < bestDelta) {
+      bestDelta = localBest;
+      bestWeek = week;
+    }
+  }
+  return bestWeek;
+}
+
+// Fallbacks: last completed week (<= now), else smallest week available
+function fallbackWeek(weekDates: WeekDates, now: Date): number {
+  const weeks = Object.keys(weekDates).map(n => Number(n)).sort((a, b) => a - b);
+  // Last week that has any game start <= now
+  let lastCompleted: number | null = null;
+  for (const w of weeks) {
+    const dates = weekDates[w] || [];
+    const anyPast = dates.some(d => d.getTime() <= now.getTime());
+    if (anyPast) lastCompleted = w;
+  }
+  if (lastCompleted !== null) return lastCompleted;
+  // Otherwise, earliest week we have
+  return weeks[0] ?? 1;
+}
+
 export async function getCurrentSeasonWeek(prisma: PrismaClient): Promise<SeasonWeek> {
   const now = new Date();
-  
-  try {
-    // Step 1: Find the latest season that has any games
-    const latestSeasonResult = await prisma.game.aggregate({
-      _max: {
-        season: true
-      }
-    });
-    
-    if (!latestSeasonResult._max.season) {
-      // No games in database, return fallback
-      return { season: new Date().getFullYear(), week: 1 };
-    }
-    
-    const latestSeason = latestSeasonResult._max.season;
-    
-    // Step 2: Get all weeks for this season with their game dates
-    const games = await prisma.game.findMany({
-      where: {
-        season: latestSeason
-      },
-      select: {
-        week: true,
-        date: true
-      },
-      orderBy: {
-        week: 'asc'
-      }
-    });
-    
-    if (games.length === 0) {
-      return { season: latestSeason, week: 1 };
-    }
-    
-    // Group games by week and find the best match
-    const weekGroups = new Map<number, Date[]>();
-    
-    for (const game of games) {
-      if (!weekGroups.has(game.week)) {
-        weekGroups.set(game.week, []);
-      }
-      weekGroups.get(game.week)!.push(game.date);
-    }
-    
-    // Find the week with games closest to now
-    let bestWeek = 1;
-    let minDifference = Infinity;
-    
-    for (const [week, dates] of weekGroups) {
-      // Find the game date closest to now for this week
-      const closestDate = dates.reduce((closest, date) => {
-        const diff = Math.abs(date.getTime() - now.getTime());
-        const closestDiff = Math.abs(closest.getTime() - now.getTime());
-        return diff < closestDiff ? date : closest;
-      });
-      
-      const difference = Math.abs(closestDate.getTime() - now.getTime());
-      
-      // Check if this week is within our target range (±3-7 days)
-      const daysDiff = difference / (1000 * 60 * 60 * 24);
-      if (daysDiff <= 7 && difference < minDifference) {
-        minDifference = difference;
-        bestWeek = week;
-      }
-    }
-    
-    // Step 3: Fallback logic
-    if (minDifference === Infinity) {
-      // No week within 7 days, find the greatest week ≤ now
-      const weeksWithPastGames = Array.from(weekGroups.keys()).filter(week => {
-        const weekDates = weekGroups.get(week)!;
-        return weekDates.some(date => date <= now);
-      });
-      
-      if (weeksWithPastGames.length > 0) {
-        bestWeek = Math.max(...weeksWithPastGames);
-      } else {
-        // No past games, pick the smallest week
-        bestWeek = Math.min(...Array.from(weekGroups.keys()));
-      }
-    }
-    
-    return { season: latestSeason, week: bestWeek };
-    
-  } catch (error) {
-    console.error('Error detecting current season/week:', error);
-    // Fallback to current year, week 1
-    return { season: new Date().getFullYear(), week: 1 };
+
+  // 1) Find latest season that has any games
+  const latestSeasonRow = await prisma.game.findFirst({
+    orderBy: [{ season: 'desc' }, { week: 'desc' }],
+    select: { season: true },
+  });
+  const season = latestSeasonRow?.season ?? now.getFullYear();
+
+  // 2) Gather weeks and their game startDates for that season (FBS only)
+  const games = await prisma.game.findMany({
+    where: {
+      season,
+      // If you have classification on team, use FBS filter via relations; else rely on what CFBD ingested.
+    },
+    select: { week: true, startDate: true },
+  });
+
+  if (!games.length) {
+    // Nothing in DB: return a sensible default
+    return { season, week: 1 };
   }
+
+  const weekDates: WeekDates = {};
+  for (const g of games) {
+    const wk = g.week ?? 1;
+    if (!weekDates[wk]) weekDates[wk] = [];
+    // Normalize to Date
+    const d = g.startDate instanceof Date ? g.startDate : new Date(g.startDate as unknown as string);
+    if (!isNaN(d.getTime())) {
+      weekDates[wk].push(d);
+    }
+  }
+
+  // 3) Try closest-week selection
+  const closest = pickClosestWeek(weekDates, now);
+  if (closest !== null) {
+    return { season, week: closest };
+  }
+
+  // 4) Fallbacks
+  return { season, week: fallbackWeek(weekDates, now) };
 }
