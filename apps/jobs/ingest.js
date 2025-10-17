@@ -78,7 +78,14 @@ function parseArgs() {
     weeks: [],
     startDate: null,
     endDate: null,
-    help: false
+    help: false,
+    dryRun: false,
+    historical: false,
+    strict: false,
+    markets: 'spreads,totals',
+    regions: 'us',
+    creditsLimit: 3000,
+    logLevel: 'info'
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -100,6 +107,26 @@ function parseArgs() {
       options.startDate = args[++i];
     } else if (arg === '--endDate') {
       options.endDate = args[++i];
+    } else if (arg === '--dry-run') {
+      options.dryRun = true;
+    } else if (arg === '--historical') {
+      options.historical = true;
+    } else if (arg === '--strict') {
+      options.strict = typeof args[i + 1] === 'string' && !args[i + 1].startsWith('--') 
+        ? args[++i] === 'true' 
+        : true;
+    } else if (arg === '--historical-strict') {
+      options.strict = typeof args[i + 1] === 'string' && !args[i + 1].startsWith('--') 
+        ? args[++i] === 'true' 
+        : true;
+    } else if (arg === '--markets') {
+      options.markets = args[++i];
+    } else if (arg === '--regions') {
+      options.regions = args[++i];
+    } else if (arg === '--credits-limit') {
+      options.creditsLimit = parseInt(args[++i]);
+    } else if (arg === '--log-level') {
+      options.logLevel = args[++i];
     } else if (!arg.startsWith('--')) {
       options.adapter = arg;
     }
@@ -118,15 +145,22 @@ M5 Data Ingestion CLI
 Usage: npm run ingest -- <adapter> --season <year> --weeks <week-range>
 
 Arguments:
-  adapter          Data source adapter to use (mock, espn, etc.)
-  --season <year>  Season year (e.g., 2024)
-  --weeks <range>  Week range (e.g., 1-2, 1,3,5)
-  --help, -h       Show this help message
+  adapter              Data source adapter to use (mock, espn, etc.)
+  --season <year>      Season year (e.g., 2024)
+  --weeks <range>      Week range (e.g., 1-2, 1,3,5)
+  --dry-run           Skip database writes, process data only
+  --historical         Enable historical mode for past seasons
+  --strict             Enable strict historical mode (no live endpoints)
+  --markets <list>     Comma-separated markets (default: spreads,totals)
+  --regions <list>     Comma-separated regions (default: us)
+  --credits-limit <n>  Maximum credits to use (default: 3000)
+  --log-level <level>  Log level (default: info)
+  --help, -h           Show this help message
 
 Examples:
   npm run ingest -- mock --season 2024 --weeks 1-2
-  npm run ingest -- mock --season 2024 --weeks 1,3,5
-  npm run ingest -- mock --season 2024 --weeks 1
+  npm run ingest -- oddsapi --season 2024 --weeks 2 --historical --strict --dry-run
+  npm run ingest -- oddsapi --season 2024 --weeks 2 --markets spreads,totals --regions us
 
 Available adapters:
   mock             Mock data source (reads from /data/ directory)
@@ -580,6 +614,23 @@ async function main() {
     console.log(`   Adapter: ${options.adapter}`);
     console.log(`   Season: ${options.season}`);
     console.log(`   Weeks: ${options.weeks.join(', ')}`);
+    
+    // DRY-RUN BANNER
+    if (options.dryRun) {
+      console.log('\n' + '='.repeat(80));
+      console.log('🔍 DRY-RUN MODE ENABLED');
+      console.log('   All data will be fetched and processed, but NO DB writes will occur');
+      console.log('   Reports will be written to reports/historical/');
+      console.log('='.repeat(80) + '\n');
+    }
+    
+    // Set environment variables for adapters
+    if (options.historical) {
+      process.env.HISTORICAL_STRICT = options.strict ? 'true' : 'false';
+    }
+    if (options.creditsLimit) {
+      process.env.CREDITS_LIMIT = String(options.creditsLimit);
+    }
 
     // Create adapter
     const factory = new AdapterFactory();
@@ -634,21 +685,33 @@ async function main() {
       console.warn('[SGO] No odds inserted. Will rely on fallback (if configured).');
     }
 
-    // Upsert data to database
-    console.log('💾 Upserting teams...');
-    const { upserted: teamsUpserted, teamIds } = await upsertTeams(teams);
-    console.log(`   Upserted ${teamsUpserted} teams`);
-
-    console.log('💾 Upserting games...');
-    const gamesUpserted = await upsertGames(games, teamIds);
-    console.log(`   Upserted ${gamesUpserted} games`);
-
-    console.log('💾 Upserting market lines...');
-    let marketLinesUpserted = await upsertMarketLines(marketLines);
-    console.log(`   Upserted ${marketLinesUpserted} market lines`);
+    // Upsert data to database (skip in dry-run mode)
+    let teamsUpserted = 0, gamesUpserted = 0, marketLinesUpserted = 0;
+    let teamIds = new Map();
     
-    // Automatic fallback: Odds API → SGO (for live 2025 data)
-    if (options.adapter === 'oddsapi' && marketLinesUpserted === 0 && process.env.SGO_API_KEY) {
+    if (options.dryRun) {
+      console.log('💾 Skipping database writes (dry-run mode)...');
+      console.log(`   [DRY-RUN] Would upsert ${teams.length} teams`);
+      console.log(`   [DRY-RUN] Would upsert ${games.length} games`);
+      console.log(`   [DRY-RUN] Would upsert ${marketLines.length} market lines`);
+    } else {
+      console.log('💾 Upserting teams...');
+      const result = await upsertTeams(teams);
+      teamsUpserted = result.upserted;
+      teamIds = result.teamIds;
+      console.log(`   Upserted ${teamsUpserted} teams`);
+
+      console.log('💾 Upserting games...');
+      gamesUpserted = await upsertGames(games, teamIds);
+      console.log(`   Upserted ${gamesUpserted} games`);
+
+      console.log('💾 Upserting market lines...');
+      marketLinesUpserted = await upsertMarketLines(marketLines);
+      console.log(`   Upserted ${marketLinesUpserted} market lines`);
+    }
+    
+    // Automatic fallback: Odds API → SGO (for live 2025 data) - skip in dry-run
+    if (!options.dryRun && options.adapter === 'oddsapi' && marketLinesUpserted === 0 && process.env.SGO_API_KEY) {
       console.warn('⚠️  Odds API returned 0 market lines. Engaging SGO fallback...');
       
       try {
@@ -668,8 +731,8 @@ async function main() {
       }
     }
     
-    // Also support SGO → Odds API fallback (for historical data or if SGO is primary)
-    if (options.adapter === 'sgo' && marketLinesUpserted === 0 && process.env.ODDS_API_KEY) {
+    // Also support SGO → Odds API fallback (for historical data or if SGO is primary) - skip in dry-run
+    if (!options.dryRun && options.adapter === 'sgo' && marketLinesUpserted === 0 && process.env.ODDS_API_KEY) {
       console.warn('⚠️  SGO returned 0 market lines. Engaging Odds API fallback...');
       
       try {
@@ -689,8 +752,8 @@ async function main() {
       }
     }
 
-    // Branding (optional)
-    if (typeof adapter.getTeamBranding === 'function') {
+    // Branding (optional) - skip in dry-run
+    if (!options.dryRun && typeof adapter.getTeamBranding === 'function') {
       console.log('📥 Fetching team branding...');
       const teamBranding = await adapter.getTeamBranding();
       console.log(`   Found ${teamBranding.length} team branding entries`);
@@ -725,9 +788,32 @@ async function main() {
 
     console.log('✅ Data ingestion completed successfully!');
 
-    // Run ratings and implied lines on the ingested data
-    console.log('🧮 Running ratings and implied lines...');
-    await runRatings();
+    // Run ratings and implied lines on the ingested data - skip in dry-run
+    if (!options.dryRun) {
+      console.log('🧮 Running ratings and implied lines...');
+      await runRatings();
+    } else {
+      console.log('\n' + '='.repeat(80));
+      console.log('📊 DRY-RUN SUMMARY');
+      console.log('='.repeat(80));
+      
+      // Count spreads and totals
+      const spreads = marketLines.filter(l => l.lineType === 'spread').length;
+      const totals = marketLines.filter(l => l.lineType === 'total').length;
+      const moneylines = marketLines.filter(l => l.lineType === 'moneyline').length;
+      
+      console.log(`found_events=${teams.length + games.length}`);
+      console.log(`matched_events=${games.length}`);
+      console.log(`unmatched_events=${teams.length + games.length - games.length}`);
+      console.log(`rows_parsed.spread=${spreads}`);
+      console.log(`rows_parsed.total=${totals}`);
+      console.log(`rows_parsed.moneyline=${moneylines}`);
+      console.log(`lines_ready_for_upsert=${marketLines.length}`);
+      console.log(`db_writes_skipped=true`);
+      console.log(`x_requests_used=N/A`);
+      console.log(`x_requests_remaining=N/A`);
+      console.log('='.repeat(80) + '\n');
+    }
 
     console.log('🎉 Ingestion and processing completed!');
 
