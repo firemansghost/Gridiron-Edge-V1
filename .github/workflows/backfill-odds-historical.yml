@@ -78,6 +78,26 @@ jobs:
       - name: Generate Prisma client
         run: npm run prisma:generate
 
+      - name: Build jobs
+        run: npm run build:jobs
+
+      - name: Verify build output
+        run: |
+          echo "Checking if compiled files exist..."
+          ls -la apps/jobs/dist/
+          echo "Checking for ingest-minimal.js..."
+          if [ -f "apps/jobs/dist/ingest-minimal.js" ]; then
+            echo "✅ ingest-minimal.js exists"
+            echo "File size: $(wc -c < apps/jobs/dist/ingest-minimal.js) bytes"
+            echo "First 5 lines:"
+            head -5 apps/jobs/dist/ingest-minimal.js
+          else
+            echo "❌ ingest-minimal.js not found!"
+            echo "Available files in dist/:"
+            ls -la apps/jobs/dist/
+            exit 1
+          fi
+
       - name: Setup environment
         run: |
           echo "ODDS_API_KEY=${{ secrets.ODDS_API_KEY }}" >> $GITHUB_ENV
@@ -87,8 +107,22 @@ jobs:
           echo "HISTORICAL_ALLOWED_WEEKS=${{ inputs.weeks }}" >> $GITHUB_ENV
           echo "CREDITS_LIMIT=${{ inputs.credits_limit }}" >> $GITHUB_ENV
 
+      - name: Test compiled file
+        run: |
+          echo "Testing compiled file with help command..."
+          node apps/jobs/dist/ingest-minimal.js --help || echo "Help command failed, but continuing..."
+
       - name: Run historical backfill
         run: |
+          echo "Running historical backfill with parameters:"
+          echo "Season: ${{ inputs.season }}"
+          echo "Weeks: ${{ inputs.weeks }}"
+          echo "Markets: ${{ inputs.markets }}"
+          echo "Regions: ${{ inputs.regions }}"
+          echo "Credits limit: ${{ inputs.credits_limit }}"
+          echo "Dry run: ${{ inputs.dry_run }}"
+          echo "Historical strict: ${{ inputs.historical_strict }}"
+          echo ""
           node apps/jobs/dist/ingest-minimal.js oddsapi \
             --season ${{ inputs.season }} \
             --weeks ${{ inputs.weeks }} \
