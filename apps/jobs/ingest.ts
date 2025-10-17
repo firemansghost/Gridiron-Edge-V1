@@ -9,9 +9,9 @@
  * Then runs ratings + implied lines on the ingested data.
  */
 
-const { PrismaClient } = require('@prisma/client');
-const { AdapterFactory } = require('./adapters/AdapterFactory');
-const { main: runRatings } = require('./seed-ratings');
+import { PrismaClient } from '@prisma/client';
+import { AdapterFactory } from './adapters/AdapterFactory.js';
+import { main as runRatings } from './seed-ratings.js';
 
 const prisma = new PrismaClient();
 

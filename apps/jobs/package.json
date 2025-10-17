@@ -1,0 +1,12 @@
+{
+  "name": "@gridiron-edge/jobs",
+  "version": "1.0.0",
+  "description": "Data ingestion and processing jobs",
+  "private": true,
+  "scripts": {
+    "start:dist": "node dist/ingest.js"
+  },
+  "dependencies": {
+    "@prisma/client": "6.17.0"
+  }
+}

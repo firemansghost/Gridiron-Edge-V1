@@ -66,11 +66,20 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'npm'
+
+      - name: Print Node version
+        run: node -v
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: Build jobs
+        run: npm run build:jobs
 
       - name: Setup environment
         run: |
@@ -83,14 +92,14 @@ jobs:
 
       - name: Run historical backfill
         run: |
-          npm run ingest -- oddsapi \
+          npm run -w apps/jobs start:dist -- oddsapi \
             --season ${{ inputs.season }} \
             --weeks ${{ inputs.weeks }} \
             --markets ${{ inputs.markets }} \
             --regions ${{ inputs.regions }} \
             --credits-limit ${{ inputs.credits_limit }} \
             --historical \
-            --strict ${{ inputs.historical_strict }} \
+            --historical-strict ${{ inputs.historical_strict }} \
             ${{ inputs.dry_run == 'true' && '--dry-run' || '' }}
 
       - name: Upload reports
