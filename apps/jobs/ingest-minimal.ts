@@ -30,6 +30,20 @@ function parseArgs() {
     creditsLimit: 3000
   };
 
+  // Debug logging
+  console.log('Debug: Raw args:', args);
+
+  // First, find the adapter (first non-flag argument)
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (!arg.startsWith('--')) {
+      options.adapter = arg;
+      console.log('Debug: Found adapter:', arg);
+      break;
+    }
+  }
+
+  // Then process flags
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     
@@ -55,10 +69,18 @@ function parseArgs() {
       options.regions = args[++i];
     } else if (arg === '--credits-limit' && i + 1 < args.length) {
       options.creditsLimit = parseInt(args[++i]);
-    } else if (!arg.startsWith('--')) {
-      options.adapter = arg;
     }
   }
+
+  // Debug logging
+  console.log('Debug: Parsed options:', {
+    adapter: options.adapter,
+    season: options.season,
+    weeks: options.weeks,
+    dryRun: options.dryRun,
+    historical: options.historical,
+    historicalStrict: options.historicalStrict
+  });
 
   return options;
 }

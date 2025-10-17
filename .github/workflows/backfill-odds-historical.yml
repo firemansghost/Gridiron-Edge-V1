@@ -125,12 +125,12 @@ jobs:
           echo ""
           node apps/jobs/dist/ingest-minimal.js oddsapi \
             --season ${{ inputs.season }} \
-            --weeks ${{ inputs.weeks }} \
-            --markets ${{ inputs.markets }} \
-            --regions ${{ inputs.regions }} \
-            --credits-limit ${{ inputs.credits_limit }} \
-            --historical \
-            --historical-strict ${{ inputs.historical_strict }} \
+            --weeks "${{ inputs.weeks }}" \
+            --markets "${{ inputs.markets }}" \
+            --regions "${{ inputs.regions }}" \
+            --credits-limit "${{ inputs.credits_limit }}" \
+            ${{ inputs.historical == 'true' && '--historical' || '' }} \
+            ${{ inputs.historical_strict == 'true' && '--historical-strict' || '' }} \
             ${{ inputs.dry_run == 'true' && '--dry-run' || '' }}
 
       - name: Upload reports
