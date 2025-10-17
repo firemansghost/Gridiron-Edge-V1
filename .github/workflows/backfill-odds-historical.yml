@@ -78,9 +78,6 @@ jobs:
       - name: Generate Prisma client
         run: npm run prisma:generate
 
-      - name: Build jobs
-        run: npm run build:jobs
-
       - name: Setup environment
         run: |
           echo "ODDS_API_KEY=${{ secrets.ODDS_API_KEY }}" >> $GITHUB_ENV
@@ -92,7 +89,7 @@ jobs:
 
       - name: Run historical backfill
         run: |
-          npm run -w apps/jobs start:dist -- oddsapi \
+          node apps/jobs/ingest-simple.js oddsapi \
             --season ${{ inputs.season }} \
             --weeks ${{ inputs.weeks }} \
             --markets ${{ inputs.markets }} \

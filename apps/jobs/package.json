@@ -3,10 +3,15 @@
   "version": "1.0.0",
   "description": "Data ingestion and processing jobs",
   "private": true,
+  "main": "dist/ingest.js",
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "start:dist": "node dist/ingest.js"
   },
   "dependencies": {
-    "@prisma/client": "6.17.0"
+    "@prisma/client": "^6.17.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
   }
 }
