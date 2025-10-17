@@ -89,7 +89,7 @@ jobs:
 
       - name: Run historical backfill
         run: |
-          node apps/jobs/ingest-simple.js oddsapi \
+          node apps/jobs/dist/ingest-minimal.js oddsapi \
             --season ${{ inputs.season }} \
             --weeks ${{ inputs.weeks }} \
             --markets ${{ inputs.markets }} \

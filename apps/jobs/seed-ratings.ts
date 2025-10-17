@@ -7,9 +7,9 @@
  * Uses simple z-scoring and constant HFA for v1.
  */
 
-const fs = require('fs');
-const path = require('path');
-const { PrismaClient } = require('@prisma/client');
+import fs from 'fs';
+import path from 'path';
+import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -523,8 +523,8 @@ async function main() {
 }
 
 // Run if called directly
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   main();
 }
 
-module.exports = { main, computeZScores, computePowerRatings, computeImpliedLines };
+export { main, computeZScores, computePowerRatings, computeImpliedLines };
