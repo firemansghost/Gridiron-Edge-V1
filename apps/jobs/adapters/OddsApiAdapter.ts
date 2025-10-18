@@ -510,12 +510,12 @@ export class OddsApiAdapter implements DataSourceAdapter {
     if (isHistorical) {
       // Use historical endpoint for past weeks
       console.log(`   [ODDSAPI] Using historical data endpoint for ${season} week ${week}`);
-      if (!options?.startDate) {
-        console.warn(`   [ODDSAPI] No startDate provided for historical data. Using current date as fallback.`);
-        const fallbackDate = new Date().toISOString().split('T')[0];
-        return await this.fetchHistoricalOdds(season, week, fallbackDate, options?.endDate);
-      }
-      return await this.fetchHistoricalOdds(season, week, options.startDate, options.endDate);
+      
+      // Calculate proper date range for the week
+      const dateRange = await this.calculateDateRangeFromGames(season, week);
+      console.log(`   [ODDSAPI] Calculated date range: ${dateRange.startDate} to ${dateRange.endDate}`);
+      
+      return await this.fetchHistoricalOdds(season, week, dateRange.startDate, dateRange.endDate);
     } else {
       // Use live odds endpoint for current week
       console.log(`   [ODDSAPI] Using live odds endpoint for ${season} week ${week}`);
@@ -596,53 +596,132 @@ export class OddsApiAdapter implements DataSourceAdapter {
     const lines: any[] = [];
     let matchedCount = 0;
     let eventCount = 0;
-    const markets = this.config.markets.join(',');
     
-    // Use historical endpoint for past seasons
-    // Convert date to timestamp (ISO format)
-    const dateTimestamp = new Date(startDate).toISOString();
-    const url = `${this.baseUrl}/historical/sports/americanfootball_ncaaf/odds?apiKey=${this.apiKey}&regions=us&markets=${markets}&oddsFormat=american&date=${dateTimestamp}`;
-    
-    console.log(`   [ODDSAPI] Historical URL: ${url.replace(this.apiKey, 'HIDDEN')}`);
-    console.log(`   [ODDSAPI] Markets: ${markets}`);
-
     try {
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        },
-        signal: AbortSignal.timeout(this.config.timeoutMs),
+      // Step 1: Get historical events for the week
+      console.log(`   [ODDSAPI] Step 1: Fetching historical events...`);
+      const events = await this.fetchHistoricalEvents('americanfootball_ncaaf', startDate, {
+        commenceTimeFrom: startDate,
+        commenceTimeTo: endDate || startDate
       });
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        console.error(`   [ODDSAPI] ERROR ${response.status} ${response.statusText} for ${url.replace(this.apiKey, 'HIDDEN')}`);
-        console.error(errorBody.slice(0, 800));
-        throw new Error(`Odds API error: ${response.status} ${response.statusText}`);
+      
+      eventCount = events.events.length;
+      console.log(`   [ODDSAPI] Found ${eventCount} historical events`);
+      
+      if (eventCount === 0) {
+        console.log(`   [ODDSAPI] No events found for ${season} week ${week}`);
+        return { lines, eventCount, matchedCount };
       }
-
-      const events: OddsApiEvent[] = await response.json();
-      eventCount = events.length;
-      console.log(`   [ODDSAPI] Found ${events.length} historical events`);
-
-      // Parse each event's odds with team matching
-      for (const event of events) {
-        const eventLines = this.parseEventOdds(event, season, week);
-        if (eventLines.length > 0) {
+      
+      // Step 2: Map events to database games
+      console.log(`   [ODDSAPI] Step 2: Mapping events to database games...`);
+      const { mappedEvents, unmatchedEvents } = await this.mapToDbGames(events.events, season);
+      
+      console.log(`   [ODDSAPI] Mapped ${mappedEvents.length} events to games, ${unmatchedEvents.length} unmatched`);
+      
+      // Step 3: Fetch odds for each mapped event
+      console.log(`   [ODDSAPI] Step 3: Fetching odds for ${mappedEvents.length} mapped events...`);
+      
+      for (const mappedEvent of mappedEvents) {
+        try {
+          console.log(`   [ODDSAPI] Fetching odds for event ${mappedEvent.eventId} (game ${mappedEvent.gameId})`);
+          
+          const eventOdds = await this.fetchHistoricalEventOdds(
+            'americanfootball_ncaaf',
+            mappedEvent.eventId,
+            mappedEvent.event.commence_time,
+            {
+              markets: this.config.markets.join(','),
+              regions: 'us',
+              oddsFormat: 'american',
+              dateFormat: 'iso'
+            }
+          );
+          
+          // Parse the event odds into market lines
+          const eventLines = this.parseHistoricalEventOdds(
+            eventOdds.event,
+            mappedEvent.gameId,
+            season,
+            week,
+            eventOdds.timestamp
+          );
+          
           lines.push(...eventLines);
           matchedCount++;
+          
+          // Rate limiting
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
+        } catch (error) {
+          console.error(`   [ODDSAPI] Error fetching odds for event ${mappedEvent.eventId}:`, (error as Error).message);
         }
       }
-
+      
+      // Write audit logs
+      await this.writeEventMappingAudit(season, week, mappedEvents, unmatchedEvents);
+      
     } catch (error) {
-      if ((error as any).name === 'AbortError') {
-        throw new Error('Request timeout');
-      }
+      console.error(`   [ODDSAPI] Error in historical odds fetch:`, (error as Error).message);
       throw error;
     }
 
     return { lines, eventCount, matchedCount };
+  }
+
+  /**
+   * Parse historical event odds into MarketLine objects
+   */
+  private parseHistoricalEventOdds(event: any, gameId: string, season: number, week: number, snapshotTimestamp: string): any[] {
+    const lines: any[] = [];
+    
+    if (!event.bookmakers || event.bookmakers.length === 0) {
+      return lines;
+    }
+    
+    for (const bookmaker of event.bookmakers) {
+      const bookName = bookmaker.title;
+      
+      // Parse spreads
+      if (bookmaker.markets?.spreads) {
+        for (const spread of bookmaker.markets.spreads) {
+          lines.push({
+            gameId,
+            season,
+            week,
+            lineType: 'spread',
+            lineValue: spread.point,
+            price: spread.price,
+            bookName,
+            source: 'oddsapi',
+            timestamp: snapshotTimestamp,
+            closingLine: true
+          });
+        }
+      }
+      
+      // Parse totals
+      if (bookmaker.markets?.totals) {
+        for (const total of bookmaker.markets.totals) {
+          lines.push({
+            gameId,
+            season,
+            week,
+            lineType: 'total',
+            lineValue: total.point,
+            price: total.price,
+            bookName,
+            source: 'oddsapi',
+            timestamp: snapshotTimestamp,
+            closingLine: true
+          });
+        }
+      }
+      
+      // Skip moneylines for cost control
+    }
+    
+    return lines;
   }
 
   /**
@@ -728,6 +807,302 @@ export class OddsApiAdapter implements DataSourceAdapter {
     }
 
     return lines;
+  }
+
+  /**
+   * Map Odds API events to database games
+   */
+  private async mapToDbGames(events: any[], season: number): Promise<{mappedEvents: any[], unmatchedEvents: any[]}> {
+    const mappedEvents: any[] = [];
+    const unmatchedEvents: any[] = [];
+    
+    for (const event of events) {
+      try {
+        // Resolve team names to CFBD team IDs
+        const homeTeamId = this.resolveTeamId(event.home_team);
+        const awayTeamId = this.resolveTeamId(event.away_team);
+        
+        if (!homeTeamId || !awayTeamId) {
+          console.log(`   [ODDSAPI] Could not resolve teams: ${event.away_team} @ ${event.home_team}`);
+          unmatchedEvents.push({ event, reason: 'team_resolution_failed' });
+          continue;
+        }
+        
+        // Find matching game in database
+        const game = await this.resolveGameBySeasonAndTeams(season, homeTeamId, awayTeamId, event.commence_time);
+        
+        if (!game) {
+          console.log(`   [ODDSAPI] No matching game found for ${event.away_team} @ ${event.home_team}`);
+          unmatchedEvents.push({ event, reason: 'no_matching_game' });
+          continue;
+        }
+        
+        mappedEvents.push({
+          eventId: event.id,
+          gameId: game.id,
+          event
+        });
+        
+      } catch (error) {
+        console.error(`   [ODDSAPI] Error mapping event ${event.id}:`, (error as Error).message);
+        unmatchedEvents.push({ event, reason: 'mapping_error', error: (error as Error).message });
+      }
+    }
+    
+    return { mappedEvents, unmatchedEvents };
+  }
+
+  /**
+   * Resolve game by season and teams with date proximity
+   */
+  private async resolveGameBySeasonAndTeams(season: number, homeTeamId: string, awayTeamId: string, eventStart: string): Promise<any> {
+    const eventDate = new Date(eventStart);
+    const startWindow = new Date(eventDate.getTime() - 7 * 24 * 60 * 60 * 1000); // 7 days before
+    const endWindow = new Date(eventDate.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days after
+    
+    const games = await prisma.game.findMany({
+      where: {
+        season,
+        homeTeamId,
+        awayTeamId,
+        date: {
+          gte: startWindow,
+          lte: endWindow
+        }
+      },
+      orderBy: {
+        date: 'asc'
+      }
+    });
+    
+    if (games.length === 0) {
+      return null;
+    }
+    
+    // Return the closest game by date
+    return games[0];
+  }
+
+  /**
+   * Fetch historical events from The Odds API
+   */
+  private async fetchHistoricalEvents(sport: string, snapshotDate: string, filters: any = {}): Promise<any> {
+    try {
+      // Strip milliseconds from snapshot date
+      const cleanSnapshotDate = this.toISOStringNoMs(new Date(snapshotDate));
+      
+      // Build URL for historical events
+      const url = `${this.baseUrl}/historical/sports/${sport}/events?apiKey=${this.apiKey}&date=${cleanSnapshotDate}&dateFormat=iso`;
+      console.log(`   [HISTORICAL_EVENTS] Fetching events for ${sport} at ${snapshotDate}`);
+      console.log(`   [HISTORICAL_EVENTS] URL: ${url.replace(this.apiKey, 'HIDDEN')}`);
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Gridiron-Edge/1.0'
+        }
+      });
+      
+      if (!response.ok) {
+        const errorBody = await response.text();
+        console.error(`   [HISTORICAL_EVENTS] ERROR ${response.status} ${response.statusText} for ${url.replace(this.apiKey, 'HIDDEN')}`);
+        console.error(errorBody.slice(0, 800));
+        throw new Error(`Historical Events API error: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      // Log quota usage
+      console.log(`   [HISTORICAL_EVENTS] Quota: ${response.headers.get('x-requests-remaining')} remaining, ${response.headers.get('x-requests-used')} used, last call cost: ${response.headers.get('x-requests-last')}`);
+      
+      // Extract events from response
+      const events = data.data || [];
+      console.log(`   [HISTORICAL_EVENTS] Found ${events.length} events at snapshot ${data.timestamp}`);
+      
+      // Apply optional filters
+      let filteredEvents = events;
+      if (filters.commenceTimeFrom || filters.commenceTimeTo) {
+        const fromTime = filters.commenceTimeFrom ? new Date(filters.commenceTimeFrom) : null;
+        const toTime = filters.commenceTimeTo ? new Date(filters.commenceTimeTo) : null;
+        
+        console.log(`   [HISTORICAL_EVENTS] Time window: ${fromTime ? fromTime.toISOString() : 'none'} to ${toTime ? toTime.toISOString() : 'none'}`);
+        
+        filteredEvents = events.filter(event => {
+          const commenceTime = new Date(event.commence_time);
+          const inWindow = (!fromTime || commenceTime >= fromTime) && (!toTime || commenceTime <= toTime);
+          if (!inWindow) {
+            console.log(`   [HISTORICAL_EVENTS] Filtered out: ${event.away_team} @ ${event.home_team} (${event.commence_time})`);
+          }
+          return inWindow;
+        });
+        
+        console.log(`   [HISTORICAL_EVENTS] Filtered to ${filteredEvents.length} events within time window`);
+      }
+      
+      return {
+        timestamp: data.timestamp,
+        previous_timestamp: data.previous_timestamp,
+        next_timestamp: data.next_timestamp,
+        events: filteredEvents
+      };
+      
+    } catch (error) {
+      console.error(`   [HISTORICAL_EVENTS] Error: ${(error as Error).message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch historical event odds from The Odds API
+   */
+  private async fetchHistoricalEventOdds(sport: string, eventId: string, snapshotDate: string, options: any = {}): Promise<any> {
+    try {
+      const {
+        markets = 'h2h,spreads,totals',
+        regions = 'us',
+        oddsFormat = 'american',
+        dateFormat = 'iso'
+      } = options;
+      
+      // Strip milliseconds from snapshot date
+      const cleanSnapshotDate = this.toISOStringNoMs(new Date(snapshotDate));
+      
+      // Build URL for historical event odds
+      const url = `${this.baseUrl}/historical/sports/${sport}/events/${eventId}/odds?apiKey=${this.apiKey}&regions=${regions}&markets=${markets}&oddsFormat=${oddsFormat}&dateFormat=${dateFormat}&date=${cleanSnapshotDate}`;
+      console.log(`   [HISTORICAL_ODDS] Fetching odds for event ${eventId} at ${snapshotDate}`);
+      console.log(`   [HISTORICAL_ODDS] URL: ${url.replace(this.apiKey, 'HIDDEN')}`);
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Gridiron-Edge/1.0'
+        }
+      });
+      
+      if (!response.ok) {
+        const errorBody = await response.text();
+        console.error(`   [HISTORICAL_ODDS] ERROR ${response.status} ${response.statusText} for event ${eventId}`);
+        console.error(errorBody.slice(0, 800));
+        throw new Error(`Historical Event Odds API error: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      // Log quota usage
+      const remaining = response.headers.get('x-requests-remaining');
+      const used = response.headers.get('x-requests-used');
+      const lastCost = response.headers.get('x-requests-last');
+      console.log(`   [HISTORICAL_ODDS] Quota: ${remaining} remaining, ${used} used, last call cost: ${lastCost}`);
+      
+      return {
+        timestamp: data.timestamp,
+        previous_timestamp: data.previous_timestamp,
+        next_timestamp: data.next_timestamp,
+        event: data.data
+      };
+      
+    } catch (error) {
+      console.error(`   [HISTORICAL_ODDS] Error for event ${eventId}: ${(error as Error).message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Calculate date range from games in database for a specific season/week
+   */
+  private async calculateDateRangeFromGames(season: number, week: number): Promise<{startDate: string, endDate: string}> {
+    try {
+      // Get all games for this season/week
+      const games = await prisma.game.findMany({
+        where: {
+          season,
+          week
+        },
+        orderBy: {
+          date: 'asc'
+        }
+      });
+      
+      if (games.length === 0) {
+        // Fallback: approximate dates for the week
+        const seasonStart = new Date(season, 7, 1); // August 1st
+        const weekStart = new Date(seasonStart.getTime() + (week - 1) * 7 * 24 * 60 * 60 * 1000);
+        const weekEnd = new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000);
+        
+        return {
+          startDate: weekStart.toISOString().split('T')[0],
+          endDate: weekEnd.toISOString().split('T')[0]
+        };
+      }
+      
+      // Use actual game dates
+      const minDate = games[0].date;
+      const maxDate = games[games.length - 1].date;
+      
+      // Add buffer days
+      const startDate = new Date(minDate.getTime() - 24 * 60 * 60 * 1000); // 1 day before
+      const endDate = new Date(maxDate.getTime() + 24 * 60 * 60 * 1000); // 1 day after
+      
+      return {
+        startDate: startDate.toISOString().split('T')[0],
+        endDate: endDate.toISOString().split('T')[0]
+      };
+      
+    } catch (error) {
+      console.error(`   [ODDSAPI] Error calculating date range:`, (error as Error).message);
+      // Fallback to current date
+      const today = new Date().toISOString().split('T')[0];
+      return { startDate: today, endDate: today };
+    }
+  }
+
+  /**
+   * Helper to strip milliseconds from ISO date strings
+   */
+  private toISOStringNoMs(date: Date): string {
+    const iso = date.toISOString();
+    return iso.replace(/\.\d{3}Z$/, 'Z'); // Remove .000Z and add back Z
+  }
+
+  /**
+   * Write event mapping audit log
+   */
+  private async writeEventMappingAudit(season: number, week: number, mappedEvents: any[], unmatchedEvents: any[]): Promise<void> {
+    try {
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      
+      const auditDir = path.join(process.cwd(), 'reports', 'historical');
+      await fs.mkdir(auditDir, { recursive: true });
+      
+      const auditFile = path.join(auditDir, `map_${season}_w${week}.jsonl`);
+      const auditLines = [
+        ...mappedEvents.map(me => JSON.stringify({
+          eventId: me.eventId,
+          gameId: me.gameId,
+          awayTeam: me.event.away_team,
+          homeTeam: me.event.home_team,
+          commenceTime: me.event.commence_time,
+          matchReason: 'successful_mapping'
+        })),
+        ...unmatchedEvents.map(ue => JSON.stringify({
+          eventId: ue.event.id,
+          awayTeam: ue.event.away_team,
+          homeTeam: ue.event.home_team,
+          commenceTime: ue.event.commence_time,
+          reason: ue.reason,
+          error: ue.error
+        }))
+      ];
+      
+      await fs.writeFile(auditFile, auditLines.join('\n') + '\n');
+      console.log(`   [AUDIT] Wrote event mapping audit to ${auditFile}`);
+      
+    } catch (error) {
+      console.error(`   [AUDIT] Failed to write event mapping audit:`, (error as Error).message);
+    }
   }
 }
 

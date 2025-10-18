@@ -132,14 +132,14 @@ jobs:
           echo "Historical strict: ${{ inputs.historical_strict }}"
           echo ""
           node apps/jobs/dist/ingest-minimal.js oddsapi \
-            --season ${{ inputs.season }} \
+            --season "${{ inputs.season }}" \
             --weeks "${{ inputs.weeks }}" \
             --markets "${{ inputs.markets }}" \
             --regions "${{ inputs.regions }}" \
             --credits-limit "${{ inputs.credits_limit }}" \
-            ${{ inputs.historical == 'true' && '--historical' || '' }} \
-            ${{ inputs.historical_strict == 'true' && '--historical-strict' || '' }} \
-            ${{ inputs.dry_run == 'true' && '--dry-run' || '' }}
+            --historical=${{ inputs.historical }} \
+            --historical-strict=${{ inputs.historical_strict }} \
+            --dry-run=${{ inputs.dry_run }}
         env:
           DEBUG: ingest:*,oddsapi:*,adapter:*
           NODE_OPTIONS: --trace-warnings
@@ -147,6 +147,14 @@ jobs:
       - name: Post-run count for 2024 W2
         run: |
           node -e "const {PrismaClient}=require('@prisma/client');const p=new PrismaClient();(async()=>{const c=await p.marketLine.count({where:{season:2024,week:2}});console.log('Post-run market_lines count (2024,2):',c);process.exit(0)})().catch(e=>{console.error(e);process.exit(1)})"
+
+      - name: Ensure artifacts exist
+        run: |
+          mkdir -p reports/historical
+          touch reports/historical/map_2024_w2.jsonl
+          touch reports/historical/errors_2024_w2.jsonl
+          echo "Artifacts created:"
+          ls -la reports/historical/
 
       - name: Upload reports
         if: always()

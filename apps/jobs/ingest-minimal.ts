@@ -57,12 +57,24 @@ function parseArgs() {
       } else {
         options.weeks = weekStr.split(',').map(Number);
       }
-    } else if (arg === '--dry-run') {
-      options.dryRun = true;
-    } else if (arg === '--historical') {
-      options.historical = true;
-    } else if (arg === '--historical-strict') {
-      options.historicalStrict = true;
+    } else if (arg === '--dry-run' || arg.startsWith('--dry-run=')) {
+      if (arg.includes('=')) {
+        options.dryRun = arg.split('=')[1] === 'true';
+      } else {
+        options.dryRun = true;
+      }
+    } else if (arg === '--historical' || arg.startsWith('--historical=')) {
+      if (arg.includes('=')) {
+        options.historical = arg.split('=')[1] === 'true';
+      } else {
+        options.historical = true;
+      }
+    } else if (arg === '--historical-strict' || arg.startsWith('--historical-strict=')) {
+      if (arg.includes('=')) {
+        options.historicalStrict = arg.split('=')[1] === 'true';
+      } else {
+        options.historicalStrict = true;
+      }
     } else if (arg === '--markets' && i + 1 < args.length) {
       options.markets = args[++i];
     } else if (arg === '--regions' && i + 1 < args.length) {
@@ -185,6 +197,12 @@ async function main() {
     console.log(`   • Inserted rows: ${marketLines.length} (simulated)`);
     console.log(`   • Games affected: ${Object.keys(gameGroups).length}`);
     console.log(`   • Market types: spreads=${marketLines.filter((l: any) => l.line_type === 'spread').length}, totals=${marketLines.filter((l: any) => l.line_type === 'total').length}`);
+    
+    // Fail-fast guard if zero rows
+    if (!options.dryRun && marketLines.length === 0) {
+      console.error('❌ Historical backfill wrote 0 rows; check event mapping and snapshot.');
+      process.exit(2);
+    }
     
     console.log('✅ Ingestion completed successfully');
 
