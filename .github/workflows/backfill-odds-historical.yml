@@ -112,6 +112,14 @@ jobs:
           echo "Testing compiled file with help command..."
           node apps/jobs/dist/ingest-minimal.js --help || echo "Help command failed, but continuing..."
 
+      - name: Echo DB host (safety)
+        run: |
+          echo "DB_URL host: $(node -e "try{const u=new URL(process.env.DATABASE_URL||'');console.log(u.host)}catch(e){console.log('NO_DB_URL')}")"
+
+      - name: Echo Prisma target
+        run: |
+          node -e "try{const u=new URL(process.env.DATABASE_URL||'');console.log({protocol:u.protocol,host:u.host,db:u.pathname})}catch(e){console.log('NO_DB_URL')}"
+
       - name: Run historical backfill
         run: |
           echo "Running historical backfill with parameters:"
@@ -132,6 +140,13 @@ jobs:
             ${{ inputs.historical == 'true' && '--historical' || '' }} \
             ${{ inputs.historical_strict == 'true' && '--historical-strict' || '' }} \
             ${{ inputs.dry_run == 'true' && '--dry-run' || '' }}
+        env:
+          DEBUG: ingest:*,oddsapi:*,adapter:*
+          NODE_OPTIONS: --trace-warnings
+
+      - name: Post-run count for 2024 W2
+        run: |
+          node -e "const {PrismaClient}=require('@prisma/client');const p=new PrismaClient();(async()=>{const c=await p.marketLine.count({where:{season:2024,week:2}});console.log('Post-run market_lines count (2024,2):',c);process.exit(0)})().catch(e=>{console.error(e);process.exit(1)})"
 
       - name: Upload reports
         if: always()
