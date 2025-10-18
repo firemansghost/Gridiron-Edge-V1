@@ -515,7 +515,7 @@ export class OddsApiAdapter implements DataSourceAdapter {
       const dateRange = await this.calculateDateRangeFromGames(season, week);
       console.log(`   [ODDSAPI] Calculated date range: ${dateRange.startDate} to ${dateRange.endDate}`);
       
-      return await this.fetchHistoricalOdds(season, week, dateRange.startDate, dateRange.endDate);
+      return await this.fetchHistoricalOdds(season, week, dateRange.startDate, dateRange.endDate, options);
     } else {
       // Use live odds endpoint for current week
       console.log(`   [ODDSAPI] Using live odds endpoint for ${season} week ${week}`);
@@ -589,7 +589,7 @@ export class OddsApiAdapter implements DataSourceAdapter {
   /**
    * Fetch historical odds from The Odds API
    */
-  private async fetchHistoricalOdds(season: number, week: number, startDate: string, endDate?: string): Promise<{lines: any[], eventCount: number, matchedCount: number}> {
+  private async fetchHistoricalOdds(season: number, week: number, startDate: string, endDate?: string, options?: any): Promise<{lines: any[], eventCount: number, matchedCount: number}> {
     console.log(`   [ODDSAPI] Using historical endpoint for ${season} week ${week}`);
     console.log(`   [ODDSAPI] Date window: ${startDate} to ${endDate || 'N/A'}`);
     
@@ -619,10 +619,11 @@ export class OddsApiAdapter implements DataSourceAdapter {
       
       console.log(`   [ODDSAPI] Mapped ${mappedEvents.length} events to games, ${unmatchedEvents.length} unmatched`);
       
-      // Step 3: Fetch odds for each mapped event
-      console.log(`   [ODDSAPI] Step 3: Fetching odds for ${mappedEvents.length} mapped events...`);
+      // Step 3: Fetch odds for each mapped event (with optional limit)
+      const eventsToProcess = options?.maxEvents ? mappedEvents.slice(0, options.maxEvents) : mappedEvents;
+      console.log(`   [ODDSAPI] Step 3: Fetching odds for ${eventsToProcess.length} mapped events${options?.maxEvents ? ` (limited to ${options.maxEvents})` : ''}...`);
       
-      for (const mappedEvent of mappedEvents) {
+      for (const mappedEvent of eventsToProcess) {
         try {
           console.log(`   [ODDSAPI] Fetching odds for event ${mappedEvent.eventId} (game ${mappedEvent.gameId})`);
           
@@ -675,52 +676,70 @@ export class OddsApiAdapter implements DataSourceAdapter {
   private parseHistoricalEventOdds(event: any, gameId: string, season: number, week: number, snapshotTimestamp: string): any[] {
     const lines: any[] = [];
     
-    if (!event.bookmakers || event.bookmakers.length === 0) {
+    // Historical responses have bookmakers nested under event.data
+    const bookmakers = event?.bookmakers || [];
+    
+    if (bookmakers.length === 0) {
+      console.log(`   [PARSER] No bookmakers found in event ${event?.id || 'unknown'}`);
       return lines;
     }
     
-    for (const bookmaker of event.bookmakers) {
-      const bookName = bookmaker.title;
+    console.log(`   [PARSER] Processing ${bookmakers.length} bookmakers for event ${event?.id || 'unknown'}`);
+    
+    for (const bookmaker of bookmakers) {
+      const bookName = bookmaker.title || bookmaker.key;
       
-      // Parse spreads
-      if (bookmaker.markets?.spreads) {
-        for (const spread of bookmaker.markets.spreads) {
-          lines.push({
-            gameId,
-            season,
-            week,
-            lineType: 'spread',
-            lineValue: spread.point,
-            price: spread.price,
-            bookName,
-            source: 'oddsapi',
-            timestamp: snapshotTimestamp,
-            closingLine: true
-          });
-        }
-      }
-      
-      // Parse totals
-      if (bookmaker.markets?.totals) {
-        for (const total of bookmaker.markets.totals) {
-          lines.push({
-            gameId,
-            season,
-            week,
-            lineType: 'total',
-            lineValue: total.point,
-            price: total.price,
-            bookName,
-            source: 'oddsapi',
-            timestamp: snapshotTimestamp,
-            closingLine: true
-          });
+      // Historical format: markets is an array with key/outcomes structure
+      if (bookmaker.markets && Array.isArray(bookmaker.markets)) {
+        for (const market of bookmaker.markets) {
+          if (market.key === 'spreads' && market.outcomes) {
+            console.log(`   [PARSER] Found ${market.outcomes.length} spread outcomes from ${bookName}`);
+            for (const outcome of market.outcomes) {
+              lines.push({
+                gameId,
+                season,
+                week,
+                lineType: 'spread',
+                lineValue: outcome.point,
+                price: outcome.price,
+                bookName,
+                source: 'oddsapi',
+                timestamp: snapshotTimestamp,
+                closingLine: true
+              });
+            }
+          }
+          
+          if (market.key === 'totals' && market.outcomes) {
+            console.log(`   [PARSER] Found ${market.outcomes.length} total outcomes from ${bookName}`);
+            for (const outcome of market.outcomes) {
+              lines.push({
+                gameId,
+                season,
+                week,
+                lineType: 'total',
+                lineValue: outcome.point,
+                price: outcome.price,
+                bookName,
+                source: 'oddsapi',
+                timestamp: snapshotTimestamp,
+                closingLine: true
+              });
+            }
+          }
         }
       }
       
       // Skip moneylines for cost control
     }
     
+    // Parser miss guard
+    if (bookmakers.length > 0 && lines.length === 0) {
+      console.log(`   [PARSER_MISS] Event ${event?.id} had ${bookmakers.length} bookmakers but parsed 0 lines`);
+      this.writeParserMissReport(event?.id, bookmakers);
+    }
+    
+    console.log(`   [PARSER] Parsed ${lines.length} lines from ${bookmakers.length} bookmakers`);
     return lines;
   }
 
@@ -996,6 +1015,9 @@ export class OddsApiAdapter implements DataSourceAdapter {
       const lastCost = response.headers.get('x-requests-last');
       console.log(`   [HISTORICAL_ODDS] Quota: ${remaining} remaining, ${used} used, last call cost: ${lastCost}`);
       
+      // Debug: Write raw payload for first few events
+      await this.writeRawPayload(eventId, data);
+      
       return {
         timestamp: data.timestamp,
         previous_timestamp: data.previous_timestamp,
@@ -1064,6 +1086,69 @@ export class OddsApiAdapter implements DataSourceAdapter {
   private toISOStringNoMs(date: Date): string {
     const iso = date.toISOString();
     return iso.replace(/\.\d{3}Z$/, 'Z'); // Remove .000Z and add back Z
+  }
+
+  /**
+   * Write raw payload for debugging
+   */
+  private async writeRawPayload(eventId: string, data: any): Promise<void> {
+    try {
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      
+      const auditDir = path.join(process.cwd(), 'reports', 'historical');
+      await fs.mkdir(auditDir, { recursive: true });
+      
+      const rawFile = path.join(auditDir, `raw_odds_2024_w2_${eventId}.json`);
+      
+      // Redact API key if present
+      const cleanData = JSON.parse(JSON.stringify(data, (key, value) => {
+        if (key === 'apiKey' || (typeof value === 'string' && value.includes('apiKey'))) {
+          return 'REDACTED';
+        }
+        return value;
+      }));
+      
+      await fs.writeFile(rawFile, JSON.stringify(cleanData, null, 2));
+      console.log(`   [DEBUG] Wrote raw payload to ${rawFile}`);
+      
+    } catch (error) {
+      console.error(`   [DEBUG] Failed to write raw payload:`, (error as Error).message);
+    }
+  }
+
+  /**
+   * Write parser miss report for debugging
+   */
+  private async writeParserMissReport(eventId: string, bookmakers: any[]): Promise<void> {
+    try {
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      
+      const auditDir = path.join(process.cwd(), 'reports', 'historical');
+      await fs.mkdir(auditDir, { recursive: true });
+      
+      const missFile = path.join(auditDir, `parser_miss_2024_w2_${eventId}.json`);
+      
+      const report = {
+        eventId,
+        bookmakerCount: bookmakers.length,
+        bookmakers: bookmakers.slice(0, 2).map(bm => ({
+          key: bm.key,
+          title: bm.title,
+          markets: Object.keys(bm.markets || {}),
+          sampleMarket: bm.markets ? Object.keys(bm.markets)[0] : null,
+          sampleOutcomes: bm.markets ? 
+            (bm.markets[Object.keys(bm.markets)[0]] || []).slice(0, 2) : []
+        }))
+      };
+      
+      await fs.writeFile(missFile, JSON.stringify(report, null, 2));
+      console.log(`   [PARSER_MISS] Wrote report to ${missFile}`);
+      
+    } catch (error) {
+      console.error(`   [PARSER_MISS] Failed to write report:`, (error as Error).message);
+    }
   }
 
   /**

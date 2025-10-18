@@ -38,6 +38,11 @@ on:
         required: false
         default: 'true'
         type: boolean
+      max_events:
+        description: 'Maximum events to process (for testing)'
+        required: false
+        default: ''
+        type: string
       concurrency:
         description: 'Concurrency control (1-5)'
         required: false
@@ -137,9 +142,10 @@ jobs:
             --markets "${{ inputs.markets }}" \
             --regions "${{ inputs.regions }}" \
             --credits-limit "${{ inputs.credits_limit }}" \
-            --historical=${{ inputs.historical }} \
-            --historical-strict=${{ inputs.historical_strict }} \
-            --dry-run=${{ inputs.dry_run }}
+            --historical=${{ inputs.historical && 'true' || 'false' }} \
+            --historical-strict=${{ inputs.historical_strict && 'true' || 'false' }} \
+            --dry-run=${{ inputs.dry_run && 'true' || 'false' }} \
+            ${{ inputs.max_events && format('--max-events {0}', inputs.max_events) || '' }}
         env:
           DEBUG: ingest:*,oddsapi:*,adapter:*
           NODE_OPTIONS: --trace-warnings

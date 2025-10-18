@@ -18,17 +18,18 @@ const errMsg = (e: any) => (e && e instanceof Error) ? e.message : String(e);
  */
 function parseArgs() {
   const args = process.argv.slice(2);
-  const options: any = {
-    adapter: null,
-    season: null,
-    weeks: [],
-    dryRun: false,
-    historical: false,
-    historicalStrict: false,
-    markets: 'spreads,totals',
-    regions: 'us',
-    creditsLimit: 3000
-  };
+    const options: any = {
+      adapter: null,
+      season: null,
+      weeks: [],
+      dryRun: false,
+      historical: false,
+      historicalStrict: false,
+      markets: 'spreads,totals',
+      regions: 'us',
+      creditsLimit: 3000,
+      maxEvents: null
+    };
 
   // Debug logging
   console.log('Debug: Raw args:', args);
@@ -81,6 +82,8 @@ function parseArgs() {
       options.regions = args[++i];
     } else if (arg === '--credits-limit' && i + 1 < args.length) {
       options.creditsLimit = parseInt(args[++i]);
+    } else if (arg === '--max-events' && i + 1 < args.length) {
+      options.maxEvents = parseInt(args[++i]);
     }
   }
 
