@@ -5,19 +5,36 @@ aliases:
   # Short names / abbreviations
   "Ole Miss": ole-miss
   "Ole Miss Rebels": ole-miss
+  "Mississippi": ole-miss
+  "Mississippi Rebels": ole-miss
   "Middle Tennessee": middle-tennessee
   "Middle Tennessee Blue Raiders": middle-tennessee
   "San Jose State": san-jose-state
+  "San Jose State Spartans": san-jose-state
   "San José State": san-jose-state
   "NC State": nc-state
   "N.C. State": nc-state
+  "NC State Wolfpack": nc-state
   "North Carolina": north-carolina
+  "North Carolina Tar Heels": north-carolina
   "Louisiana": louisiana
+  "Louisiana Ragin Cajuns": louisiana
+  "Louisiana Lafayette": louisiana
+  "UL Lafayette": louisiana
   "UTSA": utsa
+  "UTSA Roadrunners": utsa
   "Texas State": texas-state
+  "Texas State Bobcats": texas-state
   "UL Monroe": ul-monroe
+  "Louisiana Monroe": ul-monroe
   "UAB": uab
+  "UAB Blazers": uab
   "Nevada Wolf Pack": nevada
+  "Nevada": nevada
+  "Iowa": iowa
+  "Iowa Hawkeyes": iowa
+  "Iowa State": iowa-state
+  "Iowa State Cyclones": iowa-state
   
   # Full names with mascots (from unmatched report)
   "Bowling Green Falcons": bowling-green
@@ -25,12 +42,20 @@ aliases:
   "Kansas Jayhawks": kansas
   "Illinois Fighting Illini": illinois
   "Arizona State Sun Devils": arizona-state
+  "Washington State": washington-state
   "Washington State Cougars": washington-state
+  "Appalachian State": appalachian-state
   "Appalachian State Mountaineers": appalachian-state
+  "App State": appalachian-state
   "Tulsa Golden Hurricane": tulsa
+  "Arkansas State": arkansas-state
   "Arkansas State Red Wolves": arkansas-state
+  "Buffalo": buffalo
   "Buffalo Bulls": buffalo
+  "Missouri": missouri
   "Missouri Tigers": missouri
+  "Kennesaw State": kennesaw-state
+  "Kennesaw State Owls": kennesaw-state
   "Georgia Tech Yellow Jackets": georgia-tech
   "Syracuse Orange": syracuse
   "Baylor Bears": baylor

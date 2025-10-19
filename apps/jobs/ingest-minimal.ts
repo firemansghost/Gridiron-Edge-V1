@@ -262,6 +262,32 @@ async function main() {
       process.exit(2);
     }
     
+    // Print unmatched teams summary (if file exists)
+    try {
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      const unmatchedFile = path.join(process.cwd(), 'reports', 'historical', `unmatched_oddsapi_${options.season}_w${options.weeks[0]}.json`);
+      
+      try {
+        const unmatchedData = await fs.readFile(unmatchedFile, 'utf-8');
+        const unmatchedReport = JSON.parse(unmatchedData);
+        
+        if (unmatchedReport.totalUnmatched > 0) {
+          console.log('\n📋 Unmatched Teams Summary:');
+          console.log(`   Total unmatched events: ${unmatchedReport.totalUnmatched}`);
+          console.log(`   Unique unmatched team names (${unmatchedReport.uniqueUnmatchedTeams.length}):`);
+          unmatchedReport.uniqueUnmatchedTeams.forEach((team: string) => {
+            console.log(`     - ${team}`);
+          });
+          console.log(`   📁 Full report: ${unmatchedFile}`);
+        }
+      } catch (readError) {
+        // File doesn't exist or can't be read - that's okay
+      }
+    } catch (importError) {
+      // Can't import fs - that's okay
+    }
+    
     console.log('✅ Ingestion completed successfully');
 
   } catch (error) {

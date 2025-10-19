@@ -335,6 +335,98 @@ export class OddsApiAdapter implements DataSourceAdapter {
   }
 
   /**
+   * Multi-pass team name resolution with detailed candidate tracking
+   */
+  private resolveTeamIdWithCandidates(oddsTeamName: string): { 
+    teamId: string | null, 
+    normalized: string,
+    candidates: Array<{name: string, id: string, score: number, method: string}>
+  } {
+    const candidates: Array<{name: string, id: string, score: number, method: string}> = [];
+    
+    if (!this.teamIndex) {
+      throw new Error('Team index not built. Call buildTeamIndex() first.');
+    }
+
+    const normalized = this.normalizeName(oddsTeamName);
+    const slugged = this.slugifyTeam(oddsTeamName);
+
+    // P0: Exact ID match (rare but cheap)
+    if (this.teamIndex.byId[oddsTeamName]) {
+      this.matchStats.p0_exactId++;
+      return { teamId: oddsTeamName, normalized, candidates: [] };
+    }
+
+    // P1: Exact name slug match
+    if (this.teamIndex.byNameSlug[slugged]) {
+      this.matchStats.p1_nameSlug++;
+      return { teamId: this.teamIndex.byNameSlug[slugged], normalized, candidates: [] };
+    }
+
+    // P2: Alias → name slug
+    if (TEAM_ALIASES[normalized]) {
+      const aliasTarget = TEAM_ALIASES[normalized];
+      const aliasSlug = this.slugifyTeam(aliasTarget);
+      if (this.teamIndex.byNameSlug[aliasSlug]) {
+        this.matchStats.p2_alias++;
+        return { teamId: this.teamIndex.byNameSlug[aliasSlug], normalized, candidates: [] };
+      }
+    }
+
+    // P3: Strip trailing word (likely mascot)
+    const tokens = normalized.split(/\s+/);
+    if (tokens.length >= 2) {
+      const allButLast = tokens.slice(0, -1).join(' ');
+      const nameSlug = this.slugifyTeam(allButLast);
+      
+      if (this.teamIndex.byNameSlug[nameSlug]) {
+        this.matchStats.p3_stripMascot++;
+        return { teamId: this.teamIndex.byNameSlug[nameSlug], normalized, candidates: [] };
+      }
+    }
+
+    // P4: Name + Mascot combo
+    if (this.teamIndex.byNameMascotSlug[slugged]) {
+      this.matchStats.p4_nameMascot++;
+      return { teamId: this.teamIndex.byNameMascotSlug[slugged], normalized, candidates: [] };
+    }
+
+    // P5: Conservative fuzzy matching (Jaccard ≥ 0.9) - track top 3 candidates
+    let bestMatch: {id: string, score: number} | null = null;
+    const threshold = 0.9;
+
+    for (const team of this.teamIndex.allTeams) {
+      const teamNormalized = this.normalizeName(team.name);
+      const score = this.jaccardSimilarity(normalized, teamNormalized);
+      
+      if (score >= 0.5) { // Track candidates with score >= 0.5
+        candidates.push({ name: team.name, id: team.id, score, method: 'fuzzy' });
+      }
+      
+      if (score >= threshold) {
+        if (!bestMatch || score > bestMatch.score) {
+          bestMatch = { id: team.id, score };
+        } else if (score === bestMatch.score) {
+          bestMatch = null;
+          break;
+        }
+      }
+    }
+
+    // Sort candidates by score and keep top 3
+    candidates.sort((a, b) => b.score - a.score);
+    const top3 = candidates.slice(0, 3);
+
+    if (bestMatch) {
+      this.matchStats.p5_fuzzy++;
+      return { teamId: bestMatch.id, normalized, candidates: top3 };
+    }
+
+    // No match found
+    return { teamId: null, normalized, candidates: top3 };
+  }
+
+  /**
    * Multi-pass team name resolution with mascot awareness
    */
   private resolveTeamId(oddsTeamName: string): string | null {
@@ -897,22 +989,38 @@ export class OddsApiAdapter implements DataSourceAdapter {
     
     for (const event of events) {
       try {
-        // Resolve team names to CFBD team IDs
-        const homeTeamId = this.resolveTeamId(event.home_team);
-        const awayTeamId = this.resolveTeamId(event.away_team);
+        // Resolve team names to CFBD team IDs with detailed candidates
+        const homeResolution = this.resolveTeamIdWithCandidates(event.home_team);
+        const awayResolution = this.resolveTeamIdWithCandidates(event.away_team);
         
-        if (!homeTeamId || !awayTeamId) {
+        if (!homeResolution.teamId || !awayResolution.teamId) {
           console.log(`   [ODDSAPI] Could not resolve teams: ${event.away_team} @ ${event.home_team}`);
-          unmatchedEvents.push({ event, reason: 'team_resolution_failed' });
+          unmatchedEvents.push({ 
+            event, 
+            reason: 'team_resolution_failed',
+            awayTeamRaw: event.away_team,
+            homeTeamRaw: event.home_team,
+            normalizedAway: awayResolution.normalized,
+            normalizedHome: homeResolution.normalized,
+            awayCandidates: awayResolution.candidates,
+            homeCandidates: homeResolution.candidates
+          });
           continue;
         }
         
         // Find matching game in database
-        const game = await this.resolveGameBySeasonAndTeams(season, homeTeamId, awayTeamId, event.commence_time);
+        const game = await this.resolveGameBySeasonAndTeams(season, homeResolution.teamId, awayResolution.teamId, event.commence_time);
         
         if (!game) {
           console.log(`   [ODDSAPI] No matching game found for ${event.away_team} @ ${event.home_team}`);
-          unmatchedEvents.push({ event, reason: 'no_matching_game' });
+          unmatchedEvents.push({ 
+            event, 
+            reason: 'no_matching_game',
+            awayTeamRaw: event.away_team,
+            homeTeamRaw: event.home_team,
+            awayTeamId: awayResolution.teamId,
+            homeTeamId: homeResolution.teamId
+          });
           continue;
         }
         
@@ -924,7 +1032,13 @@ export class OddsApiAdapter implements DataSourceAdapter {
         
       } catch (error) {
         console.error(`   [ODDSAPI] Error mapping event ${event.id}:`, (error as Error).message);
-        unmatchedEvents.push({ event, reason: 'mapping_error', error: (error as Error).message });
+        unmatchedEvents.push({ 
+          event, 
+          reason: 'mapping_error', 
+          error: (error as Error).message,
+          awayTeamRaw: event.away_team,
+          homeTeamRaw: event.home_team
+        });
       }
     }
     
@@ -1222,27 +1336,48 @@ export class OddsApiAdapter implements DataSourceAdapter {
       const auditDir = path.join(process.cwd(), 'reports', 'historical');
       await fs.mkdir(auditDir, { recursive: true });
       
+      // Write mapped events
       const auditFile = path.join(auditDir, `map_${season}_w${week}.jsonl`);
-      const auditLines = [
-        ...mappedEvents.map(me => JSON.stringify({
-          eventId: me.eventId,
-          gameId: me.gameId,
-          awayTeam: me.event.away_team,
-          homeTeam: me.event.home_team,
-          commenceTime: me.event.commence_time,
-          matchReason: 'successful_mapping'
-        })),
-        ...unmatchedEvents.map(ue => JSON.stringify({
-          eventId: ue.event.id,
-          awayTeam: ue.event.away_team,
-          homeTeam: ue.event.home_team,
-          commenceTime: ue.event.commence_time,
-          reason: ue.reason,
-          error: ue.error
-        }))
-      ];
+      const auditLines = mappedEvents.map(me => JSON.stringify({
+        eventId: me.eventId,
+        gameId: me.gameId,
+        awayTeam: me.event.away_team,
+        homeTeam: me.event.home_team,
+        commenceTime: me.event.commence_time,
+        matchReason: 'successful_mapping'
+      }));
       
       await fs.writeFile(auditFile, auditLines.join('\n') + '\n');
+      
+      // Write detailed unmatched report
+      const unmatchedFile = path.join(auditDir, `unmatched_oddsapi_${season}_w${week}.json`);
+      const unmatchedReport = {
+        season,
+        week,
+        timestamp: new Date().toISOString(),
+        totalUnmatched: unmatchedEvents.length,
+        unmatchedEvents: unmatchedEvents.map(ue => ({
+          eventId: ue.event.id,
+          awayTeamRaw: ue.awayTeamRaw || ue.event.away_team,
+          homeTeamRaw: ue.homeTeamRaw || ue.event.home_team,
+          normalizedAway: ue.normalizedAway,
+          normalizedHome: ue.normalizedHome,
+          commenceTime: ue.event.commence_time,
+          reason: ue.reason,
+          awayCandidates: ue.awayCandidates || [],
+          homeCandidates: ue.homeCandidates || [],
+          error: ue.error
+        })),
+        // Deduplicated list of unmatched team names
+        uniqueUnmatchedTeams: Array.from(new Set(
+          unmatchedEvents.flatMap(ue => [
+            ue.awayTeamRaw || ue.event.away_team,
+            ue.homeTeamRaw || ue.event.home_team
+          ])
+        )).sort()
+      };
+      
+      await fs.writeFile(unmatchedFile, JSON.stringify(unmatchedReport, null, 2));
       console.log(`   [AUDIT] Wrote event mapping audit to ${auditFile}`);
       
     } catch (error) {
