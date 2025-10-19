@@ -1,0 +1,60 @@
+# Team name aliases for Odds API → CFBD team slug mapping
+# Format: "Odds API team name": cfbd-team-slug
+
+aliases:
+  # Short names / abbreviations
+  "Ole Miss": ole-miss
+  "Ole Miss Rebels": ole-miss
+  "Middle Tennessee": middle-tennessee
+  "Middle Tennessee Blue Raiders": middle-tennessee
+  "San Jose State": san-jose-state
+  "San José State": san-jose-state
+  "NC State": nc-state
+  "N.C. State": nc-state
+  "North Carolina": north-carolina
+  "Louisiana": louisiana
+  "UTSA": utsa
+  "Texas State": texas-state
+  "UL Monroe": ul-monroe
+  "UAB": uab
+  "Nevada Wolf Pack": nevada
+  
+  # Full names with mascots (from unmatched report)
+  "Bowling Green Falcons": bowling-green
+  "Penn State Nittany Lions": penn-state
+  "Kansas Jayhawks": kansas
+  "Illinois Fighting Illini": illinois
+  "Arizona State Sun Devils": arizona-state
+  "Washington State Cougars": washington-state
+  "Appalachian State Mountaineers": appalachian-state
+  "Tulsa Golden Hurricane": tulsa
+  "Arkansas State Red Wolves": arkansas-state
+  "Buffalo Bulls": buffalo
+  "Missouri Tigers": missouri
+  "Georgia Tech Yellow Jackets": georgia-tech
+  "Syracuse Orange": syracuse
+  "Baylor Bears": baylor
+  "Utah Utes": utah
+  "Iowa State Cyclones": iowa-state
+  "Iowa Hawkeyes": iowa
+  "South Carolina Gamecocks": south-carolina
+  "Kentucky Wildcats": kentucky
+  "Virginia Cavaliers": virginia
+  "Wake Forest Demon Deacons": wake-forest
+  "Texas Tech Red Raiders": texas-tech
+  "Charlotte 49ers": charlotte
+  "Air Force Falcons": air-force
+  "Kennesaw State Owls": kennesaw-state
+  
+  # Common variations
+  "Cal": california
+  "Cal Golden Bears": california
+  "UConn": connecticut
+  "UConn Huskies": connecticut
+  "Miami (OH)": miami-oh
+  "Miami RedHawks": miami-oh
+  "Miami (FL)": miami
+  "Miami Hurricanes": miami
+  "USC": usc
+  "USC Trojans": usc
+

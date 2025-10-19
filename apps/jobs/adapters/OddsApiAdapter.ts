@@ -8,11 +8,41 @@
 
 import { DataSourceAdapter, Team, Game, MarketLine, TeamBranding } from './DataSourceAdapter';
 import { PrismaClient } from '@prisma/client';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as yaml from 'js-yaml';
 
 const prisma = new PrismaClient();
 
-// Team name aliases for common variations
+// Load team aliases from config file
+function loadTeamAliases(): Record<string, string> {
+  try {
+    const aliasPath = path.join(process.cwd(), 'apps', 'jobs', 'config', 'team_aliases.yml');
+    if (fs.existsSync(aliasPath)) {
+      const fileContents = fs.readFileSync(aliasPath, 'utf8');
+      const config = yaml.load(fileContents) as { aliases: Record<string, string> };
+      const aliases = config.aliases || {};
+      console.log(`[ALIASES] Loaded ${Object.keys(aliases).length} team aliases from config`);
+      // Log first 10 for verification
+      const first10 = Object.entries(aliases).slice(0, 10);
+      console.log('[ALIASES] First 10:', first10.map(([k, v]) => `"${k}" → ${v}`).join(', '));
+      return aliases;
+    } else {
+      console.log('[ALIASES] Config file not found, using built-in aliases only');
+      return {};
+    }
+  } catch (error) {
+    console.error('[ALIASES] Error loading config:', (error as Error).message);
+    return {};
+  }
+}
+
+// Team name aliases for common variations (built-in + loaded from config)
 const TEAM_ALIASES: Record<string, string> = {
+  // Load from config file first
+  ...loadTeamAliases(),
+  
+  // Built-in aliases (will be overridden by config if duplicates exist)
   // Basic mascot removal (some teams need explicit mapping)
   'arizona wildcats': 'arizona',
   'houston cougars': 'houston',
@@ -201,12 +231,42 @@ export class OddsApiAdapter implements DataSourceAdapter {
    * Normalize team name for matching
    */
   private normalizeName(name: string): string {
-    return name
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, '') // Remove punctuation
-      .replace(/\b(university|univ|state|college|the|football)\b/g, '') // Remove common words
-      .replace(/\s+/g, ' ') // Collapse whitespace
-      .trim();
+    let normalized = name.toLowerCase();
+    
+    // Expand common abbreviations (when isolated)
+    normalized = normalized.replace(/\bst\b/g, 'state');
+    normalized = normalized.replace(/\bu\b/g, 'university');
+    
+    // Handle special cases
+    normalized = normalized.replace(/\bcal\b/g, 'california');
+    normalized = normalized.replace(/\buconn\b/g, 'connecticut');
+    normalized = normalized.replace(/miami\s*\(oh\)/g, 'miami-oh');
+    normalized = normalized.replace(/miami\s*\(fl\)/g, 'miami');
+    
+    // Remove punctuation
+    normalized = normalized.replace(/[^a-z0-9\s-]/g, '');
+    
+    // Remove common words
+    normalized = normalized.replace(/\b(university|univ|state|college|the|football)\b/g, '');
+    
+    // Strip trailing mascots if school name detected
+    // (e.g., "Penn State Nittany Lions" → "Penn State")
+    const knownSchools = [
+      'penn state', 'ohio state', 'michigan state', 'iowa state', 
+      'arizona state', 'washington state', 'appalachian state',
+      'arkansas state', 'georgia tech', 'texas tech', 'virginia tech'
+    ];
+    for (const school of knownSchools) {
+      if (normalized.includes(school)) {
+        normalized = school;
+        break;
+      }
+    }
+    
+    // Collapse whitespace
+    normalized = normalized.replace(/\s+/g, ' ').trim();
+    
+    return normalized;
   }
 
   /**

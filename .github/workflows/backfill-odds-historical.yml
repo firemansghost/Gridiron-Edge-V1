@@ -26,7 +26,7 @@ on:
       credits_limit:
         description: 'Maximum credits to use'
         required: false
-        default: '400'
+        default: '1200'
         type: string
       dry_run:
         description: 'Dry run mode (no DB writes)'
@@ -39,9 +39,9 @@ on:
         default: 'true'
         type: boolean
       max_events:
-        description: 'Maximum events to process (for testing)'
+        description: 'Maximum events to process (for testing, leave empty for all)'
         required: false
-        default: '5'
+        default: ''
         type: string
       concurrency:
         description: 'Concurrency control (1-5)'
