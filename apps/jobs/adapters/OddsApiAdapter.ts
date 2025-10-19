@@ -257,35 +257,11 @@ export class OddsApiAdapter implements DataSourceAdapter {
   private normalizeName(name: string): string {
     let normalized = name.toLowerCase();
     
-    // Expand common abbreviations (when isolated)
-    normalized = normalized.replace(/\bst\b/g, 'state');
-    normalized = normalized.replace(/\bu\b/g, 'university');
-    
-    // Handle special cases
-    normalized = normalized.replace(/\bcal\b/g, 'california');
-    normalized = normalized.replace(/\buconn\b/g, 'connecticut');
-    normalized = normalized.replace(/miami\s*\(oh\)/g, 'miami-oh');
-    normalized = normalized.replace(/miami\s*\(fl\)/g, 'miami');
-    
-    // Remove punctuation
+    // Remove punctuation (but keep spaces and hyphens)
     normalized = normalized.replace(/[^a-z0-9\s-]/g, '');
     
-    // Remove common words
-    normalized = normalized.replace(/\b(university|univ|state|college|the|football)\b/g, '');
-    
-    // Strip trailing mascots if school name detected
-    // (e.g., "Penn State Nittany Lions" → "Penn State")
-    const knownSchools = [
-      'penn state', 'ohio state', 'michigan state', 'iowa state', 
-      'arizona state', 'washington state', 'appalachian state',
-      'arkansas state', 'georgia tech', 'texas tech', 'virginia tech'
-    ];
-    for (const school of knownSchools) {
-      if (normalized.includes(school)) {
-        normalized = school;
-        break;
-      }
-    }
+    // Remove common filler words (but NOT "state" - that's a disambiguator!)
+    normalized = normalized.replace(/\b(university|univ|college|the|football)\b/g, '');
     
     // Collapse whitespace
     normalized = normalized.replace(/\s+/g, ' ').trim();
@@ -359,6 +335,46 @@ export class OddsApiAdapter implements DataSourceAdapter {
   }
 
   /**
+   * Check if a candidate team ID violates token parity rules
+   */
+  private violatesTokenParity(originalName: string, candidateId: string): boolean {
+    const originalLower = originalName.toLowerCase();
+    const candidateLower = candidateId.toLowerCase();
+    
+    // Rule 1: If original has "state", candidate must have "state" (or be exact match)
+    const originalHasState = /\bstate\b/.test(originalLower);
+    const candidateHasState = /state/.test(candidateLower);
+    
+    if (originalHasState && !candidateHasState) {
+      return true; // Original says "State" but candidate doesn't → violation
+    }
+    if (!originalHasState && candidateHasState) {
+      return true; // Original doesn't say "State" but candidate does → violation
+    }
+    
+    // Rule 2: If original has "tech", candidate must have "tech"
+    const originalHasTech = /\btech\b/.test(originalLower);
+    const candidateHasTech = /tech/.test(candidateLower);
+    
+    if (originalHasTech && !candidateHasTech) {
+      return true;
+    }
+    if (!originalHasTech && candidateHasTech) {
+      return true;
+    }
+    
+    // Rule 3: If original has "a&m" or "am", candidate must have it
+    const originalHasAM = /\ba&m\b|\bam\b/.test(originalLower);
+    const candidateHasAM = /a-m|am/.test(candidateLower);
+    
+    if (originalHasAM && !candidateHasAM) {
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
    * Multi-pass team name resolution with detailed candidate tracking
    */
   private resolveTeamIdWithCandidates(oddsTeamName: string): { 
@@ -381,38 +397,50 @@ export class OddsApiAdapter implements DataSourceAdapter {
       return { teamId: oddsTeamName, normalized, candidates: [] };
     }
 
-    // P1: Exact name slug match
+    // P1: Exact name slug match (with token parity check)
     if (this.teamIndex.byNameSlug[slugged]) {
-      this.matchStats.p1_nameSlug++;
-      return { teamId: this.teamIndex.byNameSlug[slugged], normalized, candidates: [] };
+      const candidateId = this.teamIndex.byNameSlug[slugged];
+      if (!this.violatesTokenParity(oddsTeamName, candidateId)) {
+        this.matchStats.p1_nameSlug++;
+        return { teamId: candidateId, normalized, candidates: [] };
+      }
     }
 
-    // P2: Alias → name slug
+    // P2: Alias → name slug (with token parity check)
     if (TEAM_ALIASES[normalized]) {
       const aliasTarget = TEAM_ALIASES[normalized];
       const aliasSlug = this.slugifyTeam(aliasTarget);
       if (this.teamIndex.byNameSlug[aliasSlug]) {
-        this.matchStats.p2_alias++;
-        return { teamId: this.teamIndex.byNameSlug[aliasSlug], normalized, candidates: [] };
+        const candidateId = this.teamIndex.byNameSlug[aliasSlug];
+        if (!this.violatesTokenParity(oddsTeamName, candidateId)) {
+          this.matchStats.p2_alias++;
+          return { teamId: candidateId, normalized, candidates: [] };
+        }
       }
     }
 
-    // P3: Strip trailing word (likely mascot)
+    // P3: Strip trailing word (likely mascot) (with token parity check)
     const tokens = normalized.split(/\s+/);
     if (tokens.length >= 2) {
       const allButLast = tokens.slice(0, -1).join(' ');
       const nameSlug = this.slugifyTeam(allButLast);
       
       if (this.teamIndex.byNameSlug[nameSlug]) {
-        this.matchStats.p3_stripMascot++;
-        return { teamId: this.teamIndex.byNameSlug[nameSlug], normalized, candidates: [] };
+        const candidateId = this.teamIndex.byNameSlug[nameSlug];
+        if (!this.violatesTokenParity(oddsTeamName, candidateId)) {
+          this.matchStats.p3_stripMascot++;
+          return { teamId: candidateId, normalized, candidates: [] };
+        }
       }
     }
 
-    // P4: Name + Mascot combo
+    // P4: Name + Mascot combo (with token parity check)
     if (this.teamIndex.byNameMascotSlug[slugged]) {
-      this.matchStats.p4_nameMascot++;
-      return { teamId: this.teamIndex.byNameMascotSlug[slugged], normalized, candidates: [] };
+      const candidateId = this.teamIndex.byNameMascotSlug[slugged];
+      if (!this.violatesTokenParity(oddsTeamName, candidateId)) {
+        this.matchStats.p4_nameMascot++;
+        return { teamId: candidateId, normalized, candidates: [] };
+      }
     }
 
     // P5: Conservative fuzzy matching (Jaccard ≥ 0.9) - track top 3 candidates
@@ -420,6 +448,11 @@ export class OddsApiAdapter implements DataSourceAdapter {
     const threshold = 0.9;
 
     for (const team of this.teamIndex.allTeams) {
+      // Apply token parity check first
+      if (this.violatesTokenParity(oddsTeamName, team.id)) {
+        continue; // Skip candidates that violate token parity
+      }
+      
       const teamNormalized = this.normalizeName(team.name);
       const score = this.jaccardSimilarity(normalized, teamNormalized);
       
@@ -1028,6 +1061,22 @@ export class OddsApiAdapter implements DataSourceAdapter {
             normalizedHome: homeResolution.normalized,
             awayCandidates: awayResolution.candidates,
             homeCandidates: homeResolution.candidates
+          });
+          continue;
+        }
+        
+        // Sanity check: both teams resolved to the same school (e.g., Iowa vs Iowa State both → iowa-state)
+        if (homeResolution.teamId === awayResolution.teamId) {
+          console.log(`   [ODDSAPI] DUPLICATE_TEAM_RESOLUTION: ${event.away_team} (${awayResolution.teamId}) @ ${event.home_team} (${homeResolution.teamId}) - both resolved to same team!`);
+          unmatchedEvents.push({ 
+            event, 
+            reason: 'DUPLICATE_TEAM_RESOLUTION',
+            awayTeamRaw: event.away_team,
+            homeTeamRaw: event.home_team,
+            awayTeamId: awayResolution.teamId,
+            homeTeamId: homeResolution.teamId,
+            normalizedAway: awayResolution.normalized,
+            normalizedHome: homeResolution.normalized
           });
           continue;
         }
