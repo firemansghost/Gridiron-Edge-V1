@@ -61,6 +61,16 @@ function loadTeamAliases(): Record<string, string> {
   }
 }
 
+// Token parity exceptions (schools that break the State/Tech pattern at FBS level)
+const TOKEN_PARITY_EXCEPTIONS: Record<string, string> = {
+  'sam houston state': 'sam-houston',
+  'sam houston state bearkats': 'sam-houston',
+  'sam houston': 'sam-houston',
+  'louisiana ragin cajuns': 'louisiana',
+  'louisiana ragincajuns': 'louisiana',
+  'louisiana ragin': 'louisiana',
+};
+
 // Team name aliases for common variations (built-in + loaded from config)
 const TEAM_ALIASES: Record<string, string> = {
   // Load from config file first
@@ -396,6 +406,16 @@ export class OddsApiAdapter implements DataSourceAdapter {
       this.matchStats.p0_exactId++;
       return { teamId: oddsTeamName, normalized, candidates: [] };
     }
+    
+    // P0.5: Token parity exceptions (authoritative - skip all other checks)
+    for (const [exceptionKey, exceptionSlug] of Object.entries(TOKEN_PARITY_EXCEPTIONS)) {
+      if (normalized.includes(exceptionKey) || oddsTeamName.toLowerCase().includes(exceptionKey)) {
+        if (this.teamIndex.byNameSlug[exceptionSlug]) {
+          console.log(`   [RESOLVER] Token parity exception: "${oddsTeamName}" → ${exceptionSlug}`);
+          return { teamId: this.teamIndex.byNameSlug[exceptionSlug], normalized, candidates: [] };
+        }
+      }
+    }
 
     // P1: Exact name slug match (with token parity check)
     if (this.teamIndex.byNameSlug[slugged]) {
@@ -406,16 +426,15 @@ export class OddsApiAdapter implements DataSourceAdapter {
       }
     }
 
-    // P2: Alias → name slug (with token parity check)
+    // P2: Alias → name slug (AUTHORITATIVE - aliases are explicit, skip parity check)
     if (TEAM_ALIASES[normalized]) {
       const aliasTarget = TEAM_ALIASES[normalized];
       const aliasSlug = this.slugifyTeam(aliasTarget);
       if (this.teamIndex.byNameSlug[aliasSlug]) {
         const candidateId = this.teamIndex.byNameSlug[aliasSlug];
-        if (!this.violatesTokenParity(oddsTeamName, candidateId)) {
-          this.matchStats.p2_alias++;
-          return { teamId: candidateId, normalized, candidates: [] };
-        }
+        this.matchStats.p2_alias++;
+        console.log(`   [RESOLVER] Alias match: "${oddsTeamName}" → ${candidateId} (via alias "${aliasTarget}")`);
+        return { teamId: candidateId, normalized, candidates: [] };
       }
     }
 
