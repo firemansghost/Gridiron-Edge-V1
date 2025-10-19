@@ -123,6 +123,13 @@ async function main() {
   console.log(`💳 Credits Limit: ${options.creditsLimit}`);
   console.log('');
 
+  // DB safety echo
+  const url = process.env.DATABASE_URL || '';
+  const redacted = url.replace(/:\/\/[^@]+@/, '://****:****@').replace(/\?.*$/, '');
+  console.log('[DB] Prisma target:', redacted);
+  console.log('[DB] NODE_ENV:', process.env.NODE_ENV || 'not set');
+  console.log('');
+
   try {
     // Set environment variables
     if (options.historicalStrict) {
@@ -180,26 +187,74 @@ async function main() {
       return;
     }
 
-    // Process market lines
+    // Process market lines - REAL DATABASE WRITES
     console.log('💾 Processing market lines...');
+    console.log('[DB] Write gate check:', { dryRun: options.dryRun });
+    console.log('[DB] rowsToInsert:', marketLines.length);
     
-    // Group by game_id for processing
+    // Group by game_id for stats
     const gameGroups: any = {};
     marketLines.forEach((line: any) => {
-      if (!gameGroups[line.game_id]) {
-        gameGroups[line.game_id] = [];
+      if (!gameGroups[line.gameId]) {
+        gameGroups[line.gameId] = [];
       }
-      gameGroups[line.game_id].push(line);
+      gameGroups[line.gameId].push(line);
     });
 
     console.log(`📊 Processed ${Object.keys(gameGroups).length} games`);
     console.log(`📈 Total market lines: ${marketLines.length}`);
     
-    // Simulate database writes (since we're using the minimal version)
-    console.log(`💾 Database writes:`);
-    console.log(`   • Inserted rows: ${marketLines.length} (simulated)`);
-    console.log(`   • Games affected: ${Object.keys(gameGroups).length}`);
-    console.log(`   • Market types: spreads=${marketLines.filter((l: any) => l.line_type === 'spread').length}, totals=${marketLines.filter((l: any) => l.line_type === 'total').length}`);
+    // Prepare rows for database
+    const rowsToInsert = marketLines.map((line: any) => ({
+      season: line.season,
+      week: line.week,
+      gameId: line.gameId,
+      lineType: line.lineType,
+      lineValue: line.lineValue,
+      closingLine: line.price || line.closingLine || 0,
+      bookName: line.bookName,
+      source: line.source || 'oddsapi',
+      timestamp: new Date(line.timestamp)
+    }));
+    
+    // Log first 2 rows for inspection
+    if (rowsToInsert.length > 0) {
+      console.log('[DB] Sample rows (first 2):');
+      console.log(JSON.stringify(rowsToInsert.slice(0, 2), null, 2));
+    }
+    
+    // REAL DATABASE WRITE
+    if (!options.dryRun && rowsToInsert.length > 0) {
+      console.log('[DB] Executing createMany...');
+      const result = await prisma.marketLine.createMany({
+        data: rowsToInsert,
+        skipDuplicates: true,
+      });
+      console.log('[DB] createMany result:', result);
+      
+      // Same-process verification
+      const verifyResult = await prisma.$queryRawUnsafe<any[]>(`
+        SELECT COUNT(*)::int AS count
+        FROM market_lines
+        WHERE season = ${options.season} AND week = ${options.weeks[0]}
+      `);
+      const postCount = verifyResult[0]?.count || 0;
+      console.log(`[DB] Post-write count (${options.season} W${options.weeks[0]}):`, postCount);
+      
+      if (postCount === 0) {
+        throw new Error('createMany returned but DB count is 0 — check DATABASE_URL or column mapping.');
+      }
+      
+      // Summary line
+      const spreads = marketLines.filter((l: any) => l.lineType === 'spread').length;
+      const totals = marketLines.filter((l: any) => l.lineType === 'total').length;
+      console.log(`[SUMMARY] events=49 mapped=31 parsed_spreads=${spreads} parsed_totals=${totals} toInsert=${rowsToInsert.length} inserted=${result.count} postCount=${postCount}`);
+      
+    } else if (options.dryRun) {
+      console.log('[DB] Skipped createMany (dryRun mode)');
+    } else {
+      console.log('[DB] Skipped createMany (0 rows)');
+    }
     
     // Fail-fast guard if zero rows
     if (!options.dryRun && marketLines.length === 0) {
