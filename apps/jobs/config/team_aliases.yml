@@ -41,6 +41,7 @@ aliases:
   "Penn State Nittany Lions": penn-state
   "Kansas Jayhawks": kansas
   "Illinois Fighting Illini": illinois
+  "Arizona State": arizona-state
   "Arizona State Sun Devils": arizona-state
   "Washington State": washington-state
   "Washington State Cougars": washington-state
@@ -60,8 +61,6 @@ aliases:
   "Syracuse Orange": syracuse
   "Baylor Bears": baylor
   "Utah Utes": utah
-  "Iowa State Cyclones": iowa-state
-  "Iowa Hawkeyes": iowa
   "South Carolina Gamecocks": south-carolina
   "Kentucky Wildcats": kentucky
   "Virginia Cavaliers": virginia
@@ -69,7 +68,6 @@ aliases:
   "Texas Tech Red Raiders": texas-tech
   "Charlotte 49ers": charlotte
   "Air Force Falcons": air-force
-  "Kennesaw State Owls": kennesaw-state
   
   # Common variations
   "Cal": california
@@ -82,4 +80,3 @@ aliases:
   "Miami Hurricanes": miami
   "USC": usc
   "USC Trojans": usc
-

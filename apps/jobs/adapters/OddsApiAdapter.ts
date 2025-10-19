@@ -16,24 +16,48 @@ const prisma = new PrismaClient();
 
 // Load team aliases from config file
 function loadTeamAliases(): Record<string, string> {
+  const aliasPath = path.join(process.cwd(), 'apps', 'jobs', 'config', 'team_aliases.yml');
+  
+  if (!fs.existsSync(aliasPath)) {
+    console.error('[ALIASES] FATAL: Config file not found at', aliasPath);
+    throw new Error('team_aliases.yml not found - cannot proceed without aliases');
+  }
+  
   try {
-    const aliasPath = path.join(process.cwd(), 'apps', 'jobs', 'config', 'team_aliases.yml');
-    if (fs.existsSync(aliasPath)) {
-      const fileContents = fs.readFileSync(aliasPath, 'utf8');
-      const config = yaml.load(fileContents) as { aliases: Record<string, string> };
-      const aliases = config.aliases || {};
-      console.log(`[ALIASES] Loaded ${Object.keys(aliases).length} team aliases from config`);
-      // Log first 10 for verification
-      const first10 = Object.entries(aliases).slice(0, 10);
-      console.log('[ALIASES] First 10:', first10.map(([k, v]) => `"${k}" → ${v}`).join(', '));
-      return aliases;
-    } else {
-      console.log('[ALIASES] Config file not found, using built-in aliases only');
-      return {};
+    const fileContents = fs.readFileSync(aliasPath, 'utf8');
+    const config = yaml.load(fileContents) as { aliases: Record<string, string> };
+    
+    if (!config || !config.aliases) {
+      throw new Error('Invalid YAML structure: missing "aliases" key');
     }
+    
+    const aliases = config.aliases;
+    const aliasCount = Object.keys(aliases).length;
+    
+    if (aliasCount === 0) {
+      throw new Error('No aliases found in config file');
+    }
+    
+    console.log(`[ALIASES] ✅ Loaded ${aliasCount} team aliases from config`);
+    
+    // Log first 10 for verification
+    const first10 = Object.entries(aliases).slice(0, 10);
+    console.log('[ALIASES] First 10:', first10.map(([k, v]) => `"${k}" → ${v}`).join(', '));
+    
+    // Check for duplicate values (warn only)
+    const valueCount = new Map<string, number>();
+    Object.values(aliases).forEach(v => valueCount.set(v, (valueCount.get(v) || 0) + 1));
+    const duplicateTargets = Array.from(valueCount.entries()).filter(([_, count]) => count > 5);
+    if (duplicateTargets.length > 0) {
+      console.log('[ALIASES] Note: Some targets have many aliases (expected):', 
+        duplicateTargets.slice(0, 3).map(([target, count]) => `${target}(${count})`).join(', '));
+    }
+    
+    return aliases;
   } catch (error) {
-    console.error('[ALIASES] Error loading config:', (error as Error).message);
-    return {};
+    console.error('[ALIASES] FATAL: Failed to load/parse team_aliases.yml');
+    console.error('[ALIASES] Error:', (error as Error).message);
+    throw new Error(`team_aliases.yml load failed: ${(error as Error).message}`);
   }
 }
 
@@ -994,10 +1018,10 @@ export class OddsApiAdapter implements DataSourceAdapter {
         const awayResolution = this.resolveTeamIdWithCandidates(event.away_team);
         
         if (!homeResolution.teamId || !awayResolution.teamId) {
-          console.log(`   [ODDSAPI] Could not resolve teams: ${event.away_team} @ ${event.home_team}`);
+          console.log(`   [ODDSAPI] COULD_NOT_RESOLVE_TEAMS: ${event.away_team} @ ${event.home_team}`);
           unmatchedEvents.push({ 
             event, 
-            reason: 'team_resolution_failed',
+            reason: 'COULD_NOT_RESOLVE_TEAMS',
             awayTeamRaw: event.away_team,
             homeTeamRaw: event.home_team,
             normalizedAway: awayResolution.normalized,
@@ -1008,18 +1032,45 @@ export class OddsApiAdapter implements DataSourceAdapter {
           continue;
         }
         
-        // Find matching game in database
+        // Find matching game in database (season-only + date proximity)
         const game = await this.resolveGameBySeasonAndTeams(season, homeResolution.teamId, awayResolution.teamId, event.commence_time);
         
         if (!game) {
-          console.log(`   [ODDSAPI] No matching game found for ${event.away_team} @ ${event.home_team}`);
+          console.log(`   [ODDSAPI] RESOLVED_TEAMS_BUT_NO_GAME: ${event.away_team} (${awayResolution.teamId}) @ ${event.home_team} (${homeResolution.teamId})`);
+          
+          // Diagnostic: find any games for these teams in this season
+          const candidateGames = await prisma.game.findMany({
+            where: {
+              season,
+              OR: [
+                { homeTeamId: homeResolution.teamId, awayTeamId: awayResolution.teamId },
+                { homeTeamId: awayResolution.teamId, awayTeamId: homeResolution.teamId }
+              ]
+            },
+            select: { id: true, week: true, date: true },
+            orderBy: { date: 'asc' }
+          });
+          
+          const eventDate = new Date(event.commence_time);
+          const closestGames = candidateGames.map(g => ({
+            week: g.week,
+            date: g.date,
+            daysDiff: Math.abs((new Date(g.date).getTime() - eventDate.getTime()) / (24 * 60 * 60 * 1000))
+          })).slice(0, 3);
+          
+          if (closestGames.length > 0) {
+            console.log(`   [ODDSAPI]   Found ${candidateGames.length} candidate game(s) in season, closest:`, 
+              closestGames.map(g => `W${g.week} (${g.daysDiff.toFixed(1)}d away)`).join(', '));
+          }
+          
           unmatchedEvents.push({ 
             event, 
-            reason: 'no_matching_game',
+            reason: 'RESOLVED_TEAMS_BUT_NO_GAME',
             awayTeamRaw: event.away_team,
             homeTeamRaw: event.home_team,
             awayTeamId: awayResolution.teamId,
-            homeTeamId: homeResolution.teamId
+            homeTeamId: homeResolution.teamId,
+            candidateGames: closestGames
           });
           continue;
         }
@@ -1046,12 +1097,12 @@ export class OddsApiAdapter implements DataSourceAdapter {
   }
 
   /**
-   * Resolve game by season and teams with date proximity
+   * Resolve game by season and teams with date proximity (historical mode: ignore week)
    */
   private async resolveGameBySeasonAndTeams(season: number, homeTeamId: string, awayTeamId: string, eventStart: string): Promise<any> {
     const eventDate = new Date(eventStart);
-    const startWindow = new Date(eventDate.getTime() - 7 * 24 * 60 * 60 * 1000); // 7 days before
-    const endWindow = new Date(eventDate.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days after
+    const startWindow = new Date(eventDate.getTime() - 2 * 24 * 60 * 60 * 1000); // 2 days before
+    const endWindow = new Date(eventDate.getTime() + 2 * 24 * 60 * 60 * 1000); // 2 days after
     
     const games = await prisma.game.findMany({
       where: {
@@ -1351,21 +1402,32 @@ export class OddsApiAdapter implements DataSourceAdapter {
       
       // Write detailed unmatched report
       const unmatchedFile = path.join(auditDir, `unmatched_oddsapi_${season}_w${week}.json`);
+      
+      // Count by reason
+      const reasonCounts = unmatchedEvents.reduce((acc, ue) => {
+        acc[ue.reason] = (acc[ue.reason] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      
       const unmatchedReport = {
         season,
         week,
         timestamp: new Date().toISOString(),
         totalUnmatched: unmatchedEvents.length,
+        reasonBreakdown: reasonCounts,
         unmatchedEvents: unmatchedEvents.map(ue => ({
           eventId: ue.event.id,
           awayTeamRaw: ue.awayTeamRaw || ue.event.away_team,
           homeTeamRaw: ue.homeTeamRaw || ue.event.home_team,
           normalizedAway: ue.normalizedAway,
           normalizedHome: ue.normalizedHome,
+          awayTeamId: ue.awayTeamId,
+          homeTeamId: ue.homeTeamId,
           commenceTime: ue.event.commence_time,
           reason: ue.reason,
           awayCandidates: ue.awayCandidates || [],
           homeCandidates: ue.homeCandidates || [],
+          candidateGames: ue.candidateGames || [],
           error: ue.error
         })),
         // Deduplicated list of unmatched team names
@@ -1378,6 +1440,7 @@ export class OddsApiAdapter implements DataSourceAdapter {
       };
       
       await fs.writeFile(unmatchedFile, JSON.stringify(unmatchedReport, null, 2));
+      console.log(`   [AUDIT] Wrote unmatched report to ${unmatchedFile}`);
       console.log(`   [AUDIT] Wrote event mapping audit to ${auditFile}`);
       
     } catch (error) {

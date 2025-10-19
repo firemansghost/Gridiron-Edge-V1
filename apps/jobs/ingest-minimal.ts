@@ -273,8 +273,16 @@ async function main() {
         const unmatchedReport = JSON.parse(unmatchedData);
         
         if (unmatchedReport.totalUnmatched > 0) {
-          console.log('\n📋 Unmatched Teams Summary:');
+          console.log('\n📋 Unmatched Events Summary:');
           console.log(`   Total unmatched events: ${unmatchedReport.totalUnmatched}`);
+          
+          if (unmatchedReport.reasonBreakdown) {
+            console.log(`   Reason breakdown:`);
+            Object.entries(unmatchedReport.reasonBreakdown).forEach(([reason, count]) => {
+              console.log(`     • ${reason}: ${count}`);
+            });
+          }
+          
           console.log(`   Unique unmatched team names (${unmatchedReport.uniqueUnmatchedTeams.length}):`);
           unmatchedReport.uniqueUnmatchedTeams.forEach((team: string) => {
             console.log(`     - ${team}`);
