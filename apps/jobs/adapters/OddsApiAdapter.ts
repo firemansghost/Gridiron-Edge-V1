@@ -56,10 +56,10 @@ function loadTeamAliasesFromYAML(): Record<string, string> {
 // Validate aliases against FBS team index (Phase B: post-index validation)
 function validateAliasesAgainstFBS(rawAliases: Record<string, string>, fbsTeamIds: Set<string>): Record<string, string> {
   // Safety check: FBS index must be properly sized (this should never trigger after buildTeamIndex fail-fast)
-  if (!fbsTeamIds || fbsTeamIds.size < 400) {
+  if (!fbsTeamIds || fbsTeamIds.size < 100) {
     console.error(`[ALIASES] ❌ FATAL: FBS index undersized during alias validation (${fbsTeamIds?.size || 0} teams)`);
     console.error(`[ALIASES] This should have been caught by buildTeamIndex fail-fast guard.`);
-    throw new Error(`Cannot validate aliases with undersized FBS index (${fbsTeamIds?.size || 0} < 400)`);
+    throw new Error(`Cannot validate aliases with undersized FBS index (${fbsTeamIds?.size || 0} < 100)`);
   }
   
   const validAliases: Record<string, string> = {};
@@ -339,23 +339,32 @@ export class OddsApiAdapter implements DataSourceAdapter {
 
     // A) Primary: teams table (preferred)
     try {
-      teams = await prisma.team.findMany({
-        where: { division: 'fbs' },
-        select: { id: true, name: true, mascot: true }
+      const dbTeams = await prisma.team.findMany({
+        select: { id: true, name: true, mascot: true, division: true }
       });
-      if (teams.length > 0) {
+      
+      // Filter to FBS only if division field exists
+      const fbsTeams = dbTeams.filter(t => {
+        // If division is null/undefined, include the team (backward compat)
+        // Otherwise, only include if division is 'fbs' (case-insensitive)
+        return !t.division || t.division.toLowerCase() === 'fbs';
+      });
+      
+      if (fbsTeams.length > 0) {
+        teams = fbsTeams.map(t => ({ id: t.id, name: t.name, mascot: t.mascot }));
         source = 'teams-db';
+        console.log(`[INDEX] teams table: ${fbsTeams.length} teams (FBS filter applied)`);
       }
     } catch (error) {
       console.warn('[INDEX] ⚠️  Failed to query teams table:', (error as Error).message);
     }
 
-    // B) Fallback 1: Extract distinct slugs from games table
+    // B) Fallback 1: Extract distinct team IDs from games table
     if (teams.length === 0) {
       console.warn('[INDEX] ⚠️  teams table empty or failed; falling back to games table');
       try {
         const gamesSlugs = await prisma.$queryRawUnsafe<Array<{slug: string}>>(` 
-          SELECT DISTINCT unnest(ARRAY[home_team_slug, away_team_slug]) AS slug
+          SELECT DISTINCT unnest(ARRAY[home_team_id, away_team_id]) AS slug
           FROM games
           WHERE season BETWEEN 2014 AND 2025
         `);
@@ -364,6 +373,7 @@ export class OddsApiAdapter implements DataSourceAdapter {
           .map(t => ({ id: t.slug, name: t.slug, mascot: null }));
         if (teams.length > 0) {
           source = 'games-slugs';
+          console.log(`[INDEX] games table: ${teams.length} unique team IDs extracted`);
         }
       } catch (error) {
         console.warn('[INDEX] ⚠️  Failed to query games table:', (error as Error).message);
@@ -385,12 +395,13 @@ export class OddsApiAdapter implements DataSourceAdapter {
       }
     }
 
-    // FAIL FAST: Index must have at least 400 teams (FBS = ~130, with historicals ~400+)
-    if (teams.length < 400) {
-      console.error(`[INDEX] ❌ FATAL: FBS index undersized: ${teams.length} teams (expected ≥ 400)`);
+    // FAIL FAST: Index must have at least 100 teams (FBS current = 133, historical games may add more)
+    // Lower threshold (100) to allow static fallback, but high enough to catch empty/broken index
+    if (teams.length < 100) {
+      console.error(`[INDEX] ❌ FATAL: FBS index undersized: ${teams.length} teams (expected ≥ 100)`);
       console.error(`[INDEX] Hints: wrong table, empty result, bad filter, or DB connection issue.`);
       console.error(`[INDEX] Source attempted: ${source}`);
-      throw new Error(`FBS team index too small (${teams.length} < 400) - cannot proceed with team resolution`);
+      throw new Error(`FBS team index too small (${teams.length} < 100) - cannot proceed with team resolution`);
     }
 
     console.log(`[INDEX] ✅ Source: ${source} | size=${teams.length}`);
