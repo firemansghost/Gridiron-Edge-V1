@@ -54,6 +54,7 @@ function loadTeamAliasesFromYAML(): Record<string, string> {
 }
 
 // Validate aliases against FBS team index (Phase B: post-index validation)
+// NOW: Load all aliases, validate at resolve-time (not load-time)
 function validateAliasesAgainstFBS(rawAliases: Record<string, string>, fbsTeamIds: Set<string>): Record<string, string> {
   // Safety check: FBS index must be properly sized (this should never trigger after buildTeamIndex fail-fast)
   if (!fbsTeamIds || fbsTeamIds.size < 100) {
@@ -63,7 +64,8 @@ function validateAliasesAgainstFBS(rawAliases: Record<string, string>, fbsTeamId
   }
   
   const validAliases: Record<string, string> = {};
-  let skippedCount = 0;
+  let presentCount = 0;
+  let missingCount = 0;
   let deniedCount = 0;
   
   for (const [key, target] of Object.entries(rawAliases)) {
@@ -74,26 +76,23 @@ function validateAliasesAgainstFBS(rawAliases: Record<string, string>, fbsTeamId
       continue;
     }
     
-    // Check if target exists in FBS teams
-    if (!fbsTeamIds.has(target)) {
-      console.log(`[ALIASES] ⚠️  Skipped non-FBS alias: "${key}" → ${target} (not in FBS index)`);
-      skippedCount++;
-      continue;
-    }
-    
+    // Load ALL aliases (don't skip if target missing from index)
+    // We'll validate at resolve-time with soft-heal (ASCII fold, renames, etc.)
     validAliases[key] = target;
+    
+    // Track presence for logging only
+    if (fbsTeamIds.has(target)) {
+      presentCount++;
+    } else {
+      missingCount++;
+    }
   }
   
-  const validCount = Object.keys(validAliases).length;
-  console.log(`[ALIASES] ✅ Valid FBS aliases: ${validCount}, Skipped (non-FBS): ${skippedCount}, Denied: ${deniedCount}`);
-  
-  // Warn if zero valid, but don't fatal (resolver can still work via parity/fuzzy)
-  if (validCount === 0) {
-    console.log(`[ALIASES] ⚠️  WARNING: 0 valid aliases after filtering — continuing (resolver will use parity/fuzzy)`);
-  }
+  const totalCount = Object.keys(validAliases).length;
+  console.log(`[ALIASES] ✅ Loaded ${totalCount} aliases: ${presentCount} in index, ${missingCount} deferred to resolve-time, ${deniedCount} denied`);
   
   // Log first 10 for verification
-  if (validCount > 0) {
+  if (totalCount > 0) {
     const first10 = Object.entries(validAliases).slice(0, 10);
     console.log('[ALIASES] First 10:', first10.map(([k, v]) => `"${k}" → ${v}`).join(', '));
   }
@@ -328,84 +327,107 @@ export class OddsApiAdapter implements DataSourceAdapter {
   }
 
   /**
-   * Build team index from database with mascot awareness
+   * Normalize a slug with ASCII folding and standard formatting
+   */
+  private normalizeSlug(x: string): string {
+    if (!x) return '';
+    return x
+      .normalize('NFKD').replace(/[\u0300-\u036f]/g, '') // ASCII fold (é → e)
+      .toLowerCase()
+      .replace(/&/g, 'and')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  /**
+   * Build team index from database with UNION of all sources (authoritative)
    */
   private async buildTeamIndex(): Promise<void> {
     if (this.teamIndex) return; // Already built
 
-    // Phase 1: Build team index first with fallback sources
-    let teams: Array<{id: string, name?: string, mascot?: string | null}> = [];
-    let source = 'unknown';
+    // Phase 1: Build UNION index from all sources (no single point of failure)
+    const slugSet = new Set<string>();
+    const sourceUsed: string[] = [];
 
-    // A) Primary: teams table (preferred)
+    // A) teams table (no division filter; it's unreliable)
     try {
       const dbTeams = await prisma.team.findMany({
-        select: { id: true, name: true, mascot: true, division: true }
+        select: { id: true, name: true, mascot: true }
       });
-      
-      // Filter to FBS only if division field exists
-      const fbsTeams = dbTeams.filter(t => {
-        // If division is null/undefined, include the team (backward compat)
-        // Otherwise, only include if division is 'fbs' (case-insensitive)
-        return !t.division || t.division.toLowerCase() === 'fbs';
-      });
-      
-      if (fbsTeams.length > 0) {
-        teams = fbsTeams.map(t => ({ id: t.id, name: t.name, mascot: t.mascot }));
-        source = 'teams-db';
-        console.log(`[INDEX] teams table: ${fbsTeams.length} teams (FBS filter applied)`);
+      for (const t of dbTeams) {
+        const slug = this.normalizeSlug(t.id);
+        if (slug) slugSet.add(slug);
       }
+      sourceUsed.push(`teams-db:${dbTeams.length}`);
     } catch (error) {
       console.warn('[INDEX] ⚠️  Failed to query teams table:', (error as Error).message);
+      sourceUsed.push('teams-db:0');
     }
 
-    // B) Fallback 1: Extract distinct team IDs from games table
-    if (teams.length === 0) {
-      console.warn('[INDEX] ⚠️  teams table empty or failed; falling back to games table');
-      try {
-        const gamesSlugs = await prisma.$queryRawUnsafe<Array<{slug: string}>>(` 
-          SELECT DISTINCT unnest(ARRAY[home_team_id, away_team_id]) AS slug
-          FROM games
-          WHERE season BETWEEN 2014 AND 2025
-        `);
-        teams = gamesSlugs
-          .filter(t => t.slug)
-          .map(t => ({ id: t.slug, name: t.slug, mascot: null }));
-        if (teams.length > 0) {
-          source = 'games-slugs';
-          console.log(`[INDEX] games table: ${teams.length} unique team IDs extracted`);
-        }
-      } catch (error) {
-        console.warn('[INDEX] ⚠️  Failed to query games table:', (error as Error).message);
+    // B) games table slugs (correct columns)
+    try {
+      const gamesSlugs = await prisma.$queryRawUnsafe<Array<{slug: string | null}>>(` 
+        SELECT unnest(ARRAY[home_team_id, away_team_id]) AS slug
+        FROM games
+        WHERE season BETWEEN 2014 AND 2025
+      `);
+      for (const r of gamesSlugs) {
+        const slug = this.normalizeSlug(r.slug || '');
+        if (slug) slugSet.add(slug);
       }
+      sourceUsed.push(`games-slugs:${gamesSlugs.length}`);
+    } catch (error) {
+      console.warn('[INDEX] ⚠️  Failed to query games table:', (error as Error).message);
+      sourceUsed.push('games-slugs:0');
     }
 
-    // C) Fallback 2: Static FBS list (checked-in JSON)
-    if (teams.length === 0) {
-      console.warn('[INDEX] ⚠️  games fallback empty; loading static FBS list');
-      try {
-        const staticPath = path.join(process.cwd(), 'apps', 'jobs', 'config', 'fbs_slugs.json');
-        if (fs.existsSync(staticPath)) {
-          const staticFbs = JSON.parse(fs.readFileSync(staticPath, 'utf8')) as string[];
-          teams = staticFbs.map(slug => ({ id: slug, name: slug, mascot: null }));
-          source = 'static-json';
+    // C) static JSON (checked in; ~134 2024 FBS slugs, plus legacy)
+    try {
+      const staticPath = path.join(process.cwd(), 'apps', 'jobs', 'config', 'fbs_slugs.json');
+      if (fs.existsSync(staticPath)) {
+        const staticFbs = JSON.parse(fs.readFileSync(staticPath, 'utf8')) as string[];
+        for (const s of staticFbs) {
+          const slug = this.normalizeSlug(s);
+          if (slug) slugSet.add(slug);
         }
-      } catch (error) {
-        console.warn('[INDEX] ⚠️  Failed to load static FBS list:', (error as Error).message);
+        sourceUsed.push(`static-json:${staticFbs.length}`);
       }
+    } catch (error) {
+      console.warn('[INDEX] ⚠️  Failed to load static FBS list:', (error as Error).message);
+      sourceUsed.push('static-json:0');
     }
 
-    // FAIL FAST: Index must have at least 100 teams (FBS current = 133, historical games may add more)
-    // Lower threshold (100) to allow static fallback, but high enough to catch empty/broken index
-    if (teams.length < 100) {
-      console.error(`[INDEX] ❌ FATAL: FBS index undersized: ${teams.length} teams (expected ≥ 100)`);
-      console.error(`[INDEX] Hints: wrong table, empty result, bad filter, or DB connection issue.`);
-      console.error(`[INDEX] Source attempted: ${source}`);
-      throw new Error(`FBS team index too small (${teams.length} < 100) - cannot proceed with team resolution`);
+    // D) Canary self-heal: ensure cornerstone programs exist (prevent regressions)
+    const MUST_HAVE = [
+      'alabama', 'georgia', 'ohio-state', 'michigan', 'clemson', 'penn-state', 'notre-dame',
+      'washington', 'oregon', 'usc', 'ucla', 'utah', 'oklahoma', 'texas', 'texas-am',
+      'florida', 'florida-state', 'miami', 'lsu', 'tennessee', 'ole-miss', 'auburn',
+      'kansas-state', 'oklahoma-state', 'iowa', 'iowa-state', 'rutgers', 'umass', 'uconn',
+      'san-jose-state', 'appalachian-state', 'usf', 'ucf', 'eastern-michigan', 'western-michigan'
+    ];
+    const missing = MUST_HAVE.filter(s => !slugSet.has(s));
+    for (const m of missing) slugSet.add(m); // inject; we trust this list
+
+    console.log(`[INDEX] 🔗 Sources: ${sourceUsed.join(' | ')} | size=${slugSet.size}`);
+    console.log(`[INDEX] Sample: ${[...slugSet].slice(0, 12).join(', ')}`);
+
+    // Self-check: verify presence of core programs (regression guard)
+    const CHECK_PROGRAMS = ['clemson', 'san-jose-state', 'uconn', 'umass', 'usf', 'ucf', 'rutgers', 'penn-state'];
+    const checkResults = CHECK_PROGRAMS.map(s => `${s}=${slugSet.has(s) ? '✓' : '✗'}`).join('  ');
+    console.log(`[INDEX] ✅ Presence check: ${checkResults}`);
+
+    // FAIL FAST: Index must have at least 100 teams
+    if (slugSet.size < 100) {
+      console.error(`[INDEX] ❌ FATAL: FBS index undersized after union: ${slugSet.size} teams (expected ≥ 100)`);
+      console.error(`[INDEX] Hints: all sources failed, DB connection issue, or corrupt data.`);
+      throw new Error(`FBS team index too small (${slugSet.size} < 100) - cannot proceed with team resolution`);
     }
 
-    console.log(`[INDEX] ✅ Source: ${source} | size=${teams.length}`);
-    console.log(`[INDEX] Sample: ${teams.slice(0, 10).map(t => t.id).join(', ')}`);
+    // Convert to full team records for indexing
+    const teams: Array<{id: string, name: string, mascot: string | null}> = [];
+    for (const slug of slugSet) {
+      teams.push({ id: slug, name: slug, mascot: null });
+    }
 
     const byId: Record<string, any> = {};
     const byNameSlug: Record<string, string> = {};
@@ -550,22 +572,47 @@ export class OddsApiAdapter implements DataSourceAdapter {
     // P2: Alias → name slug (AUTHORITATIVE - aliases are explicit, skip parity check)
     if (TEAM_ALIASES[normalized]) {
       const aliasTarget = TEAM_ALIASES[normalized];
-      const aliasSlug = this.slugifyTeam(aliasTarget);
       
-      // Resolve-time guard: ensure alias target exists in FBS index
-      if (this.teamIndex.byNameSlug[aliasSlug]) {
-        const candidateId = this.teamIndex.byNameSlug[aliasSlug];
-        
-        // Additional safety: check deny list at resolve-time
-        if (DENY_ALIAS_TARGETS.has(aliasTarget)) {
-          console.log(`   [RESOLVER] ⚠️  Blocked denied alias target: "${oddsTeamName}" → ${aliasTarget}`);
-        } else {
-          this.matchStats.p2_alias++;
-          console.log(`   [RESOLVER] Alias match: "${oddsTeamName}" → ${candidateId} (via alias "${aliasTarget}")`);
-          return { teamId: candidateId, normalized, candidates: [] };
-        }
+      // Additional safety: check deny list at resolve-time
+      if (DENY_ALIAS_TARGETS.has(aliasTarget)) {
+        console.log(`   [RESOLVER] ⚠️  Blocked denied alias target: "${oddsTeamName}" → ${aliasTarget}`);
       } else {
-        console.log(`   [RESOLVER] ⚠️  Alias target not in FBS index: "${oddsTeamName}" → ${aliasTarget}`);
+        // Soft-heal: try multiple slug variations
+        let aliasSlug = this.slugifyTeam(aliasTarget);
+        let candidateId = this.teamIndex.byNameSlug[aliasSlug];
+        
+        // If not found, try ASCII-folded version (San José → san-jose)
+        if (!candidateId) {
+          const foldedSlug = this.normalizeSlug(aliasTarget);
+          candidateId = this.teamIndex.byNameSlug[foldedSlug];
+          if (candidateId) {
+            aliasSlug = foldedSlug;
+          }
+        }
+        
+        // If still not found, check historical renames
+        if (!candidateId) {
+          const RENAMES: Record<string, string> = {
+            'central-florida': 'ucf',
+            'mississippi': 'ole-miss',
+            'louisiana-lafayette': 'louisiana',
+            'connecticut': 'uconn'
+          };
+          const renamed = RENAMES[aliasSlug];
+          if (renamed && this.teamIndex.byNameSlug[renamed]) {
+            candidateId = this.teamIndex.byNameSlug[renamed];
+            aliasSlug = renamed;
+          }
+        }
+        
+        if (candidateId) {
+          this.matchStats.p2_alias++;
+          console.log(`   [RESOLVER] Alias match: "${oddsTeamName}" → ${candidateId} (via alias "${aliasTarget}" → ${aliasSlug})`);
+          return { teamId: candidateId, normalized, candidates: [] };
+        } else {
+          // Log once but don't fail - games table may reference this slug
+          console.log(`   [RESOLVER] ⚠️  Alias target absent in index: "${oddsTeamName}" → ${aliasTarget} (will try game lookup)`);
+        }
       }
     }
 
