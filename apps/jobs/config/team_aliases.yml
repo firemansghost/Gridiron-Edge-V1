@@ -31,8 +31,7 @@ aliases:
   "Buffalo": buffalo
   "Buffalo Bulls": buffalo
   
-  # Ole Miss (Mississippi) - IMPORTANT: NOT mississippi-college
-  "Mississippi": ole-miss
+  # Ole Miss - IMPORTANT: Do NOT use bare "Mississippi" (ambiguous with Mississippi State)
   "Ole Miss": ole-miss
   "Ole Miss Rebels": ole-miss
   
@@ -41,6 +40,8 @@ aliases:
   "Iowa State Cyclones": iowa-state
   "Arizona State": arizona-state
   "Arizona State Sun Devils": arizona-state
+  "South Florida": usf
+  "South Florida Bulls": usf
   "Washington State": washington-state
   "Washington State Cougars": washington-state
   "Kansas State": kansas-state
@@ -49,6 +50,8 @@ aliases:
   "Mississippi State Bulldogs": mississippi-state
   "Arkansas State": arkansas-state
   "Arkansas State Red Wolves": arkansas-state
+  "Kennesaw State": kennesaw-state
+  "Kennesaw State Owls": kennesaw-state
   "San Jose State": san-jose-state
   "San Jose State Spartans": san-jose-state
   "San José State": san-jose-state
@@ -122,6 +125,14 @@ aliases:
   "Michigan Wolverines": michigan
   "Alabama": alabama
   "Alabama Crimson Tide": alabama
+  "Duke": duke
+  "Duke Blue Devils": duke
+  "Northwestern": northwestern
+  "Northwestern Wildcats": northwestern
+  "Northern Illinois": northern-illinois
+  "Northern Illinois Huskies": northern-illinois
+  "Notre Dame": notre-dame
+  "Notre Dame Fighting Irish": notre-dame
   "Rutgers": rutgers
   "Rutgers Scarlet Knights": rutgers
   "Eastern Michigan": eastern-michigan

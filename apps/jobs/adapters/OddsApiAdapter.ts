@@ -616,7 +616,30 @@ export class OddsApiAdapter implements DataSourceAdapter {
       }
     }
 
-    // P3: Strip trailing word (likely mascot) (with token parity check)
+    // P3: Strip trailing word/phrase (likely mascot) (with token parity check)
+    // Try stripping multi-word mascots first, then single-word
+    const MULTI_WORD_MASCOTS = [
+      'crimson tide', 'blue devils', 'fighting irish', 'nittany lions', 
+      'fighting illini', 'sun devils', 'golden hurricane', 'demon deacons',
+      'scarlet knights', 'red wolves', 'golden eagles', 'black knights'
+    ];
+    
+    for (const mascot of MULTI_WORD_MASCOTS) {
+      if (normalized.endsWith(` ${mascot}`)) {
+        const baseName = normalized.slice(0, -(mascot.length + 1));
+        const nameSlug = this.slugifyTeam(baseName);
+        
+        if (this.teamIndex.byNameSlug[nameSlug]) {
+          const candidateId = this.teamIndex.byNameSlug[nameSlug];
+          if (!this.violatesTokenParity(oddsTeamName, candidateId)) {
+            this.matchStats.p3_stripMascot++;
+            return { teamId: candidateId, normalized, candidates: [] };
+          }
+        }
+      }
+    }
+    
+    // Fall back to single-word strip
     const tokens = normalized.split(/\s+/);
     if (tokens.length >= 2) {
       const allButLast = tokens.slice(0, -1).join(' ');
@@ -1279,7 +1302,13 @@ export class OddsApiAdapter implements DataSourceAdapter {
         }
         
         // Find matching game in database (season-only + date proximity)
-        const game = await this.resolveGameBySeasonAndTeams(season, homeResolution.teamId, awayResolution.teamId, event.commence_time);
+        let game = await this.resolveGameBySeasonAndTeams(season, homeResolution.teamId, awayResolution.teamId, event.commence_time);
+        
+        // If not found with ±2d, retry with ±6d (catches week-number drifts and Fri/Sun oddities)
+        if (!game) {
+          console.log(`   [ODDSAPI] No game in ±2d; retry ±6d for ${awayResolution.teamId} @ ${homeResolution.teamId}`);
+          game = await this.resolveGameBySeasonAndTeams(season, homeResolution.teamId, awayResolution.teamId, event.commence_time, 6);
+        }
         
         if (!game) {
           console.log(`   [ODDSAPI] RESOLVED_TEAMS_BUT_NO_GAME: ${event.away_team} (${awayResolution.teamId}) @ ${event.home_team} (${homeResolution.teamId})`);
@@ -1345,10 +1374,10 @@ export class OddsApiAdapter implements DataSourceAdapter {
   /**
    * Resolve game by season and teams with date proximity (historical mode: ignore week)
    */
-  private async resolveGameBySeasonAndTeams(season: number, homeTeamId: string, awayTeamId: string, eventStart: string): Promise<any> {
+  private async resolveGameBySeasonAndTeams(season: number, homeTeamId: string, awayTeamId: string, eventStart: string, dayWindow: number = 2): Promise<any> {
     const eventDate = new Date(eventStart);
-    const startWindow = new Date(eventDate.getTime() - 2 * 24 * 60 * 60 * 1000); // 2 days before
-    const endWindow = new Date(eventDate.getTime() + 2 * 24 * 60 * 60 * 1000); // 2 days after
+    const startWindow = new Date(eventDate.getTime() - dayWindow * 24 * 60 * 60 * 1000);
+    const endWindow = new Date(eventDate.getTime() + dayWindow * 24 * 60 * 60 * 1000);
     
     const games = await prisma.game.findMany({
       where: {
