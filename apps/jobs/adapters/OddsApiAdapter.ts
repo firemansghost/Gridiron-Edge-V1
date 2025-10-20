@@ -14,8 +14,19 @@ import * as yaml from 'js-yaml';
 
 const prisma = new PrismaClient();
 
-// Load team aliases from config file
-function loadTeamAliases(): Record<string, string> {
+// Deny list for non-FBS alias targets
+const DENY_ALIAS_TARGETS = new Set([
+  'mississippi-college',
+  'louisiana-college',
+  'south-carolina-state',
+  'missouri-state',
+  'tennessee-state',  // FCS
+  'arkansas-pine-bluff',
+  'alabama-state',
+]);
+
+// Load team aliases from config file with FBS validation
+async function loadTeamAliasesValidated(): Promise<Record<string, string>> {
   const aliasPath = path.join(process.cwd(), 'apps', 'jobs', 'config', 'team_aliases.yml');
   
   if (!fs.existsSync(aliasPath)) {
@@ -31,34 +42,59 @@ function loadTeamAliases(): Record<string, string> {
       throw new Error('Invalid YAML structure: missing "aliases" key');
     }
     
-    const aliases = config.aliases;
-    const aliasCount = Object.keys(aliases).length;
+    // Get FBS teams from database for validation
+    const fbsTeams = await prisma.team.findMany({
+      where: { division: 'fbs' },
+      select: { id: true }
+    });
+    const fbsTeamIds = new Set(fbsTeams.map(t => t.id));
     
-    if (aliasCount === 0) {
-      throw new Error('No aliases found in config file');
+    const rawAliases = config.aliases;
+    const validAliases: Record<string, string> = {};
+    let skippedCount = 0;
+    let deniedCount = 0;
+    
+    for (const [key, target] of Object.entries(rawAliases)) {
+      // Check deny list first
+      if (DENY_ALIAS_TARGETS.has(target)) {
+        console.log(`[ALIASES] ⚠️  Denied non-FBS target: "${key}" → ${target}`);
+        deniedCount++;
+        continue;
+      }
+      
+      // Check if target exists in FBS teams
+      if (!fbsTeamIds.has(target)) {
+        console.log(`[ALIASES] ⚠️  Skipped non-FBS alias: "${key}" → ${target} (not in FBS index)`);
+        skippedCount++;
+        continue;
+      }
+      
+      validAliases[key] = target;
     }
     
-    console.log(`[ALIASES] ✅ Loaded ${aliasCount} team aliases from config`);
+    const validCount = Object.keys(validAliases).length;
+    console.log(`[ALIASES] ✅ Loaded ${validCount} valid FBS aliases (skipped ${skippedCount}, denied ${deniedCount})`);
+    
+    if (validCount === 0) {
+      throw new Error('No valid FBS aliases after filtering');
+    }
     
     // Log first 10 for verification
-    const first10 = Object.entries(aliases).slice(0, 10);
+    const first10 = Object.entries(validAliases).slice(0, 10);
     console.log('[ALIASES] First 10:', first10.map(([k, v]) => `"${k}" → ${v}`).join(', '));
     
-    // Check for duplicate values (warn only)
-    const valueCount = new Map<string, number>();
-    Object.values(aliases).forEach(v => valueCount.set(v, (valueCount.get(v) || 0) + 1));
-    const duplicateTargets = Array.from(valueCount.entries()).filter(([_, count]) => count > 5);
-    if (duplicateTargets.length > 0) {
-      console.log('[ALIASES] Note: Some targets have many aliases (expected):', 
-        duplicateTargets.slice(0, 3).map(([target, count]) => `${target}(${count})`).join(', '));
-    }
-    
-    return aliases;
+    return validAliases;
   } catch (error) {
     console.error('[ALIASES] FATAL: Failed to load/parse team_aliases.yml');
     console.error('[ALIASES] Error:', (error as Error).message);
     throw new Error(`team_aliases.yml load failed: ${(error as Error).message}`);
   }
+}
+
+// Synchronous wrapper that loads aliases (will be called during adapter initialization)
+function loadTeamAliases(): Record<string, string> {
+  // This will be populated during adapter initialization
+  return {};
 }
 
 // Token parity exceptions (schools that break the State/Tech pattern at FBS level)
@@ -71,10 +107,8 @@ const TOKEN_PARITY_EXCEPTIONS: Record<string, string> = {
   'louisiana ragin': 'louisiana',
 };
 
-// Team name aliases for common variations (built-in + loaded from config)
-const TEAM_ALIASES: Record<string, string> = {
-  // Load from config file first
-  ...loadTeamAliases(),
+// Team name aliases for common variations (will be loaded during initialization)
+let TEAM_ALIASES: Record<string, string> = {
   
   // Built-in aliases (will be overridden by config if duplicates exist)
   // Basic mascot removal (some teams need explicit mapping)
@@ -294,6 +328,10 @@ export class OddsApiAdapter implements DataSourceAdapter {
    */
   private async buildTeamIndex(): Promise<void> {
     if (this.teamIndex) return; // Already built
+
+    // Load and validate aliases against FBS teams
+    const validatedAliases = await loadTeamAliasesValidated();
+    TEAM_ALIASES = { ...TEAM_ALIASES, ...validatedAliases };
 
     const teams = await prisma.team.findMany({
       select: { id: true, name: true, mascot: true }

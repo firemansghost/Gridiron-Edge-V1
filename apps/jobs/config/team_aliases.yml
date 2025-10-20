@@ -1,6 +1,6 @@
 # Team name aliases for Odds API → CFBD team slug mapping
 # Format: "Odds API team name": cfbd-team-slug
-# CRITICAL: State vs non-State schools must be explicitly correct
+# CRITICAL: All targets must be FBS teams only
 
 aliases:
   # Non-State schools (must NOT map to -state)
@@ -30,6 +30,8 @@ aliases:
   "Wake Forest Demon Deacons": wake-forest
   "Buffalo": buffalo
   "Buffalo Bulls": buffalo
+  
+  # Ole Miss (Mississippi) - IMPORTANT: NOT mississippi-college
   "Mississippi": ole-miss
   "Ole Miss": ole-miss
   "Ole Miss Rebels": ole-miss
@@ -47,8 +49,6 @@ aliases:
   "Mississippi State Bulldogs": mississippi-state
   "Arkansas State": arkansas-state
   "Arkansas State Red Wolves": arkansas-state
-  "Tennessee State": tennessee-state
-  "Tennessee State Tigers": tennessee-state
   "San Jose State": san-jose-state
   "San Jose State Spartans": san-jose-state
   "San José State": san-jose-state
