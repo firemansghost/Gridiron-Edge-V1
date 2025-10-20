@@ -4,6 +4,9 @@
  * Execute a ruleset against a specific week and return qualifying games
  */
 
+// Mark as dynamic since we use searchParams
+export const dynamic = 'force-dynamic';
+
 import { prisma } from '@/lib/prisma';
 import { NextRequest, NextResponse } from 'next/server';
 import { computeSpreadPick, computeTotalPick } from '@/lib/pick-helpers';
