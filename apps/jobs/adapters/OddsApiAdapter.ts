@@ -25,8 +25,8 @@ const DENY_ALIAS_TARGETS = new Set([
   'alabama-state',
 ]);
 
-// Load team aliases from config file with FBS validation
-async function loadTeamAliasesValidated(): Promise<Record<string, string>> {
+// Load team aliases from config file (Phase A: parse YAML only)
+function loadTeamAliasesFromYAML(): Record<string, string> {
   const aliasPath = path.join(process.cwd(), 'apps', 'jobs', 'config', 'team_aliases.yml');
   
   if (!fs.existsSync(aliasPath)) {
@@ -42,48 +42,10 @@ async function loadTeamAliasesValidated(): Promise<Record<string, string>> {
       throw new Error('Invalid YAML structure: missing "aliases" key');
     }
     
-    // Get FBS teams from database for validation
-    const fbsTeams = await prisma.team.findMany({
-      where: { division: 'fbs' },
-      select: { id: true }
-    });
-    const fbsTeamIds = new Set(fbsTeams.map(t => t.id));
+    const rawCount = Object.keys(config.aliases).length;
+    console.log(`[ALIASES] Loaded ${rawCount} aliases from YAML (validation deferred)`);
     
-    const rawAliases = config.aliases;
-    const validAliases: Record<string, string> = {};
-    let skippedCount = 0;
-    let deniedCount = 0;
-    
-    for (const [key, target] of Object.entries(rawAliases)) {
-      // Check deny list first
-      if (DENY_ALIAS_TARGETS.has(target)) {
-        console.log(`[ALIASES] ⚠️  Denied non-FBS target: "${key}" → ${target}`);
-        deniedCount++;
-        continue;
-      }
-      
-      // Check if target exists in FBS teams
-      if (!fbsTeamIds.has(target)) {
-        console.log(`[ALIASES] ⚠️  Skipped non-FBS alias: "${key}" → ${target} (not in FBS index)`);
-        skippedCount++;
-        continue;
-      }
-      
-      validAliases[key] = target;
-    }
-    
-    const validCount = Object.keys(validAliases).length;
-    console.log(`[ALIASES] ✅ Loaded ${validCount} valid FBS aliases (skipped ${skippedCount}, denied ${deniedCount})`);
-    
-    if (validCount === 0) {
-      throw new Error('No valid FBS aliases after filtering');
-    }
-    
-    // Log first 10 for verification
-    const first10 = Object.entries(validAliases).slice(0, 10);
-    console.log('[ALIASES] First 10:', first10.map(([k, v]) => `"${k}" → ${v}`).join(', '));
-    
-    return validAliases;
+    return config.aliases;
   } catch (error) {
     console.error('[ALIASES] FATAL: Failed to load/parse team_aliases.yml');
     console.error('[ALIASES] Error:', (error as Error).message);
@@ -91,10 +53,51 @@ async function loadTeamAliasesValidated(): Promise<Record<string, string>> {
   }
 }
 
-// Synchronous wrapper that loads aliases (will be called during adapter initialization)
-function loadTeamAliases(): Record<string, string> {
-  // This will be populated during adapter initialization
-  return {};
+// Validate aliases against FBS team index (Phase B: post-index validation)
+function validateAliasesAgainstFBS(rawAliases: Record<string, string>, fbsTeamIds: Set<string>): Record<string, string> {
+  // Safety check: if FBS index is empty or suspiciously small, defer validation
+  if (!fbsTeamIds || fbsTeamIds.size < 400) {
+    console.log(`[ALIASES] ⚠️  WARNING: FBS index empty or undersized (${fbsTeamIds?.size || 0} teams); deferring validation to resolve-time`);
+    return rawAliases; // Keep all aliases, validate at resolve-time
+  }
+  
+  const validAliases: Record<string, string> = {};
+  let skippedCount = 0;
+  let deniedCount = 0;
+  
+  for (const [key, target] of Object.entries(rawAliases)) {
+    // Check deny list first (warn only, not fatal)
+    if (DENY_ALIAS_TARGETS.has(target)) {
+      console.log(`[ALIASES] ⚠️  Denied non-FBS target: "${key}" → ${target}`);
+      deniedCount++;
+      continue;
+    }
+    
+    // Check if target exists in FBS teams
+    if (!fbsTeamIds.has(target)) {
+      console.log(`[ALIASES] ⚠️  Skipped non-FBS alias: "${key}" → ${target} (not in FBS index)`);
+      skippedCount++;
+      continue;
+    }
+    
+    validAliases[key] = target;
+  }
+  
+  const validCount = Object.keys(validAliases).length;
+  console.log(`[ALIASES] ✅ Valid FBS aliases: ${validCount}, Skipped (non-FBS): ${skippedCount}, Denied: ${deniedCount}`);
+  
+  // Warn if zero valid, but don't fatal (resolver can still work via parity/fuzzy)
+  if (validCount === 0) {
+    console.log(`[ALIASES] ⚠️  WARNING: 0 valid aliases after filtering — continuing (resolver will use parity/fuzzy)`);
+  }
+  
+  // Log first 10 for verification
+  if (validCount > 0) {
+    const first10 = Object.entries(validAliases).slice(0, 10);
+    console.log('[ALIASES] First 10:', first10.map(([k, v]) => `"${k}" → ${v}`).join(', '));
+  }
+  
+  return validAliases;
 }
 
 // Token parity exceptions (schools that break the State/Tech pattern at FBS level)
@@ -329,13 +332,13 @@ export class OddsApiAdapter implements DataSourceAdapter {
   private async buildTeamIndex(): Promise<void> {
     if (this.teamIndex) return; // Already built
 
-    // Load and validate aliases against FBS teams
-    const validatedAliases = await loadTeamAliasesValidated();
-    TEAM_ALIASES = { ...TEAM_ALIASES, ...validatedAliases };
-
+    // Phase 1: Build team index first
     const teams = await prisma.team.findMany({
+      where: { division: 'fbs' },
       select: { id: true, name: true, mascot: true }
     });
+    
+    console.log(`[ODDSAPI] Built team index with ${teams.length} FBS teams`);
 
     const byId: Record<string, any> = {};
     const byNameSlug: Record<string, string> = {};
@@ -366,7 +369,14 @@ export class OddsApiAdapter implements DataSourceAdapter {
     }
 
     this.teamIndex = { byId, byNameSlug, byMascotSlug, byNameMascotSlug, allTeams };
-    console.log(`   [ODDSAPI] Built team index with ${allTeams.length} teams`);
+    
+    // Phase 2: Load and validate aliases against the FBS index we just built
+    const fbsTeamIds = new Set(teams.map(t => t.id));
+    const rawAliases = loadTeamAliasesFromYAML();
+    const validatedAliases = validateAliasesAgainstFBS(rawAliases, fbsTeamIds);
+    
+    // Merge validated aliases into global TEAM_ALIASES
+    TEAM_ALIASES = { ...TEAM_ALIASES, ...validatedAliases };
   }
 
   /**
@@ -468,11 +478,21 @@ export class OddsApiAdapter implements DataSourceAdapter {
     if (TEAM_ALIASES[normalized]) {
       const aliasTarget = TEAM_ALIASES[normalized];
       const aliasSlug = this.slugifyTeam(aliasTarget);
+      
+      // Resolve-time guard: ensure alias target exists in FBS index
       if (this.teamIndex.byNameSlug[aliasSlug]) {
         const candidateId = this.teamIndex.byNameSlug[aliasSlug];
-        this.matchStats.p2_alias++;
-        console.log(`   [RESOLVER] Alias match: "${oddsTeamName}" → ${candidateId} (via alias "${aliasTarget}")`);
-        return { teamId: candidateId, normalized, candidates: [] };
+        
+        // Additional safety: check deny list at resolve-time
+        if (DENY_ALIAS_TARGETS.has(aliasTarget)) {
+          console.log(`   [RESOLVER] ⚠️  Blocked denied alias target: "${oddsTeamName}" → ${aliasTarget}`);
+        } else {
+          this.matchStats.p2_alias++;
+          console.log(`   [RESOLVER] Alias match: "${oddsTeamName}" → ${candidateId} (via alias "${aliasTarget}")`);
+          return { teamId: candidateId, normalized, candidates: [] };
+        }
+      } else {
+        console.log(`   [RESOLVER] ⚠️  Alias target not in FBS index: "${oddsTeamName}" → ${aliasTarget}`);
       }
     }
 
