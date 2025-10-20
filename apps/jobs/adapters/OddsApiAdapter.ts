@@ -55,10 +55,11 @@ function loadTeamAliasesFromYAML(): Record<string, string> {
 
 // Validate aliases against FBS team index (Phase B: post-index validation)
 function validateAliasesAgainstFBS(rawAliases: Record<string, string>, fbsTeamIds: Set<string>): Record<string, string> {
-  // Safety check: if FBS index is empty or suspiciously small, defer validation
+  // Safety check: FBS index must be properly sized (this should never trigger after buildTeamIndex fail-fast)
   if (!fbsTeamIds || fbsTeamIds.size < 400) {
-    console.log(`[ALIASES] ⚠️  WARNING: FBS index empty or undersized (${fbsTeamIds?.size || 0} teams); deferring validation to resolve-time`);
-    return rawAliases; // Keep all aliases, validate at resolve-time
+    console.error(`[ALIASES] ❌ FATAL: FBS index undersized during alias validation (${fbsTeamIds?.size || 0} teams)`);
+    console.error(`[ALIASES] This should have been caught by buildTeamIndex fail-fast guard.`);
+    throw new Error(`Cannot validate aliases with undersized FBS index (${fbsTeamIds?.size || 0} < 400)`);
   }
   
   const validAliases: Record<string, string> = {};
@@ -332,13 +333,68 @@ export class OddsApiAdapter implements DataSourceAdapter {
   private async buildTeamIndex(): Promise<void> {
     if (this.teamIndex) return; // Already built
 
-    // Phase 1: Build team index first
-    const teams = await prisma.team.findMany({
-      where: { division: 'fbs' },
-      select: { id: true, name: true, mascot: true }
-    });
-    
-    console.log(`[ODDSAPI] Built team index with ${teams.length} FBS teams`);
+    // Phase 1: Build team index first with fallback sources
+    let teams: Array<{id: string, name?: string, mascot?: string | null}> = [];
+    let source = 'unknown';
+
+    // A) Primary: teams table (preferred)
+    try {
+      teams = await prisma.team.findMany({
+        where: { division: 'fbs' },
+        select: { id: true, name: true, mascot: true }
+      });
+      if (teams.length > 0) {
+        source = 'teams-db';
+      }
+    } catch (error) {
+      console.warn('[INDEX] ⚠️  Failed to query teams table:', (error as Error).message);
+    }
+
+    // B) Fallback 1: Extract distinct slugs from games table
+    if (teams.length === 0) {
+      console.warn('[INDEX] ⚠️  teams table empty or failed; falling back to games table');
+      try {
+        const gamesSlugs = await prisma.$queryRawUnsafe<Array<{slug: string}>>(` 
+          SELECT DISTINCT unnest(ARRAY[home_team_slug, away_team_slug]) AS slug
+          FROM games
+          WHERE season BETWEEN 2014 AND 2025
+        `);
+        teams = gamesSlugs
+          .filter(t => t.slug)
+          .map(t => ({ id: t.slug, name: t.slug, mascot: null }));
+        if (teams.length > 0) {
+          source = 'games-slugs';
+        }
+      } catch (error) {
+        console.warn('[INDEX] ⚠️  Failed to query games table:', (error as Error).message);
+      }
+    }
+
+    // C) Fallback 2: Static FBS list (checked-in JSON)
+    if (teams.length === 0) {
+      console.warn('[INDEX] ⚠️  games fallback empty; loading static FBS list');
+      try {
+        const staticPath = path.join(process.cwd(), 'apps', 'jobs', 'config', 'fbs_slugs.json');
+        if (fs.existsSync(staticPath)) {
+          const staticFbs = JSON.parse(fs.readFileSync(staticPath, 'utf8')) as string[];
+          teams = staticFbs.map(slug => ({ id: slug, name: slug, mascot: null }));
+          source = 'static-json';
+        }
+      } catch (error) {
+        console.warn('[INDEX] ⚠️  Failed to load static FBS list:', (error as Error).message);
+      }
+    }
+
+    // FAIL FAST: Index must have at least 400 teams (FBS = ~130, with historicals ~400+)
+    if (teams.length < 400) {
+      console.error(`[INDEX] ❌ FATAL: FBS index undersized: ${teams.length} teams (expected ≥ 400)`);
+      console.error(`[INDEX] Hints: wrong table, empty result, bad filter, or DB connection issue.`);
+      console.error(`[INDEX] Source attempted: ${source}`);
+      throw new Error(`FBS team index too small (${teams.length} < 400) - cannot proceed with team resolution`);
+    }
+
+    console.log(`[INDEX] ✅ Source: ${source} | size=${teams.length}`);
+    console.log(`[INDEX] Sample: ${teams.slice(0, 10).map(t => t.id).join(', ')}`);
 
     const byId: Record<string, any> = {};
     const byNameSlug: Record<string, string> = {};
@@ -347,25 +403,31 @@ export class OddsApiAdapter implements DataSourceAdapter {
     const allTeams: Array<{id: string, name: string, mascot: string | null}> = [];
 
     for (const team of teams) {
-      byId[team.id] = team;
+      const teamRecord = {
+        id: team.id,
+        name: team.name || team.id, // Fallback: use ID as name if missing
+        mascot: team.mascot || null
+      };
+      
+      byId[teamRecord.id] = teamRecord;
       
       // Index by name slug
-      const nameSlug = this.slugifyTeam(team.name);
-      byNameSlug[nameSlug] = team.id;
+      const nameSlug = this.slugifyTeam(teamRecord.name);
+      byNameSlug[nameSlug] = teamRecord.id;
       
       // Index by mascot slug (if exists)
-      if (team.mascot) {
-        const mascotSlug = this.slugifyTeam(team.mascot);
+      if (teamRecord.mascot) {
+        const mascotSlug = this.slugifyTeam(teamRecord.mascot);
         if (!byMascotSlug[mascotSlug]) {
-          byMascotSlug[mascotSlug] = team.id;
+          byMascotSlug[mascotSlug] = teamRecord.id;
         }
         
         // Index by name + mascot combo
-        const comboSlug = this.slugifyTeam(`${team.name} ${team.mascot}`);
-        byNameMascotSlug[comboSlug] = team.id;
+        const comboSlug = this.slugifyTeam(`${teamRecord.name} ${teamRecord.mascot}`);
+        byNameMascotSlug[comboSlug] = teamRecord.id;
       }
       
-      allTeams.push(team);
+      allTeams.push(teamRecord);
     }
 
     this.teamIndex = { byId, byNameSlug, byMascotSlug, byNameMascotSlug, allTeams };
