@@ -54,7 +54,7 @@ function loadTeamAliasesFromYAML(): Record<string, string> {
 }
 
 // Validate aliases against FBS team index (Phase B: post-index validation)
-// NOW: Load all aliases, validate at resolve-time (not load-time)
+// NOW: Hard-fail on non-FBS targets (guardrail to prevent *-college, etc.)
 function validateAliasesAgainstFBS(rawAliases: Record<string, string>, fbsTeamIds: Set<string>): Record<string, string> {
   // Safety check: FBS index must be properly sized (this should never trigger after buildTeamIndex fail-fast)
   if (!fbsTeamIds || fbsTeamIds.size < 100) {
@@ -64,32 +64,49 @@ function validateAliasesAgainstFBS(rawAliases: Record<string, string>, fbsTeamId
   }
   
   const validAliases: Record<string, string> = {};
+  const rejectedAliases: Array<{key: string, target: string, reason: string}> = [];
   let presentCount = 0;
-  let missingCount = 0;
   let deniedCount = 0;
   
   for (const [key, target] of Object.entries(rawAliases)) {
-    // Check deny list first (warn only, not fatal)
+    // Check deny list first
     if (DENY_ALIAS_TARGETS.has(target)) {
       console.log(`[ALIASES] ⚠️  Denied non-FBS target: "${key}" → ${target}`);
+      rejectedAliases.push({ key, target, reason: 'deny-list' });
       deniedCount++;
       continue;
     }
     
-    // Load ALL aliases (don't skip if target missing from index)
-    // We'll validate at resolve-time with soft-heal (ASCII fold, renames, etc.)
-    validAliases[key] = target;
-    
-    // Track presence for logging only
-    if (fbsTeamIds.has(target)) {
-      presentCount++;
-    } else {
-      missingCount++;
+    // HARD GUARDRAIL: Reject *-college targets (non-FBS)
+    if (target.includes('-college')) {
+      console.error(`[ALIASES] ❌ Rejected non-FBS target: "${key}" → ${target} (*-college pattern)`);
+      rejectedAliases.push({ key, target, reason: '*-college pattern' });
+      continue;
     }
+    
+    // HARD GUARDRAIL: Target must exist in FBS index
+    if (!fbsTeamIds.has(target)) {
+      console.error(`[ALIASES] ❌ Rejected non-FBS target: "${key}" → ${target} (not in FBS index)`);
+      rejectedAliases.push({ key, target, reason: 'not in FBS index' });
+      continue;
+    }
+    
+    // Valid FBS alias
+    validAliases[key] = target;
+    presentCount++;
+  }
+  
+  // FAIL FAST: If any aliases were rejected, abort with clear error
+  if (rejectedAliases.length > 0) {
+    console.error(`[ALIASES] ❌ FATAL: ${rejectedAliases.length} invalid alias target(s) found:`);
+    for (const { key, target, reason } of rejectedAliases) {
+      console.error(`  - "${key}" → ${target} (${reason})`);
+    }
+    throw new Error(`Invalid alias targets detected. Fix team_aliases.yml before proceeding.`);
   }
   
   const totalCount = Object.keys(validAliases).length;
-  console.log(`[ALIASES] ✅ Loaded ${totalCount} aliases: ${presentCount} in index, ${missingCount} deferred to resolve-time, ${deniedCount} denied`);
+  console.log(`[ALIASES] ✅ Loaded ${totalCount} valid FBS aliases (all in index)`);
   
   // Log first 10 for verification
   if (totalCount > 0) {
