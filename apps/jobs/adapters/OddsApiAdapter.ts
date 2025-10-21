@@ -593,7 +593,7 @@ export class OddsApiAdapter implements DataSourceAdapter {
       const aliasTarget = TEAM_ALIASES[normalized];
       
       // Additional safety: check deny list at resolve-time
-      if (DENY_ALIAS_TARGETS.has(aliasTarget)) {
+      if (isRejectedSlug(aliasTarget)) {
         console.log(`   [RESOLVER] ⚠️  Blocked denied alias target: "${oddsTeamName}" → ${aliasTarget}`);
       } else {
         // Soft-heal: try multiple slug variations
