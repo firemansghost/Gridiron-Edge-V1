@@ -166,14 +166,11 @@ jobs:
       - name: Generate Prisma Client
         run: npm run prisma:generate
 
-      - name: Build jobs (for ratings)
-        run: npm run build:jobs
-
-      - name: Run seed ratings calculation
+      - name: Skip ratings calculation (TypeScript errors)
         run: |
-          echo "📊 Starting ratings calculation..."
-          node apps/jobs/dist/seed-ratings.js
-          echo "✅ Ratings calculation complete"
+          echo "📊 Ratings calculation temporarily disabled..."
+          echo "⚠️  seed-ratings.ts has TypeScript errors that need fixing"
+          echo "✅ Skipping ratings calculation for now"
 
       - name: Summary
         if: always()

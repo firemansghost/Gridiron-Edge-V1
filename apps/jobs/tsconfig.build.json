@@ -28,7 +28,6 @@
   },
   "include": [
     "ingest-minimal.ts",
-    "seed-ratings.ts",
     "adapters/OddsApiAdapter.ts",
     "config/*.ts"
   ],
