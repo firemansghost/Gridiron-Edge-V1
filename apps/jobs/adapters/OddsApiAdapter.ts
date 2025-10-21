@@ -11,6 +11,7 @@ import { PrismaClient } from '@prisma/client';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import { isTransitionalMatchup } from '../config/transitional_teams';
 
 const prisma = new PrismaClient();
 
@@ -1327,6 +1328,19 @@ export class OddsApiAdapter implements DataSourceAdapter {
           game = await this.resolveGameBySeasonAndTeams(season, homeResolution.teamId, awayResolution.teamId, event.commence_time, 6);
         }
         
+        // Season-only nearest-date fallback (gated by env flag, tight constraints)
+        let usedSeasonFallback = false;
+        let fallbackDaysDelta: number | undefined;
+        if (!game && process.env.ODDSAPI_ENABLE_SEASON_FALLBACK === 'true') {
+          const fallbackResult = await this.trySeasonOnlyFallback(season, homeResolution.teamId, awayResolution.teamId, event.commence_time);
+          if (fallbackResult) {
+            game = fallbackResult.game;
+            usedSeasonFallback = true;
+            fallbackDaysDelta = fallbackResult.daysDelta;
+            console.log(`   [MATCH-FALLBACK] Season-only nearest match: ${awayResolution.teamId}@${homeResolution.teamId} | delta=${fallbackResult.daysDelta.toFixed(1)}d | gameId=${game.id}`);
+          }
+        }
+        
         if (!game) {
           console.log(`   [ODDSAPI] RESOLVED_TEAMS_BUT_NO_GAME: ${event.away_team} (${awayResolution.teamId}) @ ${event.home_team} (${homeResolution.teamId})`);
           
@@ -1362,7 +1376,8 @@ export class OddsApiAdapter implements DataSourceAdapter {
             homeTeamRaw: event.home_team,
             awayTeamId: awayResolution.teamId,
             homeTeamId: homeResolution.teamId,
-            candidateGames: closestGames
+            candidateGames: closestGames,
+            usedSeasonFallback: false
           });
           continue;
         }
@@ -1370,7 +1385,9 @@ export class OddsApiAdapter implements DataSourceAdapter {
         mappedEvents.push({
           eventId: event.id,
           gameId: game.id,
-          event
+          event,
+          usedSeasonFallback,
+          fallbackDaysDelta
         });
         
       } catch (error) {
@@ -1417,6 +1434,47 @@ export class OddsApiAdapter implements DataSourceAdapter {
     
     // Return the closest game by date
     return games[0];
+  }
+
+  /**
+   * Season-only nearest-date fallback (gated, tight constraints)
+   * Only triggers when:
+   * 1. Both teams resolved to FBS slugs
+   * 2. Exactly one game exists between these two teams in the season
+   * 3. The date delta is ≤ 8 days (or ≤ 14 days for transitional teams)
+   */
+  private async trySeasonOnlyFallback(season: number, homeTeamId: string, awayTeamId: string, eventStart: string): Promise<{ game: any, daysDelta: number } | null> {
+    const eventDate = new Date(eventStart);
+    const isTransitional = isTransitionalMatchup(homeTeamId, awayTeamId);
+    
+    // Find ALL games between these two teams in the season (regardless of date)
+    const candidateGames = await prisma.game.findMany({
+      where: {
+        season,
+        homeTeamId,
+        awayTeamId
+      },
+      orderBy: {
+        date: 'asc'
+      }
+    });
+    
+    // Must be exactly ONE game (prevents ambiguity for teams that play twice)
+    if (candidateGames.length !== 1) {
+      return null;
+    }
+    
+    const game = candidateGames[0];
+    const gameDate = new Date(game.date);
+    const daysDelta = Math.abs((gameDate.getTime() - eventDate.getTime()) / (24 * 60 * 60 * 1000));
+    
+    // Date threshold: ±8 days normally, ±14 days for transitional teams
+    const maxDelta = isTransitional ? 14 : 8;
+    if (daysDelta > maxDelta) {
+      return null;
+    }
+    
+    return { game, daysDelta };
   }
 
   /**

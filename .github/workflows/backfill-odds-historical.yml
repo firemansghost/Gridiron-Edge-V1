@@ -43,6 +43,11 @@ on:
         required: false
         default: ''
         type: string
+      enable_season_fallback:
+        description: 'Enable season-only fallback for date mismatches (±8d)'
+        required: false
+        default: false
+        type: boolean
       concurrency:
         description: 'Concurrency control (1-5)'
         required: false
@@ -111,11 +116,84 @@ jobs:
           echo "HISTORICAL_ALLOWED_SEASON=${{ inputs.season }}" >> $GITHUB_ENV
           echo "HISTORICAL_ALLOWED_WEEKS=${{ inputs.weeks }}" >> $GITHUB_ENV
           echo "CREDITS_LIMIT=${{ inputs.credits_limit }}" >> $GITHUB_ENV
+          echo "ODDSAPI_ENABLE_SEASON_FALLBACK=${{ inputs.enable_season_fallback && 'true' || 'false' }}" >> $GITHUB_ENV
 
       - name: Test compiled file
         run: |
           echo "Testing compiled file with help command..."
           node apps/jobs/dist/ingest-minimal.js --help || echo "Help command failed, but continuing..."
+
+      - name: Validate team aliases (duplicate keys check)
+        run: |
+          echo "Checking team_aliases.yml for duplicate keys..."
+          node -e "
+            const fs = require('fs');
+            const yaml = require('js-yaml');
+            const path = 'apps/jobs/config/team_aliases.yml';
+            try {
+              const content = fs.readFileSync(path, 'utf8');
+              const lines = content.split('\\n');
+              const keys = new Set();
+              const dupes = [];
+              lines.forEach((line, idx) => {
+                const match = line.match(/^\\s*\"([^\"]+)\":\\s*/);
+                if (match) {
+                  const key = match[1];
+                  if (keys.has(key)) {
+                    dupes.push(\`Line \${idx+1}: \${key}\`);
+                  }
+                  keys.add(key);
+                }
+              });
+              if (dupes.length > 0) {
+                console.error('❌ FATAL: Duplicate keys found in team_aliases.yml:');
+                dupes.forEach(d => console.error('  -', d));
+                process.exit(1);
+              }
+              console.log('✅ No duplicate keys found');
+              console.log(\`   Total unique keys: \${keys.size}\`);
+            } catch (err) {
+              console.error('❌ FATAL: Failed to validate aliases:', err.message);
+              process.exit(1);
+            }
+          "
+
+      - name: Validate FBS team index size
+        run: |
+          echo "Checking FBS team index will be adequately sized..."
+          node -e "
+            const { PrismaClient } = require('@prisma/client');
+            const fs = require('fs');
+            const prisma = new PrismaClient();
+            (async () => {
+              // Check teams table
+              const teams = await prisma.team.findMany().catch(() => []);
+              console.log(\`Teams table: \${teams.length} rows\`);
+              
+              // Check static fallback
+              const staticPath = 'apps/jobs/config/fbs_slugs.json';
+              const staticSlugs = fs.existsSync(staticPath) 
+                ? JSON.parse(fs.readFileSync(staticPath, 'utf8'))
+                : [];
+              console.log(\`Static FBS slugs: \${staticSlugs.length} entries\`);
+              
+              // Sanity check: at least one source should have decent data
+              const combined = teams.length + staticSlugs.length;
+              if (combined < 100) {
+                console.error(\`❌ FATAL: Combined team sources undersized (\${combined} < 100)\`);
+                console.error('   This will cause index build to fail.');
+                process.exit(1);
+              }
+              
+              console.log(\`✅ Team sources look adequate (combined: \${combined})\`);
+              process.exit(0);
+            })().catch(err => {
+              console.error('❌ FATAL: Failed to check team index:', err.message);
+              process.exit(1);
+            });
+          "
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
       - name: Echo DB host (safety)
         run: |
@@ -135,6 +213,7 @@ jobs:
           echo "Credits limit: ${{ inputs.credits_limit }}"
           echo "Dry run: ${{ inputs.dry_run }}"
           echo "Historical strict: ${{ inputs.historical_strict }}"
+          echo "Season fallback: ${{ inputs.enable_season_fallback }}"
           echo ""
           node apps/jobs/dist/ingest-minimal.js oddsapi \
             --season "${{ inputs.season }}" \

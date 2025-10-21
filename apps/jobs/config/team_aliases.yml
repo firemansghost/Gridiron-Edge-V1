@@ -31,9 +31,11 @@ aliases:
   "Buffalo": buffalo
   "Buffalo Bulls": buffalo
   
-  # Ole Miss - IMPORTANT: Do NOT use bare "Mississippi" (ambiguous with Mississippi State)
+  # Ole Miss - IMPORTANT: "Mississippi" alone maps to Ole Miss (Mississippi State always includes "State")
   "Ole Miss": ole-miss
   "Ole Miss Rebels": ole-miss
+  "Mississippi": ole-miss
+  "Mississippi Rebels": ole-miss
   
   # State schools (must map to -state)
   "Iowa State": iowa-state
