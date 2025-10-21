@@ -1283,6 +1283,33 @@ export class OddsApiAdapter implements DataSourceAdapter {
     const mappedEvents: any[] = [];
     const unmatchedEvents: any[] = [];
     
+    // PRE-CHECK: Validate all team names can resolve to FBS slugs (saves credits on bad mappings)
+    console.log(`\n[PRECHECK] Validating team name → FBS slug resolution for ${events.length} events...`);
+    const precheckFailures: Array<{event: any, team: string, side: string}> = [];
+    
+    for (const event of events) {
+      const homeResolution = this.resolveTeamIdWithCandidates(event.home_team);
+      const awayResolution = this.resolveTeamIdWithCandidates(event.away_team);
+      
+      if (!homeResolution.teamId) {
+        precheckFailures.push({ event, team: event.home_team, side: 'home' });
+      }
+      if (!awayResolution.teamId) {
+        precheckFailures.push({ event, team: event.away_team, side: 'away' });
+      }
+    }
+    
+    if (precheckFailures.length > 0) {
+      console.log(`[PRECHECK] ⚠️  ${precheckFailures.length} team name(s) could not resolve to FBS slugs:`);
+      const uniqueTeams = new Set(precheckFailures.map(f => f.team));
+      for (const team of uniqueTeams) {
+        console.log(`[PRECHECK]   - "${team}"`);
+      }
+      console.log(`[PRECHECK] → Add aliases or fix team names before fetching odds to avoid wasted credits.`);
+    } else {
+      console.log(`[PRECHECK] ✅ All ${events.length * 2} team names resolved to FBS slugs.`);
+    }
+    
     for (const event of events) {
       try {
         // Resolve team names to CFBD team IDs with detailed candidates
@@ -1368,6 +1395,10 @@ export class OddsApiAdapter implements DataSourceAdapter {
           if (closestGames.length > 0) {
             console.log(`   [ODDSAPI]   Found ${candidateGames.length} candidate game(s) in season, closest:`, 
               closestGames.map(g => `W${g.week} (${g.daysDiff.toFixed(1)}d away)`).join(', '));
+          } else {
+            // Explicit "missing schedule row" diagnostic
+            console.log(`   [NO-GAME] 0 schedule rows for (away=${awayResolution.teamId}, home=${homeResolution.teamId}, season=${season}).`);
+            console.log(`   [NO-GAME] → This is a missing game in your schedule, not a date-matching issue.`);
           }
           
           unmatchedEvents.push({ 
