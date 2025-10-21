@@ -1,8 +1,10 @@
 name: Weather Daily
 
 on:
-  schedule:
-    - cron: '0 8 * * *'
+  # DISABLED: Auto-schedule to save credits during testing
+  # TODO: Re-enable when ready for production (uncomment below)
+  # schedule:
+  #   - cron: '0 8 * * *'  # Every day at 8:00 UTC
   workflow_dispatch:
 
 jobs:
