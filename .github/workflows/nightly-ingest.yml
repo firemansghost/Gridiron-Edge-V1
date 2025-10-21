@@ -44,32 +44,18 @@ jobs:
       - name: Generate Prisma Client
         run: npm run prisma:generate
 
-      - name: Build jobs
-        run: npm run build:jobs
-
-      - name: Verify build output
-        run: |
-          echo "🔍 Checking build output..."
-          ls -la apps/jobs/dist/
-          if [ -f "apps/jobs/dist/ingest.js" ]; then
-            echo "✅ ingest.js found"
-          else
-            echo "❌ ingest.js not found"
-            exit 1
-          fi
-
       - name: Ingest schedules via CFBD (optional)
         if: ${{ env.CFBD_API_KEY != '' }}
         run: |
           echo "🗓️ Ingesting real schedules from CFBD..."
-          node apps/jobs/dist/ingest.js cfbd --season 2025 --weeks $POLL_WEEK
+          node apps/jobs/ingest-simple.js cfbd --season 2025 --weeks $POLL_WEEK
           echo "✅ CFBD schedules ingested"
 
       - name: Fallback - Ensure mock schedules (if no CFBD key)
         if: ${{ env.CFBD_API_KEY == '' }}
         run: |
           echo "📥 Using mock data (no CFBD_API_KEY)..."
-          node apps/jobs/dist/ingest.js mock --season 2025 --weeks $POLL_WEEK
+          node apps/jobs/ingest-simple.js mock --season 2025 --weeks $POLL_WEEK
           echo "✅ Mock data ingest complete"
 
   ingest-odds:
@@ -100,32 +86,18 @@ jobs:
       - name: Generate Prisma Client
         run: npm run prisma:generate
 
-      - name: Build jobs
-        run: npm run build:jobs
-
-      - name: Verify build output
-        run: |
-          echo "🔍 Checking build output..."
-          ls -la apps/jobs/dist/
-          if [ -f "apps/jobs/dist/ingest.js" ]; then
-            echo "✅ ingest.js found"
-          else
-            echo "❌ ingest.js not found"
-            exit 1
-          fi
-
       - name: Fetch odds from Odds API (primary)
         if: ${{ env.ODDS_API_KEY != '' }}
         run: |
           echo "📈 Fetching odds from Odds API..."
-          node apps/jobs/dist/ingest.js oddsapi --season 2025 --weeks $POLL_WEEK
+          node apps/jobs/ingest-simple.js oddsapi --season 2025 --weeks $POLL_WEEK
           echo "✅ Odds API odds fetched"
 
       - name: Fallback - Fetch odds from SGO (if Odds API unavailable)
         if: ${{ env.ODDS_API_KEY == '' && env.SGO_API_KEY != '' }}
         run: |
           echo "📈 Fetching odds from SGO (fallback)..."
-          node apps/jobs/dist/ingest.js sgo --season 2025 --weeks $POLL_WEEK
+          node apps/jobs/ingest-simple.js sgo --season 2025 --weeks $POLL_WEEK
           echo "✅ SGO odds fetched"
 
       - name: Skip odds (no API keys)
@@ -159,26 +131,11 @@ jobs:
       - name: Generate Prisma Client
         run: npm run prisma:generate
 
-      - name: Build jobs
-        run: npm run build:jobs
-
-      - name: Verify build output
-        run: |
-          echo "🔍 Checking build output..."
-          ls -la apps/jobs/dist/
-          if [ -f "apps/jobs/dist/ingest.js" ]; then
-            echo "✅ ingest.js found"
-          else
-            echo "❌ ingest.js not found"
-            exit 1
-          fi
-
-      - name: Fetch weather via Visual Crossing (optional)
+      - name: Skip weather (not supported in simple version)
         if: ${{ env.VISUALCROSSING_API_KEY != '' }}
         run: |
-          echo "⛅ Updating weather..."
-          node apps/jobs/dist/ingest.js weatherVc --season 2025 --weeks $POLL_WEEK
-          echo "✅ Weather data fetched"
+          echo "⛅ Weather adapter not yet supported in simple version..."
+          echo "⚠️  Skipping weather update (will be added later)"
 
       - name: Skip weather (no API key)
         if: ${{ env.VISUALCROSSING_API_KEY == '' }}
