@@ -47,6 +47,17 @@ jobs:
       - name: Build jobs
         run: npm run build:jobs
 
+      - name: Verify build output
+        run: |
+          echo "🔍 Checking build output..."
+          ls -la apps/jobs/dist/
+          if [ -f "apps/jobs/dist/ingest.js" ]; then
+            echo "✅ ingest.js found"
+          else
+            echo "❌ ingest.js not found"
+            exit 1
+          fi
+
       - name: Ingest schedules via CFBD (optional)
         if: ${{ env.CFBD_API_KEY != '' }}
         run: |
@@ -91,6 +102,17 @@ jobs:
 
       - name: Build jobs
         run: npm run build:jobs
+
+      - name: Verify build output
+        run: |
+          echo "🔍 Checking build output..."
+          ls -la apps/jobs/dist/
+          if [ -f "apps/jobs/dist/ingest.js" ]; then
+            echo "✅ ingest.js found"
+          else
+            echo "❌ ingest.js not found"
+            exit 1
+          fi
 
       - name: Fetch odds from Odds API (primary)
         if: ${{ env.ODDS_API_KEY != '' }}
@@ -139,6 +161,17 @@ jobs:
 
       - name: Build jobs
         run: npm run build:jobs
+
+      - name: Verify build output
+        run: |
+          echo "🔍 Checking build output..."
+          ls -la apps/jobs/dist/
+          if [ -f "apps/jobs/dist/ingest.js" ]; then
+            echo "✅ ingest.js found"
+          else
+            echo "❌ ingest.js not found"
+            exit 1
+          fi
 
       - name: Fetch weather via Visual Crossing (optional)
         if: ${{ env.VISUALCROSSING_API_KEY != '' }}
