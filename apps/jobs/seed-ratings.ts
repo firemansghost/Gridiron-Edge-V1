@@ -7,11 +7,37 @@
  * Uses simple z-scoring and constant HFA for v1.
  */
 
-import fs from 'fs';
-import path from 'path';
-import { PrismaClient } from '@prisma/client';
+const fs = require('fs');
+const path = require('path');
+const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
+
+// Type definitions
+interface RatingData {
+  rating: number;
+  components: Record<string, number>;
+}
+
+interface TeamStats {
+  teamId: string;
+  yppOff: number;
+  yppDef: number;
+  successOff: number;
+  successDef: number;
+}
+
+interface ImpliedLine {
+  gameId: string;
+  season: number;
+  week: number;
+  impliedSpread: number;
+  impliedTotal: number;
+  marketSpread: number;
+  marketTotal: number;
+  edgeConfidence: string;
+  modelVersion: string;
+}
 
 // M3 Constants
 const MODEL_VERSION = 'v0.0.1';
@@ -25,7 +51,7 @@ const CONFIDENCE_THRESHOLDS = {
 /**
  * Normalize team ID to handle mismatches
  */
-function normalizeId(str) {
+function normalizeId(str: string | null | undefined): string {
   if (!str) return '';
   return str
     .trim()
@@ -37,7 +63,7 @@ function normalizeId(str) {
 /**
  * Title case a string for display names
  */
-function titleCase(str) {
+function titleCase(str: string): string {
   return str
     .split('-')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
@@ -47,17 +73,17 @@ function titleCase(str) {
 /**
  * Upsert game scores
  */
-async function upsertScores(scores) {
+async function upsertScores(scores: Array<{gameId: string, homeScore: number, awayScore: number}>): Promise<number> {
   let scoresUpdated = 0;
   
   for (const score of scores) {
-    const gameId = normalizeId(score.game_id);
+    const gameId = normalizeId(score.gameId);
     
     await prisma.game.updateMany({
       where: { id: gameId },
       data: {
-        homeScore: score.home_score,
-        awayScore: score.away_score,
+        homeScore: score.homeScore,
+        awayScore: score.awayScore,
         status: 'final'
       }
     });
@@ -71,7 +97,7 @@ async function upsertScores(scores) {
 /**
  * Load seed data from JSON files
  */
-function loadSeedData() {
+function loadSeedData(): {teams: any[], games: any[], teamGameStats: any[], marketLines: any[], scores: any[] | null} {
   const seedDir = path.join(process.cwd(), 'seed');
   
   const teams = JSON.parse(fs.readFileSync(path.join(seedDir, 'teams.json'), 'utf8')).teams;
@@ -93,7 +119,7 @@ function loadSeedData() {
 /**
  * Compute z-scores for a dataset
  */
-function computeZScores(values) {
+function computeZScores(values: number[]): number[] {
   const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
   const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
   const stdDev = Math.sqrt(variance);
@@ -104,17 +130,16 @@ function computeZScores(values) {
 /**
  * Extract team features from game stats
  */
-function extractTeamFeatures(teamId, teamGameStats) {
+function extractTeamFeatures(teamId: string, teamGameStats: any[]): TeamStats {
   const teamStats = teamGameStats.filter(stat => stat.team_id === teamId);
   
   if (teamStats.length === 0) {
     return {
-      ypp_off: 0,
-      ypp_def: 0,
-      success_off: 0,
-      success_def: 0,
-      pace: 0,
-      talent_index: 0
+      teamId,
+      yppOff: 0,
+      yppDef: 0,
+      successOff: 0,
+      successDef: 0
     };
   }
   
@@ -135,82 +160,78 @@ function extractTeamFeatures(teamId, teamGameStats) {
   const pace = totalPlays || 60; // Default to 60 plays
   
   return {
-    ypp_off,
-    ypp_def: -ypp_def, // Defensive YPP enters negatively
-    success_off,
-    success_def,
-    pace,
-    talent_index: 0 // Default for seed mode
+    teamId,
+    yppOff: ypp_off,
+    yppDef: -ypp_def, // Defensive YPP enters negatively
+    successOff: success_off,
+    successDef: success_def
   };
 }
 
 /**
  * Compute linear power ratings
  */
-function computePowerRatings(teams, teamGameStats) {
+function computePowerRatings(teams: any[], teamGameStats: any[]): RatingData[] {
   console.log('Computing power ratings...');
   
   // Extract features for all teams
-  const teamFeatures = {};
+  const teamFeatures: Record<string, TeamStats> = {};
   teams.forEach(team => {
     teamFeatures[team.team_id] = extractTeamFeatures(team.team_id, teamGameStats);
   });
   
   // Collect all feature values for z-scoring
   const featureArrays = {
-    ypp_off: [],
-    ypp_def: [],
-    success_off: [],
-    success_def: [],
-    pace: [],
-    talent_index: []
+    yppOff: [] as number[],
+    yppDef: [] as number[],
+    successOff: [] as number[],
+    successDef: [] as number[]
   };
   
   Object.values(teamFeatures).forEach(features => {
-    Object.keys(featureArrays).forEach(key => {
-      featureArrays[key].push(features[key]);
-    });
+    featureArrays.yppOff.push(features.yppOff);
+    featureArrays.yppDef.push(features.yppDef);
+    featureArrays.successOff.push(features.successOff);
+    featureArrays.successDef.push(features.successDef);
   });
   
   // Compute z-scores for each feature
-  const zScores = {};
-  Object.keys(featureArrays).forEach(feature => {
-    zScores[feature] = computeZScores(featureArrays[feature]);
-  });
+  const zScores = {
+    yppOff: computeZScores(featureArrays.yppOff),
+    yppDef: computeZScores(featureArrays.yppDef),
+    successOff: computeZScores(featureArrays.successOff),
+    successDef: computeZScores(featureArrays.successDef)
+  };
   
   // Create team-to-zscore mapping
-  const teamZScores = {};
+  const teamZScores: Record<string, Record<string, number>> = {};
   const teamIds = Object.keys(teamFeatures);
   teamIds.forEach((teamId, index) => {
-    teamZScores[teamId] = {};
-    Object.keys(zScores).forEach(feature => {
-      teamZScores[teamId][feature] = zScores[feature][index];
-    });
+    teamZScores[teamId] = {
+      yppOff: zScores.yppOff[index],
+      yppDef: zScores.yppDef[index],
+      successOff: zScores.successOff[index],
+      successDef: zScores.successDef[index]
+    };
   });
   
   // Compute ratings using simple linear combination
   const weights = {
-    ypp_off: 0.3,
-    ypp_def: 0.3,
-    success_off: 0.2,
-    success_def: 0.2,
-    pace: 0.0, // Not used in v1
-    talent_index: 0.0 // Not used in v1
+    yppOff: 0.3,
+    yppDef: 0.3,
+    successOff: 0.2,
+    successDef: 0.2
   };
   
-  const ratings = {};
+  const ratings: Record<string, RatingData> = {};
   Object.keys(teamZScores).forEach(teamId => {
     let rating = 0;
-    const components = {};
+    const components: Record<string, number> = {};
     
     Object.keys(weights).forEach(feature => {
-      const contribution = teamZScores[teamId][feature] * weights[feature];
+      const contribution = teamZScores[teamId][feature] * weights[feature as keyof typeof weights];
       rating += contribution;
-      components[feature] = {
-        z_score: teamZScores[teamId][feature],
-        weight: weights[feature],
-        contribution
-      };
+      components[feature] = contribution;
     });
     
     ratings[teamId] = {
@@ -219,16 +240,16 @@ function computePowerRatings(teams, teamGameStats) {
     };
   });
   
-  return ratings;
+  return Object.values(ratings);
 }
 
 /**
  * Compute implied lines for games
  */
-function computeImpliedLines(games, ratings, marketLines) {
+function computeImpliedLines(games: any[], ratings: Record<string, RatingData>, marketLines: any[]): ImpliedLine[] {
   console.log('Computing implied lines...');
   
-  const impliedLines = [];
+  const impliedLines: ImpliedLine[] = [];
   
   games.forEach(game => {
     const homeRating = ratings[game.home_team_id]?.rating || 0;
@@ -238,8 +259,8 @@ function computeImpliedLines(games, ratings, marketLines) {
     const impliedSpread = ratingDiff + (game.neutral_site ? 0 : HFA);
     
     // Simple total calculation (pace + efficiency proxy)
-    const homePace = ratings[game.home_team_id]?.components?.pace?.z_score || 0;
-    const awayPace = ratings[game.away_team_id]?.components?.pace?.z_score || 0;
+    const homePace = ratings[game.home_team_id]?.components?.yppOff || 0;
+    const awayPace = ratings[game.away_team_id]?.components?.yppOff || 0;
     const impliedTotal = 45 + (homePace + awayPace) * 2; // Base 45 + pace adjustment
     
     // Find market lines for this game
@@ -278,10 +299,10 @@ function computeImpliedLines(games, ratings, marketLines) {
 /**
  * Upsert teams from seed data
  */
-async function upsertTeams(teams) {
+async function upsertTeams(teams: any[]): Promise<{teamsInserted: number, teamIds: Set<string>}> {
   console.log('Upserting teams...');
   let teamsInserted = 0;
-  const teamIds = new Set();
+  const teamIds = new Set<string>();
   
   for (const team of teams) {
     const normalizedId = normalizeId(team.team_id || team.id || team.name);
@@ -418,7 +439,7 @@ async function upsertGames(games, existingTeamIds) {
 /**
  * Main execution function
  */
-async function main() {
+async function main(): Promise<void> {
   try {
     console.log('Starting M3 seed ratings job...');
     
@@ -436,7 +457,8 @@ async function main() {
     const scoresUpdated = scores ? await upsertScores(scores) : 0;
     
     // Step 3: Compute power ratings
-    const ratings = computePowerRatings(teams, teamGameStats);
+    const ratingsArray = computePowerRatings(teams, teamGameStats);
+    const ratings = Object.fromEntries(ratingsArray.map((r, i) => [teams[i].team_id, r]));
     
     // Step 4: Compute implied lines
     const impliedLines = computeImpliedLines(games, ratings, marketLines);
@@ -457,18 +479,18 @@ async function main() {
           }
         },
         update: {
-          rating: ratingData.rating,
-          features: ratingData.components,
-          confidence: Math.abs(ratingData.rating)
+          rating: (ratingData as RatingData).rating,
+          features: (ratingData as RatingData).components,
+          confidence: Math.abs((ratingData as RatingData).rating)
         },
         create: {
           teamId,
           season: 2024,
           week: 1,
-          rating: ratingData.rating,
+          rating: (ratingData as RatingData).rating,
           modelVersion: MODEL_VERSION,
-          features: ratingData.components,
-          confidence: Math.abs(ratingData.rating)
+          features: (ratingData as RatingData).components,
+          confidence: Math.abs((ratingData as RatingData).rating)
         }
       });
     }
@@ -523,7 +545,7 @@ async function main() {
 }
 
 // Run if called directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (require.main === module) {
   main();
 }
 

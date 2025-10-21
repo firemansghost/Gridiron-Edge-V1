@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Data ingestion and processing jobs",
   "private": true,
+  "type": "commonjs",
   "main": "dist/ingest.js",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
