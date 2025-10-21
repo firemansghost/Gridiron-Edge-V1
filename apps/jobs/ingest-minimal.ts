@@ -248,7 +248,8 @@ async function main() {
       // Summary line
       const spreads = marketLines.filter((l: any) => l.lineType === 'spread').length;
       const totals = marketLines.filter((l: any) => l.lineType === 'total').length;
-      console.log(`[SUMMARY] events=49 mapped=31 parsed_spreads=${spreads} parsed_totals=${totals} toInsert=${rowsToInsert.length} inserted=${result.count} postCount=${postCount}`);
+      const uniqueGames = Object.keys(gameGroups).length;
+      console.log(`[SUMMARY] mapped_games=${uniqueGames} parsed_spreads=${spreads} parsed_totals=${totals} toInsert=${rowsToInsert.length} inserted=${result.count} postCount=${postCount}`);
       
     } else if (options.dryRun) {
       console.log('[DB] Skipped createMany (dryRun mode)');
