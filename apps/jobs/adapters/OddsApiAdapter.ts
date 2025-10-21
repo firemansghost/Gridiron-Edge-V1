@@ -12,19 +12,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { isTransitionalMatchup } from '../config/transitional_teams';
+import { isRejectedSlug, isDenylisted, matchesNonFBSPattern } from '../config/denylist';
 
 const prisma = new PrismaClient();
-
-// Deny list for non-FBS alias targets
-const DENY_ALIAS_TARGETS = new Set([
-  'mississippi-college',
-  'louisiana-college',
-  'south-carolina-state',
-  'missouri-state',
-  'tennessee-state',  // FCS
-  'arkansas-pine-bluff',
-  'alabama-state',
-]);
 
 // Load team aliases from config file (Phase A: parse YAML only)
 function loadTeamAliasesFromYAML(): Record<string, string> {
@@ -70,22 +60,16 @@ function validateAliasesAgainstFBS(rawAliases: Record<string, string>, fbsTeamId
   let deniedCount = 0;
   
   for (const [key, target] of Object.entries(rawAliases)) {
-    // Check deny list first
-    if (DENY_ALIAS_TARGETS.has(target)) {
-      console.log(`[ALIASES] ⚠️  Denied non-FBS target: "${key}" → ${target}`);
-      rejectedAliases.push({ key, target, reason: 'deny-list' });
+    // HARD GUARDRAIL 1: Check denylist (non-FBS schools)
+    if (isRejectedSlug(target)) {
+      const reason = isDenylisted(target) ? 'denylisted' : matchesNonFBSPattern(target) ? '*-college pattern' : 'rejected pattern';
+      console.error(`[ALIASES] ❌ Denied alias target not FBS or denylisted: "${key}" → ${target} (${reason})`);
+      rejectedAliases.push({ key, target, reason });
       deniedCount++;
       continue;
     }
     
-    // HARD GUARDRAIL: Reject *-college targets (non-FBS)
-    if (target.includes('-college')) {
-      console.error(`[ALIASES] ❌ Rejected non-FBS target: "${key}" → ${target} (*-college pattern)`);
-      rejectedAliases.push({ key, target, reason: '*-college pattern' });
-      continue;
-    }
-    
-    // HARD GUARDRAIL: Target must exist in FBS index
+    // HARD GUARDRAIL 2: Target must exist in FBS index
     if (!fbsTeamIds.has(target)) {
       console.error(`[ALIASES] ❌ Rejected non-FBS target: "${key}" → ${target} (not in FBS index)`);
       rejectedAliases.push({ key, target, reason: 'not in FBS index' });
@@ -368,13 +352,18 @@ export class OddsApiAdapter implements DataSourceAdapter {
     const sourceUsed: string[] = [];
 
     // A) teams table (no division filter; it's unreliable)
+    let filteredCount = 0;
     try {
       const dbTeams = await prisma.team.findMany({
         select: { id: true, name: true, mascot: true }
       });
       for (const t of dbTeams) {
         const slug = this.normalizeSlug(t.id);
-        if (slug) slugSet.add(slug);
+        if (slug && !isRejectedSlug(slug)) {
+          slugSet.add(slug);
+        } else if (slug && isRejectedSlug(slug)) {
+          filteredCount++;
+        }
       }
       sourceUsed.push(`teams-db:${dbTeams.length}`);
     } catch (error) {
@@ -382,7 +371,7 @@ export class OddsApiAdapter implements DataSourceAdapter {
       sourceUsed.push('teams-db:0');
     }
 
-    // B) games table slugs (correct columns)
+    // B) games table slugs (correct columns) - FILTER OUT DENYLISTED
     try {
       const gamesSlugs = await prisma.$queryRawUnsafe<Array<{slug: string | null}>>(` 
         SELECT unnest(ARRAY[home_team_id, away_team_id]) AS slug
@@ -391,7 +380,11 @@ export class OddsApiAdapter implements DataSourceAdapter {
       `);
       for (const r of gamesSlugs) {
         const slug = this.normalizeSlug(r.slug || '');
-        if (slug) slugSet.add(slug);
+        if (slug && !isRejectedSlug(slug)) {
+          slugSet.add(slug);
+        } else if (slug && isRejectedSlug(slug)) {
+          filteredCount++;
+        }
       }
       sourceUsed.push(`games-slugs:${gamesSlugs.length}`);
     } catch (error) {
@@ -399,20 +392,28 @@ export class OddsApiAdapter implements DataSourceAdapter {
       sourceUsed.push('games-slugs:0');
     }
 
-    // C) static JSON (checked in; ~134 2024 FBS slugs, plus legacy)
+    // C) static JSON (checked in; ~134 2024 FBS slugs, plus legacy) - FILTER OUT DENYLISTED
     try {
       const staticPath = path.join(process.cwd(), 'apps', 'jobs', 'config', 'fbs_slugs.json');
       if (fs.existsSync(staticPath)) {
         const staticFbs = JSON.parse(fs.readFileSync(staticPath, 'utf8')) as string[];
         for (const s of staticFbs) {
           const slug = this.normalizeSlug(s);
-          if (slug) slugSet.add(slug);
+          if (slug && !isRejectedSlug(slug)) {
+            slugSet.add(slug);
+          } else if (slug && isRejectedSlug(slug)) {
+            filteredCount++;
+          }
         }
         sourceUsed.push(`static-json:${staticFbs.length}`);
       }
     } catch (error) {
       console.warn('[INDEX] ⚠️  Failed to load static FBS list:', (error as Error).message);
       sourceUsed.push('static-json:0');
+    }
+    
+    if (filteredCount > 0) {
+      console.log(`[INDEX] 🚫 Filtered ${filteredCount} denylisted slug(s) (*-college, FCS, etc.)`);
     }
 
     // D) Canary self-heal: ensure cornerstone programs exist (prevent regressions)

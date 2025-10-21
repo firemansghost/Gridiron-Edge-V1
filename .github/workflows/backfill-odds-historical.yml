@@ -46,7 +46,7 @@ on:
       enable_season_fallback:
         description: 'Enable season-only fallback for date mismatches (±8d)'
         required: false
-        default: false
+        default: true
         type: boolean
       concurrency:
         description: 'Concurrency control (1-5)'
@@ -194,6 +194,60 @@ jobs:
           "
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Validate aliases against denylist
+        run: |
+          echo "Checking team_aliases.yml for denylisted targets..."
+          node -e "
+            const fs = require('fs');
+            const yaml = require('js-yaml');
+            const aliasPath = 'apps/jobs/config/team_aliases.yml';
+            const denylistPath = 'apps/jobs/config/denylist.ts';
+            
+            try {
+              // Load denylist
+              const denylistContent = fs.readFileSync(denylistPath, 'utf8');
+              const denylistMatch = denylistContent.match(/DENYLIST_SLUGS = new Set\\(\\[([^\\]]+)\\]/);
+              if (!denylistMatch) {
+                console.error('❌ FATAL: Could not parse DENYLIST_SLUGS');
+                process.exit(1);
+              }
+              const denylistSlugs = denylistMatch[1]
+                .split(',')
+                .map(s => s.trim().replace(/['\"]/g, ''))
+                .filter(s => s && !s.startsWith('//'));
+              
+              console.log(\`Denylist: \${denylistSlugs.length} slug(s)\`);
+              
+              // Load aliases
+              const aliasContent = fs.readFileSync(aliasPath, 'utf8');
+              const config = yaml.load(aliasContent);
+              const aliases = config.aliases || {};
+              
+              // Check for denylisted targets
+              const violations = [];
+              for (const [key, target] of Object.entries(aliases)) {
+                if (denylistSlugs.includes(target)) {
+                  violations.push(\`  - \"\${key}\" → \${target} (denylisted)\`);
+                }
+                if (target.endsWith('-college')) {
+                  violations.push(\`  - \"\${key}\" → \${target} (*-college pattern)\`);
+                }
+              }
+              
+              if (violations.length > 0) {
+                console.error('❌ FATAL: Found alias targets that are denylisted or non-FBS:');
+                violations.forEach(v => console.error(v));
+                process.exit(1);
+              }
+              
+              console.log('✅ No denylisted targets found in aliases');
+              console.log(\`   Validated \${Object.keys(aliases).length} alias mappings\`);
+            } catch (err) {
+              console.error('❌ FATAL: Failed to validate aliases:', err.message);
+              process.exit(1);
+            }
+          "
 
       - name: Echo DB host (safety)
         run: |
