@@ -21,8 +21,9 @@ jobs:
         with: { node-version: '20', cache: 'npm' }
       - run: npm ci
       - run: npm run prisma:generate
+      - run: npm run build:jobs
       - name: Fetch/update weather
         run: |
           echo "⛅ Fetching weather data from Visual Crossing..."
-          npm run ingest -- weatherVc --season 2024 --weeks 1
+          node apps/jobs/dist/ingest.js weatherVc --season 2024 --weeks 1
           echo "✅ Weather fetch complete"

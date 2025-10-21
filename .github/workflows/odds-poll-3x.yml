@@ -34,20 +34,21 @@ jobs:
         with: { node-version: '20', cache: 'npm' }
       - run: npm ci
       - run: npm run prisma:generate
+      - run: npm run build:jobs
 
       - name: Ingest schedules via CFBD (optional)
         if: ${{ env.CFBD_API_KEY != '' }}
         run: |
           echo "🗓️ Ingesting real schedules from CFBD..."
           # 2025 season, single week only
-          npm run ingest -- cfbd --season 2025 --weeks $POLL_WEEK
+          node apps/jobs/dist/ingest.js cfbd --season 2025 --weeks $POLL_WEEK
           echo "✅ CFBD schedules ingested"
 
       - name: Fallback - Ensure mock schedules (if no CFBD key)
         if: ${{ env.CFBD_API_KEY == '' }}
         run: |
           echo "🗓️ Using mock schedules (no CFBD_API_KEY)..."
-          npm run ingest -- mock --season 2025 --weeks $POLL_WEEK
+          node apps/jobs/dist/ingest.js mock --season 2025 --weeks $POLL_WEEK
           echo "✅ Mock schedules ensured"
 
       - name: Poll odds from Odds API (primary)
@@ -55,12 +56,12 @@ jobs:
         run: |
           echo "📈 Polling odds (3x daily) from Odds API..."
           # Live 2025 season - single week only
-          npm run ingest -- oddsapi --season 2025 --weeks $POLL_WEEK
+          node apps/jobs/dist/ingest.js oddsapi --season 2025 --weeks $POLL_WEEK
           echo "✅ Odds API poll complete"
 
       - name: Fallback - Poll odds from SGO (if Odds API unavailable)
         if: ${{ env.ODDS_API_KEY == '' && env.SGO_API_KEY != '' }}
         run: |
           echo "📈 Polling odds from SGO (fallback)..."
-          npm run ingest -- sgo --season 2025 --weeks $POLL_WEEK
+          node apps/jobs/dist/ingest.js sgo --season 2025 --weeks $POLL_WEEK
           echo "✅ SGO poll complete"

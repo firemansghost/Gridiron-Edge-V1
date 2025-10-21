@@ -43,18 +43,21 @@ jobs:
       - name: Generate Prisma Client
         run: npm run prisma:generate
 
+      - name: Build jobs
+        run: npm run build:jobs
+
       - name: Ingest schedules via CFBD (optional)
         if: ${{ env.CFBD_API_KEY != '' }}
         run: |
           echo "🗓️ Ingesting real schedules from CFBD..."
-          npm run ingest -- cfbd --season 2025 --weeks $POLL_WEEK
+          node apps/jobs/dist/ingest.js cfbd --season 2025 --weeks $POLL_WEEK
           echo "✅ CFBD schedules ingested"
 
       - name: Fallback - Ensure mock schedules (if no CFBD key)
         if: ${{ env.CFBD_API_KEY == '' }}
         run: |
           echo "📥 Using mock data (no CFBD_API_KEY)..."
-          npm run ingest -- mock --season 2025 --weeks $POLL_WEEK
+          node apps/jobs/dist/ingest.js mock --season 2025 --weeks $POLL_WEEK
           echo "✅ Mock data ingest complete"
 
   ingest-odds:
@@ -85,18 +88,21 @@ jobs:
       - name: Generate Prisma Client
         run: npm run prisma:generate
 
+      - name: Build jobs
+        run: npm run build:jobs
+
       - name: Fetch odds from Odds API (primary)
         if: ${{ env.ODDS_API_KEY != '' }}
         run: |
           echo "📈 Fetching odds from Odds API..."
-          npm run ingest -- oddsapi --season 2025 --weeks $POLL_WEEK
+          node apps/jobs/dist/ingest.js oddsapi --season 2025 --weeks $POLL_WEEK
           echo "✅ Odds API odds fetched"
 
       - name: Fallback - Fetch odds from SGO (if Odds API unavailable)
         if: ${{ env.ODDS_API_KEY == '' && env.SGO_API_KEY != '' }}
         run: |
           echo "📈 Fetching odds from SGO (fallback)..."
-          npm run ingest -- sgo --season 2025 --weeks $POLL_WEEK
+          node apps/jobs/dist/ingest.js sgo --season 2025 --weeks $POLL_WEEK
           echo "✅ SGO odds fetched"
 
       - name: Skip odds (no API keys)
@@ -130,11 +136,14 @@ jobs:
       - name: Generate Prisma Client
         run: npm run prisma:generate
 
+      - name: Build jobs
+        run: npm run build:jobs
+
       - name: Fetch weather via Visual Crossing (optional)
         if: ${{ env.VISUALCROSSING_API_KEY != '' }}
         run: |
           echo "⛅ Updating weather..."
-          npm run ingest -- weatherVc --season 2025 --weeks $POLL_WEEK
+          node apps/jobs/dist/ingest.js weatherVc --season 2025 --weeks $POLL_WEEK
           echo "✅ Weather data fetched"
 
       - name: Skip weather (no API key)
