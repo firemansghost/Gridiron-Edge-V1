@@ -98,7 +98,28 @@ async function upsertScores(scores: Array<{gameId: string, homeScore: number, aw
  * Load seed data from JSON files
  */
 function loadSeedData(): {teams: any[], games: any[], teamGameStats: any[], marketLines: any[], scores: any[] | null} {
-  const seedDir = path.join(process.cwd(), 'seed');
+  // Try multiple possible locations for seed data
+  const possibleSeedDirs = [
+    path.join(process.cwd(), 'seed'),
+    path.join(process.cwd(), '..', 'seed'),
+    path.join(__dirname, '..', '..', 'seed'),
+    path.join(__dirname, '..', 'seed'),
+    path.join(process.cwd(), '..', '..', 'seed')  // From apps/jobs to root/seed
+  ];
+  
+  let seedDir = null;
+  for (const dir of possibleSeedDirs) {
+    if (fs.existsSync(dir)) {
+      seedDir = dir;
+      break;
+    }
+  }
+  
+  if (!seedDir) {
+    throw new Error(`Seed directory not found. Tried: ${possibleSeedDirs.join(', ')}`);
+  }
+  
+  console.log(`Loading seed data from: ${seedDir}`);
   
   const teams = JSON.parse(fs.readFileSync(path.join(seedDir, 'teams.json'), 'utf8')).teams;
   const games = JSON.parse(fs.readFileSync(path.join(seedDir, 'games.json'), 'utf8')).games;
