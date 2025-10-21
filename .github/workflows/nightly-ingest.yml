@@ -166,10 +166,13 @@ jobs:
       - name: Generate Prisma Client
         run: npm run prisma:generate
 
+      - name: Build jobs (for ratings)
+        run: npm run build:jobs
+
       - name: Run seed ratings calculation
         run: |
           echo "📊 Starting ratings calculation..."
-          npm run seed:ratings
+          node apps/jobs/dist/seed-ratings.js
           echo "✅ Ratings calculation complete"
 
       - name: Summary
