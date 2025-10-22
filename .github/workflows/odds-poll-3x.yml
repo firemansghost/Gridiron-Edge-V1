@@ -85,7 +85,7 @@ jobs:
           echo "📈 Polling odds (3x daily) from Odds API..."
           echo "🔧 Parameters: season=2025, week=$POLL_WEEK, region=us, markets=spreads,totals,h2h"
           # Live 2025 season - single week only
-          node apps/jobs/dist/ingest.js oddsapi --season 2025 --weeks $POLL_WEEK
+          node apps/jobs/dist/ingest-minimal.js oddsapi --season 2025 --weeks $POLL_WEEK
           
           # Check if any rows were inserted
           ROWS_INSERTED=$(node -e "
@@ -116,5 +116,5 @@ jobs:
         if: ${{ env.ODDS_API_KEY == '' && env.SGO_API_KEY != '' }}
         run: |
           echo "📈 Polling odds from SGO (fallback)..."
-          node apps/jobs/dist/ingest.js sgo --season 2025 --weeks $POLL_WEEK
+          node apps/jobs/dist/ingest-minimal.js sgo --season 2025 --weeks $POLL_WEEK
           echo "✅ SGO poll complete"
