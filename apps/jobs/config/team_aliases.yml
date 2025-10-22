@@ -40,8 +40,8 @@ aliases:
   "Iowa State Cyclones": iowa-state
   "Arizona State": arizona-state
   "Arizona State Sun Devils": arizona-state
-  "South Florida": usf
-  "South Florida Bulls": usf
+  "South Florida": south-florida
+  "South Florida Bulls": south-florida
   "Washington State": washington-state
   "Washington State Cougars": washington-state
   "Kansas State": kansas-state
@@ -52,9 +52,9 @@ aliases:
   "Arkansas State Red Wolves": arkansas-state
   "Kennesaw State": kennesaw-state
   "Kennesaw State Owls": kennesaw-state
-  "San Jose State": san-jose-state
-  "San Jose State Spartans": san-jose-state
-  "San José State": san-jose-state
+  "San Jose State": san-jos-state
+  "San Jose State Spartans": san-jos-state
+  "San José State": san-jos-state
   "Utah State": utah-state
   "Utah State Aggies": utah-state
   "NC State": nc-state
@@ -62,9 +62,9 @@ aliases:
   "NC State Wolfpack": nc-state
   "Oklahoma State": oklahoma-state
   "Oklahoma State Cowboys": oklahoma-state
-  "Appalachian State": appalachian-state
-  "Appalachian State Mountaineers": appalachian-state
-  "App State": appalachian-state
+  "Appalachian State": app-state
+  "Appalachian State Mountaineers": app-state
+  "App State": app-state
   
   # Tech schools
   "Texas Tech": texas-tech
@@ -146,10 +146,10 @@ aliases:
   # Common abbreviations
   "Cal": california
   "Cal Golden Bears": california
-  "UConn": connecticut
-  "UConn Huskies": connecticut
-  "UMass": umass
-  "UMass Minutemen": umass
+  "UConn": uconn
+  "UConn Huskies": uconn
+  "UMass": massachusetts
+  "UMass Minutemen": massachusetts
   "BYU": byu
   "BYU Cougars": byu
   "SMU": smu
@@ -158,8 +158,8 @@ aliases:
   "TCU Horned Frogs": tcu
   "UCF": ucf
   "UCF Knights": ucf
-  "USF": usf
-  "USF Bulls": usf
+  "USF": south-florida
+  "USF Bulls": south-florida
   "UTEP": utep
   "UTEP Miners": utep
   "Miami (OH)": miami-oh
@@ -170,29 +170,17 @@ aliases:
   "USC Trojans": usc
   
   # Additional FBS aliases for better coverage
-  "Alabama Crimson Tide": alabama
-  "Illinois Fighting Illini": illinois
-  "Wake Forest Demon Deacons": wake-forest
+  "Kent State": kent-state
   "Kent State Golden Flashes": kent-state
+  "Southern Mississippi": southern-miss
   "Southern Mississippi Golden Eagles": southern-miss
-  "Arkansas State Red Wolves": arkansas-state
-  "Arizona State Sun Devils": arizona-state
-  "Boston College Eagles": boston-college
-  "Penn State Nittany Lions": penn-state
-  "Duke Blue Devils": duke
-  "Northwestern Wildcats": northwestern
-  "Northern Illinois Huskies": northern-illinois
-  "Notre Dame Fighting Irish": notre-dame
-  "Ohio State Buckeyes": ohio-state
-  "South Florida Bulls": usf
-  "San Jose State Spartans": san-jose-state
-  "Air Force Falcons": air-force
-  "Tulsa Golden Hurricane": tulsa
-  "Bowling Green Falcons": bowling-green
-  "Georgia Southern Eagles": georgia-southern
-  "UL Monroe Warhawks": ul-monroe
   "Southern Miss": southern-miss
   "Southern Miss Golden Eagles": southern-miss
+  "Boston College": boston-college
+  "Boston College Eagles": boston-college
+  "Georgia Southern": georgia-southern
+  "Georgia Southern Eagles": georgia-southern
+  "UL Monroe Warhawks": ul-monroe
 
 # FCS/Non-FBS denylist - these teams should be rejected
 denylist:

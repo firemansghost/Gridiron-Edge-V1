@@ -25,7 +25,7 @@
     "repoll:week9": "node scripts/repoll-week9.js",
     "manual:week9": "node scripts/manual-week9-odds.js",
     "build:jobs": "tsc -p apps/jobs/tsconfig.build.json && node scripts/copy-job-assets-simple.mjs",
-    "verify:jobs": "node scripts/verify-job-assets.mjs",
+    "verify:jobs": "node scripts/validate-team-aliases.mjs && node scripts/verify-job-assets.mjs",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "postinstall": "npm run prisma:generate"
   },

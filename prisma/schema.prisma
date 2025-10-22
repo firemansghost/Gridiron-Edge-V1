@@ -134,6 +134,7 @@ model MarketLine {
   // Relations
   game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
 
+  @@unique([gameId, lineType, bookName, timestamp])
   @@index([gameId, lineType])
   @@index([timestamp])
   @@index([season, week])
