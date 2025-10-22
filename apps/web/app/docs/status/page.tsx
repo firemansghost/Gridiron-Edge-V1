@@ -89,6 +89,17 @@ export default async function StatusPage() {
       ORDER BY ml.book_name, ml.line_type
     `;
 
+    // 6) Bets ledger counts
+    const totalBets = await prisma.bet.count();
+    const gradedBets = await prisma.bet.count({
+      where: { result: { not: null } }
+    });
+    const lastGradingRun = await prisma.bet.findFirst({
+      where: { result: { not: null } },
+      orderBy: { updatedAt: 'desc' },
+      select: { updatedAt: true }
+    });
+
     const oddsRowCount = Array.isArray(oddsCoverage) 
       ? oddsCoverage.reduce((sum: number, row: any) => sum + parseInt(row.rows), 0)
       : 0;
@@ -288,13 +299,59 @@ export default async function StatusPage() {
             </div>
           </section>
 
+          {/* Bets Ledger Status */}
+          <section>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-4">
+              💰 Bets Ledger
+            </h2>
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <h3 className="font-medium text-purple-900 mb-2">Total Bets</h3>
+                  <p className="text-purple-800">
+                    <span className="font-mono font-bold">{totalBets.toLocaleString()}</span> bets recorded
+                  </p>
+                </div>
+                <div>
+                  <h3 className="font-medium text-purple-900 mb-2">Graded</h3>
+                  <p className="text-purple-800">
+                    <span className="font-mono font-bold">{gradedBets.toLocaleString()}</span> bets graded
+                  </p>
+                </div>
+                <div>
+                  <h3 className="font-medium text-purple-900 mb-2">Last Graded</h3>
+                  <p className="text-purple-800">
+                    {lastGradingRun?.updatedAt ? lastGradingRun.updatedAt.toLocaleString() : 'Never'}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 pt-4 border-t border-purple-200">
+                <p className="text-sm text-purple-700">
+                  <a 
+                    href="/weeks/review" 
+                    className="underline hover:text-purple-900"
+                  >
+                    Review weeks →
+                  </a>
+                  {' • '}
+                  <a 
+                    href="/bets" 
+                    className="underline hover:text-purple-900"
+                  >
+                    View ledger →
+                  </a>
+                </p>
+              </div>
+            </div>
+          </section>
+
           {/* Summary */}
           <section>
             <h2 className="text-2xl font-semibold text-gray-900 mb-4">
               📋 Summary
             </h2>
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
                 <div>
                   <h3 className="font-medium text-gray-900 mb-2">Current Data</h3>
                   <p className="text-gray-700">
@@ -305,6 +362,12 @@ export default async function StatusPage() {
                   <h3 className="font-medium text-gray-900 mb-2">Market Lines</h3>
                   <p className="text-gray-700">
                     {marketLineCounts.reduce((sum, item) => sum + item._count.id, 0).toLocaleString()} total
+                  </p>
+                </div>
+                <div>
+                  <h3 className="font-medium text-gray-900 mb-2">Bets Ledger</h3>
+                  <p className="text-gray-700">
+                    {totalBets.toLocaleString()} bets, {gradedBets.toLocaleString()} graded
                   </p>
                 </div>
                 <div>
