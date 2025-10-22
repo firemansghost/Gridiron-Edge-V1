@@ -1,0 +1,36 @@
+name: Grade Bets
+
+on:
+  schedule:
+    # Hourly on Saturday and Sunday
+    - cron: '0 * * * 6,0'
+    # Nightly otherwise at 3:00 UTC
+    - cron: '0 3 * * 1-5'
+  workflow_dispatch:
+
+concurrency:
+  group: grade-bets-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  grade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIRECT_URL:   ${{ secrets.DIRECT_URL }}
+      TZ: America/Chicago
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npm run prisma:generate
+      - run: npm run build:jobs
+      - name: Grade Bets
+        run: |
+          echo "🧮 Grading bets..."
+          npm run grade:bets -- --season 2025 --week ${{ github.event.inputs.week || '' }}
+          echo "✅ Grading completed"
+
+

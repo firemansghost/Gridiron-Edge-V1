@@ -32,7 +32,8 @@
     "adapters/OddsApiAdapter.ts",
     "adapters/TeamResolver.ts",
     "adapters/GameLookup.ts",
-    "config/*.ts"
+    "config/*.ts",
+    "grade-bets.ts"
   ],
   "exclude": [
     "**/*.test.ts",
