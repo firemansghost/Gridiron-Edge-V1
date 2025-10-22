@@ -14,7 +14,7 @@ interface BetImportRequest {
   modelPrice: number;
   stake: number;
   strategyTag: string;
-  source: 'strategy-run' | 'manual';
+  source: 'strategy_run' | 'manual';
   notes?: string;
 }
 

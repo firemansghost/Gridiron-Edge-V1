@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
         modelPrice: true,
         closePrice: true,
         marketType: true,
+        stake: true,
       },
     });
 
@@ -56,7 +57,7 @@ export async function GET(request: NextRequest) {
       ? gradedBets.filter(bet => bet.result === 'win').length / gradedBets.length 
       : 0;
 
-    const totalPnL = allBets.reduce((sum, bet) => sum + (bet.pnl || 0), 0);
+    const totalPnL = allBets.reduce((sum, bet) => sum + Number(bet.pnl || 0), 0);
     const totalStake = allBets.reduce((sum, bet) => sum + Number(bet.stake), 0);
     const roi = totalStake > 0 ? (totalPnL / totalStake) * 100 : 0;
 
