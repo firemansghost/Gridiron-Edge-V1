@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
           });
           
           if (latestLine) {
-            closePrice = Number(latestLine.lineValue);
+            closePrice = latestLine.lineValue;
             filledClosePrice++;
           }
         }
@@ -192,7 +192,7 @@ export async function POST(request: NextRequest) {
             result: result as any,
             pnl: pnl ? Number(pnl) : null,
             clv: clv ? Number(clv) : null,
-            closePrice: closePrice ? Number(closePrice) : bet.closePrice,
+            closePrice: closePrice || bet.closePrice,
             updatedAt: new Date(),
           },
         });
