@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Fill closePrice if missing
-        let closePrice = bet.closePrice;
+        let closePrice: any = bet.closePrice;
         if (!closePrice) {
           const latestLine = await prisma.marketLine.findFirst({
             where: {
