@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 const prisma = new PrismaClient();
 
 interface BetImportRequest {
@@ -114,9 +117,9 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Error importing bets:', error);
+    console.error('BETS_API_ERROR import', error);
     return NextResponse.json(
-      { error: 'Failed to import bets', details: (error as Error).message },
+      { error: 'Internal error', detail: String(error?.message ?? error) },
       { status: 500 }
     );
   } finally {

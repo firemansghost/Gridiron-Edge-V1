@@ -40,6 +40,12 @@ export function HeaderNav() {
             <Link href="/weeks" className={linkClass('/weeks')}>
               Weeks
             </Link>
+            <Link href="/weeks/review" className={linkClass('/weeks/review')}>
+              Review
+            </Link>
+            <Link href="/bets" className={linkClass('/bets')}>
+              Bets
+            </Link>
             <Link href="/strategies" className={linkClass('/strategies')}>
               Strategies
             </Link>
@@ -67,6 +73,12 @@ export function HeaderNav() {
             </Link>
             <Link href="/weeks" className={linkClass('/weeks')}>
               Weeks
+            </Link>
+            <Link href="/weeks/review" className={linkClass('/weeks/review')}>
+              Review
+            </Link>
+            <Link href="/bets" className={linkClass('/bets')}>
+              Bets
             </Link>
             <Link href="/strategies" className={linkClass('/strategies')}>
               Strategies

@@ -7,6 +7,20 @@ on:
     # Nightly otherwise at 3:00 UTC
     - cron: '0 3 * * 1-5'
   workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season to grade (optional)'
+        required: false
+        type: string
+      week:
+        description: 'Week to grade (optional)'
+        required: false
+        type: string
+      force:
+        description: 'Force regrade existing bets'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: grade-bets-${{ github.ref }}
@@ -30,7 +44,17 @@ jobs:
       - name: Grade Bets
         run: |
           echo "🧮 Grading bets..."
-          npm run grade:bets -- --season 2025 --week ${{ github.event.inputs.week || '' }}
+          ARGS=""
+          if [ "${{ github.event.inputs.season }}" != "" ]; then
+            ARGS="$ARGS --season ${{ github.event.inputs.season }}"
+          fi
+          if [ "${{ github.event.inputs.week }}" != "" ]; then
+            ARGS="$ARGS --week ${{ github.event.inputs.week }}"
+          fi
+          if [ "${{ github.event.inputs.force }}" == "true" ]; then
+            ARGS="$ARGS --force"
+          fi
+          npm run grade:bets -- $ARGS
           echo "✅ Grading completed"
 
 

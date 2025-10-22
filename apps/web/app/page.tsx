@@ -185,6 +185,26 @@ export default function HomePage() {
           </div>
         </div>
 
+        {/* Selections & Profitability Card */}
+        <div className="bg-white p-6 rounded-lg shadow mb-8">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Selections & Profitability</h2>
+          <p className="text-gray-600 mb-4">Track your betting performance and review past selections.</p>
+          <div className="flex gap-4">
+            <Link 
+              href="/weeks/review"
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Week Review
+            </Link>
+            <Link 
+              href="/bets"
+              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+            >
+              Bets Ledger
+            </Link>
+          </div>
+        </div>
+
         {/* Games Table */}
         <div className="bg-white rounded-lg shadow overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200">

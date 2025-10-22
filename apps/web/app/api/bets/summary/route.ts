@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 const prisma = new PrismaClient();
 
 export async function GET(request: NextRequest) {
@@ -109,10 +112,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit),
+        currentPage: page,
+        pageSize: limit,
+        totalItems: total,
+        totalPages: Math.ceil(total / limit),
       },
       summary: {
         totalBets: allBets.length,
@@ -124,13 +127,20 @@ export async function GET(request: NextRequest) {
         avgCLV: Math.round(avgCLV * 100) / 100,
       },
       strategyBreakdown,
-      bets,
+      bets: bets.map(bet => ({
+        ...bet,
+        modelPrice: Number(bet.modelPrice),
+        closePrice: bet.closePrice ? Number(bet.closePrice) : null,
+        stake: Number(bet.stake),
+        pnl: bet.pnl ? Number(bet.pnl) : null,
+        clv: bet.clv ? Number(bet.clv) : null,
+      })),
     });
 
   } catch (error) {
-    console.error('Error fetching bet summary:', error);
+    console.error('BETS_API_ERROR summary', error);
     return NextResponse.json(
-      { error: 'Failed to fetch bet summary', details: (error as Error).message },
+      { error: 'Internal error', detail: String(error?.message ?? error) },
       { status: 500 }
     );
   } finally {
