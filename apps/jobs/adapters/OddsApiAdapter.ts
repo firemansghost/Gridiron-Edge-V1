@@ -244,6 +244,8 @@ interface MatchStats {
   p5_fuzzy: number;
   failed: number;
   unmatchedNames: Set<string>;
+  weekFlexible: number;
+  direct: number;
 }
 
 interface OddsApiEvent {
@@ -284,7 +286,9 @@ export class OddsApiAdapter implements DataSourceAdapter {
     p4_nameMascot: 0,
     p5_fuzzy: 0,
     failed: 0,
-    unmatchedNames: new Set()
+    unmatchedNames: new Set(),
+    weekFlexible: 0,
+    direct: 0
   };
 
   constructor(config: OddsApiConfig) {
@@ -852,7 +856,9 @@ export class OddsApiAdapter implements DataSourceAdapter {
       p4_nameMascot: 0,
       p5_fuzzy: 0,
       failed: 0,
-      unmatchedNames: new Set()
+      unmatchedNames: new Set(),
+      weekFlexible: 0,
+      direct: 0
     };
     
     const allLines: any[] = [];
@@ -907,6 +913,8 @@ export class OddsApiAdapter implements DataSourceAdapter {
     console.log(`       P3 (Strip mascot): ${this.matchStats.p3_stripMascot}`);
     console.log(`       P4 (Name+Mascot): ${this.matchStats.p4_nameMascot}`);
     console.log(`       P5 (Fuzzy): ${this.matchStats.p5_fuzzy}`);
+    console.log(`     Week-flexible: ${this.matchStats.weekFlexible}`);
+    console.log(`     Direct: ${this.matchStats.direct}`);
     console.log(`     Failed: ${this.matchStats.failed}`);
 
     // Write unmatched report if any
@@ -1231,7 +1239,24 @@ export class OddsApiAdapter implements DataSourceAdapter {
     }
 
     const gameId = gameLookupResult.gameId;
-    console.log(`   [DEBUG] Found game: ${gameId} for ${event.away_team} @ ${event.home_team}`);
+    const game = gameLookupResult.game;
+    
+    // Use the game's actual season and week from the database, not the requested poll week
+    const actualSeason = game.season;
+    const actualWeek = game.week;
+    
+    // Track if this was a week-flexible match (different from requested week)
+    const isWeekFlexible = actualWeek !== week;
+    const matchType = isWeekFlexible ? 'week-flexible' : 'direct';
+    
+    // Update stats
+    if (isWeekFlexible) {
+      this.matchStats.weekFlexible++;
+    } else {
+      this.matchStats.direct++;
+    }
+    
+    console.log(`   [DEBUG] Found game: ${gameId} for ${event.away_team} @ ${event.home_team} (DB: ${actualSeason} W${actualWeek}, ${matchType})`);
 
     // Step 3: Process odds and build market lines with real database game ID
     for (const bookmaker of event.bookmakers) {
@@ -1245,8 +1270,8 @@ export class OddsApiAdapter implements DataSourceAdapter {
             if (outcome.price !== undefined && outcome.price !== null) {
               lines.push({
                 gameId,
-                season,
-                week,
+                season: actualSeason,
+                week: actualWeek,
                 lineType: 'moneyline',
                 lineValue: outcome.price,
                 closingLine: outcome.price,
@@ -1265,8 +1290,8 @@ export class OddsApiAdapter implements DataSourceAdapter {
             if (outcome.point !== undefined && outcome.point !== null) {
               lines.push({
                 gameId,
-                season,
-                week,
+                season: actualSeason,
+                week: actualWeek,
                 lineType: 'spread',
                 lineValue: outcome.point,
                 closingLine: outcome.point,
@@ -1282,8 +1307,8 @@ export class OddsApiAdapter implements DataSourceAdapter {
             if (outcome.point !== undefined && outcome.point !== null) {
               lines.push({
                 gameId,
-                season,
-                week,
+                season: actualSeason,
+                week: actualWeek,
                 lineType: 'total',
                 lineValue: outcome.point,
                 closingLine: outcome.point,

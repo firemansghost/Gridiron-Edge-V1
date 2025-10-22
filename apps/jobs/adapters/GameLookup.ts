@@ -30,8 +30,8 @@ export class GameLookup {
     eventTime?: Date
   ): Promise<GameLookupResult> {
     try {
-      // Query games with exact match
-      const games = await this.prisma.game.findMany({
+      // First try exact week match
+      const exactGames = await this.prisma.game.findMany({
         where: {
           season,
           week,
@@ -41,30 +41,117 @@ export class GameLookup {
         include: {
           homeTeam: { select: { name: true } },
           awayTeam: { select: { name: true } }
+        }
+      });
+
+      if (exactGames.length > 0) {
+        if (exactGames.length === 1) {
+          return {
+            gameId: exactGames[0].id,
+            game: exactGames[0]
+          };
+        }
+
+        // Multiple games found - choose the one closest to event time
+        if (eventTime) {
+          const closestGame = exactGames.reduce((closest, current) => {
+            const closestDiff = Math.abs(closest.date.getTime() - eventTime.getTime());
+            const currentDiff = Math.abs(current.date.getTime() - eventTime.getTime());
+            return currentDiff < closestDiff ? current : closest;
+          });
+
+          return {
+            gameId: closestGame.id,
+            game: closestGame
+          };
+        }
+
+        // No event time provided, return the first one
+        return {
+          gameId: exactGames[0].id,
+          game: exactGames[0]
+        };
+      }
+
+      // No exact week match - try week-flexible lookup
+      if (eventTime) {
+        return await this.lookupGameWeekFlexible(season, homeTeamId, awayTeamId, eventTime);
+      }
+
+      return {
+        gameId: null,
+        game: null,
+        reason: `No game found for ${awayTeamId} @ ${homeTeamId} in ${season} W${week}`
+      };
+
+    } catch (error) {
+      console.error(`[GAME_LOOKUP] Error looking up game:`, error);
+      return {
+        gameId: null,
+        game: null,
+        reason: `Database error: ${error}`
+      };
+    }
+  }
+
+  /**
+   * Week-flexible game lookup using date proximity
+   * @param season - Season year
+   * @param homeTeamId - Canonical home team ID
+   * @param awayTeamId - Canonical away team ID
+   * @param eventTime - Event time for date proximity matching
+   * @returns Game ID and game object, or null if not found
+   */
+  async lookupGameWeekFlexible(
+    season: number,
+    homeTeamId: string,
+    awayTeamId: string,
+    eventTime: Date
+  ): Promise<GameLookupResult> {
+    try {
+      // Query games with season and teams (no week filter)
+      const games = await this.prisma.game.findMany({
+        where: {
+          season,
+          homeTeamId,
+          awayTeamId
         },
-        orderBy: eventTime ? {
+        include: {
+          homeTeam: { select: { name: true } },
+          awayTeam: { select: { name: true } }
+        },
+        orderBy: {
           date: 'asc'
-        } : undefined
+        }
       });
 
       if (games.length === 0) {
-        return {
-          gameId: null,
-          game: null,
-          reason: `No game found for ${awayTeamId} @ ${homeTeamId} in ${season} W${week}`
-        };
-      }
+        // Try swapping home/away in case provider flips venue
+        const swappedGames = await this.prisma.game.findMany({
+          where: {
+            season,
+            homeTeamId: awayTeamId,
+            awayTeamId: homeTeamId
+          },
+          include: {
+            homeTeam: { select: { name: true } },
+            awayTeam: { select: { name: true } }
+          },
+          orderBy: {
+            date: 'asc'
+          }
+        });
 
-      if (games.length === 1) {
-        return {
-          gameId: games[0].id,
-          game: games[0]
-        };
-      }
+        if (swappedGames.length === 0) {
+          return {
+            gameId: null,
+            game: null,
+            reason: `No game found for ${awayTeamId} @ ${homeTeamId} in ${season} (tried both directions)`
+          };
+        }
 
-      // Multiple games found - choose the one closest to event time
-      if (eventTime) {
-        const closestGame = games.reduce((closest, current) => {
+        // Use swapped games for proximity matching
+        const closestGame = swappedGames.reduce((closest, current) => {
           const closestDiff = Math.abs(closest.date.getTime() - eventTime.getTime());
           const currentDiff = Math.abs(current.date.getTime() - eventTime.getTime());
           return currentDiff < closestDiff ? current : closest;
@@ -76,18 +163,24 @@ export class GameLookup {
         };
       }
 
-      // No event time provided, return the first one
+      // Find the game closest to the event time
+      const closestGame = games.reduce((closest, current) => {
+        const closestDiff = Math.abs(closest.date.getTime() - eventTime.getTime());
+        const currentDiff = Math.abs(current.date.getTime() - eventTime.getTime());
+        return currentDiff < closestDiff ? current : closest;
+      });
+
       return {
-        gameId: games[0].id,
-        game: games[0]
+        gameId: closestGame.id,
+        game: closestGame
       };
 
     } catch (error) {
-      console.error(`[GAME_LOOKUP] Error looking up game:`, error);
+      console.error(`[GAME_LOOKUP] Error in week-flexible lookup:`, error);
       return {
         gameId: null,
         game: null,
-        reason: `Database error: ${error}`
+        reason: `Database error in week-flexible lookup: ${error}`
       };
     }
   }

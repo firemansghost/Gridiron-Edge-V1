@@ -203,6 +203,32 @@ aliases:
   "Michigan State Spartans": michigan-state
   "Texas Longhorns": texas
   "Florida Gators": florida
+  
+  # Additional FBS aliases for comprehensive coverage (Week 9 unmatched teams)
+  "South Alabama Jaguars": south-alabama
+  "North Texas Mean Green": north-texas
+  "Boise State Broncos": boise-state
+  "Old Dominion Monarchs": old-dominion
+  "Ohio Bobcats": ohio
+  "UCLA Bruins": ucla
+  "Memphis Tigers": memphis
+  "Ball State Cardinals": ball-state
+  "Central Michigan Chippewas": central-michigan
+  "Florida Atlantic Owls": florida-atlantic
+  "San Diego State Aztecs": san-diego-state
+  "Minnesota Golden Gophers": minnesota
+  "Miami (OH) RedHawks": miami-oh
+  "Temple Owls": temple
+  "Toledo Rockets": toledo
+  "Stanford Cardinal": stanford
+  "Wisconsin Badgers": wisconsin
+  "Colorado State Rams": colorado-state
+  "Texas A&M Aggies": texas-a-m
+  "Houston Cougars": houston
+  "Colorado Buffaloes": colorado
+  "James Madison Dukes": james-madison
+  "Tulane Green Wave": tulane
+  "Georgia Bulldogs": georgia
 
 # FCS/Non-FBS denylist - these teams should be rejected
 denylist:
