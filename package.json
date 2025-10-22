@@ -22,6 +22,7 @@
     "verify:ingest": "node apps/jobs/verify-ingest.js",
     "backtest": "node apps/jobs/backtest.js",
     "backfill:oddsapi": "node apps/jobs/backfill-odds-oddsapi.js",
+    "repoll:week9": "node scripts/repoll-week9.js",
     "build:jobs": "tsc -p apps/jobs/tsconfig.build.json",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "postinstall": "npm run prisma:generate"

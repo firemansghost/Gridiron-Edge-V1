@@ -11,7 +11,7 @@ export const revalidate = 0; // no caching; always run on server
 
 import { prisma } from '@/lib/prisma';
 import { computeSpreadPick, computeTotalPick } from '@/lib/pick-helpers';
-import { pickMarketLine, getLineValue, pickMoneyline, americanToProb } from '@/lib/market-line-helpers';
+import { pickMarketLine, getLineValue, getLineValueWithFallback, pickMoneyline, americanToProb } from '@/lib/market-line-helpers';
 import { getSeasonWeekFromParams } from '@/lib/season-week-helpers';
 import { getCurrentSeasonWeek } from '@/lib/current-week';
 
@@ -109,9 +109,11 @@ export async function GET(request: Request) {
       const impliedSpread = matchupOutput?.impliedSpread || 0;
       const impliedTotal = matchupOutput?.impliedTotal || 45;
       
-      // Get line values (prefers closingLine, falls back to lineValue)
-      const marketSpread = getLineValue(spreadLine) || 0;
-      const marketTotal = getLineValue(totalLine) || 45;
+      // Get line values with fallback information
+      const spreadInfo = getLineValueWithFallback(spreadLine);
+      const totalInfo = getLineValueWithFallback(totalLine);
+      const marketSpread = spreadInfo.value || 0;
+      const marketTotal = totalInfo.value || 45;
 
       // Extract market metadata for source badges
       const spreadMeta = spreadLine ? {
@@ -220,6 +222,10 @@ export async function GET(request: Request) {
         marketMeta: {
           spread: spreadMeta,
           total: totalMeta,
+        },
+        marketFallback: {
+          spread: !spreadInfo.isClosing,
+          total: !totalInfo.isClosing,
         },
         moneyline,
         

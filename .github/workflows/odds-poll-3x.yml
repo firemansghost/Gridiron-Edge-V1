@@ -52,13 +52,64 @@ jobs:
           node apps/jobs/ingest-simple.js mock --season 2025 --weeks $POLL_WEEK
           echo "✅ Mock schedules ensured"
 
+      - name: Preflight checks
+        run: |
+          echo "🔍 Preflight checks for odds polling..."
+          echo "📅 Season: 2025"
+          echo "📆 Week: $POLL_WEEK"
+          echo "🌍 Region: us"
+          echo "📊 Markets: spreads,totals,h2h"
+          echo "📚 Books: all"
+          
+          # Count games for the week
+          GAME_COUNT=$(node -e "
+            const { PrismaClient } = require('@prisma/client');
+            const prisma = new PrismaClient();
+            (async () => {
+              const count = await prisma.game.count({ where: { season: 2025, week: parseInt(process.env.POLL_WEEK) } });
+              console.log(count);
+              await prisma.\$disconnect();
+            })();
+          ")
+          echo "🎮 Games for 2025 Week $POLL_WEEK: $GAME_COUNT"
+          
+          if [ "$GAME_COUNT" -eq 0 ]; then
+            echo "❌ No games found for 2025 Week $POLL_WEEK - aborting"
+            exit 1
+          fi
+
       - name: Poll odds from Odds API (primary)
         if: ${{ env.ODDS_API_KEY != '' }}
         run: |
           echo "📈 Polling odds (3x daily) from Odds API..."
+          echo "🔧 Parameters: season=2025, week=$POLL_WEEK, region=us, markets=spreads,totals,h2h"
           # Live 2025 season - single week only
           node apps/jobs/ingest-simple.js oddsapi --season 2025 --weeks $POLL_WEEK
-          echo "✅ Odds API poll complete"
+          
+          # Check if any rows were inserted
+          ROWS_INSERTED=$(node -e "
+            const { PrismaClient } = require('@prisma/client');
+            const prisma = new PrismaClient();
+            (async () => {
+              const count = await prisma.marketLine.count({ 
+                where: { 
+                  season: 2025, 
+                  week: parseInt(process.env.POLL_WEEK),
+                  timestamp: { gte: new Date(Date.now() - 5 * 60 * 1000) } // Last 5 minutes
+                } 
+              });
+              console.log(count);
+              await prisma.\$disconnect();
+            })();
+          ")
+          
+          if [ "$ROWS_INSERTED" -eq 0 ]; then
+            echo "❌ No odds rows inserted for 2025 Week $POLL_WEEK - provider may have returned empty data"
+            echo "🔍 Check provider response and team matching"
+            exit 1
+          else
+            echo "✅ Odds API poll complete - $ROWS_INSERTED rows inserted"
+          fi
 
       - name: Fallback - Poll odds from SGO (if Odds API unavailable)
         if: ${{ env.ODDS_API_KEY == '' && env.SGO_API_KEY != '' }}

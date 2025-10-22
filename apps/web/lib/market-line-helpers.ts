@@ -84,6 +84,31 @@ export function getLineValue(
 }
 
 /**
+ * Get line value with fallback information
+ * Returns both the value and whether it's a closing line or latest snapshot
+ * 
+ * @param line - Market line object or null/undefined
+ * @returns Object with value and isClosing flag
+ */
+export function getLineValueWithFallback(
+  line?: { closingLine?: number | null; lineValue?: number | null } | null
+): { value: number | null; isClosing: boolean } {
+  if (!line) return { value: null, isClosing: false };
+  
+  // Prefer closingLine if available
+  if (line.closingLine !== null && line.closingLine !== undefined) {
+    return { value: line.closingLine, isClosing: true };
+  }
+  
+  // Fallback to lineValue (latest snapshot)
+  if (line.lineValue !== null && line.lineValue !== undefined) {
+    return { value: line.lineValue, isClosing: false };
+  }
+  
+  return { value: null, isClosing: false };
+}
+
+/**
  * Pick the best moneyline from a list of market lines
  * Uses the same selection logic as pickMarketLine (prefers SGO, then latest)
  * 

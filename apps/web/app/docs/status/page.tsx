@@ -75,6 +75,35 @@ export default async function StatusPage() {
       },
     });
 
+    // 5) Odds coverage for current week
+    const oddsCoverage = await prisma.$queryRaw`
+      SELECT 
+        ml.book_name,
+        ml.line_type,
+        COUNT(*) AS rows,
+        MAX(ml.timestamp) AS last_timestamp
+      FROM market_lines ml
+      JOIN games g ON g.id = ml.game_id
+      WHERE g.season = ${currentSeason} AND g.week = ${currentWeek}
+      GROUP BY ml.book_name, ml.line_type
+      ORDER BY ml.book_name, ml.line_type
+    `;
+
+    const oddsRowCount = Array.isArray(oddsCoverage) 
+      ? oddsCoverage.reduce((sum: number, row: any) => sum + parseInt(row.rows), 0)
+      : 0;
+
+    const uniqueBooks = Array.isArray(oddsCoverage) 
+      ? [...new Set(oddsCoverage.map((row: any) => row.book_name))]
+      : [];
+
+    const lastOddsUpdate = Array.isArray(oddsCoverage) && oddsCoverage.length > 0
+      ? oddsCoverage.reduce((latest: Date, row: any) => {
+          const timestamp = new Date(row.last_timestamp);
+          return timestamp > latest ? timestamp : latest;
+        }, new Date(0))
+      : null;
+
     return (
       <>
         <h1 className="text-3xl font-bold text-gray-900 mb-8">
@@ -105,6 +134,42 @@ export default async function StatusPage() {
                   </p>
                   <p className="text-blue-800">
                     2024 Week 1 Market Lines: <span className="font-mono font-bold">{seedWeekMarketLines}</span>
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Odds Coverage Status */}
+          <section>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-4">
+              📊 Odds Coverage Status
+            </h2>
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <h3 className="font-medium text-green-900 mb-2">Week {currentWeek} Coverage</h3>
+                  <p className="text-green-800">
+                    Odds rows: <span className="font-mono font-bold">{oddsRowCount.toLocaleString()}</span>
+                  </p>
+                  <p className="text-green-800">
+                    Books: <span className="font-mono font-bold">{uniqueBooks.length}</span> ({uniqueBooks.join(', ')})
+                  </p>
+                </div>
+                <div>
+                  <h3 className="font-medium text-green-900 mb-2">Last Update</h3>
+                  <p className="text-green-800">
+                    {lastOddsUpdate ? lastOddsUpdate.toLocaleString() : 'No data'}
+                  </p>
+                  <p className="text-sm text-green-700 mt-1">
+                    <a 
+                      href={`/api/diagnostics/odds-coverage?season=${currentSeason}&week=${currentWeek}`}
+                      className="underline hover:text-green-900"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      View raw diagnostics →
+                    </a>
                   </p>
                 </div>
               </div>

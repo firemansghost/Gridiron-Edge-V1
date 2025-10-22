@@ -40,6 +40,10 @@ interface WeekData {
     spread?: MarketMeta | null;
     total?: MarketMeta | null;
   };
+  marketFallback?: {
+    spread: boolean;
+    total: boolean;
+  };
   moneyline?: MoneylineInfo;
   impliedSpread: number;
   impliedTotal: number;
@@ -397,6 +401,14 @@ function WeeksPageContent() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           <div className="flex items-center">
                             <span>Spread: {game.marketSpread > 0 ? '+' : ''}{game.marketSpread.toFixed(1)}</span>
+                            {game.marketFallback?.spread && (
+                              <span 
+                                className="ml-2 text-xs rounded px-2 py-0.5 bg-orange-100 text-orange-700 font-medium"
+                                title="Using latest snapshot (closing line not available)"
+                              >
+                                Latest
+                              </span>
+                            )}
                             {game.marketMeta?.spread?.source && (
                               <span 
                                 className="ml-2 text-xs rounded px-2 py-0.5 bg-blue-100 text-blue-700 font-medium"
@@ -408,6 +420,14 @@ function WeeksPageContent() {
                           </div>
                           <div className="flex items-center">
                             <span>Total: {game.marketTotal.toFixed(1)}</span>
+                            {game.marketFallback?.total && (
+                              <span 
+                                className="ml-2 text-xs rounded px-2 py-0.5 bg-orange-100 text-orange-700 font-medium"
+                                title="Using latest snapshot (closing line not available)"
+                              >
+                                Latest
+                              </span>
+                            )}
                             {game.marketMeta?.total?.source && (
                               <span 
                                 className="ml-2 text-xs rounded px-2 py-0.5 bg-blue-100 text-blue-700 font-medium"
