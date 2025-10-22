@@ -191,25 +191,30 @@ model MatchupOutput {
 }
 
 model Bet {
-  id          String     @id @default(cuid())
-  gameId      String     @map("game_id")
-  betType     BetType    @map("bet_type")
-  lineAtBet   Float      @map("line_at_bet")
-  closingLine Float      @map("closing_line")
-  amount      Float
-  result      BetResult?
-  pnl         Float?
-  clv         Float?
-  createdAt   DateTime   @default(now()) @map("created_at")
-  updatedAt   DateTime   @updatedAt @map("updated_at")
+  id           String     @id @default(cuid())
+  createdAt    DateTime   @default(now()) @map("created_at")
+  season       Int
+  week         Int
+  gameId       String     @map("game_id")
+  marketType   BetType    @map("market_type")
+  side         BetSide
+  modelPrice   Decimal    @map("model_price")
+  closePrice   Decimal?   @map("close_price")
+  stake        Decimal
+  result       BetResult?
+  pnl          Decimal?
+  clv          Decimal?
+  strategyTag  String     @map("strategy_tag")
+  source       BetSource
+  notes        String?
+  updatedAt    DateTime   @updatedAt @map("updated_at")
 
   // Relations
   game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
 
-  @@index([gameId])
-  @@index([betType])
-  @@index([result])
-  @@index([createdAt])
+  @@index([season, week])
+  @@index([strategyTag])
+  @@index([gameId, marketType])
   @@map("bets")
 }
 
@@ -251,6 +256,7 @@ model StrategyRun {
   @@map("strategy_runs")
 }
 
+
 // =============================================================================
 // Enums
 // =============================================================================
@@ -283,4 +289,16 @@ enum BetResult {
   win
   loss
   push
+}
+
+enum BetSide {
+  home
+  away
+  over
+  under
+}
+
+enum BetSource {
+  strategy_run
+  manual
 }
