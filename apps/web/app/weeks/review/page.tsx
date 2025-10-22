@@ -57,6 +57,7 @@ export default function WeekReviewPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
+  const [grading, setGrading] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -105,39 +106,39 @@ export default function WeekReviewPage() {
     }
   };
 
+  const handleGrade = async () => {
+    setGrading(true);
+    try {
+      const response = await fetch('/api/bets/grade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ season, week }),
+      });
+      const result = await response.json();
+      
+      if (result.success) {
+        const { graded, pushes, failed, filledClosePrice } = result.summary;
+        alert(`Grading complete: ${graded} graded, ${pushes} pushes, ${failed} failed, ${filledClosePrice} close prices filled`);
+        fetchData(); // Refresh the data
+      } else {
+        alert(`Error: ${result.error}`);
+      }
+    } catch (err) {
+      alert(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setGrading(false);
+    }
+  };
+
   const exportCSV = () => {
-    if (!data?.bets) return;
+    const params = new URLSearchParams({
+      season: season.toString(),
+      ...(week && { week: week.toString() }),
+      ...(strategy && { strategy }),
+    });
     
-    const headers = [
-      'Matchup', 'Market', 'Side', 'Model Price', 'Close Price', 'CLV', 
-      'Result', 'Stake', 'PnL', 'Strategy', 'Created'
-    ];
-    
-    const rows = data.bets.map(bet => [
-      `${bet.game.awayTeam.name} @ ${bet.game.homeTeam.name}`,
-      bet.marketType,
-      bet.side,
-      bet.modelPrice,
-      bet.closePrice || '',
-      bet.clv || '',
-      bet.result || '',
-      bet.stake,
-      bet.pnl || '',
-      bet.strategyTag,
-      new Date(bet.createdAt).toLocaleDateString()
-    ]);
-    
-    const csvContent = [headers, ...rows]
-      .map(row => row.map(cell => `"${cell}"`).join(','))
-      .join('\n');
-    
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `bets-${season}-w${week}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const url = `/api/bets/export?${params}`;
+    window.open(url, '_blank');
   };
 
   const formatCurrency = (value: number) => 
@@ -145,6 +146,23 @@ export default function WeekReviewPage() {
 
   const formatPercent = (value: number) => 
     `${(value * 100).toFixed(1)}%`;
+
+  const getCLVColor = (clv: number | null) => {
+    if (clv === null) return 'bg-gray-100 text-gray-600';
+    return clv > 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+  };
+
+  const getEdgeColor = (edge: number | null) => {
+    if (edge === null) return 'bg-gray-100 text-gray-600';
+    return edge > 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+  };
+
+  const calculateEdge = (bet: any) => {
+    if (!bet.closePrice || bet.marketType === 'moneyline') return null;
+    const modelLine = Number(bet.modelPrice);
+    const closeLine = Number(bet.closePrice);
+    return modelLine - closeLine;
+  };
 
   const getResultColor = (result: string | null) => {
     switch (result) {
@@ -167,7 +185,14 @@ export default function WeekReviewPage() {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-4">Week Review</h1>
+        <h1 className="text-3xl font-bold mb-2">Week Review</h1>
+        <p className="text-gray-600 mb-4">Review betting performance for a specific week</p>
+        <p className="text-sm text-gray-500 mb-4">
+          Close prices and CLV calculations use the latest market lines as of kickoff time. 
+          <a href="/docs/selections-profitability" className="text-blue-600 hover:underline ml-1">
+            Learn more about grading
+          </a>
+        </p>
         
         {/* Controls */}
         <div className="flex flex-wrap gap-4 mb-6">
@@ -224,6 +249,15 @@ export default function WeekReviewPage() {
                 className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
               >
                 {seeding ? 'Seeding...' : 'Insert Demo Bets'}
+              </button>
+            )}
+            {process.env.NEXT_PUBLIC_ENABLE_GRADE_UI === 'true' && (
+              <button 
+                onClick={handleGrade}
+                disabled={grading}
+                className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 disabled:opacity-50"
+              >
+                {grading ? 'Grading...' : 'Run Grading'}
               </button>
             )}
           </div>
@@ -301,9 +335,21 @@ export default function WeekReviewPage() {
               <div className="px-6 py-12 text-center">
                 <div className="text-gray-400 text-5xl mb-4">📊</div>
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No bets found</h3>
-                <p className="text-gray-600 mb-6">
+                <p className="text-gray-600 mb-4">
                   No bets found for the current filters. Try adjusting your selection or add some demo bets.
                 </p>
+                <div className="space-y-2 mb-6">
+                  <p className="text-sm text-gray-500">
+                    <a href="/docs/selections-profitability" className="text-blue-600 hover:underline">
+                      How grading works
+                    </a>
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    <a href="/strategies" className="text-blue-600 hover:underline">
+                      View strategies
+                    </a>
+                  </p>
+                </div>
                 {process.env.NEXT_PUBLIC_ENABLE_BETS_SEED === 'true' && (
                   <button 
                     onClick={handleSeed}
@@ -336,6 +382,9 @@ export default function WeekReviewPage() {
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         CLV
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Edge
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Result
@@ -378,8 +427,19 @@ export default function WeekReviewPage() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {bet.closePrice || '-'}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {bet.clv ? bet.clv.toFixed(3) : '-'}
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          {bet.clv ? (
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCLVColor(bet.clv)}`}>
+                              {bet.clv > 0 ? '+' : ''}{bet.clv.toFixed(3)}
+                            </span>
+                          ) : '-'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          {calculateEdge(bet) !== null ? (
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getEdgeColor(calculateEdge(bet))}`}>
+                              {calculateEdge(bet)! > 0 ? '+' : ''}{calculateEdge(bet)!.toFixed(1)}
+                            </span>
+                          ) : '-'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`inline-flex items-center text-sm font-medium ${getResultColor(bet.result)}`}>

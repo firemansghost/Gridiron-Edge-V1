@@ -99,39 +99,16 @@ export default function BetsPage() {
   };
 
   const exportCSV = () => {
-    const headers = [
-      'Season', 'Week', 'Matchup', 'Market', 'Side', 'Model Price', 'Close Price', 
-      'CLV', 'Result', 'Stake', 'PnL', 'Strategy', 'Source', 'Created'
-    ];
+    const params = new URLSearchParams({
+      season: filters.season.toString(),
+      ...(filters.week && { week: filters.week.toString() }),
+      ...(filters.marketType && { marketType: filters.marketType }),
+      ...(filters.side && { side: filters.side }),
+      ...(filters.strategyTag && { strategy: filters.strategyTag }),
+    });
     
-    const rows = bets.map(bet => [
-      bet.season,
-      bet.week,
-      `${bet.game.awayTeam.name} @ ${bet.game.homeTeam.name}`,
-      bet.marketType,
-      bet.side,
-      bet.modelPrice,
-      bet.closePrice || '',
-      bet.clv || '',
-      bet.result || '',
-      bet.stake,
-      bet.pnl || '',
-      bet.strategyTag,
-      bet.source,
-      new Date(bet.createdAt).toLocaleDateString()
-    ]);
-    
-    const csvContent = [headers, ...rows]
-      .map(row => row.map(cell => `"${cell}"`).join(','))
-      .join('\n');
-    
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `bets-${filters.season}${filters.week ? `-w${filters.week}` : ''}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const url = `/api/bets/export?${params}`;
+    window.open(url, '_blank');
   };
 
   const generateChartData = () => {
@@ -154,6 +131,23 @@ export default function BetsPage() {
 
   const formatCurrency = (value: number) => 
     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+
+  const getCLVColor = (clv: number | null) => {
+    if (clv === null) return 'bg-gray-100 text-gray-600';
+    return clv > 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+  };
+
+  const getEdgeColor = (edge: number | null) => {
+    if (edge === null) return 'bg-gray-100 text-gray-600';
+    return edge > 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+  };
+
+  const calculateEdge = (bet: any) => {
+    if (!bet.closePrice || bet.marketType === 'moneyline') return null;
+    const modelLine = Number(bet.modelPrice);
+    const closeLine = Number(bet.closePrice);
+    return modelLine - closeLine;
+  };
 
   const getResultColor = (result: string | null) => {
     switch (result) {
@@ -364,22 +358,34 @@ export default function BetsPage() {
         {/* Bets Table */}
         <div className="bg-white rounded-lg shadow overflow-hidden">
           {bets.length === 0 ? (
-            <div className="px-6 py-12 text-center">
-              <div className="text-gray-400 text-5xl mb-4">📊</div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No bets found</h3>
-              <p className="text-gray-600 mb-6">
-                No bets found for the current filters. Try adjusting your selection or add some demo bets.
-              </p>
-              {process.env.NEXT_PUBLIC_ENABLE_BETS_SEED === 'true' && (
-                <button 
-                  onClick={handleSeed}
-                  disabled={seeding}
-                  className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
-                >
-                  {seeding ? 'Seeding...' : 'Insert Demo Bets'}
-                </button>
-              )}
-            </div>
+              <div className="px-6 py-12 text-center">
+                <div className="text-gray-400 text-5xl mb-4">📊</div>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No bets found</h3>
+                <p className="text-gray-600 mb-4">
+                  No bets found for the current filters. Try adjusting your selection or add some demo bets.
+                </p>
+                <div className="space-y-2 mb-6">
+                  <p className="text-sm text-gray-500">
+                    <a href="/docs/selections-profitability" className="text-blue-600 hover:underline">
+                      How grading works
+                    </a>
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    <a href="/strategies" className="text-blue-600 hover:underline">
+                      View strategies
+                    </a>
+                  </p>
+                </div>
+                {process.env.NEXT_PUBLIC_ENABLE_BETS_SEED === 'true' && (
+                  <button 
+                    onClick={handleSeed}
+                    disabled={seeding}
+                    className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
+                  >
+                    {seeding ? 'Seeding...' : 'Insert Demo Bets'}
+                  </button>
+                )}
+              </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
@@ -405,6 +411,9 @@ export default function BetsPage() {
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       CLV
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Edge
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Result
@@ -446,8 +455,19 @@ export default function BetsPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {bet.closePrice || '-'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {bet.clv ? bet.clv.toFixed(3) : '-'}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {bet.clv ? (
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCLVColor(bet.clv)}`}>
+                          {bet.clv > 0 ? '+' : ''}{bet.clv.toFixed(3)}
+                        </span>
+                      ) : '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {calculateEdge(bet) !== null ? (
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getEdgeColor(calculateEdge(bet))}`}>
+                          {calculateEdge(bet)! > 0 ? '+' : ''}{calculateEdge(bet)!.toFixed(1)}
+                        </span>
+                      ) : '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex items-center text-sm font-medium ${getResultColor(bet.result)}`}>
