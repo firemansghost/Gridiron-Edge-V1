@@ -63,13 +63,20 @@ export class TeamResolver {
         source = aliasPath;
       }
 
-      const aliasData = yaml.load(aliasContent) as TeamAlias;
+      const aliasData = yaml.load(aliasContent) as any;
       
       if (!aliasData || typeof aliasData !== 'object') {
         throw new Error('Invalid YAML structure: expected object with team aliases');
       }
       
-      for (const [alias, teamId] of Object.entries(aliasData)) {
+      // Handle nested structure with 'aliases' key
+      const aliases = aliasData.aliases || aliasData;
+      
+      if (!aliases || typeof aliases !== 'object') {
+        throw new Error('Invalid YAML structure: missing or invalid aliases section');
+      }
+      
+      for (const [alias, teamId] of Object.entries(aliases)) {
         if (typeof teamId === 'string' && teamId.trim()) {
           this.aliases.set(alias.toLowerCase(), teamId);
         }

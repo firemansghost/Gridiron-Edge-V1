@@ -181,6 +181,28 @@ aliases:
   "Georgia Southern": georgia-southern
   "Georgia Southern Eagles": georgia-southern
   "UL Monroe Warhawks": ul-monroe
+  
+  # Additional FBS aliases for better coverage (Week 9 unmatched teams)
+  "Oklahoma Sooners": oklahoma
+  "Nebraska Cornhuskers": nebraska
+  "Purdue Boilermakers": purdue
+  "Auburn Tigers": auburn
+  "Buffalo Bulls": buffalo
+  "Rice Owls": rice
+  "Navy Midshipmen": navy
+  "Fresno State Bulldogs": fresno-state
+  "Vanderbilt Commodores": vanderbilt
+  "Pittsburgh Panthers": pittsburgh
+  "Cincinnati Bearcats": cincinnati
+  "West Virginia Mountaineers": west-virginia
+  "Troy Trojans": troy
+  "Oregon Ducks": oregon
+  "Louisville Cardinals": louisville
+  "Wyoming Cowboys": wyoming
+  "LSU Tigers": lsu
+  "Michigan State Spartans": michigan-state
+  "Texas Longhorns": texas
+  "Florida Gators": florida
 
 # FCS/Non-FBS denylist - these teams should be rejected
 denylist:

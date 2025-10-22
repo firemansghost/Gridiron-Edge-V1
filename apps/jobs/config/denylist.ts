@@ -35,9 +35,18 @@ export function isDenylisted(slug: string): boolean {
  * Check if a slug matches a known non-FBS pattern
  */
 export function matchesNonFBSPattern(slug: string): boolean {
-  // Pattern: *-college (except specific FBS exceptions if any)
+  // Pattern: *-college (except specific FBS exceptions)
   if (slug.endsWith('-college')) {
-    return true;
+    // FBS exceptions to the *-college pattern
+    const fbsCollegeExceptions = new Set([
+      'boston-college'  // FBS team in Independent conference
+    ]);
+    
+    if (fbsCollegeExceptions.has(slug)) {
+      return false; // Allow this FBS team
+    }
+    
+    return true; // Deny other *-college schools
   }
   
   // Could add other patterns here (e.g., *-a-m that aren't texas-a-m, etc.)
