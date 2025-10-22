@@ -27,9 +27,10 @@
     "allowUnreachableCode": true
   },
   "include": [
+    "ingest.ts",
     "ingest-minimal.ts",
     "seed-ratings.ts",
-    "adapters/OddsApiAdapter.ts",
+    "adapters/*.ts",
     "config/*.ts"
   ],
   "exclude": [
