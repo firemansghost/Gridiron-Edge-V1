@@ -168,3 +168,33 @@ aliases:
   "Miami Hurricanes": miami
   "USC": usc
   "USC Trojans": usc
+  
+  # Additional FBS aliases for better coverage
+  "Alabama Crimson Tide": alabama
+  "Illinois Fighting Illini": illinois
+  "Wake Forest Demon Deacons": wake-forest
+  "Kent State Golden Flashes": kent-state
+  "Southern Mississippi Golden Eagles": southern-miss
+  "Arkansas State Red Wolves": arkansas-state
+  "Arizona State Sun Devils": arizona-state
+  "Boston College Eagles": boston-college
+  "Penn State Nittany Lions": penn-state
+  "Duke Blue Devils": duke
+  "Northwestern Wildcats": northwestern
+  "Northern Illinois Huskies": northern-illinois
+  "Notre Dame Fighting Irish": notre-dame
+  "Ohio State Buckeyes": ohio-state
+  "South Florida Bulls": usf
+  "San Jose State Spartans": san-jose-state
+  "Air Force Falcons": air-force
+  "Tulsa Golden Hurricane": tulsa
+  "Bowling Green Falcons": bowling-green
+  "Georgia Southern Eagles": georgia-southern
+  "UL Monroe Warhawks": ul-monroe
+  "Southern Miss": southern-miss
+  "Southern Miss Golden Eagles": southern-miss
+
+# FCS/Non-FBS denylist - these teams should be rejected
+denylist:
+  - "Delaware Blue Hens"
+  - "Missouri State Bears"

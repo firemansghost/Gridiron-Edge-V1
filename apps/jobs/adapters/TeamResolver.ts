@@ -24,39 +24,114 @@ export class TeamResolver {
   }
 
   private loadAliases(): void {
+    let aliasContent: string;
+    let source: string;
+
     try {
-      const aliasPath = path.join(__dirname, '../config/team_aliases.yml');
-      const aliasContent = fs.readFileSync(aliasPath, 'utf8');
+      // Priority 1: Inline env variable (useful for quick hotfixes)
+      if (process.env.TEAM_ALIASES_YAML) {
+        aliasContent = process.env.TEAM_ALIASES_YAML;
+        source = 'environment variable TEAM_ALIASES_YAML';
+      }
+      // Priority 2: Path env variable
+      else if (process.env.TEAM_ALIASES_PATH) {
+        aliasContent = fs.readFileSync(process.env.TEAM_ALIASES_PATH, 'utf8');
+        source = `environment variable TEAM_ALIASES_PATH (${process.env.TEAM_ALIASES_PATH})`;
+      }
+      // Priority 3: Well-known relative paths (first that exists)
+      else {
+        const possiblePaths = [
+          path.join(__dirname, '../config/team_aliases.yml'), // dist runtime
+          path.join(process.cwd(), 'apps/jobs/config/team_aliases.yml'), // monorepo root
+          path.join(process.cwd(), 'config/team_aliases.yml'), // fallback
+        ];
+
+        let aliasPath: string | null = null;
+        for (const testPath of possiblePaths) {
+          if (fs.existsSync(testPath)) {
+            aliasPath = testPath;
+            break;
+          }
+        }
+
+        if (!aliasPath) {
+          const attemptedPaths = possiblePaths.join(', ');
+          throw new Error(`team_aliases.yml not found in any of these locations: ${attemptedPaths}`);
+        }
+
+        aliasContent = fs.readFileSync(aliasPath, 'utf8');
+        source = aliasPath;
+      }
+
       const aliasData = yaml.load(aliasContent) as TeamAlias;
       
-      for (const [alias, teamId] of Object.entries(aliasData)) {
-        this.aliases.set(alias.toLowerCase(), teamId);
+      if (!aliasData || typeof aliasData !== 'object') {
+        throw new Error('Invalid YAML structure: expected object with team aliases');
       }
       
-      console.log(`[TEAM_RESOLVER] Loaded ${this.aliases.size} team aliases`);
+      for (const [alias, teamId] of Object.entries(aliasData)) {
+        if (typeof teamId === 'string' && teamId.trim()) {
+          this.aliases.set(alias.toLowerCase(), teamId);
+        }
+      }
+      
+      console.log(`[TEAM_RESOLVER] Loaded ${this.aliases.size} team aliases from ${source}`);
     } catch (error) {
-      console.error('[TEAM_RESOLVER] Failed to load team aliases:', error);
-      throw error;
+      console.error('[TEAM_RESOLVER] FATAL: Failed to load team aliases');
+      console.error('[TEAM_RESOLVER] Error:', (error as Error).message);
+      console.error('[TEAM_RESOLVER] Attempted locations:');
+      console.error('  - Environment variable TEAM_ALIASES_YAML');
+      console.error('  - Environment variable TEAM_ALIASES_PATH');
+      console.error('  - ' + path.join(__dirname, '../config/team_aliases.yml'));
+      console.error('  - ' + path.join(process.cwd(), 'apps/jobs/config/team_aliases.yml'));
+      console.error('  - ' + path.join(process.cwd(), 'config/team_aliases.yml'));
+      console.error('[TEAM_RESOLVER] Cannot proceed without team aliases - exiting');
+      process.exit(1);
     }
   }
 
   private loadDenylist(): void {
     try {
-      const denylistPath = path.join(__dirname, '../config/denylist.ts');
-      const denylistContent = fs.readFileSync(denylistPath, 'utf8');
+      // Load denylist from the same YAML file as aliases
+      let aliasContent: string;
       
-      // Extract DENYLIST_SLUGS from the TypeScript file
-      const denylistMatch = denylistContent.match(/DENYLIST_SLUGS = new Set\(\[([\s\S]*?)\]\)/);
-      if (denylistMatch) {
-        const slugs = denylistMatch[1]
-          .split(',')
-          .map(s => s.trim().replace(/['"]/g, ''))
-          .filter(s => s.length > 0);
-        
-        slugs.forEach(slug => this.denylist.add(slug));
+      // Use the same path resolution logic as loadAliases
+      if (process.env.TEAM_ALIASES_YAML) {
+        aliasContent = process.env.TEAM_ALIASES_YAML;
+      } else if (process.env.TEAM_ALIASES_PATH) {
+        aliasContent = fs.readFileSync(process.env.TEAM_ALIASES_PATH, 'utf8');
+      } else {
+        const possiblePaths = [
+          path.join(__dirname, '../config/team_aliases.yml'), // dist runtime
+          path.join(process.cwd(), 'apps/jobs/config/team_aliases.yml'), // monorepo root
+          path.join(process.cwd(), 'config/team_aliases.yml'), // fallback
+        ];
+
+        let aliasPath: string | null = null;
+        for (const testPath of possiblePaths) {
+          if (fs.existsSync(testPath)) {
+            aliasPath = testPath;
+            break;
+          }
+        }
+
+        if (!aliasPath) {
+          console.warn('[TEAM_RESOLVER] No team_aliases.yml found, continuing without denylist');
+          return;
+        }
+
+        aliasContent = fs.readFileSync(aliasPath, 'utf8');
+      }
+
+      const aliasData = yaml.load(aliasContent) as any;
+      
+      if (aliasData && aliasData.denylist && Array.isArray(aliasData.denylist)) {
+        aliasData.denylist.forEach((teamName: string) => {
+          this.denylist.add(teamName.toLowerCase());
+        });
       }
       
-      console.log(`[TEAM_RESOLVER] Loaded ${this.denylist.size} denylisted teams`);
+      console.log(`[TEAM_RESOLVER] Loaded ${this.denylist.size} denylisted teams from YAML`);
     } catch (error) {
       console.warn('[TEAM_RESOLVER] Failed to load denylist, continuing without it:', error);
     }
@@ -80,6 +155,12 @@ export class TeamResolver {
    */
   resolveTeam(providerName: string, providerSport: string): string | null {
     if (!providerName || !providerSport) {
+      return null;
+    }
+
+    // Check if the provider name itself is denylisted
+    if (this.denylist.has(providerName.toLowerCase())) {
+      console.log(`[TEAM_RESOLVER] Denylisted team name: ${providerName}`);
       return null;
     }
 
