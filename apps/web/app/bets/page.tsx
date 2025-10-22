@@ -40,6 +40,7 @@ export default function BetsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showChart, setShowChart] = useState(false);
+  const [seeding, setSeeding] = useState(false);
   const [filters, setFilters] = useState<BetFilters>({
     season: 2025,
     week: null,
@@ -58,15 +59,15 @@ export default function BetsPage() {
         ...(filters.marketType && { marketType: filters.marketType }),
         ...(filters.side && { side: filters.side }),
         ...(filters.strategyTag && { strategyTag: filters.strategyTag }),
-        page: '1',
-        pageSize: '100'
+        limit: '100',
+        offset: '0'
       });
       
-      const response = await fetch(`/api/bets/summary?${params}`);
+      const response = await fetch(`/api/bets/list?${params}`);
       if (!response.ok) throw new Error('Failed to fetch bets');
       
       const result = await response.json();
-      setBets(result.bets || []);
+      setBets(result.items || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -77,6 +78,25 @@ export default function BetsPage() {
   useEffect(() => {
     fetchBets();
   }, [filters]);
+
+  const handleSeed = async () => {
+    setSeeding(true);
+    try {
+      const response = await fetch('/api/bets/seed', { method: 'GET' });
+      const result = await response.json();
+      
+      if (result.success) {
+        alert(`Seeded ${result.inserted} demo bets`);
+        fetchBets(); // Refresh the data
+      } else {
+        alert(`Error: ${result.error}`);
+      }
+    } catch (err) {
+      alert(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setSeeding(false);
+    }
+  };
 
   const exportCSV = () => {
     const headers = [
@@ -281,12 +301,23 @@ export default function BetsPage() {
               Show PnL Chart
             </label>
           </div>
-          <button
-            onClick={exportCSV}
-            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
-          >
-            Export CSV
-          </button>
+          <div className="flex gap-2">
+            {process.env.NEXT_PUBLIC_ENABLE_BETS_SEED === 'true' && (
+              <button 
+                onClick={handleSeed}
+                disabled={seeding}
+                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                {seeding ? 'Seeding...' : 'Insert Demo Bets'}
+              </button>
+            )}
+            <button
+              onClick={exportCSV}
+              className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+            >
+              Export CSV
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -332,47 +363,65 @@ export default function BetsPage() {
 
         {/* Bets Table */}
         <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Season/Week
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Matchup
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Market
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Side
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Model Price
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Close Price
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    CLV
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Result
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Stake
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    PnL
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Strategy
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {bets.map((bet) => (
+          {bets.length === 0 ? (
+            <div className="px-6 py-12 text-center">
+              <div className="text-gray-400 text-5xl mb-4">📊</div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No bets found</h3>
+              <p className="text-gray-600 mb-6">
+                No bets found for the current filters. Try adjusting your selection or add some demo bets.
+              </p>
+              {process.env.NEXT_PUBLIC_ENABLE_BETS_SEED === 'true' && (
+                <button 
+                  onClick={handleSeed}
+                  disabled={seeding}
+                  className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
+                >
+                  {seeding ? 'Seeding...' : 'Insert Demo Bets'}
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Season/Week
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Matchup
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Market
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Side
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Model Price
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Close Price
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      CLV
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Result
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Stake
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      PnL
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Strategy
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {bets.map((bet) => (
                   <tr key={bet.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {bet.season} W{bet.week}
@@ -422,14 +471,9 @@ export default function BetsPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+            </div>
+          )}
         </div>
-
-        {bets.length === 0 && !loading && (
-          <div className="text-center py-12">
-            <p className="text-gray-500 text-lg">No bets found matching your filters.</p>
-          </div>
-        )}
       </div>
     </div>
   );

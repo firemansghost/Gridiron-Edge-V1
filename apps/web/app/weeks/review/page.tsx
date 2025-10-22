@@ -56,6 +56,7 @@ export default function WeekReviewPage() {
   const [data, setData] = useState<WeekReviewData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [seeding, setSeeding] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -84,6 +85,25 @@ export default function WeekReviewPage() {
   useEffect(() => {
     fetchData();
   }, [season, week, strategy]);
+
+  const handleSeed = async () => {
+    setSeeding(true);
+    try {
+      const response = await fetch('/api/bets/seed', { method: 'GET' });
+      const result = await response.json();
+      
+      if (result.success) {
+        alert(`Seeded ${result.inserted} demo bets`);
+        fetchData(); // Refresh the data
+      } else {
+        alert(`Error: ${result.error}`);
+      }
+    } catch (err) {
+      alert(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setSeeding(false);
+    }
+  };
 
   const exportCSV = () => {
     if (!data?.bets) return;
@@ -189,7 +209,7 @@ export default function WeekReviewPage() {
             </select>
           </div>
           
-          <div className="flex items-end">
+          <div className="flex items-end gap-2">
             <button 
               onClick={fetchData}
               disabled={loading}
@@ -197,6 +217,15 @@ export default function WeekReviewPage() {
             >
               {loading ? 'Loading...' : 'Refresh'}
             </button>
+            {process.env.NEXT_PUBLIC_ENABLE_BETS_SEED === 'true' && (
+              <button 
+                onClick={handleSeed}
+                disabled={seeding}
+                className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
+              >
+                {seeding ? 'Seeding...' : 'Insert Demo Bets'}
+              </button>
+            )}
           </div>
         </div>
 
@@ -268,95 +297,114 @@ export default function WeekReviewPage() {
 
           {/* Bets Table */}
           <div className="bg-white rounded-lg shadow overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Matchup
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Market
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Side
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Model Price
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Close Price
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      CLV
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Result
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Stake
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      PnL
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Strategy
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {data.bets.map((bet) => (
-                    <tr 
-                      key={bet.id}
-                      className="hover:bg-gray-50 cursor-pointer"
-                      onClick={() => router.push(`/game/${bet.gameId}?asOf=close`)}
-                    >
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">
-                          {bet.game.awayTeam.name} @ {bet.game.homeTeam.name}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          {new Date(bet.game.date).toLocaleDateString()}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {bet.marketType}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {bet.side}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {bet.modelPrice}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {bet.closePrice || '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {bet.clv ? bet.clv.toFixed(3) : '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center text-sm font-medium ${getResultColor(bet.result)}`}>
-                          {getResultIcon(bet.result)} {bet.result || 'Pending'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {formatCurrency(bet.stake)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {bet.pnl ? (
-                          <span className={bet.pnl >= 0 ? 'text-green-600' : 'text-red-600'}>
-                            {formatCurrency(bet.pnl)}
-                          </span>
-                        ) : '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {bet.strategyTag}
-                      </td>
+            {data.bets.length === 0 ? (
+              <div className="px-6 py-12 text-center">
+                <div className="text-gray-400 text-5xl mb-4">📊</div>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No bets found</h3>
+                <p className="text-gray-600 mb-6">
+                  No bets found for the current filters. Try adjusting your selection or add some demo bets.
+                </p>
+                {process.env.NEXT_PUBLIC_ENABLE_BETS_SEED === 'true' && (
+                  <button 
+                    onClick={handleSeed}
+                    disabled={seeding}
+                    className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
+                  >
+                    {seeding ? 'Seeding...' : 'Insert Demo Bets'}
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Matchup
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Market
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Side
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Model Price
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Close Price
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        CLV
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Result
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Stake
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        PnL
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Strategy
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {data.bets.map((bet) => (
+                      <tr 
+                        key={bet.id}
+                        className="hover:bg-gray-50 cursor-pointer"
+                        onClick={() => router.push(`/game/${bet.gameId}?asOf=close`)}
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900">
+                            {bet.game.awayTeam.name} @ {bet.game.homeTeam.name}
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            {new Date(bet.game.date).toLocaleDateString()}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {bet.marketType}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {bet.side}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {bet.modelPrice}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {bet.closePrice || '-'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {bet.clv ? bet.clv.toFixed(3) : '-'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex items-center text-sm font-medium ${getResultColor(bet.result)}`}>
+                            {getResultIcon(bet.result)} {bet.result || 'Pending'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {formatCurrency(bet.stake)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {bet.pnl ? (
+                            <span className={bet.pnl >= 0 ? 'text-green-600' : 'text-red-600'}>
+                              {formatCurrency(bet.pnl)}
+                            </span>
+                          ) : '-'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {bet.strategyTag}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {/* Pagination */}
