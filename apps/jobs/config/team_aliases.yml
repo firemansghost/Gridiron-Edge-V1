@@ -39,15 +39,6 @@ aliases:
   "Illinois Fighting Illini": illinois
   "Boston College": boston-college
   "Boston College Eagles": boston-college
-  "Kent State": kent-state
-  "Kent State Golden Flashes": kent-state
-  "Southern Mississippi": southern-mississippi
-  "Southern Mississippi Golden Eagles": southern-mississippi
-  "Southern Miss": southern-mississippi
-  "Arkansas State": arkansas-state
-  "Arkansas State Red Wolves": arkansas-state
-  "Buffalo": buffalo
-  "Buffalo Bulls": buffalo
   
   # Ole Miss - IMPORTANT: "Mississippi" alone maps to Ole Miss (Mississippi State always includes "State")
   "Ole Miss": ole-miss
