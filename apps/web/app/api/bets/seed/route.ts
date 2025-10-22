@@ -32,36 +32,36 @@ export async function POST(request: NextRequest) {
         season: 2025,
         week: 9,
         gameId: games[0]?.id,
-        marketType: 'spread',
-        side: 'away',
+        marketType: 'spread' as const,
+        side: 'away' as const,
         modelPrice: -7.5,
         stake: 100,
         strategyTag: 'demo_seed',
-        source: 'strategy_run',
+        source: 'strategy_run' as const,
         notes: 'Demo bet 1',
       },
       {
         season: 2025,
         week: 9,
         gameId: games[1]?.id,
-        marketType: 'total',
-        side: 'over',
+        marketType: 'total' as const,
+        side: 'over' as const,
         modelPrice: 55.0,
         stake: 100,
         strategyTag: 'demo_seed',
-        source: 'strategy_run',
+        source: 'strategy_run' as const,
         notes: 'Demo bet 2',
       },
       {
         season: 2025,
         week: 9,
         gameId: games[2]?.id,
-        marketType: 'moneyline',
-        side: 'home',
+        marketType: 'moneyline' as const,
+        side: 'home' as const,
         modelPrice: -150,
         stake: 100,
         strategyTag: 'demo_seed',
-        source: 'strategy_run',
+        source: 'strategy_run' as const,
         notes: 'Demo bet 3',
       },
     ].filter(bet => bet.gameId); // Only include bets with valid gameIds
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('BETS_API_ERROR seed', error);
     return NextResponse.json(
-      { error: 'Internal error', detail: String(error?.message ?? error) },
+      { error: 'Internal error', detail: String((error as Error)?.message ?? error) },
       { status: 500 }
     );
   } finally {

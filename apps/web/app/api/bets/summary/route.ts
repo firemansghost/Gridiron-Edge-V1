@@ -140,7 +140,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('BETS_API_ERROR summary', error);
     return NextResponse.json(
-      { error: 'Internal error', detail: String(error?.message ?? error) },
+      { error: 'Internal error', detail: String((error as Error)?.message ?? error) },
       { status: 500 }
     );
   } finally {
