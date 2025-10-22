@@ -40,6 +40,8 @@ jobs:
 
       - name: Ingest schedules via CFBD (optional)
         if: ${{ env.CFBD_API_KEY != '' }}
+        env:
+          JOBS_ALLOW_SIMULATED_ODDS: false
         run: |
           echo "🗓️ Ingesting real schedules from CFBD..."
           # 2025 season, single week only
@@ -87,29 +89,38 @@ jobs:
           # Live 2025 season - single week only
           node apps/jobs/dist/ingest-minimal.js oddsapi --season 2025 --weeks $POLL_WEEK
           
-          # Check if any rows were inserted
-          ROWS_INSERTED=$(node -e "
+          # Check if any rows were inserted (account for week-flexible inserts)
+          WEEK_BREAKDOWN=$(node -e "
             const { PrismaClient } = require('@prisma/client');
             const prisma = new PrismaClient();
             (async () => {
-              const count = await prisma.marketLine.count({ 
-                where: { 
-                  season: 2025, 
-                  week: parseInt(process.env.POLL_WEEK),
-                  timestamp: { gte: new Date(Date.now() - 5 * 60 * 1000) } // Last 5 minutes
-                } 
+              const since = new Date(Date.now() - 5 * 60 * 1000);
+              const rows = await prisma.marketLine.groupBy({
+                by: ['season','week'],
+                where: { season: 2025, timestamp: { gte: since } },
+                _count: { _all: true },
               });
-              console.log(count);
+              console.log(JSON.stringify(rows));
               await prisma.\$disconnect();
             })();
           ")
           
-          if [ "$ROWS_INSERTED" -eq 0 ]; then
+          # Parse the breakdown and calculate total
+          TOTAL_ROWS=$(node -e "
+            const breakdown = JSON.parse('$WEEK_BREAKDOWN');
+            const total = breakdown.reduce((sum, row) => sum + row._count._all, 0);
+            console.log(total);
+          ")
+          
+          echo "📊 Week breakdown: $WEEK_BREAKDOWN"
+          echo "📈 Total rows inserted: $TOTAL_ROWS"
+          
+          if [ "$TOTAL_ROWS" -eq 0 ]; then
             echo "❌ No odds rows inserted for 2025 Week $POLL_WEEK - provider may have returned empty data"
             echo "🔍 Check provider response and team matching"
             exit 1
           else
-            echo "✅ Odds API poll complete - $ROWS_INSERTED rows inserted"
+            echo "✅ Odds API poll complete - $TOTAL_ROWS rows inserted"
           fi
 
       - name: Fallback - Poll odds from SGO (if Odds API unavailable)

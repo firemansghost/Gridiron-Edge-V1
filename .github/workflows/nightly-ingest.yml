@@ -46,6 +46,8 @@ jobs:
 
       - name: Ingest schedules via CFBD (optional)
         if: ${{ env.CFBD_API_KEY != '' }}
+        env:
+          JOBS_ALLOW_SIMULATED_ODDS: false
         run: |
           echo "🗓️ Ingesting real schedules from CFBD..."
           node apps/jobs/ingest-simple.js cfbd --season 2025 --weeks $POLL_WEEK
