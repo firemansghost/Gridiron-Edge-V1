@@ -13,6 +13,8 @@ import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { isTransitionalMatchup } from '../config/transitional_teams';
 import { isRejectedSlug, isDenylisted, matchesNonFBSPattern } from '../config/denylist';
+import { TeamResolver } from './TeamResolver';
+import { GameLookup } from './GameLookup';
 
 const prisma = new PrismaClient();
 
@@ -272,6 +274,8 @@ export class OddsApiAdapter implements DataSourceAdapter {
   private apiKey: string;
   private baseUrl: string;
   private teamIndex: TeamIndex | null = null;
+  private teamResolver: TeamResolver;
+  private gameLookup: GameLookup;
   private matchStats: MatchStats = {
     p0_exactId: 0,
     p1_nameSlug: 0,
@@ -298,6 +302,10 @@ export class OddsApiAdapter implements DataSourceAdapter {
     // Use env override or config
     this.baseUrl = process.env.ODDS_API_BASE_URL || config.baseUrl;
     console.log(`[ODDSAPI] Base URL: ${this.baseUrl}`);
+    
+    // Initialize new components
+    this.teamResolver = new TeamResolver();
+    this.gameLookup = new GameLookup(prisma);
   }
 
   /**
@@ -1017,7 +1025,7 @@ export class OddsApiAdapter implements DataSourceAdapter {
 
       // Parse each event's odds with team matching
       for (const event of events) {
-        const eventLines = this.parseEventOdds(event, season, week);
+        const eventLines = await this.parseEventOdds(event, season, week);
         if (eventLines.length > 0) {
           lines.push(...eventLines);
           matchedCount++;
@@ -1194,12 +1202,12 @@ export class OddsApiAdapter implements DataSourceAdapter {
   /**
    * Parse event odds into MarketLine objects
    */
-  private parseEventOdds(event: OddsApiEvent, season: number, week: number): any[] {
+  private async parseEventOdds(event: OddsApiEvent, season: number, week: number): Promise<any[]> {
     const lines: any[] = [];
 
-    // Resolve team names to CFBD team IDs
-    const homeTeamId = this.resolveTeamId(event.home_team);
-    const awayTeamId = this.resolveTeamId(event.away_team);
+    // Step 1: Resolve team names to canonical team IDs using TeamResolver
+    const homeTeamId = this.teamResolver.resolveTeam(event.home_team, 'NCAAF');
+    const awayTeamId = this.teamResolver.resolveTeam(event.away_team, 'NCAAF');
 
     // Skip if either team couldn't be matched
     if (!homeTeamId || !awayTeamId) {
@@ -1207,9 +1215,25 @@ export class OddsApiAdapter implements DataSourceAdapter {
       return [];
     }
 
-    // Create gameId using matched team IDs (match CFBD format)
-    const gameId = `${season}-wk${week}-${awayTeamId}-${homeTeamId}`;
+    // Step 2: Look up the actual database game ID using GameLookup
+    const eventTime = new Date(event.commence_time);
+    const gameLookupResult = await this.gameLookup.lookupGame(
+      season,
+      week,
+      homeTeamId,
+      awayTeamId,
+      eventTime
+    );
 
+    if (!gameLookupResult.gameId) {
+      console.log(`   [DEBUG] Game lookup failed: ${awayTeamId} @ ${homeTeamId} - ${gameLookupResult.reason}`);
+      return [];
+    }
+
+    const gameId = gameLookupResult.gameId;
+    console.log(`   [DEBUG] Found game: ${gameId} for ${event.away_team} @ ${event.home_team}`);
+
+    // Step 3: Process odds and build market lines with real database game ID
     for (const bookmaker of event.bookmakers) {
       const bookName = bookmaker.title || bookmaker.key;
       const timestamp = new Date(bookmaker.last_update);

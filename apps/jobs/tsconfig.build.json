@@ -30,6 +30,8 @@
     "ingest-minimal.ts",
     "seed-ratings.ts",
     "adapters/OddsApiAdapter.ts",
+    "adapters/TeamResolver.ts",
+    "adapters/GameLookup.ts",
     "config/*.ts"
   ],
   "exclude": [
