@@ -84,8 +84,8 @@ export async function POST(request: NextRequest) {
         }
 
         // Calculate result
-        const homeScore = game.homeScore;
-        const awayScore = game.awayScore;
+        const homeScore = Number(game.homeScore);
+        const awayScore = Number(game.awayScore);
         const margin = homeScore - awayScore;
         const totalPoints = homeScore + awayScore;
 
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
         let clv: number | null = null;
 
         if (bet.marketType === 'spread') {
-          const spreadLine = closePrice || 0;
+          const spreadLine = Number(closePrice) || 0;
           let betWins = false;
           
           if (bet.side === 'home') {
@@ -114,14 +114,15 @@ export async function POST(request: NextRequest) {
           // Calculate CLV
           if (closePrice) {
             const modelLine = Number(bet.modelPrice);
+            const closeLine = Number(closePrice);
             if (bet.side === 'home') {
-              clv = modelLine - closePrice;
+              clv = modelLine - closeLine;
             } else {
-              clv = closePrice - modelLine;
+              clv = closeLine - modelLine;
             }
           }
         } else if (bet.marketType === 'total') {
-          const totalLine = closePrice || 0;
+          const totalLine = Number(closePrice) || 0;
           let betWins = false;
           
           if (bet.side === 'over') {
@@ -141,10 +142,11 @@ export async function POST(request: NextRequest) {
           // Calculate CLV
           if (closePrice) {
             const modelLine = Number(bet.modelPrice);
+            const closeLine = Number(closePrice);
             if (bet.side === 'over') {
-              clv = modelLine - closePrice;
+              clv = modelLine - closeLine;
             } else {
-              clv = closePrice - modelLine;
+              clv = closeLine - modelLine;
             }
           }
         } else if (bet.marketType === 'moneyline') {
@@ -175,8 +177,10 @@ export async function POST(request: NextRequest) {
           
           // Calculate CLV for moneyline
           if (closePrice) {
-            const modelProb = odds < 0 ? 100 / (100 + Math.abs(odds)) : odds / (100 + odds);
-            const closeProb = closePrice < 0 ? 100 / (100 + Math.abs(closePrice)) : closePrice / (100 + closePrice);
+            const modelOdds = Number(bet.modelPrice);
+            const closeOdds = Number(closePrice);
+            const modelProb = modelOdds < 0 ? 100 / (100 + Math.abs(modelOdds)) : modelOdds / (100 + modelOdds);
+            const closeProb = closeOdds < 0 ? 100 / (100 + Math.abs(closeOdds)) : closeOdds / (100 + closeOdds);
             clv = modelProb - closeProb;
           }
         }
@@ -185,9 +189,9 @@ export async function POST(request: NextRequest) {
         await prisma.bet.update({
           where: { id: bet.id },
           data: {
-            result,
-            pnl,
-            clv,
+            result: result as any,
+            pnl: pnl ? Number(pnl) : null,
+            clv: clv ? Number(clv) : null,
             closePrice: closePrice ? Number(closePrice) : bet.closePrice,
             updatedAt: new Date(),
           },
