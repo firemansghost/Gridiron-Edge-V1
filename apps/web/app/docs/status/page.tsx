@@ -94,7 +94,7 @@ export default async function StatusPage() {
       : 0;
 
     const uniqueBooks = Array.isArray(oddsCoverage) 
-      ? [...new Set(oddsCoverage.map((row: any) => row.book_name))]
+      ? Array.from(new Set(oddsCoverage.map((row: any) => row.book_name)))
       : [];
 
     const lastOddsUpdate = Array.isArray(oddsCoverage) && oddsCoverage.length > 0
