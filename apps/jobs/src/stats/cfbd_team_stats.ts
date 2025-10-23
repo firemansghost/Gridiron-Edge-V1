@@ -201,7 +201,24 @@ async function fetchTeamStats(season: number, week: number): Promise<CFBDTeamSta
       throw new Error(`CFBD API error: ${response.status} ${response.statusText}`);
     }
 
-    const data = await response.json() as CFBDTeamStats[];
+    const responseText = await response.text();
+    console.log(`   [CFBD] Raw response length: ${responseText.length}`);
+    
+    // Check if response is HTML (error page)
+    if (responseText.trim().startsWith('<')) {
+      console.error(`   [CFBD] Received HTML response instead of JSON`);
+      console.error(`   [CFBD] Response preview: ${responseText.substring(0, 200)}...`);
+      throw new Error('CFBD API returned HTML instead of JSON - likely an error page');
+    }
+
+    let data: CFBDTeamStats[];
+    try {
+      data = JSON.parse(responseText) as CFBDTeamStats[];
+    } catch (parseError) {
+      console.error(`   [CFBD] JSON parse error: ${parseError}`);
+      console.error(`   [CFBD] Response preview: ${responseText.substring(0, 200)}...`);
+      throw new Error(`Failed to parse JSON response: ${parseError}`);
+    }
     console.log(`   [CFBD] Fetched ${data.length} team stats for ${season} Week ${week}`);
     
     return data;

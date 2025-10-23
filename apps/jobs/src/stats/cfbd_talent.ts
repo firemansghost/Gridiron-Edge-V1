@@ -19,14 +19,14 @@ interface CFBDTeamTalent {
   conference: string;
   season: number;
   talent: number;
-  recruiting: {
-    rank: number;
-    points: number;
-    averageRating: number;
-    commits: number;
-    fiveStars: number;
-    fourStars: number;
-    threeStars: number;
+  recruiting?: {
+    rank?: number;
+    points?: number;
+    averageRating?: number;
+    commits?: number;
+    fiveStars?: number;
+    fourStars?: number;
+    threeStars?: number;
   };
 }
 
@@ -111,7 +111,24 @@ async function fetchTeamTalent(season: number): Promise<CFBDTeamTalent[]> {
       throw new Error(`CFBD API error: ${response.status} ${response.statusText}`);
     }
 
-    const data = await response.json() as CFBDTeamTalent[];
+    const responseText = await response.text();
+    console.log(`   [CFBD] Raw response length: ${responseText.length}`);
+    
+    // Check if response is HTML (error page)
+    if (responseText.trim().startsWith('<')) {
+      console.error(`   [CFBD] Received HTML response instead of JSON`);
+      console.error(`   [CFBD] Response preview: ${responseText.substring(0, 200)}...`);
+      throw new Error('CFBD API returned HTML instead of JSON - likely an error page');
+    }
+
+    let data: CFBDTeamTalent[];
+    try {
+      data = JSON.parse(responseText) as CFBDTeamTalent[];
+    } catch (parseError) {
+      console.error(`   [CFBD] JSON parse error: ${parseError}`);
+      console.error(`   [CFBD] Response preview: ${responseText.substring(0, 200)}...`);
+      throw new Error(`Failed to parse JSON response: ${parseError}`);
+    }
     console.log(`   [CFBD] Fetched ${data.length} team talent records for ${season}`);
     
     return data;
@@ -140,12 +157,12 @@ function mapCFBDTalentToRecruiting(cfbdTalent: CFBDTeamTalent): RecruitingData |
     teamId,
     season: cfbdTalent.season,
     teamTalentIndex: cfbdTalent.talent,
-    fiveStar: cfbdTalent.recruiting.fiveStars,
-    fourStar: cfbdTalent.recruiting.fourStars,
-    threeStar: cfbdTalent.recruiting.threeStars,
-    commits: cfbdTalent.recruiting.commits,
-    points: cfbdTalent.recruiting.points,
-    nationalRank: cfbdTalent.recruiting.rank,
+    fiveStar: cfbdTalent.recruiting?.fiveStars || null,
+    fourStar: cfbdTalent.recruiting?.fourStars || null,
+    threeStar: cfbdTalent.recruiting?.threeStars || null,
+    commits: cfbdTalent.recruiting?.commits || null,
+    points: cfbdTalent.recruiting?.points || null,
+    nationalRank: cfbdTalent.recruiting?.rank || null,
     conferenceRank: null, // CFBD doesn't provide conference rank in talent endpoint
     rawJson: cfbdTalent
   };
