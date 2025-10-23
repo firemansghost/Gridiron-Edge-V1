@@ -176,9 +176,13 @@ async function fetchTeamStats(season: number, week: number): Promise<CFBDTeamSta
   url.searchParams.set('year', season.toString());
   url.searchParams.set('week', week.toString());
   url.searchParams.set('seasonType', 'regular');
+  
+  // Debug: Log the exact URL being called
+  console.log(`   [CFBD] Full URL: ${url.toString()}`);
 
   console.log(`   [CFBD] Fetching team stats for ${season} Week ${week}...`);
   console.log(`   [CFBD] URL: ${url.toString()}`);
+  console.log(`   [CFBD] API Key present: ${apiKey ? 'Yes' : 'No'}`);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);

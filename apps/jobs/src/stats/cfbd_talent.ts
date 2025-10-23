@@ -131,6 +131,11 @@ async function fetchTeamTalent(season: number): Promise<CFBDTeamTalent[]> {
     }
     console.log(`   [CFBD] Fetched ${data.length} team talent records for ${season}`);
     
+    // Debug: Log first record to see structure
+    if (data.length > 0) {
+      console.log(`   [CFBD] Sample record:`, JSON.stringify(data[0], null, 2));
+    }
+    
     return data;
   } catch (error) {
     clearTimeout(timeout);
@@ -155,7 +160,7 @@ function mapCFBDTalentToRecruiting(cfbdTalent: CFBDTeamTalent): RecruitingData |
 
   return {
     teamId,
-    season: cfbdTalent.season,
+    season: cfbdTalent.season || 2025, // Fallback to 2025 if season is undefined
     teamTalentIndex: cfbdTalent.talent,
     fiveStar: cfbdTalent.recruiting?.fiveStars || null,
     fourStar: cfbdTalent.recruiting?.fourStars || null,
