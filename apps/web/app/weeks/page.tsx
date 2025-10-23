@@ -126,6 +126,14 @@ function WeekPageContent() {
     if (weekParam) setWeek(parseInt(weekParam, 10));
   }, [searchParams]);
 
+  // Update URL when filters change
+  const updateURL = (newSeason: number, newWeek: number) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('season', newSeason.toString());
+    url.searchParams.set('week', newWeek.toString());
+    window.history.pushState({}, '', url.toString());
+  };
+
   useEffect(() => {
     fetchWeekData();
   }, [season, week]);
@@ -218,6 +226,58 @@ function WeekPageContent() {
           </p>
         </div>
 
+        {/* Filter Controls */}
+        <div className="mb-6 bg-white p-4 rounded-lg shadow">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center space-x-2">
+              <label htmlFor="season-select" className="text-sm font-medium text-gray-700">
+                Season:
+              </label>
+              <select
+                id="season-select"
+                value={season}
+                onChange={(e) => {
+                  const newSeason = parseInt(e.target.value, 10);
+                  setSeason(newSeason);
+                  updateURL(newSeason, week);
+                }}
+                className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              >
+                <option value={2022}>2022</option>
+                <option value={2023}>2023</option>
+                <option value={2024}>2024</option>
+                <option value={2025}>2025</option>
+              </select>
+            </div>
+            
+            <div className="flex items-center space-x-2">
+              <label htmlFor="week-select" className="text-sm font-medium text-gray-700">
+                Week:
+              </label>
+              <select
+                id="week-select"
+                value={week}
+                onChange={(e) => {
+                  const newWeek = parseInt(e.target.value, 10);
+                  setWeek(newWeek);
+                  updateURL(season, newWeek);
+                }}
+                className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              >
+                {Array.from({ length: 15 }, (_, i) => i + 1).map(w => (
+                  <option key={w} value={w}>Week {w}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-500">
+                {loading ? 'Loading...' : `${data?.games?.length || 0} games`}
+              </span>
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           {/* Games Table */}
           <div className="lg:col-span-3">
@@ -226,6 +286,7 @@ function WeekPageContent() {
               week={week} 
               title={`Week ${week} Games`}
               showDateHeaders={true}
+              showAdvanced={false}
             />
           </div>
 

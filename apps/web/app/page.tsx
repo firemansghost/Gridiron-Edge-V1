@@ -213,6 +213,7 @@ export default function HomePage() {
             week={slate.week} 
             title="This Week's Slate"
             showDateHeaders={true}
+            showAdvanced={false}
           />
         )}
 

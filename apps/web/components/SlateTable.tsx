@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 
 interface SlateGame {
@@ -22,6 +22,13 @@ interface SlateGame {
     book: string;
     timestamp: string;
   } | null;
+  // Advanced columns (optional)
+  modelSpread?: number | null;
+  modelTotal?: number | null;
+  pickSpread?: string | null;
+  pickTotal?: string | null;
+  maxEdge?: number | null;
+  confidence?: string | null;
 }
 
 interface SlateTableProps {
@@ -29,21 +36,41 @@ interface SlateTableProps {
   week: number;
   title?: string;
   showDateHeaders?: boolean;
+  showAdvanced?: boolean;
+  onAdvancedToggle?: (show: boolean) => void;
 }
 
 export default function SlateTable({ 
   season, 
   week, 
   title = `Week ${week} Games`,
-  showDateHeaders = true 
+  showDateHeaders = true,
+  showAdvanced = false,
+  onAdvancedToggle
 }: SlateTableProps) {
   const [games, setGames] = useState<SlateGame[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showAdvancedColumns, setShowAdvancedColumns] = useState(showAdvanced);
 
   useEffect(() => {
     fetchSlate();
   }, [season, week]);
+
+  // Load advanced columns preference from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('slateTable-showAdvanced');
+    if (saved !== null) {
+      setShowAdvancedColumns(JSON.parse(saved));
+    }
+  }, []);
+
+  // Save advanced columns preference to localStorage
+  const handleAdvancedToggle = (show: boolean) => {
+    setShowAdvancedColumns(show);
+    localStorage.setItem('slateTable-showAdvanced', JSON.stringify(show));
+    onAdvancedToggle?.(show);
+  };
 
   const fetchSlate = async () => {
     setLoading(true);
@@ -147,13 +174,25 @@ export default function SlateTable({
     }
   };
 
-  // Group games by date
-  const groupedGames = games.reduce((acc, game) => {
-    const date = formatDate(game.date);
-    if (!acc[date]) acc[date] = [];
-    acc[date].push(game);
-    return acc;
-  }, {} as Record<string, SlateGame[]>);
+  // Group games by date with performance optimization
+  const groupedGames = useMemo(() => {
+    return games.reduce((acc, game) => {
+      const date = formatDate(game.date);
+      if (!acc[date]) acc[date] = [];
+      acc[date].push(game);
+      return acc;
+    }, {} as Record<string, SlateGame[]>);
+  }, [games]);
+
+  // Performance: Show first 3 dates initially, then load more
+  const [visibleDates, setVisibleDates] = useState(3);
+  const dateEntries = Object.entries(groupedGames);
+  const visibleDateEntries = dateEntries.slice(0, visibleDates);
+  const hasMoreDates = dateEntries.length > visibleDates;
+
+  const loadMoreDates = () => {
+    setVisibleDates(prev => Math.min(prev + 3, dateEntries.length));
+  };
 
   if (loading) {
     return (
@@ -208,37 +247,77 @@ export default function SlateTable({
   return (
     <div className="bg-white rounded-lg shadow overflow-hidden">
       <div className="px-6 py-4 border-b border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-        <p className="text-sm text-gray-600 mt-1">{games.length} games</p>
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+            <p className="text-sm text-gray-600 mt-1">{games.length} games</p>
+          </div>
+          <div className="flex items-center space-x-4">
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={showAdvancedColumns}
+                onChange={(e) => handleAdvancedToggle(e.target.checked)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="ml-2 text-sm text-gray-700">Show advanced columns</span>
+            </label>
+          </div>
+        </div>
       </div>
       
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50 sticky top-0 z-10">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[200px]">
                 Matchup
               </th>
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
                 Time / Score
               </th>
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
                 Spread
               </th>
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
                 Total
               </th>
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
                 Status
               </th>
+              {showAdvancedColumns && (
+                <>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
+                    Model Spread
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
+                    Model Total
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
+                    Pick (ATS)
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
+                    Pick (Total)
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
+                    Max Edge
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
+                    Confidence
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
+                    Action
+                  </th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {Object.entries(groupedGames).map(([date, dateGames]) => (
+            {visibleDateEntries.map(([date, dateGames]) => (
               <React.Fragment key={date}>
                 {showDateHeaders && (
                   <tr className="bg-gray-100">
-                    <td colSpan={5} className="px-6 py-3 text-sm font-medium text-gray-700">
+                    <td colSpan={showAdvancedColumns ? 12 : 5} className="px-6 py-3 text-sm font-medium text-gray-700">
                       {date}
                     </td>
                   </tr>
@@ -282,6 +361,49 @@ export default function SlateTable({
                     <td className="px-6 py-4 whitespace-nowrap text-center">
                       {getStatusBadge(game.status)}
                     </td>
+                    {showAdvancedColumns && (
+                      <>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">
+                            {game.modelSpread !== null && game.modelSpread !== undefined ? game.modelSpread.toFixed(1) : '—'}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">
+                            {game.modelTotal !== null && game.modelTotal !== undefined ? game.modelTotal.toFixed(1) : '—'}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">
+                            {game.pickSpread || '—'}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">
+                            {game.pickTotal || '—'}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">
+                            {game.maxEdge !== null && game.maxEdge !== undefined ? game.maxEdge.toFixed(1) : '—'}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">
+                            {game.confidence || '—'}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <Link 
+                            href={`/game/${game.gameId}`}
+                            className="text-blue-600 hover:text-blue-800 font-medium"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            View →
+                          </Link>
+                        </td>
+                      </>
+                    )}
                   </tr>
                 ))}
               </React.Fragment>
@@ -289,6 +411,17 @@ export default function SlateTable({
           </tbody>
         </table>
       </div>
+      
+      {hasMoreDates && (
+        <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+          <button
+            onClick={loadMoreDates}
+            className="w-full px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            Load more dates ({dateEntries.length - visibleDates} remaining)
+          </button>
+        </div>
+      )}
     </div>
   );
 }
