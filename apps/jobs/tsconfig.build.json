@@ -33,7 +33,8 @@
     "adapters/TeamResolver.ts",
     "adapters/GameLookup.ts",
     "config/*.ts",
-    "grade-bets.ts"
+    "grade-bets.ts",
+    "src/cfbd-game-results.ts"
   ],
   "exclude": [
     "**/*.test.ts",

@@ -1,0 +1,108 @@
+name: CFBD Scores Sync
+
+on:
+  # Run every 2 hours during game days (Friday-Sunday)
+  schedule:
+    - cron: '0 */2 * * 5-7'  # Every 2 hours on Friday, Saturday, Sunday
+  # Run nightly to catch any late score updates
+  schedule:
+    - cron: '0 2 * * *'  # 2:00 AM UTC (8:00 PM CST/CDT)
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year'
+        required: true
+        default: '2025'
+      weeks:
+        description: 'Weeks to sync (e.g., 1-8, current, 1..8)'
+        required: true
+        default: 'current'
+      force:
+        description: 'Force update all games (even if already final)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: cfbd-scores-sync-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sync-scores:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      TZ: America/Chicago
+      CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+      SEASON: ${{ github.event.inputs.season || '2025' }}
+      WEEKS: ${{ github.event.inputs.weeks || 'current' }}
+      FORCE: ${{ github.event.inputs.force || 'false' }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run prisma:generate
+
+      - name: Build jobs
+        run: npm run build:jobs
+
+      - name: Sync CFBD Game Results
+        if: ${{ env.CFBD_API_KEY != '' }}
+        run: |
+          echo "🏈 Syncing game results from CFBD..."
+          echo "Season: $SEASON"
+          echo "Weeks: $WEEKS"
+          echo "Force: $FORCE"
+          
+          # Build command
+          CMD="node apps/jobs/dist/src/cfbd-game-results.js --season $SEASON --weeks $WEEKS"
+          
+          # Add force flag if requested
+          if [ "$FORCE" = "true" ]; then
+            CMD="$CMD --force"
+          fi
+          
+          echo "Running: $CMD"
+          $CMD
+          
+          echo "✅ CFBD scores sync complete"
+
+      - name: Skip scores sync (no CFBD key)
+        if: ${{ env.CFBD_API_KEY == '' }}
+        run: |
+          echo "⚠️  CFBD_API_KEY not set; skipping scores sync"
+          echo "This workflow requires a valid CFBD API key to fetch game results"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "============================================"
+          echo "🏈 CFBD SCORES SYNC SUMMARY"
+          echo "============================================"
+          echo "Time (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')"
+          echo "Time (CST/CDT): $(TZ=America/Chicago date '+%Y-%m-%d %H:%M:%S %Z')"
+          echo "Season: $SEASON"
+          echo "Weeks: $WEEKS"
+          echo "Force: $FORCE"
+          echo "Status: ${{ job.status }}"
+          echo ""
+          echo "This workflow:"
+          echo "  🏈 Fetches final scores from CFBD API"
+          echo "  📊 Updates games with homeScore/awayScore"
+          echo "  ✅ Sets status='final' for completed games"
+          echo "  🔄 Runs every 2 hours on game days (Fri-Sun)"
+          echo "  🌙 Runs nightly to catch late updates"
+          echo "============================================"

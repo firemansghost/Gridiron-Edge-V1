@@ -1,0 +1,145 @@
+name: Backfill Scores 2025 W1-W8
+
+on:
+  # Allow manual trigger only
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year'
+        required: true
+        default: '2025'
+      weeks:
+        description: 'Weeks to backfill (e.g., 1-8, 1..8)'
+        required: true
+        default: '1-8'
+      force:
+        description: 'Force update all games (even if already final)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: backfill-scores-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backfill-scores:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      TZ: America/Chicago
+      CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+      SEASON: ${{ github.event.inputs.season || '2025' }}
+      WEEKS: ${{ github.event.inputs.weeks || '1-8' }}
+      FORCE: ${{ github.event.inputs.force || 'false' }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run prisma:generate
+
+      - name: Build jobs
+        run: npm run build:jobs
+
+      - name: Backfill CFBD Game Results
+        if: ${{ env.CFBD_API_KEY != '' }}
+        run: |
+          echo "🏈 Backfilling game results from CFBD..."
+          echo "Season: $SEASON"
+          echo "Weeks: $WEEKS"
+          echo "Force: $FORCE"
+          
+          # Build command
+          CMD="node apps/jobs/dist/src/cfbd-game-results.js --season $SEASON --weeks $WEEKS"
+          
+          # Add force flag if requested
+          if [ "$FORCE" = "true" ]; then
+            CMD="$CMD --force"
+          fi
+          
+          echo "Running: $CMD"
+          $CMD
+          
+          echo "✅ CFBD scores backfill complete"
+
+      - name: Skip backfill (no CFBD key)
+        if: ${{ env.CFBD_API_KEY == '' }}
+        run: |
+          echo "⚠️  CFBD_API_KEY not set; skipping scores backfill"
+          echo "This workflow requires a valid CFBD API key to fetch game results"
+
+      - name: Verify Results
+        if: ${{ env.CFBD_API_KEY != '' }}
+        run: |
+          echo "📊 Verifying backfill results..."
+          
+          # Check how many games now have final scores
+          node -e "
+            const { PrismaClient } = require('@prisma/client');
+            const prisma = new PrismaClient();
+            
+            async function checkResults() {
+              try {
+                const totalGames = await prisma.game.count({
+                  where: { season: parseInt(process.env.SEASON) }
+                });
+                
+                const finalGames = await prisma.game.count({
+                  where: { 
+                    season: parseInt(process.env.SEASON),
+                    status: 'final',
+                    homeScore: { not: null },
+                    awayScore: { not: null }
+                  }
+                });
+                
+                console.log(\`Total games in \${process.env.SEASON}: \${totalGames}\`);
+                console.log(\`Games with final scores: \${finalGames}\`);
+                console.log(\`Completion rate: \${((finalGames / totalGames) * 100).toFixed(1)}%\`);
+                
+                if (finalGames > 0) {
+                  console.log('✅ Backfill successful - games now have final scores');
+                } else {
+                  console.log('⚠️  No games with final scores found');
+                }
+              } catch (error) {
+                console.error('❌ Error checking results:', error);
+              } finally {
+                await prisma.\$disconnect();
+              }
+            }
+            
+            checkResults();
+          "
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "============================================"
+          echo "🏈 CFBD SCORES BACKFILL SUMMARY"
+          echo "============================================"
+          echo "Time (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')"
+          echo "Time (CST/CDT): $(TZ=America/Chicago date '+%Y-%m-%d %H:%M:%S %Z')"
+          echo "Season: $SEASON"
+          echo "Weeks: $WEEKS"
+          echo "Force: $FORCE"
+          echo "Status: ${{ job.status }}"
+          echo ""
+          echo "This backfill:"
+          echo "  🏈 Fetches final scores for past weeks"
+          echo "  📊 Updates games with homeScore/awayScore"
+          echo "  ✅ Sets status='final' for completed games"
+          echo "  🎯 Enables bet grading for historical data"
+          echo "============================================"

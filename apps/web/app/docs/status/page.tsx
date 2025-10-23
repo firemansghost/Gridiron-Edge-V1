@@ -100,6 +100,29 @@ export default async function StatusPage() {
       select: { updatedAt: true }
     });
 
+    // 7) Games graded this season
+    const totalGames = await prisma.game.count({
+      where: { season: currentSeason }
+    });
+    const gamesWithFinalScores = await prisma.game.count({
+      where: { 
+        season: currentSeason,
+        status: 'final',
+        homeScore: { not: null },
+        awayScore: { not: null }
+      }
+    });
+    const lastScoreUpdate = await prisma.game.findFirst({
+      where: { 
+        season: currentSeason,
+        status: 'final',
+        homeScore: { not: null },
+        awayScore: { not: null }
+      },
+      orderBy: { updatedAt: 'desc' },
+      select: { updatedAt: true }
+    });
+
     const oddsRowCount = Array.isArray(oddsCoverage) 
       ? oddsCoverage.reduce((sum: number, row: any) => sum + parseInt(row.rows), 0)
       : 0;
@@ -299,6 +322,42 @@ export default async function StatusPage() {
             </div>
           </section>
 
+          {/* Games Graded Status */}
+          <section>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-4">
+              🏈 Games Graded This Season
+            </h2>
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <h3 className="font-medium text-orange-900 mb-2">Total Games</h3>
+                  <p className="text-orange-800">
+                    <span className="font-mono font-bold">{totalGames.toLocaleString()}</span> games in {currentSeason}
+                  </p>
+                </div>
+                <div>
+                  <h3 className="font-medium text-orange-900 mb-2">With Final Scores</h3>
+                  <p className="text-orange-800">
+                    <span className="font-mono font-bold">{gamesWithFinalScores.toLocaleString()}</span> games graded
+                  </p>
+                </div>
+                <div>
+                  <h3 className="font-medium text-orange-900 mb-2">Last Score Update</h3>
+                  <p className="text-orange-800">
+                    {lastScoreUpdate?.updatedAt ? lastScoreUpdate.updatedAt.toLocaleString() : 'Never'}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 pt-4 border-t border-orange-200">
+                <p className="text-sm text-orange-700">
+                  Completion rate: <span className="font-mono font-bold">
+                    {totalGames > 0 ? ((gamesWithFinalScores / totalGames) * 100).toFixed(1) : '0.0'}%
+                  </span>
+                </p>
+              </div>
+            </div>
+          </section>
+
           {/* Bets Ledger Status */}
           <section>
             <h2 className="text-2xl font-semibold text-gray-900 mb-4">
@@ -351,11 +410,17 @@ export default async function StatusPage() {
               📋 Summary
             </h2>
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4 text-sm">
                 <div>
                   <h3 className="font-medium text-gray-900 mb-2">Current Data</h3>
                   <p className="text-gray-700">
                     Latest: {currentSeason} Week {currentWeek}
+                  </p>
+                </div>
+                <div>
+                  <h3 className="font-medium text-gray-900 mb-2">Games Graded</h3>
+                  <p className="text-gray-700">
+                    {gamesWithFinalScores.toLocaleString()}/{totalGames.toLocaleString()} ({totalGames > 0 ? ((gamesWithFinalScores / totalGames) * 100).toFixed(1) : '0.0'}%)
                   </p>
                 </div>
                 <div>

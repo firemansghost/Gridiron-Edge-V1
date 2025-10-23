@@ -26,6 +26,7 @@
     "manual:week9": "node scripts/manual-week9-odds.js",
     "build:jobs": "tsc -p apps/jobs/tsconfig.build.json && node scripts/copy-job-assets-simple.mjs",
     "grade:bets": "node apps/jobs/dist/grade-bets.js",
+    "scores:cfbd": "node apps/jobs/dist/src/cfbd-game-results.js",
     "verify:jobs": "node scripts/validate-team-aliases.mjs && node scripts/verify-job-assets.mjs",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "postinstall": "npm run prisma:generate"
