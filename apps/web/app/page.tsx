@@ -246,6 +246,9 @@ export default function HomePage() {
                       Kickoff (CT)
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Score
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Market Close
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -313,6 +316,17 @@ export default function HomePage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {game.kickoff}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {game.homeScore !== null && game.awayScore !== null ? (
+                          <div className="font-medium">
+                            <span className="text-blue-600">{game.awayScore}</span>
+                            <span className="mx-1 text-gray-400">@</span>
+                            <span className="text-red-600">{game.homeScore}</span>
+                          </div>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         <div className="flex items-center">
