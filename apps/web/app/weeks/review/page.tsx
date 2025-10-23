@@ -130,6 +130,30 @@ export default function WeekReviewPage() {
     }
   };
 
+  const handleSyncAndGrade = async () => {
+    setGrading(true);
+    try {
+      const response = await fetch('/api/review/grade-week', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ season, week }),
+      });
+      const result = await response.json();
+      
+      if (result.ok) {
+        const { updatedGames, graded, pushes, failed, filledClosePrices } = result;
+        alert(`Sync & Grade complete: ${updatedGames} games updated, ${graded} bets graded, ${pushes} pushes, ${failed} failed, ${filledClosePrices} close prices filled`);
+        fetchData(); // Refresh the data
+      } else {
+        alert(`Error: ${result.error}`);
+      }
+    } catch (err) {
+      alert(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setGrading(false);
+    }
+  };
+
   const exportCSV = () => {
     const params = new URLSearchParams({
       season: season.toString(),
@@ -260,6 +284,13 @@ export default function WeekReviewPage() {
                 {grading ? 'Grading...' : 'Run Grading'}
               </button>
             )}
+            <button 
+              onClick={handleSyncAndGrade}
+              disabled={grading}
+              className="bg-orange-600 text-white px-4 py-2 rounded hover:bg-orange-700 disabled:opacity-50"
+            >
+              {grading ? 'Syncing & Grading...' : 'Sync Results & Grade'}
+            </button>
           </div>
         </div>
 

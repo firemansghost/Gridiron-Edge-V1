@@ -152,11 +152,10 @@ async function main() {
     ...(args.season ? { season: args.season } : {}),
     ...(args.week ? { week: args.week } : {}),
     game: {
-      // Require final scores available
-      OR: [
-        { status: 'final' },
-        { AND: [{ homeScore: { not: null } }, { awayScore: { not: null } }] }
-      ]
+      // Only grade bets for games that are actually final
+      status: 'final',
+      homeScore: { not: null },
+      awayScore: { not: null }
     }
   };
 
