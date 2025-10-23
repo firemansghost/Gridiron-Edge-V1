@@ -61,4 +61,4 @@ jobs:
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
         run: |
           echo "Checking team_game_stats table..."
-          npx prisma db execute --stdin <<< "SELECT COUNT(*) as total_stats, COUNT(DISTINCT season) as seasons, COUNT(DISTINCT week) as weeks FROM team_game_stats WHERE season = 2025;"
+          npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "SELECT COUNT(*) as total_stats, COUNT(DISTINCT season) as seasons, COUNT(DISTINCT week) as weeks FROM team_game_stats WHERE season = 2025;"
