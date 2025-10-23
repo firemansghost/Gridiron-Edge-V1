@@ -1,0 +1,61 @@
+name: CFBD Team Stats Sync
+
+on:
+  schedule:
+    # Run nightly during season (Mon-Sun at 2 AM UTC)
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season to sync (e.g., 2025)'
+        required: true
+        default: '2025'
+        type: string
+      weeks:
+        description: 'Week range (e.g., 1-9, 9, 1..current)'
+        required: true
+        default: '1..current'
+        type: string
+
+jobs:
+  sync-team-stats:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Run CFBD Team Stats Sync
+        env:
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+          CFBD_BASE_URL: ${{ vars.CFBD_BASE_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            npm run stats:cfbd -- --season ${{ github.event.inputs.season }} --weeks ${{ github.event.inputs.weeks }}
+          else
+            # For scheduled runs, sync current week
+            CURRENT_WEEK=$(date +%V)
+            npm run stats:cfbd -- --season 2025 --weeks $CURRENT_WEEK
+          fi
+
+      - name: Verify stats were inserted
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          echo "Checking team_game_stats table..."
+          npx prisma db execute --stdin <<< "SELECT COUNT(*) as total_stats, COUNT(DISTINCT season) as seasons, COUNT(DISTINCT week) as weeks FROM team_game_stats WHERE season = 2025;"

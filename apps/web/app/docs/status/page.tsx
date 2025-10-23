@@ -123,6 +123,32 @@ export default async function StatusPage() {
       select: { updatedAt: true }
     });
 
+    // 8) Team Game Stats counts
+    const totalTeamGameStats = await prisma.teamGameStat.count({
+      where: { season: currentSeason }
+    });
+    const teamGameStatsThisWeek = await prisma.teamGameStat.count({
+      where: { 
+        season: currentSeason,
+        week: currentWeek
+      }
+    });
+    const lastTeamStatsUpdate = await prisma.teamGameStat.findFirst({
+      where: { season: currentSeason },
+      orderBy: { updatedAt: 'desc' },
+      select: { updatedAt: true }
+    });
+
+    // 9) Recruiting/Talent counts
+    const totalRecruitingRecords = await prisma.recruiting.count({
+      where: { season: currentSeason }
+    });
+    const lastRecruitingUpdate = await prisma.recruiting.findFirst({
+      where: { season: currentSeason },
+      orderBy: { updatedAt: 'desc' },
+      select: { updatedAt: true }
+    });
+
     const oddsRowCount = Array.isArray(oddsCoverage) 
       ? oddsCoverage.reduce((sum: number, row: any) => sum + parseInt(row.rows), 0)
       : 0;
@@ -404,13 +430,65 @@ export default async function StatusPage() {
             </div>
           </section>
 
+          {/* Team Game Stats Status */}
+          <section>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-4">
+              📊 Team Game Stats
+            </h2>
+            <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <h3 className="font-medium text-indigo-900 mb-2">Total Stats</h3>
+                  <p className="text-indigo-800">
+                    <span className="font-mono font-bold">{totalTeamGameStats.toLocaleString()}</span> team game stats in {currentSeason}
+                  </p>
+                </div>
+                <div>
+                  <h3 className="font-medium text-indigo-900 mb-2">This Week</h3>
+                  <p className="text-indigo-800">
+                    <span className="font-mono font-bold">{teamGameStatsThisWeek.toLocaleString()}</span> stats for Week {currentWeek}
+                  </p>
+                </div>
+                <div>
+                  <h3 className="font-medium text-indigo-900 mb-2">Last Update</h3>
+                  <p className="text-indigo-800">
+                    {lastTeamStatsUpdate?.updatedAt ? lastTeamStatsUpdate.updatedAt.toLocaleString() : 'Never'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Recruiting/Talent Status */}
+          <section>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-4">
+              🎯 Team Talent & Recruiting
+            </h2>
+            <div className="bg-teal-50 border border-teal-200 rounded-lg p-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <h3 className="font-medium text-teal-900 mb-2">Talent Records</h3>
+                  <p className="text-teal-800">
+                    <span className="font-mono font-bold">{totalRecruitingRecords.toLocaleString()}</span> team talent records in {currentSeason}
+                  </p>
+                </div>
+                <div>
+                  <h3 className="font-medium text-teal-900 mb-2">Last Update</h3>
+                  <p className="text-teal-800">
+                    {lastRecruitingUpdate?.updatedAt ? lastRecruitingUpdate.updatedAt.toLocaleString() : 'Never'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
           {/* Summary */}
           <section>
             <h2 className="text-2xl font-semibold text-gray-900 mb-4">
               📋 Summary
             </h2>
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4 text-sm">
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-4 text-sm">
                 <div>
                   <h3 className="font-medium text-gray-900 mb-2">Current Data</h3>
                   <p className="text-gray-700">
@@ -430,15 +508,21 @@ export default async function StatusPage() {
                   </p>
                 </div>
                 <div>
-                  <h3 className="font-medium text-gray-900 mb-2">Bets Ledger</h3>
+                  <h3 className="font-medium text-gray-900 mb-2">Team Stats</h3>
                   <p className="text-gray-700">
-                    {totalBets.toLocaleString()} bets, {gradedBets.toLocaleString()} graded
+                    {totalTeamGameStats.toLocaleString()} stats, {teamGameStatsThisWeek.toLocaleString()} this week
                   </p>
                 </div>
                 <div>
-                  <h3 className="font-medium text-gray-900 mb-2">Seed Data</h3>
+                  <h3 className="font-medium text-gray-900 mb-2">Talent Data</h3>
                   <p className="text-gray-700">
-                    2024 W1: {seedWeekCheck} games, {seedWeekMarketLines} lines
+                    {totalRecruitingRecords.toLocaleString()} talent records
+                  </p>
+                </div>
+                <div>
+                  <h3 className="font-medium text-gray-900 mb-2">Bets Ledger</h3>
+                  <p className="text-gray-700">
+                    {totalBets.toLocaleString()} bets, {gradedBets.toLocaleString()} graded
                   </p>
                 </div>
               </div>

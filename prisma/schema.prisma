@@ -74,46 +74,77 @@ model Game {
 }
 
 model TeamGameStat {
-  id             String   @id @default(cuid())
-  gameId         String   @map("game_id")
-  teamId         String   @map("team_id")
-  season         Int
-  week           Int
-  offensiveStats Json     @map("offensive_stats")
-  defensiveStats Json     @map("defensive_stats")
-  specialTeams   Json     @map("special_teams")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  id            String   @id @default(cuid())
+  gameId        String   @map("game_id")
+  teamId        String   @map("team_id")
+  season        Int
+  week          Int
+  opponentId    String?  @map("opponent_id")
+  isHome        Boolean? @map("is_home") @default(false)
+  
+  // Core features (nullable until data available)
+  playsOff      Int?     @map("plays_off")
+  yardsOff      Int?     @map("yards_off")
+  yppOff        Float?   @map("ypp_off")
+  successOff    Float?   @map("success_off")
+  epaOff        Float?   @map("epa_off")
+  pacePlaysGm   Float?   @map("pace_plays_gm") // plays per game proxy
+  
+  passYardsOff  Int?     @map("pass_yards_off")
+  rushYardsOff  Int?     @map("rush_yards_off")
+  passAttOff    Int?     @map("pass_att_off")
+  rushAttOff    Int?     @map("rush_att_off")
+  passYpaOff    Float?   @map("pass_ypa_off")
+  rushYpcOff    Float?   @map("rush_ypc_off")
+  
+  // Defense mirrors (nullable if unavailable)
+  playsDef      Int?     @map("plays_def")
+  yardsDef      Int?     @map("yards_def")
+  yppDef        Float?   @map("ypp_def")
+  successDef    Float?   @map("success_def")
+  epaDef        Float?   @map("epa_def")
+  passYardsDef  Int?     @map("pass_yards_def")
+  rushYardsDef  Int?     @map("rush_yards_def")
+  passAttDef    Int?     @map("pass_att_def")
+  rushAttDef    Int?     @map("rush_att_def")
+  passYpaDef    Float?   @map("pass_ypa_def")
+  rushYpcDef    Float?   @map("rush_ypc_def")
+  
+  rawJson       Json?    @map("raw_json")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   // Relations
   game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
-  @@unique([gameId, teamId])
-  @@index([teamId, season])
   @@index([gameId])
+  @@index([teamId, season])
+  @@index([season, week])
   @@map("team_game_stats")
 }
 
 model Recruiting {
-  id          String   @id @default(cuid())
-  teamId      String   @map("team_id")
-  season      Int
-  classRank   Int      @map("class_rank")
-  avgRating   Float    @map("avg_rating")
-  commitCount Int      @map("commit_count")
-  fiveStars   Int      @map("five_stars")
-  fourStars   Int      @map("four_stars")
-  threeStars  Int      @map("three_stars")
-  topPlayers  Json     @map("top_players")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id                 String   @id @default(cuid())
+  teamId             String   @map("team_id")
+  season             Int
+  teamTalentIndex    Float?   @map("team_talent_index") // CFBD "team talent" composite
+  fiveStar           Int?     @map("five_star")
+  fourStar           Int?     @map("four_star")
+  threeStar          Int?     @map("three_star")
+  commits            Int?
+  points             Float?
+  nationalRank       Int?     @map("national_rank")
+  conferenceRank     Int?     @map("conference_rank")
+  rawJson            Json?    @map("raw_json")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
 
   // Relations
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
-  @@index([teamId, season])
-  @@index([season, classRank])
+  @@unique([teamId, season])
+  @@index([season])
   @@map("recruiting")
 }
 

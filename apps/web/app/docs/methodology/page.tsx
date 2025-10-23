@@ -25,6 +25,44 @@ export default function MethodologyPage() {
 
         <section>
           <h2 className="text-2xl font-semibold text-gray-900 mb-4">
+            Inputs & Sources
+          </h2>
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Team Performance Metrics
+              </h3>
+              <p className="text-gray-700 mb-2">
+                Core statistical features derived from game-by-game team performance:
+              </p>
+              <ul className="list-disc pl-6 space-y-1 text-gray-700">
+                <li><strong>YPP (Yards Per Play):</strong> Total yards divided by total plays (offense/defense)</li>
+                <li><strong>Success Rate:</strong> Percentage of successful plays (when available from CFBD)</li>
+                <li><strong>EPA (Expected Points Added):</strong> Advanced efficiency metric (when available)</li>
+                <li><strong>Pace:</strong> Plays per game proxy for tempo analysis</li>
+                <li><strong>Pass/Rush Efficiency:</strong> Yards per attempt/carry for offensive and defensive units</li>
+              </ul>
+            </div>
+            
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Team Talent Composite
+              </h3>
+              <p className="text-gray-700 mb-2">
+                Talent assessment based on recruiting data and team composition:
+              </p>
+              <ul className="list-disc pl-6 space-y-1 text-gray-700">
+                <li><strong>Team Talent Index:</strong> CFBD composite score (0-100 scale)</li>
+                <li><strong>Recruiting Class Rankings:</strong> National and conference rankings</li>
+                <li><strong>Star Ratings:</strong> Counts of 5-star, 4-star, and 3-star recruits</li>
+                <li><strong>Commit Points:</strong> Recruiting class point totals</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h2 className="text-2xl font-semibold text-gray-900 mb-4">
             Data Sources
           </h2>
           <div className="space-y-4">
@@ -37,6 +75,8 @@ export default function MethodologyPage() {
                 <li>Team classifications (FBS filtering applied)</li>
                 <li>Conference and division information</li>
                 <li>Historical game data and statistics</li>
+                <li>Team game-by-game performance statistics</li>
+                <li>Team talent composite and recruiting data</li>
               </ul>
             </div>
             

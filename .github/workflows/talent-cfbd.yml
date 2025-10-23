@@ -1,0 +1,56 @@
+name: CFBD Team Talent Sync
+
+on:
+  schedule:
+    # Run yearly in February (recruiting season)
+    - cron: '0 2 1 2 *'
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season to sync (e.g., 2025)'
+        required: true
+        default: '2025'
+        type: string
+
+jobs:
+  sync-team-talent:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Run CFBD Team Talent Sync
+        env:
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+          CFBD_BASE_URL: ${{ vars.CFBD_BASE_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            npm run talent:cfbd -- --season ${{ github.event.inputs.season }}
+          else
+            # For scheduled runs, sync current year
+            CURRENT_YEAR=$(date +%Y)
+            npm run talent:cfbd -- --season $CURRENT_YEAR
+          fi
+
+      - name: Verify talent data was inserted
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          echo "Checking recruiting table..."
+          npx prisma db execute --stdin <<< "SELECT COUNT(*) as total_records, COUNT(DISTINCT season) as seasons FROM recruiting WHERE season = 2025;"
