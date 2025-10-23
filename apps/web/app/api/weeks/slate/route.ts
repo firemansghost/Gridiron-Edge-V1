@@ -37,6 +37,11 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
     const season = parseInt(url.searchParams.get('season') || '2025', 10);
     const week = parseInt(url.searchParams.get('week') || '9', 10);
+    
+    // Query parameters for performance optimization
+    const limitDates = parseInt(url.searchParams.get('limitDates') || '0', 10);
+    const afterDate = url.searchParams.get('afterDate');
+    const includeAdvanced = url.searchParams.get('includeAdvanced') === 'true';
 
     if (!season || !week) {
       return NextResponse.json(
@@ -45,11 +50,18 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log(`📅 Fetching slate for ${season} Week ${week}`);
+    console.log(`📅 Fetching slate for ${season} Week ${week}${limitDates > 0 ? ` (limitDates: ${limitDates})` : ''}${afterDate ? ` (afterDate: ${afterDate})` : ''}`);
+
+    // Build where clause with date filtering
+    const whereClause: any = { season, week };
+    
+    if (afterDate) {
+      whereClause.date = { gt: new Date(afterDate) };
+    }
 
     // Get games with team info
     const games = await prisma.game.findMany({
-      where: { season, week },
+      where: whereClause,
       include: {
         homeTeam: { select: { id: true, name: true } },
         awayTeam: { select: { id: true, name: true } }
@@ -57,12 +69,57 @@ export async function GET(request: NextRequest) {
       orderBy: { date: 'asc' }
     });
 
-    console.log(`   Found ${games.length} games for ${season} Week ${week}`);
+    // Apply date limiting if requested
+    let filteredGames = games;
+    if (limitDates > 0) {
+      const uniqueDates = Array.from(new Set(games.map(g => g.date.toISOString().split('T')[0])));
+      const limitedDates = uniqueDates.slice(0, limitDates);
+      filteredGames = games.filter(g => 
+        limitedDates.includes(g.date.toISOString().split('T')[0])
+      );
+    }
+
+    console.log(`   Found ${filteredGames.length} games for ${season} Week ${week}`);
+
+    // Batch fetch closing lines for all games to avoid N+1 queries
+    const gameIds = filteredGames.map(g => g.id);
+    const [spreadLines, totalLines] = await Promise.all([
+      prisma.marketLine.findMany({
+        where: {
+          gameId: { in: gameIds },
+          lineType: 'spread'
+        },
+        orderBy: { timestamp: 'desc' }
+      }),
+      prisma.marketLine.findMany({
+        where: {
+          gameId: { in: gameIds },
+          lineType: 'total'
+        },
+        orderBy: { timestamp: 'desc' }
+      })
+    ]);
+
+    // Create lookup maps for closing lines
+    const spreadMap = new Map<string, any>();
+    const totalMap = new Map<string, any>();
+    
+    spreadLines.forEach(line => {
+      if (!spreadMap.has(line.gameId)) {
+        spreadMap.set(line.gameId, line);
+      }
+    });
+    
+    totalLines.forEach(line => {
+      if (!totalMap.has(line.gameId)) {
+        totalMap.set(line.gameId, line);
+      }
+    });
 
     // Process each game
     const slateGames: SlateGame[] = [];
     
-    for (const game of games) {
+    for (const game of filteredGames) {
       // Determine status
       let status: 'final' | 'scheduled' | 'in_progress' = 'scheduled';
       if (game.status === 'final') {
@@ -71,11 +128,21 @@ export async function GET(request: NextRequest) {
         status = 'in_progress';
       }
 
-      // Get closing lines using the shared helper
-      const [closingSpread, closingTotal] = await Promise.all([
-        selectClosingLine(game.id, 'spread'),
-        selectClosingLine(game.id, 'total')
-      ]);
+      // Get closing lines from batch data
+      const spreadLine = spreadMap.get(game.id);
+      const totalLine = totalMap.get(game.id);
+      
+      const closingSpread = spreadLine ? {
+        value: Number(spreadLine.lineValue),
+        book: spreadLine.bookName,
+        timestamp: spreadLine.timestamp.toISOString()
+      } : null;
+      
+      const closingTotal = totalLine ? {
+        value: Number(totalLine.lineValue),
+        book: totalLine.bookName,
+        timestamp: totalLine.timestamp.toISOString()
+      } : null;
 
       // Format kickoff time (convert to local timezone)
       const kickoffDate = new Date(game.date);
@@ -99,7 +166,13 @@ export async function GET(request: NextRequest) {
 
     console.log(`   Processed ${slateGames.length} games with closing lines`);
 
-    return NextResponse.json(slateGames);
+    // Determine cache headers based on game status
+    const hasFinalGames = slateGames.some(g => g.status === 'final');
+    const cacheHeaders = hasFinalGames 
+      ? { 'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=1200' } // 10min cache for final games
+      : { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=120' }; // 1min cache for live games
+
+    return NextResponse.json(slateGames, { headers: cacheHeaders });
 
   } catch (error) {
     console.error('Slate API error:', error);

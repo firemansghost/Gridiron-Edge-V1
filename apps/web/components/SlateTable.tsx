@@ -422,6 +422,39 @@ export default function SlateTable({
           </button>
         </div>
       )}
+      
+      {/* View all columns link */}
+      <div className="px-6 py-3 border-t border-gray-200 bg-gray-50">
+        <div className="flex justify-between items-center">
+          <button
+            onClick={() => handleAdvancedToggle(!showAdvancedColumns)}
+            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+          >
+            {showAdvancedColumns ? 'Hide advanced columns' : 'View all columns'}
+          </button>
+          <div className="text-xs text-gray-500">
+            {showAdvancedColumns ? 'Showing model data, picks, and edge calculations' : 'Click to show model data, picks, and edge calculations'}
+          </div>
+        </div>
+      </div>
+      
+      {/* Legend */}
+      <div className="px-6 py-3 border-t border-gray-200 bg-gray-50">
+        <div className="text-xs text-gray-600 space-y-1">
+          <div className="font-medium text-gray-700 mb-2">Legend:</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <div>
+              <span className="font-medium">Tooltips:</span> Hover over spread/total values to see book name and timestamp
+            </div>
+            <div>
+              <span className="font-medium">Status badges:</span> 
+              <span className="ml-1 px-1.5 py-0.5 text-xs bg-green-100 text-green-800 rounded">FINAL</span> = Game complete, 
+              <span className="ml-1 px-1.5 py-0.5 text-xs bg-red-100 text-red-800 rounded">LIVE</span> = In progress, 
+              <span className="ml-1 px-1.5 py-0.5 text-xs bg-gray-100 text-gray-800 rounded">SCHEDULED</span> = Upcoming
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
