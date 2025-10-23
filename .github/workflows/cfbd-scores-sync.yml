@@ -3,7 +3,9 @@ name: CFBD Scores Sync
 on:
   # Run every 2 hours during game days (Friday-Sunday) and nightly
   schedule:
-    - cron: '0 */2 * * 5-7'  # Every 2 hours on Friday, Saturday, Sunday
+    - cron: '0 0,2,4,6,8,10,12,14,16,18,20,22 * * 5'  # Every 2 hours on Friday
+    - cron: '0 0,2,4,6,8,10,12,14,16,18,20,22 * * 6'  # Every 2 hours on Saturday  
+    - cron: '0 0,2,4,6,8,10,12,14,16,18,20,22 * * 0'  # Every 2 hours on Sunday
     - cron: '0 2 * * *'  # 2:00 AM UTC (8:00 PM CST/CDT) - nightly
   # Allow manual trigger
   workflow_dispatch:
