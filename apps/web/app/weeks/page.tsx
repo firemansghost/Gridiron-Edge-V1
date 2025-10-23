@@ -13,6 +13,7 @@ import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import { SkeletonTable } from '@/components/SkeletonRow';
 import { SyncScrollX } from '@/components/SyncScrollX';
+import SlateTable from '@/components/SlateTable';
 import { abbrevSource, formatSourceTooltip } from '@/lib/market-badges';
 import { MoneylineInfo, MarketMeta } from '@/types';
 
@@ -291,18 +292,12 @@ function WeeksPageContent() {
             </div>
 
             {/* Games Table */}
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Week {data?.week} Games ({data?.games?.length || 0} games)
-                </h2>
-              </div>
-              
-              <SyncScrollX>
-                <div className="max-h-[70vh] overflow-y-auto">
-                  <table className="min-w-[1200px] divide-y divide-gray-200">
-                    <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
-                    <tr>
+            <SlateTable 
+              season={season} 
+              week={week} 
+              title={`Week ${week} Games`}
+              showDateHeaders={true}
+            />
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Matchup
                       </th>
