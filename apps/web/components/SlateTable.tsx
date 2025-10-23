@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 
 interface SlateGame {
@@ -31,6 +31,10 @@ interface SlateGame {
   confidence?: string | null;
 }
 
+interface SearchResult extends SlateGame {
+  score: number;
+}
+
 interface SlateTableProps {
   season: number;
   week: number;
@@ -52,24 +56,364 @@ export default function SlateTable({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAdvancedColumns, setShowAdvancedColumns] = useState(showAdvanced);
+  const [compactMode, setCompactMode] = useState(false);
+  const [showFloatingButtons, setShowFloatingButtons] = useState(false);
+  const [activeDate, setActiveDate] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [selectedResultIndex, setSelectedResultIndex] = useState(0);
+  
+  // Refs for scroll synchronization
+  const topScrollRef = useRef<HTMLDivElement>(null);
+  const bodyScrollRef = useRef<HTMLDivElement>(null);
+  const dateHeaderRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchSlate();
   }, [season, week]);
 
-  // Load advanced columns preference from localStorage
+  // Handle URL hash for deep linking
   useEffect(() => {
-    const saved = localStorage.getItem('slateTable-showAdvanced');
-    if (saved !== null) {
-      setShowAdvancedColumns(JSON.parse(saved));
+    const handleHashChange = () => {
+      const hash = window.location.hash;
+      if (hash.startsWith('#date-')) {
+        const date = hash.replace('#date-', '');
+        const header = dateHeaderRefs.current.get(date);
+        if (header && bodyScrollRef.current) {
+          const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
+          bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
+        }
+      } else if (hash.startsWith('#game-')) {
+        const gameId = hash.replace('#game-', '');
+        const gameRow = document.getElementById(`game-${gameId}`);
+        if (gameRow && bodyScrollRef.current) {
+          const offset = gameRow.offsetTop - bodyScrollRef.current.offsetTop;
+          bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
+          
+          // Highlight the row briefly
+          gameRow.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2');
+          setTimeout(() => {
+            gameRow.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2');
+          }, 1500);
+        }
+      }
+    };
+
+    // Handle initial hash on mount
+    handleHashChange();
+    
+    // Listen for hash changes
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [games]);
+
+  // Load preferences from localStorage
+  useEffect(() => {
+    const savedAdvanced = localStorage.getItem('slateTable-showAdvanced');
+    if (savedAdvanced !== null) {
+      setShowAdvancedColumns(JSON.parse(savedAdvanced));
+    }
+    
+    const savedCompact = localStorage.getItem('slateTable-compactMode');
+    if (savedCompact !== null) {
+      setCompactMode(JSON.parse(savedCompact));
     }
   }, []);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Only handle shortcuts when the table container is focused or hovered
+      if (!bodyScrollRef.current?.matches(':hover') && !bodyScrollRef.current?.matches(':focus-within')) {
+        return;
+      }
+
+      // Check for reduced motion preference
+      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const behavior = prefersReducedMotion ? 'auto' : 'smooth';
+
+      switch (event.key.toLowerCase()) {
+        case 't':
+          event.preventDefault();
+          scrollToTop();
+          break;
+        case 'd':
+          event.preventDefault();
+          if (hasTodayGames()) {
+            scrollToToday();
+          }
+          break;
+        case 'j':
+          event.preventDefault();
+          navigateToDate('next');
+          break;
+        case 'k':
+          event.preventDefault();
+          navigateToDate('prev');
+          break;
+        case '/':
+          event.preventDefault();
+          // Focus search input if it exists (for S5g)
+          const searchInput = document.querySelector('[data-search-input]') as HTMLInputElement;
+          if (searchInput) {
+            searchInput.focus();
+          }
+          break;
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [activeDate]);
+
+  // Navigate to next/previous date
+  const navigateToDate = (direction: 'next' | 'prev') => {
+    const currentIndex = dateEntries.findIndex(([date]) => date === activeDate);
+    if (currentIndex === -1) return;
+
+    const newIndex = direction === 'next' 
+      ? Math.min(currentIndex + 1, dateEntries.length - 1)
+      : Math.max(currentIndex - 1, 0);
+
+    const [newDate] = dateEntries[newIndex];
+    const header = dateHeaderRefs.current.get(newDate);
+    if (header && bodyScrollRef.current) {
+      const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
+      bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
+    }
+  };
+
+  // Build in-memory game index
+  const buildGameIndex = useMemo(() => {
+    const index: Array<{
+      game: SlateGame;
+      searchTerms: string[];
+      awayName: string;
+      homeName: string;
+    }> = [];
+
+    games.forEach(game => {
+      const awayName = game.awayTeamId.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      const homeName = game.homeTeamId.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      
+      const searchTerms = [
+        game.awayTeamId,
+        game.homeTeamId,
+        awayName,
+        homeName,
+        awayName.toLowerCase(),
+        homeName.toLowerCase(),
+        // Add common nicknames
+        ...(game.awayTeamId.includes('alabama') ? ['bama', 'crimson tide'] : []),
+        ...(game.homeTeamId.includes('alabama') ? ['bama', 'crimson tide'] : []),
+        ...(game.awayTeamId.includes('michigan') ? ['wolverines'] : []),
+        ...(game.homeTeamId.includes('michigan') ? ['wolverines'] : []),
+        ...(game.awayTeamId.includes('ohio-state') ? ['buckeyes', 'ohio state'] : []),
+        ...(game.homeTeamId.includes('ohio-state') ? ['buckeyes', 'ohio state'] : []),
+      ];
+
+      index.push({
+        game,
+        searchTerms,
+        awayName,
+        homeName
+      });
+    });
+
+    return index;
+  }, [games]);
+
+  // Search games
+  const searchGames = (query: string) => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      setShowSearchResults(false);
+      return;
+    }
+
+    const normalizedQuery = query.toLowerCase().trim();
+    const results: SearchResult[] = [];
+
+    buildGameIndex.forEach(({ game, searchTerms, awayName, homeName }) => {
+      let score = 0;
+      
+      // Check for exact matches
+      if (searchTerms.some(term => term.toLowerCase() === normalizedQuery)) {
+        score += 100;
+      }
+      
+      // Check for substring matches
+      if (searchTerms.some(term => term.toLowerCase().includes(normalizedQuery))) {
+        score += 50;
+      }
+      
+      // Check for matchup format (team1 @ team2 or team1 vs team2)
+      if (normalizedQuery.includes('@') || normalizedQuery.includes('vs') || normalizedQuery.includes(' v ')) {
+        const parts = normalizedQuery.split(/[@vs]/).map(p => p.trim());
+        if (parts.length === 2) {
+          const [part1, part2] = parts;
+          if ((awayName.toLowerCase().includes(part1) && homeName.toLowerCase().includes(part2)) ||
+              (awayName.toLowerCase().includes(part2) && homeName.toLowerCase().includes(part1))) {
+            score += 200;
+          }
+        }
+      }
+      
+      if (score > 0) {
+        results.push({ ...game, score });
+      }
+    });
+
+    // Sort by score and limit to 8 results
+    const sortedResults = results
+      .sort((a, b) => (b as any).score - (a as any).score)
+      .slice(0, 8);
+
+    setSearchResults(sortedResults);
+    setShowSearchResults(true);
+    setSelectedResultIndex(0);
+  };
+
+  // Handle search input
+  const handleSearchInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const query = e.target.value;
+    setSearchQuery(query);
+    searchGames(query);
+  };
+
+  // Handle search result selection
+  const selectSearchResult = (game: SlateGame) => {
+    const gameRow = document.getElementById(`game-${game.gameId}`);
+    if (gameRow && bodyScrollRef.current) {
+      const offset = gameRow.offsetTop - bodyScrollRef.current.offsetTop;
+      bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
+      
+      // Highlight the row briefly
+      gameRow.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2');
+      setTimeout(() => {
+        gameRow.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2');
+      }, 1500);
+      
+      // Update URL hash
+      window.history.replaceState(null, '', `#game-${game.gameId}`);
+    }
+    
+    setShowSearchResults(false);
+    setSearchQuery('');
+  };
+
+  // Handle keyboard navigation in search results
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showSearchResults) return;
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setSelectedResultIndex(prev => Math.min(prev + 1, searchResults.length - 1));
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setSelectedResultIndex(prev => Math.max(prev - 1, 0));
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (searchResults[selectedResultIndex]) {
+          selectSearchResult(searchResults[selectedResultIndex]);
+        }
+        break;
+      case 'Escape':
+        e.preventDefault();
+        setShowSearchResults(false);
+        setSearchQuery('');
+        break;
+    }
+  };
 
   // Save advanced columns preference to localStorage
   const handleAdvancedToggle = (show: boolean) => {
     setShowAdvancedColumns(show);
     localStorage.setItem('slateTable-showAdvanced', JSON.stringify(show));
     onAdvancedToggle?.(show);
+  };
+
+  // Save compact mode preference to localStorage
+  const handleCompactToggle = (compact: boolean) => {
+    setCompactMode(compact);
+    localStorage.setItem('slateTable-compactMode', JSON.stringify(compact));
+  };
+
+  // Scroll synchronization between top and body scrollbars
+  const handleTopScroll = () => {
+    if (topScrollRef.current && bodyScrollRef.current) {
+      if (topScrollRef.current.scrollLeft !== bodyScrollRef.current.scrollLeft) {
+        bodyScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+      }
+    }
+  };
+
+  const handleBodyScroll = () => {
+    if (topScrollRef.current && bodyScrollRef.current) {
+      if (bodyScrollRef.current.scrollLeft !== topScrollRef.current.scrollLeft) {
+        topScrollRef.current.scrollLeft = bodyScrollRef.current.scrollLeft;
+      }
+    }
+    
+    // Show floating buttons after scrolling 200px
+    if (bodyScrollRef.current) {
+      setShowFloatingButtons(bodyScrollRef.current.scrollTop > 200);
+    }
+    
+    // Update active date based on scroll position
+    updateActiveDate();
+  };
+
+  // Update active date based on scroll position
+  const updateActiveDate = () => {
+    if (!bodyScrollRef.current) return;
+    
+    const scrollTop = bodyScrollRef.current.scrollTop;
+    const headerHeight = 48; // Approximate header height
+    
+    // Find the date header that's currently visible
+    for (const [date, header] of Array.from(dateHeaderRefs.current.entries())) {
+      if (header) {
+        const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
+        if (offset <= scrollTop + headerHeight) {
+          setActiveDate(date);
+        }
+      }
+    }
+  };
+
+  // Get today's date in local timezone
+  const getTodayDate = () => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  };
+
+  // Check if today has games
+  const hasTodayGames = () => {
+    const today = getTodayDate();
+    return dateEntries.some(([date]) => date === today);
+  };
+
+  // Scroll to today's games
+  const scrollToToday = () => {
+    const today = getTodayDate();
+    const header = dateHeaderRefs.current.get(today);
+    if (header && bodyScrollRef.current) {
+      const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
+      bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
+    }
+  };
+
+  // Scroll to top
+  const scrollToTop = () => {
+    if (bodyScrollRef.current) {
+      bodyScrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   const fetchSlate = async () => {
@@ -262,13 +606,163 @@ export default function SlateTable({
               />
               <span className="ml-2 text-sm text-gray-700">Show advanced columns</span>
             </label>
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={compactMode}
+                onChange={(e) => handleCompactToggle(e.target.checked)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="ml-2 text-sm text-gray-700">Compact rows</span>
+            </label>
           </div>
         </div>
       </div>
       
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50 sticky top-0 z-10">
+      {/* Search bar */}
+      <div className="px-6 py-3 border-b border-gray-200 bg-gray-50">
+        <div className="relative">
+          <div className="flex items-center space-x-2">
+            <div className="flex-1 relative">
+              <input
+                ref={searchInputRef}
+                data-search-input
+                type="text"
+                value={searchQuery}
+                onChange={handleSearchInput}
+                onKeyDown={handleSearchKeyDown}
+                placeholder="Jump to game… (type a team)"
+                className="w-full px-4 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                role="combobox"
+                aria-expanded={showSearchResults}
+                aria-controls="search-results"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setShowSearchResults(false);
+                  }}
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+            <div className="text-xs text-gray-500">
+              Press <kbd className="px-1 py-0.5 bg-gray-200 rounded text-xs">/</kbd> to focus
+            </div>
+          </div>
+          
+          {/* Search results dropdown */}
+          {showSearchResults && (
+            <div
+              id="search-results"
+              className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-64 overflow-y-auto"
+              role="listbox"
+            >
+              {searchResults.length > 0 ? (
+                searchResults.map((game, index) => {
+                  const awayName = game.awayTeamId.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                  const homeName = game.homeTeamId.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                  
+                  return (
+                    <button
+                      key={game.gameId}
+                      onClick={() => selectSearchResult(game)}
+                      className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 focus:outline-none focus:bg-gray-50 ${
+                        index === selectedResultIndex ? 'bg-blue-50' : ''
+                      }`}
+                      role="option"
+                      aria-selected={index === selectedResultIndex}
+                    >
+                      <div className="font-medium">{awayName} @ {homeName}</div>
+                      <div className="text-xs text-gray-500">
+                        {new Date(game.date).toLocaleDateString('en-US', { 
+                          weekday: 'short', 
+                          month: 'short', 
+                          day: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit'
+                        })}
+                      </div>
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="px-4 py-2 text-sm text-gray-500" role="option" aria-disabled="true">
+                  No games found
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      
+      {/* Top horizontal scrollbar */}
+      <div 
+        ref={topScrollRef}
+        onScroll={handleTopScroll}
+        className="sticky top-0 z-20 overflow-x-auto bg-gray-50 border-b border-gray-200"
+        style={{ height: '17px' }}
+      >
+        <div 
+          className="h-full"
+          style={{ 
+            width: showAdvancedColumns ? '1400px' : '1100px',
+            minWidth: showAdvancedColumns ? '1400px' : '1100px'
+          }}
+        />
+      </div>
+      
+      {/* Mini day-nav with active highlighting */}
+      {dateEntries.length > 1 && (
+        <div className="sticky top-[17px] z-19 bg-gray-50 border-b border-gray-200 px-4 py-2">
+          <div className="flex space-x-2 overflow-x-auto">
+            {dateEntries.map(([date, _]) => {
+              const isActive = activeDate === date;
+              const isToday = date === getTodayDate();
+              return (
+                <button
+                  key={date}
+                  onClick={() => {
+                    const header = dateHeaderRefs.current.get(date);
+                    if (header && bodyScrollRef.current) {
+                      const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
+                      bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
+                      
+                      // Update URL hash
+                      window.history.replaceState(null, '', `#date-${date}`);
+                    }
+                  }}
+                  className={`px-3 py-1 text-xs font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 whitespace-nowrap transition-colors ${
+                    isActive 
+                      ? 'bg-blue-600 text-white' 
+                      : isToday 
+                        ? 'bg-yellow-100 text-yellow-800 border border-yellow-300 hover:bg-yellow-200'
+                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  {new Date(date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                  {isToday && ' (Today)'}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      
+      {/* Fixed-height scroll container */}
+      <div 
+        ref={bodyScrollRef}
+        onScroll={handleBodyScroll}
+        className="overflow-auto"
+        style={{ height: '70vh', maxHeight: '70vh' }}
+      >
+        <table className="min-w-full divide-y divide-gray-200" style={{ minWidth: showAdvancedColumns ? '1400px' : '1100px' }}>
+          <thead className="bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/70 sticky top-0 z-10 border-b">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[200px]">
                 Matchup
@@ -316,7 +810,14 @@ export default function SlateTable({
             {visibleDateEntries.map(([date, dateGames]) => (
               <React.Fragment key={date}>
                 {showDateHeaders && (
-                  <tr className="bg-gray-100">
+                  <tr 
+                    ref={(el) => {
+                      if (el) {
+                        dateHeaderRefs.current.set(date, el);
+                      }
+                    }}
+                    className="bg-white/90 sticky top-[var(--header-height,48px)] z-9 border-b"
+                  >
                     <td colSpan={showAdvancedColumns ? 12 : 5} className="px-6 py-3 text-sm font-medium text-gray-700">
                       {date}
                     </td>
@@ -325,10 +826,11 @@ export default function SlateTable({
                 {dateGames.map((game) => (
                   <tr 
                     key={game.gameId} 
+                    id={`game-${game.gameId}`}
                     className="hover:bg-gray-50 cursor-pointer"
                     onClick={() => window.location.href = `/game/${game.gameId}`}
                   >
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className={`px-6 whitespace-nowrap ${compactMode ? 'py-1' : 'py-4'}`}>
                       <div className="text-sm font-medium text-gray-900">
                         <Link href={`/team/${game.awayTeamId}`} className="hover:text-blue-600 transition-colors">
                           {game.awayTeamId.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
@@ -339,10 +841,10 @@ export default function SlateTable({
                         </Link>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className={`px-6 whitespace-nowrap ${compactMode ? 'py-1' : 'py-4'}`}>
                       {getScoreDisplay(game)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
                       <div 
                         className="text-sm font-medium text-gray-900 cursor-help"
                         title={formatTooltip(game.closingSpread)}
@@ -350,7 +852,7 @@ export default function SlateTable({
                         {formatSpread(game.closingSpread)}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
                       <div 
                         className="text-sm font-medium text-gray-900 cursor-help"
                         title={formatTooltip(game.closingTotal)}
@@ -358,42 +860,42 @@ export default function SlateTable({
                         {formatTotal(game.closingTotal)}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
                       {getStatusBadge(game.status)}
                     </td>
                     {showAdvancedColumns && (
                       <>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
                           <div className="text-sm text-gray-900">
                             {game.modelSpread !== null && game.modelSpread !== undefined ? game.modelSpread.toFixed(1) : '—'}
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
                           <div className="text-sm text-gray-900">
                             {game.modelTotal !== null && game.modelTotal !== undefined ? game.modelTotal.toFixed(1) : '—'}
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
                           <div className="text-sm text-gray-900">
                             {game.pickSpread || '—'}
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
                           <div className="text-sm text-gray-900">
                             {game.pickTotal || '—'}
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
                           <div className="text-sm text-gray-900">
                             {game.maxEdge !== null && game.maxEdge !== undefined ? game.maxEdge.toFixed(1) : '—'}
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
                           <div className="text-sm text-gray-900">
                             {game.confidence || '—'}
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
                           <Link 
                             href={`/game/${game.gameId}`}
                             className="text-blue-600 hover:text-blue-800 font-medium"
@@ -410,6 +912,34 @@ export default function SlateTable({
             ))}
           </tbody>
         </table>
+        
+        {/* Floating action buttons */}
+        {showFloatingButtons && (
+          <div className="absolute bottom-4 right-4 flex flex-col space-y-2 z-30">
+            <button
+              onClick={scrollToTop}
+              aria-label="Back to top"
+              title="Back to top"
+              className="p-3 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+              </svg>
+            </button>
+            {hasTodayGames() && (
+              <button
+                onClick={scrollToToday}
+                aria-label="Scroll to today"
+                title="Scroll to today"
+                className="p-3 bg-green-600 text-white rounded-full shadow-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </button>
+            )}
+          </div>
+        )}
       </div>
       
       {hasMoreDates && (
