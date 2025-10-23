@@ -111,7 +111,7 @@ async function fetchTeamTalent(season: number): Promise<CFBDTeamTalent[]> {
       throw new Error(`CFBD API error: ${response.status} ${response.statusText}`);
     }
 
-    const data: CFBDTeamTalent[] = await response.json();
+    const data = await response.json() as CFBDTeamTalent[];
     console.log(`   [CFBD] Fetched ${data.length} team talent records for ${season}`);
     
     return data;

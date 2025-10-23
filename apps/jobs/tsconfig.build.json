@@ -34,7 +34,9 @@
     "adapters/GameLookup.ts",
     "config/*.ts",
     "grade-bets.ts",
-    "src/cfbd-game-results.ts"
+    "src/cfbd-game-results.ts",
+    "src/stats/cfbd_team_stats.ts",
+    "src/stats/cfbd_talent.ts"
   ],
   "exclude": [
     "**/*.test.ts",
