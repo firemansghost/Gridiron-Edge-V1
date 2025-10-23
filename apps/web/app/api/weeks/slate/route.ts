@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { selectClosingLine } from '@/lib/closing-line-helpers';
 
 interface SlateGame {
   gameId: string;
@@ -30,49 +31,6 @@ interface SlateGame {
   } | null;
 }
 
-async function getClosingLine(gameId: string, lineType: 'spread' | 'total'): Promise<{
-  value: number;
-  book: string;
-  timestamp: string;
-} | null> {
-  try {
-    // Get the latest market line before kickoff for this game
-    const game = await prisma.game.findUnique({
-      where: { id: gameId },
-      select: { date: true }
-    });
-
-    if (!game?.date) return null;
-
-    const kickoff = new Date(game.date);
-    
-    // Find the latest line before kickoff
-    const latestLine = await prisma.marketLine.findFirst({
-      where: {
-        gameId,
-        lineType,
-        timestamp: { lt: kickoff }
-      },
-      orderBy: { timestamp: 'desc' },
-      select: {
-        lineValue: true,
-        bookName: true,
-        timestamp: true
-      }
-    });
-
-    if (!latestLine) return null;
-
-    return {
-      value: Number(latestLine.lineValue),
-      book: latestLine.bookName,
-      timestamp: latestLine.timestamp.toISOString()
-    };
-  } catch (error) {
-    console.error(`Error getting closing ${lineType} for game ${gameId}:`, error);
-    return null;
-  }
-}
 
 export async function GET(request: NextRequest) {
   try {
@@ -113,10 +71,10 @@ export async function GET(request: NextRequest) {
         status = 'in_progress';
       }
 
-      // Get closing lines
+      // Get closing lines using the shared helper
       const [closingSpread, closingTotal] = await Promise.all([
-        getClosingLine(game.id, 'spread'),
-        getClosingLine(game.id, 'total')
+        selectClosingLine(game.id, 'spread'),
+        selectClosingLine(game.id, 'total')
       ]);
 
       // Format kickoff time (convert to local timezone)

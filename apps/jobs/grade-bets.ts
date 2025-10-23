@@ -44,7 +44,9 @@ async function findCloseLineAtCutoff(
   marketType: BetType,
   cutoff: Date
 ): Promise<number | null> {
-  const line = await prisma.marketLine.findFirst({
+  // Use the same logic as the web app helper for consistency
+  // First try to find line at or before kickoff
+  const preKickoffLine = await prisma.marketLine.findFirst({
     where: {
       gameId,
       lineType: marketType === 'moneyline' ? 'moneyline' : marketType,
@@ -52,7 +54,21 @@ async function findCloseLineAtCutoff(
     },
     orderBy: { timestamp: 'desc' }
   });
-  return line ? Number(line.lineValue) : null;
+
+  if (preKickoffLine) {
+    return Number(preKickoffLine.lineValue);
+  }
+
+  // Fallback: get the latest line regardless of time
+  const latestLine = await prisma.marketLine.findFirst({
+    where: {
+      gameId,
+      lineType: marketType === 'moneyline' ? 'moneyline' : marketType
+    },
+    orderBy: { timestamp: 'desc' }
+  });
+
+  return latestLine ? Number(latestLine.lineValue) : null;
 }
 
 type GradeCounts = {
