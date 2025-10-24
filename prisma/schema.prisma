@@ -1,40 +1,31 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider  = "postgresql"
-  url       = env("DATABASE_URL") // pooled (pgBouncer) for runtime
-  directUrl = env("DIRECT_URL") // direct for migrations
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
-// =============================================================================
-// Core Tables
-// =============================================================================
-
 model Team {
-  id             String   @id
+  id             String         @id
   name           String
   conference     String
   division       String?
-  logoUrl        String?  @map("logo_url")
-  primaryColor   String?  @map("primary_color")
-  secondaryColor String?  @map("secondary_color")
+  logoUrl        String?        @map("logo_url")
+  primaryColor   String?        @map("primary_color")
+  secondaryColor String?        @map("secondary_color")
   mascot         String?
   city           String?
   state          String?
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  homeGames     Game[]         @relation("HomeTeam")
-  awayGames     Game[]         @relation("AwayTeam")
-  teamGameStats TeamGameStat[]
-  recruiting    Recruiting[]
-  powerRatings  PowerRating[]
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+  awayGames      Game[]         @relation("AwayTeam")
+  homeGames      Game[]         @relation("HomeTeam")
+  powerRatings   PowerRating[]
+  recruiting     Recruiting[]
+  teamGameStats  TeamGameStat[]
 
   @@index([conference, division])
   @@index([name])
@@ -42,29 +33,27 @@ model Team {
 }
 
 model Game {
-  id             String     @id
-  homeTeamId     String     @map("home_team_id")
-  awayTeamId     String     @map("away_team_id")
+  id             String          @id
+  homeTeamId     String          @map("home_team_id")
+  awayTeamId     String          @map("away_team_id")
   season         Int
   week           Int
   date           DateTime
   status         GameStatus
-  homeScore      Int?       @map("home_score")
-  awayScore      Int?       @map("away_score")
+  homeScore      Int?            @map("home_score")
+  awayScore      Int?            @map("away_score")
   venue          String
   city           String
-  neutralSite    Boolean    @default(false) @map("neutral_site")
-  conferenceGame Boolean    @default(false) @map("conference_game")
-  createdAt      DateTime   @default(now()) @map("created_at")
-  updatedAt      DateTime   @updatedAt @map("updated_at")
-
-  // Relations
-  homeTeam       Team            @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  neutralSite    Boolean         @default(false) @map("neutral_site")
+  conferenceGame Boolean         @default(false) @map("conference_game")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+  bets           Bet[]
   awayTeam       Team            @relation("AwayTeam", fields: [awayTeamId], references: [id])
-  teamGameStats  TeamGameStat[]
+  homeTeam       Team            @relation("HomeTeam", fields: [homeTeamId], references: [id])
   marketLines    MarketLine[]
   matchupOutputs MatchupOutput[]
-  bets           Bet[]
+  teamGameStats  TeamGameStat[]
 
   @@index([season, week])
   @@index([homeTeamId, season])
@@ -74,77 +63,69 @@ model Game {
 }
 
 model TeamGameStat {
-  id            String   @id @default(cuid())
-  gameId        String   @map("game_id")
-  teamId        String   @map("team_id")
-  season        Int
-  week          Int
-  opponentId    String?  @map("opponent_id")
-  isHome        Boolean? @map("is_home") @default(false)
-  
-  // Core features (nullable until data available)
-  playsOff      Int?     @map("plays_off")
-  yardsOff      Int?     @map("yards_off")
-  yppOff        Float?   @map("ypp_off")
-  successOff    Float?   @map("success_off")
-  epaOff        Float?   @map("epa_off")
-  pacePlaysGm   Float?   @map("pace_plays_gm") // plays per game proxy
-  
-  passYardsOff  Int?     @map("pass_yards_off")
-  rushYardsOff  Int?     @map("rush_yards_off")
-  passAttOff    Int?     @map("pass_att_off")
-  rushAttOff    Int?     @map("rush_att_off")
-  passYpaOff    Float?   @map("pass_ypa_off")
-  rushYpcOff    Float?   @map("rush_ypc_off")
-  
-  // Defense mirrors (nullable if unavailable)
-  playsDef      Int?     @map("plays_def")
-  yardsDef      Int?     @map("yards_def")
-  yppDef        Float?   @map("ypp_def")
-  successDef    Float?   @map("success_def")
-  epaDef        Float?   @map("epa_def")
-  passYardsDef  Int?     @map("pass_yards_def")
-  rushYardsDef  Int?     @map("rush_yards_def")
-  passAttDef    Int?     @map("pass_att_def")
-  rushAttDef    Int?     @map("rush_att_def")
-  passYpaDef    Float?   @map("pass_ypa_def")
-  rushYpcDef    Float?   @map("rush_ypc_def")
-  
-  rawJson       Json?    @map("raw_json")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  id              String   @id @default(cuid())
+  gameId          String   @map("game_id")
+  teamId          String   @map("team_id")
+  season          Int
+  week            Int
+  offensive_stats Json
+  defensive_stats Json
+  special_teams   Json
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  yppOff          Float?   @map("ypp_off")
+  successOff      Float?   @map("success_off")
+  epaOff          Float?   @map("epa_off")
+  pace            Float?
+  passYpaOff      Float?   @map("pass_ypa_off")
+  rushYpcOff      Float?   @map("rush_ypc_off")
+  yppDef          Float?   @map("ypp_def")
+  successDef      Float?   @map("success_def")
+  epaDef          Float?   @map("epa_def")
+  passYpaDef      Float?   @map("pass_ypa_def")
+  rushYpcDef      Float?   @map("rush_ypc_def")
+  rawJson         Json?    @map("raw_json")
+  game            Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  team            Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
-  // Relations
-  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
-
+  @@unique([gameId, teamId])
+  @@unique([gameId, teamId], map: "team_game_stats_game_team_unique")
   @@index([gameId])
   @@index([teamId, season])
   @@index([season, week])
+  @@index([gameId], map: "idx_tgs_game")
+  @@index([season, week], map: "idx_tgs_season_week")
+  @@index([teamId, season], map: "idx_tgs_team_season")
+  @@index([teamId, season], map: "team_game_stats_team_season_idx")
   @@map("team_game_stats")
 }
 
 model Recruiting {
-  id                 String   @id @default(cuid())
-  teamId             String   @map("team_id")
-  season             Int
-  teamTalentIndex    Float?   @map("team_talent_index") // CFBD "team talent" composite
-  fiveStar           Int?     @map("five_star")
-  fourStar           Int?     @map("four_star")
-  threeStar          Int?     @map("three_star")
-  commits            Int?
-  points             Float?
-  nationalRank       Int?     @map("national_rank")
-  conferenceRank     Int?     @map("conference_rank")
-  rawJson            Json?    @map("raw_json")
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
+  id              String   @id @default(cuid())
+  teamId          String   @map("team_id")
+  season          Int
+  class_rank      Int
+  avg_rating      Float
+  commit_count    Int
+  five_stars      Int
+  four_stars      Int
+  three_stars     Int
+  top_players     Json
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  teamTalentIndex Float?   @map("team_talent_index")
+  fiveStar        Int?     @default(0) @map("five_star")
+  fourStar        Int?     @default(0) @map("four_star")
+  threeStar       Int?     @default(0) @map("three_star")
+  team            Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
-  // Relations
-  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
-
-  @@unique([teamId, season])
+  @@unique([teamId, season], map: "recruiting_team_season_unique")
+  @@unique([teamId, season], map: "uniq_recruiting_team_season")
   @@index([season])
+  @@index([season], map: "idx_recruiting_season")
+  @@index([season, class_rank])
+  @@index([teamId, season])
+  @@index([teamId], map: "recruiting_team_idx")
   @@map("recruiting")
 }
 
@@ -161,11 +142,9 @@ model MarketLine {
   bookName    String   @map("book_name")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
+  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
 
-  // Relations
-  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
-
-  @@unique([gameId, lineType, bookName, timestamp])
+  @@unique([gameId, lineType, bookName, timestamp], map: "market_lines_game_line_book_timestamp_unique")
   @@index([gameId, lineType])
   @@index([timestamp])
   @@index([season, week])
@@ -183,12 +162,9 @@ model PowerRating {
   confidence   Float
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
+  team         Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
-  // Relations
-  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
-
-  @@unique([teamId, season, week, modelVersion]) // <-- needed for upsert
-  // Indexes & constraints
+  @@unique([teamId, season, week, modelVersion], map: "power_ratings_teamId_season_week_modelVersion_key")
   @@index([teamId, season])
   @@index([season, week])
   @@index([modelVersion])
@@ -209,11 +185,9 @@ model MatchupOutput {
   modelVersion   String         @map("model_version")
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")
+  game           Game           @relation(fields: [gameId], references: [id], onDelete: Cascade)
 
-  // Relations
-  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
-
-  @@unique([gameId, modelVersion])
+  @@unique([gameId, modelVersion], map: "matchup_outputs_gameId_modelVersion_key")
   @@index([gameId])
   @@index([season, week])
   @@index([edgeConfidence])
@@ -222,26 +196,24 @@ model MatchupOutput {
 }
 
 model Bet {
-  id           String     @id @default(cuid())
-  createdAt    DateTime   @default(now()) @map("created_at")
-  season       Int
-  week         Int
-  gameId       String     @map("game_id")
-  marketType   BetType    @map("market_type")
-  side         BetSide
-  modelPrice   Decimal    @map("model_price")
-  closePrice   Decimal?   @map("close_price")
-  stake        Decimal
-  result       BetResult?
-  pnl          Decimal?
-  clv          Decimal?
-  strategyTag  String     @map("strategy_tag")
-  source       BetSource
-  notes        String?
-  updatedAt    DateTime   @updatedAt @map("updated_at")
-
-  // Relations
-  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  id          String     @id @default(cuid())
+  createdAt   DateTime   @default(now()) @map("created_at")
+  season      Int
+  week        Int
+  gameId      String     @map("game_id")
+  marketType  BetType    @map("market_type")
+  side        BetSide
+  modelPrice  Decimal    @map("model_price")
+  closePrice  Decimal?   @map("close_price")
+  stake       Decimal
+  result      BetResult?
+  pnl         Decimal?
+  clv         Decimal?
+  strategyTag String     @map("strategy_tag")
+  source      BetSource
+  notes       String?
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+  game        Game       @relation(fields: [gameId], references: [id], onDelete: Cascade)
 
   @@index([season, week])
   @@index([strategyTag])
@@ -250,15 +222,13 @@ model Bet {
 }
 
 model Ruleset {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  parameters  Json
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  // Relations
+  id           String        @id @default(cuid())
+  name         String
+  description  String?
+  parameters   Json
+  active       Boolean       @default(true)
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
   strategyRuns StrategyRun[]
 
   @@index([active])
@@ -277,20 +247,13 @@ model StrategyRun {
   clv       Float
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  ruleset Ruleset @relation(fields: [rulesetId], references: [id], onDelete: Cascade)
+  ruleset   Ruleset  @relation(fields: [rulesetId], references: [id], onDelete: Cascade)
 
   @@index([rulesetId])
   @@index([startDate])
   @@index([roi(sort: Desc)])
   @@map("strategy_runs")
 }
-
-
-// =============================================================================
-// Enums
-// =============================================================================
 
 enum GameStatus {
   scheduled

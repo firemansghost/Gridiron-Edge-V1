@@ -11,8 +11,10 @@
 import { PrismaClient } from '@prisma/client';
 import * as fs from 'fs';
 import * as path from 'path';
+import { TeamResolver } from '../../adapters/TeamResolver';
 
 const prisma = new PrismaClient();
+const teamResolver = new TeamResolver();
 
 interface CFBDTeamTalent {
   team: string;
@@ -63,16 +65,6 @@ function parseArgs(): { season: number } {
   return { season };
 }
 
-/**
- * Normalize team name to team ID
- */
-function normalizeTeamId(teamName: string): string {
-  return teamName
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
 
 /**
  * Fetch team talent from CFBD API
@@ -150,11 +142,11 @@ async function fetchTeamTalent(season: number): Promise<CFBDTeamTalent[]> {
  * Map CFBD team talent to our database format
  */
 function mapCFBDTalentToRecruiting(cfbdTalent: CFBDTeamTalent): RecruitingData | null {
-  // Normalize team ID
-  const teamId = normalizeTeamId(cfbdTalent.team);
+  // Use TeamResolver to resolve team name to team ID
+  const teamId = teamResolver.resolveTeam(cfbdTalent.team, 'college-football');
 
   if (!teamId) {
-    console.warn(`   [CFBD] Invalid team ID: team="${teamId}" for ${cfbdTalent.team}`);
+    console.warn(`   [CFBD] Could not resolve team: "${cfbdTalent.team}"`);
     return null;
   }
 
@@ -165,10 +157,7 @@ function mapCFBDTalentToRecruiting(cfbdTalent: CFBDTeamTalent): RecruitingData |
     fiveStar: cfbdTalent.recruiting?.fiveStars || null,
     fourStar: cfbdTalent.recruiting?.fourStars || null,
     threeStar: cfbdTalent.recruiting?.threeStars || null,
-    commits: cfbdTalent.recruiting?.commits || null,
-    points: cfbdTalent.recruiting?.points || null,
-    nationalRank: cfbdTalent.recruiting?.rank || null,
-    conferenceRank: null, // CFBD doesn't provide conference rank in talent endpoint
+    // Note: points, nationalRank, conferenceRank fields don't exist in current schema
     rawJson: cfbdTalent
   };
 }
@@ -194,24 +183,21 @@ async function upsertRecruitingData(recruitingData: RecruitingData[]): Promise<{
           fiveStar: data.fiveStar,
           fourStar: data.fourStar,
           threeStar: data.threeStar,
-          commits: data.commits,
-          points: data.points,
-          nationalRank: data.nationalRank,
-          conferenceRank: data.conferenceRank,
-          rawJson: data.rawJson
         },
         create: {
           teamId: data.teamId,
           season: data.season,
+          class_rank: 0, // Default value for required field
+          avg_rating: 0.0, // Default value for required field
+          commit_count: 0, // Default value for required field
+          five_stars: data.fiveStar || 0,
+          four_stars: data.fourStar || 0,
+          three_stars: data.threeStar || 0,
+          top_players: {}, // Default empty JSON for required field
           teamTalentIndex: data.teamTalentIndex,
           fiveStar: data.fiveStar,
           fourStar: data.fourStar,
           threeStar: data.threeStar,
-          commits: data.commits,
-          points: data.points,
-          nationalRank: data.nationalRank,
-          conferenceRank: data.conferenceRank,
-          rawJson: data.rawJson
         }
       });
       upserted++;

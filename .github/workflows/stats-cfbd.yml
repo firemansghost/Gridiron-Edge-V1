@@ -50,9 +50,8 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             node apps/jobs/dist/src/stats/cfbd_team_stats.js --season ${{ github.event.inputs.season }} --weeks ${{ github.event.inputs.weeks }}
           else
-            # For scheduled runs, sync current week
-            CURRENT_WEEK=$(date +%V)
-            node apps/jobs/dist/src/stats/cfbd_team_stats.js --season 2025 --weeks $CURRENT_WEEK
+            # For scheduled runs, sync current week (use week 9 for now during season)
+            node apps/jobs/dist/src/stats/cfbd_team_stats.js --season 2025 --weeks 9
           fi
 
       - name: Verify stats were inserted

@@ -12,8 +12,12 @@
 import { PrismaClient } from '@prisma/client';
 import * as fs from 'fs';
 import * as path from 'path';
+import { TeamResolver } from '../../adapters/TeamResolver';
+import { GameLookup } from '../../adapters/GameLookup';
 
 const prisma = new PrismaClient();
+const teamResolver = new TeamResolver();
+const gameLookup = new GameLookup(prisma);
 
 interface CFBDTeamStats {
   gameId: number;
@@ -151,16 +155,6 @@ function parseArgs(): { season: number; weeks: number[] } {
   return { season, weeks };
 }
 
-/**
- * Normalize team name to team ID
- */
-function normalizeTeamId(teamName: string): string {
-  return teamName
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
 
 /**
  * Fetch team stats from CFBD API
@@ -172,7 +166,7 @@ async function fetchTeamStats(season: number, week: number): Promise<CFBDTeamSta
   }
 
   const baseUrl = process.env.CFBD_BASE_URL || 'https://api.collegefootballdata.com';
-  const url = new URL(`${baseUrl}/stats/game/team`);
+  const url = new URL(`${baseUrl}/stats/game/teams`); // Note: plural "teams"
   url.searchParams.set('year', season.toString());
   url.searchParams.set('week', week.toString());
   url.searchParams.set('seasonType', 'regular');
@@ -238,18 +232,28 @@ async function fetchTeamStats(season: number, week: number): Promise<CFBDTeamSta
 /**
  * Map CFBD team stats to our database format
  */
-function mapCFBDStatsToTeamGameStat(cfbdStats: CFBDTeamStats): TeamGameStatData | null {
-  // Normalize team IDs
-  const teamId = normalizeTeamId(cfbdStats.team);
-  const opponentId = normalizeTeamId(cfbdStats.opponent);
+async function mapCFBDStatsToTeamGameStat(cfbdStats: CFBDTeamStats): Promise<TeamGameStatData | null> {
+  // Use TeamResolver to resolve team names to team IDs
+  const teamId = teamResolver.resolveTeam(cfbdStats.team, 'college-football');
+  const opponentId = teamResolver.resolveTeam(cfbdStats.opponent, 'college-football');
 
   if (!teamId || !opponentId) {
-    console.warn(`   [CFBD] Invalid team IDs: team="${teamId}", opponent="${opponentId}" for ${cfbdStats.team} vs ${cfbdStats.opponent}`);
+    console.warn(`   [CFBD] Could not resolve teams: "${cfbdStats.team}" vs "${cfbdStats.opponent}"`);
     return null;
   }
 
-  // Create stable game ID (same format as other jobs)
-  const gameId = `${cfbdStats.season}-wk${cfbdStats.week}-${cfbdStats.homeAway === 'away' ? teamId : opponentId}-${cfbdStats.homeAway === 'home' ? teamId : opponentId}`;
+  // Use GameLookup to find the game in our database
+  const gameResult = await gameLookup.lookupGame(
+    cfbdStats.season,
+    cfbdStats.week,
+    cfbdStats.homeAway === 'home' ? teamId : opponentId,
+    cfbdStats.homeAway === 'home' ? opponentId : teamId
+  );
+
+  if (!gameResult.gameId) {
+    console.warn(`   [CFBD] Could not find game: ${cfbdStats.team} vs ${cfbdStats.opponent} (${cfbdStats.season} W${cfbdStats.week})`);
+    return null;
+  }
 
   // Calculate derived metrics
   const yppOff = cfbdStats.plays > 0 ? cfbdStats.yards / cfbdStats.plays : null;
@@ -262,7 +266,7 @@ function mapCFBDStatsToTeamGameStat(cfbdStats: CFBDTeamStats): TeamGameStatData 
   const rushYpcDef = cfbdStats.defense.rushing.attempts > 0 ? cfbdStats.defense.rushing.yards / cfbdStats.defense.rushing.attempts : null;
 
   return {
-    gameId,
+    gameId: gameResult.gameId,
     teamId,
     opponentId,
     season: cfbdStats.season,
@@ -311,29 +315,43 @@ async function upsertTeamGameStats(stats: TeamGameStatData[]): Promise<{ upserte
         teamId: stat.teamId,
         season: stat.season,
         week: stat.week,
-        opponentId: stat.opponentId,
-        isHome: stat.isHome,
-        playsOff: stat.playsOff,
-        yardsOff: stat.yardsOff,
+        offensive_stats: {
+          plays: stat.playsOff,
+          yards: stat.yardsOff,
+          ypp: stat.yppOff,
+          success: stat.successOff,
+          epa: stat.epaOff,
+          pace: stat.pacePlaysGm,
+          passYards: stat.passYardsOff,
+          rushYards: stat.rushYardsOff,
+          passAtt: stat.passAttOff,
+          rushAtt: stat.rushAttOff,
+          passYpa: stat.passYpaOff,
+          rushYpc: stat.rushYpcOff
+        },
+        defensive_stats: {
+          plays: stat.playsDef,
+          yards: stat.yardsDef,
+          ypp: stat.yppDef,
+          success: stat.successDef,
+          epa: stat.epaDef,
+          passYards: stat.passYardsDef,
+          rushYards: stat.rushYardsDef,
+          passAtt: stat.passAttDef,
+          rushAtt: stat.rushAttDef,
+          passYpa: stat.passYpaDef,
+          rushYpc: stat.rushYpcDef
+        },
+        special_teams: {},
         yppOff: stat.yppOff,
         successOff: stat.successOff,
         epaOff: stat.epaOff,
-        pacePlaysGm: stat.pacePlaysGm,
-        passYardsOff: stat.passYardsOff,
-        rushYardsOff: stat.rushYardsOff,
-        passAttOff: stat.passAttOff,
-        rushAttOff: stat.rushAttOff,
+        pace: stat.pacePlaysGm,
         passYpaOff: stat.passYpaOff,
         rushYpcOff: stat.rushYpcOff,
-        playsDef: stat.playsDef,
-        yardsDef: stat.yardsDef,
         yppDef: stat.yppDef,
         successDef: stat.successDef,
         epaDef: stat.epaDef,
-        passYardsDef: stat.passYardsDef,
-        rushYardsDef: stat.rushYardsDef,
-        passAttDef: stat.passAttDef,
-        rushAttDef: stat.rushAttDef,
         passYpaDef: stat.passYpaDef,
         rushYpcDef: stat.rushYpcDef,
         rawJson: stat.rawJson
@@ -372,7 +390,7 @@ async function main() {
         // Map to our format
         const teamGameStats: TeamGameStatData[] = [];
         for (const cfbdStat of cfbdStats) {
-          const stat = mapCFBDStatsToTeamGameStat(cfbdStat);
+          const stat = await mapCFBDStatsToTeamGameStat(cfbdStat);
           if (stat) {
             teamGameStats.push(stat);
           }
