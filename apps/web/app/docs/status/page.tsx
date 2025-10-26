@@ -1,6 +1,7 @@
 import { Metadata } from 'next';
 import { prisma } from '@/lib/prisma';
 import ETLHeartbeat from './etl-heartbeat';
+import DataSources from './data-sources';
 
 export const dynamic = 'force-dynamic';
 
@@ -582,6 +583,9 @@ export default async function StatusPage() {
               teamSeasonRatings2025,
             }}
           />
+
+          {/* Data Sources */}
+          <DataSources season={2025} />
 
           {/* Summary */}
           <section>
