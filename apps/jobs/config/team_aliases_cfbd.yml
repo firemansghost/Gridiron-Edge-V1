@@ -13,6 +13,7 @@
 
 # Miami schools (prevent confusion)
 "Miami": miami
+"Miami (FL)": miami
 "Miami (OH)": miami-oh
 "Miami (Ohio)": miami-oh
 
@@ -30,18 +31,6 @@
 "Liberty": liberty
 "UNLV": unlv
 "North Texas": north-texas
-
-# Additional team mappings for common mismatches
-"UMass": massachusetts
-"Massachusetts": massachusetts
-"FIU": florida-international
-"Florida International": florida-international
-"Western Kentucky": western-kentucky
-"Hawai'i": hawaii
-"UTEP": utep
-"UTSA": utsa
-"Ole Miss": ole-miss
-"Miami (FL)": miami
 
 # Additional FBS teams
 "Michigan": michigan
@@ -96,23 +85,6 @@
 "USF": usf
 "Cincinnati": cincinnati
 "Temple": temple
-"East Carolina": east-carolina
-"Charlotte": charlotte
-"FAU": fau
-"FIU": fiu
-"Marshall": marshall
-"Old Dominion": old-dominion
-"Appalachian State": appalachian-state
-"Coastal Carolina": coastal-carolina
-"Troy": troy
-"South Alabama": south-alabama
-"Louisiana": louisiana
-"Louisiana-Monroe": louisiana-monroe
-"Arkansas State": arkansas-state
-"Southern Miss": southern-miss
-"Louisiana Tech": louisiana-tech
-"UTEP": utep
-"UTSA": utsa
 "Rice": rice
 "New Mexico": new-mexico
 "New Mexico State": new-mexico-state
@@ -122,6 +94,7 @@
 "Boise State": boise-state
 "Fresno State": fresno-state
 "Hawaii": hawaii
+"Hawai'i": hawaii
 "Nevada": nevada
 "Utah State": utah-state
 "Colorado": colorado
@@ -132,7 +105,8 @@
 "Army": army
 "Navy": navy
 "Connecticut": connecticut
-"UMass": umass
+"UMass": massachusetts
+"Massachusetts": massachusetts
 "Buffalo": buffalo
 "Kent State": kent-state
 "Bowling Green": bowling-green
@@ -145,3 +119,40 @@
 "Ohio": ohio
 "Akron": akron
 "Tulsa": tulsa
+
+# AAC / C-USA / Sun Belt (deduped)
+"East Carolina": east-carolina
+"ECU": east-carolina
+
+"Charlotte": charlotte
+
+"Florida Atlantic": florida-atlantic
+"FAU": florida-atlantic
+
+"Florida International": florida-international
+"FIU": florida-international
+
+"Marshall": marshall
+
+"Old Dominion": old-dominion
+"ODU": old-dominion
+
+"Coastal Carolina": coastal-carolina
+"Troy": troy
+
+"Western Kentucky": western-kentucky
+"WKU": western-kentucky
+
+"UTSA": utsa
+"UTEP": utep
+
+"Louisiana Tech": louisiana-tech
+"La Tech": louisiana-tech
+"Louisiana": louisiana
+"ULL": louisiana
+
+"Southern Miss": southern-miss
+"USM": southern-miss
+
+# Additional mappings for common mismatches
+"Ole Miss": ole-miss

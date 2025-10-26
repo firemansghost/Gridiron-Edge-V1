@@ -24,7 +24,7 @@
     "backfill:oddsapi": "node apps/jobs/backfill-odds-oddsapi.js",
     "repoll:week9": "node scripts/repoll-week9.js",
     "manual:week9": "node scripts/manual-week9-odds.js",
-    "build:jobs": "tsc -p apps/jobs/tsconfig.build.json && node scripts/copy-job-assets-simple.mjs",
+    "build:jobs": "tsc -p apps/jobs/tsconfig.build.json && node scripts/validate-aliases.mjs && node scripts/copy-job-assets-simple.mjs",
     "grade:bets": "node apps/jobs/dist/grade-bets.js",
     "scores:cfbd": "node apps/jobs/dist/src/cfbd-game-results.js",
     "stats:cfbd": "ts-node apps/jobs/src/stats/cfbd_team_stats.ts",

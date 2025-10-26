@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import { validateAliasFile } from '../src/utils/validate-aliases';
 
 interface TeamAlias {
   [key: string]: string;
@@ -65,6 +66,7 @@ export class TeamResolver {
         source = aliasPath;
       }
 
+      // Parse and validate aliases (throws if duplicates found)
       const aliasData = yaml.load(aliasContent) as any;
       
       if (!aliasData || typeof aliasData !== 'object') {
@@ -76,6 +78,17 @@ export class TeamResolver {
       
       if (!aliases || typeof aliases !== 'object') {
         throw new Error('Invalid YAML structure: missing or invalid aliases section');
+      }
+      
+      // Validate for duplicate keys
+      const seen = new Set<string>();
+      const dups: string[] = [];
+      for (const k of Object.keys(aliases)) {
+        if (seen.has(k)) dups.push(k);
+        seen.add(k);
+      }
+      if (dups.length) {
+        throw new Error(`Duplicate keys in team_aliases.yml: ${dups.join(", ")}`);
       }
       
       for (const [alias, teamId] of Object.entries(aliases)) {
@@ -103,12 +116,8 @@ export class TeamResolver {
     try {
       const cfbdAliasPath = path.join(__dirname, '../config/team_aliases_cfbd.yml');
       if (fs.existsSync(cfbdAliasPath)) {
-        const content = fs.readFileSync(cfbdAliasPath, 'utf8');
-        const cfbdAliases = yaml.load(content) as TeamAlias;
-        
-        if (!cfbdAliases || typeof cfbdAliases !== 'object') {
-          throw new Error('CFBD aliases file is empty or invalid YAML');
-        }
+        // Validate CFBD aliases file (throws if duplicates found)
+        const cfbdAliases = validateAliasFile(cfbdAliasPath);
         
         for (const [cfbdName, teamId] of Object.entries(cfbdAliases)) {
           if (typeof teamId === 'string' && teamId.trim()) {
