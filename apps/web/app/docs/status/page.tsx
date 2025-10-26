@@ -1,6 +1,8 @@
 import { Metadata } from 'next';
 import { prisma } from '@/lib/prisma';
 
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: 'Database Status',
   description: 'Live database status and sanity checks for Gridiron Edge',
