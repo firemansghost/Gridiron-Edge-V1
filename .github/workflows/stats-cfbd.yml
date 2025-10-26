@@ -59,6 +59,18 @@ jobs:
           echo ""
           node scripts/curl-cfbd.mjs fbs --season 2025
 
+      - name: CFBD curl preflight (week 9)
+        if: always()
+        env:
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+        run: |
+          echo "CFBD curl preflight (week 9)…"
+          curl -sS -D - \
+            -H "Authorization: Bearer $CFBD_API_KEY" \
+            -H "Accept: application/json" \
+            "https://api.collegefootballdata.com/stats/game/team?year=2025&week=9&seasonType=regular&classification=fbs" \
+            | head -n 40
+
       - name: Run CFBD Team Stats Sync
         env:
           CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}

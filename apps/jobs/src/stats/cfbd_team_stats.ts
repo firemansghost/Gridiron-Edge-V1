@@ -166,10 +166,11 @@ async function fetchTeamStats(season: number, week: number): Promise<CFBDTeamSta
   }
 
   const baseUrl = process.env.CFBD_BASE_URL || 'https://api.collegefootballdata.com';
-  const url = new URL(`${baseUrl}/stats/game/teams`); // Note: plural "teams"
+  const url = new URL(`${baseUrl}/stats/game/team`); // Note: singular "team"
   url.searchParams.set('year', season.toString());
   url.searchParams.set('week', week.toString());
   url.searchParams.set('seasonType', 'regular');
+  url.searchParams.set('classification', 'fbs'); // Optional filter to reduce payload
   
   // Debug: Log the exact URL being called
   console.log(`   [CFBD] Full URL: ${url.toString()}`);
@@ -229,9 +230,10 @@ async function fetchTeamStats(season: number, week: number): Promise<CFBDTeamSta
     }
 
     if (!contentType || !contentType.includes('application/json')) {
+      const preview = body.substring(0, 200);
       console.error(`   [CFBD] Invalid content-type: ${contentType}`);
-      console.error(`   [CFBD] Response body (first 200 bytes): ${body.substring(0, 200)}...`);
-      throw new Error(`CFBD API returned non-JSON content-type: ${contentType}`);
+      console.error(`   [CFBD] Response body (first 200 bytes): ${preview}...`);
+      throw new Error(`CFBD non-JSON (status=${response.status}, type=${contentType}): ${preview}`);
     }
 
     console.log(`   [CFBD] Raw response length: ${body.length}`);

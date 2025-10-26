@@ -31,6 +31,18 @@
 "UNLV": unlv
 "North Texas": north-texas
 
+# Additional team mappings for common mismatches
+"UMass": massachusetts
+"Massachusetts": massachusetts
+"FIU": florida-international
+"Florida International": florida-international
+"Western Kentucky": western-kentucky
+"Hawai'i": hawaii
+"UTEP": utep
+"UTSA": utsa
+"Ole Miss": ole-miss
+"Miami (FL)": miami
+
 # Additional FBS teams
 "Michigan": michigan
 "Penn State": penn-state

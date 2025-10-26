@@ -149,6 +149,14 @@ export default async function StatusPage() {
       select: { updatedAt: true }
     });
 
+    // 10) ETL Heartbeat counts (2025 specific)
+    const recruiting2025 = await prisma.recruiting.count({
+      where: { season: 2025 }
+    });
+    const teamGameStats2025 = await prisma.teamGameStat.count({
+      where: { season: 2025 }
+    });
+
     const oddsRowCount = Array.isArray(oddsCoverage) 
       ? oddsCoverage.reduce((sum: number, row: any) => sum + parseInt(row.rows), 0)
       : 0;
@@ -476,6 +484,29 @@ export default async function StatusPage() {
                   <h3 className="font-medium text-teal-900 mb-2">Last Update</h3>
                   <p className="text-teal-800">
                     {lastRecruitingUpdate?.updatedAt ? lastRecruitingUpdate.updatedAt.toLocaleString() : 'Never'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* ETL Heartbeat */}
+          <section>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-4">
+              💓 ETL Heartbeat (2025)
+            </h2>
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <h3 className="font-medium text-purple-900 mb-2">Recruiting Data</h3>
+                  <p className="text-purple-800">
+                    <span className="font-mono font-bold">{recruiting2025.toLocaleString()}</span> records
+                  </p>
+                </div>
+                <div>
+                  <h3 className="font-medium text-purple-900 mb-2">Team Game Stats</h3>
+                  <p className="text-purple-800">
+                    <span className="font-mono font-bold">{teamGameStats2025.toLocaleString()}</span> records
                   </p>
                 </div>
               </div>
