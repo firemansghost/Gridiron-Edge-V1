@@ -85,7 +85,7 @@ async function fetchTeamSeasonStats(season: number): Promise<CFBDTeamSeasonStats
   }
 
   const baseUrl = process.env.CFBD_BASE_URL || 'https://api.collegefootballdata.com';
-  const url = new URL(`${baseUrl}/stats/season/team`);
+  const url = new URL(`${baseUrl}/stats/season`);
   url.searchParams.set('year', season.toString());
   url.searchParams.set('excludeGarbageTime', 'true');
   

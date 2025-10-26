@@ -166,7 +166,7 @@ async function fetchTeamStats(season: number, week: number): Promise<{ data: CFB
   }
 
   const baseUrl = process.env.CFBD_BASE_URL || 'https://api.collegefootballdata.com';
-  const url = new URL(`${baseUrl}/stats/game/team`); // Note: singular "team"
+  const url = new URL(`${baseUrl}/stats/game/advanced`); // Use advanced stats endpoint
   url.searchParams.set('year', season.toString());
   url.searchParams.set('week', week.toString());
   url.searchParams.set('seasonType', 'regular');
