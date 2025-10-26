@@ -81,6 +81,84 @@ interface CFBDTeamStats {
   };
 }
 
+// Interface for /stats/game/advanced endpoint (different structure)
+interface CFBDAdvancedStats {
+  gameId: number;
+  team: string;
+  conference: string;
+  opponent: string;
+  opponentConference: string;
+  season: number;
+  week: number;
+  seasonType: string;
+  startDate: string;
+  homeAway: 'home' | 'away';
+  points: number;
+  offense?: {
+    yardsPerPlay?: number;
+    successRate?: number;
+    ppa?: number; // points per play = EPA/play
+    secondsPerPlay?: number;
+    yardsPerPass?: number;
+    yardsPerRush?: number;
+  };
+  defense?: {
+    yardsPerPlay?: number;
+    successRate?: number;
+    ppa?: number;
+    secondsPerPlay?: number;
+    yardsPerPass?: number;
+    yardsPerRush?: number;
+    // Legacy defense fields
+    yards?: number;
+    plays?: number;
+    points?: number;
+    rushing?: {
+      yards?: number;
+      attempts?: number;
+      yardsPerRush?: number;
+      touchdowns?: number;
+    };
+    passing?: {
+      yards?: number;
+      completions?: number;
+      attempts?: number;
+      completionPercentage?: number;
+      yardsPerAttempt?: number;
+      yardsPerCompletion?: number;
+      touchdowns?: number;
+      interceptions?: number;
+      quarterbackRating?: number;
+    };
+  };
+  // Legacy fields for backward compatibility
+  yards?: number;
+  plays?: number;
+  yardsPerPlay?: number;
+  pointsPerPossession?: number;
+  turnovers?: number;
+  penalties?: number;
+  penaltyYards?: number;
+  timeOfPossession?: number;
+  rushing?: {
+    yards?: number;
+    attempts?: number;
+    yardsPerRush?: number;
+    touchdowns?: number;
+  };
+  passing?: {
+    yards?: number;
+    completions?: number;
+    attempts?: number;
+    completionPercentage?: number;
+    yardsPerAttempt?: number;
+    yardsPerCompletion?: number;
+    touchdowns?: number;
+    interceptions?: number;
+    quarterbackRating?: number;
+  };
+}
+
 interface TeamGameStatData {
   gameId: string;
   teamId: string;
@@ -115,6 +193,7 @@ interface TeamGameStatData {
   rushAttDef?: number;
   passYpaDef?: number;
   rushYpcDef?: number;
+  paceDef?: number;
   
   rawJson?: any;
 }
@@ -159,7 +238,7 @@ function parseArgs(): { season: number; weeks: number[] } {
 /**
  * Fetch team stats from CFBD API
  */
-async function fetchTeamStats(season: number, week: number): Promise<{ data: CFBDTeamStats[]; weeksRequested: number; weeksJson: number; weeksNonJson: number; upserts: number }> {
+async function fetchTeamStats(season: number, week: number): Promise<{ data: CFBDAdvancedStats[]; weeksRequested: number; weeksJson: number; weeksNonJson: number; upserts: number }> {
   const apiKey = process.env.CFBD_API_KEY;
   if (!apiKey) {
     throw new Error('CFBD_API_KEY environment variable is required');
@@ -245,9 +324,9 @@ async function fetchTeamStats(season: number, week: number): Promise<{ data: CFB
       throw new Error('CFBD API returned HTML instead of JSON - likely an error page');
     }
 
-    let data: CFBDTeamStats[];
+    let data: CFBDAdvancedStats[];
     try {
-      data = JSON.parse(body) as CFBDTeamStats[];
+      data = JSON.parse(body) as CFBDAdvancedStats[];
     } catch (parseError) {
       console.error(`   [CFBD] JSON parse error: ${parseError}`);
       console.error(`   [CFBD] Response preview: ${body.substring(0, 200)}...`);
@@ -268,6 +347,93 @@ async function fetchTeamStats(season: number, week: number): Promise<{ data: CFB
 /**
  * Map CFBD team stats to our database format
  */
+// New mapping function for advanced stats endpoint
+async function mapCFBDAdvancedStatsToTeamGameStat(cfbdStats: CFBDAdvancedStats): Promise<TeamGameStatData | null> {
+  // Use TeamResolver to resolve team names to team IDs
+  const teamId = teamResolver.resolveTeam(cfbdStats.team, 'college-football', { provider: 'cfbd' });
+  const opponentId = teamResolver.resolveTeam(cfbdStats.opponent, 'college-football', { provider: 'cfbd' });
+
+  if (!teamId || !opponentId) {
+    console.warn(`   [CFBD] Could not resolve teams: "${cfbdStats.team}" vs "${cfbdStats.opponent}"`);
+    return null;
+  }
+
+  // Use GameLookup to find the game in our database
+  const gameResult = await gameLookup.lookupGame(
+    cfbdStats.season,
+    cfbdStats.week,
+    cfbdStats.homeAway === 'home' ? teamId : opponentId,
+    cfbdStats.homeAway === 'home' ? opponentId : teamId
+  );
+
+  if (!gameResult.gameId) {
+    console.warn(`   [CFBD] Could not find game: ${cfbdStats.team} vs ${cfbdStats.opponent} (${cfbdStats.season} W${cfbdStats.week})`);
+    return null;
+  }
+
+  // Helper function to safely get numeric values
+  const safeNumber = (value: any): number | null => {
+    if (value === null || value === undefined || isNaN(value) || !isFinite(value)) {
+      return null;
+    }
+    return Number(value);
+  };
+
+  // Calculate pace from seconds per play (if available)
+  const paceOff = cfbdStats.offense?.secondsPerPlay && cfbdStats.offense.secondsPerPlay > 0 
+    ? 60 / cfbdStats.offense.secondsPerPlay 
+    : null;
+
+  const paceDef = cfbdStats.defense?.secondsPerPlay && cfbdStats.defense.secondsPerPlay > 0 
+    ? 60 / cfbdStats.defense.secondsPerPlay 
+    : null;
+
+  return {
+    gameId: gameResult.gameId,
+    teamId,
+    opponentId,
+    season: cfbdStats.season,
+    week: cfbdStats.week,
+    isHome: cfbdStats.homeAway === 'home',
+    
+    // Offensive stats (using advanced stats structure)
+    yppOff: safeNumber(cfbdStats.offense?.yardsPerPlay),
+    successOff: safeNumber(cfbdStats.offense?.successRate),
+    epaOff: safeNumber(cfbdStats.offense?.ppa),
+    pacePlaysGm: safeNumber(paceOff),
+    passYpaOff: safeNumber(cfbdStats.offense?.yardsPerPass),
+    rushYpcOff: safeNumber(cfbdStats.offense?.yardsPerRush),
+    
+    // Defensive stats (using advanced stats structure)
+    yppDef: safeNumber(cfbdStats.defense?.yardsPerPlay),
+    successDef: safeNumber(cfbdStats.defense?.successRate),
+    epaDef: safeNumber(cfbdStats.defense?.ppa),
+    paceDef: safeNumber(paceDef),
+    passYpaDef: safeNumber(cfbdStats.defense?.yardsPerPass),
+    rushYpcDef: safeNumber(cfbdStats.defense?.yardsPerRush),
+    
+    // Legacy fields for backward compatibility
+    playsOff: safeNumber(cfbdStats.plays),
+    yardsOff: safeNumber(cfbdStats.yards),
+    passYardsOff: safeNumber(cfbdStats.passing?.yards),
+    rushYardsOff: safeNumber(cfbdStats.rushing?.yards),
+    passAttOff: safeNumber(cfbdStats.passing?.attempts),
+    rushAttOff: safeNumber(cfbdStats.rushing?.attempts),
+    
+    // Defensive legacy fields
+    playsDef: safeNumber(cfbdStats.defense?.plays),
+    yardsDef: safeNumber(cfbdStats.defense?.yards),
+    passYardsDef: safeNumber(cfbdStats.defense?.passing?.yards),
+    rushYardsDef: safeNumber(cfbdStats.defense?.rushing?.yards),
+    passAttDef: safeNumber(cfbdStats.defense?.passing?.attempts),
+    rushAttDef: safeNumber(cfbdStats.defense?.rushing?.attempts),
+    
+    // Store raw JSON for debugging
+    rawJson: cfbdStats
+  };
+}
+
+// Legacy mapping function for backward compatibility
 async function mapCFBDStatsToTeamGameStat(cfbdStats: CFBDTeamStats): Promise<TeamGameStatData | null> {
   // Use TeamResolver to resolve team names to team IDs
   const teamId = teamResolver.resolveTeam(cfbdStats.team, 'college-football', { provider: 'cfbd' });
@@ -438,7 +604,7 @@ async function main() {
         // Map to our format
         const teamGameStats: TeamGameStatData[] = [];
         for (const cfbdStat of result.data) {
-          const stat = await mapCFBDStatsToTeamGameStat(cfbdStat);
+          const stat = await mapCFBDAdvancedStatsToTeamGameStat(cfbdStat);
           if (stat) {
             teamGameStats.push(stat);
           }
