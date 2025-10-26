@@ -41,7 +41,10 @@ jobs:
           CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
         run: |
           echo "== CFBD preflight: season team stats =="
-          curl -i -H "Authorization: Bearer $CFBD_API_KEY" -H "Accept: application/json" "https://api.collegefootballdata.com/stats/season/team?year=2024&excludeGarbageTime=true" | head -n 40
+          curl -i \
+            -H "Authorization: Bearer $CFBD_API_KEY" \
+            -H "Accept: application/json" \
+            "https://api.collegefootballdata.com/stats/season/team?year=2024&excludeGarbageTime=true" | head -n 40
 
       - name: CFBD preflight: games/teams probe
         if: always()
@@ -49,7 +52,10 @@ jobs:
           CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
         run: |
           echo "== CFBD preflight: games/teams probe =="
-          curl -i -H "Authorization: Bearer $CFBD_API_KEY" -H "Accept: application/json" "https://api.collegefootballdata.com/games/teams?year=2024&week=1&seasonType=regular" | head -n 60
+          curl -i \
+            -H "Authorization: Bearer $CFBD_API_KEY" \
+            -H "Accept: application/json" \
+            "https://api.collegefootballdata.com/games/teams?year=2024&week=1&seasonType=regular" | head -n 60
 
       - name: Run CFBD Team Season Stats Sync
         env:
