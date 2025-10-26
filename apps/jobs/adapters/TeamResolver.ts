@@ -14,11 +14,13 @@ interface UnmatchedTeam {
 
 export class TeamResolver {
   private aliases: Map<string, string> = new Map();
+  private cfbdAliases: Map<string, string> = new Map();
   private denylist: Set<string> = new Set();
   private fbsTeams: Set<string> = new Set();
 
   constructor() {
     this.loadAliases();
+    this.loadCFBDAliases();
     this.loadDenylist();
     this.loadFBSTeams();
   }
@@ -97,6 +99,26 @@ export class TeamResolver {
     }
   }
 
+  private loadCFBDAliases(): void {
+    try {
+      const cfbdAliasPath = path.join(__dirname, '../config/team_aliases_cfbd.yml');
+      if (fs.existsSync(cfbdAliasPath)) {
+        const content = fs.readFileSync(cfbdAliasPath, 'utf8');
+        const cfbdAliases = yaml.load(content) as TeamAlias;
+        
+        for (const [cfbdName, teamId] of Object.entries(cfbdAliases)) {
+          this.cfbdAliases.set(cfbdName.toLowerCase(), teamId);
+        }
+        
+        console.log(`[TEAM_RESOLVER] Loaded ${this.cfbdAliases.size} CFBD-specific aliases`);
+      } else {
+        console.log(`[TEAM_RESOLVER] CFBD aliases file not found: ${cfbdAliasPath}`);
+      }
+    } catch (error) {
+      console.error(`[TEAM_RESOLVER] Failed to load CFBD aliases: ${error}`);
+    }
+  }
+
   private loadDenylist(): void {
     try {
       // Load denylist from the same YAML file as aliases
@@ -155,12 +177,51 @@ export class TeamResolver {
   }
 
   /**
+   * Apply mis-map guards to prevent common fuzzy matching errors
+   */
+  private applyMisMapGuards(providerName: string): string | null {
+    const name = providerName.toLowerCase();
+    
+    // Texas A&M -> texas-a-m (prevent fuzzy match to north-texas)
+    if (name.includes('texas a&m') || name === 'texas a&m') {
+      return 'texas-a-m';
+    }
+    
+    // Miami -> miami (FL), not miami-oh unless explicitly Ohio
+    if (name === 'miami' && !name.includes('oh') && !name.includes('ohio')) {
+      return 'miami';
+    }
+    if (name.includes('miami') && (name.includes('oh') || name.includes('ohio'))) {
+      return 'miami-oh';
+    }
+    
+    // Georgia schools - exact matches
+    if (name === 'georgia state') {
+      return 'georgia-state';
+    }
+    if (name === 'georgia southern') {
+      return 'georgia-southern';
+    }
+    
+    // San José State vs San Diego State - normalize diacritics
+    if (name.includes('san josé') || name.includes('san jose')) {
+      return 'san-jose-state';
+    }
+    if (name.includes('san diego')) {
+      return 'san-diego-state';
+    }
+    
+    return null; // No guard applied
+  }
+
+  /**
    * Resolve a provider team name to a canonical team ID
    * @param providerName - Team name from the provider (e.g., "Alabama Crimson Tide")
    * @param providerSport - Sport from the provider (e.g., "NCAAF")
+   * @param options - Optional provider-specific options
    * @returns Canonical team ID or null if not found/denylisted
    */
-  resolveTeam(providerName: string, providerSport: string): string | null {
+  resolveTeam(providerName: string, providerSport: string, options?: { provider?: string }): string | null {
     if (!providerName || !providerSport) {
       return null;
     }
@@ -171,7 +232,27 @@ export class TeamResolver {
       return null;
     }
 
-    // Step 1: Exact alias match (required)
+    // Apply mis-map guards for common pitfalls
+    const guardedResult = this.applyMisMapGuards(providerName);
+    if (guardedResult) {
+      return guardedResult;
+    }
+
+    // Step 1: Provider-specific alias match (CFBD first if provider is cfbd)
+    if (options?.provider === 'cfbd') {
+      const cfbdMatch = this.cfbdAliases.get(providerName.toLowerCase());
+      if (cfbdMatch) {
+        // Check if it's denylisted
+        if (this.denylist.has(cfbdMatch)) {
+          console.log(`[TEAM_RESOLVER] Denylisted CFBD team: ${providerName} -> ${cfbdMatch}`);
+          return null;
+        }
+        console.log(`[TEAM_RESOLVER] CFBD alias match: ${providerName} -> ${cfbdMatch}`);
+        return cfbdMatch;
+      }
+    }
+
+    // Step 2: Exact alias match (general aliases)
     const exactMatch = this.aliases.get(providerName.toLowerCase());
     if (exactMatch) {
       // Check if it's denylisted

@@ -40,6 +40,19 @@ jobs:
       - name: Generate Prisma client
         run: npm run db:generate
 
+      - name: Debug CFBD connectivity
+        if: always()
+        env:
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+          CFBD_BASE_URL: ${{ vars.CFBD_BASE_URL }}
+        run: |
+          echo "🔍 Testing CFBD connectivity..."
+          node scripts/curl-cfbd.mjs stats --season 2025 --week 9
+          echo ""
+          node scripts/curl-cfbd.mjs talent --season 2025
+          echo ""
+          node scripts/curl-cfbd.mjs fbs --season 2025
+
       - name: Run CFBD Team Stats Sync
         env:
           CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}

@@ -184,19 +184,44 @@ async function fetchTeamStats(season: number, week: number): Promise<CFBDTeamSta
   try {
     const response = await fetch(url.toString(), {
       signal: controller.signal,
+      redirect: 'manual', // Handle redirects manually
       headers: {
         'Authorization': `Bearer ${apiKey}`,
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'User-Agent': 'gridiron-edge-jobs/1.0'
       }
     });
 
     clearTimeout(timeout);
 
+    // Debug logging
+    if (process.env.DEBUG_CFBD === '1') {
+      console.log(`   [CFBD] Response status: ${response.status}`);
+      console.log(`   [CFBD] Response URL: ${response.url}`);
+    }
+
+    // Handle redirects
+    if (response.status === 301 || response.status === 302) {
+      const location = response.headers.get('location');
+      console.error(`   [CFBD] Redirect detected: ${response.status} to ${location}`);
+      console.error(`   [CFBD] Original URL: ${url.toString()}`);
+      throw new Error(`CFBD API redirected: ${response.status} to ${location}`);
+    }
+
     if (!response.ok) {
       const errorBody = await response.text();
       console.error(`   [CFBD] HTTP ${response.status} ${response.statusText}`);
-      console.error(`   [CFBD] Error body: ${errorBody}`);
+      console.error(`   [CFBD] Error body: ${errorBody.substring(0, 400)}...`);
       throw new Error(`CFBD API error: ${response.status} ${response.statusText}`);
+    }
+
+    // Check content-type
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const body = await response.text();
+      console.error(`   [CFBD] Invalid content-type: ${contentType}`);
+      console.error(`   [CFBD] Response body preview: ${body.substring(0, 400)}...`);
+      throw new Error(`CFBD API returned non-JSON content-type: ${contentType}`);
     }
 
     const responseText = await response.text();
@@ -234,8 +259,8 @@ async function fetchTeamStats(season: number, week: number): Promise<CFBDTeamSta
  */
 async function mapCFBDStatsToTeamGameStat(cfbdStats: CFBDTeamStats): Promise<TeamGameStatData | null> {
   // Use TeamResolver to resolve team names to team IDs
-  const teamId = teamResolver.resolveTeam(cfbdStats.team, 'college-football');
-  const opponentId = teamResolver.resolveTeam(cfbdStats.opponent, 'college-football');
+  const teamId = teamResolver.resolveTeam(cfbdStats.team, 'college-football', { provider: 'cfbd' });
+  const opponentId = teamResolver.resolveTeam(cfbdStats.opponent, 'college-football', { provider: 'cfbd' });
 
   if (!teamId || !opponentId) {
     console.warn(`   [CFBD] Could not resolve teams: "${cfbdStats.team}" vs "${cfbdStats.opponent}"`);

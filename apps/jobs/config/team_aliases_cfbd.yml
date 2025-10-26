@@ -1,0 +1,202 @@
+# CFBD-specific team name mappings
+# Maps CFBD team names to our canonical team IDs
+# This prevents fuzzy matching errors like "Texas A&M" -> "North Texas"
+
+# Major programs (exact matches)
+"Alabama": alabama
+"Georgia": georgia
+"Texas": texas
+"Oregon": oregon
+"LSU": lsu
+"Ohio State": ohio-state
+"Texas A&M": texas-a-m
+
+# Miami schools (prevent confusion)
+"Miami": miami
+"Miami (OH)": miami-oh
+"Miami (Ohio)": miami-oh
+
+# Georgia schools (exact matches)
+"Georgia State": georgia-state
+"Georgia Southern": georgia-southern
+
+# California schools
+"UCLA": ucla
+"San José State": san-jose-state
+"San Jose State": san-jose-state
+"San Diego State": san-diego-state
+
+# Other common teams
+"Liberty": liberty
+"UNLV": unlv
+"North Texas": north-texas
+
+# Additional FBS teams (add more as needed)
+"Michigan": michigan
+"Penn State": penn-state
+"Notre Dame": notre-dame
+"Clemson": clemson
+"Florida State": florida-state
+"Florida": florida
+"Tennessee": tennessee
+"Auburn": auburn
+"Oklahoma": oklahoma
+"Oklahoma State": oklahoma-state
+"USC": usc
+"Washington": washington
+"Washington State": washington-state
+"Oregon State": oregon-state
+"Utah": utah
+"BYU": byu
+"Wisconsin": wisconsin
+"Iowa": iowa
+"Michigan State": michigan-state
+"Minnesota": minnesota
+"Nebraska": nebraska
+"Purdue": purdue
+"Indiana": indiana
+"Illinois": illinois
+"Northwestern": northwestern
+"Maryland": maryland
+"Rutgers": rutgers
+"Virginia Tech": virginia-tech
+"Virginia": virginia
+"North Carolina": north-carolina
+"NC State": nc-state
+"Wake Forest": wake-forest
+"Duke": duke
+"Louisville": louisville
+"Pittsburgh": pittsburgh
+"Syracuse": syracuse
+"Boston College": boston-college
+"Kansas State": kansas-state
+"Kansas": kansas
+"Iowa State": iowa-state
+"West Virginia": west-virginia
+"Texas Tech": texas-tech
+"TCU": tcu
+"Baylor": baylor
+"Houston": houston
+"SMU": smu
+"Tulane": tulane
+"Memphis": memphis
+"UCF": ucf
+"USF": usf
+"Cincinnati": cincinnati
+"Temple": temple
+"East Carolina": east-carolina
+"Charlotte": charlotte
+"FAU": fau
+"FIU": fiu
+"Marshall": marshall
+"Old Dominion": old-dominion
+"Appalachian State": appalachian-state
+"Coastal Carolina": coastal-carolina
+"Georgia Southern": georgia-southern
+"Georgia State": georgia-state
+"Troy": troy
+"South Alabama": south-alabama
+"Louisiana": louisiana
+"Louisiana-Monroe": louisiana-monroe
+"Arkansas State": arkansas-state
+"South Alabama": south-alabama
+"Troy": troy
+"Southern Miss": southern-miss
+"Louisiana Tech": louisiana-tech
+"UTEP": utep
+"UTSA": utsa
+"Rice": rice
+"North Texas": north-texas
+"UTEP": utep
+"New Mexico": new-mexico
+"New Mexico State": new-mexico-state
+"Wyoming": wyoming
+"Colorado State": colorado-state
+"Air Force": air-force
+"Boise State": boise-state
+"Fresno State": fresno-state
+"San Diego State": san-diego-state
+"San José State": san-jose-state
+"San Jose State": san-jose-state
+"Hawaii": hawaii
+"UNLV": unlv
+"Nevada": nevada
+"Utah State": utah-state
+"Colorado": colorado
+"Arizona": arizona
+"Arizona State": arizona-state
+"California": california
+"Stanford": stanford
+"Oregon": oregon
+"Oregon State": oregon-state
+"Washington": washington
+"Washington State": washington-state
+"UCLA": ucla
+"USC": usc
+"Army": army
+"Navy": navy
+"Air Force": air-force
+"Notre Dame": notre-dame
+"BYU": byu
+"Liberty": liberty
+"Connecticut": connecticut
+"UMass": umass
+"Buffalo": buffalo
+"Kent State": kent-state
+"Bowling Green": bowling-green
+"Toledo": toledo
+"Central Michigan": central-michigan
+"Eastern Michigan": eastern-michigan
+"Western Michigan": western-michigan
+"Northern Illinois": northern-illinois
+"Ball State": ball-state
+"Miami (OH)": miami-oh
+"Miami (Ohio)": miami-oh
+"Ohio": ohio
+"Akron": akron
+"Kent State": kent-state
+"Bowling Green": bowling-green
+"Toledo": toledo
+"Central Michigan": central-michigan
+"Eastern Michigan": eastern-michigan
+"Western Michigan": western-michigan
+"Northern Illinois": northern-illinois
+"Ball State": ball-state
+"Temple": temple
+"Tulane": tulane
+"SMU": smu
+"Memphis": memphis
+"Tulsa": tulsa
+"UCF": ucf
+"USF": usf
+"Cincinnati": cincinnati
+"East Carolina": east-carolina
+"Charlotte": charlotte
+"FAU": fau
+"FIU": fiu
+"Marshall": marshall
+"Old Dominion": old-dominion
+"Appalachian State": appalachian-state
+"Coastal Carolina": coastal-carolina
+"Georgia Southern": georgia-southern
+"Georgia State": georgia-state
+"Troy": troy
+"South Alabama": south-alabama
+"Louisiana": louisiana
+"Louisiana-Monroe": louisiana-monroe
+"Arkansas State": arkansas-state
+"Southern Miss": southern-miss
+"Louisiana Tech": louisiana-tech
+"UTEP": utep
+"UTSA": utsa
+"Rice": rice
+"North Texas": north-texas
+"New Mexico": new-mexico
+"New Mexico State": new-mexico-state
+"Wyoming": wyoming
+"Colorado State": colorado-state
+"Boise State": boise-state
+"Fresno State": fresno-state
+"Hawaii": hawaii
+"Nevada": nevada
+"Utah State": utah-state
