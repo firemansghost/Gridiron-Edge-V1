@@ -36,6 +36,7 @@
     "grade-bets.ts",
     "src/cfbd-game-results.ts",
     "src/stats/cfbd_team_stats.ts",
+    "src/stats/cfbd_team_season_stats.ts",
     "src/stats/cfbd_talent.ts"
   ],
   "exclude": [

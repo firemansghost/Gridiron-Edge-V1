@@ -28,6 +28,7 @@
     "grade:bets": "node apps/jobs/dist/grade-bets.js",
     "scores:cfbd": "node apps/jobs/dist/src/cfbd-game-results.js",
     "stats:cfbd": "ts-node apps/jobs/src/stats/cfbd_team_stats.ts",
+    "stats:season:cfbd": "ts-node apps/jobs/src/stats/cfbd_team_season_stats.ts",
     "talent:cfbd": "ts-node apps/jobs/src/stats/cfbd_talent.ts",
     "verify:jobs": "node scripts/validate-team-aliases.mjs && node scripts/verify-job-assets.mjs",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",

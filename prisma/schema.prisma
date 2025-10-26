@@ -129,6 +129,30 @@ model Recruiting {
   @@map("recruiting")
 }
 
+model TeamSeasonStat {
+  season     Int      @map("season")
+  teamId     String   @map("team_id")
+  yppOff     Decimal? @map("ypp_off")
+  successOff Decimal? @map("success_off")
+  passYpaOff Decimal? @map("pass_ypa_off")
+  rushYpcOff Decimal? @map("rush_ypc_off")
+  paceOff    Decimal? @map("pace_off")
+  yppDef     Decimal? @map("ypp_def")
+  successDef Decimal? @map("success_def")
+  passYpaDef Decimal? @map("pass_ypa_def")
+  rushYpcDef Decimal? @map("rush_ypc_def")
+  paceDef    Decimal? @map("pace_def")
+  epaOff     Decimal? @map("epa_off")
+  epaDef     Decimal? @map("epa_def")
+  rawJson    Json?    @map("raw_json")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@id([season, teamId])
+  @@index([season])
+  @@index([teamId])
+  @@map("team_season_stats")
+}
+
 model MarketLine {
   id          String   @id @default(cuid())
   gameId      String   @map("game_id")

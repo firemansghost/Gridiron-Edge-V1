@@ -1,0 +1,90 @@
+name: CFBD Team Season Stats Sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season to sync (e.g., 2024, 2025)'
+        required: true
+        default: '2025'
+        type: string
+  schedule:
+    # Run nightly at 2 AM UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  sync-season-stats:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build jobs
+        run: npm run build:jobs
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Debug CFBD connectivity
+        if: always()
+        env:
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+          CFBD_BASE_URL: ${{ vars.CFBD_BASE_URL }}
+        run: |
+          echo "🔍 Testing CFBD season stats connectivity..."
+          echo "Testing 2024 (known good season)..."
+          curl -sS -D - \
+            -H "Authorization: Bearer $CFBD_API_KEY" \
+            -H "Accept: application/json" \
+            "https://api.collegefootballdata.com/stats/season/team?year=2024&excludeGarbageTime=true" \
+            | head -n 20
+          echo ""
+          echo "Testing 2025 (current season)..."
+          curl -sS -D - \
+            -H "Authorization: Bearer $CFBD_API_KEY" \
+            -H "Accept: application/json" \
+            "https://api.collegefootballdata.com/stats/season/team?year=2025&excludeGarbageTime=true" \
+            | head -n 20
+
+      - name: Run CFBD Team Season Stats Sync
+        env:
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+          CFBD_BASE_URL: ${{ vars.CFBD_BASE_URL }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SEASON="${{ github.event.inputs.season }}"
+          else
+            SEASON="2025"
+          fi
+          echo "Running season stats sync for $SEASON"
+          node apps/jobs/dist/src/stats/cfbd_team_season_stats.js --season=$SEASON
+
+      - name: Verify season stats were inserted
+        run: |
+          npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "
+          SELECT season, COUNT(*) as count 
+          FROM team_season_stats 
+          WHERE season IN (2024, 2025)
+          GROUP BY 1 
+          ORDER BY 1 DESC;
+          "
+
+      - name: Show sample data
+        run: |
+          npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "
+          SELECT team_id, ypp_off, success_off, epa_off
+          FROM team_season_stats
+          WHERE season = 2025
+          ORDER BY team_id
+          LIMIT 10;
+          "

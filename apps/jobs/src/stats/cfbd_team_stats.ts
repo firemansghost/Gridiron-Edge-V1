@@ -159,7 +159,7 @@ function parseArgs(): { season: number; weeks: number[] } {
 /**
  * Fetch team stats from CFBD API
  */
-async function fetchTeamStats(season: number, week: number): Promise<CFBDTeamStats[]> {
+async function fetchTeamStats(season: number, week: number): Promise<{ data: CFBDTeamStats[]; weeksRequested: number; weeksJson: number; weeksNonJson: number; upserts: number }> {
   const apiKey = process.env.CFBD_API_KEY;
   if (!apiKey) {
     throw new Error('CFBD_API_KEY environment variable is required');
@@ -231,9 +231,9 @@ async function fetchTeamStats(season: number, week: number): Promise<CFBDTeamSta
 
     if (!contentType || !contentType.includes('application/json')) {
       const preview = body.substring(0, 200);
-      console.error(`   [CFBD] Invalid content-type: ${contentType}`);
-      console.error(`   [CFBD] Response body (first 200 bytes): ${preview}...`);
-      throw new Error(`CFBD non-JSON (status=${response.status}, type=${contentType}): ${preview}`);
+      console.warn(`   [CFBD] Non-JSON response (status=${response.status}, type=${contentType}): ${preview}`);
+      console.warn(`   [CFBD] Skipping week ${week} - endpoint returned non-JSON content`);
+      return { data: [], weeksRequested: 1, weeksJson: 0, weeksNonJson: 1, upserts: 0 };
     }
 
     console.log(`   [CFBD] Raw response length: ${body.length}`);
@@ -255,7 +255,7 @@ async function fetchTeamStats(season: number, week: number): Promise<CFBDTeamSta
     }
     console.log(`   [CFBD] Fetched ${data.length} team stats for ${season} Week ${week}`);
     
-    return data;
+    return { data, weeksRequested: 1, weeksJson: 1, weeksNonJson: 0, upserts: 0 };
   } catch (error) {
     clearTimeout(timeout);
     if (error.name === 'AbortError') {
@@ -415,17 +415,29 @@ async function main() {
 
     let totalUpserted = 0;
     let totalErrors = 0;
+    let totalWeeksRequested = 0;
+    let totalWeeksJson = 0;
+    let totalWeeksNonJson = 0;
 
     for (const week of args.weeks) {
       console.log(`\n📥 Processing ${args.season} Week ${week}...`);
       
       try {
         // Fetch team stats from CFBD
-        const cfbdStats = await fetchTeamStats(args.season, week);
+        const result = await fetchTeamStats(args.season, week);
+        
+        totalWeeksRequested += result.weeksRequested;
+        totalWeeksJson += result.weeksJson;
+        totalWeeksNonJson += result.weeksNonJson;
+        
+        if (result.weeksNonJson > 0) {
+          console.log(`   ⚠️  Week ${week} returned non-JSON content - skipping`);
+          continue;
+        }
         
         // Map to our format
         const teamGameStats: TeamGameStatData[] = [];
-        for (const cfbdStat of cfbdStats) {
+        for (const cfbdStat of result.data) {
           const stat = await mapCFBDStatsToTeamGameStat(cfbdStat);
           if (stat) {
             teamGameStats.push(stat);
@@ -447,13 +459,16 @@ async function main() {
 
       } catch (error) {
         console.error(`   ❌ Failed to process Week ${week}:`, error);
+        totalErrors++;
       }
     }
 
     console.log('\n📊 Summary:');
+    console.log(`   Weeks requested: ${totalWeeksRequested}`);
+    console.log(`   Weeks with JSON: ${totalWeeksJson}`);
+    console.log(`   Weeks with non-JSON: ${totalWeeksNonJson}`);
     console.log(`   Stats upserted: ${totalUpserted}`);
     console.log(`   Errors: ${totalErrors}`);
-    console.log(`   Total processed: ${totalUpserted + totalErrors}`);
 
   } catch (error) {
     console.error('❌ Job failed:', error);

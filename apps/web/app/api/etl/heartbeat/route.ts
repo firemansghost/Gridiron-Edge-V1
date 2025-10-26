@@ -18,9 +18,15 @@ export async function GET(request: NextRequest) {
       where: { season: 2025 }
     });
 
+    // Get team season stats count for 2025
+    const teamSeasonStats2025 = await prisma.teamSeasonStat.count({
+      where: { season: 2025 }
+    });
+
     return NextResponse.json({
       recruiting_2025: recruiting2025,
       team_game_stats_2025: teamGameStats2025,
+      team_season_stats_2025: teamSeasonStats2025,
       timestamp: new Date().toISOString()
     });
 
@@ -31,6 +37,7 @@ export async function GET(request: NextRequest) {
         error: 'Failed to fetch ETL status',
         recruiting_2025: 0,
         team_game_stats_2025: 0,
+        team_season_stats_2025: 0,
         timestamp: new Date().toISOString()
       },
       { status: 500 }
