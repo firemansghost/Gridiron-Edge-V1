@@ -30,6 +30,7 @@
     "stats:cfbd": "ts-node apps/jobs/src/stats/cfbd_team_stats.ts",
     "stats:season:cfbd": "ts-node apps/jobs/src/stats/cfbd_team_season_stats.ts",
     "talent:cfbd": "ts-node apps/jobs/src/stats/cfbd_talent.ts",
+    "ratings:baseline": "ts-node apps/jobs/src/ratings/baseline_from_scores.ts",
     "verify:jobs": "node scripts/validate-team-aliases.mjs && node scripts/verify-job-assets.mjs",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "postinstall": "npm run prisma:generate"

@@ -18,10 +18,16 @@ export async function GET(request: NextRequest) {
       where: { season: 2025 }
     });
 
-    // Get team season stats count for 2025
-    const teamSeasonStats2025 = await prisma.teamSeasonStat.count({
-      where: { season: 2025 }
-    });
+    // Get team season stats count for 2025 (handle gracefully if table doesn't exist)
+    let teamSeasonStats2025 = 0;
+    try {
+      teamSeasonStats2025 = await prisma.teamSeasonStat.count({
+        where: { season: 2025 }
+      });
+    } catch (error) {
+      console.warn('team_season_stats table not accessible:', error);
+      teamSeasonStats2025 = 0;
+    }
 
     return NextResponse.json({
       recruiting_2025: recruiting2025,

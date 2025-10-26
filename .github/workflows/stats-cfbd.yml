@@ -40,36 +40,38 @@ jobs:
       - name: Generate Prisma client
         run: npm run db:generate
 
-      - name: Debug CFBD connectivity
-        if: always()
-        env:
-          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
-          CFBD_BASE_URL: ${{ vars.CFBD_BASE_URL }}
-        run: |
-          echo "🔍 Testing CFBD connectivity..."
-          echo "Testing 2024 (known good season)..."
-          node scripts/curl-cfbd.mjs stats --season 2024 --week 9
-          echo ""
-          node scripts/curl-cfbd.mjs talent --season 2024
-          echo ""
-          echo "Testing 2025 (current season)..."
-          node scripts/curl-cfbd.mjs stats --season 2025 --week 9
-          echo ""
-          node scripts/curl-cfbd.mjs talent --season 2025
-          echo ""
-          node scripts/curl-cfbd.mjs fbs --season 2025
-
-      - name: CFBD curl preflight (week 9)
+      - name: CFBD preflight: season team stats
         if: always()
         env:
           CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
         run: |
-          echo "CFBD curl preflight (week 9)…"
-          curl -sS -D - \
+          echo "== CFBD preflight: season team stats =="
+          curl -i \
             -H "Authorization: Bearer $CFBD_API_KEY" \
             -H "Accept: application/json" \
-            "https://api.collegefootballdata.com/stats/game/team?year=2025&week=9&seasonType=regular&classification=fbs" \
-            | head -n 40
+            "https://api.collegefootballdata.com/stats/season/team?year=2024&excludeGarbageTime=true" | head -n 40
+
+      - name: CFBD preflight: games/teams probe
+        if: always()
+        env:
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+        run: |
+          echo "== CFBD preflight: games/teams probe =="
+          curl -i \
+            -H "Authorization: Bearer $CFBD_API_KEY" \
+            -H "Accept: application/json" \
+            "https://api.collegefootballdata.com/games/teams?year=2024&week=1&seasonType=regular" | head -n 60
+
+      - name: CFBD preflight: game team stats
+        if: always()
+        env:
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+        run: |
+          echo "== CFBD preflight: game team stats =="
+          curl -i \
+            -H "Authorization: Bearer $CFBD_API_KEY" \
+            -H "Accept: application/json" \
+            "https://api.collegefootballdata.com/stats/game/team?year=2025&week=9&seasonType=regular&classification=fbs" | head -n 40
 
       - name: Run CFBD Team Stats Sync
         env:

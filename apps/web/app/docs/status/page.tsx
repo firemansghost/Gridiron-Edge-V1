@@ -156,9 +156,28 @@ export default async function StatusPage() {
     const teamGameStats2025 = await prisma.teamGameStat.count({
       where: { season: 2025 }
     });
-    const teamSeasonStats2025 = await prisma.teamSeasonStat.count({
-      where: { season: 2025 }
-    });
+    
+    // Handle team_season_stats gracefully (table might be empty)
+    let teamSeasonStats2025 = 0;
+    try {
+      teamSeasonStats2025 = await prisma.teamSeasonStat.count({
+        where: { season: 2025 }
+      });
+    } catch (error) {
+      console.warn('team_season_stats table not accessible:', error);
+      teamSeasonStats2025 = 0;
+    }
+
+    // Handle team_season_ratings gracefully (table might be empty)
+    let teamSeasonRatings2025 = 0;
+    try {
+      teamSeasonRatings2025 = await prisma.teamSeasonRating.count({
+        where: { season: 2025 }
+      });
+    } catch (error) {
+      console.warn('team_season_ratings table not accessible:', error);
+      teamSeasonRatings2025 = 0;
+    }
 
     const oddsRowCount = Array.isArray(oddsCoverage) 
       ? oddsCoverage.reduce((sum: number, row: any) => sum + parseInt(row.rows), 0)
@@ -513,6 +532,41 @@ export default async function StatusPage() {
                   </p>
                 </div>
               </div>
+            </div>
+          </section>
+
+          {/* Baseline Ratings */}
+          <section>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-4">
+              🏆 Baseline Ratings (Scores)
+            </h2>
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <h3 className="font-medium text-green-900 mb-2">2025 Team Ratings</h3>
+                  <p className="text-green-800">
+                    <span className="font-mono font-bold">{teamSeasonRatings2025.toLocaleString()}</span> teams rated
+                  </p>
+                </div>
+                <div>
+                  <h3 className="font-medium text-green-900 mb-2">Status</h3>
+                  <p className="text-green-800">
+                    {teamSeasonRatings2025 > 0 ? '✅ Ratings available' : '⏳ Pending calculation'}
+                  </p>
+                </div>
+              </div>
+              {teamSeasonRatings2025 > 0 && (
+                <div className="mt-4">
+                  <a 
+                    href="/api/ratings/baseline?season=2025&limit=10" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-green-700 hover:text-green-800 underline text-sm"
+                  >
+                    View top 10 teams →
+                  </a>
+                </div>
+              )}
             </div>
           </section>
 

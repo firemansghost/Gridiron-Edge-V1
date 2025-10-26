@@ -35,26 +35,27 @@ jobs:
       - name: Generate Prisma client
         run: npm run db:generate
 
-      - name: Debug CFBD connectivity
+      - name: CFBD preflight: season team stats
         if: always()
         env:
           CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
-          CFBD_BASE_URL: ${{ vars.CFBD_BASE_URL }}
         run: |
-          echo "🔍 Testing CFBD season stats connectivity..."
-          echo "Testing 2024 (known good season)..."
-          curl -sS -D - \
+          echo "== CFBD preflight: season team stats =="
+          curl -i \
             -H "Authorization: Bearer $CFBD_API_KEY" \
             -H "Accept: application/json" \
-            "https://api.collegefootballdata.com/stats/season/team?year=2024&excludeGarbageTime=true" \
-            | head -n 20
-          echo ""
-          echo "Testing 2025 (current season)..."
-          curl -sS -D - \
+            "https://api.collegefootballdata.com/stats/season/team?year=2024&excludeGarbageTime=true" | head -n 40
+
+      - name: CFBD preflight: games/teams probe
+        if: always()
+        env:
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+        run: |
+          echo "== CFBD preflight: games/teams probe =="
+          curl -i \
             -H "Authorization: Bearer $CFBD_API_KEY" \
             -H "Accept: application/json" \
-            "https://api.collegefootballdata.com/stats/season/team?year=2025&excludeGarbageTime=true" \
-            | head -n 20
+            "https://api.collegefootballdata.com/games/teams?year=2024&week=1&seasonType=regular" | head -n 60
 
       - name: Run CFBD Team Season Stats Sync
         env:
