@@ -22,8 +22,8 @@
 
 # California schools
 "UCLA": ucla
-"San José State": san-jose-state
-"San Jose State": san-jose-state
+"San José State": san-jos-state
+"San Jose State": san-jos-state
 "San Diego State": san-diego-state
 
 # Other common teams
@@ -31,7 +31,7 @@
 "UNLV": unlv
 "North Texas": north-texas
 
-# Additional FBS teams (add more as needed)
+# Additional FBS teams
 "Michigan": michigan
 "Penn State": penn-state
 "Notre Dame": notre-dame
@@ -92,22 +92,16 @@
 "Old Dominion": old-dominion
 "Appalachian State": appalachian-state
 "Coastal Carolina": coastal-carolina
-"Georgia Southern": georgia-southern
-"Georgia State": georgia-state
 "Troy": troy
 "South Alabama": south-alabama
 "Louisiana": louisiana
 "Louisiana-Monroe": louisiana-monroe
 "Arkansas State": arkansas-state
-"South Alabama": south-alabama
-"Troy": troy
 "Southern Miss": southern-miss
 "Louisiana Tech": louisiana-tech
 "UTEP": utep
 "UTSA": utsa
 "Rice": rice
-"North Texas": north-texas
-"UTEP": utep
 "New Mexico": new-mexico
 "New Mexico State": new-mexico-state
 "Wyoming": wyoming
@@ -115,11 +109,7 @@
 "Air Force": air-force
 "Boise State": boise-state
 "Fresno State": fresno-state
-"San Diego State": san-diego-state
-"San José State": san-jose-state
-"San Jose State": san-jose-state
 "Hawaii": hawaii
-"UNLV": unlv
 "Nevada": nevada
 "Utah State": utah-state
 "Colorado": colorado
@@ -127,18 +117,8 @@
 "Arizona State": arizona-state
 "California": california
 "Stanford": stanford
-"Oregon": oregon
-"Oregon State": oregon-state
-"Washington": washington
-"Washington State": washington-state
-"UCLA": ucla
-"USC": usc
 "Army": army
 "Navy": navy
-"Air Force": air-force
-"Notre Dame": notre-dame
-"BYU": byu
-"Liberty": liberty
 "Connecticut": connecticut
 "UMass": umass
 "Buffalo": buffalo
@@ -150,53 +130,6 @@
 "Western Michigan": western-michigan
 "Northern Illinois": northern-illinois
 "Ball State": ball-state
-"Miami (OH)": miami-oh
-"Miami (Ohio)": miami-oh
 "Ohio": ohio
 "Akron": akron
-"Kent State": kent-state
-"Bowling Green": bowling-green
-"Toledo": toledo
-"Central Michigan": central-michigan
-"Eastern Michigan": eastern-michigan
-"Western Michigan": western-michigan
-"Northern Illinois": northern-illinois
-"Ball State": ball-state
-"Temple": temple
-"Tulane": tulane
-"SMU": smu
-"Memphis": memphis
 "Tulsa": tulsa
-"UCF": ucf
-"USF": usf
-"Cincinnati": cincinnati
-"East Carolina": east-carolina
-"Charlotte": charlotte
-"FAU": fau
-"FIU": fiu
-"Marshall": marshall
-"Old Dominion": old-dominion
-"Appalachian State": appalachian-state
-"Coastal Carolina": coastal-carolina
-"Georgia Southern": georgia-southern
-"Georgia State": georgia-state
-"Troy": troy
-"South Alabama": south-alabama
-"Louisiana": louisiana
-"Louisiana-Monroe": louisiana-monroe
-"Arkansas State": arkansas-state
-"Southern Miss": southern-miss
-"Louisiana Tech": louisiana-tech
-"UTEP": utep
-"UTSA": utsa
-"Rice": rice
-"North Texas": north-texas
-"New Mexico": new-mexico
-"New Mexico State": new-mexico-state
-"Wyoming": wyoming
-"Colorado State": colorado-state
-"Boise State": boise-state
-"Fresno State": fresno-state
-"Hawaii": hawaii
-"Nevada": nevada
-"Utah State": utah-state

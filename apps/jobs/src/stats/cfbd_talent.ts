@@ -112,38 +112,47 @@ async function fetchTeamTalent(season: number): Promise<CFBDTeamTalent[]> {
       throw new Error(`CFBD API redirected: ${response.status} to ${location}`);
     }
 
+    // Check content-type first
+    const contentType = response.headers.get('content-type');
+    const body = await response.text();
+    
     if (!response.ok) {
-      const errorBody = await response.text();
       console.error(`   [CFBD] HTTP ${response.status} ${response.statusText}`);
-      console.error(`   [CFBD] Error body: ${errorBody.substring(0, 400)}...`);
-      throw new Error(`CFBD API error: ${response.status} ${response.statusText}`);
+      console.error(`   [CFBD] Content-Type: ${contentType}`);
+      console.error(`   [CFBD] Response body (first 200 bytes): ${body.substring(0, 200)}...`);
+      
+      if (response.status === 401) {
+        throw new Error(`CFBD API unauthorized (401) - check API key`);
+      } else if (response.status === 403) {
+        throw new Error(`CFBD API forbidden (403) - check API permissions`);
+      } else if (response.status === 404) {
+        throw new Error(`CFBD API not found (404) - check endpoint URL`);
+      } else {
+        throw new Error(`CFBD API error: ${response.status} ${response.statusText}`);
+      }
     }
 
-    // Check content-type
-    const contentType = response.headers.get('content-type');
     if (!contentType || !contentType.includes('application/json')) {
-      const body = await response.text();
       console.error(`   [CFBD] Invalid content-type: ${contentType}`);
-      console.error(`   [CFBD] Response body preview: ${body.substring(0, 400)}...`);
+      console.error(`   [CFBD] Response body (first 200 bytes): ${body.substring(0, 200)}...`);
       throw new Error(`CFBD API returned non-JSON content-type: ${contentType}`);
     }
 
-    const responseText = await response.text();
-    console.log(`   [CFBD] Raw response length: ${responseText.length}`);
+    console.log(`   [CFBD] Raw response length: ${body.length}`);
     
     // Check if response is HTML (error page)
-    if (responseText.trim().startsWith('<')) {
+    if (body.trim().startsWith('<')) {
       console.error(`   [CFBD] Received HTML response instead of JSON`);
-      console.error(`   [CFBD] Response preview: ${responseText.substring(0, 200)}...`);
+      console.error(`   [CFBD] Response preview: ${body.substring(0, 200)}...`);
       throw new Error('CFBD API returned HTML instead of JSON - likely an error page');
     }
 
     let data: CFBDTeamTalent[];
     try {
-      data = JSON.parse(responseText) as CFBDTeamTalent[];
+      data = JSON.parse(body) as CFBDTeamTalent[];
     } catch (parseError) {
       console.error(`   [CFBD] JSON parse error: ${parseError}`);
-      console.error(`   [CFBD] Response preview: ${responseText.substring(0, 200)}...`);
+      console.error(`   [CFBD] Response preview: ${body.substring(0, 200)}...`);
       throw new Error(`Failed to parse JSON response: ${parseError}`);
     }
     console.log(`   [CFBD] Fetched ${data.length} team talent records for ${season}`);
@@ -188,14 +197,30 @@ function mapCFBDTalentToRecruiting(cfbdTalent: CFBDTeamTalent): RecruitingData |
 }
 
 /**
- * Upsert recruiting data to database
+ * Upsert recruiting data to database with FK safety checks
  */
-async function upsertRecruitingData(recruitingData: RecruitingData[]): Promise<{ upserted: number; errors: number }> {
+async function upsertRecruitingData(recruitingData: RecruitingData[]): Promise<{ upserted: number; skippedMissingTeam: number; errors: number }> {
   let upserted = 0;
+  let skippedMissingTeam = 0;
   let errors = 0;
+
+  // Check which teams exist in the database
+  const teamIds = [...new Set(recruitingData.map(d => d.teamId))];
+  const existingTeams = await prisma.team.findMany({
+    where: { id: { in: teamIds } },
+    select: { id: true }
+  });
+  const existingTeamIds = new Set(existingTeams.map(t => t.id));
 
   for (const data of recruitingData) {
     try {
+      // Check if team exists before upsert
+      if (!existingTeamIds.has(data.teamId)) {
+        console.warn(`   [DB] Skipping ${data.teamId} - team not found in database`);
+        skippedMissingTeam++;
+        continue;
+      }
+
       await prisma.recruiting.upsert({
         where: {
           teamId_season: {
@@ -232,7 +257,7 @@ async function upsertRecruitingData(recruitingData: RecruitingData[]): Promise<{
     }
   }
 
-  return { upserted, errors };
+  return { upserted, skippedMissingTeam, errors };
 }
 
 /**
@@ -262,14 +287,15 @@ async function main() {
 
       if (recruitingData.length > 0) {
         // Upsert to database
-        const { upserted, errors } = await upsertRecruitingData(recruitingData);
+        const { upserted, skippedMissingTeam, errors } = await upsertRecruitingData(recruitingData);
         
-        console.log(`   ✅ Upserted ${upserted} records, ${errors} errors`);
+        console.log(`   ✅ Upserted ${upserted} records, skipped ${skippedMissingTeam} missing teams, ${errors} errors`);
         
         console.log('\n📊 Summary:');
         console.log(`   Records upserted: ${upserted}`);
+        console.log(`   Skipped missing teams: ${skippedMissingTeam}`);
         console.log(`   Errors: ${errors}`);
-        console.log(`   Total processed: ${upserted + errors}`);
+        console.log(`   Total processed: ${recruitingData.length}`);
       } else {
         console.log(`   ℹ️  No team talent data found for ${args.season}`);
       }

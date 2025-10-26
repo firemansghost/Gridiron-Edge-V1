@@ -47,6 +47,12 @@ jobs:
           CFBD_BASE_URL: ${{ vars.CFBD_BASE_URL }}
         run: |
           echo "🔍 Testing CFBD connectivity..."
+          echo "Testing 2024 (known good season)..."
+          node scripts/curl-cfbd.mjs stats --season 2024 --week 9
+          echo ""
+          node scripts/curl-cfbd.mjs talent --season 2024
+          echo ""
+          echo "Testing 2025 (current season)..."
           node scripts/curl-cfbd.mjs stats --season 2025 --week 9
           echo ""
           node scripts/curl-cfbd.mjs talent --season 2025

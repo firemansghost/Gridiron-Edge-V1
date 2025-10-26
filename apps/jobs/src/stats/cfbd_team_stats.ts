@@ -208,38 +208,47 @@ async function fetchTeamStats(season: number, week: number): Promise<CFBDTeamSta
       throw new Error(`CFBD API redirected: ${response.status} to ${location}`);
     }
 
+    // Check content-type first
+    const contentType = response.headers.get('content-type');
+    const body = await response.text();
+    
     if (!response.ok) {
-      const errorBody = await response.text();
       console.error(`   [CFBD] HTTP ${response.status} ${response.statusText}`);
-      console.error(`   [CFBD] Error body: ${errorBody.substring(0, 400)}...`);
-      throw new Error(`CFBD API error: ${response.status} ${response.statusText}`);
+      console.error(`   [CFBD] Content-Type: ${contentType}`);
+      console.error(`   [CFBD] Response body (first 200 bytes): ${body.substring(0, 200)}...`);
+      
+      if (response.status === 401) {
+        throw new Error(`CFBD API unauthorized (401) - check API key`);
+      } else if (response.status === 403) {
+        throw new Error(`CFBD API forbidden (403) - check API permissions`);
+      } else if (response.status === 404) {
+        throw new Error(`CFBD API not found (404) - check endpoint URL`);
+      } else {
+        throw new Error(`CFBD API error: ${response.status} ${response.statusText}`);
+      }
     }
 
-    // Check content-type
-    const contentType = response.headers.get('content-type');
     if (!contentType || !contentType.includes('application/json')) {
-      const body = await response.text();
       console.error(`   [CFBD] Invalid content-type: ${contentType}`);
-      console.error(`   [CFBD] Response body preview: ${body.substring(0, 400)}...`);
+      console.error(`   [CFBD] Response body (first 200 bytes): ${body.substring(0, 200)}...`);
       throw new Error(`CFBD API returned non-JSON content-type: ${contentType}`);
     }
 
-    const responseText = await response.text();
-    console.log(`   [CFBD] Raw response length: ${responseText.length}`);
+    console.log(`   [CFBD] Raw response length: ${body.length}`);
     
     // Check if response is HTML (error page)
-    if (responseText.trim().startsWith('<')) {
+    if (body.trim().startsWith('<')) {
       console.error(`   [CFBD] Received HTML response instead of JSON`);
-      console.error(`   [CFBD] Response preview: ${responseText.substring(0, 200)}...`);
+      console.error(`   [CFBD] Response preview: ${body.substring(0, 200)}...`);
       throw new Error('CFBD API returned HTML instead of JSON - likely an error page');
     }
 
     let data: CFBDTeamStats[];
     try {
-      data = JSON.parse(responseText) as CFBDTeamStats[];
+      data = JSON.parse(body) as CFBDTeamStats[];
     } catch (parseError) {
       console.error(`   [CFBD] JSON parse error: ${parseError}`);
-      console.error(`   [CFBD] Response preview: ${responseText.substring(0, 200)}...`);
+      console.error(`   [CFBD] Response preview: ${body.substring(0, 200)}...`);
       throw new Error(`Failed to parse JSON response: ${parseError}`);
     }
     console.log(`   [CFBD] Fetched ${data.length} team stats for ${season} Week ${week}`);

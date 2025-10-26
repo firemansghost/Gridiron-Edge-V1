@@ -106,16 +106,25 @@ export class TeamResolver {
         const content = fs.readFileSync(cfbdAliasPath, 'utf8');
         const cfbdAliases = yaml.load(content) as TeamAlias;
         
-        for (const [cfbdName, teamId] of Object.entries(cfbdAliases)) {
-          this.cfbdAliases.set(cfbdName.toLowerCase(), teamId);
+        if (!cfbdAliases || typeof cfbdAliases !== 'object') {
+          throw new Error('CFBD aliases file is empty or invalid YAML');
         }
         
-        console.log(`[TEAM_RESOLVER] Loaded ${this.cfbdAliases.size} CFBD-specific aliases`);
+        for (const [cfbdName, teamId] of Object.entries(cfbdAliases)) {
+          if (typeof teamId === 'string' && teamId.trim()) {
+            this.cfbdAliases.set(cfbdName.toLowerCase(), teamId);
+          }
+        }
+        
+        console.log(`[TEAM_RESOLVER] Loaded ${this.cfbdAliases.size} CFBD-specific aliases from ${cfbdAliasPath}`);
       } else {
-        console.log(`[TEAM_RESOLVER] CFBD aliases file not found: ${cfbdAliasPath}`);
+        console.warn(`[TEAM_RESOLVER] CFBD aliases file not found: ${cfbdAliasPath}`);
       }
     } catch (error) {
-      console.error(`[TEAM_RESOLVER] Failed to load CFBD aliases: ${error}`);
+      console.error(`[TEAM_RESOLVER] FATAL: Failed to load CFBD aliases from ${path.join(__dirname, '../config/team_aliases_cfbd.yml')}`);
+      console.error(`[TEAM_RESOLVER] Error:`, (error as Error).message);
+      console.error(`[TEAM_RESOLVER] Cannot proceed without CFBD aliases - exiting`);
+      process.exit(1);
     }
   }
 
