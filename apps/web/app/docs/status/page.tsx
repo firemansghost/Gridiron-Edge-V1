@@ -1,5 +1,6 @@
 import { Metadata } from 'next';
 import { prisma } from '@/lib/prisma';
+import ETLHeartbeat from './etl-heartbeat';
 
 export const dynamic = 'force-dynamic';
 
@@ -573,39 +574,14 @@ export default async function StatusPage() {
           </section>
 
           {/* ETL Heartbeat */}
-          <section>
-            <h2 className="text-2xl font-semibold text-gray-900 mb-4">
-              💓 ETL Heartbeat (2025)
-            </h2>
-            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div>
-                  <h3 className="font-medium text-purple-900 mb-2">Recruiting Data</h3>
-                  <p className="text-purple-800">
-                    <span className="font-mono font-bold">{recruiting2025.toLocaleString()}</span> records
-                  </p>
-                </div>
-                <div>
-                  <h3 className="font-medium text-purple-900 mb-2">Team Game Stats</h3>
-                  <p className="text-purple-800">
-                    <span className="font-mono font-bold">{teamGameStats2025.toLocaleString()}</span> records
-                  </p>
-                </div>
-                <div>
-                  <h3 className="font-medium text-purple-900 mb-2">Season Stats</h3>
-                  <p className="text-purple-800">
-                    <span className="font-mono font-bold">{teamSeasonStats2025.toLocaleString()}</span> records
-                  </p>
-                </div>
-                <div>
-                  <h3 className="font-medium text-purple-900 mb-2">Baseline Ratings</h3>
-                  <p className="text-purple-800">
-                    <span className="font-mono font-bold">{teamSeasonRatings2025.toLocaleString()}</span> teams rated
-                  </p>
-                </div>
-              </div>
-            </div>
-          </section>
+          <ETLHeartbeat 
+            fallbackData={{
+              recruiting2025,
+              teamGameStats2025,
+              teamSeasonStats2025,
+              teamSeasonRatings2025,
+            }}
+          />
 
           {/* Summary */}
           <section>
