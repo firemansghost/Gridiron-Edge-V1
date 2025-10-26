@@ -578,7 +578,7 @@ export default async function StatusPage() {
               💓 ETL Heartbeat (2025)
             </h2>
             <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <h3 className="font-medium text-purple-900 mb-2">Recruiting Data</h3>
                   <p className="text-purple-800">
@@ -595,6 +595,12 @@ export default async function StatusPage() {
                   <h3 className="font-medium text-purple-900 mb-2">Season Stats</h3>
                   <p className="text-purple-800">
                     <span className="font-mono font-bold">{teamSeasonStats2025.toLocaleString()}</span> records
+                  </p>
+                </div>
+                <div>
+                  <h3 className="font-medium text-purple-900 mb-2">Baseline Ratings</h3>
+                  <p className="text-purple-800">
+                    <span className="font-mono font-bold">{teamSeasonRatings2025.toLocaleString()}</span> teams rated
                   </p>
                 </div>
               </div>
