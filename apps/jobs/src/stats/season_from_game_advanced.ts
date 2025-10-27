@@ -197,6 +197,15 @@ async function main() {
     // Convert to array for upsert
     const statsArray = Array.from(aggregatedStats.values());
     
+    // Log summary of what we'll update
+    const teamsWithSuccessOff = statsArray.filter(s => s.weightedSuccessOff > 0).length;
+    const teamsWithEpaOff = statsArray.filter(s => s.weightedEpaOff !== 0).length;
+    const teamsWithSuccessDef = statsArray.filter(s => s.weightedSuccessDef > 0).length;
+    const teamsWithEpaDef = statsArray.filter(s => s.weightedEpaDef !== 0).length;
+    
+    console.log(`📊 Update summary: ${teamsWithSuccessOff} teams with success_off, ${teamsWithEpaOff} teams with epa_off`);
+    console.log(`📊 Update summary: ${teamsWithSuccessDef} teams with success_def, ${teamsWithEpaDef} teams with epa_def`);
+    
     // Upsert to database
     const upserted = await upsertAdvancedStats(statsArray);
     

@@ -1,19 +1,19 @@
-name: CFBD Team Talent Sync
+name: CFBD Advanced Stats Sync
 
 on:
-  schedule:
-    # Run yearly in February (recruiting season)
-    - cron: '0 2 1 2 *'
   workflow_dispatch:
     inputs:
       season:
-        description: 'Season to sync (e.g., 2025)'
+        description: 'Season to sync (e.g., 2024, 2025)'
         required: true
         default: '2025'
         type: string
+  schedule:
+    # Run nightly at 3 AM UTC (after season stats)
+    - cron: '0 3 * * *'
 
 jobs:
-  sync-team-talent:
+  sync-advanced-stats:
     runs-on: ubuntu-latest
     
     steps:
@@ -53,25 +53,28 @@ jobs:
             echo "DIRECT_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
           fi
 
-      - name: Run CFBD Team Talent Sync
+      - name: Run CFBD Advanced Stats Sync
         env:
           CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
           CFBD_BASE_URL: ${{ vars.CFBD_BASE_URL }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DIRECT_URL: ${{ secrets.DIRECT_URL }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            node apps/jobs/dist/src/stats/cfbd_talent.js --season ${{ github.event.inputs.season }}
+            SEASON="${{ github.event.inputs.season }}"
           else
-            # For scheduled runs, sync current year
-            CURRENT_YEAR=$(date +%Y)
-            node apps/jobs/dist/src/stats/cfbd_talent.js --season $CURRENT_YEAR
+            SEASON="2025"
           fi
+          echo "Running advanced stats sync for $SEASON"
+          node apps/jobs/dist/src/stats/season_from_game_advanced.js --season=$SEASON
 
-      - name: Verify talent data was inserted
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      - name: Check advanced stats fill rates
         run: |
-          echo "Checking recruiting table..."
-          npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "SELECT COUNT(*) as total_records, COUNT(DISTINCT season) as seasons FROM recruiting WHERE season = 2025;"
+          npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "
+          SELECT season,
+                 SUM((success_off IS NOT NULL)::int) AS success_filled,
+                 SUM((epa_off     IS NOT NULL)::int) AS epa_filled,
+                 COUNT(*) AS rows
+          FROM team_season_stats
+          WHERE season IN (2024, 2025)
+          GROUP BY 1
+          ORDER BY 1 DESC;
+          "

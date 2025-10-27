@@ -47,6 +47,7 @@ jobs:
           else
             echo "ERROR: DATABASE_URL secret not set"; exit 1
           fi
+          echo "FORCE_DB_TEAMS=true" >> $GITHUB_ENV
 
       - name: Set DIRECT_URL for Prisma
         run: |

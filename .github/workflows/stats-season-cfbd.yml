@@ -42,6 +42,7 @@ jobs:
           else
             echo "ERROR: DATABASE_URL secret not set"; exit 1
           fi
+          echo "FORCE_DB_TEAMS=true" >> $GITHUB_ENV
 
       - name: Set DIRECT_URL for Prisma
         run: |
@@ -51,6 +52,12 @@ jobs:
             # Fallback: use pooled URL if a direct one is not configured yet
             echo "DIRECT_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
           fi
+
+      - name: Debug DB + teams
+        run: |
+          echo "DB URL Host: $(echo $DATABASE_URL | cut -d'@' -f2 | cut -d'/' -f1)"
+          npx prisma db execute --schema=prisma/schema.prisma --stdin <<< 'SELECT COUNT(*) AS team_rows FROM teams;'
+          npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "SELECT id FROM teams ORDER BY id LIMIT 10;"
 
       - name: Run CFBD Team Season Stats Sync
         env:
@@ -83,4 +90,17 @@ jobs:
           WHERE season = 2025
           ORDER BY team_id
           LIMIT 10;
+          "
+
+      - name: Check advanced stats fill rates
+        run: |
+          npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "
+          SELECT season,
+                 SUM((success_off IS NOT NULL)::int) AS success_filled,
+                 SUM((epa_off     IS NOT NULL)::int) AS epa_filled,
+                 COUNT(*) AS rows
+          FROM team_season_stats
+          WHERE season IN (2024, 2025)
+          GROUP BY 1
+          ORDER BY 1 DESC;
           "

@@ -187,13 +187,47 @@ export class TeamResolver {
     }
   }
 
-  private loadFBSTeams(): void {
-    // For now, load from aliases to avoid async issues
-    // TODO: Implement database loading once async issues are resolved
+  private async loadFBSTeams(): Promise<void> {
+    const forceDbTeams = process.env.FORCE_DB_TEAMS === 'true';
+    
+    if (forceDbTeams) {
+      console.log(`[TEAM_RESOLVER] FORCE_DB_TEAMS=true, attempting database load...`);
+    }
+
+    // Try to load from database first
+    try {
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
+      
+      const teams = await prisma.team.findMany({
+        select: { id: true }
+      });
+      
+      if (teams.length >= 130) {
+        // Database has sufficient teams, use it
+        for (const team of teams) {
+          this.fbsTeams.add(team.id.toLowerCase());
+        }
+        await prisma.$disconnect();
+        console.log(`[TEAM_RESOLVER] source=db (${this.fbsTeams.size} teams)`);
+        return;
+      } else {
+        console.log(`[TEAM_RESOLVER] Database has only ${teams.length} teams, need ≥130`);
+        await prisma.$disconnect();
+      }
+    } catch (error) {
+      console.warn(`[TEAM_RESOLVER] Could not load teams from database: ${error}`);
+    }
+
+    // Fallback to aliases
+    if (forceDbTeams) {
+      throw new Error(`FORCE_DB_TEAMS=true but database load failed or insufficient teams (${this.fbsTeams.size} < 130)`);
+    }
+
     for (const teamId of this.aliases.values()) {
       this.fbsTeams.add(teamId);
     }
-    console.log(`[TEAM_RESOLVER] Loaded ${this.fbsTeams.size} teams from aliases (fallback mode)`);
+    console.log(`[TEAM_RESOLVER] source=aliases (${this.fbsTeams.size} teams)`);
   }
 
   private teamExistsInDatabase(teamId: string): boolean {
@@ -253,8 +287,12 @@ export class TeamResolver {
       return null;
     }
 
+    // Strip diacritics for better matching (e.g., "José" -> "Jose")
+    const strippedName = providerName.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const normalizedName = strippedName.toLowerCase().trim();
+
     // Check if the provider name itself is denylisted
-    if (this.denylist.has(providerName.toLowerCase())) {
+    if (this.denylist.has(normalizedName)) {
       console.log(`[TEAM_RESOLVER] Denylisted team name: ${providerName}`);
       return null;
     }
@@ -267,7 +305,7 @@ export class TeamResolver {
 
     // Step 1: Provider-specific alias match (CFBD first if provider is cfbd)
     if (options?.provider === 'cfbd') {
-      const cfbdMatch = this.cfbdAliases.get(providerName.toLowerCase());
+      const cfbdMatch = this.cfbdAliases.get(normalizedName);
       if (cfbdMatch) {
         // Check if it's denylisted
         if (this.denylist.has(cfbdMatch)) {
@@ -290,7 +328,7 @@ export class TeamResolver {
     }
 
     // Step 2: Exact alias match (general aliases)
-    const exactMatch = this.aliases.get(providerName.toLowerCase());
+    const exactMatch = this.aliases.get(normalizedName);
     if (exactMatch) {
       // Check if it's denylisted
       if (this.denylist.has(exactMatch)) {
