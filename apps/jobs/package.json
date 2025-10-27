@@ -10,7 +10,8 @@
     "start:dist": "node dist/ingest.js"
   },
   "dependencies": {
-    "@prisma/client": "^6.17.0"
+    "@prisma/client": "^6.17.0",
+    "yargs": "^17.7.2"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

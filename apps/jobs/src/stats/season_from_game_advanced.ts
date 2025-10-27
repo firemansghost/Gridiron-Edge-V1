@@ -137,55 +137,58 @@ function aggregateTeamAdvancedStats(records: CFBDGameAdvancedStats[]): Map<strin
 }
 
 async function upsertAdvancedStats(statsData: TeamAdvancedStats[]): Promise<number> {
-  let upserted = 0;
+  let updated = 0;
   
   for (const stat of statsData) {
     try {
-      await prisma.teamSeasonStat.upsert({
+      await prisma.teamSeasonStat.update({
         where: {
           season_teamId: {
             season: stat.season,
             teamId: stat.team.toLowerCase().replace(/\s+/g, '-'),
           }
         },
-        update: {
-          successOff: stat.weightedSuccessOff > 0 ? stat.weightedSuccessOff : null,
-          epaOff: stat.weightedEpaOff !== 0 ? stat.weightedEpaOff : null,
-          successDef: stat.weightedSuccessDef > 0 ? stat.weightedSuccessDef : null,
-          epaDef: stat.weightedEpaDef !== 0 ? stat.weightedEpaDef : null,
-        },
-        create: {
-          season: stat.season,
-          teamId: stat.team.toLowerCase().replace(/\s+/g, '-'),
+        data: {
           successOff: stat.weightedSuccessOff > 0 ? stat.weightedSuccessOff : null,
           epaOff: stat.weightedEpaOff !== 0 ? stat.weightedEpaOff : null,
           successDef: stat.weightedSuccessDef > 0 ? stat.weightedSuccessDef : null,
           epaDef: stat.weightedEpaDef !== 0 ? stat.weightedEpaDef : null,
         }
       });
-      upserted++;
+      updated++;
     } catch (error) {
-      console.error(`[DB] Failed to upsert advanced stats for ${stat.team}:`, error);
+      // P2025: record not found -> skip quietly (do not create here)
+      if (error.code !== 'P2025') {
+        console.error(`[DB] Failed to update advanced stats for ${stat.team}:`, error);
+      }
     }
   }
   
-  return upserted;
+  return updated;
 }
 
 async function main() {
   try {
-    const args = process.argv.slice(2);
-    let season = 2025;
+    // Parse command line arguments with yargs
+    const yargs = require('yargs/yargs');
+    const argv = yargs(process.argv.slice(2))
+      .option('season', { type: 'number', demandOption: true })
+      .parse();
     
-    // Parse command line arguments
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '--season' && i + 1 < args.length) {
-        season = parseInt(args[i + 1]);
-        i++;
-      }
+    const season = Number(argv.season);
+    
+    if (isNaN(season) || season < 2000 || season > 2030) {
+      throw new Error('Invalid season. Must be between 2000 and 2030');
     }
 
-    console.log(`🚀 Starting CFBD Game Advanced Stats aggregation for ${season}...`);
+    console.log(`🚀 Starting CFBD Game Advanced Stats aggregation for season=${season}...`);
+
+    // Get FBS team IDs from database
+    const fbsTeams = await prisma.team.findMany({
+      select: { id: true }
+    });
+    const fbsIds = new Set(fbsTeams.map(t => t.id));
+    console.log(`📋 Loaded ${fbsIds.size} FBS teams from database`);
 
     // Fetch raw data from CFBD
     const rawRecords = await fetchGameAdvancedStats(season);
@@ -194,8 +197,13 @@ async function main() {
     const aggregatedStats = aggregateTeamAdvancedStats(rawRecords);
     console.log(`[AGGREGATION] Aggregated ${rawRecords.length} records into ${aggregatedStats.size} teams`);
     
-    // Convert to array for upsert
-    const statsArray = Array.from(aggregatedStats.values());
+    // Convert to array and filter to FBS teams only
+    const statsArray = Array.from(aggregatedStats.values()).filter(stat => {
+      const teamId = stat.team.toLowerCase().replace(/\s+/g, '-');
+      return fbsIds.has(teamId);
+    });
+    
+    console.log(`🔍 Filtered to ${statsArray.length} FBS teams (from ${aggregatedStats.size} total)`);
     
     // Log summary of what we'll update
     const teamsWithSuccessOff = statsArray.filter(s => s.weightedSuccessOff > 0).length;
@@ -206,8 +214,8 @@ async function main() {
     console.log(`📊 Update summary: ${teamsWithSuccessOff} teams with success_off, ${teamsWithEpaOff} teams with epa_off`);
     console.log(`📊 Update summary: ${teamsWithSuccessDef} teams with success_def, ${teamsWithEpaDef} teams with epa_def`);
     
-    // Upsert to database
-    const upserted = await upsertAdvancedStats(statsArray);
+    // Update existing records in database
+    const updated = await upsertAdvancedStats(statsArray);
     
     // Calculate fill ratios
     const fillRatios = {
@@ -221,7 +229,7 @@ async function main() {
     console.log(`📊 Summary:`);
     console.log(`   Records pulled: ${rawRecords.length}`);
     console.log(`   Teams aggregated: ${aggregatedStats.size}`);
-    console.log(`   Records upserted: ${upserted}`);
+    console.log(`   Records updated: ${updated}`);
     console.log(`   Fields fill: success_off=${fillRatios.successOff.toFixed(1)}%, epa_off=${fillRatios.epaOff.toFixed(1)}%, success_def=${fillRatios.successDef.toFixed(1)}%, epa_def=${fillRatios.epaDef.toFixed(1)}%`);
 
   } catch (error) {

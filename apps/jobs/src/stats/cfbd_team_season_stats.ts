@@ -304,12 +304,12 @@ function calculateDerivedStats(teamStats: AggregatedTeamStats): void {
     teamStats.paceDef = totalPlays / teamStats.gamesDef;
   }
   
-  // For now, set success rate and EPA to null since CFBD doesn't provide these
-  // We'll need to calculate them differently or use a different data source
-  teamStats.successOff = null;
-  teamStats.epaOff = null;
-  teamStats.successDef = null;
-  teamStats.epaDef = null;
+      // For now, set success rate and EPA to undefined since CFBD doesn't provide these
+      // We'll need to calculate them differently or use a different data source
+      teamStats.successOff = undefined;
+      teamStats.epaOff = undefined;
+      teamStats.successDef = undefined;
+      teamStats.epaDef = undefined;
 }
 
 async function mapAggregatedStatsToTeamSeasonStat(aggregatedStats: AggregatedTeamStats): Promise<TeamSeasonStatData | null> {
@@ -334,17 +334,17 @@ async function mapAggregatedStatsToTeamSeasonStat(aggregatedStats: AggregatedTea
     season: aggregatedStats.season,
     teamId,
     yppOff: aggregatedStats.yppOff,
-    successOff: aggregatedStats.successOff,
-    passYpaOff: aggregatedStats.passYpaOff,
-    rushYpcOff: aggregatedStats.rushYpcOff,
-    paceOff: safeNumber(paceOff),
-    yppDef: aggregatedStats.yppDef,
-    successDef: aggregatedStats.successDef,
-    passYpaDef: aggregatedStats.passYpaDef,
-    rushYpcDef: aggregatedStats.rushYpcDef,
-    paceDef: safeNumber(paceDef),
-    epaOff: aggregatedStats.epaOff,
-    epaDef: aggregatedStats.epaDef,
+    successOff: aggregatedStats.successOff ?? undefined,
+    passYpaOff: aggregatedStats.passYpaOff ?? undefined,
+    rushYpcOff: aggregatedStats.rushYpcOff ?? undefined,
+    paceOff: safeNumber(paceOff) ?? undefined,
+    yppDef: aggregatedStats.yppDef ?? undefined,
+    successDef: aggregatedStats.successDef ?? undefined,
+    passYpaDef: aggregatedStats.passYpaDef ?? undefined,
+    rushYpcDef: aggregatedStats.rushYpcDef ?? undefined,
+    paceDef: safeNumber(paceDef) ?? undefined,
+    epaOff: aggregatedStats.epaOff ?? undefined,
+    epaDef: aggregatedStats.epaDef ?? undefined,
     rawJson: aggregatedStats.rawStats
   };
 }
@@ -405,18 +405,19 @@ async function upsertTeamSeasonStats(statsData: TeamSeasonStatData[]): Promise<n
 
 async function main() {
   try {
-    const args = process.argv.slice(2);
-    let season = 2025;
+    // Parse command line arguments with yargs
+    const yargs = require('yargs/yargs');
+    const argv = yargs(process.argv.slice(2))
+      .option('season', { type: 'number', demandOption: true })
+      .parse();
     
-    // Parse command line arguments
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '--season' && i + 1 < args.length) {
-        season = parseInt(args[i + 1]);
-        i++;
-      }
+    const season = Number(argv.season);
+    
+    if (isNaN(season) || season < 2000 || season > 2030) {
+      throw new Error('Invalid season. Must be between 2000 and 2030');
     }
 
-    console.log(`🚀 Starting CFBD Team Season Stats ingestion for ${season}...`);
+    console.log(`🚀 Starting CFBD Team Season Stats ingestion for season=${season}...`);
 
     // Enable debug mode for first few teams
     if (process.env.DEBUG_CFBD === '1') {
