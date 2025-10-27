@@ -257,6 +257,11 @@ function aggregateTeamStats(records: CFBDSeasonStatRecord[]): Map<string, Aggreg
 
 // Calculate derived stats from raw stats
 function calculateDerivedStats(teamStats: AggregatedTeamStats): void {
+  // Debug logging for raw totals
+  if (process.env.DEBUG_CFBD === '1') {
+    console.log(`[DEBUG] ${teamStats.team}: total_yards=${teamStats.totalYardsOff}, total_plays=${(teamStats.passAttemptsOff || 0) + (teamStats.rushAttemptsOff || 0)}, pass_yards=${teamStats.passingYardsOff}, pass_att=${teamStats.passAttemptsOff}, rush_yards=${teamStats.rushingYardsOff}, rush_att=${teamStats.rushAttemptsOff}, games=${teamStats.gamesOff}`);
+  }
+
   // Calculate offensive stats
   if (teamStats.totalYardsOff && teamStats.passAttemptsOff && teamStats.rushAttemptsOff) {
     const totalPlays = teamStats.passAttemptsOff + teamStats.rushAttemptsOff;

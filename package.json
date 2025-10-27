@@ -29,6 +29,7 @@
     "scores:cfbd": "node apps/jobs/dist/src/cfbd-game-results.js",
     "stats:cfbd": "ts-node apps/jobs/src/stats/cfbd_team_stats.ts",
     "stats:season:cfbd": "ts-node apps/jobs/src/stats/cfbd_team_season_stats.ts",
+    "stats:advanced:cfbd": "ts-node apps/jobs/src/stats/season_from_game_advanced.ts",
     "talent:cfbd": "ts-node apps/jobs/src/stats/cfbd_talent.ts",
     "ratings:baseline": "ts-node apps/jobs/src/ratings/baseline_from_scores.ts",
     "verify:jobs": "node scripts/validate-team-aliases.mjs && node scripts/verify-job-assets.mjs",
