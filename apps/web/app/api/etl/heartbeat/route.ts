@@ -37,10 +37,10 @@ export async function GET(request: NextRequest) {
       });
       const seasonStatsData = await prisma.teamSeasonStat.findFirst({
         where: { season: 2025 },
-        orderBy: { updatedAt: 'desc' },
-        select: { updatedAt: true }
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true }
       });
-      teamSeasonStatsLastUpdated = seasonStatsData?.updatedAt || null;
+      teamSeasonStatsLastUpdated = seasonStatsData?.createdAt || null;
     } catch (error) {
       console.warn('team_season_stats table not accessible:', error);
       teamSeasonStats2025 = 0;
@@ -55,10 +55,10 @@ export async function GET(request: NextRequest) {
       });
       const ratingsData = await prisma.teamSeasonRating.findFirst({
         where: { season: 2025 },
-        orderBy: { updatedAt: 'desc' },
-        select: { updatedAt: true }
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true }
       });
-      ratingsLastUpdated = ratingsData?.updatedAt || null;
+      ratingsLastUpdated = ratingsData?.createdAt || null;
     } catch (error) {
       console.warn('team_season_ratings table not accessible:', error);
       ratings2025 = 0;

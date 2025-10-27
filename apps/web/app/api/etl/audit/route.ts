@@ -68,8 +68,7 @@ export async function GET(request: NextRequest) {
         successDef: true,
         epaOff: true,
         epaDef: true,
-        pacePlaysGm: true,
-        paceDef: true,
+        pace: true,
         createdAt: true,
         updatedAt: true,
       }
@@ -84,8 +83,8 @@ export async function GET(request: NextRequest) {
       successDef: totalRecords > 0 ? (teamGameStats.filter(r => r.successDef !== null).length / totalRecords) * 100 : 0,
       epaOff: totalRecords > 0 ? (teamGameStats.filter(r => r.epaOff !== null).length / totalRecords) * 100 : 0,
       epaDef: totalRecords > 0 ? (teamGameStats.filter(r => r.epaDef !== null).length / totalRecords) * 100 : 0,
-      paceOff: totalRecords > 0 ? (teamGameStats.filter(r => r.pacePlaysGm !== null).length / totalRecords) * 100 : 0,
-      paceDef: totalRecords > 0 ? (teamGameStats.filter(r => r.paceDef !== null).length / totalRecords) * 100 : 0,
+      paceOff: totalRecords > 0 ? (teamGameStats.filter(r => r.pace !== null).length / totalRecords) * 100 : 0,
+      paceDef: 0, // Not available in TeamGameStat schema
     };
 
     // Calculate data freshness

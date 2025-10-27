@@ -10,7 +10,14 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import { FeatureLoader, DataSourceSummary } from '../../../../apps/jobs/src/ratings/feature-loader';
+// Import types only - we'll implement the logic directly here to avoid cross-workspace imports
+interface DataSourceSummary {
+  gameFeatures: number;
+  seasonFeatures: number;
+  baselineOnly: number;
+  missing: number;
+  total: number;
+}
 
 const prisma = new PrismaClient();
 
@@ -23,8 +30,71 @@ export async function GET(request: NextRequest) {
 
     console.log(`[DATA_SOURCES] Getting data source summary for season ${season}`);
 
-    const loader = new FeatureLoader(prisma);
-    const summary = await loader.getDataSourceSummary(season);
+    // Get all teams for the season
+    const teams = await prisma.team.findMany({
+      select: { id: true }
+    });
+
+    const summary: DataSourceSummary = {
+      gameFeatures: 0,
+      seasonFeatures: 0,
+      baselineOnly: 0,
+      missing: 0,
+      total: teams.length,
+    };
+
+    // Check each team's data sources
+    for (const team of teams) {
+      // Check for game-level stats
+      const gameStats = await prisma.teamGameStat.findFirst({
+        where: {
+          teamId: team.id,
+          season,
+          OR: [
+            { yppOff: { not: null } },
+            { yppDef: { not: null } },
+            { successOff: { not: null } },
+            { successDef: { not: null } },
+          ]
+        }
+      });
+
+      if (gameStats) {
+        summary.gameFeatures++;
+        continue;
+      }
+
+      // Check for season-level stats
+      const seasonStats = await prisma.teamSeasonStat.findUnique({
+        where: {
+          season_teamId: {
+            season,
+            teamId: team.id,
+          }
+        }
+      });
+
+      if (seasonStats) {
+        summary.seasonFeatures++;
+        continue;
+      }
+
+      // Check for baseline ratings
+      const baselineRating = await prisma.teamSeasonRating.findUnique({
+        where: {
+          season_teamId: {
+            season,
+            teamId: team.id,
+          }
+        }
+      });
+
+      if (baselineRating) {
+        summary.baselineOnly++;
+      } else {
+        summary.missing++;
+      }
+    }
 
     // Calculate percentages
     const percentages = {
