@@ -35,6 +35,14 @@ jobs:
       - name: Generate Prisma client
         run: npm run db:generate
 
+      - name: Set DATABASE_URL for Prisma
+        run: |
+          if [ -n "${{ secrets.DATABASE_URL }}" ]; then
+            echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
+          else
+            echo "ERROR: DATABASE_URL secret not set"; exit 1
+          fi
+
       - name: Set DIRECT_URL for Prisma
         run: |
           if [ -n "${{ secrets.DIRECT_URL }}" ]; then

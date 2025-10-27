@@ -29,7 +29,24 @@ interface AggregatedTeamStats {
   season: number;
   conference: string;
   
-  // Offensive stats
+  // Raw stats we collect from CFBD
+  totalYardsOff?: number;
+  passAttemptsOff?: number;
+  passCompletionsOff?: number;
+  passingYardsOff?: number;
+  rushAttemptsOff?: number;
+  rushingYardsOff?: number;
+  gamesOff?: number;
+  
+  totalYardsDef?: number;
+  passAttemptsDef?: number;
+  passCompletionsDef?: number;
+  passingYardsDef?: number;
+  rushAttemptsDef?: number;
+  rushingYardsDef?: number;
+  gamesDef?: number;
+  
+  // Derived stats (calculated from raw stats)
   yppOff?: number;
   successOff?: number;
   epaOff?: number;
@@ -37,7 +54,6 @@ interface AggregatedTeamStats {
   rushYpcOff?: number;
   paceOff?: number;
   
-  // Defensive stats  
   yppDef?: number;
   successDef?: number;
   epaDef?: number;
@@ -93,46 +109,58 @@ function normalizeStatName(statName: string): string {
 function mapStatNameToField(statName: string, category?: string): string | null {
   const normalized = normalizeStatName(statName);
   
-  // Offensive stats
-  if (normalized.includes('yards_per_play') || normalized.includes('ypp')) {
-    return 'yppOff';
-  }
-  if (normalized.includes('success_rate') || normalized.includes('successrate')) {
-    return 'successOff';
-  }
-  if (normalized.includes('points_per_play') || normalized.includes('ppa') || normalized.includes('epa')) {
-    return 'epaOff';
-  }
-  if (normalized.includes('yards_per_pass') || normalized.includes('passing_yards_per_attempt')) {
-    return 'passYpaOff';
-  }
-  if (normalized.includes('yards_per_rush') || normalized.includes('rushing_yards_per_carry')) {
-    return 'rushYpcOff';
-  }
-  if (normalized.includes('seconds_per_play') || normalized.includes('pace')) {
-    return 'paceOff';
+  // Debug logging for first few teams
+  if (process.env.DEBUG_CFBD === '1') {
+    console.log(`[DEBUG] Mapping stat: "${statName}" -> "${normalized}" (category: ${category})`);
   }
   
-  // Defensive stats (look for defense context)
-  if (category && category.toLowerCase().includes('defense')) {
-    if (normalized.includes('yards_per_play') || normalized.includes('ypp')) {
-      return 'yppDef';
-    }
-    if (normalized.includes('success_rate') || normalized.includes('successrate')) {
-      return 'successDef';
-    }
-    if (normalized.includes('points_per_play') || normalized.includes('ppa') || normalized.includes('epa')) {
-      return 'epaDef';
-    }
-    if (normalized.includes('yards_per_pass') || normalized.includes('passing_yards_per_attempt')) {
-      return 'passYpaDef';
-    }
-    if (normalized.includes('yards_per_rush') || normalized.includes('rushing_yards_per_carry')) {
-      return 'rushYpcDef';
-    }
-    if (normalized.includes('seconds_per_play') || normalized.includes('pace')) {
-      return 'paceDef';
-    }
+  // We need to map basic stats to our derived fields
+  // CFBD provides raw counts, we need to calculate rates/efficiency
+  
+  // Offensive stats
+  if (normalized === 'totalyards') {
+    return 'totalYardsOff';
+  }
+  if (normalized === 'passattempts') {
+    return 'passAttemptsOff';
+  }
+  if (normalized === 'passcompletions') {
+    return 'passCompletionsOff';
+  }
+  if (normalized === 'netpassingyards') {
+    return 'passingYardsOff';
+  }
+  if (normalized === 'rushingattempts') {
+    return 'rushAttemptsOff';
+  }
+  if (normalized === 'rushingyards') {
+    return 'rushingYardsOff';
+  }
+  if (normalized === 'games') {
+    return 'gamesOff';
+  }
+  
+  // Defensive stats (opponent stats)
+  if (normalized === 'totalyardsopponent') {
+    return 'totalYardsDef';
+  }
+  if (normalized === 'passattemptsopponent') {
+    return 'passAttemptsDef';
+  }
+  if (normalized === 'passcompletionsopponent') {
+    return 'passCompletionsDef';
+  }
+  if (normalized === 'netpassingyardsopponent') {
+    return 'passingYardsDef';
+  }
+  if (normalized === 'rushingattemptsopponent') {
+    return 'rushAttemptsDef';
+  }
+  if (normalized === 'rushingyardsopponent') {
+    return 'rushingYardsDef';
+  }
+  if (normalized === 'games') {
+    return 'gamesDef';
   }
   
   return null;
@@ -188,6 +216,7 @@ async function fetchTeamSeasonStats(season: number): Promise<CFBDSeasonStatRecor
 
 function aggregateTeamStats(records: CFBDSeasonStatRecord[]): Map<string, AggregatedTeamStats> {
   const teamMap = new Map<string, AggregatedTeamStats>();
+  let debugCount = 0;
   
   for (const record of records) {
     const teamKey = record.team;
@@ -204,17 +233,78 @@ function aggregateTeamStats(records: CFBDSeasonStatRecord[]): Map<string, Aggreg
     const teamStats = teamMap.get(teamKey)!;
     teamStats.rawStats.push(record);
     
+    // Debug logging for first few teams
+    if (process.env.DEBUG_CFBD === '1' && debugCount < 20) {
+      console.log(`[DEBUG] Team: ${teamKey}, Stat: "${record.statName}" = ${record.statValue}`);
+      debugCount++;
+    }
+    
     // Map the stat to our field
     const fieldName = mapStatNameToField(record.statName, record.category);
     if (fieldName) {
       const value = safeNumber(record.statValue);
       if (value !== null) {
         (teamStats as any)[fieldName] = value;
+        if (process.env.DEBUG_CFBD === '1' && debugCount <= 20) {
+          console.log(`[DEBUG] Mapped ${record.statName} -> ${fieldName} = ${value}`);
+        }
       }
     }
   }
   
   return teamMap;
+}
+
+// Calculate derived stats from raw stats
+function calculateDerivedStats(teamStats: AggregatedTeamStats): void {
+  // Calculate offensive stats
+  if (teamStats.totalYardsOff && teamStats.passAttemptsOff && teamStats.rushAttemptsOff) {
+    const totalPlays = teamStats.passAttemptsOff + teamStats.rushAttemptsOff;
+    if (totalPlays > 0) {
+      teamStats.yppOff = teamStats.totalYardsOff / totalPlays;
+    }
+  }
+  
+  if (teamStats.passingYardsOff && teamStats.passAttemptsOff && teamStats.passAttemptsOff > 0) {
+    teamStats.passYpaOff = teamStats.passingYardsOff / teamStats.passAttemptsOff;
+  }
+  
+  if (teamStats.rushingYardsOff && teamStats.rushAttemptsOff && teamStats.rushAttemptsOff > 0) {
+    teamStats.rushYpcOff = teamStats.rushingYardsOff / teamStats.rushAttemptsOff;
+  }
+  
+  if (teamStats.passAttemptsOff && teamStats.rushAttemptsOff && teamStats.gamesOff && teamStats.gamesOff > 0) {
+    const totalPlays = teamStats.passAttemptsOff + teamStats.rushAttemptsOff;
+    teamStats.paceOff = totalPlays / teamStats.gamesOff;
+  }
+  
+  // Calculate defensive stats
+  if (teamStats.totalYardsDef && teamStats.passAttemptsDef && teamStats.rushAttemptsDef) {
+    const totalPlays = teamStats.passAttemptsDef + teamStats.rushAttemptsDef;
+    if (totalPlays > 0) {
+      teamStats.yppDef = teamStats.totalYardsDef / totalPlays;
+    }
+  }
+  
+  if (teamStats.passingYardsDef && teamStats.passAttemptsDef && teamStats.passAttemptsDef > 0) {
+    teamStats.passYpaDef = teamStats.passingYardsDef / teamStats.passAttemptsDef;
+  }
+  
+  if (teamStats.rushingYardsDef && teamStats.rushAttemptsDef && teamStats.rushAttemptsDef > 0) {
+    teamStats.rushYpcDef = teamStats.rushingYardsDef / teamStats.rushAttemptsDef;
+  }
+  
+  if (teamStats.passAttemptsDef && teamStats.rushAttemptsDef && teamStats.gamesDef && teamStats.gamesDef > 0) {
+    const totalPlays = teamStats.passAttemptsDef + teamStats.rushAttemptsDef;
+    teamStats.paceDef = totalPlays / teamStats.gamesDef;
+  }
+  
+  // For now, set success rate and EPA to null since CFBD doesn't provide these
+  // We'll need to calculate them differently or use a different data source
+  teamStats.successOff = null;
+  teamStats.epaOff = null;
+  teamStats.successDef = null;
+  teamStats.epaDef = null;
 }
 
 async function mapAggregatedStatsToTeamSeasonStat(aggregatedStats: AggregatedTeamStats): Promise<TeamSeasonStatData | null> {
@@ -323,12 +413,22 @@ async function main() {
 
     console.log(`🚀 Starting CFBD Team Season Stats ingestion for ${season}...`);
 
+    // Enable debug mode for first few teams
+    if (process.env.DEBUG_CFBD === '1') {
+      console.log(`[DEBUG] Debug mode enabled - will show stat mapping details`);
+    }
+
     // Fetch raw data from CFBD
     const rawRecords = await fetchTeamSeasonStats(season);
     
     // Aggregate by team
     const aggregatedStats = aggregateTeamStats(rawRecords);
     console.log(`[AGGREGATION] Aggregated ${rawRecords.length} records into ${aggregatedStats.size} teams`);
+    
+    // Calculate derived stats for each team
+    for (const [teamName, teamStats] of aggregatedStats) {
+      calculateDerivedStats(teamStats);
+    }
     
     // Convert to our format and resolve teams
     const teamStatsData: TeamSeasonStatData[] = [];
