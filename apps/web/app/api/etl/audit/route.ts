@@ -127,11 +127,40 @@ export async function GET(request: NextRequest) {
       dataAge,
     };
 
+    // Get season stats data for additional context
+    let seasonStatsData = null;
+    try {
+      const seasonStats = await prisma.teamSeasonStat.findMany({
+        where: { season },
+        select: {
+          yppOff: true,
+          successOff: true,
+          epaOff: true,
+          paceOff: true,
+          createdAt: true,
+        }
+      });
+      
+      seasonStatsData = {
+        count: seasonStats.length,
+        fillRatios: {
+          yppOff: seasonStats.length > 0 ? (seasonStats.filter(s => s.yppOff !== null).length / seasonStats.length) * 100 : 0,
+          successOff: seasonStats.length > 0 ? (seasonStats.filter(s => s.successOff !== null).length / seasonStats.length) * 100 : 0,
+          epaOff: seasonStats.length > 0 ? (seasonStats.filter(s => s.epaOff !== null).length / seasonStats.length) * 100 : 0,
+          paceOff: seasonStats.length > 0 ? (seasonStats.filter(s => s.paceOff !== null).length / seasonStats.length) * 100 : 0,
+        },
+        lastUpdated: seasonStats.length > 0 ? new Date(Math.max(...seasonStats.map(s => s.createdAt.getTime()))) : null,
+      };
+    } catch (error) {
+      console.warn('team_season_stats not accessible:', error);
+    }
+
     // Add context counts
     const context = {
       recruiting: recruitingCount,
       seasonStats: seasonStatsCount,
       ratings: ratingsCount,
+      seasonStatsData,
     };
 
     console.log(`[ETL_AUDIT] Found ${totalRecords} team game stats, fill ratios:`, fillRatios);

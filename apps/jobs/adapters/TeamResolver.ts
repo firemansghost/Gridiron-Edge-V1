@@ -18,8 +18,11 @@ export class TeamResolver {
   private cfbdAliases: Map<string, string> = new Map();
   private denylist: Set<string> = new Set();
   private fbsTeams: Set<string> = new Set();
+  private verboseLogging: boolean;
+  private resolvedTeams: Set<string> = new Set(); // Track teams we've already logged
 
   constructor() {
+    this.verboseLogging = process.env.LOG_RESOLVER_VERBOSE === 'true';
     this.loadAliases();
     this.loadCFBDAliases();
     this.loadDenylist();
@@ -265,7 +268,10 @@ export class TeamResolver {
           console.log(`[TEAM_RESOLVER] Denylisted CFBD team: ${providerName} -> ${cfbdMatch}`);
           return null;
         }
-        console.log(`[TEAM_RESOLVER] CFBD alias match: ${providerName} -> ${cfbdMatch}`);
+        if (this.verboseLogging || !this.resolvedTeams.has(providerName)) {
+          console.log(`[TEAM_RESOLVER] CFBD alias match: ${providerName} -> ${cfbdMatch}`);
+          this.resolvedTeams.add(providerName);
+        }
         return cfbdMatch;
       }
     }
@@ -385,5 +391,23 @@ export class TeamResolver {
     }
     
     return unmatched;
+  }
+
+  /**
+   * Get a summary of team resolution statistics
+   */
+  getResolutionSummary(): { resolved: number; total: number; unique: number } {
+    return {
+      resolved: this.resolvedTeams.size,
+      total: this.resolvedTeams.size, // This will be updated by the calling code
+      unique: this.resolvedTeams.size
+    };
+  }
+
+  /**
+   * Reset the resolved teams tracking (useful for new batches)
+   */
+  resetResolutionTracking(): void {
+    this.resolvedTeams.clear();
   }
 }

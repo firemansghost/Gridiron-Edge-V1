@@ -2,7 +2,7 @@
 
 /**
  * CFBD Team Season Stats Ingestion
- * Fetches season-level team statistics from CFBD API
+ * Fetches season-level team statistics from CFBD API and aggregates them by team
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -11,50 +11,42 @@ import { TeamResolver } from '../../adapters/TeamResolver';
 const prisma = new PrismaClient();
 const teamResolver = new TeamResolver();
 
-interface CFBDTeamSeasonStats {
+// CFBD /stats/season returns multiple records per team with different stat categories
+interface CFBDSeasonStatRecord {
+  team: string;
+  conference: string;
+  season: number;
+  statName: string;
+  statValue: number;
+  // Additional fields that might be present
+  category?: string;
+  subcategory?: string;
+}
+
+// Aggregated team season stats
+interface AggregatedTeamStats {
   team: string;
   season: number;
-  games: number;
-  plays: number;
-  yards: number;
-  successRate: number;
-  epa: number;
-  explosiveness: number;
-  passing: {
-    plays: number;
-    yards: number;
-    successRate: number;
-    epa: number;
-    explosiveness: number;
-  };
-  rushing: {
-    plays: number;
-    yards: number;
-    successRate: number;
-    epa: number;
-    explosiveness: number;
-  };
-  defense: {
-    plays: number;
-    yards: number;
-    successRate: number;
-    epa: number;
-    explosiveness: number;
-    passing: {
-      plays: number;
-      yards: number;
-      successRate: number;
-      epa: number;
-      explosiveness: number;
-    };
-    rushing: {
-      plays: number;
-      yards: number;
-      successRate: number;
-      epa: number;
-      explosiveness: number;
-    };
-  };
+  conference: string;
+  
+  // Offensive stats
+  yppOff?: number;
+  successOff?: number;
+  epaOff?: number;
+  passYpaOff?: number;
+  rushYpcOff?: number;
+  paceOff?: number;
+  
+  // Defensive stats  
+  yppDef?: number;
+  successDef?: number;
+  epaDef?: number;
+  passYpaDef?: number;
+  rushYpcDef?: number;
+  paceDef?: number;
+  
+  // Raw data for debugging
+  rawStats: CFBDSeasonStatRecord[];
 }
 
 interface TeamSeasonStatData {
@@ -72,284 +64,308 @@ interface TeamSeasonStatData {
   paceDef?: number;
   epaOff?: number;
   epaDef?: number;
-  rawJson: any;
+  rawJson?: any;
 }
 
-/**
- * Fetch team season stats from CFBD API
- */
-async function fetchTeamSeasonStats(season: number): Promise<CFBDTeamSeasonStats[]> {
+// Helper function to safely convert values to numbers
+function safeNumber(value: any): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number') {
+    return isNaN(value) || !isFinite(value) ? null : value;
+  }
+  if (typeof value === 'string') {
+    const parsed = parseFloat(value);
+    return isNaN(parsed) || !isFinite(parsed) ? null : parsed;
+  }
+  return null;
+}
+
+// Helper function to normalize stat names (handle different naming conventions)
+function normalizeStatName(statName: string): string {
+  return statName
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+}
+
+// Map CFBD stat names to our field names
+function mapStatNameToField(statName: string, category?: string): string | null {
+  const normalized = normalizeStatName(statName);
+  
+  // Offensive stats
+  if (normalized.includes('yards_per_play') || normalized.includes('ypp')) {
+    return 'yppOff';
+  }
+  if (normalized.includes('success_rate') || normalized.includes('successrate')) {
+    return 'successOff';
+  }
+  if (normalized.includes('points_per_play') || normalized.includes('ppa') || normalized.includes('epa')) {
+    return 'epaOff';
+  }
+  if (normalized.includes('yards_per_pass') || normalized.includes('passing_yards_per_attempt')) {
+    return 'passYpaOff';
+  }
+  if (normalized.includes('yards_per_rush') || normalized.includes('rushing_yards_per_carry')) {
+    return 'rushYpcOff';
+  }
+  if (normalized.includes('seconds_per_play') || normalized.includes('pace')) {
+    return 'paceOff';
+  }
+  
+  // Defensive stats (look for defense context)
+  if (category && category.toLowerCase().includes('defense')) {
+    if (normalized.includes('yards_per_play') || normalized.includes('ypp')) {
+      return 'yppDef';
+    }
+    if (normalized.includes('success_rate') || normalized.includes('successrate')) {
+      return 'successDef';
+    }
+    if (normalized.includes('points_per_play') || normalized.includes('ppa') || normalized.includes('epa')) {
+      return 'epaDef';
+    }
+    if (normalized.includes('yards_per_pass') || normalized.includes('passing_yards_per_attempt')) {
+      return 'passYpaDef';
+    }
+    if (normalized.includes('yards_per_rush') || normalized.includes('rushing_yards_per_carry')) {
+      return 'rushYpcDef';
+    }
+    if (normalized.includes('seconds_per_play') || normalized.includes('pace')) {
+      return 'paceDef';
+    }
+  }
+  
+  return null;
+}
+
+async function fetchTeamSeasonStats(season: number): Promise<CFBDSeasonStatRecord[]> {
+  const baseUrl = process.env.CFBD_BASE_URL || 'https://api.collegefootballdata.com';
   const apiKey = process.env.CFBD_API_KEY;
+  
   if (!apiKey) {
     throw new Error('CFBD_API_KEY environment variable is required');
   }
 
-  const baseUrl = process.env.CFBD_BASE_URL || 'https://api.collegefootballdata.com';
   const url = new URL(`${baseUrl}/stats/season`);
   url.searchParams.set('year', season.toString());
   url.searchParams.set('excludeGarbageTime', 'true');
   
-  // Debug: Log the exact URL being called
-  console.log(`   [CFBD] Full URL: ${url.toString()}`);
+  console.log(`[CFBD] Full URL: ${url.toString()}`);
+  console.log(`[CFBD] Fetching team season stats for ${season}...`);
 
-  console.log(`   [CFBD] Fetching team season stats for ${season}...`);
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Accept': 'application/json',
+      'User-Agent': 'gridiron-edge-jobs/1.0'
+    },
+    redirect: 'manual'
+  });
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-
-  try {
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Accept': 'application/json',
-        'User-Agent': 'gridiron-edge-jobs/1.0'
-      },
-      signal: controller.signal,
-      redirect: 'manual'
-    });
-
-    clearTimeout(timeout);
-
-    if (process.env.DEBUG_CFBD === '1') {
-      console.log(`   [CFBD] Response status: ${response.status}`);
-      console.log(`   [CFBD] Response URL: ${response.url}`);
-    }
-
-    // Handle redirects
-    if (response.status === 301 || response.status === 302) {
-      const location = response.headers.get('location');
-      console.error(`   [CFBD] Redirect detected: ${response.status} to ${location}`);
-      console.error(`   [CFBD] Original URL: ${url.toString()}`);
-      throw new Error(`CFBD API redirected: ${response.status} to ${location}`);
-    }
-
-    // Check content-type first
-    const contentType = response.headers.get('content-type');
-    const body = await response.text();
-    
-    if (!response.ok) {
-      console.error(`   [CFBD] HTTP ${response.status} ${response.statusText}`);
-      console.error(`   [CFBD] Content-Type: ${contentType}`);
-      console.error(`   [CFBD] Response body (first 200 bytes): ${body.substring(0, 200)}...`);
-      
-      if (response.status === 401) {
-        throw new Error(`CFBD API unauthorized (401) - check API key`);
-      } else if (response.status === 403) {
-        throw new Error(`CFBD API forbidden (403) - check API permissions`);
-      } else if (response.status === 404) {
-        throw new Error(`CFBD API not found (404) - check endpoint URL`);
-      } else {
-        throw new Error(`CFBD API error: ${response.status} ${response.statusText}`);
-      }
-    }
-
-    if (!contentType || !contentType.includes('application/json')) {
-      const preview = body.substring(0, 200);
-      console.error(`   [CFBD] Invalid content-type: ${contentType}`);
-      console.error(`   [CFBD] Response body (first 200 bytes): ${preview}...`);
-      throw new Error(`CFBD non-JSON (status=${response.status}, type=${contentType}): ${preview}`);
-    }
-
-    console.log(`   [CFBD] Raw response length: ${body.length}`);
-    
-    // Check if response is HTML (error page)
-    if (body.trim().startsWith('<')) {
-      console.error(`   [CFBD] Received HTML response instead of JSON`);
-      console.error(`   [CFBD] Response preview: ${body.substring(0, 200)}...`);
-      throw new Error('CFBD API returned HTML instead of JSON - likely an error page');
-    }
-
-    let data: CFBDTeamSeasonStats[];
-    try {
-      data = JSON.parse(body) as CFBDTeamSeasonStats[];
-    } catch (parseError) {
-      console.error(`   [CFBD] JSON parse error: ${parseError}`);
-      console.error(`   [CFBD] Response preview: ${body.substring(0, 200)}...`);
-      throw new Error(`Failed to parse JSON response: ${parseError}`);
-    }
-    console.log(`   [CFBD] Fetched ${data.length} team season stats for ${season}`);
-    
-    return data;
-  } catch (error) {
-    clearTimeout(timeout);
-    if (error.name === 'AbortError') {
-      throw new Error('CFBD API request timed out after 30 seconds');
-    }
-    throw error;
+  if (!response.ok) {
+    throw new Error(`CFBD API error: ${response.status} ${response.statusText}`);
   }
+
+  const contentType = response.headers.get('content-type');
+  if (!contentType || !contentType.includes('application/json')) {
+    const body = await response.text();
+    console.log(`[CFBD] Invalid content-type: ${contentType}`);
+    console.log(`[CFBD] Response body (first 200 bytes): ${body.substring(0, 200)}`);
+    throw new Error(`CFBD non-JSON (status=${response.status}, type=${contentType}): ${body.substring(0, 200)}`);
+  }
+
+  const data = await response.json();
+  console.log(`[CFBD] Raw response length: ${JSON.stringify(data).length}`);
+  console.log(`[CFBD] Fetched ${data.length} team season stat records for ${season}`);
+  
+  if (data.length > 0) {
+    console.log(`[CFBD] Sample record:`, JSON.stringify(data[0], null, 2));
+  }
+
+  return data;
 }
 
-/**
- * Map CFBD team season stats to our database format
- */
-function mapCFBDSeasonStatsToTeamSeasonStat(cfbdStats: CFBDTeamSeasonStats): TeamSeasonStatData | null {
-  // Use TeamResolver to resolve team name to team ID
-  const teamId = teamResolver.resolveTeam(cfbdStats.team, 'college-football', { provider: 'cfbd' });
+function aggregateTeamStats(records: CFBDSeasonStatRecord[]): Map<string, AggregatedTeamStats> {
+  const teamMap = new Map<string, AggregatedTeamStats>();
+  
+  for (const record of records) {
+    const teamKey = record.team;
+    
+    if (!teamMap.has(teamKey)) {
+      teamMap.set(teamKey, {
+        team: record.team,
+        season: record.season,
+        conference: record.conference,
+        rawStats: []
+      });
+    }
+    
+    const teamStats = teamMap.get(teamKey)!;
+    teamStats.rawStats.push(record);
+    
+    // Map the stat to our field
+    const fieldName = mapStatNameToField(record.statName, record.category);
+    if (fieldName) {
+      const value = safeNumber(record.statValue);
+      if (value !== null) {
+        (teamStats as any)[fieldName] = value;
+      }
+    }
+  }
+  
+  return teamMap;
+}
 
+async function mapAggregatedStatsToTeamSeasonStat(aggregatedStats: AggregatedTeamStats): Promise<TeamSeasonStatData | null> {
+  // Resolve team name to team ID
+  const teamId = teamResolver.resolveTeam(aggregatedStats.team, 'college-football', { provider: 'cfbd' });
+  
   if (!teamId) {
-    console.warn(`   [CFBD] Could not resolve team: "${cfbdStats.team}"`);
+    console.warn(`[CFBD] Could not resolve team: "${aggregatedStats.team}"`);
     return null;
   }
 
-  // Calculate derived metrics
-  const yppOff = cfbdStats.plays > 0 ? cfbdStats.yards / cfbdStats.plays : null;
-  const successOff = cfbdStats.successRate || null;
-  const epaOff = cfbdStats.epa || null;
-  const paceOff = cfbdStats.games > 0 ? cfbdStats.plays / cfbdStats.games : null;
+  // Calculate pace from seconds per play if available
+  const paceOff = aggregatedStats.paceOff && aggregatedStats.paceOff > 0 
+    ? 60 / aggregatedStats.paceOff 
+    : null;
 
-  // Passing metrics
-  const passYpaOff = cfbdStats.passing?.plays > 0 ? cfbdStats.passing.yards / cfbdStats.passing.plays : null;
-
-  // Rushing metrics
-  const rushYpcOff = cfbdStats.rushing?.plays > 0 ? cfbdStats.rushing.yards / cfbdStats.rushing.plays : null;
-
-  // Defensive metrics (if available)
-  const yppDef = cfbdStats.defense?.plays > 0 ? cfbdStats.defense.yards / cfbdStats.defense.plays : null;
-  const successDef = cfbdStats.defense?.successRate || null;
-  const epaDef = cfbdStats.defense?.epa || null;
-  const paceDef = cfbdStats.games > 0 && cfbdStats.defense?.plays ? cfbdStats.defense.plays / cfbdStats.games : null;
-  const passYpaDef = cfbdStats.defense?.passing?.plays > 0 ? cfbdStats.defense.passing.yards / cfbdStats.defense.passing.plays : null;
-  const rushYpcDef = cfbdStats.defense?.rushing?.plays > 0 ? cfbdStats.defense.rushing.yards / cfbdStats.defense.rushing.plays : null;
+  const paceDef = aggregatedStats.paceDef && aggregatedStats.paceDef > 0 
+    ? 60 / aggregatedStats.paceDef 
+    : null;
 
   return {
-    season: cfbdStats.season,
+    season: aggregatedStats.season,
     teamId,
-    yppOff,
-    successOff,
-    passYpaOff,
-    rushYpcOff,
-    paceOff,
-    yppDef,
-    successDef,
-    passYpaDef,
-    rushYpcDef,
-    paceDef,
-    epaOff,
-    epaDef,
-    rawJson: cfbdStats
+    yppOff: aggregatedStats.yppOff,
+    successOff: aggregatedStats.successOff,
+    passYpaOff: aggregatedStats.passYpaOff,
+    rushYpcOff: aggregatedStats.rushYpcOff,
+    paceOff: safeNumber(paceOff),
+    yppDef: aggregatedStats.yppDef,
+    successDef: aggregatedStats.successDef,
+    passYpaDef: aggregatedStats.passYpaDef,
+    rushYpcDef: aggregatedStats.rushYpcDef,
+    paceDef: safeNumber(paceDef),
+    epaOff: aggregatedStats.epaOff,
+    epaDef: aggregatedStats.epaDef,
+    rawJson: aggregatedStats.rawStats
   };
 }
 
-/**
- * Upsert team season stats to database with FK safety checks
- */
-async function upsertTeamSeasonStats(seasonStats: TeamSeasonStatData[]): Promise<{ upserted: number; skippedMissingTeam: number; errors: number }> {
+async function upsertTeamSeasonStats(statsData: TeamSeasonStatData[]): Promise<number> {
   let upserted = 0;
-  let skippedMissingTeam = 0;
-  let errors = 0;
-
-  // Check which teams exist in the database
-  const teamIds = [...new Set(seasonStats.map(s => s.teamId))];
-  const existingTeams = await prisma.team.findMany({
-    where: { id: { in: teamIds } },
-    select: { id: true }
-  });
-  const existingTeamIds = new Set(existingTeams.map(t => t.id));
-
-  for (const data of seasonStats) {
+  
+  for (const stat of statsData) {
     try {
-      // Check if team exists before upsert
-      if (!existingTeamIds.has(data.teamId)) {
-        console.warn(`   [DB] Skipping ${data.teamId} - team not found in database`);
-        skippedMissingTeam++;
-        continue;
-      }
-
       await prisma.teamSeasonStat.upsert({
         where: {
           season_teamId: {
-            season: data.season,
-            teamId: data.teamId
+            season: stat.season,
+            teamId: stat.teamId,
           }
         },
         update: {
-          yppOff: data.yppOff,
-          successOff: data.successOff,
-          passYpaOff: data.passYpaOff,
-          rushYpcOff: data.rushYpcOff,
-          paceOff: data.paceOff,
-          yppDef: data.yppDef,
-          successDef: data.successDef,
-          passYpaDef: data.passYpaDef,
-          rushYpcDef: data.rushYpcDef,
-          paceDef: data.paceDef,
-          epaOff: data.epaOff,
-          epaDef: data.epaDef,
-          rawJson: data.rawJson
+          yppOff: stat.yppOff,
+          successOff: stat.successOff,
+          passYpaOff: stat.passYpaOff,
+          rushYpcOff: stat.rushYpcOff,
+          paceOff: stat.paceOff,
+          yppDef: stat.yppDef,
+          successDef: stat.successDef,
+          passYpaDef: stat.passYpaDef,
+          rushYpcDef: stat.rushYpcDef,
+          paceDef: stat.paceDef,
+          epaOff: stat.epaOff,
+          epaDef: stat.epaDef,
+          rawJson: stat.rawJson,
         },
         create: {
-          season: data.season,
-          teamId: data.teamId,
-          yppOff: data.yppOff,
-          successOff: data.successOff,
-          passYpaOff: data.passYpaOff,
-          rushYpcOff: data.rushYpcOff,
-          paceOff: data.paceOff,
-          yppDef: data.yppDef,
-          successDef: data.successDef,
-          passYpaDef: data.passYpaDef,
-          rushYpcDef: data.rushYpcDef,
-          paceDef: data.paceDef,
-          epaOff: data.epaOff,
-          epaDef: data.epaDef,
-          rawJson: data.rawJson
+          season: stat.season,
+          teamId: stat.teamId,
+          yppOff: stat.yppOff,
+          successOff: stat.successOff,
+          passYpaOff: stat.passYpaOff,
+          rushYpcOff: stat.rushYpcOff,
+          paceOff: stat.paceOff,
+          yppDef: stat.yppDef,
+          successDef: stat.successDef,
+          passYpaDef: stat.passYpaDef,
+          rushYpcDef: stat.rushYpcDef,
+          paceDef: stat.paceDef,
+          epaOff: stat.epaOff,
+          epaDef: stat.epaDef,
+          rawJson: stat.rawJson,
         }
       });
       upserted++;
     } catch (error) {
-      console.error(`   [DB] Failed to upsert season stats for ${data.teamId}/${data.season}:`, error);
-      errors++;
+      console.error(`[DB] Failed to upsert stats for ${stat.teamId}:`, error);
     }
   }
-
-  return { upserted, skippedMissingTeam, errors };
+  
+  return upserted;
 }
 
-/**
- * Main function
- */
 async function main() {
   try {
     const args = process.argv.slice(2);
-    const seasonArg = args.find(arg => arg.startsWith('--season='));
-    const season = seasonArg ? parseInt(seasonArg.split('=')[1]) : new Date().getFullYear();
-
-    console.log(`🚀 Starting CFBD Team Season Stats ingestion for ${season}...`);
-
-    // Fetch team season stats from CFBD
-    const cfbdStats = await fetchTeamSeasonStats(season);
-
-    if (cfbdStats.length === 0) {
-      console.log(`   ℹ️  No team season stats found for ${season}`);
-      return;
-    }
-
-    // Map to our database format
-    const seasonStats: TeamSeasonStatData[] = [];
-    for (const cfbdStat of cfbdStats) {
-      const mapped = mapCFBDSeasonStatsToTeamSeasonStat(cfbdStat);
-      if (mapped) {
-        seasonStats.push(mapped);
+    let season = 2025;
+    
+    // Parse command line arguments
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--season' && i + 1 < args.length) {
+        season = parseInt(args[i + 1]);
+        i++;
       }
     }
 
-    console.log(`   Found ${seasonStats.length} team season stats records`);
+    console.log(`🚀 Starting CFBD Team Season Stats ingestion for ${season}...`);
 
-    if (seasonStats.length > 0) {
-      // Upsert to database
-      const { upserted, skippedMissingTeam, errors } = await upsertTeamSeasonStats(seasonStats);
-      
-      console.log(`   ✅ Upserted ${upserted} records, skipped ${skippedMissingTeam} missing teams, ${errors} errors`);
-      
-      console.log('\n📊 Summary:');
-      console.log(`   Records upserted: ${upserted}`);
-      console.log(`   Skipped missing teams: ${skippedMissingTeam}`);
-      console.log(`   Errors: ${errors}`);
-      console.log(`   Total processed: ${seasonStats.length}`);
-    } else {
-      console.log(`   ℹ️  No team season stats data found for ${season}`);
+    // Fetch raw data from CFBD
+    const rawRecords = await fetchTeamSeasonStats(season);
+    
+    // Aggregate by team
+    const aggregatedStats = aggregateTeamStats(rawRecords);
+    console.log(`[AGGREGATION] Aggregated ${rawRecords.length} records into ${aggregatedStats.size} teams`);
+    
+    // Convert to our format and resolve teams
+    const teamStatsData: TeamSeasonStatData[] = [];
+    let teamsResolved = 0;
+    let teamsSkipped = 0;
+    
+    for (const [teamName, stats] of aggregatedStats) {
+      const mappedStats = await mapAggregatedStatsToTeamSeasonStat(stats);
+      if (mappedStats) {
+        teamStatsData.push(mappedStats);
+        teamsResolved++;
+      } else {
+        teamsSkipped++;
+      }
     }
+    
+    console.log(`[TEAM_RESOLVER] Resolved: ${teamsResolved}/${aggregatedStats.size} teams (${teamsSkipped} unknown)`);
+    
+    // Upsert to database
+    const upserted = await upsertTeamSeasonStats(teamStatsData);
+    
+    // Calculate fill ratios
+    const fillRatios = {
+      yppOff: teamStatsData.filter(s => s.yppOff !== null).length / teamStatsData.length * 100,
+      successOff: teamStatsData.filter(s => s.successOff !== null).length / teamStatsData.length * 100,
+      epaOff: teamStatsData.filter(s => s.epaOff !== null).length / teamStatsData.length * 100,
+      paceOff: teamStatsData.filter(s => s.paceOff !== null).length / teamStatsData.length * 100,
+    };
+    
+    console.log(`✅ Successfully processed season stats for ${season}`);
+    console.log(`📊 Summary:`);
+    console.log(`   Records pulled: ${rawRecords.length}`);
+    console.log(`   Teams aggregated: ${aggregatedStats.size}`);
+    console.log(`   Teams resolved: ${teamsResolved}`);
+    console.log(`   Teams skipped: ${teamsSkipped}`);
+    console.log(`   Records upserted: ${upserted}`);
+    console.log(`   Fields fill: ypp_off=${fillRatios.yppOff.toFixed(1)}%, success_off=${fillRatios.successOff.toFixed(1)}%, epa_off=${fillRatios.epaOff.toFixed(1)}%, pace_off=${fillRatios.paceOff.toFixed(1)}%`);
 
   } catch (error) {
     console.error('❌ Fatal error:', error);
@@ -359,7 +375,6 @@ async function main() {
   }
 }
 
-// Run if called directly
 if (require.main === module) {
-  main();
+  main().catch(console.error);
 }
