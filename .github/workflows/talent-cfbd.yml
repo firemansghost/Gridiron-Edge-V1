@@ -35,6 +35,15 @@ jobs:
       - name: Generate Prisma client
         run: npm run db:generate
 
+      - name: Set DIRECT_URL for Prisma
+        run: |
+          if [ -n "${{ secrets.DIRECT_URL }}" ]; then
+            echo "DIRECT_URL=${{ secrets.DIRECT_URL }}" >> $GITHUB_ENV
+          else
+            # Fallback: use pooled URL if a direct one is not configured yet
+            echo "DIRECT_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
+          fi
+
       - name: Run CFBD Team Talent Sync
         env:
           CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
