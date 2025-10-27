@@ -351,8 +351,10 @@ async function upsertTeamSeasonStats(statsData: TeamSeasonStatData[]): Promise<n
     try {
       await prisma.teamSeasonStat.upsert({
         where: {
-          season: stat.season,
-          teamId: stat.teamId,
+          season_teamId: {
+            season: stat.season,
+            teamId: stat.teamId,
+          }
         },
         update: {
           yppOff: stat.yppOff,

@@ -34,11 +34,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build jobs
-        run: npm run build:jobs
-
       - name: Generate Prisma client
         run: npm run db:generate
+
+      - name: Build jobs
+        run: npm run build:jobs
 
       - name: Set DATABASE_URL for Prisma
         run: |
