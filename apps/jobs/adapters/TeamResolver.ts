@@ -26,7 +26,11 @@ export class TeamResolver {
     this.loadAliases();
     this.loadCFBDAliases();
     this.loadDenylist();
-    this.loadFBSTeams();
+    // Note: loadFBSTeams() is now async and called separately
+  }
+
+  async initialize(): Promise<void> {
+    await this.loadFBSTeams();
   }
 
   private loadAliases(): void {
@@ -187,14 +191,37 @@ export class TeamResolver {
     }
   }
 
-  private loadFBSTeams(): void {
-    // This would typically load from a database or static file
-    // For now, we'll populate from the aliases we loaded
-    for (const teamId of this.aliases.values()) {
-      this.fbsTeams.add(teamId);
+  private async loadFBSTeams(): Promise<void> {
+    // Load teams from the database as the single source of truth
+    try {
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
+      
+      const teams = await prisma.team.findMany({
+        select: { id: true }
+      });
+      
+      for (const team of teams) {
+        this.fbsTeams.add(team.id.toLowerCase());
+      }
+      
+      await prisma.$disconnect();
+      console.log(`[TEAM_RESOLVER] Loaded ${this.fbsTeams.size} teams from database`);
+    } catch (error) {
+      console.warn(`[TEAM_RESOLVER] Could not load teams from database: ${error}`);
+      // Fallback to aliases if database is unavailable
+      for (const teamId of this.aliases.values()) {
+        this.fbsTeams.add(teamId);
+      }
+      console.log(`[TEAM_RESOLVER] Fallback: Loaded ${this.fbsTeams.size} teams from aliases`);
     }
-    
-    console.log(`[TEAM_RESOLVER] Loaded ${this.fbsTeams.size} FBS teams`);
+  }
+
+  private teamExistsInDatabase(teamId: string): boolean {
+    // Check if the team ID exists in our FBS teams set
+    // This is a simple check against the teams.json file
+    // In a production system, you might want to query the database directly
+    return this.fbsTeams.has(teamId.toLowerCase());
   }
 
   /**
@@ -268,6 +295,13 @@ export class TeamResolver {
           console.log(`[TEAM_RESOLVER] Denylisted CFBD team: ${providerName} -> ${cfbdMatch}`);
           return null;
         }
+        
+        // Check if the resolved team ID exists in our database
+        if (!this.teamExistsInDatabase(cfbdMatch)) {
+          console.error(`[TEAM_RESOLVER] FK ERROR: Alias "${providerName}" -> "${cfbdMatch}" but team ID doesn't exist in database`);
+          return null;
+        }
+        
         if (this.verboseLogging || !this.resolvedTeams.has(providerName)) {
           console.log(`[TEAM_RESOLVER] CFBD alias match: ${providerName} -> ${cfbdMatch}`);
           this.resolvedTeams.add(providerName);
@@ -284,6 +318,13 @@ export class TeamResolver {
         console.log(`[TEAM_RESOLVER] Denylisted team: ${providerName} -> ${exactMatch}`);
         return null;
       }
+      
+      // Check if the resolved team ID exists in our database
+      if (!this.teamExistsInDatabase(exactMatch)) {
+        console.error(`[TEAM_RESOLVER] FK ERROR: Alias "${providerName}" -> "${exactMatch}" but team ID doesn't exist in database`);
+        return null;
+      }
+      
       return exactMatch;
     }
 
