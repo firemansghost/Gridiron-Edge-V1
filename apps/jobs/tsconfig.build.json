@@ -38,6 +38,7 @@
     "src/stats/cfbd_team_stats.ts",
     "src/stats/cfbd_team_season_stats.ts",
     "src/stats/cfbd_talent.ts",
+    "src/stats/season_from_game_advanced.ts",
     "src/ratings/baseline_from_scores.ts",
     "src/ratings/feature-loader.ts",
     "src/ratings/test-feature-loader.ts"
