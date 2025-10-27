@@ -230,6 +230,18 @@ export class TeamResolver {
     console.log(`[TEAM_RESOLVER] source=aliases (${this.fbsTeams.size} teams)`);
   }
 
+  private preNormalizeName(s: string): string {
+    const noDiacritics = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    // unify A & M forms to A&M token
+    const fixAM = noDiacritics.replace(/\bA\s*&\s*M\b/gi, 'A&M');
+    return fixAM.trim();
+  }
+
+  private postFallbackNormalize(s: string): string {
+    // only after alias miss: drop things like "(OH)"
+    return s.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
   private teamExistsInDatabase(teamId: string): boolean {
     // Check if the team ID exists in our FBS teams set
     // This is a simple check against the teams.json file
@@ -287,9 +299,9 @@ export class TeamResolver {
       return null;
     }
 
-    // Strip diacritics for better matching (e.g., "José" -> "Jose")
-    const strippedName = providerName.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const normalizedName = strippedName.toLowerCase().trim();
+    // Pre-normalize: strip diacritics and unify A&M forms
+    const preNormalized = this.preNormalizeName(providerName);
+    const normalizedName = preNormalized.toLowerCase().trim();
 
     // Check if the provider name itself is denylisted
     if (this.denylist.has(normalizedName)) {
@@ -305,7 +317,14 @@ export class TeamResolver {
 
     // Step 1: Provider-specific alias match (CFBD first if provider is cfbd)
     if (options?.provider === 'cfbd') {
-      const cfbdMatch = this.cfbdAliases.get(normalizedName);
+      let cfbdMatch = this.cfbdAliases.get(normalizedName);
+      
+      // If no match, try with fallback normalization
+      if (!cfbdMatch) {
+        const fallbackName = this.postFallbackNormalize(normalizedName);
+        cfbdMatch = this.cfbdAliases.get(fallbackName);
+      }
+      
       if (cfbdMatch) {
         // Check if it's denylisted
         if (this.denylist.has(cfbdMatch)) {
@@ -328,7 +347,14 @@ export class TeamResolver {
     }
 
     // Step 2: Exact alias match (general aliases)
-    const exactMatch = this.aliases.get(normalizedName);
+    let exactMatch = this.aliases.get(normalizedName);
+    
+    // If no match, try with fallback normalization
+    if (!exactMatch) {
+      const fallbackName = this.postFallbackNormalize(normalizedName);
+      exactMatch = this.aliases.get(fallbackName);
+    }
+    
     if (exactMatch) {
       // Check if it's denylisted
       if (this.denylist.has(exactMatch)) {

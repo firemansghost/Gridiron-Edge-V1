@@ -28,6 +28,17 @@
 "SJSU": san-jos-state
 "San Diego State": san-diego-state
 
+# Miami (OH) variations
+"Miami OH": miami-oh
+"Miami-OH": miami-oh
+"Miami (OH) RedHawks": miami-oh
+
+# Texas A&M variations
+"Texas A & M": texas-a-m
+"Texas A and M": texas-a-m
+"Texas A&M Aggies": texas-a-m
+"TAMU": texas-a-m
+
 # Other common teams
 "Liberty": liberty
 "UNLV": unlv
