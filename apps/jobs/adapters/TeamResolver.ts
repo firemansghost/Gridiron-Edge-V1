@@ -26,11 +26,7 @@ export class TeamResolver {
     this.loadAliases();
     this.loadCFBDAliases();
     this.loadDenylist();
-    // Note: loadFBSTeams() is now async and called separately
-  }
-
-  async initialize(): Promise<void> {
-    await this.loadFBSTeams();
+    this.loadFBSTeams();
   }
 
   private loadAliases(): void {
@@ -191,30 +187,13 @@ export class TeamResolver {
     }
   }
 
-  private async loadFBSTeams(): Promise<void> {
-    // Load teams from the database as the single source of truth
-    try {
-      const { PrismaClient } = await import('@prisma/client');
-      const prisma = new PrismaClient();
-      
-      const teams = await prisma.team.findMany({
-        select: { id: true }
-      });
-      
-      for (const team of teams) {
-        this.fbsTeams.add(team.id.toLowerCase());
-      }
-      
-      await prisma.$disconnect();
-      console.log(`[TEAM_RESOLVER] Loaded ${this.fbsTeams.size} teams from database`);
-    } catch (error) {
-      console.warn(`[TEAM_RESOLVER] Could not load teams from database: ${error}`);
-      // Fallback to aliases if database is unavailable
-      for (const teamId of this.aliases.values()) {
-        this.fbsTeams.add(teamId);
-      }
-      console.log(`[TEAM_RESOLVER] Fallback: Loaded ${this.fbsTeams.size} teams from aliases`);
+  private loadFBSTeams(): void {
+    // For now, load from aliases to avoid async issues
+    // TODO: Implement database loading once async issues are resolved
+    for (const teamId of this.aliases.values()) {
+      this.fbsTeams.add(teamId);
     }
+    console.log(`[TEAM_RESOLVER] Loaded ${this.fbsTeams.size} teams from aliases (fallback mode)`);
   }
 
   private teamExistsInDatabase(teamId: string): boolean {

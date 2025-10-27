@@ -413,9 +413,6 @@ async function main() {
 
     console.log(`🚀 Starting CFBD Team Season Stats ingestion for ${season}...`);
 
-    // Initialize team resolver with database teams
-    await teamResolver.initialize();
-
     // Enable debug mode for first few teams
     if (process.env.DEBUG_CFBD === '1') {
       console.log(`[DEBUG] Debug mode enabled - will show stat mapping details`);
