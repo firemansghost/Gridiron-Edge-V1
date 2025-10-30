@@ -233,7 +233,9 @@ export class TeamResolver {
   private preNormalizeName(s: string): string {
     const noDiacritics = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     // unify A & M forms to A&M token
-    const fixAM = noDiacritics.replace(/\bA\s*&\s*M\b/gi, 'A&M');
+    const fixAM = noDiacritics
+      .replace(/\bA\s*&\s*M\b/gi, 'A&M')
+      .replace(/\bA\s+and\s+M\b/gi, 'A&M');
     return fixAM.trim();
   }
 
@@ -302,6 +304,11 @@ export class TeamResolver {
     // Pre-normalize: strip diacritics and unify A&M forms
     const preNormalized = this.preNormalizeName(providerName);
     const normalizedName = preNormalized.toLowerCase().trim();
+    
+    // Debug logging for Miami and Texas A&M
+    const needsDebug = providerName.toLowerCase().includes('miami') || 
+                       providerName.toLowerCase().includes('a&m') || 
+                       providerName.toLowerCase().includes('a and m');
 
     // Check if the provider name itself is denylisted
     if (this.denylist.has(normalizedName)) {
@@ -338,8 +345,11 @@ export class TeamResolver {
           return null;
         }
         
-        if (this.verboseLogging || !this.resolvedTeams.has(providerName)) {
+        if (this.verboseLogging || !this.resolvedTeams.has(providerName) || needsDebug) {
           console.log(`[TEAM_RESOLVER] CFBD alias match: ${providerName} -> ${cfbdMatch}`);
+          if (needsDebug) {
+            console.log(`[RESOLVER-DEBUG] input="${providerName}" -> normalized="${normalizedName}" -> mapped="${cfbdMatch}"`);
+          }
           this.resolvedTeams.add(providerName);
         }
         return cfbdMatch;

@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { TeamResolver } from '../../adapters/TeamResolver';
 
 const prisma = new PrismaClient();
 
@@ -72,15 +73,33 @@ async function fetchGameAdvancedStats(season: number): Promise<CFBDGameAdvancedS
   return data;
 }
 
-function aggregateTeamAdvancedStats(records: CFBDGameAdvancedStats[]): Map<string, TeamAdvancedStats> {
+function aggregateTeamAdvancedStats(records: CFBDGameAdvancedStats[], resolver: TeamResolver): Map<string, TeamAdvancedStats> {
   const teamMap = new Map<string, TeamAdvancedStats>();
 
   for (const record of records) {
-    const teamKey = record.team;
+    // Resolve CFBD team name to canonical team ID
+    const canonicalTeamId = resolver.resolveTeam(record.team, 'NCAAF', { provider: 'cfbd' });
+    
+    // Skip if team couldn't be resolved or is not FBS
+    if (!canonicalTeamId) {
+      // Debug log for Miami and Texas A&M to help diagnose issues
+      if (record.team.toLowerCase().includes('miami') || record.team.toLowerCase().includes('a&m') || record.team.toLowerCase().includes('a and m')) {
+        console.log(`[RESOLVER-DEBUG] Skipping unresolved team: "${record.team}" (season=${record.season})`);
+      }
+      continue;
+    }
+    
+    // Debug log for Miami and Texas A&M
+    if (canonicalTeamId === 'miami-oh' || canonicalTeamId === 'texas-a-m') {
+      console.log(`[RESOLVER-DEBUG] Resolved "${record.team}" -> "${canonicalTeamId}"`);
+    }
+    
+    // Use canonical team ID as the key
+    const teamKey = canonicalTeamId;
     
     if (!teamMap.has(teamKey)) {
       teamMap.set(teamKey, {
-        team: record.team,
+        team: canonicalTeamId, // Store canonical ID
         season: record.season,
         totalPlaysOff: 0,
         totalPlaysDef: 0,
@@ -141,11 +160,12 @@ async function upsertAdvancedStats(statsData: TeamAdvancedStats[]): Promise<numb
   
   for (const stat of statsData) {
     try {
+      // stat.team is already a canonical team ID from TeamResolver
       await prisma.teamSeasonStat.update({
         where: {
           season_teamId: {
             season: stat.season,
-            teamId: stat.team.toLowerCase().replace(/\s+/g, '-'),
+            teamId: stat.team, // Already canonical ID
           }
         },
         data: {
@@ -183,7 +203,11 @@ async function main() {
 
     console.log(`🚀 Starting CFBD Game Advanced Stats aggregation for season=${season}...`);
 
-    // Get FBS team IDs from database
+    // Initialize TeamResolver (will load DB teams if FORCE_DB_TEAMS=true)
+    const resolver = new TeamResolver();
+    console.log(`📋 TeamResolver initialized`);
+
+    // Get FBS team IDs from database (for validation/filtering)
     const fbsTeams = await prisma.team.findMany({
       select: { id: true }
     });
@@ -193,17 +217,16 @@ async function main() {
     // Fetch raw data from CFBD
     const rawRecords = await fetchGameAdvancedStats(season);
     
-    // Aggregate by team
-    const aggregatedStats = aggregateTeamAdvancedStats(rawRecords);
+    // Aggregate by team using TeamResolver to map CFBD names to canonical IDs
+    const aggregatedStats = aggregateTeamAdvancedStats(rawRecords, resolver);
     console.log(`[AGGREGATION] Aggregated ${rawRecords.length} records into ${aggregatedStats.size} teams`);
     
-    // Convert to array and filter to FBS teams only
+    // Convert to array and filter to FBS teams only (already canonical IDs from resolver)
     const statsArray = Array.from(aggregatedStats.values()).filter(stat => {
-      const teamId = stat.team.toLowerCase().replace(/\s+/g, '-');
-      return fbsIds.has(teamId);
+      return fbsIds.has(stat.team); // stat.team is already canonical ID
     });
     
-    console.log(`🔍 Filtered to ${statsArray.length} FBS teams (from ${aggregatedStats.size} total)`);
+    console.log(`🔍 Filtered to ${statsArray.length} DB FBS teams (from ${aggregatedStats.size} CFBD teams) — season=${season}`);
     
     // Log summary of what we'll update
     const teamsWithSuccessOff = statsArray.filter(s => s.weightedSuccessOff > 0).length;
