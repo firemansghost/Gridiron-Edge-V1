@@ -352,6 +352,7 @@ function WeekPageContent() {
                 ) : (
                   <div className="text-sm text-gray-500">No results yet — scores not seeded</div>
                 )}
+              </div>
             </div>
           </div>
         </div>
