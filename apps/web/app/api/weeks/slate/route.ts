@@ -144,8 +144,8 @@ export async function GET(request: NextRequest) {
     });
 
     // Diagnostic: Log games without market lines
-    const gamesWithoutSpread = filteredGames.filter(g => !spreadMap.has(g.id));
-    const gamesWithoutTotal = filteredGames.filter(g => !totalMap.has(g.id));
+    const gamesWithoutSpread = fbsGames.filter(g => !spreadMap.has(g.id));
+    const gamesWithoutTotal = fbsGames.filter(g => !totalMap.has(g.id));
     if (gamesWithoutSpread.length > 0 || gamesWithoutTotal.length > 0) {
       console.log(`   ⚠️  ${gamesWithoutSpread.length} games missing spread lines, ${gamesWithoutTotal.length} games missing total lines`);
       if (gamesWithoutSpread.length <= 10) {
