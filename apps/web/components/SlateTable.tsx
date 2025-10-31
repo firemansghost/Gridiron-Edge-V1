@@ -483,20 +483,31 @@ export default function SlateTable({
   };
 
   // Get ISO date string (YYYY-MM-DD) for grouping and comparison
+  // IMPORTANT: Convert to America/Chicago timezone first to get correct local date
   const getDateKey = (dateString: string) => {
     try {
       const d = new Date(dateString);
-      return d.toISOString().split('T')[0];
+      // Convert to America/Chicago timezone first, then extract date
+      const localDateStr = d.toLocaleDateString('en-US', { 
+        timeZone: 'America/Chicago',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      // Format as YYYY-MM-DD
+      const [month, day, year] = localDateStr.split('/');
+      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
     } catch {
       return 'unknown';
     }
   };
 
-  // Format date for display
+  // Format date for display (using America/Chicago timezone)
   const formatDate = (date: string) => {
     try {
       const d = new Date(date);
       return d.toLocaleDateString('en-US', { 
+        timeZone: 'America/Chicago',
         weekday: 'long',
         month: 'short', 
         day: 'numeric' 
