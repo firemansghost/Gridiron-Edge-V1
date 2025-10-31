@@ -877,10 +877,30 @@ export default function SlateTable({
               </svg>
             </button>
 
-            {/* Date range indicator */}
+            {/* Date range indicator and jump to last date */}
             {dateEntries.length > 0 && (
-              <div className="flex-shrink-0 text-xs text-gray-500 px-2">
-                {dateEntries.length} day{dateEntries.length !== 1 ? 's' : ''}
+              <div className="flex-shrink-0 flex items-center gap-2">
+                <div className="text-xs text-gray-500 px-2">
+                  {dateEntries.length} day{dateEntries.length !== 1 ? 's' : ''}
+                </div>
+                {dateEntries.length > 1 && (
+                  <button
+                    onClick={() => {
+                      const [lastDateKey] = dateEntries[dateEntries.length - 1];
+                      const header = dateHeaderRefs.current.get(lastDateKey);
+                      if (header && bodyScrollRef.current) {
+                        const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
+                        bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
+                        window.history.replaceState(null, '', `#date-${lastDateKey}`);
+                        setActiveDate(lastDateKey);
+                      }
+                    }}
+                    className="text-xs text-blue-600 hover:text-blue-800 underline px-2"
+                    title="Jump to last date"
+                  >
+                    Last →
+                  </button>
+                )}
               </div>
             )}
           </div>
