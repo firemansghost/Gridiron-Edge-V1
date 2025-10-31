@@ -249,7 +249,11 @@ export default function WeekReviewPage() {
             <label className="block text-sm font-medium mb-1">Strategy</label>
             <select 
               value={strategy} 
-              onChange={(e) => setStrategy(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                // Normalize empty string and "all" to empty for API
+                setStrategy(val === 'all' ? '' : val);
+              }}
               className="border rounded px-3 py-2"
             >
               <option value="">All Strategies</option>
