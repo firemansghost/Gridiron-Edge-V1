@@ -759,44 +759,122 @@ export default function SlateTable({
         />
       </div>
       
-      {/* Mini day-nav with active highlighting */}
+      {/* Enhanced date navigation with arrows and game counts */}
       {dateEntries.length > 1 && (
-        <div className="sticky top-[17px] z-19 bg-gray-50 border-b border-gray-200 px-4 py-2">
-          <div className="flex space-x-2 overflow-x-auto pb-2">
-            {dateEntries.map(([dateKey, dateData]) => {
-              const isActive = activeDate === dateKey;
-              const isToday = dateKey === getTodayDate();
-              // Parse the formatted date to extract day of week and date
-              const formattedParts = dateData.formattedDate.split(',');
-              const dayOfWeek = formattedParts[0]; // "Friday"
-              const monthDay = formattedParts[1]?.trim() || ''; // "Oct 31"
-              return (
-                <button
-                  key={dateKey}
-                  onClick={() => {
-                    const header = dateHeaderRefs.current.get(dateKey);
-                    if (header && bodyScrollRef.current) {
-                      const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
-                      bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
-                      
-                      // Update URL hash and active date
-                      window.history.replaceState(null, '', `#date-${dateKey}`);
-                      setActiveDate(dateKey);
-                    }
-                  }}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 whitespace-nowrap transition-colors cursor-pointer ${
-                    isActive 
-                      ? 'bg-blue-600 text-white' 
-                      : isToday 
-                        ? 'bg-yellow-100 text-yellow-800 border border-yellow-300 hover:bg-yellow-200'
-                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  {dayOfWeek.substring(0, 3)} {monthDay}
-                  {isToday && ' (Today)'}
-                </button>
-              );
-            })}
+        <div className="sticky top-[17px] z-19 bg-gray-50 border-b border-gray-200">
+          <div className="flex items-center gap-2 px-4 py-2">
+            {/* Left arrow button */}
+            <button
+              onClick={() => {
+                const currentIndex = dateEntries.findIndex(([dateKey]) => dateKey === activeDate || dateKey === dateEntries[0][0]);
+                if (currentIndex > 0) {
+                  const [prevDateKey] = dateEntries[currentIndex - 1];
+                  const header = dateHeaderRefs.current.get(prevDateKey);
+                  if (header && bodyScrollRef.current) {
+                    const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
+                    bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
+                    window.history.replaceState(null, '', `#date-${prevDateKey}`);
+                    setActiveDate(prevDateKey);
+                  }
+                }
+              }}
+              disabled={activeDate === dateEntries[0][0]}
+              className="flex-shrink-0 p-1.5 rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500"
+              title="Previous date"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+
+            {/* Date pills with horizontal scroll */}
+            <div className="flex-1 flex space-x-2 overflow-x-auto pb-2 scrollbar-hide" ref={(el) => {
+              // Auto-scroll to active date when it changes
+              if (el && activeDate) {
+                const activeButton = el.querySelector(`[data-date-key="${activeDate}"]`) as HTMLElement;
+                if (activeButton) {
+                  activeButton.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                }
+              }
+            }}>
+              {dateEntries.map(([dateKey, dateData]) => {
+                const isActive = activeDate === dateKey;
+                const isToday = dateKey === getTodayDate();
+                const gameCount = dateData.games.length;
+                // Parse the formatted date to extract day of week and date
+                const formattedParts = dateData.formattedDate.split(',');
+                const dayOfWeek = formattedParts[0]; // "Friday"
+                const monthDay = formattedParts[1]?.trim() || ''; // "Oct 31"
+                return (
+                  <button
+                    key={dateKey}
+                    data-date-key={dateKey}
+                    onClick={() => {
+                      const header = dateHeaderRefs.current.get(dateKey);
+                      if (header && bodyScrollRef.current) {
+                        const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
+                        bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
+                        
+                        // Update URL hash and active date
+                        window.history.replaceState(null, '', `#date-${dateKey}`);
+                        setActiveDate(dateKey);
+                      }
+                    }}
+                    className={`flex-shrink-0 px-3 py-1.5 text-xs font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 whitespace-nowrap transition-colors cursor-pointer ${
+                      isActive 
+                        ? 'bg-blue-600 text-white shadow-md' 
+                        : isToday 
+                          ? 'bg-yellow-100 text-yellow-800 border border-yellow-300 hover:bg-yellow-200'
+                          : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                    }`}
+                    title={`${dateData.formattedDate} - ${gameCount} game${gameCount !== 1 ? 's' : ''}`}
+                  >
+                    <div className="flex flex-col items-center">
+                      <span>{dayOfWeek.substring(0, 3)} {monthDay}</span>
+                      {gameCount > 0 && (
+                        <span className={`text-[10px] mt-0.5 ${isActive ? 'text-blue-100' : 'text-gray-500'}`}>
+                          {gameCount} game{gameCount !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {isToday && !isActive && (
+                        <span className="text-[10px] mt-0.5 text-yellow-600">Today</span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Right arrow button */}
+            <button
+              onClick={() => {
+                const currentIndex = dateEntries.findIndex(([dateKey]) => dateKey === activeDate || dateKey === dateEntries[0][0]);
+                if (currentIndex < dateEntries.length - 1) {
+                  const [nextDateKey] = dateEntries[currentIndex + 1];
+                  const header = dateHeaderRefs.current.get(nextDateKey);
+                  if (header && bodyScrollRef.current) {
+                    const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
+                    bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
+                    window.history.replaceState(null, '', `#date-${nextDateKey}`);
+                    setActiveDate(nextDateKey);
+                  }
+                }
+              }}
+              disabled={activeDate === dateEntries[dateEntries.length - 1][0]}
+              className="flex-shrink-0 p-1.5 rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500"
+              title="Next date"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+
+            {/* Date range indicator */}
+            {dateEntries.length > 0 && (
+              <div className="flex-shrink-0 text-xs text-gray-500 px-2">
+                {dateEntries.length} day{dateEntries.length !== 1 ? 's' : ''}
+              </div>
+            )}
           </div>
         </div>
       )}
