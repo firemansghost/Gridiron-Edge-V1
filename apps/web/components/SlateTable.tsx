@@ -171,6 +171,16 @@ export default function SlateTable({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [activeDate]);
 
+  // Auto-scroll date pills container to show active date
+  useEffect(() => {
+    if (activeDate && datePillsRef.current) {
+      const activeButton = datePillsRef.current.querySelector(`[data-date-key="${activeDate}"]`) as HTMLElement;
+      if (activeButton) {
+        activeButton.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      }
+    }
+  }, [activeDate]);
+
   // Navigate to next/previous date
   const navigateToDate = (direction: 'next' | 'prev') => {
     const currentIndex = dateEntries.findIndex(([dateKey]) => dateKey === activeDate);
