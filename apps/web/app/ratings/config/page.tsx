@@ -273,8 +273,13 @@ export default function RatingsConfigPage() {
 
         {/* Defensive Weights */}
         <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-2">
             <h2 className="text-xl font-semibold text-red-700">Defensive Feature Weights</h2>
+          </div>
+          <p className="text-sm text-gray-600 mb-4">
+            Adjust how much each defensive statistic contributes to defensive ratings. Higher weights mean stronger defensive teams rank higher.
+          </p>
+          <div className="flex items-center justify-between mb-4">
             <div className={`text-sm font-medium ${Math.abs(defensiveTotal - 1.0) < 0.01 ? 'text-green-600' : 'text-red-600'}`}>
               Total: {defensiveTotal.toFixed(3)} {Math.abs(defensiveTotal - 1.0) >= 0.01 && '(should be 1.0)'}
             </div>
