@@ -742,7 +742,7 @@ export default async function StatusPage() {
                 <div>
                   <h3 className="font-medium text-gray-900 mb-2">Market Lines</h3>
                   <p className="text-gray-700">
-                    {marketLineCounts.reduce((sum, item) => sum + item._count.id, 0).toLocaleString()} total
+                    {marketLineCounts.reduce((sum: number, item: any) => sum + Number(item.count || 0), 0).toLocaleString()} total
                   </p>
                 </div>
                 <div>
