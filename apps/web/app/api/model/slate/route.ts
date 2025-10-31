@@ -134,15 +134,21 @@ export async function GET(request: NextRequest) {
         let maxEdge = null;
 
         if (marketSpread !== null && modelSpread !== null) {
-          const pickResult = computeSpreadPick(modelSpread, marketSpread);
-          spreadPick = pickResult.pickLabel;
-          spreadEdgePts = pickResult.edgePts;
+          const pickResult = computeSpreadPick(
+            modelSpread,
+            game.homeTeam.name,
+            game.awayTeam.name,
+            game.homeTeamId,
+            game.awayTeamId
+          );
+          spreadPick = pickResult.spreadPickLabel;
+          spreadEdgePts = Math.abs(modelSpread - marketSpread);
         }
 
         if (marketTotal !== null && modelTotal !== null) {
           const pickResult = computeTotalPick(modelTotal, marketTotal);
-          totalPick = pickResult.pickLabel;
-          totalEdgePts = pickResult.edgePts;
+          totalPick = pickResult.totalPickLabel;
+          totalEdgePts = Math.abs(modelTotal - marketTotal);
         }
 
         if (spreadEdgePts !== null && totalEdgePts !== null) {

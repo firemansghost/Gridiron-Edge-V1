@@ -175,40 +175,115 @@ export async function GET(request: NextRequest) {
 
     // Fetch model projections (always include if ratings are available)
     try {
-      // Import the model slate function directly to avoid HTTP overhead
-      const { GET: getModelSlate } = await import('../model/slate/route');
-      const modelRequest = new NextRequest(
-        new URL(`/api/model/slate?season=${season}&week=${week}`, request.url),
-        { method: 'GET' }
+      // Load all team ratings for this season in one query
+      const teamRatings = await prisma.teamSeasonRating.findMany({
+        where: { season },
+      });
+      const ratingsMap = new Map(
+        teamRatings.map(r => [r.teamId, r])
       );
-      const modelResponse = await getModelSlate(modelRequest);
-      
-      if (modelResponse.ok) {
-        const modelData = await modelResponse.json();
-        if (modelData.success && modelData.games) {
-          // Create a map of gameId -> model projection
-          const modelMap = new Map(
-            modelData.games.map((g: any) => [g.gameId, g])
-          );
+
+      // Load all team stats for this season in one query
+      const teamStats = await prisma.teamSeasonStat.findMany({
+        where: { season },
+      });
+      const statsMap = new Map(
+        teamStats.map(s => [s.teamId, s])
+      );
+
+      // Compute projections for each game
+      const HFA = 2.0;
+      for (const game of slateGames) {
+        const homeRating = ratingsMap.get(game.homeTeamId);
+        const awayRating = ratingsMap.get(game.awayTeamId);
+        const homeStats = statsMap.get(game.homeTeamId);
+        const awayStats = statsMap.get(game.awayTeamId);
+
+        if (homeRating && awayRating) {
+          const homePower = Number(homeRating.powerRating || homeRating.rating || 0);
+          const awayPower = Number(awayRating.powerRating || awayRating.rating || 0);
           
-          // Merge model projections into slate games
-          slateGames.forEach(game => {
-            const projection = modelMap.get(game.gameId);
-            if (projection) {
-              game.modelSpread = projection.modelSpread;
-              game.modelTotal = projection.modelTotal;
-              game.pickSpread = projection.spreadPick;
-              game.pickTotal = projection.totalPick;
-              game.maxEdge = projection.maxEdge;
-              game.confidence = projection.confidence;
-            }
-          });
+          // Get game to check neutral site
+          const fullGame = filteredGames.find(g => g.id === game.gameId);
+          const isNeutral = fullGame?.neutralSite || false;
           
-          console.log(`   Merged model projections for ${modelMap.size} games`);
+          // Model Spread
+          const modelSpread = homePower - awayPower + (isNeutral ? 0 : HFA);
+
+          // Model Total
+          const homeEpaOff = homeStats?.epaOff ? Number(homeStats.epaOff) : null;
+          const awayEpaOff = awayStats?.epaOff ? Number(awayStats.epaOff) : null;
+          const homeYppOff = homeStats?.yppOff ? Number(homeStats.yppOff) : null;
+          const awayYppOff = awayStats?.yppOff ? Number(awayStats.yppOff) : null;
+          
+          const homePaceOff = homeStats?.paceOff ? Number(homeStats.paceOff) : 70;
+          const awayPaceOff = awayStats?.paceOff ? Number(awayStats.paceOff) : 70;
+
+          const homePpp = homeEpaOff !== null 
+            ? Math.max(0, Math.min(1.0, 7 * homeEpaOff))
+            : homeYppOff !== null 
+              ? 0.8 * homeYppOff
+              : 0.4;
+          
+          const awayPpp = awayEpaOff !== null
+            ? Math.max(0, Math.min(1.0, 7 * awayEpaOff))
+            : awayYppOff !== null
+              ? 0.8 * awayYppOff
+              : 0.4;
+
+          const modelTotal = (homePpp * homePaceOff) + (awayPpp * awayPaceOff);
+
+          // Compute picks and edges
+          const marketSpread = game.closingSpread?.value ?? null;
+          const marketTotal = game.closingTotal?.value ?? null;
+
+          let spreadPick: string | null = null;
+          let totalPick: string | null = null;
+          let spreadEdgePts: number | null = null;
+          let totalEdgePts: number | null = null;
+
+          if (marketSpread !== null) {
+            spreadEdgePts = Math.abs(modelSpread - marketSpread);
+            const favoredSide = modelSpread < 0 ? 'home' : 'away';
+            const favoredTeam = favoredSide === 'home' 
+              ? fullGame?.homeTeam.name || 'Home'
+              : fullGame?.awayTeam.name || 'Away';
+            const sign = modelSpread >= 0 ? '+' : '';
+            spreadPick = `${favoredTeam} ${sign}${Math.abs(Math.round(modelSpread * 2) / 2).toFixed(1)}`;
+          }
+
+          if (marketTotal !== null) {
+            totalEdgePts = Math.abs(modelTotal - marketTotal);
+            const pick = modelTotal > marketTotal ? 'Over' : 'Under';
+            const roundedTotal = Math.round(marketTotal * 2) / 2;
+            totalPick = `${pick} ${roundedTotal.toFixed(1)}`;
+          }
+
+          const maxEdge = spreadEdgePts !== null && totalEdgePts !== null
+            ? Math.max(spreadEdgePts, totalEdgePts)
+            : spreadEdgePts ?? totalEdgePts ?? null;
+
+          // Confidence tier
+          let confidence: string | null = null;
+          if (maxEdge !== null) {
+            if (maxEdge >= 4.0) confidence = 'A';
+            else if (maxEdge >= 3.0) confidence = 'B';
+            else if (maxEdge >= 2.0) confidence = 'C';
+          }
+
+          // Assign to game
+          game.modelSpread = Math.round(modelSpread * 10) / 10;
+          game.modelTotal = Math.round(modelTotal * 10) / 10;
+          game.pickSpread = spreadPick;
+          game.pickTotal = totalPick;
+          game.maxEdge = maxEdge !== null ? Math.round(maxEdge * 10) / 10 : null;
+          game.confidence = confidence;
         }
       }
+      
+      console.log(`   Computed model projections for slate games`);
     } catch (error) {
-      console.warn('   Failed to fetch model projections:', error);
+      console.warn('   Failed to compute model projections:', error);
       // Continue without model data rather than failing
     }
 

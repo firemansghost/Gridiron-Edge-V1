@@ -88,9 +88,13 @@ export async function GET(
       }),
     ]);
 
+    // Get initial values from matchupOutput if available
+    const initialSpread = matchupOutput?.impliedSpread || 0;
+    const initialTotal = matchupOutput?.impliedTotal || 45;
+    
     // Compute model spread and total if ratings are available
-    let computedSpread = impliedSpread;
-    let computedTotal = impliedTotal;
+    let computedSpread = initialSpread;
+    let computedTotal = initialTotal;
     
     if (homeRating && awayRating) {
       const homePower = Number(homeRating.powerRating || homeRating.rating || 0);
