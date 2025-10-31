@@ -142,15 +142,15 @@ export default function RatingsConfigPage() {
     }
   };
 
-  const handleDeleteConfig = (configName: string) => {
+  const handleDeleteConfig = (nameToDelete: string) => {
     try {
-      const updated = savedConfigs.filter(c => c.name !== configName);
+      const updated = savedConfigs.filter(c => c.name !== nameToDelete);
       localStorage.setItem('ratings-configs', JSON.stringify(updated));
       setSavedConfigs(updated);
-      if (configName === configName) {
+      if (configName === nameToDelete) {
         setConfigName('');
       }
-      setMessage(`Configuration "${configName}" deleted`);
+      setMessage(`Configuration "${nameToDelete}" deleted`);
       setMessageType('success');
       setTimeout(() => setMessage(''), 3000);
     } catch (error) {
@@ -332,9 +332,62 @@ export default function RatingsConfigPage() {
           </div>
         </div>
 
+        {/* Save Configuration */}
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Save Configuration</h2>
+          <div className="flex gap-4 items-end">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Configuration Name
+              </label>
+              <input
+                type="text"
+                value={configName}
+                onChange={(e) => setConfigName(e.target.value)}
+                placeholder="e.g., Balanced, EPA-Heavy, Defense-First"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <button
+              onClick={handleSaveWeights}
+              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+
+        {/* Saved Configurations */}
+        {savedConfigs.length > 0 && (
+          <div className="bg-white rounded-lg shadow p-6 mb-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">Saved Configurations</h2>
+            <div className="space-y-2">
+              {savedConfigs.map(({ name }) => (
+                <div key={name} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                  <span className="font-medium text-gray-900">{name}</span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleLoadConfig(name)}
+                      className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition"
+                    >
+                      Load
+                    </button>
+                    <button
+                      onClick={() => handleDeleteConfig(name)}
+                      className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Actions */}
         <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex flex-wrap gap-4">
+          <div className="flex flex-wrap gap-4 mb-4">
             <button
               onClick={handleExportWeights}
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition"
@@ -353,6 +406,48 @@ export default function RatingsConfigPage() {
             >
               View Backtest Results →
             </Link>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Import Configuration (JSON)
+            </label>
+            <input
+              type="file"
+              accept=".json"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  const reader = new FileReader();
+                  reader.onload = (event) => {
+                    try {
+                      const imported = JSON.parse(event.target?.result as string);
+                      if (imported.offensiveWeights && imported.defensiveWeights) {
+                        setOffensiveWeights(imported.offensiveWeights);
+                        setDefensiveWeights(imported.defensiveWeights);
+                        if (imported.backtestSettings) {
+                          setBacktestSeason(imported.backtestSettings.season);
+                          setBacktestWeeks(imported.backtestSettings.weeks);
+                          setMinEdge(imported.backtestSettings.minEdge.toString());
+                          setKellyFraction(imported.backtestSettings.kellyFraction.toString());
+                        }
+                        setMessage('Configuration imported successfully!');
+                        setMessageType('success');
+                        setTimeout(() => setMessage(''), 3000);
+                      } else {
+                        throw new Error('Invalid config format');
+                      }
+                    } catch (error) {
+                      setMessage('Error importing configuration: ' + (error instanceof Error ? error.message : 'Invalid JSON'));
+                      setMessageType('error');
+                      setTimeout(() => setMessage(''), 5000);
+                    }
+                  };
+                  reader.readAsText(file);
+                }
+              }}
+              className="block w-full text-sm text-gray-700 border border-gray-300 rounded-md cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
           </div>
           
           <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-md">

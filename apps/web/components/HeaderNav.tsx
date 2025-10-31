@@ -52,6 +52,9 @@ export function HeaderNav() {
             <Link href="/backtests" className={linkClass('/backtests')}>
               Backtests
             </Link>
+            <Link href="/ratings/config" className={linkClass('/ratings')}>
+              Ratings
+            </Link>
             {process.env.NEXT_PUBLIC_SHOW_DOCS === 'true' && (
               <Link href="/docs" className={linkClass('/docs')}>
                 Docs
@@ -85,6 +88,9 @@ export function HeaderNav() {
             </Link>
             <Link href="/backtests" className={linkClass('/backtests')}>
               Backtests
+            </Link>
+            <Link href="/ratings/config" className={linkClass('/ratings')}>
+              Ratings
             </Link>
             {process.env.NEXT_PUBLIC_SHOW_DOCS === 'true' && (
               <Link href="/docs" className={linkClass('/docs')}>
