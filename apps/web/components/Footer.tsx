@@ -9,6 +9,11 @@ export function Footer() {
           <div>
             <h3 className="text-sm font-semibold text-gray-900 mb-3">Learn More</h3>
             <ul className="space-y-2 text-sm">
+              <li>
+                <Link href="/getting-started" className="text-gray-600 hover:text-blue-600 transition-colors">
+                  Getting Started
+                </Link>
+              </li>
               {process.env.NEXT_PUBLIC_SHOW_DOCS === 'true' && (
                 <>
                   <li>
