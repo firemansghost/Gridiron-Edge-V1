@@ -6,7 +6,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
@@ -50,6 +50,8 @@ export default function RatingsConfigPage() {
   const [backtestWeeks, setBacktestWeeks] = useState<string>('1-12');
   const [minEdge, setMinEdge] = useState<string>('3');
   const [kellyFraction, setKellyFraction] = useState<string>('0.25');
+  const [configName, setConfigName] = useState<string>('');
+  const [savedConfigs, setSavedConfigs] = useState<Array<{ name: string; config: any }>>([]);
   const [message, setMessage] = useState<string>('');
   const [messageType, setMessageType] = useState<'success' | 'error' | ''>('');
 
@@ -76,11 +78,86 @@ export default function RatingsConfigPage() {
     setDefensiveWeights(normalized as DefensiveWeights);
   };
 
+  // Load saved configs from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('ratings-configs');
+      if (saved) {
+        const configs = JSON.parse(saved);
+        setSavedConfigs(configs);
+      }
+    } catch (error) {
+      console.error('Error loading saved configs:', error);
+    }
+  }, []);
+
   const handleSaveWeights = () => {
-    // TODO: Implement API endpoint to save weights to database or config file
-    setMessage('Weight saving not yet implemented. Use export to copy JSON.');
-    setMessageType('error');
-    setTimeout(() => setMessage(''), 5000);
+    if (!configName.trim()) {
+      setMessage('Please enter a name for this configuration');
+      setMessageType('error');
+      setTimeout(() => setMessage(''), 3000);
+      return;
+    }
+
+    const config = {
+      offensiveWeights,
+      defensiveWeights,
+      backtestSettings: {
+        season: backtestSeason,
+        weeks: backtestWeeks,
+        minEdge: parseFloat(minEdge),
+        kellyFraction: parseFloat(kellyFraction),
+      },
+    };
+
+    try {
+      const updated = [...savedConfigs.filter(c => c.name !== configName), { name: configName, config }];
+      localStorage.setItem('ratings-configs', JSON.stringify(updated));
+      setSavedConfigs(updated);
+      setMessage(`Configuration "${configName}" saved successfully!`);
+      setMessageType('success');
+      setTimeout(() => setMessage(''), 3000);
+    } catch (error) {
+      setMessage('Error saving configuration: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      setMessageType('error');
+      setTimeout(() => setMessage(''), 5000);
+    }
+  };
+
+  const handleLoadConfig = (configName: string) => {
+    const saved = savedConfigs.find(c => c.name === configName);
+    if (saved) {
+      setOffensiveWeights(saved.config.offensiveWeights);
+      setDefensiveWeights(saved.config.defensiveWeights);
+      if (saved.config.backtestSettings) {
+        setBacktestSeason(saved.config.backtestSettings.season);
+        setBacktestWeeks(saved.config.backtestSettings.weeks);
+        setMinEdge(saved.config.backtestSettings.minEdge.toString());
+        setKellyFraction(saved.config.backtestSettings.kellyFraction.toString());
+      }
+      setConfigName(configName);
+      setMessage(`Configuration "${configName}" loaded`);
+      setMessageType('success');
+      setTimeout(() => setMessage(''), 3000);
+    }
+  };
+
+  const handleDeleteConfig = (configName: string) => {
+    try {
+      const updated = savedConfigs.filter(c => c.name !== configName);
+      localStorage.setItem('ratings-configs', JSON.stringify(updated));
+      setSavedConfigs(updated);
+      if (configName === configName) {
+        setConfigName('');
+      }
+      setMessage(`Configuration "${configName}" deleted`);
+      setMessageType('success');
+      setTimeout(() => setMessage(''), 3000);
+    } catch (error) {
+      setMessage('Error deleting configuration');
+      setMessageType('error');
+      setTimeout(() => setMessage(''), 3000);
+    }
   };
 
   const handleExportWeights = () => {
