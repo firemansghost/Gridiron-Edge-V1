@@ -14,6 +14,7 @@ import { Footer } from '@/components/Footer';
 import { abbrevSource, formatSourceTooltip } from '@/lib/market-badges';
 import { InfoTooltip } from '@/components/InfoTooltip';
 import { LoadingState } from '@/components/LoadingState';
+import { CollapsibleSection } from '@/components/CollapsibleSection';
 import { ErrorState } from '@/components/ErrorState';
 
 export default function GameDetailPage() {
@@ -369,14 +370,20 @@ export default function GameDetailPage() {
           </div>
         </div>
 
-        {/* Factor Breakdown */}
+        {/* Factor Breakdown - Collapsible for progressive disclosure */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           {/* Home Team Factors */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">{game.ratings.home.team} - Top Factors</h3>
+          <CollapsibleSection 
+            title={`${game.ratings.home.team} - Top Factors`}
+            defaultOpen={false}
+          >
             <div className="space-y-3">
+              <p className="text-xs text-gray-500 mb-3">
+                These factors show which statistics contributed most to the team's power rating. 
+                Higher values indicate stronger contribution.
+              </p>
               {game.ratings.home.factors.map((factor: any, index: number) => (
-                <div key={index} className="flex justify-between items-center">
+                <div key={index} className="flex justify-between items-center py-2 border-b border-gray-100 last:border-0">
                   <div className="text-sm text-gray-900 capitalize">{factor.factor.replace('_', ' ')}</div>
                   <div className="text-sm text-gray-600">
                     {factor.contribution.toFixed(3)} ({factor.weight.toFixed(2)} × {factor.zScore.toFixed(2)})
@@ -384,14 +391,20 @@ export default function GameDetailPage() {
                 </div>
               ))}
             </div>
-          </div>
+          </CollapsibleSection>
 
           {/* Away Team Factors */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">{game.ratings.away.team} - Top Factors</h3>
+          <CollapsibleSection 
+            title={`${game.ratings.away.team} - Top Factors`}
+            defaultOpen={false}
+          >
             <div className="space-y-3">
+              <p className="text-xs text-gray-500 mb-3">
+                These factors show which statistics contributed most to the team's power rating. 
+                Higher values indicate stronger contribution.
+              </p>
               {game.ratings.away.factors.map((factor: any, index: number) => (
-                <div key={index} className="flex justify-between items-center">
+                <div key={index} className="flex justify-between items-center py-2 border-b border-gray-100 last:border-0">
                   <div className="text-sm text-gray-900 capitalize">{factor.factor.replace('_', ' ')}</div>
                   <div className="text-sm text-gray-600">
                     {factor.contribution.toFixed(3)} ({factor.weight.toFixed(2)} × {factor.zScore.toFixed(2)})
@@ -399,7 +412,7 @@ export default function GameDetailPage() {
                 </div>
               ))}
             </div>
-          </div>
+          </CollapsibleSection>
         </div>
 
         {/* Model Info */}

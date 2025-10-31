@@ -14,6 +14,11 @@ export function Footer() {
                   Getting Started
                 </Link>
               </li>
+              <li>
+                <Link href="/docs/glossary" className="text-gray-600 hover:text-blue-600 transition-colors">
+                  Glossary
+                </Link>
+              </li>
               {process.env.NEXT_PUBLIC_SHOW_DOCS === 'true' && (
                 <>
                   <li>
