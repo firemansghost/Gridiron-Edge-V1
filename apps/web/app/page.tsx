@@ -156,23 +156,31 @@ export default function HomePage() {
             <span className="text-sm font-medium text-gray-700">Adjustments:</span>
             <button
               onClick={() => setInjuriesOn(!injuriesOn)}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${
                 injuriesOn 
-                  ? 'bg-blue-500 text-white' 
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  ? 'bg-blue-600 text-white shadow-md' 
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
+              aria-pressed={injuriesOn}
             >
-              Injuries {injuriesOn ? 'ON' : 'OFF'}
+              <span className={injuriesOn ? 'text-green-300' : 'text-gray-400'}>
+                {injuriesOn ? '✓' : '○'}
+              </span>
+              Injury Adjustments {injuriesOn ? 'Enabled' : 'Disabled'}
             </button>
             <button
               onClick={() => setWeatherOn(!weatherOn)}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${
                 weatherOn 
-                  ? 'bg-blue-500 text-white' 
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  ? 'bg-blue-600 text-white shadow-md' 
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
+              aria-pressed={weatherOn}
             >
-              Weather {weatherOn ? 'ON' : 'OFF'}
+              <span className={weatherOn ? 'text-green-300' : 'text-gray-400'}>
+                {weatherOn ? '✓' : '○'}
+              </span>
+              Weather Adjustments {weatherOn ? 'Enabled' : 'Disabled'}
             </button>
           </div>
         </div>
