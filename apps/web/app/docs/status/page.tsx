@@ -1,5 +1,6 @@
 import { Metadata } from 'next';
 import { prisma } from '@/lib/prisma';
+import Link from 'next/link';
 import ETLHeartbeat from './etl-heartbeat';
 import DataSources from './data-sources';
 
@@ -637,22 +638,18 @@ export default async function StatusPage() {
                     <div>
                       <div className="text-green-700 font-medium">Quick Links</div>
                       <div className="text-green-800 space-y-1">
-                        <a 
-                          href="/api/ratings/peek?season=2025&teamId=georgia" 
-                          target="_blank" 
-                          rel="noopener noreferrer"
+                        <Link 
+                          href="/ratings/peek?season=2025&teamId=georgia"
                           className="underline hover:text-green-900 block"
                         >
                           Peek: Georgia →
-                        </a>
-                        <a 
-                          href="/api/ratings/peek?season=2025&teamId=alabama" 
-                          target="_blank" 
-                          rel="noopener noreferrer"
+                        </Link>
+                        <Link 
+                          href="/ratings/peek?season=2025&teamId=alabama"
                           className="underline hover:text-green-900 block"
                         >
                           Peek: Alabama →
-                        </a>
+                        </Link>
                       </div>
                     </div>
                   </div>

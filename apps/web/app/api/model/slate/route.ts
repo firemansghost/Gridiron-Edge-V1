@@ -91,22 +91,33 @@ export async function GET(request: NextRequest) {
         const homeYppOff = homeStats?.yppOff ? Number(homeStats.yppOff) : null;
         const awayYppOff = awayStats?.yppOff ? Number(awayStats.yppOff) : null;
         
-        const homePaceOff = homeStats?.paceOff ? Number(homeStats.paceOff) : 70;
-        const awayPaceOff = awayStats?.paceOff ? Number(awayStats.paceOff) : 70;
-
+        // Pace is stored as plays per game (typically 70-80)
+        // If it's stored as seconds per play (< 1.0), convert it
+        let homePace = homeStats?.paceOff ? Number(homeStats.paceOff) : 70;
+        let awayPace = awayStats?.paceOff ? Number(awayStats.paceOff) : 70;
+        
+        // If pace is < 10, it's likely seconds per play, convert to plays per game
+        if (homePace < 10) {
+          homePace = 60 / homePace;
+        }
+        if (awayPace < 10) {
+          awayPace = 60 / awayPace;
+        }
+        
+        // Estimate points per play (typically 0.4-0.8)
         const homePpp = homeEpaOff !== null 
-          ? Math.max(0, Math.min(1.0, 7 * homeEpaOff))
+          ? Math.max(0.3, Math.min(0.8, 7 * homeEpaOff))
           : homeYppOff !== null 
-            ? 0.8 * homeYppOff
-            : 0.4;
+            ? Math.max(0.3, Math.min(0.8, 0.14 * homeYppOff))
+            : 0.5;
         
         const awayPpp = awayEpaOff !== null
-          ? Math.max(0, Math.min(1.0, 7 * awayEpaOff))
+          ? Math.max(0.3, Math.min(0.8, 7 * awayEpaOff))
           : awayYppOff !== null
-            ? 0.8 * awayYppOff
-            : 0.4;
+            ? Math.max(0.3, Math.min(0.8, 0.14 * awayYppOff))
+            : 0.5;
 
-        const modelTotal = (homePpp * homePaceOff) + (awayPpp * awayPaceOff);
+        const modelTotal = (homePpp * homePace) + (awayPpp * awayPace);
 
         // Confidence
         const homeConfidence = Number(homeRating.confidence || 0);
