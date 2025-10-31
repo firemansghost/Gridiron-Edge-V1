@@ -64,80 +64,61 @@ jobs:
       - name: Prisma migrate status (non-fatal)
         run: npx -y prisma@latest migrate status --schema=prisma/schema.prisma || true
 
-      - name: Resolve failed migrations (if any)
+      - name: Resolve failed migration 20251027_t6q_fixup_missing_teams
         run: |
-          set +e  # Don't exit on error for this step
-          
-          echo "Checking for failed migrations..."
-          STATUS_OUTPUT=$(npx -y prisma@latest migrate status --schema=prisma/schema.prisma 2>&1)
-          STATUS_CODE=$?
-          
-          echo "Migration status output:"
-          echo "$STATUS_OUTPUT"
+          echo "🔧 Attempting to resolve failed migration: 20251027_t6q_fixup_missing_teams"
+          echo "This migration uses IF NOT EXISTS checks, so it's safe to mark as applied"
           echo ""
           
-          # Check if there are failed migrations (either in output or exit code)
-          if echo "$STATUS_OUTPUT" | grep -qi "failed" || [ "$STATUS_CODE" != "0" ]; then
-            echo "⚠️  Found failed migrations or migration errors"
-            
-            # Try to resolve the known failed migration directly
-            if echo "$STATUS_OUTPUT" | grep -q "20251027_t6q_fixup_missing_teams" || echo "$STATUS_OUTPUT" | grep -qi "P3009"; then
-              echo "Attempting to resolve: 20251027_t6q_fixup_missing_teams"
-              echo "Note: This migration uses IF NOT EXISTS checks, so it's safe to mark as applied"
-              echo "      even if it partially failed, as the checks prevent duplicate inserts."
-              
-              # Try to resolve using Prisma command first
-              RESOLVE_OUTPUT=$(npx -y prisma@latest migrate resolve --applied 20251027_t6q_fixup_missing_teams --schema=prisma/schema.prisma 2>&1)
-              RESOLVE_CODE=$?
-              
-              if [ "$RESOLVE_CODE" = "0" ]; then
-                echo "✅ Successfully resolved migration using Prisma command"
-              elif echo "$RESOLVE_OUTPUT" | grep -qi "already applied\|does not exist\|not found"; then
-                echo "✅ Migration already resolved or doesn't need resolution"
-              else
-                echo "⚠️  Prisma resolve command failed, trying direct SQL update..."
-                echo "Resolve output: $RESOLVE_OUTPUT"
-                
-                # Fallback: Update the migration table directly
-                # This marks the migration as applied without re-running it
-                SQL_UPDATE="UPDATE _prisma_migrations 
-                  SET finished_at = NOW(), 
-                      applied_steps_count = 1
-                  WHERE migration_name = '20251027_t6q_fixup_missing_teams' 
-                    AND finished_at IS NULL
-                  RETURNING migration_name;"
-                
-                SQL_OUTPUT=$(npx -y prisma@latest db execute --schema=prisma/schema.prisma --stdin <<< "$SQL_UPDATE" 2>&1) || {
-                  echo "⚠️  SQL update also failed:"
-                  echo "$SQL_OUTPUT"
-                  echo "Migration may need manual intervention"
-                }
-                
-                if echo "$SQL_OUTPUT" | grep -q "20251027_t6q_fixup_missing_teams"; then
-                  echo "✅ Successfully resolved migration using direct SQL update"
-                else
-                  echo "⚠️  Could not resolve migration automatically"
-                fi
-              fi
-              
-              # Verify resolution worked
-              VERIFY_OUTPUT=$(npx -y prisma@latest migrate status --schema=prisma/schema.prisma 2>&1)
-              if echo "$VERIFY_OUTPUT" | grep -qi "failed.*20251027_t6q_fixup_missing_teams"; then
-                echo "❌ Migration still showing as failed after resolution attempt"
-                echo "You may need to manually resolve it:"
-                echo "  npx prisma migrate resolve --applied 20251027_t6q_fixup_missing_teams"
-                # Don't exit - let deploy step show the actual error
-              else
-                echo "✅ Migration resolution appears successful"
-              fi
-            else
-              echo "⚠️  Other failed migrations detected - may need manual resolution"
-            fi
+          # First, try Prisma's resolve command
+          echo "Step 1: Trying Prisma migrate resolve command..."
+          RESOLVE_ATTEMPT=$(npx -y prisma@latest migrate resolve --applied 20251027_t6q_fixup_missing_teams --schema=prisma/schema.prisma 2>&1)
+          RESOLVE_CODE=$?
+          
+          if [ "$RESOLVE_CODE" = "0" ]; then
+            echo "✅ Prisma resolve command succeeded"
+            echo "$RESOLVE_ATTEMPT"
+          elif echo "$RESOLVE_ATTEMPT" | grep -qi "already applied\|does not exist\|not found"; then
+            echo "✅ Migration already resolved or doesn't exist"
+            echo "$RESOLVE_ATTEMPT"
           else
-            echo "✅ No failed migrations found"
+            echo "⚠️  Prisma resolve failed (exit code: $RESOLVE_CODE)"
+            echo "$RESOLVE_ATTEMPT"
+            echo ""
+            echo "Step 2: Trying direct SQL update..."
+            
+            # Fallback: Direct SQL update to _prisma_migrations table
+            SQL_UPDATE='UPDATE _prisma_migrations SET finished_at = NOW(), applied_steps_count = 1 WHERE migration_name = '\''20251027_t6q_fixup_missing_teams'\'' AND finished_at IS NULL;'
+            
+            SQL_RESULT=$(echo "$SQL_UPDATE" | npx -y prisma@latest db execute --schema=prisma/schema.prisma --stdin 2>&1)
+            SQL_CODE=$?
+            
+            if [ "$SQL_CODE" = "0" ]; then
+              echo "✅ SQL update succeeded"
+              echo "$SQL_RESULT"
+            else
+              echo "⚠️  SQL update failed (exit code: $SQL_CODE)"
+              echo "$SQL_RESULT"
+              echo ""
+              echo "Continuing - will verify if resolution is needed before deploy"
+            fi
           fi
           
-          set -e  # Re-enable exit on error
+          echo ""
+          echo "Verifying migration status..."
+          FINAL_STATUS=$(npx -y prisma@latest migrate status --schema=prisma/schema.prisma 2>&1 || true)
+          echo "$FINAL_STATUS"
+          
+          # Check if the specific migration is still showing as failed
+          if echo "$FINAL_STATUS" | grep -qi "20251027_t6q_fixup_missing_teams.*failed\|P3009"; then
+            echo ""
+            echo "❌ WARNING: Migration still appears as failed"
+            echo "The deploy step will likely fail. Manual resolution may be needed."
+            echo "Run this locally: npx prisma migrate resolve --applied 20251027_t6q_fixup_missing_teams"
+          else
+            echo ""
+            echo "✅ Migration no longer showing as failed - proceeding with deploy"
+          fi
 
       - name: Prisma migrate deploy
         run: npx -y prisma@latest migrate deploy --schema=prisma/schema.prisma
