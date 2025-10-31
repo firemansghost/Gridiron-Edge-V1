@@ -248,7 +248,7 @@ export async function GET(request: NextRequest) {
           const awayPower = Number(awayRating.powerRating || awayRating.rating || 0);
           
           // Get game to check neutral site
-          const fullGame = gamesToInclude.find(g => g.id === game.gameId);
+          const fullGame = finalGamesToInclude.find(g => g.id === game.gameId);
           const isNeutral = fullGame?.neutralSite || false;
           
           // Model Spread
