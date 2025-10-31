@@ -80,11 +80,12 @@ export default function SlateTable({
     const handleHashChange = () => {
       const hash = window.location.hash;
       if (hash.startsWith('#date-')) {
-        const date = hash.replace('#date-', '');
-        const header = dateHeaderRefs.current.get(date);
+        const dateKey = hash.replace('#date-', '');
+        const header = dateHeaderRefs.current.get(dateKey);
         if (header && bodyScrollRef.current) {
           const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
           bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
+          setActiveDate(dateKey);
         }
       } else if (hash.startsWith('#game-')) {
         const gameId = hash.replace('#game-', '');
@@ -171,18 +172,19 @@ export default function SlateTable({
 
   // Navigate to next/previous date
   const navigateToDate = (direction: 'next' | 'prev') => {
-    const currentIndex = dateEntries.findIndex(([date]) => date === activeDate);
+    const currentIndex = dateEntries.findIndex(([dateKey]) => dateKey === activeDate);
     if (currentIndex === -1) return;
 
     const newIndex = direction === 'next' 
       ? Math.min(currentIndex + 1, dateEntries.length - 1)
       : Math.max(currentIndex - 1, 0);
 
-    const [newDate] = dateEntries[newIndex];
-    const header = dateHeaderRefs.current.get(newDate);
+    const [newDateKey] = dateEntries[newIndex];
+    const header = dateHeaderRefs.current.get(newDateKey);
     if (header && bodyScrollRef.current) {
       const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
       bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
+      setActiveDate(newDateKey);
     }
   };
 
@@ -378,11 +380,27 @@ export default function SlateTable({
     const headerHeight = 48; // Approximate header height
     
     // Find the date header that's currently visible
-    for (const [date, header] of Array.from(dateHeaderRefs.current.entries())) {
+    // Sort by position to check in order
+    const sortedHeaders = Array.from(dateHeaderRefs.current.entries())
+      .sort(([, a], [, b]) => {
+        const offsetA = a.offsetTop - bodyScrollRef.current!.offsetTop;
+        const offsetB = b.offsetTop - bodyScrollRef.current!.offsetTop;
+        return offsetA - offsetB;
+      });
+    
+    for (const [dateKey, header] of sortedHeaders) {
       if (header) {
         const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
         if (offset <= scrollTop + headerHeight) {
-          setActiveDate(date);
+          const nextHeader = sortedHeaders.find(([, h]) => {
+            const nextOffset = h.offsetTop - bodyScrollRef.current!.offsetTop;
+            return nextOffset > scrollTop + headerHeight;
+          });
+          
+          if (!nextHeader || header === nextHeader[1]) {
+            setActiveDate(dateKey);
+            break;
+          }
         }
       }
     }
