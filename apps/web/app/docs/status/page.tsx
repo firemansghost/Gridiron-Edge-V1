@@ -650,6 +650,12 @@ export default async function StatusPage() {
                         >
                           Peek: Alabama →
                         </Link>
+                        <Link 
+                          href="/ratings/config"
+                          className="underline hover:text-green-900 block mt-2"
+                        >
+                          Configure Weights →
+                        </Link>
                       </div>
                     </div>
                   </div>
