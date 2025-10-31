@@ -356,39 +356,6 @@ export default async function StatusPage() {
                 </div>
               </div>
             </div>
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">
-            </h2>
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <h3 className="font-medium text-green-900 mb-2">Week {currentWeek} Coverage</h3>
-                  <p className="text-green-800">
-                    Odds rows: <span className="font-mono font-bold">{oddsRowCount.toLocaleString()}</span>
-                  </p>
-                  <p className="text-green-800">
-                    Books: <span className="font-mono font-bold">{uniqueBooks.length}</span> ({uniqueBooks.join(', ')})
-                  </p>
-                </div>
-                <div>
-                  <h3 className="font-medium text-green-900 mb-2">Last Update</h3>
-                  <p className="text-green-800">
-                    {lastOddsUpdate ? lastOddsUpdate.toLocaleString() : 'No data'}
-                  </p>
-                  <p className="text-sm text-green-700 mt-1">
-                    <a 
-                      href={`/api/diagnostics/odds-coverage?season=${currentSeason}&week=${currentWeek}`}
-                      className="underline hover:text-green-900"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      View raw diagnostics →
-                    </a>
-                  </p>
-                </div>
-              </div>
-            </div>
           </section>
 
           {/* Market Line Counts */}
