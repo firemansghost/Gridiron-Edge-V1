@@ -366,9 +366,15 @@ export default function RatingsConfigPage() {
                 <div key={name} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
                   <span className="font-medium text-gray-900">{name}</span>
                   <div className="flex gap-2">
+                    <Link
+                      href={`/ratings/preview?config=${encodeURIComponent(name)}`}
+                      className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition inline-block"
+                    >
+                      Preview
+                    </Link>
                     <button
                       onClick={() => handleLoadConfig(name)}
-                      className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition"
+                      className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition"
                     >
                       Load
                     </button>
