@@ -356,6 +356,7 @@ function WeekPageContent() {
           </div>
         </div>
       </div>
+    </div>
   );
 }
 
