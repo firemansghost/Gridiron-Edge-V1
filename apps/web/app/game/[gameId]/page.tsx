@@ -100,8 +100,16 @@ export default function GameDetailPage() {
               </p>
             </div>
             <div className="text-right">
-              <div className="text-sm text-gray-500">Model Version</div>
-              <div className="text-lg font-semibold text-gray-900">{game.model.version}</div>
+              <div className="text-sm text-gray-500 flex items-center justify-end gap-1">
+                Model Version
+                <InfoTooltip content="Ratings Model v1 uses feature-based power ratings calculated from offensive and defensive statistics. Click version number to view changelog." />
+              </div>
+              <Link 
+                href="/docs/changelog"
+                className="text-lg font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors inline-block"
+              >
+                {game.model.version}
+              </Link>
             </div>
           </div>
         </div>
