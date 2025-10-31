@@ -1,6 +1,7 @@
 import { Metadata } from 'next';
 import { prisma } from '@/lib/prisma';
 import Link from 'next/link';
+import { getCurrentSeasonWeek } from '@/lib/current-week';
 import ETLHeartbeat from './etl-heartbeat';
 import DataSources from './data-sources';
 
