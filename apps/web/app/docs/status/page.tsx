@@ -97,6 +97,19 @@ export default async function StatusPage() {
       ORDER BY ml.book_name, ml.line_type
     `;
 
+    // Count unique games with odds data
+    const gamesWithOdds = await prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(DISTINCT g.id)::bigint AS count
+      FROM games g
+      WHERE g.season = ${currentSeason} 
+        AND g.week = ${currentWeek}
+        AND EXISTS (
+          SELECT 1 FROM market_lines ml 
+          WHERE ml.game_id = g.id
+        )
+    `;
+    const uniqueGamesWithOdds = Number(gamesWithOdds[0]?.count || 0);
+
     // 6) Bets ledger counts
     const totalBets = await prisma.bet.count();
     const gradedBets = await prisma.bet.count({
@@ -320,6 +333,32 @@ export default async function StatusPage() {
           <section>
             <h2 className="text-2xl font-semibold text-gray-900 mb-4">
               📊 Odds Coverage Status
+            </h2>
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <h3 className="font-medium text-green-900 mb-2">Games with Odds</h3>
+                  <p className="text-green-800">
+                    <span className="font-mono font-bold text-2xl">{uniqueGamesWithOdds}</span> games with at least one market line
+                  </p>
+                  <p className="text-sm text-green-700 mt-1">
+                    (Week {currentWeek}, {currentSeason})
+                  </p>
+                </div>
+                <div>
+                  <h3 className="font-medium text-green-900 mb-2">Total Market Line Rows</h3>
+                  <p className="text-green-800">
+                    <span className="font-mono font-bold text-2xl">{oddsRowCount.toLocaleString()}</span> market line records
+                  </p>
+                  <p className="text-sm text-green-700 mt-1">
+                    From {uniqueBooks.length} sportsbook{uniqueBooks.length !== 1 ? 's' : ''}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900">
             </h2>
             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
