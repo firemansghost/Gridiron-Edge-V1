@@ -88,44 +88,46 @@ export async function GET(request: NextRequest) {
 
     console.log(`   Found ${filteredGames.length} games for ${season} Week ${week}`);
 
-    // Filter to FBS games only using team_membership table
-    const fbsTeamIds = new Set(
-      (await prisma.teamMembership.findMany({
-        where: {
-          season,
-          level: 'fbs'
-        },
-        select: { teamId: true }
-      })).map(m => m.teamId.toLowerCase())
-    );
-
-    const fbsGames = filteredGames.filter(g => 
-      fbsTeamIds.has(g.homeTeam.id.toLowerCase()) && 
-      fbsTeamIds.has(g.awayTeam.id.toLowerCase())
-    );
-
-    console.log(`   Filtered to ${fbsGames.length} FBS games (from ${filteredGames.length} total)`);
-
-    // Batch fetch closing lines for all games to avoid N+1 queries
-    const gameIds = fbsGames.map(g => g.id);
-    const [spreadLines, totalLines] = await Promise.all([
+    // For backtesting, we want ALL games with odds, not just FBS
+    // First, fetch all market lines for this week to find which games have odds
+    const allGameIds = filteredGames.map(g => g.id);
+    const [spreadLines, totalLines, moneylineLines] = await Promise.all([
       prisma.marketLine.findMany({
         where: {
-          gameId: { in: gameIds },
+          gameId: { in: allGameIds },
           lineType: 'spread'
         },
         orderBy: { timestamp: 'desc' }
       }),
       prisma.marketLine.findMany({
         where: {
-          gameId: { in: gameIds },
+          gameId: { in: allGameIds },
           lineType: 'total'
+        },
+        orderBy: { timestamp: 'desc' }
+      }),
+      prisma.marketLine.findMany({
+        where: {
+          gameId: { in: allGameIds },
+          lineType: 'moneyline'
         },
         orderBy: { timestamp: 'desc' }
       })
     ]);
 
-    console.log(`   Found ${spreadLines.length} spread lines and ${totalLines.length} total lines for ${gameIds.length} games`);
+    console.log(`   Found ${spreadLines.length} spread lines, ${totalLines.length} total lines, ${moneylineLines.length} moneyline lines for ${allGameIds.length} games`);
+
+    // Find all games that have at least one market line (spread, total, or moneyline)
+    const gamesWithOdds = new Set([
+      ...spreadLines.map(l => l.gameId),
+      ...totalLines.map(l => l.gameId),
+      ...moneylineLines.map(l => l.gameId)
+    ]);
+
+    // Filter to only games that have odds data
+    const gamesToInclude = filteredGames.filter(g => gamesWithOdds.has(g.id));
+    
+    console.log(`   Filtered to ${gamesToInclude.length} games with odds (from ${filteredGames.length} total games)`);
 
     // Create lookup maps for closing lines
     const spreadMap = new Map<string, any>();
@@ -143,22 +145,10 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    // Diagnostic: Log games without market lines
-    const gamesWithoutSpread = fbsGames.filter(g => !spreadMap.has(g.id));
-    const gamesWithoutTotal = fbsGames.filter(g => !totalMap.has(g.id));
-    if (gamesWithoutSpread.length > 0 || gamesWithoutTotal.length > 0) {
-      console.log(`   ⚠️  ${gamesWithoutSpread.length} games missing spread lines, ${gamesWithoutTotal.length} games missing total lines`);
-      if (gamesWithoutSpread.length <= 10) {
-        gamesWithoutSpread.forEach(g => {
-          console.log(`      No spread: ${g.awayTeam.name} @ ${g.homeTeam.name} (${g.id})`);
-        });
-      }
-    }
-
     // Process each game
     const slateGames: SlateGame[] = [];
     
-    for (const game of fbsGames) {
+    for (const game of gamesToInclude) {
       // Determine status
       let status: 'final' | 'scheduled' | 'in_progress' = 'scheduled';
       if (game.status === 'final') {
@@ -236,7 +226,7 @@ export async function GET(request: NextRequest) {
           const awayPower = Number(awayRating.powerRating || awayRating.rating || 0);
           
           // Get game to check neutral site
-          const fullGame = fbsGames.find(g => g.id === game.gameId);
+          const fullGame = gamesToInclude.find(g => g.id === game.gameId);
           const isNeutral = fullGame?.neutralSite || false;
           
           // Model Spread
