@@ -6,7 +6,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { HeaderNav } from '@/components/HeaderNav';
@@ -45,7 +45,7 @@ interface RatingData {
   } | null;
 }
 
-export default function RatingsPeekPage() {
+function RatingsPeekContent() {
   const searchParams = useSearchParams();
   const [data, setData] = useState<RatingData | null>(null);
   const [loading, setLoading] = useState(true);
