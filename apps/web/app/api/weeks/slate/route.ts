@@ -88,9 +88,8 @@ export async function GET(request: NextRequest) {
 
     console.log(`   Found ${filteredGames.length} games for ${season} Week ${week}`);
 
-    // For backtesting, we want ALL games with odds, not just FBS
-    // Query market lines by season/week directly (market_lines table has season/week fields)
-    // This ensures we find ALL games with odds, even if they weren't in filteredGames
+    // Show ALL games (for backtesting and to identify which games need odds)
+    // Query market lines by season/week to populate odds data for games that have it
     const [spreadLines, totalLines, moneylineLines] = await Promise.all([
       prisma.marketLine.findMany({
         where: {
@@ -118,7 +117,7 @@ export async function GET(request: NextRequest) {
       })
     ]);
 
-    // Find all games that have at least one market line (spread, total, or moneyline)
+    // Track which games have odds (for reference, but we'll show all games)
     const gamesWithOdds = new Set([
       ...spreadLines.map(l => l.gameId),
       ...totalLines.map(l => l.gameId),
@@ -126,17 +125,13 @@ export async function GET(request: NextRequest) {
     ]);
 
     console.log(`   Found ${spreadLines.length} spread lines, ${totalLines.length} total lines, ${moneylineLines.length} moneyline lines`);
-    console.log(`   Found ${gamesWithOdds.size} unique games with odds`);
+    console.log(`   ${gamesWithOdds.size} unique games have odds out of ${filteredGames.length} total games`);
 
-    // Filter to only games that have odds data
-    // Use the FULL games list (not filteredGames) to ensure we find ALL games with odds
-    // This is critical because date filtering might exclude games that actually have odds
-    const gamesToInclude = games.filter(g => gamesWithOdds.has(g.id));
+    // Show ALL games, not just those with odds
+    // This helps identify which games need odds ingestion
+    let finalGamesToInclude = filteredGames;
     
-    console.log(`   Found ${gamesToInclude.length} games with odds (from ${games.length} total games for week)`);
-
-    // Apply date limiting if requested (after finding games with odds)
-    let finalGamesToInclude = gamesToInclude;
+    // Apply date limiting if requested
     if (limitDates > 0) {
       // Helper function to get date key for timezone conversion
       const getDateKey = (dateString: string): string => {
@@ -155,15 +150,13 @@ export async function GET(request: NextRequest) {
         }
       };
       
-      const uniqueDates = Array.from(new Set(gamesToInclude.map(g => getDateKey(g.date.toISOString()))));
+      const uniqueDates = Array.from(new Set(finalGamesToInclude.map(g => getDateKey(g.date.toISOString()))));
       const limitedDates = uniqueDates.slice(0, limitDates);
-      finalGamesToInclude = gamesToInclude.filter(g => {
+      finalGamesToInclude = finalGamesToInclude.filter(g => {
         const dateKey = getDateKey(g.date.toISOString());
         return limitedDates.includes(dateKey);
       });
       console.log(`   After date limiting: ${finalGamesToInclude.length} games`);
-    } else {
-      finalGamesToInclude = gamesToInclude;
     }
 
     // Create lookup maps for closing lines
@@ -194,7 +187,7 @@ export async function GET(request: NextRequest) {
         status = 'in_progress';
       }
 
-      // Get closing lines from batch data
+      // Get closing lines from batch data (may be null if game doesn't have odds yet)
       const spreadLine = spreadMap.get(game.id);
       const totalLine = totalMap.get(game.id);
       
@@ -209,6 +202,9 @@ export async function GET(request: NextRequest) {
         book: totalLine.bookName,
         timestamp: totalLine.timestamp.toISOString()
       } : null;
+      
+      // Track if this game has odds (for UI indication)
+      const hasOdds = gamesWithOdds.has(game.id);
 
       // Format kickoff time - just use the ISO string, frontend will format with correct timezone
       // The date from Prisma is already in UTC, we'll let the frontend convert it properly
@@ -224,7 +220,8 @@ export async function GET(request: NextRequest) {
         awayScore: game.awayScore,
         homeScore: game.homeScore,
         closingSpread,
-        closingTotal
+        closingTotal,
+        hasOdds // Indicate if this game has odds data
       };
 
       slateGames.push(slateGame);
