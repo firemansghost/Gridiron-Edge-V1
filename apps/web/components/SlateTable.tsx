@@ -388,10 +388,14 @@ export default function SlateTable({
     }
   };
 
-  // Get today's date in local timezone
+  // Get today's date in YYYY-MM-DD format for comparison
   const getTodayDate = () => {
     const today = new Date();
-    return today.toISOString().split('T')[0];
+    // Use local date, not UTC
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
   // Check if today has games
@@ -407,6 +411,7 @@ export default function SlateTable({
     if (header && bodyScrollRef.current) {
       const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
       bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
+      setActiveDate(today);
     }
   };
 
@@ -446,6 +451,17 @@ export default function SlateTable({
     }
   };
 
+  // Get ISO date string (YYYY-MM-DD) for grouping and comparison
+  const getDateKey = (dateString: string) => {
+    try {
+      const d = new Date(dateString);
+      return d.toISOString().split('T')[0];
+    } catch {
+      return 'unknown';
+    }
+  };
+
+  // Format date for display
   const formatDate = (date: string) => {
     try {
       const d = new Date(date);
@@ -527,21 +543,24 @@ export default function SlateTable({
     }
   };
 
-  // Group games by date with performance optimization
+  // Group games by date using ISO date strings as keys
   const groupedGames = useMemo(() => {
     return games.reduce((acc, game) => {
-      const date = formatDate(game.date);
-      if (!acc[date]) acc[date] = [];
-      acc[date].push(game);
+      const dateKey = getDateKey(game.date);
+      if (!acc[dateKey]) {
+        acc[dateKey] = {
+          dateKey,
+          formattedDate: formatDate(game.date),
+          games: []
+        };
+      }
+      acc[dateKey].games.push(game);
       return acc;
-    }, {} as Record<string, SlateGame[]>);
+    }, {} as Record<string, { dateKey: string; formattedDate: string; games: SlateGame[] }>);
   }, [games]);
 
-  // Performance: Show first 3 dates initially, then load more
-  const [visibleDates, setVisibleDates] = useState(3);
-  const dateEntries = Object.entries(groupedGames);
-  const visibleDateEntries = dateEntries.slice(0, visibleDates);
-  const hasMoreDates = dateEntries.length > visibleDates;
+  // Show all dates by default (no lazy loading for now to ensure all games show)
+  const dateEntries = Object.entries(groupedGames).sort(([a], [b]) => a.localeCompare(b));
 
   const loadMoreDates = () => {
     setVisibleDates(prev => Math.min(prev + 3, dateEntries.length));
@@ -729,24 +748,29 @@ export default function SlateTable({
       {/* Mini day-nav with active highlighting */}
       {dateEntries.length > 1 && (
         <div className="sticky top-[17px] z-19 bg-gray-50 border-b border-gray-200 px-4 py-2">
-          <div className="flex space-x-2 overflow-x-auto">
-            {dateEntries.map(([date, _]) => {
-              const isActive = activeDate === date;
-              const isToday = date === getTodayDate();
+          <div className="flex space-x-2 overflow-x-auto pb-2">
+            {dateEntries.map(([dateKey, dateData]) => {
+              const isActive = activeDate === dateKey;
+              const isToday = dateKey === getTodayDate();
+              // Parse the formatted date to extract day of week and date
+              const formattedParts = dateData.formattedDate.split(',');
+              const dayOfWeek = formattedParts[0]; // "Friday"
+              const monthDay = formattedParts[1]?.trim() || ''; // "Oct 31"
               return (
                 <button
-                  key={date}
+                  key={dateKey}
                   onClick={() => {
-                    const header = dateHeaderRefs.current.get(date);
+                    const header = dateHeaderRefs.current.get(dateKey);
                     if (header && bodyScrollRef.current) {
                       const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
                       bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
                       
-                      // Update URL hash
-                      window.history.replaceState(null, '', `#date-${date}`);
+                      // Update URL hash and active date
+                      window.history.replaceState(null, '', `#date-${dateKey}`);
+                      setActiveDate(dateKey);
                     }
                   }}
-                  className={`px-3 py-1 text-xs font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 whitespace-nowrap transition-colors ${
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 whitespace-nowrap transition-colors cursor-pointer ${
                     isActive 
                       ? 'bg-blue-600 text-white' 
                       : isToday 
@@ -754,7 +778,7 @@ export default function SlateTable({
                         : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
                   }`}
                 >
-                  {new Date(date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                  {dayOfWeek.substring(0, 3)} {monthDay}
                   {isToday && ' (Today)'}
                 </button>
               );
@@ -840,23 +864,23 @@ export default function SlateTable({
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {visibleDateEntries.map(([date, dateGames]) => (
-              <React.Fragment key={date}>
+            {dateEntries.map(([dateKey, dateData]) => (
+              <React.Fragment key={dateKey}>
                 {showDateHeaders && (
                   <tr 
                     ref={(el) => {
                       if (el) {
-                        dateHeaderRefs.current.set(date, el);
+                        dateHeaderRefs.current.set(dateKey, el);
                       }
                     }}
                     className="bg-white/90 sticky top-[var(--header-height,48px)] z-9 border-b"
                   >
                     <td colSpan={showAdvancedColumns ? 12 : 5} className="px-6 py-3 text-sm font-medium text-gray-700">
-                      {date}
+                      {dateData.formattedDate}
                     </td>
                   </tr>
                 )}
-                {dateGames.map((game) => (
+                {dateData.games.map((game) => (
                   <tr 
                     key={game.gameId} 
                     id={`game-${game.gameId}`}
