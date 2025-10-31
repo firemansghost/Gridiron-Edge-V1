@@ -89,26 +89,29 @@ export async function GET(request: NextRequest) {
     console.log(`   Found ${filteredGames.length} games for ${season} Week ${week}`);
 
     // For backtesting, we want ALL games with odds, not just FBS
-    // First, fetch all market lines for this week to find which games have odds
-    const allGameIds = filteredGames.map(g => g.id);
+    // Query market lines by season/week directly (market_lines table has season/week fields)
+    // This ensures we find ALL games with odds, even if they weren't in filteredGames
     const [spreadLines, totalLines, moneylineLines] = await Promise.all([
       prisma.marketLine.findMany({
         where: {
-          gameId: { in: allGameIds },
+          season: season,
+          week: week,
           lineType: 'spread'
         },
         orderBy: { timestamp: 'desc' }
       }),
       prisma.marketLine.findMany({
         where: {
-          gameId: { in: allGameIds },
+          season: season,
+          week: week,
           lineType: 'total'
         },
         orderBy: { timestamp: 'desc' }
       }),
       prisma.marketLine.findMany({
         where: {
-          gameId: { in: allGameIds },
+          season: season,
+          week: week,
           lineType: 'moneyline'
         },
         orderBy: { timestamp: 'desc' }
@@ -150,7 +153,24 @@ export async function GET(request: NextRequest) {
     // Process each game
     const slateGames: SlateGame[] = [];
     
-    for (const game of gamesToInclude) {
+    // Helper function to get date key for timezone conversion
+    const getDateKey = (dateString: string): string => {
+      try {
+        const d = new Date(dateString);
+        const localDateStr = d.toLocaleDateString('en-US', { 
+          timeZone: 'America/Chicago',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        });
+        const [month, day, year] = localDateStr.split('/');
+        return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+      } catch {
+        return 'unknown';
+      }
+    };
+    
+    for (const game of finalGamesToInclude) {
       // Determine status
       let status: 'final' | 'scheduled' | 'in_progress' = 'scheduled';
       if (game.status === 'final') {
