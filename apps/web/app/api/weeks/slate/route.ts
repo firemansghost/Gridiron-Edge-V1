@@ -173,9 +173,16 @@ export async function GET(request: NextRequest) {
         timestamp: totalLine.timestamp.toISOString()
       } : null;
 
-      // Format kickoff time (convert to local timezone)
+      // Format kickoff time (convert to America/Chicago timezone properly)
       const kickoffDate = new Date(game.date);
-      const kickoffLocal = kickoffDate.toISOString().replace('Z', '-05:00'); // CST/CDT
+      // Convert to America/Chicago timezone and format as ISO string
+      const kickoffInChicago = new Date(kickoffDate.toLocaleString('en-US', { timeZone: 'America/Chicago' }));
+      // Calculate timezone offset
+      const offsetMs = kickoffDate.getTime() - kickoffInChicago.getTime();
+      const offsetHours = Math.round(offsetMs / (1000 * 60 * 60));
+      const offsetSign = offsetHours >= 0 ? '+' : '-';
+      const offsetString = `${offsetSign}${Math.abs(offsetHours).toString().padStart(2, '0')}:00`;
+      const kickoffLocal = kickoffDate.toISOString().replace('Z', offsetString);
 
       const slateGame: SlateGame = {
         gameId: game.id,

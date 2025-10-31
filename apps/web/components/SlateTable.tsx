@@ -470,7 +470,9 @@ export default function SlateTable({
   const formatTime = (kickoffLocal: string) => {
     try {
       const date = new Date(kickoffLocal);
+      // Format using America/Chicago timezone to ensure correct local time
       return date.toLocaleTimeString('en-US', { 
+        timeZone: 'America/Chicago',
         hour: 'numeric', 
         minute: '2-digit',
         hour12: true 
