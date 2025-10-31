@@ -30,6 +30,7 @@ interface SlateGame {
   pickTotal?: string | null;
   maxEdge?: number | null;
   confidence?: string | null;
+  hasOdds?: boolean; // Indicates if game has any market lines
 }
 
 interface SearchResult extends SlateGame {
@@ -1046,20 +1047,42 @@ export default function SlateTable({
                       {getScoreDisplay(game)}
                     </td>
                     <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
-                      <div 
-                        className="text-sm font-medium text-gray-900 cursor-help"
-                        title={formatTooltip(game.closingSpread)}
-                      >
-                        {formatSpread(game.closingSpread)}
-                      </div>
+                      {game.closingSpread ? (
+                        <div>
+                          <div 
+                            className="text-sm font-medium text-gray-900 cursor-help"
+                            title={formatTooltip(game.closingSpread)}
+                          >
+                            {formatSpread(game.closingSpread)}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {game.closingSpread.book}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-gray-400 italic">
+                          No odds
+                        </div>
+                      )}
                     </td>
                     <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
-                      <div 
-                        className="text-sm font-medium text-gray-900 cursor-help"
-                        title={formatTooltip(game.closingTotal)}
-                      >
-                        {formatTotal(game.closingTotal)}
-                      </div>
+                      {game.closingTotal ? (
+                        <div>
+                          <div 
+                            className="text-sm font-medium text-gray-900 cursor-help"
+                            title={formatTooltip(game.closingTotal)}
+                          >
+                            {formatTotal(game.closingTotal)}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {game.closingTotal.book}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-gray-400 italic">
+                          No odds
+                        </div>
+                      )}
                     </td>
                     <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
                       {getStatusBadge(game)}
