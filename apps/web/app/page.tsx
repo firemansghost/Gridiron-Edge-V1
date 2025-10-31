@@ -279,20 +279,6 @@ export default function HomePage() {
             showAdvanced={false}
           />
         )}
-
-        {/* Info Footer */}
-        <div className="mt-8 text-center text-sm text-gray-500">
-          <p className="mb-2">
-            Ratings Model v1 • <InfoTooltip content="Home Field Advantage: The automatic point advantage given to the home team in spread calculations. Research shows home teams typically win by about 2 points more than expected." /> Home field advantage: +2.0 pts
-          </p>
-          <div className="flex items-center justify-center gap-2">
-            <span>Confidence Levels:</span>
-            <span className="text-green-600">High (A) ≥ 4.0 pts</span>
-            <span className="text-yellow-600">• Medium (B) ≥ 3.0 pts</span>
-            <span className="text-red-600">• Low (C) ≥ 2.0 pts</span>
-            <InfoTooltip content="Confidence tiers indicate the strength of our model's advantage over the betting market. Higher tiers (A) represent stronger opportunities where the model strongly disagrees with the market line." />
-          </div>
-        </div>
         </div>
       </div>
       <Footer />
