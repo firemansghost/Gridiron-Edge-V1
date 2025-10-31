@@ -41,12 +41,23 @@ async function main() {
     }
   }
 
-  // Step 2: Get all teams from database
-  const allTeams = await prisma.team.findMany({
-    select: { id: true }
-  });
+  // Step 2: Load FBS team IDs from fbs_slugs.json
+  const fs = require('fs');
+  const path = require('path');
   
-  console.log(`📋 Found ${allTeams.length} teams in database`);
+  const fbsSlugsPath = path.join(__dirname, '../../config/fbs_slugs.json');
+  let fbsTeamIds: string[] = [];
+  
+  try {
+    const fbsSlugsContent = fs.readFileSync(fbsSlugsPath, 'utf8');
+    fbsTeamIds = JSON.parse(fbsSlugsContent);
+    console.log(`📋 Loaded ${fbsTeamIds.length} FBS team IDs from fbs_slugs.json`);
+  } catch (error) {
+    console.warn(`⚠️  Could not load fbs_slugs.json, falling back to all teams:`, error);
+    // Fallback: use all teams (less ideal but functional)
+    const allTeams = await prisma.team.findMany({ select: { id: true } });
+    fbsTeamIds = allTeams.map(t => t.id);
+  }
 
   // Step 3: Insert team_membership records for each season
   let totalInserted = 0;
@@ -61,8 +72,22 @@ async function main() {
     });
     const existingIds = new Set(existing.map(e => e.teamId));
     
-    // Insert memberships for teams not already in this season
-    const toInsert = allTeams.filter(t => !existingIds.has(t.id));
+    // Add 2025-specific teams
+    const teamIdsForSeason = season === 2025 
+      ? [...fbsTeamIds, 'delaware', 'missouri-state']
+      : fbsTeamIds;
+    
+    // Filter to only teams that exist in the database
+    const existingTeamsInDb = await prisma.team.findMany({
+      where: { id: { in: teamIdsForSeason } },
+      select: { id: true }
+    });
+    const existingTeamIds = new Set(existingTeamsInDb.map(t => t.id));
+    
+    // Insert memberships for FBS teams not already in this season
+    const toInsert = teamIdsForSeason
+      .filter(id => existingTeamIds.has(id) && !existingIds.has(id))
+      .map(id => ({ id }));
     
     if (toInsert.length === 0) {
       console.log(`   ✓ Season ${season} already has ${existing.length} FBS teams (skipping)`);
@@ -76,7 +101,7 @@ async function main() {
         await prisma.teamMembership.create({
           data: {
             season,
-            teamId: team.id,
+            teamId: team.id.toLowerCase(),
             level: 'fbs'
           }
         });
