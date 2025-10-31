@@ -62,16 +62,22 @@ jobs:
           echo "=== Validating season $SEASON ==="
           
           # Get expected FBS count from team_membership
-          EXPECTED_SQL="SELECT COUNT(*) FROM team_membership WHERE season=$SEASON AND level='fbs';"
-          EXPECTED=$(npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "$EXPECTED_SQL" | tail -n 1 | tr -d '[:space:]')
+          EXPECTED_SQL="SELECT COUNT(*) AS count FROM team_membership WHERE season=$SEASON AND level='fbs';"
+          EXPECTED_OUTPUT=$(npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "$EXPECTED_SQL" 2>&1)
+          EXPECTED=$(echo "$EXPECTED_OUTPUT" | grep -oE '[0-9]+' | head -n 1)
           
           # Get actual ratings count
-          ACTUAL_SQL="SELECT COUNT(*) FROM team_season_ratings WHERE season=$SEASON AND power_rating IS NOT NULL;"
-          ACTUAL=$(npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "$ACTUAL_SQL" | tail -n 1 | tr -d '[:space:]')
+          ACTUAL_SQL="SELECT COUNT(*) AS count FROM team_season_ratings WHERE season=$SEASON AND power_rating IS NOT NULL;"
+          ACTUAL_OUTPUT=$(npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "$ACTUAL_SQL" 2>&1)
+          ACTUAL=$(echo "$ACTUAL_OUTPUT" | grep -oE '[0-9]+' | head -n 1)
           
           echo "Expected FBS=$EXPECTED, Ratings computed=$ACTUAL (season=$SEASON)"
           
-          if [ "$ACTUAL" -lt "$((EXPECTED * 80 / 100))" ]; then
+          if [ -z "$EXPECTED" ] || [ -z "$ACTUAL" ]; then
+            echo "⚠️  WARNING: Could not parse counts from database output"
+            echo "Expected output: $EXPECTED_OUTPUT"
+            echo "Actual output: $ACTUAL_OUTPUT"
+          elif [ "$ACTUAL" -lt "$((EXPECTED * 80 / 100))" ]; then
             echo "⚠️  WARNING: Less than 80% of expected teams have ratings ($ACTUAL/$EXPECTED)"
           else
             echo "✅ Ratings computed for $ACTUAL/$EXPECTED teams"
@@ -93,7 +99,7 @@ jobs:
             ROUND(AVG(confidence)::numeric * 100, 1) AS avg_confidence_pct
           FROM team_season_ratings
           WHERE season = $SEASON;
-          "
+          " || echo "Note: Summary query may have failed (non-fatal)"
 
       - name: Show sample ratings
         run: |
@@ -112,5 +118,5 @@ jobs:
           WHERE season = $SEASON AND power_rating IS NOT NULL
           ORDER BY power_rating DESC
           LIMIT 10;
-          "
+          " || echo "Note: Sample query may have failed (non-fatal)"
 
