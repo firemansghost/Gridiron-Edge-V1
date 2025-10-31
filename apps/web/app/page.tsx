@@ -249,23 +249,27 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Selections & Profitability Card */}
-        <div className="bg-white p-6 rounded-lg shadow mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Selections & Profitability</h2>
-          <p className="text-gray-600 mb-4">Track your betting performance and review past selections.</p>
-          <div className="flex gap-4">
-            <Link 
-              href="/weeks/review"
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-            >
-              Week Review
-            </Link>
-            <Link 
-              href="/bets"
-              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-            >
-              Bets Ledger
-            </Link>
+        {/* Quick Actions - Simplified from "Selections & Profitability" */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-lg shadow mb-8 border border-blue-100">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 mb-1">Quick Actions</h2>
+              <p className="text-sm text-gray-600">Review past weeks and track your selections</p>
+            </div>
+            <div className="flex gap-3">
+              <Link 
+                href="/weeks"
+                className="px-4 py-2 bg-white text-blue-600 rounded-md hover:bg-blue-50 border border-blue-200 text-sm font-medium transition-colors"
+              >
+                Browse Weeks
+              </Link>
+              <Link 
+                href="/weeks/review"
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium transition-colors"
+              >
+                Week Review
+              </Link>
+            </div>
           </div>
         </div>
 
