@@ -17,6 +17,7 @@ import { SkeletonTable } from '@/components/SkeletonRow';
 import { SyncScrollX } from '@/components/SyncScrollX';
 import SlateTable from '@/components/SlateTable';
 import { abbrevSource, formatSourceTooltip } from '@/lib/market-badges';
+import { InfoTooltip } from '@/components/InfoTooltip';
 
 export default function HomePage() {
   const [slate, setSlate] = useState<SlateData | null>(null);
