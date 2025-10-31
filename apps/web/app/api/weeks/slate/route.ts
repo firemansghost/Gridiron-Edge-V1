@@ -115,8 +115,6 @@ export async function GET(request: NextRequest) {
       })
     ]);
 
-    console.log(`   Found ${spreadLines.length} spread lines, ${totalLines.length} total lines, ${moneylineLines.length} moneyline lines for ${allGameIds.length} games`);
-
     // Find all games that have at least one market line (spread, total, or moneyline)
     const gamesWithOdds = new Set([
       ...spreadLines.map(l => l.gameId),
@@ -124,7 +122,11 @@ export async function GET(request: NextRequest) {
       ...moneylineLines.map(l => l.gameId)
     ]);
 
+    console.log(`   Found ${spreadLines.length} spread lines, ${totalLines.length} total lines, ${moneylineLines.length} moneyline lines`);
+    console.log(`   Found ${gamesWithOdds.size} unique games with odds`);
+
     // Filter to only games that have odds data
+    // Use the full games list, not filteredGames, to ensure we don't miss games due to date limits
     const gamesToInclude = filteredGames.filter(g => gamesWithOdds.has(g.id));
     
     console.log(`   Filtered to ${gamesToInclude.length} games with odds (from ${filteredGames.length} total games)`);
