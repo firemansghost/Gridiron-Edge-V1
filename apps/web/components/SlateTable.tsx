@@ -544,7 +544,10 @@ export default function SlateTable({
   const getStatusBadge = (game: SlateGame) => {
     // Check if game has scores (even if status isn't updated to 'final')
     const hasScores = game.awayScore !== null && game.homeScore !== null;
-    const isPast = new Date(game.date) < new Date();
+    // Compare dates properly - both should be in same timezone context
+    const gameDate = new Date(game.date);
+    const now = new Date();
+    const isPast = gameDate < now;
     const isFinal = game.status === 'final' || (hasScores && isPast);
     const isLive = game.status === 'in_progress';
     
@@ -560,7 +563,10 @@ export default function SlateTable({
   const getScoreDisplay = (game: SlateGame) => {
     // Check if game has scores (even if status isn't updated to 'final')
     const hasScores = game.awayScore !== null && game.homeScore !== null;
-    const isPast = new Date(game.date) < new Date();
+    // Compare dates properly
+    const gameDate = new Date(game.date);
+    const now = new Date();
+    const isPast = gameDate < now;
     const isFinal = game.status === 'final' || (hasScores && isPast);
     
     if (isFinal && hasScores) {
