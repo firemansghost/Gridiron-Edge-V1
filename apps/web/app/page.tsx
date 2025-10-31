@@ -191,6 +191,30 @@ export default function HomePage() {
           </div>
         </div>
 
+        {/* What is Edge? - Prominent explanation */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-l-4 border-blue-400 p-6 rounded-r-lg mb-8">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="text-lg font-semibold text-gray-900">What is Edge?</h3>
+                <InfoTooltip content="Edge is the difference between our model's prediction and the betting market (in points). Higher edge = stronger betting opportunity." />
+              </div>
+              <p className="text-sm text-gray-700 mb-3">
+                <strong>Edge</strong> shows how much our model disagrees with the betting market. When our model thinks the market is wrong, 
+                that creates a betting opportunity. The numbers below show games where we found meaningful edges (2.0+ points difference).
+              </p>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span className="bg-green-100 text-green-800 px-2 py-1 rounded font-medium">High (A) ≥ 4.0 pts</span>
+                <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-medium">Medium (B) ≥ 3.0 pts</span>
+                <span className="bg-red-100 text-red-800 px-2 py-1 rounded font-medium">Low (C) ≥ 2.0 pts</span>
+                <Link href="/getting-started" className="text-blue-600 hover:text-blue-800 underline font-medium">
+                  Learn more →
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Summary Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-white p-4 rounded-lg shadow">
