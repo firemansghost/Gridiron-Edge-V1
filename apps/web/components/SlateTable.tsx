@@ -559,12 +559,8 @@ export default function SlateTable({
     }, {} as Record<string, { dateKey: string; formattedDate: string; games: SlateGame[] }>);
   }, [games]);
 
-  // Show all dates by default (no lazy loading for now to ensure all games show)
+  // Show all dates (no lazy loading to ensure all games show)
   const dateEntries = Object.entries(groupedGames).sort(([a], [b]) => a.localeCompare(b));
-
-  const loadMoreDates = () => {
-    setVisibleDates(prev => Math.min(prev + 3, dateEntries.length));
-  };
 
   if (loading) {
     return (
@@ -999,16 +995,6 @@ export default function SlateTable({
         )}
       </div>
       
-      {hasMoreDates && (
-        <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
-          <button
-            onClick={loadMoreDates}
-            className="w-full px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            Load more dates ({dateEntries.length - visibleDates} remaining)
-          </button>
-        </div>
-      )}
       
       {/* View all columns link */}
       <div className="px-6 py-3 border-t border-gray-200 bg-gray-50">
