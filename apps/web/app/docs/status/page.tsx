@@ -174,10 +174,56 @@ export default async function StatusPage() {
 
     // Handle team_season_ratings gracefully (table might be empty)
     let teamSeasonRatings2025 = 0;
+    let ratingsHealth2025: any = null;
     try {
       teamSeasonRatings2025 = await prisma.teamSeasonRating.count({
         where: { season: 2025 }
       });
+
+      // Get ratings health metrics if ratings exist
+      if (teamSeasonRatings2025 > 0) {
+        const ratings = await prisma.teamSeasonRating.findMany({
+          where: { season: 2025 },
+          select: {
+            powerRating: true,
+            rating: true,
+            confidence: true,
+            dataSource: true,
+          },
+        });
+
+        const powerRatings = ratings
+          .map(r => Number(r.powerRating || r.rating || 0))
+          .filter(r => r !== 0);
+        const confidences = ratings
+          .map(r => Number(r.confidence || 0))
+          .filter(c => c > 0);
+        
+        const dataSourceBreakdown = ratings.reduce((acc, r) => {
+          const source = r.dataSource || 'unknown';
+          acc[source] = (acc[source] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>);
+
+        if (powerRatings.length > 0) {
+          powerRatings.sort((a, b) => a - b);
+          const minRating = powerRatings[0];
+          const maxRating = powerRatings[powerRatings.length - 1];
+          const medianRating = powerRatings[Math.floor(powerRatings.length / 2)];
+          const avgConfidence = confidences.length > 0 
+            ? confidences.reduce((sum, c) => sum + c, 0) / confidences.length
+            : 0;
+
+          ratingsHealth2025 = {
+            minRating: minRating.toFixed(2),
+            maxRating: maxRating.toFixed(2),
+            medianRating: medianRating.toFixed(2),
+            avgConfidence: (avgConfidence * 100).toFixed(1),
+            dataSourceBreakdown,
+            totalWithConfidence: confidences.length,
+          };
+        }
+      }
     } catch (error) {
       console.warn('team_season_ratings table not accessible:', error);
       teamSeasonRatings2025 = 0;
@@ -539,13 +585,13 @@ export default async function StatusPage() {
             </div>
           </section>
 
-          {/* Baseline Ratings */}
+          {/* Ratings v1 */}
           <section>
             <h2 className="text-2xl font-semibold text-gray-900 mb-4">
-              🏆 Baseline Ratings (Scores)
+              🎯 Ratings v1 (Feature-Based)
             </h2>
             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
                   <h3 className="font-medium text-green-900 mb-2">2025 Team Ratings</h3>
                   <p className="text-green-800">
@@ -559,16 +605,57 @@ export default async function StatusPage() {
                   </p>
                 </div>
               </div>
-              {teamSeasonRatings2025 > 0 && (
-                <div className="mt-4">
-                  <a 
-                    href="/api/ratings/baseline?season=2025&limit=10" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-green-700 hover:text-green-800 underline text-sm"
-                  >
-                    View top 10 teams →
-                  </a>
+              {ratingsHealth2025 && (
+                <div className="mt-4 pt-4 border-t border-green-300">
+                  <h3 className="font-medium text-green-900 mb-3">Health Metrics</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <div className="text-green-700 font-medium">Power Rating Range</div>
+                      <div className="text-green-800">
+                        Min: <span className="font-mono">{ratingsHealth2025.minRating}</span><br/>
+                        Max: <span className="font-mono">{ratingsHealth2025.maxRating}</span><br/>
+                        Median: <span className="font-mono">{ratingsHealth2025.medianRating}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-green-700 font-medium">Confidence</div>
+                      <div className="text-green-800">
+                        Avg: <span className="font-mono">{ratingsHealth2025.avgConfidence}%</span><br/>
+                        Teams with confidence: <span className="font-mono">{ratingsHealth2025.totalWithConfidence}/{teamSeasonRatings2025}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-green-700 font-medium">Data Sources</div>
+                      <div className="text-green-800">
+                        {Object.entries(ratingsHealth2025.dataSourceBreakdown).map(([source, count]: [string, any]) => (
+                          <div key={source}>
+                            <span className="font-mono">{count}</span> {source}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-green-700 font-medium">Quick Links</div>
+                      <div className="text-green-800 space-y-1">
+                        <a 
+                          href="/api/ratings/peek?season=2025&teamId=georgia" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="underline hover:text-green-900 block"
+                        >
+                          Peek: Georgia →
+                        </a>
+                        <a 
+                          href="/api/ratings/peek?season=2025&teamId=alabama" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="underline hover:text-green-900 block"
+                        >
+                          Peek: Alabama →
+                        </a>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
