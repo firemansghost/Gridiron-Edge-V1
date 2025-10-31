@@ -245,6 +245,7 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // Always return season/week even if no games found
     return Response.json({
       success: true,
       week,
@@ -262,7 +263,14 @@ export async function GET(request: NextRequest) {
       signConvention: {
         spread: 'home_minus_away',
         hfaPoints: 2.0
-      }
+      },
+      // Include metadata for debugging
+      detected: {
+        season,
+        week,
+        hasGames: slate.length > 0,
+        gameCount: slate.length,
+      },
     });
 
   } catch (error) {
