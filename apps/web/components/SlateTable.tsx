@@ -771,10 +771,16 @@ export default function SlateTable({
                 Time / Score
               </th>
               <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
-                Spread
+                <div className="flex items-center justify-center gap-1">
+                  Market Spread
+                  <InfoTooltip content="The betting market's point spread. Negative values mean the home team is favored. This is the line you'd bet against." position="bottom" />
+                </div>
               </th>
               <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
-                Total
+                <div className="flex items-center justify-center gap-1">
+                  Market Total
+                  <InfoTooltip content="The betting market's total points line (over/under). This is the combined points both teams are expected to score." position="bottom" />
+                </div>
               </th>
               <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
                 Status
@@ -788,7 +794,10 @@ export default function SlateTable({
                     </div>
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
-                    Model Total
+                    <div className="flex items-center justify-center gap-1">
+                      Model Total
+                      <InfoTooltip content="Our model's predicted total points for this game. Compare to Market Total to find edge opportunities." position="bottom" />
+                    </div>
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
                     <div className="flex items-center justify-center gap-1">
