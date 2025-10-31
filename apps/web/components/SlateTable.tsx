@@ -470,13 +470,20 @@ export default function SlateTable({
   const formatTime = (kickoffLocal: string) => {
     try {
       const date = new Date(kickoffLocal);
-      // Format using America/Chicago timezone to ensure correct local time
-      return date.toLocaleTimeString('en-US', { 
+      // Format using America/Chicago timezone (CST/CDT)
+      const timeStr = date.toLocaleTimeString('en-US', { 
         timeZone: 'America/Chicago',
         hour: 'numeric', 
         minute: '2-digit',
         hour12: true 
       });
+      // Determine if CST or CDT (daylight saving)
+      const isDST = date.toLocaleString('en-US', { 
+        timeZone: 'America/Chicago',
+        timeZoneName: 'short'
+      }).includes('CDT');
+      const tzLabel = isDST ? 'CDT' : 'CST';
+      return `${timeStr} ${tzLabel}`;
     } catch {
       return 'TBD';
     }

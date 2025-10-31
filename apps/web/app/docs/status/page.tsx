@@ -36,20 +36,22 @@ export default async function StatusPage() {
     const currentSeason = current.season;
     const currentWeek = current.week;
     
-    const marketLineCounts = await prisma.marketLine.groupBy({
-      by: ['lineType', 'source'],
-      where: {
-        season: currentSeason,
-        week: currentWeek,
-      },
-      _count: {
-        id: true,
-      },
-      orderBy: [
-        { lineType: 'asc' },
-        { source: 'asc' },
-      ],
-    });
+    // Market lines don't have season/week directly - need to join with games
+    const marketLineCounts = await prisma.$queryRaw<Array<{
+      lineType: string;
+      source: string | null;
+      count: bigint;
+    }>>`
+      SELECT 
+        ml.line_type AS "lineType",
+        ml.source,
+        COUNT(*)::bigint AS count
+      FROM market_lines ml
+      INNER JOIN games g ON g.id = ml.game_id
+      WHERE g.season = ${currentSeason} AND g.week = ${currentWeek}
+      GROUP BY ml.line_type, ml.source
+      ORDER BY ml.line_type, ml.source
+    `;
 
     // 3) Top 10 most-recent market_lines rows
     const recentMarketLines = await prisma.marketLine.findMany({
@@ -246,8 +248,8 @@ export default async function StatusPage() {
       teamSeasonRatings2025 = 0;
     }
 
-    const oddsRowCount = Array.isArray(oddsCoverage) 
-      ? oddsCoverage.reduce((sum: number, row: any) => sum + parseInt(row.rows), 0)
+    const oddsRowCount = Array.isArray(marketLineCounts) 
+      ? marketLineCounts.reduce((sum: number, row: any) => sum + Number(row.count || 0), 0)
       : 0;
 
     const uniqueBooks = Array.isArray(oddsCoverage) 
