@@ -293,3 +293,19 @@ function RatingsPeekContent() {
   );
 }
 
+export default function RatingsPeekPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50">
+        <HeaderNav />
+        <div className="max-w-4xl mx-auto px-4 py-8">
+          <div className="text-center">Loading...</div>
+        </div>
+        <Footer />
+      </div>
+    }>
+      <RatingsPeekContent />
+    </Suspense>
+  );
+}
+
