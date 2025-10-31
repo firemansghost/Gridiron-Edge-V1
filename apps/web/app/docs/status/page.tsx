@@ -391,7 +391,7 @@ export default async function StatusPage() {
                           {item.source}
                         </td>
                         <td className="px-4 py-3 text-sm font-mono text-gray-900">
-                          {item._count.id.toLocaleString()}
+                          {Number(item.count || 0).toLocaleString()}
                         </td>
                       </tr>
                     ))
