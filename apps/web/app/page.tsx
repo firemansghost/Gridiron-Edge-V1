@@ -125,20 +125,30 @@ export default function HomePage() {
               })}
             </div>
             <div className="text-sm text-gray-500">
-              Showing: Season {slate?.season || '—'}, Week {slate?.week || '—'}
+              {slate?.season && slate?.week ? (
+                `Showing: Season ${slate.season}, Week ${slate.week}`
+              ) : (
+                <span className="text-yellow-600">No games found - Select a different week</span>
+              )}
             </div>
           </div>
           
-          <div className="flex items-center gap-3 mt-2">
-            <p className="text-gray-600">
-              Week {slate?.week} • {slate?.season} Season • Model {slate?.modelVersion}
-            </p>
-            {slate?.games?.some(game => game.homeScore !== null && game.awayScore !== null) && (
-              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                Final
-              </span>
-            )}
-          </div>
+          {slate && (
+            <div className="flex items-center gap-3 mt-2">
+              <p className="text-gray-600">
+                {slate.week && slate.season ? (
+                  <>Week {slate.week} • {slate.season} Season • Model {slate.modelVersion || 'v0.0.1'}</>
+                ) : (
+                  <span className="text-yellow-600">Season/Week detection failed - try selecting manually</span>
+                )}
+              </p>
+              {slate?.games?.some(game => game.homeScore !== null && game.awayScore !== null) && (
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                  Final
+                </span>
+              )}
+            </div>
+          )}
           
           {/* M6 Adjustment Toggles */}
           <div className="flex items-center gap-4 mt-3">
@@ -185,6 +195,41 @@ export default function HomePage() {
             <div className="text-sm text-gray-600">Tier C Edges</div>
           </div>
         </div>
+
+        {/* Empty State Message */}
+        {(!slate || !slate.games || slate.games.length === 0) && !loading && (
+          <div className="bg-yellow-50 border-l-4 border-yellow-400 p-6 mb-8 rounded-r-lg">
+            <div className="flex items-start">
+              <div className="flex-shrink-0">
+                <svg className="h-6 w-6 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div className="ml-3 flex-1">
+                <h3 className="text-lg font-medium text-yellow-800 mb-2">No Games Found</h3>
+                <p className="text-sm text-yellow-700 mb-4">
+                  {slate?.season && slate?.week
+                    ? `No games are scheduled for Season ${slate.season}, Week ${slate.week}.`
+                    : 'Unable to determine the current week. Games may not be loaded yet.'}
+                </p>
+                <div className="flex gap-3">
+                  <Link
+                    href="/weeks"
+                    className="inline-flex items-center px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 text-sm font-medium"
+                  >
+                    Browse All Weeks →
+                  </Link>
+                  <Link
+                    href="/docs/status"
+                    className="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 text-sm font-medium"
+                  >
+                    Check Data Status →
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Selections & Profitability Card */}
         <div className="bg-white p-6 rounded-lg shadow mb-8">
