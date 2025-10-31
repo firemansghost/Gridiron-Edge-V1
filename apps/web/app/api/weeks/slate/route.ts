@@ -29,6 +29,7 @@ interface SlateGame {
     book: string;
     timestamp: string;
   } | null;
+  hasOdds?: boolean; // Indicates if game has any market lines
   // Advanced columns (optional)
   modelSpread?: number | null;
   modelTotal?: number | null;
