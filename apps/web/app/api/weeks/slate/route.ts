@@ -173,16 +173,9 @@ export async function GET(request: NextRequest) {
         timestamp: totalLine.timestamp.toISOString()
       } : null;
 
-      // Format kickoff time (convert to America/Chicago timezone properly)
-      const kickoffDate = new Date(game.date);
-      // Convert to America/Chicago timezone and format as ISO string
-      const kickoffInChicago = new Date(kickoffDate.toLocaleString('en-US', { timeZone: 'America/Chicago' }));
-      // Calculate timezone offset
-      const offsetMs = kickoffDate.getTime() - kickoffInChicago.getTime();
-      const offsetHours = Math.round(offsetMs / (1000 * 60 * 60));
-      const offsetSign = offsetHours >= 0 ? '+' : '-';
-      const offsetString = `${offsetSign}${Math.abs(offsetHours).toString().padStart(2, '0')}:00`;
-      const kickoffLocal = kickoffDate.toISOString().replace('Z', offsetString);
+      // Format kickoff time - just use the ISO string, frontend will format with correct timezone
+      // The date from Prisma is already in UTC, we'll let the frontend convert it properly
+      const kickoffLocal = game.date.toISOString();
 
       const slateGame: SlateGame = {
         gameId: game.id,
