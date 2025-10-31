@@ -74,13 +74,30 @@ jobs:
 
       - name: Verify season stats were inserted
         run: |
-          npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "
-          SELECT season, COUNT(*) as count 
-          FROM team_season_stats 
-          WHERE season IN (2024, 2025)
-          GROUP BY 1 
-          ORDER BY 1 DESC;
-          "
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SEASON="${{ github.event.inputs.season }}"
+          else
+            SEASON="2025"
+          fi
+          
+          echo "=== Validating season $SEASON ==="
+          
+          # Get expected FBS count from team_membership
+          EXPECTED_SQL="SELECT COUNT(*) FROM team_membership WHERE season=$SEASON AND level='fbs';"
+          EXPECTED=$(npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "$EXPECTED_SQL" | tail -n 1 | tr -d '[:space:]')
+          
+          # Get actual rows in team_season_stats
+          ACTUAL_SQL="SELECT COUNT(*) FROM team_season_stats WHERE season=$SEASON;"
+          ACTUAL=$(npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "$ACTUAL_SQL" | tail -n 1 | tr -d '[:space:]')
+          
+          echo "Expected FBS=$EXPECTED, Actual rows=$ACTUAL (season=$SEASON)"
+          
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "❌ ERROR: Row count mismatch! Expected $EXPECTED FBS teams but found $ACTUAL rows"
+            exit 1
+          fi
+          
+          echo "✅ Row count matches expected FBS count"
 
       - name: Show sample data
         run: |
@@ -94,13 +111,24 @@ jobs:
 
       - name: Check advanced stats fill rates
         run: |
-          npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "
-          SELECT season,
-                 SUM((success_off IS NOT NULL)::int) AS success_filled,
-                 SUM((epa_off     IS NOT NULL)::int) AS epa_filled,
-                 COUNT(*) AS rows
-          FROM team_season_stats
-          WHERE season IN (2024, 2025)
-          GROUP BY 1
-          ORDER BY 1 DESC;
-          "
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SEASON="${{ github.event.inputs.season }}"
+          else
+            SEASON="2025"
+          fi
+          
+          # Get expected count
+          EXPECTED_SQL="SELECT COUNT(*) FROM team_membership WHERE season=$SEASON AND level='fbs';"
+          EXPECTED=$(npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "$EXPECTED_SQL" | tail -n 1 | tr -d '[:space:]')
+          
+          # Get advanced stats fill
+          ADV_SQL="SELECT SUM((success_off IS NOT NULL)::int) AS success_filled, SUM((epa_off IS NOT NULL)::int) AS epa_filled FROM team_season_stats WHERE season=$SEASON;"
+          RESULT=$(npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "$ADV_SQL" | tail -n 1)
+          SUCCESS_FILLED=$(echo $RESULT | cut -d'|' -f1 | tr -d '[:space:]')
+          EPA_FILLED=$(echo $RESULT | cut -d'|' -f2 | tr -d '[:space:]')
+          
+          echo "Advanced stats fill (season=$SEASON): success_off=$SUCCESS_FILLED/$EXPECTED, epa_off=$EPA_FILLED/$EXPECTED"
+          
+          if [ "$SUCCESS_FILLED" != "$EXPECTED" ] || [ "$EPA_FILLED" != "$EXPECTED" ]; then
+            echo "⚠️  WARNING: Advanced stats not fully filled (some may be populated by separate advanced stats job)"
+          fi

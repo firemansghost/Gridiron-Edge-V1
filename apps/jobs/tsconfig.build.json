@@ -41,7 +41,8 @@
     "src/stats/season_from_game_advanced.ts",
     "src/ratings/baseline_from_scores.ts",
     "src/ratings/feature-loader.ts",
-    "src/ratings/test-feature-loader.ts"
+    "src/ratings/test-feature-loader.ts",
+    "src/seed-team-membership.ts"
   ],
   "exclude": [
     "**/*.test.ts",

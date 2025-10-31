@@ -28,9 +28,20 @@ export async function GET(request: NextRequest) {
       where: { season: 2025 }
     });
 
+    // Get expected FBS count for 2025 from team_membership
+    let expectedFBS2025 = 0;
+    try {
+      expectedFBS2025 = await prisma.teamMembership.count({
+        where: { season: 2025, level: 'fbs' }
+      });
+    } catch (error) {
+      console.warn('team_membership table not accessible:', error);
+    }
+
     // Get team season stats data with timestamp (handle gracefully if table doesn't exist)
     let teamSeasonStats2025 = 0;
     let teamSeasonStatsLastUpdated = null;
+    let advancedStatsFilled = { successOff: 0, epaOff: 0 };
     try {
       teamSeasonStats2025 = await prisma.teamSeasonStat.count({
         where: { season: 2025 }
@@ -41,6 +52,16 @@ export async function GET(request: NextRequest) {
         select: { createdAt: true }
       });
       teamSeasonStatsLastUpdated = seasonStatsData?.createdAt || null;
+      
+      // Get advanced stats fill counts
+      const advancedStats = await prisma.teamSeasonStat.findMany({
+        where: { season: 2025 },
+        select: { successOff: true, epaOff: true }
+      });
+      advancedStatsFilled = {
+        successOff: advancedStats.filter(s => s.successOff !== null).length,
+        epaOff: advancedStats.filter(s => s.epaOff !== null).length,
+      };
     } catch (error) {
       console.warn('team_season_stats table not accessible:', error);
       teamSeasonStats2025 = 0;
@@ -68,6 +89,8 @@ export async function GET(request: NextRequest) {
       recruiting_2025: recruiting2025,
       team_game_stats_2025: teamGameStats2025,
       team_season_stats_2025: teamSeasonStats2025,
+      expected_fbs_2025: expectedFBS2025,
+      advanced_stats_filled: advancedStatsFilled,
       ratings_2025: ratings2025,
       lastUpdated: {
         recruiting: recruitingData?.updatedAt?.toISOString() || null,

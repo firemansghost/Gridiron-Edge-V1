@@ -419,6 +419,10 @@ async function main() {
 
     console.log(`🚀 Starting CFBD Team Season Stats ingestion for season=${season}...`);
 
+    // Load FBS teams for this season (from team_membership)
+    const fbsTeamIds = await teamResolver.loadFBSTeamsForSeason(season);
+    console.log(`📋 Loaded ${fbsTeamIds.size} FBS teams for season ${season} from team_membership`);
+
     // Enable debug mode for first few teams
     if (process.env.DEBUG_CFBD === '1') {
       console.log(`[DEBUG] Debug mode enabled - will show stat mapping details`);
@@ -453,15 +457,23 @@ async function main() {
     
     console.log(`[TEAM_RESOLVER] Resolved: ${teamsResolved}/${aggregatedStats.size} teams (${teamsSkipped} unknown)`);
     
-    // Upsert to database
-    const upserted = await upsertTeamSeasonStats(teamStatsData);
+    // Filter to only FBS teams for this season before upserting
+    const fbsFilteredStats = teamStatsData.filter(stat => fbsTeamIds.has(stat.teamId.toLowerCase()));
+    const filteredCount = teamStatsData.length - fbsFilteredStats.length;
     
-    // Calculate fill ratios
+    if (filteredCount > 0) {
+      console.log(`🔍 Filtered out ${filteredCount} non-FBS teams (kept ${fbsFilteredStats.length} FBS teams for season ${season})`);
+    }
+    
+    // Upsert to database
+    const upserted = await upsertTeamSeasonStats(fbsFilteredStats);
+    
+    // Calculate fill ratios (based on filtered FBS teams)
     const fillRatios = {
-      yppOff: teamStatsData.filter(s => s.yppOff !== null).length / teamStatsData.length * 100,
-      successOff: teamStatsData.filter(s => s.successOff !== null).length / teamStatsData.length * 100,
-      epaOff: teamStatsData.filter(s => s.epaOff !== null).length / teamStatsData.length * 100,
-      paceOff: teamStatsData.filter(s => s.paceOff !== null).length / teamStatsData.length * 100,
+      yppOff: fbsFilteredStats.filter(s => s.yppOff !== null && s.yppOff !== undefined).length / (fbsFilteredStats.length || 1) * 100,
+      successOff: fbsFilteredStats.filter(s => s.successOff !== null && s.successOff !== undefined).length / (fbsFilteredStats.length || 1) * 100,
+      epaOff: fbsFilteredStats.filter(s => s.epaOff !== null && s.epaOff !== undefined).length / (fbsFilteredStats.length || 1) * 100,
+      paceOff: fbsFilteredStats.filter(s => s.paceOff !== null && s.paceOff !== undefined).length / (fbsFilteredStats.length || 1) * 100,
     };
     
     console.log(`✅ Successfully processed season stats for ${season}`);

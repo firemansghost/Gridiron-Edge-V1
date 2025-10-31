@@ -203,16 +203,12 @@ async function main() {
 
     console.log(`🚀 Starting CFBD Game Advanced Stats aggregation for season=${season}...`);
 
-    // Initialize TeamResolver (will load DB teams if FORCE_DB_TEAMS=true)
+    // Initialize TeamResolver
     const resolver = new TeamResolver();
-    console.log(`📋 TeamResolver initialized`);
-
-    // Get FBS team IDs from database (for validation/filtering)
-    const fbsTeams = await prisma.team.findMany({
-      select: { id: true }
-    });
-    const fbsIds = new Set(fbsTeams.map(t => t.id));
-    console.log(`📋 Loaded ${fbsIds.size} FBS teams from database`);
+    
+    // Load FBS teams for this season (from team_membership)
+    const fbsIds = await resolver.loadFBSTeamsForSeason(season);
+    console.log(`📋 Loaded ${fbsIds.size} FBS teams for season ${season} from team_membership`);
 
     // Fetch raw data from CFBD
     const rawRecords = await fetchGameAdvancedStats(season);
@@ -223,10 +219,15 @@ async function main() {
     
     // Convert to array and filter to FBS teams only (already canonical IDs from resolver)
     const statsArray = Array.from(aggregatedStats.values()).filter(stat => {
-      return fbsIds.has(stat.team); // stat.team is already canonical ID
+      return fbsIds.has(stat.team.toLowerCase()); // stat.team is already canonical ID
     });
     
-    console.log(`🔍 Filtered to ${statsArray.length} DB FBS teams (from ${aggregatedStats.size} CFBD teams) — season=${season}`);
+    const filteredCount = aggregatedStats.size - statsArray.length;
+    if (filteredCount > 0) {
+      console.log(`🔍 Filtered out ${filteredCount} non-FBS teams (kept ${statsArray.length} FBS teams for season ${season})`);
+    } else {
+      console.log(`🔍 Filtered to ${statsArray.length} DB FBS teams (from ${aggregatedStats.size} CFBD teams) — season=${season}`);
+    }
     
     // Log summary of what we'll update
     const teamsWithSuccessOff = statsArray.filter(s => s.weightedSuccessOff > 0).length;

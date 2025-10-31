@@ -17,7 +17,8 @@ export class TeamResolver {
   private aliases: Map<string, string> = new Map();
   private cfbdAliases: Map<string, string> = new Map();
   private denylist: Set<string> = new Set();
-  private fbsTeams: Set<string> = new Set();
+  private fbsTeams: Set<string> = new Set(); // Current season's FBS teams
+  private currentSeason?: number; // Track which season's teams are loaded
   private verboseLogging: boolean;
   private resolvedTeams: Set<string> = new Set(); // Track teams we've already logged
 
@@ -26,7 +27,7 @@ export class TeamResolver {
     this.loadAliases();
     this.loadCFBDAliases();
     this.loadDenylist();
-    this.loadFBSTeams();
+    // Don't load FBS teams automatically - must call loadFBSTeamsForSeason(season)
   }
 
   private loadAliases(): void {
@@ -187,47 +188,73 @@ export class TeamResolver {
     }
   }
 
-  private async loadFBSTeams(): Promise<void> {
+  /**
+   * Load FBS teams for a specific season from team_membership table
+   * @param season - The season year (e.g., 2024, 2025)
+   * @returns Promise<Set<string>> Set of canonical team IDs
+   */
+  async loadFBSTeamsForSeason(season: number): Promise<Set<string>> {
     const forceDbTeams = process.env.FORCE_DB_TEAMS === 'true';
     
-    if (forceDbTeams) {
-      console.log(`[TEAM_RESOLVER] FORCE_DB_TEAMS=true, attempting database load...`);
+    // If we already have this season loaded, return cached
+    if (this.currentSeason === season && this.fbsTeams.size > 0) {
+      return this.fbsTeams;
     }
 
-    // Try to load from database first
+    // Clear previous season's teams
+    this.fbsTeams.clear();
+    this.currentSeason = season;
+
+    if (forceDbTeams) {
+      console.log(`[TEAM_RESOLVER] FORCE_DB_TEAMS=true, loading FBS teams for season=${season} from team_membership...`);
+    }
+
+    // Try to load from team_membership table
     try {
       const { PrismaClient } = await import('@prisma/client');
       const prisma = new PrismaClient();
       
-      const teams = await prisma.team.findMany({
-        select: { id: true }
+      const memberships = await prisma.teamMembership.findMany({
+        where: {
+          season,
+          level: 'fbs'
+        },
+        select: { teamId: true }
       });
       
-      if (teams.length >= 130) {
-        // Database has sufficient teams, use it
-        for (const team of teams) {
-          this.fbsTeams.add(team.id.toLowerCase());
+      if (memberships.length > 0) {
+        // Database has season-aware FBS teams
+        for (const membership of memberships) {
+          this.fbsTeams.add(membership.teamId.toLowerCase());
         }
         await prisma.$disconnect();
-        console.log(`[TEAM_RESOLVER] source=db (${this.fbsTeams.size} teams)`);
-        return;
+        console.log(`[TEAM_RESOLVER] source=db (season=${season}, fbs_count=${this.fbsTeams.size})`);
+        
+        if (forceDbTeams && this.fbsTeams.size === 0) {
+          throw new Error(`FORCE_DB_TEAMS=true but no FBS teams found for season ${season} in team_membership`);
+        }
+        
+        return this.fbsTeams;
       } else {
-        console.log(`[TEAM_RESOLVER] Database has only ${teams.length} teams, need ≥130`);
+        console.warn(`[TEAM_RESOLVER] No FBS teams found in team_membership for season ${season}`);
         await prisma.$disconnect();
       }
     } catch (error) {
-      console.warn(`[TEAM_RESOLVER] Could not load teams from database: ${error}`);
+      console.warn(`[TEAM_RESOLVER] Could not load teams from team_membership: ${error}`);
     }
 
-    // Fallback to aliases
+    // Fallback to aliases if not forcing DB
     if (forceDbTeams) {
-      throw new Error(`FORCE_DB_TEAMS=true but database load failed or insufficient teams (${this.fbsTeams.size} < 130)`);
+      throw new Error(`FORCE_DB_TEAMS=true but database load failed or no teams for season ${season}`);
     }
 
+    // Legacy fallback: use all aliases (not season-aware)
     for (const teamId of this.aliases.values()) {
       this.fbsTeams.add(teamId);
     }
-    console.log(`[TEAM_RESOLVER] source=aliases (${this.fbsTeams.size} teams)`);
+    console.log(`[TEAM_RESOLVER] source=aliases (season=${season}, fallback_count=${this.fbsTeams.size})`);
+    
+    return this.fbsTeams;
   }
 
   private preNormalizeName(s: string): string {

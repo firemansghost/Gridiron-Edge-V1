@@ -105,6 +105,31 @@ export async function GET(request: NextRequest) {
       where: { season }
     });
 
+    // Get expected FBS count from team_membership
+    let expectedFBS = 0;
+    try {
+      expectedFBS = await prisma.teamMembership.count({
+        where: { season, level: 'fbs' }
+      });
+    } catch (error) {
+      console.warn('team_membership table not accessible:', error);
+    }
+
+    // Get advanced stats fill counts
+    let advancedStatsFilled = { successOff: 0, epaOff: 0 };
+    try {
+      const advancedStats = await prisma.teamSeasonStat.findMany({
+        where: { season },
+        select: { successOff: true, epaOff: true }
+      });
+      advancedStatsFilled = {
+        successOff: advancedStats.filter(s => s.successOff !== null).length,
+        epaOff: advancedStats.filter(s => s.epaOff !== null).length,
+      };
+    } catch (error) {
+      console.warn('Could not get advanced stats fill counts:', error);
+    }
+
     const ratingsCount = await prisma.teamSeasonRating.count({
       where: { season }
     });
@@ -159,6 +184,8 @@ export async function GET(request: NextRequest) {
     const context = {
       recruiting: recruitingCount,
       seasonStats: seasonStatsCount,
+      expectedFBS,
+      advancedStatsFilled,
       ratings: ratingsCount,
       seasonStatsData,
     };

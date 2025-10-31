@@ -9,23 +9,24 @@ datasource db {
 }
 
 model Team {
-  id             String         @id
+  id             String           @id
   name           String
   conference     String
   division       String?
-  logoUrl        String?        @map("logo_url")
-  primaryColor   String?        @map("primary_color")
-  secondaryColor String?        @map("secondary_color")
+  logoUrl        String?          @map("logo_url")
+  primaryColor   String?          @map("primary_color")
+  secondaryColor String?          @map("secondary_color")
   mascot         String?
   city           String?
   state          String?
-  createdAt      DateTime       @default(now()) @map("created_at")
-  updatedAt      DateTime       @updatedAt @map("updated_at")
-  awayGames      Game[]         @relation("AwayTeam")
-  homeGames      Game[]         @relation("HomeTeam")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+  awayGames      Game[]           @relation("AwayTeam")
+  homeGames      Game[]           @relation("HomeTeam")
   powerRatings   PowerRating[]
   recruiting     Recruiting[]
   teamGameStats  TeamGameStat[]
+  memberships    TeamMembership[]
 
   @@index([conference, division])
   @@index([name])
@@ -339,4 +340,16 @@ enum BetSide {
 enum BetSource {
   strategy_run
   manual
+}
+
+model TeamMembership {
+  season  Int
+  teamId  String @map("team_id")
+  level   String // 'fbs', 'fcs', etc.
+  team    Team   @relation(fields: [teamId], references: [id], onDelete: Restrict)
+
+  @@id([season, teamId])
+  @@index([season, level])
+  @@index([teamId])
+  @@map("team_membership")
 }
