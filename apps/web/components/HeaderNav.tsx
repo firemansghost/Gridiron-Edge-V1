@@ -34,14 +34,14 @@ export function HeaderNav() {
 
           {/* Center: Navigation Links */}
           <div className="hidden md:flex items-center space-x-1">
-            <Link href="/" className={linkClass('/')}>
-              This Week
+            <Link href="/" className={linkClass('/')} title="View current week's slate of games">
+              Current Slate
             </Link>
-            <Link href="/weeks" className={linkClass('/weeks')}>
-              Weeks
+            <Link href="/weeks" className={linkClass('/weeks')} title="Browse all weeks and seasons">
+              Browse Weeks
             </Link>
-            <Link href="/weeks/review" className={linkClass('/weeks/review')}>
-              Review
+            <Link href="/weeks/review" className={linkClass('/weeks/review')} title="Review past week performance">
+              Week Review
             </Link>
             <Link href="/bets" className={linkClass('/bets')}>
               Bets
@@ -71,14 +71,14 @@ export function HeaderNav() {
         {/* Mobile Navigation */}
         <div className="md:hidden pb-3">
           <div className="flex flex-wrap gap-2">
-            <Link href="/" className={linkClass('/')}>
-              This Week
+            <Link href="/" className={linkClass('/')} title="View current week's slate of games">
+              Current Slate
             </Link>
-            <Link href="/weeks" className={linkClass('/weeks')}>
-              Weeks
+            <Link href="/weeks" className={linkClass('/weeks')} title="Browse all weeks and seasons">
+              Browse Weeks
             </Link>
-            <Link href="/weeks/review" className={linkClass('/weeks/review')}>
-              Review
+            <Link href="/weeks/review" className={linkClass('/weeks/review')} title="Review past week performance">
+              Week Review
             </Link>
             <Link href="/bets" className={linkClass('/bets')}>
               Bets
