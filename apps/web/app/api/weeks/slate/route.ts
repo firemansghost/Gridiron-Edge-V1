@@ -129,10 +129,42 @@ export async function GET(request: NextRequest) {
     console.log(`   Found ${gamesWithOdds.size} unique games with odds`);
 
     // Filter to only games that have odds data
-    // Use the full games list, not filteredGames, to ensure we don't miss games due to date limits
-    const gamesToInclude = filteredGames.filter(g => gamesWithOdds.has(g.id));
+    // Use the FULL games list (not filteredGames) to ensure we find ALL games with odds
+    // This is critical because date filtering might exclude games that actually have odds
+    const gamesToInclude = games.filter(g => gamesWithOdds.has(g.id));
     
-    console.log(`   Filtered to ${gamesToInclude.length} games with odds (from ${filteredGames.length} total games)`);
+    console.log(`   Found ${gamesToInclude.length} games with odds (from ${games.length} total games for week)`);
+
+    // Apply date limiting if requested (after finding games with odds)
+    let finalGamesToInclude = gamesToInclude;
+    if (limitDates > 0) {
+      // Helper function to get date key for timezone conversion
+      const getDateKey = (dateString: string): string => {
+        try {
+          const d = new Date(dateString);
+          const localDateStr = d.toLocaleDateString('en-US', { 
+            timeZone: 'America/Chicago',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+          });
+          const [month, day, year] = localDateStr.split('/');
+          return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+        } catch {
+          return 'unknown';
+        }
+      };
+      
+      const uniqueDates = Array.from(new Set(gamesToInclude.map(g => getDateKey(g.date.toISOString()))));
+      const limitedDates = uniqueDates.slice(0, limitDates);
+      finalGamesToInclude = gamesToInclude.filter(g => {
+        const dateKey = getDateKey(g.date.toISOString());
+        return limitedDates.includes(dateKey);
+      });
+      console.log(`   After date limiting: ${finalGamesToInclude.length} games`);
+    } else {
+      finalGamesToInclude = gamesToInclude;
+    }
 
     // Create lookup maps for closing lines
     const spreadMap = new Map<string, any>();
@@ -152,23 +184,6 @@ export async function GET(request: NextRequest) {
 
     // Process each game
     const slateGames: SlateGame[] = [];
-    
-    // Helper function to get date key for timezone conversion
-    const getDateKey = (dateString: string): string => {
-      try {
-        const d = new Date(dateString);
-        const localDateStr = d.toLocaleDateString('en-US', { 
-          timeZone: 'America/Chicago',
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit'
-        });
-        const [month, day, year] = localDateStr.split('/');
-        return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-      } catch {
-        return 'unknown';
-      }
-    };
     
     for (const game of finalGamesToInclude) {
       // Determine status
