@@ -266,15 +266,24 @@ export default function GameDetailPage() {
 
           {/* Recommended Picks */}
           <div className="mt-6 pt-6 border-t border-gray-200">
-            <h4 className="text-md font-medium text-gray-900 mb-3">Recommended Picks</h4>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-md font-medium text-gray-900">Recommended Picks</h4>
+              <InfoTooltip content="These are our model's betting recommendations based on comparing our predictions to the market. Higher edge means stronger opportunity. Always do your own research before placing bets." />
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-blue-50 p-4 rounded-lg">
-                <div className="text-sm text-gray-500">Spread Pick</div>
+                <div className="text-sm text-gray-500 flex items-center gap-1 mb-1">
+                  Spread Pick
+                  <InfoTooltip content="Our model recommends this team against the spread. The edge shows how much our prediction differs from the market line." />
+                </div>
                 <div className="text-lg font-semibold text-gray-900">{game.picks?.spread?.spreadPickLabel}</div>
                 <div className="text-sm text-blue-600">Edge: +{game.picks?.spread?.edgePts?.toFixed(1)} pts</div>
               </div>
               <div className="bg-green-50 p-4 rounded-lg">
-                <div className="text-sm text-gray-500">Total Pick</div>
+                <div className="text-sm text-gray-500 flex items-center gap-1 mb-1">
+                  Total Pick
+                  <InfoTooltip content="Our model recommends over or under the total. Only shown when there's a meaningful edge (2.0+ points)." />
+                </div>
                 <div className="text-lg font-semibold text-gray-900">{game.picks?.total?.totalPickLabel || 'No edge'}</div>
                 {game.picks?.total?.totalPickLabel && (
                   <div className="text-sm text-green-600">Edge: +{game.picks?.total?.edgePts?.toFixed(1)} pts</div>
@@ -286,18 +295,30 @@ export default function GameDetailPage() {
 
         {/* Edge Analysis */}
         <div className="bg-white p-6 rounded-lg shadow mb-8">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Edge Analysis</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Edge Analysis</h3>
+            <InfoTooltip content="Edge is the difference between our model's prediction and the betting market (in points). Positive edge means our model thinks the market is mispriced, creating a betting opportunity." />
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="text-center">
-              <div className="text-sm text-gray-500">Spread Edge</div>
+              <div className="text-sm text-gray-500 flex items-center justify-center gap-1 mb-1">
+                Spread Edge
+                <InfoTooltip content="Difference between our model's spread prediction and the market spread. Higher positive edge = stronger betting opportunity on the spread." />
+              </div>
               <div className="text-xl font-bold text-gray-900">{formatEdge(game.edge.spreadEdge)} pts</div>
             </div>
             <div className="text-center">
-              <div className="text-sm text-gray-500">Total Edge</div>
+              <div className="text-sm text-gray-500 flex items-center justify-center gap-1 mb-1">
+                Total Edge
+                <InfoTooltip content="Difference between our model's total prediction and the market total. Positive edge suggests over, negative suggests under." />
+              </div>
               <div className="text-xl font-bold text-gray-900">{formatEdge(game.edge.totalEdge)} pts</div>
             </div>
             <div className="text-center">
-              <div className="text-sm text-gray-500">Max Edge</div>
+              <div className="text-sm text-gray-500 flex items-center justify-center gap-1 mb-1">
+                Max Edge
+                <InfoTooltip content="The larger of spread edge or total edge. This is the strongest betting opportunity for this game." />
+              </div>
               <div className="text-xl font-bold text-gray-900">{formatEdge(game.edge.maxEdge)} pts</div>
             </div>
           </div>

@@ -247,9 +247,41 @@ export default async function StatusPage() {
 
     return (
       <>
-        <h1 className="text-3xl font-bold text-gray-900 mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-4">
           Database Status
         </h1>
+        
+        {/* Summary Section for Less Technical Users */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-l-4 border-blue-400 p-6 rounded-r-lg mb-8">
+          <h2 className="text-xl font-semibold text-gray-900 mb-3">Quick Status Overview</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div className="bg-white p-4 rounded-lg shadow-sm">
+              <div className="text-sm text-gray-600 mb-1">Current Season</div>
+              <div className="text-2xl font-bold text-blue-600">{currentSeason}</div>
+              <div className="text-xs text-gray-500 mt-1">Week {currentWeek}</div>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow-sm">
+              <div className="text-sm text-gray-600 mb-1">Total Games</div>
+              <div className="text-2xl font-bold text-green-600">{totalGames.toLocaleString()}</div>
+              <div className="text-xs text-gray-500 mt-1">This season</div>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow-sm">
+              <div className="text-sm text-gray-600 mb-1">Betting Lines</div>
+              <div className="text-2xl font-bold text-purple-600">{oddsRowCount.toLocaleString()}</div>
+              <div className="text-xs text-gray-500 mt-1">From {uniqueBooks.length} books</div>
+            </div>
+          </div>
+          <div className="text-sm text-gray-700">
+            <p className="mb-2">
+              <strong>What this page shows:</strong> Technical details about the database, data coverage, and system health. 
+              For general usage, check the <Link href="/" className="text-blue-600 hover:text-blue-800 underline">Current Slate</Link> page.
+            </p>
+            <p>
+              <strong>Key metrics:</strong> Games = scheduled games stored in database. Betting Lines = odds from various sportsbooks. 
+              Ratings = computed team power ratings. See sections below for detailed breakdowns.
+            </p>
+          </div>
+        </div>
         
         <div className="space-y-8">
           {/* Latest Season/Week */}
