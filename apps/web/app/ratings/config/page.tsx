@@ -209,9 +209,21 @@ export default function RatingsConfigPage() {
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Ratings Configuration</h1>
-          <p className="text-gray-600">
+          <p className="text-gray-600 mb-4">
             Adjust feature weights for Ratings v1 and configure backtesting parameters
           </p>
+          
+          {/* Beginner Guide */}
+          <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg mb-6">
+            <h3 className="text-sm font-semibold text-blue-900 mb-2">How This Works</h3>
+            <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+              <li><strong>Feature Weights</strong> determine how much each statistic (yards per play, success rate, etc.) contributes to team ratings</li>
+              <li>Weights automatically normalize to 1.0 - increasing one weight decreases others proportionally</li>
+              <li>Higher weights on offensive features will prioritize teams with strong offenses in power ratings</li>
+              <li>Changing weights will affect team rankings and game predictions - use the Preview page to see impact</li>
+              <li>Save configurations to compare different weight combinations in backtests</li>
+            </ul>
+          </div>
         </div>
 
         {/* Message Banner */}
@@ -227,8 +239,13 @@ export default function RatingsConfigPage() {
 
         {/* Offensive Weights */}
         <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-2">
             <h2 className="text-xl font-semibold text-green-700">Offensive Feature Weights</h2>
+          </div>
+          <p className="text-sm text-gray-600 mb-4">
+            Adjust how much each offensive statistic contributes to offensive ratings. Higher weights mean that stat has more influence on team rankings.
+          </p>
+          <div className="flex items-center justify-between mb-4">
             <div className={`text-sm font-medium ${Math.abs(offensiveTotal - 1.0) < 0.01 ? 'text-green-600' : 'text-red-600'}`}>
               Total: {offensiveTotal.toFixed(3)} {Math.abs(offensiveTotal - 1.0) >= 0.01 && '(should be 1.0)'}
             </div>

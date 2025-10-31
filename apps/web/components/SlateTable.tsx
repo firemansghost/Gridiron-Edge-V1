@@ -782,22 +782,37 @@ export default function SlateTable({
               {showAdvancedColumns && (
                 <>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
-                    Model Spread
+                    <div className="flex items-center justify-center gap-1">
+                      Model Spread
+                      <InfoTooltip content="Our model's predicted point spread based on team power ratings. Compare this to Market Spread to find edge opportunities." position="bottom" />
+                    </div>
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
                     Model Total
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
-                    Pick (ATS)
+                    <div className="flex items-center justify-center gap-1">
+                      Pick (ATS)
+                      <InfoTooltip content="Model's pick against the spread. Shows which team to bet based on our spread prediction vs. the market." position="bottom" />
+                    </div>
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
-                    Pick (Total)
+                    <div className="flex items-center justify-center gap-1">
+                      Pick (Total)
+                      <InfoTooltip content="Model's pick for the total (over/under). Based on our total prediction vs. the market line." position="bottom" />
+                    </div>
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
-                    Max Edge
+                    <div className="flex items-center justify-center gap-1">
+                      Max Edge
+                      <InfoTooltip content="The larger of spread edge or total edge (in points). Higher edge means stronger betting opportunity." position="bottom" />
+                    </div>
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
-                    Confidence
+                    <div className="flex items-center justify-center gap-1">
+                      Confidence
+                      <InfoTooltip content="Confidence tier (A/B/C) based on edge size. A = 4.0+ pts (highest), B = 3.0-3.9 pts, C = 2.0-2.9 pts (lowest)." position="bottom" />
+                    </div>
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
                     Action
