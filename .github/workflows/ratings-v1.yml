@@ -1,0 +1,116 @@
+name: Ratings v1 Computation
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season to compute ratings for (e.g., 2024, 2025)'
+        required: true
+        default: '2025'
+        type: string
+
+jobs:
+  compute-ratings:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Build jobs
+        run: npm run build:jobs
+
+      - name: Set DATABASE_URL for Prisma
+        run: |
+          if [ -n "${{ secrets.DATABASE_URL }}" ]; then
+            echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
+          else
+            echo "ERROR: DATABASE_URL secret not set"; exit 1
+          fi
+          echo "FORCE_DB_TEAMS=true" >> $GITHUB_ENV
+
+      - name: Set DIRECT_URL for Prisma
+        run: |
+          if [ -n "${{ secrets.DIRECT_URL }}" ]; then
+            echo "DIRECT_URL=${{ secrets.DIRECT_URL }}" >> $GITHUB_ENV
+          else
+            echo "DIRECT_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
+          fi
+
+      - name: Run Ratings v1 Computation
+        run: |
+          SEASON="${{ github.event.inputs.season }}"
+          echo "Computing Ratings v1 for season $SEASON"
+          node apps/jobs/dist/src/ratings/compute_ratings_v1.js --season=$SEASON
+
+      - name: Verify ratings were computed
+        run: |
+          SEASON="${{ github.event.inputs.season }}"
+          
+          echo "=== Validating season $SEASON ==="
+          
+          # Get expected FBS count from team_membership
+          EXPECTED_SQL="SELECT COUNT(*) FROM team_membership WHERE season=$SEASON AND level='fbs';"
+          EXPECTED=$(npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "$EXPECTED_SQL" | tail -n 1 | tr -d '[:space:]')
+          
+          # Get actual ratings count
+          ACTUAL_SQL="SELECT COUNT(*) FROM team_season_ratings WHERE season=$SEASON AND power_rating IS NOT NULL;"
+          ACTUAL=$(npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "$ACTUAL_SQL" | tail -n 1 | tr -d '[:space:]')
+          
+          echo "Expected FBS=$EXPECTED, Ratings computed=$ACTUAL (season=$SEASON)"
+          
+          if [ "$ACTUAL" -lt "$((EXPECTED * 80 / 100))" ]; then
+            echo "⚠️  WARNING: Less than 80% of expected teams have ratings ($ACTUAL/$EXPECTED)"
+          else
+            echo "✅ Ratings computed for $ACTUAL/$EXPECTED teams"
+          fi
+
+      - name: Show ratings summary
+        run: |
+          SEASON="${{ github.event.inputs.season }}"
+          
+          echo "=== Ratings Summary (season $SEASON) ==="
+          npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "
+          SELECT 
+            COUNT(*) AS total_ratings,
+            COUNT(power_rating) AS with_power_rating,
+            COUNT(confidence) AS with_confidence,
+            COUNT(CASE WHEN data_source = 'game+season' THEN 1 END) AS game_season_source,
+            COUNT(CASE WHEN data_source = 'season_only' THEN 1 END) AS season_only_source,
+            ROUND(AVG(power_rating)::numeric, 2) AS avg_power_rating,
+            ROUND(AVG(confidence)::numeric * 100, 1) AS avg_confidence_pct
+          FROM team_season_ratings
+          WHERE season = $SEASON;
+          "
+
+      - name: Show sample ratings
+        run: |
+          SEASON="${{ github.event.inputs.season }}"
+          
+          echo "=== Sample Ratings (top 10 by power_rating) ==="
+          npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "
+          SELECT 
+            team_id,
+            ROUND(power_rating::numeric, 2) AS power_rating,
+            ROUND(offense_rating::numeric, 2) AS offense_rating,
+            ROUND(defense_rating::numeric, 2) AS defense_rating,
+            ROUND(confidence::numeric * 100, 1) AS confidence_pct,
+            data_source
+          FROM team_season_ratings
+          WHERE season = $SEASON AND power_rating IS NOT NULL
+          ORDER BY power_rating DESC
+          LIMIT 10;
+          "
+
