@@ -88,8 +88,26 @@ export async function GET(request: NextRequest) {
 
     console.log(`   Found ${filteredGames.length} games for ${season} Week ${week}`);
 
+    // Filter to FBS games only using team_membership table
+    const fbsTeamIds = new Set(
+      (await prisma.teamMembership.findMany({
+        where: {
+          season,
+          level: 'fbs'
+        },
+        select: { teamId: true }
+      })).map(m => m.teamId.toLowerCase())
+    );
+
+    const fbsGames = filteredGames.filter(g => 
+      fbsTeamIds.has(g.homeTeam.id.toLowerCase()) && 
+      fbsTeamIds.has(g.awayTeam.id.toLowerCase())
+    );
+
+    console.log(`   Filtered to ${fbsGames.length} FBS games (from ${filteredGames.length} total)`);
+
     // Batch fetch closing lines for all games to avoid N+1 queries
-    const gameIds = filteredGames.map(g => g.id);
+    const gameIds = fbsGames.map(g => g.id);
     const [spreadLines, totalLines] = await Promise.all([
       prisma.marketLine.findMany({
         where: {
@@ -140,7 +158,7 @@ export async function GET(request: NextRequest) {
     // Process each game
     const slateGames: SlateGame[] = [];
     
-    for (const game of filteredGames) {
+    for (const game of fbsGames) {
       // Determine status
       let status: 'final' | 'scheduled' | 'in_progress' = 'scheduled';
       if (game.status === 'final') {
@@ -218,7 +236,7 @@ export async function GET(request: NextRequest) {
           const awayPower = Number(awayRating.powerRating || awayRating.rating || 0);
           
           // Get game to check neutral site
-          const fullGame = filteredGames.find(g => g.id === game.gameId);
+          const fullGame = fbsGames.find(g => g.id === game.gameId);
           const isNeutral = fullGame?.neutralSite || false;
           
           // Model Spread
