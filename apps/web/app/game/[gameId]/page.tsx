@@ -13,6 +13,8 @@ import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import { abbrevSource, formatSourceTooltip } from '@/lib/market-badges';
 import { InfoTooltip } from '@/components/InfoTooltip';
+import { LoadingState } from '@/components/LoadingState';
+import { ErrorState } from '@/components/ErrorState';
 
 export default function GameDetailPage() {
   const params = useParams();
@@ -58,29 +60,35 @@ export default function GameDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading game detail...</p>
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <HeaderNav />
+        <div className="flex-1">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <LoadingState message="Loading game details..." />
+          </div>
         </div>
+        <Footer />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-red-600 text-6xl mb-4">⚠️</div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Error Loading Game</h1>
-          <p className="text-gray-600 mb-4">{error}</p>
-          <button 
-            onClick={fetchGameDetail}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-          >
-            Retry
-          </button>
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <HeaderNav />
+        <div className="flex-1 flex items-center justify-center px-4">
+          <ErrorState
+            title="Unable to Load Game"
+            message="We couldn't load the game details. The game may not exist or there was a connection issue."
+            onRetry={fetchGameDetail}
+            helpLink={{
+              label: 'Browse All Weeks',
+              href: '/weeks'
+            }}
+            fullScreen={false}
+          />
         </div>
+        <Footer />
       </div>
     );
   }

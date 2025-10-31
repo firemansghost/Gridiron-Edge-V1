@@ -18,6 +18,7 @@ import { SyncScrollX } from '@/components/SyncScrollX';
 import SlateTable from '@/components/SlateTable';
 import { abbrevSource, formatSourceTooltip } from '@/lib/market-badges';
 import { InfoTooltip } from '@/components/InfoTooltip';
+import { ErrorState } from '@/components/ErrorState';
 
 export default function HomePage() {
   const [slate, setSlate] = useState<SlateData | null>(null);
@@ -68,18 +69,23 @@ export default function HomePage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-red-600 text-6xl mb-4">⚠️</div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Error Loading Slate</h1>
-          <p className="text-gray-600 mb-4">{error}</p>
-          <button 
-            onClick={fetchSlate}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-          >
-            Retry
-          </button>
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <HeaderNav />
+        <div className="flex-1 flex items-center justify-center px-4">
+          <ErrorState
+            title="Unable to Load Current Slate"
+            message={error.includes('Network') 
+              ? "We couldn't connect to the server. Please check your internet connection and try again."
+              : "We couldn't load this week's games. This might be temporary - please try again in a moment."}
+            onRetry={fetchSlate}
+            helpLink={{
+              label: 'Check System Status',
+              href: '/docs/status'
+            }}
+            fullScreen={false}
+          />
         </div>
+        <Footer />
       </div>
     );
   }
@@ -189,7 +195,10 @@ export default function HomePage() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-white p-4 rounded-lg shadow">
             <div className="text-2xl font-bold text-blue-600">{slate?.summary?.totalGames || 0}</div>
-            <div className="text-sm text-gray-600">Total Games</div>
+            <div className="text-sm text-gray-600 flex items-center gap-1">
+              Total Games
+              <InfoTooltip content="Total number of games scheduled for this week. Edge counts show games where our model's prediction differs from the betting market by 2.0+ points." />
+            </div>
           </div>
           <div className="bg-white p-4 rounded-lg shadow">
             <div className="text-2xl font-bold text-green-600">{slate?.summary?.confidenceBreakdown?.A || 0}</div>
