@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
+import { InfoTooltip } from '@/components/InfoTooltip';
 
 interface OffensiveWeights {
   yppOff: number;
@@ -251,23 +252,33 @@ export default function RatingsConfigPage() {
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            {Object.entries(offensiveWeights).map(([key, value]) => (
-              <div key={key}>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {key.replace(/([A-Z])/g, ' $1').trim()}
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="1"
-                  value={value}
-                  onChange={(e) => handleOffensiveWeightChange(key as keyof OffensiveWeights, e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-                />
-                <div className="text-xs text-gray-500 mt-1">{Number(value).toFixed(3)}</div>
-              </div>
-            ))}
+            {Object.entries(offensiveWeights).map(([key, value]) => {
+              const descriptions: Record<string, string> = {
+                yppOff: 'Yards Per Play (Offense): Average yards gained per offensive play. Higher = more efficient offense.',
+                passYpaOff: 'Pass Yards Per Attempt (Offense): Average passing yards per attempt. Higher = better passing offense.',
+                rushYpcOff: 'Rush Yards Per Carry (Offense): Average rushing yards per carry. Higher = better running game.',
+                successOff: 'Success Rate (Offense): Percentage of plays that gain meaningful yardage or achieve first downs. Higher = more consistent offense.',
+                epaOff: 'Expected Points Added (Offense): Average points added per play based on down, distance, and field position. Higher = more efficient offense.',
+              };
+              return (
+                <div key={key}>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                    {key.replace(/([A-Z])/g, ' $1').trim()}
+                    <InfoTooltip content={descriptions[key] || `${key}: Offensive rating feature weight`} />
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="1"
+                    value={value}
+                    onChange={(e) => handleOffensiveWeightChange(key as keyof OffensiveWeights, e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                  />
+                  <div className="text-xs text-gray-500 mt-1">{Number(value).toFixed(3)}</div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -285,23 +296,33 @@ export default function RatingsConfigPage() {
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            {Object.entries(defensiveWeights).map(([key, value]) => (
-              <div key={key}>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {key.replace(/([A-Z])/g, ' $1').trim()}
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="1"
-                  value={value}
-                  onChange={(e) => handleDefensiveWeightChange(key as keyof DefensiveWeights, e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
-                />
-                <div className="text-xs text-gray-500 mt-1">{Number(value).toFixed(3)}</div>
-              </div>
-            ))}
+            {Object.entries(defensiveWeights).map(([key, value]) => {
+              const descriptions: Record<string, string> = {
+                yppDef: 'Yards Per Play Allowed (Defense): Average yards allowed per opponent play. Lower = better defense.',
+                passYpaDef: 'Pass Yards Per Attempt Allowed (Defense): Average passing yards allowed per attempt. Lower = better pass defense.',
+                rushYpcDef: 'Rush Yards Per Carry Allowed (Defense): Average rushing yards allowed per carry. Lower = better run defense.',
+                successDef: 'Success Rate Allowed (Defense): Percentage of opponent plays that gain meaningful yardage. Lower = better defense (opponents less successful).',
+                epaDef: 'Expected Points Added Allowed (Defense): Average points added by opponents per play. Lower = better defense (opponents less efficient).',
+              };
+              return (
+                <div key={key}>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                    {key.replace(/([A-Z])/g, ' $1').trim()}
+                    <InfoTooltip content={descriptions[key] || `${key}: Defensive rating feature weight`} />
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="1"
+                    value={value}
+                    onChange={(e) => handleDefensiveWeightChange(key as keyof DefensiveWeights, e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                  />
+                  <div className="text-xs text-gray-500 mt-1">{Number(value).toFixed(3)}</div>
+                </div>
+              );
+            })}
           </div>
         </div>
 

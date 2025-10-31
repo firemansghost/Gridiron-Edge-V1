@@ -371,14 +371,12 @@ export default function WeekPage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen bg-gray-50">
-        <HeaderNav />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="animate-pulse">
             <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
             <div className="h-64 bg-gray-200 rounded"></div>
         </div>
         </div>
-        <Footer />
       </div>
     }>
       <WeekPageContent />

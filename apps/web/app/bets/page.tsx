@@ -485,7 +485,11 @@ export default function BetsPage() {
                       ) : '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {bet.strategyTag}
+                      {bet.strategyTag === 'demo_seed' ? (
+                        <span className="text-gray-500 italic">Demo</span>
+                      ) : (
+                        bet.strategyTag
+                      )}
                     </td>
                   </tr>
                 ))}

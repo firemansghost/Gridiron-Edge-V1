@@ -30,8 +30,10 @@ export default async function StatusPage() {
     });
 
     // 2) Counts for market_lines for the current (season, week) grouped by line_type and source
-    const currentSeason = latestGame?.season || 2025;
-    const currentWeek = latestGame?.week || 8;
+    // Use getCurrentSeasonWeek helper to get actual current week, not just latest game in DB
+    const current = await getCurrentSeasonWeek(prisma);
+    const currentSeason = current.season;
+    const currentWeek = current.week;
     
     const marketLineCounts = await prisma.marketLine.groupBy({
       by: ['lineType', 'source'],

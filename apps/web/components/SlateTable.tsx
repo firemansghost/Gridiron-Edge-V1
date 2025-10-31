@@ -483,23 +483,31 @@ export default function SlateTable({
     return `${line.book} @ ${localTime}`;
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'final':
-        return <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">FINAL</span>;
-      case 'in_progress':
-        return <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">LIVE</span>;
-      case 'scheduled':
-        return <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">SCHEDULED</span>;
-      default:
-        return null;
+  const getStatusBadge = (game: SlateGame) => {
+    // Check if game has scores (even if status isn't updated to 'final')
+    const hasScores = game.awayScore !== null && game.homeScore !== null;
+    const isPast = new Date(game.date) < new Date();
+    const isFinal = game.status === 'final' || (hasScores && isPast);
+    const isLive = game.status === 'in_progress';
+    
+    if (isFinal) {
+      return <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">FINAL</span>;
+    } else if (isLive) {
+      return <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">LIVE</span>;
+    } else {
+      return <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">SCHEDULED</span>;
     }
   };
 
   const getScoreDisplay = (game: SlateGame) => {
-    if (game.status === 'final' && game.awayScore !== null && game.homeScore !== null) {
-      const awayWon = game.awayScore > game.homeScore;
-      const homeWon = game.homeScore > game.awayScore;
+    // Check if game has scores (even if status isn't updated to 'final')
+    const hasScores = game.awayScore !== null && game.homeScore !== null;
+    const isPast = new Date(game.date) < new Date();
+    const isFinal = game.status === 'final' || (hasScores && isPast);
+    
+    if (isFinal && hasScores) {
+      const awayWon = game.awayScore! > game.homeScore!;
+      const homeWon = game.homeScore! > game.awayScore!;
       
       return (
         <div className="text-center">
@@ -886,7 +894,7 @@ export default function SlateTable({
                       </div>
                     </td>
                     <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
-                      {getStatusBadge(game.status)}
+                      {getStatusBadge(game)}
                     </td>
                     {showAdvancedColumns && (
                       <>

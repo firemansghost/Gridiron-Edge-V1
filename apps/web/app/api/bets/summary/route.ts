@@ -19,7 +19,10 @@ export async function GET(request: NextRequest) {
     const where: any = {};
     if (season) where.season = parseInt(season);
     if (week) where.week = parseInt(week);
-    if (strategy) where.strategyTag = strategy;
+    // Only filter by strategy if it's provided and not empty (not "All Strategies")
+    if (strategy && strategy.trim() !== '' && strategy !== 'all') {
+      where.strategyTag = strategy;
+    }
 
     // Get bets with pagination
     const [bets, total] = await Promise.all([
