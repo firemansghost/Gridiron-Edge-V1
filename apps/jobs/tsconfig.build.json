@@ -42,6 +42,7 @@
     "src/ratings/baseline_from_scores.ts",
     "src/ratings/feature-loader.ts",
     "src/ratings/test-feature-loader.ts",
+    "src/ratings/compute_ratings_v1.ts",
     "src/seed-team-membership.ts"
   ],
   "exclude": [

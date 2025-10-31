@@ -48,9 +48,84 @@ export async function GET(
     const spreadLine = pickMarketLine(game.marketLines, 'spread');
     const totalLine = pickMarketLine(game.marketLines, 'total');
 
-    const impliedSpread = matchupOutput?.impliedSpread || 0;
-    const impliedTotal = matchupOutput?.impliedTotal || 45;
+    // Get power ratings from team_season_ratings (Ratings v1)
+    const [homeRating, awayRating] = await Promise.all([
+      prisma.teamSeasonRating.findUnique({
+        where: {
+          season_teamId: {
+            season: game.season,
+            teamId: game.homeTeamId,
+          },
+        },
+      }),
+      prisma.teamSeasonRating.findUnique({
+        where: {
+          season_teamId: {
+            season: game.season,
+            teamId: game.awayTeamId,
+          },
+        },
+      }),
+    ]);
+
+    // Load team stats for pace/EPA calculations
+    const [homeStats, awayStats] = await Promise.all([
+      prisma.teamSeasonStat.findUnique({
+        where: {
+          season_teamId: {
+            season: game.season,
+            teamId: game.homeTeamId,
+          },
+        },
+      }),
+      prisma.teamSeasonStat.findUnique({
+        where: {
+          season_teamId: {
+            season: game.season,
+            teamId: game.awayTeamId,
+          },
+        },
+      }),
+    ]);
+
+    // Compute model spread and total if ratings are available
+    let computedSpread = impliedSpread;
+    let computedTotal = impliedTotal;
     
+    if (homeRating && awayRating) {
+      const homePower = Number(homeRating.powerRating || homeRating.rating || 0);
+      const awayPower = Number(awayRating.powerRating || awayRating.rating || 0);
+      const HFA = game.neutralSite ? 0 : 2.0;
+      computedSpread = homePower - awayPower + HFA;
+
+      // Compute total using pace + efficiency
+      const homeEpaOff = homeStats?.epaOff ? Number(homeStats.epaOff) : null;
+      const awayEpaOff = awayStats?.epaOff ? Number(awayStats.epaOff) : null;
+      const homeYppOff = homeStats?.yppOff ? Number(homeStats.yppOff) : null;
+      const awayYppOff = awayStats?.yppOff ? Number(awayStats.yppOff) : null;
+      
+      const homePaceOff = homeStats?.paceOff ? Number(homeStats.paceOff) : 70;
+      const awayPaceOff = awayStats?.paceOff ? Number(awayStats.paceOff) : 70;
+
+      const homePpp = homeEpaOff !== null 
+        ? Math.max(0, Math.min(1.0, 7 * homeEpaOff))
+        : homeYppOff !== null 
+          ? 0.8 * homeYppOff
+          : 0.4;
+      
+      const awayPpp = awayEpaOff !== null
+        ? Math.max(0, Math.min(1.0, 7 * awayEpaOff))
+        : awayYppOff !== null
+          ? 0.8 * awayYppOff
+          : 0.4;
+
+      computedTotal = (homePpp * homePaceOff) + (awayPpp * awayPaceOff);
+    }
+
+    // Use computed values if matchupOutput doesn't exist
+    const finalImpliedSpread = matchupOutput?.impliedSpread ?? computedSpread;
+    const finalImpliedTotal = matchupOutput?.impliedTotal ?? computedTotal;
+
     // Get line values (prefers closingLine, falls back to lineValue)
     const marketSpread = getLineValue(spreadLine) ?? 0;
     const marketTotal = getLineValue(totalLine) ?? 45;
@@ -94,7 +169,7 @@ export async function GET(
 
     // Compute spread pick details
     const spreadPick = computeSpreadPick(
-      impliedSpread,
+      finalImpliedSpread,
       game.homeTeam.name,
       game.awayTeam.name,
       game.homeTeamId,
@@ -102,30 +177,11 @@ export async function GET(
     );
 
     // Compute total pick details
-    const totalPick = computeTotalPick(impliedTotal, marketTotal);
+    const totalPick = computeTotalPick(finalImpliedTotal, marketTotal);
 
     // Calculate edge points
-    const spreadEdgePts = Math.abs(impliedSpread - marketSpread);
-    const totalEdgePts = Math.abs(impliedTotal - marketTotal);
-
-    // Get power ratings for both teams
-    const homeRating = await prisma.powerRating.findFirst({
-      where: {
-        teamId: game.homeTeamId,
-        season: 2024,
-        week: 1,
-        modelVersion: 'v0.0.1'
-      }
-    });
-
-    const awayRating = await prisma.powerRating.findFirst({
-      where: {
-        teamId: game.awayTeamId,
-        season: 2024,
-        week: 1,
-        modelVersion: 'v0.0.1'
-      }
-    });
+    const spreadEdgePts = Math.abs(finalImpliedSpread - marketSpread);
+    const totalEdgePts = Math.abs(finalImpliedTotal - marketTotal);
 
     // Convert date to America/Chicago timezone
     const kickoffTime = new Date(game.date).toLocaleString('en-US', {
@@ -138,24 +194,8 @@ export async function GET(
       hour12: true
     });
 
-    // Extract factor breakdown from components
-    const getFactorBreakdown = (rating: any) => {
-      if (!rating?.features) return [];
-      
-      const factors = Object.entries(rating.features)
-        .filter(([key, value]: [string, any]) => key !== 'talent_index' && key !== 'pace') // Skip unused factors
-        .map(([key, value]: [string, any]) => ({
-          factor: key,
-          zScore: value.z_score,
-          weight: value.weight,
-          contribution: value.contribution,
-          absContribution: Math.abs(value.contribution)
-        }))
-        .sort((a, b) => b.absContribution - a.absContribution)
-        .slice(0, 3); // Top 3 contributing factors
-      
-      return factors;
-    };
+    // Extract factor breakdown - for Ratings v1, we'll use a simplified approach
+    // In the future, we can enhance this to show top contributing features
 
     const response = {
       success: true,
@@ -186,8 +226,8 @@ export async function GET(
       
       // Implied data
       implied: {
-        spread: impliedSpread,
-        total: impliedTotal,
+        spread: finalImpliedSpread,
+        total: finalImpliedTotal,
         confidence: matchupOutput?.edgeConfidence || 'C'
       },
       
@@ -210,19 +250,19 @@ export async function GET(
         }
       },
       
-      // Power ratings
+      // Power ratings (from team_season_ratings)
       ratings: {
         home: {
           team: game.homeTeam.name,
-          rating: homeRating?.rating || 0,
-          confidence: homeRating?.confidence || 0,
-          factors: getFactorBreakdown(homeRating)
+          rating: homeRating ? Number(homeRating.powerRating || homeRating.rating || 0) : 0,
+          confidence: homeRating ? Number(homeRating.confidence || 0) : 0,
+          factors: [] // Top factors will be computed separately if needed
         },
         away: {
           team: game.awayTeam.name,
-          rating: awayRating?.rating || 0,
-          confidence: awayRating?.confidence || 0,
-          factors: getFactorBreakdown(awayRating)
+          rating: awayRating ? Number(awayRating.powerRating || awayRating.rating || 0) : 0,
+          confidence: awayRating ? Number(awayRating.confidence || 0) : 0,
+          factors: [] // Top factors will be computed separately if needed
         }
       },
       

@@ -162,10 +162,14 @@ model TeamSeasonRating {
   pointsAgainst  Int?     @map("points_against")
   movAvg         Decimal? @map("mov_avg")
   rating         Decimal?
+  powerRating    Decimal? @map("power_rating")  // Alias for rating, kept for clarity
   offenseRating  Decimal? @map("offense_rating")
   defenseRating  Decimal? @map("defense_rating")
   sigma          Decimal?
+  confidence     Decimal?                       // 0-1 scale: feature coverage * data_source quality
+  dataSource     String?  @map("data_source")   // 'game+season', 'season_only', 'baseline'
   createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   @@id([season, teamId])
   @@index([season])

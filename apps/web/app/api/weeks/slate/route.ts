@@ -29,6 +29,13 @@ interface SlateGame {
     book: string;
     timestamp: string;
   } | null;
+  // Advanced columns (optional)
+  modelSpread?: number | null;
+  modelTotal?: number | null;
+  pickSpread?: string | null;
+  pickTotal?: string | null;
+  maxEdge?: number | null;
+  confidence?: string | null;
 }
 
 
@@ -165,6 +172,45 @@ export async function GET(request: NextRequest) {
     }
 
     console.log(`   Processed ${slateGames.length} games with closing lines`);
+
+    // Fetch model projections (always include if ratings are available)
+    try {
+      // Import the model slate function directly to avoid HTTP overhead
+      const { GET: getModelSlate } = await import('../model/slate/route');
+      const modelRequest = new NextRequest(
+        new URL(`/api/model/slate?season=${season}&week=${week}`, request.url),
+        { method: 'GET' }
+      );
+      const modelResponse = await getModelSlate(modelRequest);
+      
+      if (modelResponse.ok) {
+        const modelData = await modelResponse.json();
+        if (modelData.success && modelData.games) {
+          // Create a map of gameId -> model projection
+          const modelMap = new Map(
+            modelData.games.map((g: any) => [g.gameId, g])
+          );
+          
+          // Merge model projections into slate games
+          slateGames.forEach(game => {
+            const projection = modelMap.get(game.gameId);
+            if (projection) {
+              game.modelSpread = projection.modelSpread;
+              game.modelTotal = projection.modelTotal;
+              game.pickSpread = projection.spreadPick;
+              game.pickTotal = projection.totalPick;
+              game.maxEdge = projection.maxEdge;
+              game.confidence = projection.confidence;
+            }
+          });
+          
+          console.log(`   Merged model projections for ${modelMap.size} games`);
+        }
+      }
+    } catch (error) {
+      console.warn('   Failed to fetch model projections:', error);
+      // Continue without model data rather than failing
+    }
 
     // Determine cache headers based on game status
     const hasFinalGames = slateGames.some(g => g.status === 'final');
