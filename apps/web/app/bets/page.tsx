@@ -132,6 +132,27 @@ export default function BetsPage() {
   const formatCurrency = (value: number) => 
     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
 
+  const formatStrategyTag = (strategyTag: string) => {
+    if (strategyTag === 'demo_seed') {
+      return <span className="text-gray-500 italic">Demo</span>;
+    }
+    // Format common patterns: ratings_v1_edge_3pt -> "Ratings v1 (3pt Edge)"
+    if (strategyTag.startsWith('ratings_v1')) {
+      const parts = strategyTag.split('_');
+      if (parts.length >= 4 && parts[2] === 'edge') {
+        const edgeValue = parts[3].replace('pt', 'pt');
+        return <span className="text-blue-600 font-medium">Ratings v1 ({edgeValue} Edge)</span>;
+      }
+      if (parts.length >= 4 && parts[2] === 'confidence') {
+        const tier = parts[3].toUpperCase();
+        return <span className="text-blue-600 font-medium">Ratings v1 (Tier {tier})</span>;
+      }
+      return <span className="text-blue-600 font-medium">Ratings v1</span>;
+    }
+    // Default: return as-is but make it readable
+    return <span className="text-gray-900">{strategyTag.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</span>;
+  };
+
   const getCLVColor = (clv: number | null) => {
     if (clv === null) return 'bg-gray-100 text-gray-600';
     return clv > 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
@@ -484,12 +505,8 @@ export default function BetsPage() {
                         </span>
                       ) : '-'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {bet.strategyTag === 'demo_seed' ? (
-                        <span className="text-gray-500 italic">Demo</span>
-                      ) : (
-                        bet.strategyTag
-                      )}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {formatStrategyTag(bet.strategyTag)}
                     </td>
                   </tr>
                 ))}
