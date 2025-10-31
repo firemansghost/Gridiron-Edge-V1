@@ -70,6 +70,7 @@ export default function SlateTable({
   const bodyScrollRef = useRef<HTMLDivElement>(null);
   const dateHeaderRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const datePillsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchSlate();
@@ -788,15 +789,10 @@ export default function SlateTable({
             </button>
 
             {/* Date pills with horizontal scroll */}
-            <div className="flex-1 flex space-x-2 overflow-x-auto pb-2 scrollbar-hide" ref={(el) => {
-              // Auto-scroll to active date when it changes
-              if (el && activeDate) {
-                const activeButton = el.querySelector(`[data-date-key="${activeDate}"]`) as HTMLElement;
-                if (activeButton) {
-                  activeButton.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-                }
-              }
-            }}>
+            <div 
+              ref={datePillsRef}
+              className="flex-1 flex space-x-2 overflow-x-auto pb-2 scrollbar-hide"
+            >
               {dateEntries.map(([dateKey, dateData]) => {
                 const isActive = activeDate === dateKey;
                 const isToday = dateKey === getTodayDate();
