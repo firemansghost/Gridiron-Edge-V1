@@ -107,6 +107,8 @@ export async function GET(request: NextRequest) {
       })
     ]);
 
+    console.log(`   Found ${spreadLines.length} spread lines and ${totalLines.length} total lines for ${gameIds.length} games`);
+
     // Create lookup maps for closing lines
     const spreadMap = new Map<string, any>();
     const totalMap = new Map<string, any>();
@@ -122,6 +124,18 @@ export async function GET(request: NextRequest) {
         totalMap.set(line.gameId, line);
       }
     });
+
+    // Diagnostic: Log games without market lines
+    const gamesWithoutSpread = filteredGames.filter(g => !spreadMap.has(g.id));
+    const gamesWithoutTotal = filteredGames.filter(g => !totalMap.has(g.id));
+    if (gamesWithoutSpread.length > 0 || gamesWithoutTotal.length > 0) {
+      console.log(`   ⚠️  ${gamesWithoutSpread.length} games missing spread lines, ${gamesWithoutTotal.length} games missing total lines`);
+      if (gamesWithoutSpread.length <= 10) {
+        gamesWithoutSpread.forEach(g => {
+          console.log(`      No spread: ${g.awayTeam.name} @ ${g.homeTeam.name} (${g.id})`);
+        });
+      }
+    }
 
     // Process each game
     const slateGames: SlateGame[] = [];
