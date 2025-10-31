@@ -12,6 +12,7 @@ import Link from 'next/link';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import { abbrevSource, formatSourceTooltip } from '@/lib/market-badges';
+import { InfoTooltip } from '@/components/InfoTooltip';
 
 export default function GameDetailPage() {
   const params = useParams();
@@ -121,14 +122,23 @@ export default function GameDetailPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Spread Comparison */}
             <div>
-              <h4 className="text-md font-medium text-gray-900 mb-3">Spread</h4>
+              <h4 className="text-md font-medium text-gray-900 mb-3 flex items-center gap-2">
+                Spread
+                <InfoTooltip content="The point spread indicates how many points one team is expected to win by. Negative values mean the home team is favored. Our model calculates its own spread prediction based on team ratings." />
+              </h4>
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
-                  <div className="text-sm text-gray-500">Model Line</div>
+                  <div className="text-sm text-gray-500 flex items-center gap-1">
+                    Model Line
+                    <InfoTooltip content="Our model's predicted point spread for this game, calculated using team power ratings and home field advantage." />
+                  </div>
                   <div className="text-lg font-semibold text-gray-900">{game.picks?.spread?.spreadPickLabel}</div>
                 </div>
                 <div className="flex justify-between items-center">
-                  <div className="text-sm text-gray-500">Market Line</div>
+                  <div className="text-sm text-gray-500 flex items-center gap-1">
+                    Market Line
+                    <InfoTooltip content="The betting market's consensus spread, reflecting what sportsbooks are offering. This is what you'd actually bet against." />
+                  </div>
                   <div className="flex items-center">
                     <div className="text-lg font-semibold text-gray-900">
                       {game.market.spread > 0 ? '+' : ''}{game.market.spread.toFixed(1)}
@@ -144,7 +154,10 @@ export default function GameDetailPage() {
                   </div>
                 </div>
                 <div className="flex justify-between items-center">
-                  <div className="text-sm text-gray-500">Edge</div>
+                  <div className="text-sm text-gray-500 flex items-center gap-1">
+                    Edge
+                    <InfoTooltip content="The difference between our model's prediction and the market line (in points). Positive edge means our model thinks the market is mispriced, creating a betting opportunity." />
+                  </div>
                   <div className="text-sm font-medium text-blue-600">+{game.picks?.spread?.edgePts?.toFixed(1)} pts</div>
                 </div>
               </div>
@@ -152,14 +165,23 @@ export default function GameDetailPage() {
 
             {/* Total Comparison */}
             <div>
-              <h4 className="text-md font-medium text-gray-900 mb-3">Total</h4>
+              <h4 className="text-md font-medium text-gray-900 mb-3 flex items-center gap-2">
+                Total
+                <InfoTooltip content="The total points expected to be scored by both teams combined. You can bet over or under this number." />
+              </h4>
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
-                  <div className="text-sm text-gray-500">Model Total</div>
+                  <div className="text-sm text-gray-500 flex items-center gap-1">
+                    Model Total
+                    <InfoTooltip content="Our model's predicted total points for this game, based on team offensive/defensive ratings and pace." />
+                  </div>
                   <div className="text-lg font-semibold text-gray-900">{game.implied.total.toFixed(1)}</div>
                 </div>
                 <div className="flex justify-between items-center">
-                  <div className="text-sm text-gray-500">Market Total</div>
+                  <div className="text-sm text-gray-500 flex items-center gap-1">
+                    Market Total
+                    <InfoTooltip content="The betting market's consensus total points line, reflecting what sportsbooks are offering." />
+                  </div>
                   <div className="flex items-center">
                     <div className="text-lg font-semibold text-gray-900">{game.market.total.toFixed(1)}</div>
                     {game.market.meta?.total?.source && (
@@ -173,7 +195,10 @@ export default function GameDetailPage() {
                   </div>
                 </div>
                 <div className="flex justify-between items-center">
-                  <div className="text-sm text-gray-500">Edge</div>
+                  <div className="text-sm text-gray-500 flex items-center gap-1">
+                    Edge
+                    <InfoTooltip content="The difference between our model's predicted total and the market total. Positive edge suggests betting over, negative suggests under." />
+                  </div>
                   <div className="text-sm font-medium text-blue-600">+{game.picks?.total?.edgePts?.toFixed(1)} pts</div>
                 </div>
               </div>

@@ -99,9 +99,9 @@ export default function HomePage() {
                     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
                   </svg>
                 </button>
-                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10">
-                  Spread: Home minus Away (negative = home favored)<br/>
-                  Edge: |Model - Market| points
+                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10 max-w-xs">
+                  <div className="mb-1"><strong>Spread:</strong> Home team's advantage. Negative = home favored</div>
+                  <div><strong>Edge:</strong> Difference between our model's prediction and the betting market (in points). Higher edge = stronger opportunity.</div>
                   <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
                 </div>
               </div>
@@ -184,15 +184,24 @@ export default function HomePage() {
           </div>
           <div className="bg-white p-4 rounded-lg shadow">
             <div className="text-2xl font-bold text-green-600">{slate?.summary?.confidenceBreakdown?.A || 0}</div>
-            <div className="text-sm text-gray-600">Tier A Edges</div>
+            <div className="text-sm text-gray-600 flex items-center gap-1">
+              High Confidence (A)
+              <InfoTooltip content="Games where our model differs from the betting market by 4.0+ points. These represent the strongest betting opportunities with high confidence in the model's advantage." />
+            </div>
           </div>
           <div className="bg-white p-4 rounded-lg shadow">
             <div className="text-2xl font-bold text-yellow-600">{slate?.summary?.confidenceBreakdown?.B || 0}</div>
-            <div className="text-sm text-gray-600">Tier B Edges</div>
+            <div className="text-sm text-gray-600 flex items-center gap-1">
+              Medium Confidence (B)
+              <InfoTooltip content="Games where our model differs from the betting market by 3.0-3.9 points. Moderate betting opportunities with good model advantage." />
+            </div>
           </div>
           <div className="bg-white p-4 rounded-lg shadow">
             <div className="text-2xl font-bold text-red-600">{slate?.summary?.confidenceBreakdown?.C || 0}</div>
-            <div className="text-sm text-gray-600">Tier C Edges</div>
+            <div className="text-sm text-gray-600 flex items-center gap-1">
+              Low Confidence (C)
+              <InfoTooltip content="Games where our model differs from the betting market by 2.0-2.9 points. Lower confidence opportunities - use with caution." />
+            </div>
           </div>
         </div>
 
@@ -264,8 +273,16 @@ export default function HomePage() {
 
         {/* Info Footer */}
         <div className="mt-8 text-center text-sm text-gray-500">
-          <p>M3 Seed Mode • Linear Ratings • Constant HFA = 2.0 pts</p>
-          <p>Confidence Tiers: A ≥ 4.0 pts, B ≥ 3.0 pts, C ≥ 2.0 pts</p>
+          <p className="mb-2">
+            Ratings Model v1 • <InfoTooltip content="Home Field Advantage: The automatic point advantage given to the home team in spread calculations. Research shows home teams typically win by about 2 points more than expected." /> Home field advantage: +2.0 pts
+          </p>
+          <div className="flex items-center justify-center gap-2">
+            <span>Confidence Levels:</span>
+            <span className="text-green-600">High (A) ≥ 4.0 pts</span>
+            <span className="text-yellow-600">• Medium (B) ≥ 3.0 pts</span>
+            <span className="text-red-600">• Low (C) ≥ 2.0 pts</span>
+            <InfoTooltip content="Confidence tiers indicate the strength of our model's advantage over the betting market. Higher tiers (A) represent stronger opportunities where the model strongly disagrees with the market line." />
+          </div>
         </div>
         </div>
       </div>
