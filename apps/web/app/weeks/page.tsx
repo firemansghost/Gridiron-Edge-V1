@@ -168,23 +168,20 @@ function WeekPageContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <HeaderNav />
+      <div className="flex-1">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="animate-pulse">
             <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
             <div className="h-64 bg-gray-200 rounded"></div>
           </div>
         </div>
-        <Footer />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <HeaderNav />
+      <div className="flex-1">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="bg-red-50 border border-red-200 rounded-lg p-6">
             <div className="flex">
@@ -199,26 +196,24 @@ function WeekPageContent() {
                   <p>{error}</p>
                 </div>
                 <div className="mt-4">
-          <button 
-            onClick={fetchWeekData}
+                  <button 
+                    onClick={fetchWeekData}
                     className="bg-red-100 text-red-800 px-3 py-2 rounded-md text-sm font-medium hover:bg-red-200"
-          >
+                  >
                     Try Again
-          </button>
-        </div>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
-        <Footer />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <HeaderNav />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="flex-1">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Browse Weeks</h1>
           <p className="mt-2 text-gray-600">
@@ -360,26 +355,27 @@ function WeekPageContent() {
             </div>
           </div>
         </div>
-        </div>
       </div>
-      <Footer />
-    </div>
   );
 }
 
 export default function WeekPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="animate-pulse">
-            <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
-            <div className="h-64 bg-gray-200 rounded"></div>
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <HeaderNav />
+      <Suspense fallback={
+        <div className="flex-1">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div className="animate-pulse">
+              <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
+              <div className="h-64 bg-gray-200 rounded"></div>
+            </div>
+          </div>
         </div>
-        </div>
-      </div>
-    }>
-      <WeekPageContent />
-    </Suspense>
+      }>
+        <WeekPageContent />
+      </Suspense>
+      <Footer />
+    </div>
   );
 }

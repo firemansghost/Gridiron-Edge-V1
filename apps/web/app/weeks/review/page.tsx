@@ -66,10 +66,13 @@ export default function WeekReviewPage() {
       const params = new URLSearchParams({
         season: season.toString(),
         week: week.toString(),
-        ...(strategy && { strategy }),
         page: '1',
         pageSize: '50'
       });
+      // Only add strategy if it's not empty (not "All Strategies")
+      if (strategy && strategy.trim() !== '' && strategy !== 'all') {
+        params.append('strategy', strategy);
+      }
       
       const response = await fetch(`/api/bets/summary?${params}`);
       if (!response.ok) throw new Error('Failed to fetch data');
