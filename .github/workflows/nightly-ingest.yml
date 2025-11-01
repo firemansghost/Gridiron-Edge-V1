@@ -1,17 +1,16 @@
 name: Nightly Ingest + Ratings
 
 on:
-  # DISABLED: Auto-schedule to save credits during testing
-  # TODO: Re-enable when ready for production (uncomment below)
-  # schedule:
-  #   - cron: '0 7 * * *'  # Every night at 7:00 UTC (2:00 AM CST / 1:00 AM CDT)
+  # Auto-run every night at 2:00 AM CST (7:00 AM UTC)
+  schedule:
+    - cron: '0 7 * * *'  # Every night at 7:00 UTC (2:00 AM CST / 1:00 AM CDT)
   # Allow manual trigger for testing (adds the Run workflow button in GitHub UI)
   workflow_dispatch:
     inputs:
       week:
-        description: 'CFB week to ingest'
-        required: true
-        default: '8'
+        description: 'CFB week to ingest (leave empty for current week)'
+        required: false
+        default: ''
 
 concurrency:
   group: nightly-ingest-${{ github.ref }}
@@ -26,7 +25,6 @@ jobs:
       DIRECT_URL: ${{ secrets.DIRECT_URL }}
       TZ: America/Chicago
       CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
-      POLL_WEEK: ${{ github.event.inputs.week || '8' }}
     
     steps:
       - name: Checkout repository
@@ -43,6 +41,18 @@ jobs:
 
       - name: Generate Prisma Client
         run: npm run prisma:generate
+
+      - name: Calculate current week
+        id: current-week
+        run: |
+          if [ "${{ github.event.inputs.week }}" != "" ]; then
+            POLL_WEEK="${{ github.event.inputs.week }}"
+          else
+            # Calculate current week from database
+            POLL_WEEK=$(node scripts/get-current-week.mjs)
+          fi
+          echo "📅 Using week: $POLL_WEEK"
+          echo "POLL_WEEK=$POLL_WEEK" >> $GITHUB_ENV
 
       - name: Ingest schedules via CFBD (optional)
         if: ${{ env.CFBD_API_KEY != '' }}
@@ -70,7 +80,6 @@ jobs:
       TZ: America/Chicago
       SGO_API_KEY: ${{ secrets.SGO_API_KEY }}
       ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
-      POLL_WEEK: ${{ github.event.inputs.week || '8' }}
     
     steps:
       - name: Checkout repository
@@ -88,11 +97,26 @@ jobs:
       - name: Generate Prisma Client
         run: npm run prisma:generate
 
+      - name: Calculate current week
+        id: current-week
+        run: |
+          if [ "${{ github.event.inputs.week }}" != "" ]; then
+            POLL_WEEK="${{ github.event.inputs.week }}"
+          else
+            # Calculate current week from database
+            POLL_WEEK=$(node scripts/get-current-week.mjs)
+          fi
+          echo "📅 Using week: $POLL_WEEK"
+          echo "POLL_WEEK=$POLL_WEEK" >> $GITHUB_ENV
+
+      - name: Build jobs (for odds ingestion)
+        run: npm run build:jobs
+
       - name: Fetch odds from Odds API (primary)
         if: ${{ env.ODDS_API_KEY != '' }}
         run: |
-          echo "📈 Fetching odds from Odds API..."
-          node apps/jobs/ingest-simple.js oddsapi --season 2025 --weeks $POLL_WEEK
+          echo "📈 Fetching odds from Odds API for week $POLL_WEEK..."
+          node apps/jobs/dist/ingest-minimal.js oddsapi --season 2025 --weeks $POLL_WEEK
           echo "✅ Odds API odds fetched"
 
       - name: Fallback - Fetch odds from SGO (if Odds API unavailable)
@@ -186,7 +210,7 @@ jobs:
           echo "Time (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')"
           echo "Time (CST/CDT): $(TZ=America/Chicago date '+%Y-%m-%d %H:%M:%S %Z')"
           echo "Season: 2025"
-          echo "Week: 8"
+          echo "Week: $POLL_WEEK"
           echo "Status: ${{ job.status }}"
           echo ""
           echo "Steps executed:"
