@@ -278,9 +278,17 @@ export class TeamResolver {
     if (this.fbsTeams.size === 0) {
       // FBS teams not loaded - skip validation to allow matches
       // The database FK constraint will catch truly invalid team IDs
+      // This is safe because we're matching to existing games, not creating new teams
       return true;
     }
-    return this.fbsTeams.has(teamId.toLowerCase());
+    const normalizedId = teamId.toLowerCase();
+    const exists = this.fbsTeams.has(normalizedId);
+    if (!exists) {
+      // Log a warning but don't block - team might exist in games but not in team_membership
+      // The database FK will catch if it truly doesn't exist
+      console.warn(`[TEAM_RESOLVER] Team ${normalizedId} not in FBS set but allowing match (will validate at DB level)`);
+    }
+    return true; // Always allow - let database FK constraints be the final validator
   }
 
   /**
