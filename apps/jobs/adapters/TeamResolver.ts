@@ -273,8 +273,13 @@ export class TeamResolver {
 
   private teamExistsInDatabase(teamId: string): boolean {
     // Check if the team ID exists in our FBS teams set
-    // This is a simple check against the teams.json file
-    // In a production system, you might want to query the database directly
+    // If FBS teams haven't been loaded yet, we can't validate
+    // In that case, allow the match to proceed (the database will catch invalid FKs)
+    if (this.fbsTeams.size === 0) {
+      // FBS teams not loaded - skip validation to allow matches
+      // The database FK constraint will catch truly invalid team IDs
+      return true;
+    }
     return this.fbsTeams.has(teamId.toLowerCase());
   }
 

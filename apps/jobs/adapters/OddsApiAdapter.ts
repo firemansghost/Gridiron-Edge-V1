@@ -844,6 +844,10 @@ export class OddsApiAdapter implements DataSourceAdapter {
    * Fetch market lines (spreads, totals, moneylines) from The Odds API
    */
   async getMarketLines(season: number, weeks: number[], options?: { startDate?: string; endDate?: string }): Promise<MarketLine[]> {
+    // Load FBS teams into TeamResolver BEFORE building team index
+    // This ensures teamExistsInDatabase checks will work correctly
+    await this.teamResolver.loadFBSTeamsForSeason(season);
+    
     // Build team index from database for matching
     await this.buildTeamIndex();
     
