@@ -290,92 +290,113 @@ export class CFBDAdapter implements DataSourceAdapter {
     const venueDetails = venueMap.get(venueName.toLowerCase());
     const venueTimezone = venueDetails?.timezone;
     
-    if (venueTimezone) {
-      // Venue has timezone - CFBD times are likely in venue local time
-      // Parse as local time and convert to UTC
-      try {
-        // Create date assuming the timezone string is valid (e.g., "America/New_York")
-        // First, parse the date string (it might not have timezone info)
-        const localDate = new Date(startDateStr);
-        
-        // If the date string doesn't have timezone info, treat it as venue local time
-        if (!startDateStr.includes('Z') && !startDateStr.includes('+') && !startDateStr.match(/-\d{2}:\d{2}$/)) {
-          // No timezone in string - assume it's venue local time
-          // Use a workaround: create date in UTC, then convert
-          // CFBD format is typically: "2025-11-01T18:30:00" (venue local time)
-          
-          // Get the time components
-          const timeMatch = startDateStr.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
-          if (timeMatch) {
-            const [, year, month, day, hour, minute, second] = timeMatch;
-            
-            // Create a date string in UTC format, but we'll adjust for timezone
-            // Use Intl.DateTimeFormat to convert from venue timezone to UTC
-            const dateStr = `${year}-${month}-${day}T${hour}:${minute}:${second}`;
-            const tempDate = new Date(dateStr); // This will be interpreted as local time by JS
-            
-            // Get the offset between venue timezone and UTC at this date
-            const formatter = new Intl.DateTimeFormat('en-US', {
-              timeZone: venueTimezone,
-              year: 'numeric',
-              month: '2-digit',
-              day: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit',
-              hour12: false
-            });
-            
-            // Create date in venue timezone, then convert to UTC
-            // Parse as if it's in venue timezone
-            const localTimeStr = `${year}-${month}-${day}T${hour}:${minute}:${second}`;
-            const utcEquivalent = new Date(localTimeStr + 'Z'); // Treat as UTC temporarily
-            
-            // Calculate offset: get what UTC time equals the venue local time
-            const venueLocalParts = formatter.formatToParts(utcEquivalent);
-            // This is complex - simpler approach: use the fact that if CFBD returns local time,
-            // we can construct the UTC time by subtracting the timezone offset
-            
-            // Simpler workaround: if CFBD says 6:30 PM CT, that's 00:30 UTC next day (during DST)
-            // For now, log a warning and use the date as-is, treating it as potentially local
-            console.warn(`   [CFBD] Venue timezone available (${venueTimezone}) for ${cfbdGame.awayTeam} @ ${cfbdGame.homeTeam}, but timezone conversion not yet fully implemented. Using date as-is: ${startDateStr}`);
-            date = new Date(startDateStr + 'Z'); // Still treat as UTC for now
-          } else {
-            date = new Date(startDateStr);
-          }
-        } else {
-          // Date string has timezone info - parse normally
-          date = new Date(startDateStr);
-        }
-      } catch (error) {
-        console.warn(`   [CFBD] Error processing date with venue timezone: ${error}`);
-        date = new Date(startDateStr.includes('Z') ? startDateStr : startDateStr + 'Z');
+    // Helper function to convert local time in a timezone to UTC
+    const convertLocalTimeToUTC = (dateStr: string, timezone: string): Date => {
+      // Parse the date string (format: "2025-11-01T18:30:00")
+      const match = dateStr.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{3})?/);
+      if (!match) {
+        throw new Error(`Invalid date format: ${dateStr}`);
       }
-    } else {
-      // No venue timezone info - use standard parsing
-      if (startDateStr.includes('Z')) {
-        date = new Date(startDateStr);
-      } else if (startDateStr.includes('+') || startDateStr.match(/-\d{2}:\d{2}$/)) {
-        date = new Date(startDateStr);
-      } else {
-        // No timezone indicator - CFBD documentation says UTC, but times suggest local
-        // TEMPORARY FIX: If time looks like a reasonable game time (12:00-23:59), 
-        // it's likely venue local time, not UTC
-        const timeMatch = startDateStr.match(/T(\d{2}):(\d{2})/);
-        if (timeMatch) {
-          const hour = parseInt(timeMatch[1]);
-          // If hour is 12-23, likely local time (games rarely at 0-6 AM)
-          if (hour >= 12 && hour <= 23) {
-            console.warn(`   [CFBD] Suspicious time (${hour}:00) for ${cfbdGame.awayTeam} @ ${cfbdGame.homeTeam} - treating as UTC but may be venue local time. Consider re-ingesting after timezone fix.`);
+      
+      const [, year, month, day, hour, minute, second] = match;
+      const localTimeStr = `${year}-${month}-${day}T${hour.padStart(2, '0')}:${minute.padStart(2, '0')}:${second.padStart(2, '0')}`;
+      
+      // Strategy: We need to find what UTC time produces the desired local time in the venue timezone
+      // Use iterative approach: start with a guess and adjust based on the offset
+      
+      // Start with the date as if it were UTC
+      let candidateUtc = new Date(`${localTimeStr}Z`);
+      
+      // Format what this UTC time would be in the venue timezone
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+      
+      let formattedLocal = formatter.format(candidateUtc);
+      
+      // Extract the time from formatted string (format: "M/d/yyyy, HH:mm:ss")
+      const parts = formattedLocal.split(', ');
+      if (parts.length === 2) {
+        const timePart = parts[1]; // "HH:mm:ss"
+        const [formattedHour, formattedMinute, formattedSecond] = timePart.split(':').map(Number);
+        const targetHour = parseInt(hour);
+        const targetMinute = parseInt(minute);
+        const targetSecond = parseInt(second);
+        
+        // Calculate the difference in seconds
+        const formattedTotalSeconds = formattedHour * 3600 + formattedMinute * 60 + formattedSecond;
+        const targetTotalSeconds = targetHour * 3600 + targetMinute * 60 + targetSecond;
+        let diffSeconds = targetTotalSeconds - formattedTotalSeconds;
+        
+        // Handle day rollover (if target is next day, add 24 hours)
+        if (diffSeconds < -43200) { // More than 12 hours earlier - likely next day
+          diffSeconds += 86400; // Add 24 hours
+        } else if (diffSeconds > 43200) { // More than 12 hours later - likely previous day
+          diffSeconds -= 86400; // Subtract 24 hours
+        }
+        
+        // Adjust the UTC date by the difference
+        candidateUtc = new Date(candidateUtc.getTime() + diffSeconds * 1000);
+        
+        // Verify the result
+        formattedLocal = formatter.format(candidateUtc);
+        const verifyParts = formattedLocal.split(', ');
+        if (verifyParts.length === 2) {
+          const verifyTime = verifyParts[1];
+          const verifyTimeStr = `${targetHour.toString().padStart(2, '0')}:${targetMinute.toString().padStart(2, '0')}:${targetSecond.toString().padStart(2, '0')}`;
+          // Allow 1 minute tolerance for DST edge cases
+          if (Math.abs(diffSeconds) > 60) {
+            // Try one more adjustment
+            const verifyMatch = verifyTime.match(/(\d{2}):(\d{2}):(\d{2})/);
+            if (verifyMatch) {
+              const [, vHour, vMinute, vSecond] = verifyMatch;
+              const verifyTotalSeconds = parseInt(vHour) * 3600 + parseInt(vMinute) * 60 + parseInt(vSecond);
+              const finalDiff = targetTotalSeconds - verifyTotalSeconds;
+              if (Math.abs(finalDiff) > 60) {
+                candidateUtc = new Date(candidateUtc.getTime() + finalDiff * 1000);
+              }
+            }
           }
         }
+      }
+      
+      return candidateUtc;
+    };
+    
+    if (venueTimezone && !startDateStr.includes('Z') && !startDateStr.includes('+') && !startDateStr.match(/-\d{2}:\d{2}$/)) {
+      // Venue has timezone and date string has no timezone - convert from venue local to UTC
+      try {
+        date = convertLocalTimeToUTC(startDateStr, venueTimezone);
+        console.log(`   [CFBD] Converted ${cfbdGame.awayTeam} @ ${cfbdGame.homeTeam} from ${venueTimezone} local time to UTC: ${startDateStr} -> ${date.toISOString()}`);
+      } catch (error) {
+        console.warn(`   [CFBD] Error converting timezone for ${cfbdGame.awayTeam} @ ${cfbdGame.homeTeam}: ${error}. Using date as UTC.`);
         date = new Date(startDateStr + 'Z');
       }
-    }
-    
-    // Debug log if times look suspicious (very early morning UTC might indicate wrong timezone)
-    if (date.getUTCHours() < 6) {
-      console.warn(`   [CFBD] Early UTC time detected for ${cfbdGame.awayTeam} @ ${cfbdGame.homeTeam}: ${startDateStr} -> UTC ${date.toISOString()} (venue: ${venueName}, timezone: ${venueTimezone || 'unknown'})`);
+    } else if (startDateStr.includes('Z')) {
+      // Already has UTC indicator
+      date = new Date(startDateStr);
+    } else if (startDateStr.includes('+') || startDateStr.match(/-\d{2}:\d{2}$/)) {
+      // Has timezone offset
+      date = new Date(startDateStr);
+    } else {
+      // No timezone info - assume UTC (CFBD documentation)
+      date = new Date(startDateStr + 'Z');
+      
+      // Warn if time looks like it might be local time
+      const timeMatch = startDateStr.match(/T(\d{2}):(\d{2})/);
+      if (timeMatch) {
+        const hour = parseInt(timeMatch[1]);
+        if (hour >= 12 && hour <= 23) {
+          console.warn(`   [CFBD] No venue timezone available for ${cfbdGame.awayTeam} @ ${cfbdGame.homeTeam}. Time ${hour}:00 may be local time. Treating as UTC.`);
+        }
+      }
     }
 
     const game: Game = {
