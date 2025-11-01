@@ -3,10 +3,10 @@
 /**
  * Get current CFB week from database
  * This script queries the database to find the current week
- * Uses CommonJS for compatibility with GitHub Actions
+ * Uses ES modules for Node.js compatibility
  */
 
-const { PrismaClient } = require('@prisma/client');
+import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
