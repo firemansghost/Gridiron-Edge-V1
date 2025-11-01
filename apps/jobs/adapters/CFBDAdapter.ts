@@ -280,7 +280,30 @@ export class CFBDAdapter implements DataSourceAdapter {
     }
 
     // Parse date
-    const date = new Date(cfbdGame.startDate);
+    // CFBD returns startDate as ISO string in UTC (usually with 'Z' suffix)
+    // However, there are reports that some dates might be missing timezone info
+    // We'll parse it and ensure it's treated as UTC
+    let date: Date;
+    const startDateStr = cfbdGame.startDate;
+    
+    // CFBD should return UTC times with 'Z' suffix, but check for timezone indicators
+    if (startDateStr.includes('Z')) {
+      // Already UTC
+      date = new Date(startDateStr);
+    } else if (startDateStr.includes('+') || startDateStr.match(/-\d{2}:\d{2}$/)) {
+      // Has timezone offset
+      date = new Date(startDateStr);
+    } else {
+      // No timezone indicator - CFBD claims these are UTC, but they might actually be venue local time
+      // For now, treat as UTC (with Z suffix) as per CFBD documentation
+      // TODO: If times are consistently wrong, may need to apply venue timezone conversion
+      date = new Date(startDateStr + 'Z');
+    }
+    
+    // Debug log if times look suspicious (very early morning UTC might indicate wrong timezone)
+    if (date.getUTCHours() < 6) {
+      console.warn(`   [CFBD] Early UTC time detected for ${cfbdGame.awayTeam} @ ${cfbdGame.homeTeam}: ${startDateStr} -> UTC ${date.toISOString()}`);
+    }
 
     const game: Game = {
       id: gameId,
