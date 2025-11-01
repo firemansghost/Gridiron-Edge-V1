@@ -42,6 +42,9 @@ jobs:
       - name: Generate Prisma Client
         run: npm run prisma:generate
 
+      - name: Build jobs (for schedule ingestion)
+        run: npm run build:jobs
+
       - name: Calculate current week
         id: current-week
         run: |
@@ -60,7 +63,7 @@ jobs:
           JOBS_ALLOW_SIMULATED_ODDS: false
         run: |
           echo "🗓️ Ingesting real schedules from CFBD..."
-          node apps/jobs/ingest-simple.js cfbd --season 2025 --weeks $POLL_WEEK
+          node apps/jobs/dist/ingest.js cfbd --season 2025 --weeks $POLL_WEEK
           echo "✅ CFBD schedules ingested"
 
       - name: Fallback - Ensure mock schedules (if no CFBD key)
