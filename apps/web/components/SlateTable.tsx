@@ -701,6 +701,15 @@ export default function SlateTable({
               />
               <span className="ml-2 text-sm text-gray-700">Compact rows</span>
             </label>
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={hideGamesWithoutOdds}
+                onChange={(e) => setHideGamesWithoutOdds(e.target.checked)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="ml-2 text-sm text-gray-700">Hide games without odds</span>
+            </label>
           </div>
         </div>
       </div>
