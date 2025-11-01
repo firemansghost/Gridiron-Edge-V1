@@ -24,9 +24,11 @@ interface CFBDGame {
   homeTeam: string;
   homeId?: number;
   homeConference?: string;
+  homeClassification?: string;
   awayTeam: string;
   awayId?: number;
   awayConference?: string;
+  awayClassification?: string;
   venue?: string;
   venueId?: number;
   completed?: boolean;

@@ -16,7 +16,15 @@ import { main as runRatings } from './seed-ratings.js';
 const prisma = new PrismaClient();
 
 // Safe error message helper for JS runtime (no TypeScript casts)
-const errMsg = (e) => (e && e instanceof Error) ? e.message : String(e);
+const errMsg = (e: unknown): string => (e && e instanceof Error) ? e.message : String(e);
+
+// Helper to convert team ID to title case
+function titleCase(str: string): string {
+  return str
+    .split('-')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
 
 /**
  * Calculate date range from CFBD games for historical odds
@@ -43,7 +51,7 @@ async function calculateDateRangeFromGames(season, weeks) {
       return null;
     }
     
-    const dates = games.map(g => new Date(g.date));
+    const dates = games.map(g => new Date(g.date).getTime());
     const minDate = new Date(Math.min(...dates));
     const maxDate = new Date(Math.max(...dates));
     
@@ -194,10 +202,10 @@ function normalizeId(str) {
 /**
  * Upsert teams from adapter data
  */
-async function upsertTeams(teams) {
+async function upsertTeams(teams: any[]) {
   let upserted = 0;
   let deduplicated = 0;
-  const teamIds = new Set();
+  const teamIds = new Set<string>();
 
   // Step 1: In-memory de-duplication
   const dedupMap = new Map();
@@ -289,7 +297,7 @@ async function upsertTeams(teams) {
   }
 
   console.log(`   ✅ Upserted ${upserted} teams in chunks of ${chunkSize}`);
-  return { upserted, teamIds };
+  return { upserted, teamIds: Array.from(teamIds) };
 }
 
 /**
@@ -350,22 +358,20 @@ async function upsertGames(games, existingTeamIds) {
 
   // Create missing teams in chunks
   if (teamsToCreate.size > 0) {
-    const teamChunks = Array.from(teamsToCreate).reduce((chunks, teamId, index) => {
+    const teamChunks: any[][] = [];
+    Array.from(teamsToCreate).forEach((teamId, index) => {
       const chunkIndex = Math.floor(index / 100);
-      if (!chunks[chunkIndex]) chunks[chunkIndex] = [];
-      chunks[chunkIndex].push({
-        id: teamId,
-        name: teamId.split('-').map(word => 
-          word.charAt(0).toUpperCase() + word.slice(1)
-        ).join(' '),
+      if (!teamChunks[chunkIndex]) teamChunks[chunkIndex] = [];
+      teamChunks[chunkIndex].push({
+        id: String(teamId),
+        name: titleCase(String(teamId)),
         conference: 'Independent',
         division: null,
         logoUrl: null,
         primaryColor: null,
         secondaryColor: null
       });
-      return chunks;
-    }, []);
+    });
 
     for (const teamChunk of teamChunks) {
       try {
@@ -539,7 +545,7 @@ async function upsertTeamBranding(teamBranding) {
     const teamId = normalizeId(branding.id);
 
     // Only update non-null fields
-    const updateData = {};
+    const updateData: any = {};
     if (branding.name) updateData.name = branding.name;
     if (branding.conference) updateData.conference = branding.conference;
     if (branding.division !== null) updateData.division = branding.division;
@@ -645,8 +651,9 @@ async function main() {
 
     // Special handling for weather adapters (they don't follow standard flow)
     if (options.adapter === 'weatherVc' || adapter.getName() === 'VisualCrossing') {
-      if (typeof adapter.fetchWeatherForGames === 'function') {
-        await adapter.fetchWeatherForGames(options.season, options.weeks);
+      const weatherAdapter = adapter as any;
+      if (typeof weatherAdapter.fetchWeatherForGames === 'function') {
+        await weatherAdapter.fetchWeatherForGames(options.season, options.weeks);
         console.log('✅ Weather fetch completed!');
         return; // Skip standard ingestion flow
       }
@@ -662,7 +669,7 @@ async function main() {
     console.log(`   Found ${games.length} games`);
 
     console.log('📥 Fetching market lines...');
-    const dateOptions = {};
+    const dateOptions: { startDate?: string; endDate?: string } = {};
     if (options.startDate) dateOptions.startDate = options.startDate;
     if (options.endDate) dateOptions.endDate = options.endDate;
     
@@ -677,7 +684,12 @@ async function main() {
       }
     }
     
-    const marketLines = await adapter.getMarketLines(options.season, options.weeks, Object.keys(dateOptions).length > 0 ? dateOptions : undefined);
+    // Some adapters support date options, some don't - use type assertion
+    const marketLines = await (adapter.getMarketLines as any)(
+      options.season, 
+      options.weeks, 
+      Object.keys(dateOptions).length > 0 ? dateOptions : undefined
+    );
     console.log(`   Found ${marketLines.length} market lines`);
     
     // Check if SGO returned zero lines
@@ -687,7 +699,7 @@ async function main() {
 
     // Upsert data to database (skip in dry-run mode)
     let teamsUpserted = 0, gamesUpserted = 0, marketLinesUpserted = 0;
-    let teamIds = new Map();
+    let teamIds: Set<string> = new Set();
     
     if (options.dryRun) {
       console.log('💾 Skipping database writes (dry-run mode)...');
@@ -698,7 +710,7 @@ async function main() {
       console.log('💾 Upserting teams...');
       const result = await upsertTeams(teams);
       teamsUpserted = result.upserted;
-      teamIds = result.teamIds;
+      teamIds = new Set(result.teamIds);
       console.log(`   Upserted ${teamsUpserted} teams`);
 
       console.log('💾 Upserting games...');
@@ -719,7 +731,7 @@ async function main() {
         const sgoAdapter = await sgoFactory.createAdapter('sgo');
         
         console.log('📥 Fetching market lines from SGO...');
-        const fallbackMarketLines = await sgoAdapter.getMarketLines(options.season, options.weeks, Object.keys(dateOptions).length > 0 ? dateOptions : undefined);
+        const fallbackMarketLines = await (sgoAdapter.getMarketLines as any)(options.season, options.weeks, Object.keys(dateOptions).length > 0 ? dateOptions : undefined);
         console.log(`   Found ${fallbackMarketLines.length} market lines (sgo)`);
         
         console.log('💾 Upserting fallback market lines...');
@@ -740,7 +752,7 @@ async function main() {
         const oddsApiAdapter = await oddsApiFactory.createAdapter('oddsapi');
         
         console.log('📥 Fetching market lines from Odds API...');
-        const fallbackMarketLines = await oddsApiAdapter.getMarketLines(options.season, options.weeks, Object.keys(dateOptions).length > 0 ? dateOptions : undefined);
+        const fallbackMarketLines = await (oddsApiAdapter.getMarketLines as any)(options.season, options.weeks, Object.keys(dateOptions).length > 0 ? dateOptions : undefined);
         console.log(`   Found ${fallbackMarketLines.length} market lines (oddsapi)`);
         
         console.log('💾 Upserting fallback market lines...');
