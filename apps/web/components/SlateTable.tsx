@@ -65,6 +65,7 @@ export default function SlateTable({
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [selectedResultIndex, setSelectedResultIndex] = useState(0);
+  const [hideGamesWithoutOdds, setHideGamesWithoutOdds] = useState(false);
   
   // Refs for scroll synchronization
   const topScrollRef = useRef<HTMLDivElement>(null);
@@ -600,8 +601,13 @@ export default function SlateTable({
   };
 
   // Group games by date using ISO date strings as keys
+  // Filter out games without odds if checkbox is checked
   const groupedGames = useMemo(() => {
-    return games.reduce((acc, game) => {
+    const filteredGames = hideGamesWithoutOdds 
+      ? games.filter(game => game.hasOdds === true)
+      : games;
+    
+    return filteredGames.reduce((acc, game) => {
       const dateKey = getDateKey(game.date);
       if (!acc[dateKey]) {
         acc[dateKey] = {
@@ -613,7 +619,7 @@ export default function SlateTable({
       acc[dateKey].games.push(game);
       return acc;
     }, {} as Record<string, { dateKey: string; formattedDate: string; games: SlateGame[] }>);
-  }, [games]);
+  }, [games, hideGamesWithoutOdds]);
 
   // Show all dates (no lazy loading to ensure all games show)
   const dateEntries = Object.entries(groupedGames).sort(([a], [b]) => a.localeCompare(b));

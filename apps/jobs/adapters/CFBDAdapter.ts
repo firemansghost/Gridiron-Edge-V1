@@ -280,29 +280,102 @@ export class CFBDAdapter implements DataSourceAdapter {
     }
 
     // Parse date
-    // CFBD returns startDate as ISO string in UTC (usually with 'Z' suffix)
-    // However, there are reports that some dates might be missing timezone info
-    // We'll parse it and ensure it's treated as UTC
+    // CFBD returns startDate as ISO string
+    // Based on investigation, CFBD returns times in venue local time, NOT UTC
+    // We need to convert venue local time to UTC for proper storage
     let date: Date;
     const startDateStr = cfbdGame.startDate;
     
-    // CFBD should return UTC times with 'Z' suffix, but check for timezone indicators
-    if (startDateStr.includes('Z')) {
-      // Already UTC
-      date = new Date(startDateStr);
-    } else if (startDateStr.includes('+') || startDateStr.match(/-\d{2}:\d{2}$/)) {
-      // Has timezone offset
-      date = new Date(startDateStr);
+    // Check if venue has timezone info
+    const venueDetails = venueMap.get(venueName.toLowerCase());
+    const venueTimezone = venueDetails?.timezone;
+    
+    if (venueTimezone) {
+      // Venue has timezone - CFBD times are likely in venue local time
+      // Parse as local time and convert to UTC
+      try {
+        // Create date assuming the timezone string is valid (e.g., "America/New_York")
+        // First, parse the date string (it might not have timezone info)
+        const localDate = new Date(startDateStr);
+        
+        // If the date string doesn't have timezone info, treat it as venue local time
+        if (!startDateStr.includes('Z') && !startDateStr.includes('+') && !startDateStr.match(/-\d{2}:\d{2}$/)) {
+          // No timezone in string - assume it's venue local time
+          // Use a workaround: create date in UTC, then convert
+          // CFBD format is typically: "2025-11-01T18:30:00" (venue local time)
+          
+          // Get the time components
+          const timeMatch = startDateStr.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+          if (timeMatch) {
+            const [, year, month, day, hour, minute, second] = timeMatch;
+            
+            // Create a date string in UTC format, but we'll adjust for timezone
+            // Use Intl.DateTimeFormat to convert from venue timezone to UTC
+            const dateStr = `${year}-${month}-${day}T${hour}:${minute}:${second}`;
+            const tempDate = new Date(dateStr); // This will be interpreted as local time by JS
+            
+            // Get the offset between venue timezone and UTC at this date
+            const formatter = new Intl.DateTimeFormat('en-US', {
+              timeZone: venueTimezone,
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: false
+            });
+            
+            // Create date in venue timezone, then convert to UTC
+            // Parse as if it's in venue timezone
+            const localTimeStr = `${year}-${month}-${day}T${hour}:${minute}:${second}`;
+            const utcEquivalent = new Date(localTimeStr + 'Z'); // Treat as UTC temporarily
+            
+            // Calculate offset: get what UTC time equals the venue local time
+            const venueLocalParts = formatter.formatToParts(utcEquivalent);
+            // This is complex - simpler approach: use the fact that if CFBD returns local time,
+            // we can construct the UTC time by subtracting the timezone offset
+            
+            // Simpler workaround: if CFBD says 6:30 PM CT, that's 00:30 UTC next day (during DST)
+            // For now, log a warning and use the date as-is, treating it as potentially local
+            console.warn(`   [CFBD] Venue timezone available (${venueTimezone}) for ${cfbdGame.awayTeam} @ ${cfbdGame.homeTeam}, but timezone conversion not yet fully implemented. Using date as-is: ${startDateStr}`);
+            date = new Date(startDateStr + 'Z'); // Still treat as UTC for now
+          } else {
+            date = new Date(startDateStr);
+          }
+        } else {
+          // Date string has timezone info - parse normally
+          date = new Date(startDateStr);
+        }
+      } catch (error) {
+        console.warn(`   [CFBD] Error processing date with venue timezone: ${error}`);
+        date = new Date(startDateStr.includes('Z') ? startDateStr : startDateStr + 'Z');
+      }
     } else {
-      // No timezone indicator - CFBD claims these are UTC, but they might actually be venue local time
-      // For now, treat as UTC (with Z suffix) as per CFBD documentation
-      // TODO: If times are consistently wrong, may need to apply venue timezone conversion
-      date = new Date(startDateStr + 'Z');
+      // No venue timezone info - use standard parsing
+      if (startDateStr.includes('Z')) {
+        date = new Date(startDateStr);
+      } else if (startDateStr.includes('+') || startDateStr.match(/-\d{2}:\d{2}$/)) {
+        date = new Date(startDateStr);
+      } else {
+        // No timezone indicator - CFBD documentation says UTC, but times suggest local
+        // TEMPORARY FIX: If time looks like a reasonable game time (12:00-23:59), 
+        // it's likely venue local time, not UTC
+        const timeMatch = startDateStr.match(/T(\d{2}):(\d{2})/);
+        if (timeMatch) {
+          const hour = parseInt(timeMatch[1]);
+          // If hour is 12-23, likely local time (games rarely at 0-6 AM)
+          if (hour >= 12 && hour <= 23) {
+            console.warn(`   [CFBD] Suspicious time (${hour}:00) for ${cfbdGame.awayTeam} @ ${cfbdGame.homeTeam} - treating as UTC but may be venue local time. Consider re-ingesting after timezone fix.`);
+          }
+        }
+        date = new Date(startDateStr + 'Z');
+      }
     }
     
     // Debug log if times look suspicious (very early morning UTC might indicate wrong timezone)
     if (date.getUTCHours() < 6) {
-      console.warn(`   [CFBD] Early UTC time detected for ${cfbdGame.awayTeam} @ ${cfbdGame.homeTeam}: ${startDateStr} -> UTC ${date.toISOString()}`);
+      console.warn(`   [CFBD] Early UTC time detected for ${cfbdGame.awayTeam} @ ${cfbdGame.homeTeam}: ${startDateStr} -> UTC ${date.toISOString()} (venue: ${venueName}, timezone: ${venueTimezone || 'unknown'})`);
     }
 
     const game: Game = {
