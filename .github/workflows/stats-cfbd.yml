@@ -1,9 +1,11 @@
 name: CFBD Team Stats Sync
 
 on:
-  schedule:
-    # Run nightly during season (Mon-Sun at 2 AM UTC)
-    - cron: '0 2 * * *'
+  # DISABLED: Per-game stats not needed for ratings (which use season stats)
+  # Keep for manual use if needed for game-level analysis
+  # schedule:
+  #   # Run nightly during season (Mon-Sun at 2 AM UTC)
+  #   - cron: '0 2 * * *'
   workflow_dispatch:
     inputs:
       season:
