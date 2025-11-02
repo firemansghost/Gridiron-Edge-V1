@@ -16,7 +16,8 @@ export const DENYLIST_SLUGS = new Set([
   'illinois-college',          // Not Illinois (illinois)
   'louisiana-college',         // Not Louisiana (louisiana)
   'south-carolina-state',      // FCS, not South Carolina (south-carolina)
-  'missouri-state',            // FCS, not Missouri (missouri)
+  // NOTE: missouri-state is now FBS (joined in 2025) - removed from denylist
+  // 'missouri-state',            // REMOVED: Now FBS in 2025
   'tennessee-state',           // FCS, not Tennessee (tennessee)
   'arkansas-pine-bluff',       // FCS
   'alabama-state',             // FCS

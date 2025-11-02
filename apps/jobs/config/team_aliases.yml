@@ -28,6 +28,10 @@ aliases:
   "Virginia Cavaliers": virginia
   "Wake Forest": wake-forest
   "Wake Forest Demon Deacons": wake-forest
+  "Delaware": delaware
+  "Delaware Blue Hens": delaware  # Delaware is FBS in 2025
+  "Missouri State": missouri-state
+  "Missouri State Bears": missouri-state  # Missouri State is FBS in 2025
   
   # Ole Miss - IMPORTANT: "Mississippi" alone maps to Ole Miss (Mississippi State always includes "State")
   "Ole Miss": ole-miss
@@ -231,6 +235,7 @@ aliases:
   "Georgia Bulldogs": georgia
 
 # FCS/Non-FBS denylist - these teams should be rejected
+# NOTE: "Delaware Blue Hens" and "Missouri State Bears" removed - these teams are FBS in 2025
 denylist:
-  - "Delaware Blue Hens"
-  - "Missouri State Bears"
+  # Removed: "Delaware Blue Hens" - Delaware is now FBS
+  # Removed: "Missouri State Bears" - Missouri State is now FBS
