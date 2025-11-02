@@ -970,7 +970,7 @@ export class OddsApiAdapter implements DataSourceAdapter {
   private async fetchOddsForWeek(season: number, week: number, options?: { startDate?: string; endDate?: string }): Promise<{lines: any[], eventCount: number, matchedCount: number}> {
     // Determine if we need historical data
     const currentYear = new Date().getFullYear();
-    const currentWeek = this.getCurrentCFBWeek();
+    const currentWeek = await this.getCurrentCFBWeek(season);
     const isHistorical = season < currentYear || (season === currentYear && week < currentWeek);
     
     console.log(`   [DEBUG] Historical check: season=${season}, currentYear=${currentYear}, week=${week}, currentWeek=${currentWeek}, isHistorical=${isHistorical}`);
@@ -993,12 +993,68 @@ export class OddsApiAdapter implements DataSourceAdapter {
   }
 
   /**
-   * Get current CFB week (simplified - in production this would be more sophisticated)
+   * Get current CFB week by querying the database
+   * Finds the week with game dates closest to now
    */
-  private getCurrentCFBWeek(): number {
-    // For now, hardcode to week 8 (as per the workflow changes)
-    // In production, this would calculate based on the actual CFB calendar
-    return 8;
+  private async getCurrentCFBWeek(season: number): Promise<number> {
+    try {
+      const now = new Date();
+      
+      // Get all games for the season, grouped by week
+      const games = await prisma.game.findMany({
+        where: { season },
+        select: { week: true, date: true },
+        orderBy: { date: 'asc' }
+      });
+
+      if (games.length === 0) {
+        // No games in DB - return a safe default (treat everything as historical)
+        return 999;
+      }
+
+      // Group games by week and find the week with dates closest to now
+      const weekDates: Record<number, Date[]> = {};
+      for (const game of games) {
+        const week = game.week || 1;
+        if (!weekDates[week]) {
+          weekDates[week] = [];
+        }
+        const gameDate = game.date instanceof Date ? game.date : new Date(game.date);
+        if (!isNaN(gameDate.getTime())) {
+          weekDates[week].push(gameDate);
+        }
+      }
+
+      // Find the week with the closest game date to now
+      let bestWeek: number | null = null;
+      let bestDelta = Number.POSITIVE_INFINITY;
+
+      for (const [weekStr, dates] of Object.entries(weekDates)) {
+        const week = parseInt(weekStr);
+        for (const date of dates) {
+          const delta = Math.abs(date.getTime() - now.getTime());
+          if (delta < bestDelta) {
+            bestDelta = delta;
+            bestWeek = week;
+          }
+        }
+      }
+
+      // If we're past all games, use the latest week
+      const allPast = Object.values(weekDates).flat()
+        .every(date => date.getTime() < now.getTime());
+      
+      if (allPast) {
+        const weeks = Object.keys(weekDates).map(n => parseInt(n)).sort((a, b) => b - a);
+        bestWeek = weeks[0] || 1;
+      }
+
+      return bestWeek || 1;
+    } catch (error) {
+      console.warn(`   [ODDSAPI] Error determining current week: ${(error as Error).message}. Defaulting to week 1.`);
+      // Default to week 1 if there's an error (treats everything as potentially historical)
+      return 1;
+    }
   }
 
   /**
