@@ -994,7 +994,8 @@ export class OddsApiAdapter implements DataSourceAdapter {
 
   /**
    * Get current CFB week by querying the database
-   * Finds the week with game dates closest to now
+   * Finds the week with upcoming games (games that haven't started yet)
+   * If all games are past, returns the latest week
    */
   private async getCurrentCFBWeek(season: number): Promise<number> {
     try {
@@ -1012,7 +1013,7 @@ export class OddsApiAdapter implements DataSourceAdapter {
         return 999;
       }
 
-      // Group games by week and find the week with dates closest to now
+      // Group games by week
       const weekDates: Record<number, Date[]> = {};
       for (const game of games) {
         const week = game.week || 1;
@@ -1025,31 +1026,32 @@ export class OddsApiAdapter implements DataSourceAdapter {
         }
       }
 
-      // Find the week with the closest game date to now
-      let bestWeek: number | null = null;
-      let bestDelta = Number.POSITIVE_INFINITY;
+      // Find the week with the earliest upcoming game (future games)
+      let currentWeek: number | null = null;
+      let earliestFutureDate: Date | null = null;
 
       for (const [weekStr, dates] of Object.entries(weekDates)) {
         const week = parseInt(weekStr);
+        // Find the earliest future game in this week
         for (const date of dates) {
-          const delta = Math.abs(date.getTime() - now.getTime());
-          if (delta < bestDelta) {
-            bestDelta = delta;
-            bestWeek = week;
+          if (date.getTime() > now.getTime()) {
+            // This is a future game
+            if (!earliestFutureDate || date.getTime() < earliestFutureDate.getTime()) {
+              earliestFutureDate = date;
+              currentWeek = week;
+            }
           }
         }
       }
 
-      // If we're past all games, use the latest week
-      const allPast = Object.values(weekDates).flat()
-        .every(date => date.getTime() < now.getTime());
-      
-      if (allPast) {
-        const weeks = Object.keys(weekDates).map(n => parseInt(n)).sort((a, b) => b - a);
-        bestWeek = weeks[0] || 1;
+      // If we found a week with upcoming games, return it
+      if (currentWeek !== null) {
+        return currentWeek;
       }
 
-      return bestWeek || 1;
+      // If all games are past, use the latest week
+      const weeks = Object.keys(weekDates).map(n => parseInt(n)).sort((a, b) => b - a);
+      return weeks[0] || 1;
     } catch (error) {
       console.warn(`   [ODDSAPI] Error determining current week: ${(error as Error).message}. Defaulting to week 1.`);
       // Default to week 1 if there's an error (treats everything as potentially historical)
