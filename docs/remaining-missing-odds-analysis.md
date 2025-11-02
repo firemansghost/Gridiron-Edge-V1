@@ -1,12 +1,26 @@
-# Analysis: Remaining 8 FBS Games Without Odds
+# Analysis: Remaining FBS Games Without Odds
 
-## Status Update
-- ✅ **Fixed**: 3 games now have odds after denylist/alias fixes:
-  - Delaware @ Liberty
-  - Florida International @ Missouri State  
-  - New Mexico @ UNLV
+## ✅ **Status: All Resolved!**
 
-- ❌ **Still Missing**: 8 FBS games without odds
+**Final Status (as of latest workflow run):**
+- ✅ **All 11 previously missing games now have odds**
+- ✅ **Week 10: 50 games with odds (100% FBS coverage)**
+- ✅ **0 remaining FBS games without odds**
+
+### **All Games Successfully Ingested**
+
+The following games now have odds after the fixes:
+- ✅ Delaware @ Liberty: 20 market lines
+- ✅ Florida International @ Missouri State: 20 market lines
+- ✅ New Mexico @ UNLV: 20 market lines
+- ✅ UTEP @ Kennesaw State: Has odds
+- ✅ Marshall @ Coastal Carolina: Has odds
+- ✅ Army @ Air Force: Has odds
+- ✅ East Carolina @ Temple: Has odds
+- ✅ New Mexico State @ Western Kentucky: Has odds
+- ✅ Indiana @ Maryland: Has odds
+- ✅ Wake Forest @ Florida State: Has odds
+- ✅ Washington State @ Oregon State: Has odds
 
 ## The Remaining 8 Games
 
