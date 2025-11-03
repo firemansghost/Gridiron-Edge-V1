@@ -253,6 +253,24 @@ export async function GET(
       });
     }
 
+    // Calculate confidence grades based on thresholds
+    const thresholds = {
+      A: 4.0,
+      B: 3.0,
+      C: 2.0
+    };
+
+    const getGrade = (edge: number): 'A' | 'B' | 'C' | null => {
+      const absEdge = Math.abs(edge);
+      if (absEdge >= thresholds.A) return 'A';
+      if (absEdge >= thresholds.B) return 'B';
+      if (absEdge >= thresholds.C) return 'C';
+      return null; // No grade if edge is below minimum threshold
+    };
+
+    const spreadGrade = getGrade(atsEdge);
+    const totalGrade = getGrade(totalEdgePts);
+
     // Convert date to America/Chicago timezone
     const kickoffTime = new Date(game.date).toLocaleString('en-US', {
       timeZone: 'America/Chicago',

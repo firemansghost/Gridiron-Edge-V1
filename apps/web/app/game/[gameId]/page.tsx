@@ -611,41 +611,89 @@ export default function GameDetailPage() {
             </div>
           )}
 
-          {/* Recommended Picks */}
+          {/* Recommended Picks - Ticket Style */}
           <div className="mt-6 pt-6 border-t border-gray-200">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-md font-medium text-gray-900">Recommended Picks</h4>
-              <InfoTooltip content="These are our model's betting recommendations based on comparing our predictions to the market. Higher edge means stronger opportunity. Always do your own research before placing bets." />
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Recommended Picks</h3>
+              <InfoTooltip content="These are our model's betting recommendations based on comparing our predictions to the market. Grades (A/B/C) indicate confidence level based on edge magnitude. A ≥ 4.0 pts, B ≥ 3.0 pts, C ≥ 2.0 pts. Always do your own research before placing bets." />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <div className="text-sm text-gray-500 flex items-center gap-1 mb-1">
-                  Spread Pick
-                  <InfoTooltip content="Our model recommends this team against the spread. The edge shows how much our prediction differs from the market line." />
-                </div>
-                <div className="text-lg font-semibold text-gray-900">{game.picks?.spread?.spreadPickLabel}</div>
-                <div className="text-sm text-blue-600">Edge: +{game.picks?.spread?.edgePts?.toFixed(1)} pts</div>
-              </div>
-              <div className="bg-green-50 p-4 rounded-lg">
-                <div className="text-sm text-gray-500 flex items-center gap-1 mb-1">
-                  Total Pick
-                  <InfoTooltip content="Our model recommends over or under the total. Total Edge = Model Total - Market Total. Positive means Over (higher scoring), negative means Under (lower scoring)." />
-                </div>
-                <div className="text-lg font-semibold text-gray-900">{game.picks?.total?.totalPickLabel || 'No edge'}</div>
-                {game.picks?.total?.totalPickLabel && game.picks?.total?.edgeDisplay && (
-                  <div className={`text-sm mt-1 ${game.picks?.total?.edgePts >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {game.picks.total.edgeDisplay}
-                  </div>
-                )}
-                {game.picks?.total?.totalPickLabel && !game.picks?.total?.edgeDisplay && (
-                  <div className={`text-sm ${game.picks?.total?.edgePts >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    Edge: {game.picks?.total?.edgePts >= 0 ? '+' : ''}{game.picks?.total?.edgePts?.toFixed(1)} pts
-                    {game.picks?.total?.edgePts && (
-                      <span className="ml-1 text-xs">({game.picks.total.edgePts >= 0 ? 'Over' : 'Under'})</span>
+              {/* ATS Pick Card */}
+              {game.picks?.spread?.spreadPickLabel && game.picks?.spread?.grade && (
+                <div className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-300 rounded-lg p-5 shadow-md">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-sm font-medium text-blue-900 uppercase tracking-wide">Against the Spread</div>
+                    {game.picks.spread.grade && (
+                      <div className={`px-3 py-1 rounded-full text-xs font-bold ${
+                        game.picks.spread.grade === 'A' ? 'bg-green-500 text-white' :
+                        game.picks.spread.grade === 'B' ? 'bg-yellow-500 text-white' :
+                        'bg-orange-500 text-white'
+                      }`}>
+                        Grade {game.picks.spread.grade}
+                      </div>
                     )}
                   </div>
-                )}
-              </div>
+                  <div className="text-2xl font-bold text-gray-900 mb-2">
+                    {game.picks.spread.spreadPickLabel}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-gray-600">
+                      Edge: <span className={`font-semibold ${game.picks.spread.edgePts >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                        {game.picks.spread.edgePts >= 0 ? '+' : ''}{game.picks.spread.edgePts?.toFixed(1)} pts
+                      </span>
+                    </div>
+                    <InfoTooltip content={`ATS Edge = (Model favorite spread) - (Market favorite spread). Grade ${game.picks.spread.grade} indicates ${game.picks.spread.grade === 'A' ? 'high' : game.picks.spread.grade === 'B' ? 'medium' : 'low'} confidence based on edge magnitude.`} />
+                  </div>
+                </div>
+              )}
+
+              {/* Total Pick Card */}
+              {game.picks?.total?.totalPickLabel && game.picks?.total?.grade && (
+                <div className="bg-gradient-to-br from-green-50 to-green-100 border-2 border-green-300 rounded-lg p-5 shadow-md">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-sm font-medium text-green-900 uppercase tracking-wide">Total (Over/Under)</div>
+                    {game.picks.total.grade && (
+                      <div className={`px-3 py-1 rounded-full text-xs font-bold ${
+                        game.picks.total.grade === 'A' ? 'bg-green-500 text-white' :
+                        game.picks.total.grade === 'B' ? 'bg-yellow-500 text-white' :
+                        'bg-orange-500 text-white'
+                      }`}>
+                        Grade {game.picks.total.grade}
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-2xl font-bold text-gray-900 mb-2">
+                    {game.picks.total.totalPickLabel}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-gray-600">
+                      Edge: <span className={`font-semibold ${game.picks.total.edgePts >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {game.picks.total.edgePts >= 0 ? '+' : ''}{game.picks.total.edgePts?.toFixed(1)} pts
+                        {game.picks.total.edgePts && (
+                          <span className="ml-1">({game.picks.total.edgePts >= 0 ? 'Over' : 'Under'})</span>
+                        )}
+                      </span>
+                    </div>
+                    <InfoTooltip content={`Total Edge = Model Total - Market Total. Positive means Over (higher scoring), negative means Under (lower scoring). Grade ${game.picks.total.grade} indicates ${game.picks.total.grade === 'A' ? 'high' : game.picks.total.grade === 'B' ? 'medium' : 'low'} confidence based on edge magnitude.`} />
+                  </div>
+                </div>
+              )}
+
+              {/* No picks message */}
+              {(!game.picks?.spread?.grade || !game.picks?.total?.grade) && (
+                <div className="md:col-span-2 bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
+                  <div className="text-gray-600 mb-2">
+                    {!game.picks?.spread?.grade && !game.picks?.total?.grade ? (
+                      <>No recommended picks (edge below 2.0 pts threshold)</>
+                    ) : (
+                      <>Only {game.picks?.spread?.grade ? 'ATS' : 'Total'} pick available (edge below threshold for other market)</>
+                    )}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Picks are only shown when edge meets minimum threshold (Grade C = 2.0+ pts)
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
