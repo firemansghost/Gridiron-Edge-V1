@@ -810,17 +810,19 @@ export async function GET(
         maxEdge: Math.max(Math.abs(atsEdge), Math.abs(totalEdgePts))
       },
 
-      // New explicit pick fields
+      // New explicit pick fields (ticket-style with grades)
       picks: {
         spread: {
           ...spreadPick,
           edgePts: atsEdge,
           // For backward compatibility
           spreadEdge: Math.abs(atsEdge),
+          grade: spreadGrade, // A, B, C, or null
         },
         total: {
           ...totalPick,
-          edgePts: totalEdgePts
+          edgePts: totalEdgePts,
+          grade: totalGrade, // A, B, C, or null
         }
       },
       
