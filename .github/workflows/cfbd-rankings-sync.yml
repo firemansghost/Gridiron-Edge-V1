@@ -1,0 +1,94 @@
+name: CFBD Rankings Sync
+
+on:
+  # Weekly schedule - runs every Monday at 3:00 AM CST (when rankings are typically updated)
+  schedule:
+    - cron: '0 9 * * 1'  # Every Monday at 9:00 UTC (3:00 AM CST / 2:00 AM CDT)
+  # Allow manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (e.g., 2025)'
+        required: true
+        default: '2025'
+        type: string
+      weeks:
+        description: 'Weeks to sync (comma-separated like "1,2,3" or "all" for all weeks)'
+        required: true
+        default: 'all'
+        type: string
+
+concurrency:
+  group: cfbd-rankings-sync-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sync-rankings:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      TZ: America/Chicago
+      CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+      CFBD_BASE_URL: ${{ vars.CFBD_BASE_URL }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run prisma:generate
+
+      - name: Build jobs
+        run: npm run build:jobs
+
+      - name: Set FORCE_DB_TEAMS
+        run: echo "FORCE_DB_TEAMS=true" >> $GITHUB_ENV
+
+      - name: Sync CFBD Rankings
+        run: |
+          echo "📊 Syncing CFBD Rankings"
+          echo "Season: ${{ github.event.inputs.season || '2025' }}"
+          echo "Weeks: ${{ github.event.inputs.weeks || 'all' }}"
+          node apps/jobs/dist/src/rankings/cfbd_rankings_etl.js \
+            --season ${{ github.event.inputs.season || '2025' }} \
+            --weeks "${{ github.event.inputs.weeks || 'all' }}"
+
+      - name: Verify Rankings Data
+        run: |
+          echo "📈 Verifying rankings data..."
+          npx prisma db execute --schema=prisma/schema.prisma --stdin <<EOF
+          SELECT 
+            poll_type,
+            COUNT(*) as count,
+            MIN(week) as min_week,
+            MAX(week) as max_week
+          FROM team_rankings
+          WHERE season = ${{ github.event.inputs.season || '2025' }}
+          GROUP BY poll_type
+          ORDER BY poll_type;
+          EOF
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "============================================"
+          echo "📊 CFBD RANKINGS SYNC SUMMARY"
+          echo "============================================"
+          echo "Time (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')"
+          echo "Time (CST/CDT): $(TZ=America/Chicago date '+%Y-%m-%d %H:%M:%S %Z')"
+          echo "Season: ${{ github.event.inputs.season || '2025' }}"
+          echo "Weeks: ${{ github.event.inputs.weeks || 'all' }}"
+          echo "Status: ${{ job.status }}"
+          echo "============================================"
+
