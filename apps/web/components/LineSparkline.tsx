@@ -21,6 +21,11 @@ interface LineSparklineProps {
   width?: number;
   height?: number;
   color?: string;
+  openingValue?: number; // Opening line value for label
+  closingValue?: number; // Closing line value for label
+  movement?: number; // Movement amount (closing - opening)
+  showLabels?: boolean; // Whether to show Open/Close labels on chart
+  showCaption?: boolean; // Whether to show caption below chart
 }
 
 export function LineSparkline({ 
@@ -28,7 +33,12 @@ export function LineSparkline({
   lineType, 
   width = 200, 
   height = 40,
-  color = '#3b82f6' 
+  color = '#3b82f6',
+  openingValue,
+  closingValue,
+  movement,
+  showLabels = true,
+  showCaption = true
 }: LineSparklineProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -102,7 +112,23 @@ export function LineSparkline({
       ctx.fill();
     }
 
-  }, [data, width, height, color]);
+    // Draw Open/Close labels if enabled and values provided
+    if (showLabels && openingValue !== undefined && closingValue !== undefined && points.length > 1) {
+      ctx.font = '10px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      
+      // Opening label (left side)
+      ctx.fillStyle = '#059669'; // Darker green
+      ctx.fillText(`Open: ${openingValue.toFixed(1)}`, 2, points[0].y - 8);
+      
+      // Closing label (right side)
+      ctx.fillStyle = '#dc2626'; // Darker red
+      ctx.textAlign = 'right';
+      ctx.fillText(`Close: ${closingValue.toFixed(1)}`, width - 2, points[points.length - 1].y - 8);
+    }
+
+  }, [data, width, height, color, openingValue, closingValue, showLabels]);
 
   if (data.length === 0) {
     return (
@@ -131,6 +157,14 @@ export function LineSparkline({
           Close
         </span>
       </div>
+      {showCaption && openingValue !== undefined && closingValue !== undefined && movement !== undefined && (
+        <div className="text-xs text-gray-600 mt-1 font-medium text-center">
+          Open: {openingValue.toFixed(1)} → Close: {closingValue.toFixed(1)} 
+          <span className={`ml-1 ${movement >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            ({movement >= 0 ? '+' : ''}{movement.toFixed(1)})
+          </span>
+        </div>
+      )}
     </div>
   );
 }

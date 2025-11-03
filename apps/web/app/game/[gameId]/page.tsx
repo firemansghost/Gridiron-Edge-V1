@@ -566,45 +566,41 @@ export default function GameDetailPage() {
 
           {game.lineHistory && (game.lineHistory.history?.spread?.length > 0 || game.lineHistory.history?.total?.length > 0) && (
             <div className="mt-6 pt-6 border-t border-gray-200">
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-4">
                 <h4 className="text-md font-medium text-gray-900">Line Movement</h4>
-                <InfoTooltip content="Shows how the betting lines have moved over time. Green dot = opening line, Red dot = closing line. Line movement can indicate where sharp money is going." />
+                <InfoTooltip content="Shows how the betting lines have moved over time. Green dot = opening line, Red dot = closing line. Line movement can indicate where sharp money is going. Labels show exact values at Open and Close." />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {game.lineHistory.history?.spread && game.lineHistory.history.spread.length > 0 && (
+                {game.lineHistory.history?.spread && game.lineHistory.history.spread.length > 0 && game.lineHistory.statistics?.spread && (
                   <div className="bg-gray-50 p-4 rounded-lg">
-                    <div className="text-sm text-gray-600 mb-2">Spread Movement</div>
+                    <div className="text-sm font-medium text-gray-700 mb-3">Spread Movement</div>
                     <LineSparkline 
                       data={game.lineHistory.history.spread} 
                       lineType="spread"
-                      width={250}
-                      height={50}
+                      width={280}
+                      height={60}
+                      openingValue={game.lineHistory.statistics.spread.opening.value}
+                      closingValue={game.lineHistory.statistics.spread.closing.value}
+                      movement={game.lineHistory.statistics.spread.movement}
+                      showLabels={true}
+                      showCaption={true}
                     />
-                    {game.lineHistory.statistics?.spread && (
-                      <div className="text-xs text-gray-500 mt-2">
-                        Opening: {game.lineHistory.statistics.spread.opening.value.toFixed(1)} → 
-                        Closing: {game.lineHistory.statistics.spread.closing.value.toFixed(1)} 
-                        ({game.lineHistory.statistics.spread.movement > 0 ? '+' : ''}{game.lineHistory.statistics.spread.movement.toFixed(1)})
-                      </div>
-                    )}
                   </div>
                 )}
-                {game.lineHistory.history?.total && game.lineHistory.history.total.length > 0 && (
+                {game.lineHistory.history?.total && game.lineHistory.history.total.length > 0 && game.lineHistory.statistics?.total && (
                   <div className="bg-gray-50 p-4 rounded-lg">
-                    <div className="text-sm text-gray-600 mb-2">Total Movement</div>
+                    <div className="text-sm font-medium text-gray-700 mb-3">Total Movement</div>
                     <LineSparkline 
                       data={game.lineHistory.history.total} 
                       lineType="total"
-                      width={250}
-                      height={50}
+                      width={280}
+                      height={60}
+                      openingValue={game.lineHistory.statistics.total.opening.value}
+                      closingValue={game.lineHistory.statistics.total.closing.value}
+                      movement={game.lineHistory.statistics.total.movement}
+                      showLabels={true}
+                      showCaption={true}
                     />
-                    {game.lineHistory.statistics?.total && (
-                      <div className="text-xs text-gray-500 mt-2">
-                        Opening: {game.lineHistory.statistics.total.opening.value.toFixed(1)} → 
-                        Closing: {game.lineHistory.statistics.total.closing.value.toFixed(1)} 
-                        ({game.lineHistory.statistics.total.movement > 0 ? '+' : ''}{game.lineHistory.statistics.total.movement.toFixed(1)})
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
