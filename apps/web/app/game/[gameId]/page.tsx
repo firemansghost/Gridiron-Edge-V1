@@ -221,25 +221,27 @@ export default function GameDetailPage() {
             <div>
               <h4 className="text-md font-medium text-gray-900 mb-3 flex items-center gap-2">
                 Spread
-                <InfoTooltip content="The point spread indicates how many points one team is expected to win by. Negative values mean the home team is favored. Our model calculates its own spread prediction based on team ratings." />
+                <InfoTooltip content="Spread is shown in favorite-centric format: the favorite always shows -X.X (laying points). Our model calculates its own spread prediction based on team ratings." />
               </h4>
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-gray-500 flex items-center gap-1">
-                    Model Line
-                    <InfoTooltip content="Our model's predicted point spread for this game, calculated using team power ratings and home field advantage." />
+                    Model Favorite
+                    <InfoTooltip content="Our model's predicted favorite team and spread. The favorite always shows -X.X (laying points)." />
                   </div>
-                  <div className="text-lg font-semibold text-gray-900">{game.picks?.spread?.spreadPickLabel}</div>
+                  <div className="text-lg font-semibold text-gray-900">
+                    {game.model?.favorite ? `${game.model.favorite.teamName} ${game.model.favorite.spread.toFixed(1)}` : '—'}
+                  </div>
                 </div>
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-gray-500 flex items-center gap-1">
-                    Best Available Spread
-                    <InfoTooltip content="The best available point spread from the betting market (prefers SGO source, then latest). This is what you'd actually bet against." />
+                    Market Favorite
+                    <InfoTooltip content="The betting market's favorite team and spread. This is what you'd actually bet against." />
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <div className="flex items-center gap-3">
                       <div className="text-lg font-semibold text-gray-900">
-                        {game.market.spread > 0 ? '+' : ''}{game.market.spread.toFixed(1)}
+                        {game.market?.favorite ? `${game.market.favorite.teamName} ${game.market.favorite.spread.toFixed(1)}` : '—'}
                       </div>
                       {lineHistory?.history?.spread && lineHistory.history.spread.length > 0 && (
                         <LineSparkline 
@@ -273,10 +275,12 @@ export default function GameDetailPage() {
                 </div>
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-gray-500 flex items-center gap-1">
-                    Edge
-                    <InfoTooltip content="The difference between our model's prediction and the market line (in points). Positive edge means our model thinks the market is mispriced, creating a betting opportunity." />
+                    ATS Edge
+                    <InfoTooltip content="ATS Edge = (Model favorite spread) - (Market favorite spread). Positive means model thinks the favorite should lay more points. Negative means model thinks favorite should lay fewer points." />
                   </div>
-                  <div className="text-sm font-medium text-blue-600">+{game.picks?.spread?.edgePts?.toFixed(1)} pts</div>
+                  <div className={`text-sm font-medium ${game.edge?.atsEdge >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                    {game.edge?.atsEdge >= 0 ? '+' : ''}{game.edge?.atsEdge?.toFixed(1)} pts
+                  </div>
                 </div>
               </div>
             </div>
@@ -293,11 +297,11 @@ export default function GameDetailPage() {
                     Model Total
                     <InfoTooltip content="Our model's predicted total points for this game, based on team offensive/defensive ratings and pace." />
                   </div>
-                  <div className="text-lg font-semibold text-gray-900">{game.implied.total.toFixed(1)}</div>
+                  <div className="text-lg font-semibold text-gray-900">{game.model?.total?.toFixed(1) || '—'}</div>
                 </div>
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-gray-500 flex items-center gap-1">
-                    Best Available Total
+                    Market Total
                     <InfoTooltip content="The best available total points line from the betting market (prefers SGO source, then latest). This is what you'd actually bet against." />
                   </div>
                   <div className="flex flex-col items-end gap-1">
@@ -335,10 +339,15 @@ export default function GameDetailPage() {
                 </div>
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-gray-500 flex items-center gap-1">
-                    Edge
-                    <InfoTooltip content="The difference between our model's predicted total and the market total. Positive edge suggests betting over, negative suggests under." />
+                    Total Edge
+                    <InfoTooltip content="Total Edge = Model Total - Market Total. Positive means model thinks Over (higher scoring), negative means model thinks Under (lower scoring)." />
                   </div>
-                  <div className="text-sm font-medium text-blue-600">+{game.picks?.total?.edgePts?.toFixed(1)} pts</div>
+                  <div className={`text-sm font-medium ${game.edge?.totalEdge >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {game.edge?.totalEdge >= 0 ? '+' : ''}{game.edge?.totalEdge?.toFixed(1)} pts
+                    {game.edge?.totalEdge && (
+                      <span className="ml-1 text-xs">({game.edge.totalEdge >= 0 ? 'Over' : 'Under'})</span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
