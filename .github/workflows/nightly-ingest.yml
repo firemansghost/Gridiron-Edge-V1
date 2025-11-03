@@ -186,6 +186,140 @@ jobs:
         if: ${{ env.VISUALCROSSING_API_KEY == '' }}
         run: echo "⚠️  VISUALCROSSING_API_KEY not set; skipping weather update."
 
+  sync-talent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      TZ: America/Chicago
+      CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+      CFBD_BASE_URL: ${{ vars.CFBD_BASE_URL }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run prisma:generate
+
+      - name: Build jobs
+        run: npm run build:jobs
+
+      - name: Set FORCE_DB_TEAMS
+        run: echo "FORCE_DB_TEAMS=true" >> $GITHUB_ENV
+
+      - name: Check if talent data needs refresh
+        id: check-talent
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          echo "Checking existing talent data for season 2025..."
+          LAST_UPDATED=$(npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "SELECT MAX(source_updated_at) as last_updated FROM team_season_talent WHERE season = 2025;" | grep -v "^$" | tail -n 1 | tr -d '[:space:]' || echo "")
+          RECORD_COUNT=$(npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "SELECT COUNT(*) as count FROM team_season_talent WHERE season = 2025;" | grep -v "^$" | tail -n 1 | tr -d '[:space:]' || echo "0")
+          
+          if [ -z "$LAST_UPDATED" ] || [ "$LAST_UPDATED" = "null" ] || [ "$RECORD_COUNT" -lt 130 ]; then
+            echo "Talent data missing or incomplete (count: $RECORD_COUNT)"
+            echo "should_sync=true" >> $GITHUB_OUTPUT
+          else
+            # Check if data is older than 30 days
+            DAYS_AGO=$(node -e "const last = new Date('$LAST_UPDATED'); const days = Math.floor((Date.now() - last) / (1000 * 60 * 60 * 24)); console.log(days);" 2>/dev/null || echo "999")
+            if [ "$DAYS_AGO" -gt 30 ]; then
+              echo "Talent data is $DAYS_AGO days old, refreshing..."
+              echo "should_sync=true" >> $GITHUB_OUTPUT
+            else
+              echo "Talent data is fresh ($DAYS_AGO days old), skipping sync"
+              echo "should_sync=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Sync Roster Talent
+        if: steps.check-talent.outputs.should_sync == 'true'
+        run: |
+          echo "🏈 Syncing roster talent for season 2025"
+          node apps/jobs/dist/src/talent/cfbd_team_roster_talent.js --season 2025
+
+      - name: Skip Talent Sync
+        if: steps.check-talent.outputs.should_sync == 'false'
+        run: echo "⏭️  Skipping talent sync - data is fresh"
+
+  sync-commits:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      TZ: America/Chicago
+      CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+      CFBD_BASE_URL: ${{ vars.CFBD_BASE_URL }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run prisma:generate
+
+      - name: Build jobs
+        run: npm run build:jobs
+
+      - name: Set FORCE_DB_TEAMS
+        run: echo "FORCE_DB_TEAMS=true" >> $GITHUB_ENV
+
+      - name: Check if commits data needs refresh
+        id: check-commits
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          echo "Checking existing commits data for season 2025..."
+          LAST_UPDATED=$(npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "SELECT MAX(source_updated_at) as last_updated FROM team_class_commits WHERE season = 2025;" | grep -v "^$" | tail -n 1 | tr -d '[:space:]' || echo "")
+          RECORD_COUNT=$(npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "SELECT COUNT(*) as count FROM team_class_commits WHERE season = 2025;" | grep -v "^$" | tail -n 1 | tr -d '[:space:]' || echo "0")
+          
+          if [ -z "$LAST_UPDATED" ] || [ "$LAST_UPDATED" = "null" ] || [ "$RECORD_COUNT" -lt 130 ]; then
+            echo "Commits data missing or incomplete (count: $RECORD_COUNT)"
+            echo "should_sync=true" >> $GITHUB_OUTPUT
+          else
+            # Check if data is older than 30 days
+            DAYS_AGO=$(node -e "const last = new Date('$LAST_UPDATED'); const days = Math.floor((Date.now() - last) / (1000 * 60 * 60 * 24)); console.log(days);" 2>/dev/null || echo "999")
+            if [ "$DAYS_AGO" -gt 30 ]; then
+              echo "Commits data is $DAYS_AGO days old, refreshing..."
+              echo "should_sync=true" >> $GITHUB_OUTPUT
+            else
+              echo "Commits data is fresh ($DAYS_AGO days old), skipping sync"
+              echo "should_sync=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Sync Class Commits
+        if: steps.check-commits.outputs.should_sync == 'true'
+        run: |
+          echo "📝 Syncing recruiting class commits for season 2025"
+          node apps/jobs/dist/src/talent/cfbd_team_class_commits.js --season 2025
+
+      - name: Skip Commits Sync
+        if: steps.check-commits.outputs.should_sync == 'false'
+        run: echo "⏭️  Skipping commits sync - data is fresh"
+
   ingest-injuries:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -235,7 +369,7 @@ jobs:
   calculate-ratings:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [ingest-schedules, ingest-odds]
+    needs: [ingest-schedules, ingest-odds, sync-talent, sync-commits]
     env:
       DATABASE_URL: ${{ secrets.DIRECT_URL }}
       DIRECT_URL: ${{ secrets.DIRECT_URL }}
@@ -283,6 +417,9 @@ jobs:
           echo "  📥 Mock fallback (enabled: ${{ env.CFBD_API_KEY == '' }})"
           echo "  📈 Odds API (primary, enabled: ${{ env.ODDS_API_KEY != '' }})"
           echo "  📈 SGO odds (fallback, enabled: ${{ env.SGO_API_KEY != '' }})"
+          echo "  🏈 Roster talent sync (conditional)"
+          echo "  📝 Commits sync (conditional)"
           echo "  ⛅ Weather data (optional, enabled: ${{ env.VISUALCROSSING_API_KEY != '' }})"
+          echo "  🏥 Injury data"
           echo "  📊 Ratings + implied lines"
           echo "============================================"
