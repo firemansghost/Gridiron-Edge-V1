@@ -202,27 +202,27 @@ export async function GET(
     const computeTopFactors = async (teamId: string, season: number): Promise<Array<{factor: string; contribution: number; weight: number; zScore: number}>> => {
       try {
         // Dynamically import FeatureLoader to avoid build issues
+        // @ts-ignore - Cross-app import
         const featureLoaderModule = await import('../../../../../apps/jobs/src/ratings/feature-loader');
         const FeatureLoader = featureLoaderModule.FeatureLoader;
-        type TeamFeatures = featureLoaderModule.TeamFeatures;
         
         // Load all FBS teams for the season
         const fbsMemberships = await prisma.teamMembership.findMany({
           where: { season, level: 'fbs' },
           select: { teamId: true }
         });
-        const fbsTeamIds = new Set(fbsMemberships.map(m => m.teamId.toLowerCase()));
+        const fbsTeamIds = Array.from(new Set(fbsMemberships.map(m => m.teamId.toLowerCase())));
 
         // Load features for all FBS teams
         const loader = new FeatureLoader(prisma);
-        const allFeatures: TeamFeatures[] = [];
+        const allFeatures: any[] = [];
         for (const tid of fbsTeamIds) {
           const features = await loader.loadTeamFeatures(tid, season);
           allFeatures.push(features);
         }
 
         // Calculate z-score statistics across all teams
-        const calculateZScores = (features: TeamFeatures[], getValue: (f: TeamFeatures) => number | null) => {
+        const calculateZScores = (features: any[], getValue: (f: any) => number | null) => {
           const values = features
             .map(f => getValue(f))
             .filter(v => v !== null && v !== undefined && !isNaN(v))
