@@ -832,8 +832,12 @@ export default function GameDetailPage() {
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Model Information</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <div className="text-sm text-gray-500">Home Field Advantage</div>
+              <div className="text-sm text-gray-500 flex items-center gap-1">
+                Home Field Advantage (HFA)
+                <InfoTooltip content="Additional points awarded to the home team, independent of talent. This is a constant value (typically 2.0-3.0 points) that accounts for home field advantage factors like crowd noise, travel, and familiarity." />
+              </div>
               <div className="text-lg text-gray-900">{game.modelConfig?.hfa || 2.0} points</div>
+              <div className="text-xs text-gray-500 mt-1">Separate from talent component</div>
             </div>
             <div>
               <div className="text-sm text-gray-500">Confidence Thresholds</div>
