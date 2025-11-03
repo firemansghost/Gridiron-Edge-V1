@@ -55,6 +55,7 @@ model Game {
   marketLines    MarketLine[]
   matchupOutputs MatchupOutput[]
   teamGameStats  TeamGameStat[]
+  weather        Weather?
 
   @@index([season, week])
   @@index([homeTeamId, season])
@@ -359,4 +360,26 @@ model TeamMembership {
   @@index([season, level])
   @@index([teamId])
   @@map("team_membership")
+}
+
+model Weather {
+  id               String   @id @default(cuid())
+  gameId           String   @unique @map("game_id")
+  season           Int
+  week             Int
+  temperature      Float    @map("temperature") // Fahrenheit
+  windSpeed        Float    @map("wind_speed")  // mph
+  precipitationProb Float   @map("precipitation_prob") // 0-100%
+  humidity         Float?   // 0-100%
+  conditions       String?  // "Clear", "Rain", "Snow", etc.
+  source           String   @default("visualcrossing") // "visualcrossing", etc.
+  forecastTime     DateTime @map("forecast_time") // When the forecast was fetched
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  game             Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@index([season, week])
+  @@index([gameId])
+  @@index([forecastTime])
+  @@map("weather")
 }

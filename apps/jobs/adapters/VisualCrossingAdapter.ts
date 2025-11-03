@@ -145,11 +145,39 @@ export class VisualCrossingAdapter implements DataSourceAdapter {
           const weather = await this.fetchWeatherForLocation(location, dateStr, gameHour);
 
           if (weather) {
+            // Upsert weather data to database
+            await prisma.weather.upsert({
+              where: {
+                gameId: game.id,
+              },
+              update: {
+                temperature: weather.temp,
+                windSpeed: weather.windspeed,
+                precipitationProb: weather.precipprob,
+                humidity: weather.humidity,
+                conditions: weather.conditions,
+                forecastTime: new Date(),
+                updatedAt: new Date(),
+              },
+              create: {
+                gameId: game.id,
+                season: game.season,
+                week: game.week,
+                temperature: weather.temp,
+                windSpeed: weather.windspeed,
+                precipitationProb: weather.precipprob,
+                humidity: weather.humidity,
+                conditions: weather.conditions,
+                source: 'visualcrossing',
+                forecastTime: new Date(),
+              },
+            });
+
             // Format the log line as specified
             const formattedDate = gameDate.toISOString().slice(11, 16); // HH:MM
             console.log(
               `weather-vc: ${season} wk${game.week} ${game.awayTeamId}-${game.homeTeamId} @ ${formattedDate} → ` +
-              `temp ${weather.temp}°F, wind ${weather.windspeed} mph, precipProb ${weather.precipprob}%`
+              `temp ${weather.temp}°F, wind ${weather.windspeed} mph, precipProb ${weather.precipprob}% (saved)`
             );
             fetched++;
           } else {
