@@ -688,16 +688,19 @@ export default function GameDetailPage() {
           </div>
         </div>
 
-        {/* Talent Differential (Phase 3) */}
-        {game.ratings?.talentDifferential !== null && game.ratings?.talentDifferential !== undefined && (
+        {/* Talent Component - Clear and Separate from HFA */}
+        {(game.ratings?.home?.talentComponent !== null || game.ratings?.away?.talentComponent !== null) && (
           <div className="bg-white p-6 rounded-lg shadow mb-8">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Talent Advantage</h3>
-              <InfoTooltip content="Talent differential shows how much roster talent advantage contributes to the home team's edge. This decays as the season progresses (100% at week 0, 0% at week 8+)." />
+              <h3 className="text-lg font-semibold text-gray-900">Talent Component</h3>
+              <InfoTooltip content="Roster talent contribution to each team's power rating. Sourced from 247 Sports Composite talent ratings. Decays as the season progresses (100% weight at week 0, 0% at week 8+) as game statistics become more reliable. This is separate from Home Field Advantage (HFA)." />
             </div>
-            <div className="flex items-center justify-center gap-4">
-              <div className="text-center">
-                <div className="text-sm text-gray-500 mb-1">Home Team Talent Component</div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <div className="text-sm text-gray-600 mb-2 flex items-center gap-1">
+                  {game.teams?.home?.team?.name || game.game.homeTeam}
+                  <InfoTooltip content="Talent component points for the home team. Calculated from 247 Composite talent rating, blue-chip percentage, and recruiting class signal, then decayed based on weeks played." />
+                </div>
                 <div className="text-2xl font-bold text-gray-900">
                   {game.ratings.home.talentComponent !== null ? 
                     `${game.ratings.home.talentComponent >= 0 ? '+' : ''}${game.ratings.home.talentComponent.toFixed(1)} pts` :
@@ -705,14 +708,17 @@ export default function GameDetailPage() {
                   }
                 </div>
                 {game.ratings.home.decay !== null && (
-                  <div className="text-xs text-gray-400 mt-1">
-                    Decay: {(game.ratings.home.decay * 100).toFixed(0)}%
+                  <div className="text-xs text-gray-500 mt-2">
+                    Decay factor: {(game.ratings.home.decay * 100).toFixed(0)}% 
+                    <span className="ml-1 text-gray-400">(weeks played: {Math.round((1 - game.ratings.home.decay) * 8)})</span>
                   </div>
                 )}
               </div>
-              <div className="text-3xl text-gray-400">−</div>
-              <div className="text-center">
-                <div className="text-sm text-gray-500 mb-1">Away Team Talent Component</div>
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <div className="text-sm text-gray-600 mb-2 flex items-center gap-1">
+                  {game.teams?.away?.team?.name || game.game.awayTeam}
+                  <InfoTooltip content="Talent component points for the away team. Calculated from 247 Composite talent rating, blue-chip percentage, and recruiting class signal, then decayed based on weeks played." />
+                </div>
                 <div className="text-2xl font-bold text-gray-900">
                   {game.ratings.away.talentComponent !== null ? 
                     `${game.ratings.away.talentComponent >= 0 ? '+' : ''}${game.ratings.away.talentComponent.toFixed(1)} pts` :
@@ -720,18 +726,29 @@ export default function GameDetailPage() {
                   }
                 </div>
                 {game.ratings.away.decay !== null && (
-                  <div className="text-xs text-gray-400 mt-1">
-                    Decay: {(game.ratings.away.decay * 100).toFixed(0)}%
+                  <div className="text-xs text-gray-500 mt-2">
+                    Decay factor: {(game.ratings.away.decay * 100).toFixed(0)}%
+                    <span className="ml-1 text-gray-400">(weeks played: {Math.round((1 - game.ratings.away.decay) * 8)})</span>
                   </div>
                 )}
               </div>
-              <div className="text-3xl text-gray-400">=</div>
-              <div className="text-center">
-                <div className="text-sm text-gray-500 mb-1">Talent Differential</div>
-                <div className={`text-3xl font-bold ${game.ratings.talentDifferential >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <div className="text-sm text-gray-600 mb-2 flex items-center gap-1">
+                  Talent Differential
+                  <InfoTooltip content="Home team talent advantage = (Home talent component) - (Away talent component). This is independent of Home Field Advantage (HFA). Positive means home team has more roster talent." />
+                </div>
+                <div className={`text-2xl font-bold ${game.ratings.talentDifferential >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                   {game.ratings.talentDifferential >= 0 ? '+' : ''}{game.ratings.talentDifferential.toFixed(1)} pts
                 </div>
-                <div className="text-xs text-gray-400 mt-1">(Home advantage)</div>
+                <div className="text-xs text-gray-500 mt-2">
+                  Home advantage (independent of HFA)
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <div className="text-xs text-gray-500">
+                <strong>Data Source:</strong> 247 Sports Composite Talent Ratings (via CFBD API). 
+                <strong className="ml-2">Decay:</strong> Talent influence decreases linearly from 100% at week 0 to 0% at week 8+ as game statistics become more reliable indicators of team strength.
               </div>
             </div>
           </div>
