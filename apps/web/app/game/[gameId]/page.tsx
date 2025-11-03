@@ -18,6 +18,7 @@ import { CollapsibleSection } from '@/components/CollapsibleSection';
 import { ErrorState } from '@/components/ErrorState';
 import { LineSparkline } from '@/components/LineSparkline';
 import { GameDetailSkeleton } from '@/components/GameDetailSkeleton';
+import { TOOLTIP_CONTENT } from '@/lib/tooltip-content';
 
 export default function GameDetailPage() {
   const params = useParams();
@@ -147,7 +148,7 @@ export default function GameDetailPage() {
             <div className="text-right">
               <div className="text-sm text-gray-500 flex items-center justify-end gap-1">
                 Model Version
-                <InfoTooltip content="Ratings Model v1 uses feature-based power ratings calculated from offensive and defensive statistics. Click version number to view changelog." />
+                <InfoTooltip content={TOOLTIP_CONTENT.MODEL_VERSION} />
               </div>
               <Link 
                 href="/docs/changelog"
@@ -190,7 +191,7 @@ export default function GameDetailPage() {
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
             <h3 className="text-lg font-semibold text-blue-900 mb-3 flex items-center gap-2">
               Betting Lines
-              <InfoTooltip content="Current betting market lines for this game. These are the lines you would bet against at sportsbooks." />
+              <InfoTooltip content={TOOLTIP_CONTENT.MARKET_LINES} />
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-white p-3 rounded border border-blue-100">
@@ -264,13 +265,13 @@ export default function GameDetailPage() {
             <div>
               <h4 className="text-md font-medium text-gray-900 mb-3 flex items-center gap-2">
                 Spread
-                <InfoTooltip content="Spread is shown in favorite-centric format: the favorite always shows -X.X (laying points). Our model calculates its own spread prediction based on team ratings." />
+                <InfoTooltip content={TOOLTIP_CONTENT.SPREAD_FORMAT} />
               </h4>
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-gray-500 flex items-center gap-1">
                     Model Favorite
-                    <InfoTooltip content="Our model's predicted favorite team and spread. The favorite always shows -X.X (laying points)." />
+                    <InfoTooltip content={TOOLTIP_CONTENT.MODEL_FAVORITE} />
                   </div>
                   <div className="text-lg font-semibold text-gray-900">
                     {game.model?.favorite ? `${game.model.favorite.teamName} ${game.model.favorite.spread.toFixed(1)}` : '—'}
@@ -279,7 +280,7 @@ export default function GameDetailPage() {
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-gray-500 flex items-center gap-1">
                     Market Favorite
-                    <InfoTooltip content="The betting market's favorite team and spread. This is what you'd actually bet against." />
+                    <InfoTooltip content={TOOLTIP_CONTENT.MARKET_FAVORITE} />
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <div className="flex items-center gap-3">
@@ -319,7 +320,7 @@ export default function GameDetailPage() {
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-gray-500 flex items-center gap-1">
                     ATS Edge
-                    <InfoTooltip content="ATS Edge = (Model favorite spread) - (Market favorite spread). Positive means model thinks the favorite should lay more points. Negative means model thinks favorite should lay fewer points." />
+                    <InfoTooltip content={TOOLTIP_CONTENT.ATS_EDGE_FORMULA} />
                   </div>
                   <div className={`text-sm font-medium ${game.edge?.atsEdge >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
                     {game.edge?.atsEdge >= 0 ? '+' : ''}{game.edge?.atsEdge?.toFixed(1)} pts
@@ -332,20 +333,20 @@ export default function GameDetailPage() {
             <div>
               <h4 className="text-md font-medium text-gray-900 mb-3 flex items-center gap-2">
                 Total
-                <InfoTooltip content="The total points expected to be scored by both teams combined. You can bet over or under this number." />
+                <InfoTooltip content={TOOLTIP_CONTENT.TOTAL_EXPLANATION} />
               </h4>
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-gray-500 flex items-center gap-1">
                     Model Total
-                    <InfoTooltip content="Our model's predicted total points for this game, based on team offensive/defensive ratings and pace." />
+                    <InfoTooltip content={TOOLTIP_CONTENT.MODEL_TOTAL} />
                   </div>
                   <div className="text-lg font-semibold text-gray-900">{game.model?.total?.toFixed(1) || '—'}</div>
                 </div>
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-gray-500 flex items-center gap-1">
                     Market Total
-                    <InfoTooltip content="The best available total points line from the betting market (prefers SGO source, then latest). This is what you'd actually bet against." />
+                    <InfoTooltip content={TOOLTIP_CONTENT.MARKET_TOTAL} />
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <div className="flex items-center gap-3">
@@ -383,7 +384,7 @@ export default function GameDetailPage() {
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-gray-500 flex items-center gap-1">
                     Total Edge
-                    <InfoTooltip content="Total Edge = Model Total - Market Total. Positive means model thinks Over (higher scoring), negative means model thinks Under (lower scoring)." />
+                    <InfoTooltip content={TOOLTIP_CONTENT.TOTAL_EDGE_FORMULA} />
                   </div>
                   <div className={`text-sm font-medium ${game.edge?.totalEdge >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {game.edge?.totalEdge >= 0 ? '+' : ''}{game.edge?.totalEdge?.toFixed(1)} pts
@@ -458,7 +459,7 @@ export default function GameDetailPage() {
             <div className="mt-6 pt-6 border-t border-gray-200">
               <div className="flex items-center justify-between mb-3">
                 <h4 className="text-md font-medium text-gray-900">Weather Conditions</h4>
-                <InfoTooltip content="Game-time weather forecast from Visual Crossing for the game date and kickoff time. Weather can affect scoring, especially wind and precipitation." />
+                <InfoTooltip content={TOOLTIP_CONTENT.WEATHER} />
               </div>
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 mb-3">
                 <div className="text-xs text-blue-700 font-medium">
@@ -507,7 +508,7 @@ export default function GameDetailPage() {
           <div className="mt-6 pt-6 border-t border-gray-200">
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-md font-medium text-gray-900">Injuries</h4>
-              <InfoTooltip content="Player injury reports from ESPN. OUT = confirmed out, QUESTIONABLE = may not play, PROBABLE = likely to play, DOUBTFUL = unlikely to play." />
+              <InfoTooltip content={TOOLTIP_CONTENT.INJURIES} />
             </div>
             {game.injuries && game.injuries.length > 0 ? (
               <div className="space-y-2">
@@ -569,7 +570,7 @@ export default function GameDetailPage() {
             <div className="mt-6 pt-6 border-t border-gray-200">
               <div className="flex items-center justify-between mb-4">
                 <h4 className="text-md font-medium text-gray-900">Line Movement</h4>
-                <InfoTooltip content="Shows how the betting lines have moved over time. Green dot = opening line, Red dot = closing line. Line movement can indicate where sharp money is going. Labels show exact values at Open and Close." />
+                <InfoTooltip content={TOOLTIP_CONTENT.LINE_MOVEMENT} />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {game.lineHistory.history?.spread && game.lineHistory.history.spread.length > 0 && game.lineHistory.statistics?.spread && (
@@ -612,7 +613,7 @@ export default function GameDetailPage() {
           <div className="mt-6 pt-6 border-t border-gray-200">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">Recommended Picks</h3>
-              <InfoTooltip content="These are our model's betting recommendations based on comparing our predictions to the market. Grades (A/B/C) indicate confidence level based on edge magnitude. A ≥ 4.0 pts, B ≥ 3.0 pts, C ≥ 2.0 pts. Always do your own research before placing bets." />
+              <InfoTooltip content={TOOLTIP_CONTENT.RECOMMENDED_PICKS + ' ' + TOOLTIP_CONTENT.GRADE_THRESHOLDS} />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* ATS Pick Card */}
@@ -639,7 +640,7 @@ export default function GameDetailPage() {
                         {game.picks.spread.edgePts >= 0 ? '+' : ''}{game.picks.spread.edgePts?.toFixed(1)} pts
                       </span>
                     </div>
-                    <InfoTooltip content={`ATS Edge = (Model favorite spread) - (Market favorite spread). Grade ${game.picks.spread.grade} indicates ${game.picks.spread.grade === 'A' ? 'high' : game.picks.spread.grade === 'B' ? 'medium' : 'low'} confidence based on edge magnitude.`} />
+                    <InfoTooltip content={`${TOOLTIP_CONTENT.ATS_EDGE_FORMULA} ${game.picks.spread.grade === 'A' ? TOOLTIP_CONTENT.GRADE_A : game.picks.spread.grade === 'B' ? TOOLTIP_CONTENT.GRADE_B : TOOLTIP_CONTENT.GRADE_C}`} />
                   </div>
                 </div>
               )}
@@ -671,7 +672,7 @@ export default function GameDetailPage() {
                         )}
                       </span>
                     </div>
-                    <InfoTooltip content={`Total Edge = Model Total - Market Total. Positive means Over (higher scoring), negative means Under (lower scoring). Grade ${game.picks.total.grade} indicates ${game.picks.total.grade === 'A' ? 'high' : game.picks.total.grade === 'B' ? 'medium' : 'low'} confidence based on edge magnitude.`} />
+                    <InfoTooltip content={`${TOOLTIP_CONTENT.TOTAL_EDGE_FORMULA} ${game.picks.total.grade === 'A' ? TOOLTIP_CONTENT.GRADE_A : game.picks.total.grade === 'B' ? TOOLTIP_CONTENT.GRADE_B : TOOLTIP_CONTENT.GRADE_C}`} />
                   </div>
                 </div>
               )}
@@ -699,13 +700,13 @@ export default function GameDetailPage() {
         <div className="bg-white p-6 rounded-lg shadow mb-8">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900">Edge Analysis</h3>
-            <InfoTooltip content="Edge is the difference between our model's prediction and the betting market (in points). Positive edge means our model thinks the market is mispriced, creating a betting opportunity." />
+            <InfoTooltip content={TOOLTIP_CONTENT.EDGE_GENERAL} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="text-center">
               <div className="text-sm text-gray-500 flex items-center justify-center gap-1 mb-1">
                 Spread Edge
-                <InfoTooltip content="Difference between our model's spread prediction and the market spread. Higher positive edge = stronger betting opportunity on the spread." />
+                <InfoTooltip content={TOOLTIP_CONTENT.SPREAD_EDGE} />
               </div>
               <div className={`text-xl font-bold ${game.edge?.atsEdge >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
                 {game.edge?.atsEdge >= 0 ? '+' : ''}{game.edge?.atsEdge?.toFixed(1)} pts
@@ -714,7 +715,7 @@ export default function GameDetailPage() {
             <div className="text-center">
               <div className="text-sm text-gray-500 flex items-center justify-center gap-1 mb-1">
                 Total Edge
-                <InfoTooltip content="Difference between our model's total prediction and the market total. Positive edge suggests over, negative suggests under." />
+                <InfoTooltip content={TOOLTIP_CONTENT.TOTAL_EDGE_VALUE} />
               </div>
               <div className={`text-xl font-bold ${game.edge?.totalEdge >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 {game.edge?.totalEdge >= 0 ? '+' : ''}{game.edge?.totalEdge?.toFixed(1)} pts
@@ -726,7 +727,7 @@ export default function GameDetailPage() {
             <div className="text-center">
               <div className="text-sm text-gray-500 flex items-center justify-center gap-1 mb-1">
                 Max Edge
-                <InfoTooltip content="The larger of ATS edge or Total edge (absolute value). This is the strongest betting opportunity for this game." />
+                <InfoTooltip content={TOOLTIP_CONTENT.MAX_EDGE} />
               </div>
               <div className="text-xl font-bold text-gray-900">{game.edge?.maxEdge?.toFixed(1)} pts</div>
             </div>
@@ -738,13 +739,13 @@ export default function GameDetailPage() {
           <div className="bg-white p-6 rounded-lg shadow mb-8">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">Talent Component</h3>
-              <InfoTooltip content="Roster talent contribution to each team's power rating. Sourced from 247 Sports Composite talent ratings. Decays as the season progresses (100% weight at week 0, 0% at week 8+) as game statistics become more reliable. This is separate from Home Field Advantage (HFA)." />
+              <InfoTooltip content={TOOLTIP_CONTENT.TALENT_COMPONENT} />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="bg-gray-50 p-4 rounded-lg">
                 <div className="text-sm text-gray-600 mb-2 flex items-center gap-1">
                   {game.teams?.home?.team?.name || game.game.homeTeam}
-                  <InfoTooltip content="Talent component points for the home team. Calculated from 247 Composite talent rating, blue-chip percentage, and recruiting class signal, then decayed based on weeks played." />
+                  <InfoTooltip content={`${TOOLTIP_CONTENT.TALENT_SOURCE} ${TOOLTIP_CONTENT.TALENT_DECAY}`} />
                 </div>
                 <div className="text-2xl font-bold text-gray-900">
                   {game.ratings.home.talentComponent !== null ? 
@@ -762,7 +763,7 @@ export default function GameDetailPage() {
               <div className="bg-gray-50 p-4 rounded-lg">
                 <div className="text-sm text-gray-600 mb-2 flex items-center gap-1">
                   {game.teams?.away?.team?.name || game.game.awayTeam}
-                  <InfoTooltip content="Talent component points for the away team. Calculated from 247 Composite talent rating, blue-chip percentage, and recruiting class signal, then decayed based on weeks played." />
+                  <InfoTooltip content={`${TOOLTIP_CONTENT.TALENT_SOURCE} ${TOOLTIP_CONTENT.TALENT_DECAY}`} />
                 </div>
                 <div className="text-2xl font-bold text-gray-900">
                   {game.ratings.away.talentComponent !== null ? 
@@ -780,7 +781,7 @@ export default function GameDetailPage() {
               <div className="bg-blue-50 p-4 rounded-lg">
                 <div className="text-sm text-gray-600 mb-2 flex items-center gap-1">
                   Talent Differential
-                  <InfoTooltip content="Home team talent advantage = (Home talent component) - (Away talent component). This is independent of Home Field Advantage (HFA). Positive means home team has more roster talent." />
+                  <InfoTooltip content={`Home team talent advantage = (Home talent component) - (Away talent component). This is independent of Home Field Advantage (HFA). Positive means home team has more roster talent. ${TOOLTIP_CONTENT.TALENT_SOURCE}`} />
                 </div>
                 <div className={`text-2xl font-bold ${game.ratings.talentDifferential >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                   {game.ratings.talentDifferential >= 0 ? '+' : ''}{game.ratings.talentDifferential.toFixed(1)} pts
