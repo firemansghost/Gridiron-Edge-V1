@@ -342,6 +342,94 @@ export default function GameDetailPage() {
           </div>
 
           {/* Line Movement History */}
+          {/* Weather Data */}
+          {game.weather && (
+            <div className="mt-6 pt-6 border-t border-gray-200">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-md font-medium text-gray-900">Weather Conditions</h4>
+                <InfoTooltip content="Game-time weather forecast from Visual Crossing. Weather can affect scoring, especially wind and precipitation." />
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-gray-50 p-3 rounded-lg">
+                  <div className="text-xs text-gray-500 mb-1">Temperature</div>
+                  <div className="text-lg font-semibold text-gray-900">{game.weather.temperature}°F</div>
+                </div>
+                <div className="bg-gray-50 p-3 rounded-lg">
+                  <div className="text-xs text-gray-500 mb-1">Wind Speed</div>
+                  <div className="text-lg font-semibold text-gray-900">{game.weather.windSpeed} mph</div>
+                </div>
+                <div className="bg-gray-50 p-3 rounded-lg">
+                  <div className="text-xs text-gray-500 mb-1">Precipitation</div>
+                  <div className="text-lg font-semibold text-gray-900">{game.weather.precipitationProb}%</div>
+                </div>
+                {game.weather.conditions && (
+                  <div className="bg-gray-50 p-3 rounded-lg">
+                    <div className="text-xs text-gray-500 mb-1">Conditions</div>
+                    <div className="text-lg font-semibold text-gray-900">{game.weather.conditions}</div>
+                  </div>
+                )}
+              </div>
+              {game.weather.humidity && (
+                <div className="text-xs text-gray-500 mt-2">
+                  Humidity: {game.weather.humidity}% • Source: {game.weather.source} • Forecast: {new Date(game.weather.forecastTime).toLocaleString()}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Injury Data */}
+          {game.injuries && game.injuries.length > 0 && (
+            <div className="mt-6 pt-6 border-t border-gray-200">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-md font-medium text-gray-900">Injuries</h4>
+                <InfoTooltip content="Player injury reports. OUT = confirmed out, QUESTIONABLE = may not play, PROBABLE = likely to play, DOUBTFUL = unlikely to play." />
+              </div>
+              <div className="space-y-2">
+                {game.injuries.map((injury: any) => (
+                  <div key={injury.id} className="bg-gray-50 p-3 rounded-lg">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-sm font-semibold text-gray-900">{injury.teamName}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded ${
+                            injury.severity === 'OUT' ? 'bg-red-100 text-red-800' :
+                            injury.severity === 'QUESTIONABLE' ? 'bg-yellow-100 text-yellow-800' :
+                            injury.severity === 'PROBABLE' ? 'bg-green-100 text-green-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {injury.severity}
+                          </span>
+                        </div>
+                        {injury.playerName && (
+                          <div className="text-sm text-gray-700">
+                            {injury.playerName} ({injury.position})
+                          </div>
+                        )}
+                        {!injury.playerName && injury.position && (
+                          <div className="text-sm text-gray-700">{injury.position}</div>
+                        )}
+                        {injury.bodyPart && (
+                          <div className="text-xs text-gray-500">Body Part: {injury.bodyPart}</div>
+                        )}
+                        {injury.injuryType && (
+                          <div className="text-xs text-gray-500">Type: {injury.injuryType}</div>
+                        )}
+                        {injury.status && (
+                          <div className="text-xs text-gray-500 mt-1">{injury.status}</div>
+                        )}
+                      </div>
+                      {injury.reportedAt && (
+                        <div className="text-xs text-gray-400 ml-4">
+                          {new Date(injury.reportedAt).toLocaleDateString()}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {lineHistory && (lineHistory.history?.spread?.length > 0 || lineHistory.history?.total?.length > 0) && (
             <div className="mt-6 pt-6 border-t border-gray-200">
               <div className="flex items-center justify-between mb-3">

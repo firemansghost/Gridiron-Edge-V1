@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
 
     // Group by strategy if no specific strategy requested
     let strategyBreakdown = null;
-    if (!strategy) {
+    if (!strategy || strategy.trim() === '' || strategy === 'all') {
       const strategies = await prisma.bet.groupBy({
         by: ['strategyTag'],
         where: { ...where, strategyTag: { not: null } },
@@ -108,7 +108,7 @@ export async function GET(request: NextRequest) {
       strategyBreakdown = strategies.map(s => ({
         strategy: s.strategyTag,
         count: s._count._all,
-        totalPnL: s._sum.pnl || 0,
+        totalPnL: s._sum.pnl ? Number(s._sum.pnl) : 0,
       }));
     }
 

@@ -1,0 +1,17 @@
+feat: Add backtesting framework for historical model validation
+
+- Create backtest_runner.ts with comprehensive backtesting logic
+- Freeze projections at snapshot timestamp (as-of date)
+- Load historical market lines and game results
+- Calculate hypothetical bet outcomes with spread/total bets
+- Support flat and Kelly bet sizing strategies
+- Compute metrics: hit rate, CLV, ROI, drawdown, bankroll growth
+
+Features:
+- Snapshot-based: Freeze projections at specific timestamp
+- Configurable filters: min edge, min confidence tier
+- Bet sizing: Flat (fixed %) or Kelly criterion (1/4 Kelly)
+- Metrics: Wins, losses, pushes, hit rate, ROI, avg CLV
+- Bankroll tracking: Peak, drawdown, final bankroll
+- Supports spread and total bets
+

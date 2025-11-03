@@ -22,6 +22,17 @@ export async function GET(
         homeTeam: true,
         awayTeam: true,
         marketLines: true,
+        weather: true,
+        injuries: {
+          include: {
+            team: {
+              select: {
+                id: true,
+                name: true,
+              }
+            }
+          }
+        },
         matchupOutputs: {
           where: {
             modelVersion: 'v0.0.1'
@@ -554,7 +565,33 @@ export async function GET(
       signConvention: {
         spread: 'home_minus_away',
         hfaPoints: 2.0
-      }
+      },
+
+      // Weather data (if available)
+      weather: game.weather ? {
+        temperature: game.weather.temperature,
+        windSpeed: game.weather.windSpeed,
+        precipitationProb: game.weather.precipitationProb,
+        humidity: game.weather.humidity,
+        conditions: game.weather.conditions,
+        source: game.weather.source,
+        forecastTime: game.weather.forecastTime,
+      } : null,
+
+      // Injury data (if available)
+      injuries: game.injuries.map(injury => ({
+        id: injury.id,
+        teamId: injury.teamId,
+        teamName: injury.team.name,
+        playerName: injury.playerName,
+        position: injury.position,
+        severity: injury.severity,
+        bodyPart: injury.bodyPart,
+        injuryType: injury.injuryType,
+        status: injury.status,
+        reportedAt: injury.reportedAt,
+        source: injury.source,
+      })),
     };
 
     return Response.json(response);

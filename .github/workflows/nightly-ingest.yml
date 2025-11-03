@@ -160,11 +160,27 @@ jobs:
       - name: Generate Prisma Client
         run: npm run prisma:generate
 
-      - name: Skip weather (not supported in simple version)
+      - name: Build jobs (for weather ingestion)
+        run: npm run build:jobs
+
+      - name: Calculate current week
+        id: current-week
+        run: |
+          if [ "${{ github.event.inputs.week }}" != "" ]; then
+            POLL_WEEK="${{ github.event.inputs.week }}"
+          else
+            # Calculate current week from database
+            POLL_WEEK=$(node scripts/get-current-week.mjs)
+          fi
+          echo "📅 Using week: $POLL_WEEK"
+          echo "POLL_WEEK=$POLL_WEEK" >> $GITHUB_ENV
+
+      - name: Fetch weather data from Visual Crossing
         if: ${{ env.VISUALCROSSING_API_KEY != '' }}
         run: |
-          echo "⛅ Weather adapter not yet supported in simple version..."
-          echo "⚠️  Skipping weather update (will be added later)"
+          echo "⛅ Fetching weather data for week $POLL_WEEK..."
+          node apps/jobs/dist/ingest.js weatherVc --season 2025 --weeks $POLL_WEEK
+          echo "✅ Weather data fetched"
 
       - name: Skip weather (no API key)
         if: ${{ env.VISUALCROSSING_API_KEY == '' }}

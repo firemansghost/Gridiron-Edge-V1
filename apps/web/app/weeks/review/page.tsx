@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { HeaderNav } from '@/components/HeaderNav';
+import { Footer } from '@/components/Footer';
 
 interface BetSummary {
   totalBets: number;
@@ -58,6 +60,29 @@ export default function WeekReviewPage() {
   const [error, setError] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
   const [grading, setGrading] = useState(false);
+  const [strategies, setStrategies] = useState<Array<{ strategy: string; count: number }>>([]);
+
+  // Fetch available strategies
+  useEffect(() => {
+    const fetchStrategies = async () => {
+      try {
+        const params = new URLSearchParams({
+          season: season.toString(),
+          week: week.toString(),
+        });
+        const response = await fetch(`/api/bets/summary?${params}`);
+        if (response.ok) {
+          const result = await response.json();
+          if (result.strategyBreakdown) {
+            setStrategies(result.strategyBreakdown);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch strategies:', err);
+      }
+    };
+    fetchStrategies();
+  }, [season, week]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -210,7 +235,10 @@ export default function WeekReviewPage() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <HeaderNav />
+      <div className="flex-1">
+        <div className="container mx-auto px-4 py-8">
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2">Week Review</h1>
         <p className="text-gray-600 mb-4">Review betting performance for a specific week</p>
@@ -260,8 +288,11 @@ export default function WeekReviewPage() {
               className="border rounded px-3 py-2"
             >
               <option value="">All Strategies</option>
-              <option value="TestStrategy1">Test Strategy 1</option>
-              <option value="TestStrategy2">Test Strategy 2</option>
+              {strategies.map((s) => (
+                <option key={s.strategy} value={s.strategy}>
+                  {s.strategy} ({s.count})
+                </option>
+              ))}
             </select>
           </div>
           
@@ -529,6 +560,9 @@ export default function WeekReviewPage() {
           )}
         </>
       )}
+        </div>
+      </div>
+      <Footer />
     </div>
   );
 }
