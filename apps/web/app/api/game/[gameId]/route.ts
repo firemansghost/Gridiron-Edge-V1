@@ -798,8 +798,8 @@ export async function GET(
         talentDifferential: talentDiff.talentDifferential, // Home - Away talent advantage (in points)
       },
       
-      // Model info
-      model: {
+      // Model configuration
+      modelConfig: {
         version: matchupOutput?.modelVersion || 'v0.0.1',
         hfa: 2.0, // Constant HFA for v1
         thresholds: {
