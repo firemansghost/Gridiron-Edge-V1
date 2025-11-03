@@ -7,6 +7,9 @@
 import { prisma } from '@/lib/prisma';
 import { computeSpreadPick, computeTotalPick, convertToFavoriteCentric, computeATSEdge } from '@/lib/pick-helpers';
 import { pickMarketLine, getLineValue, pickMoneyline, americanToProb } from '@/lib/market-line-helpers';
+import { NextResponse } from 'next/server';
+
+export const revalidate = 300; // Revalidate every 5 minutes (ISR-like caching)
 
 export async function GET(
   request: Request,
@@ -47,7 +50,7 @@ export async function GET(
     });
 
     if (!game) {
-      return Response.json(
+      return NextResponse.json(
         { success: false, error: 'Game not found' },
         { status: 404 }
       );

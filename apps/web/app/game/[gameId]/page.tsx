@@ -17,6 +17,7 @@ import { LoadingState } from '@/components/LoadingState';
 import { CollapsibleSection } from '@/components/CollapsibleSection';
 import { ErrorState } from '@/components/ErrorState';
 import { LineSparkline } from '@/components/LineSparkline';
+import { GameDetailSkeleton } from '@/components/GameDetailSkeleton';
 
 export default function GameDetailPage() {
   const params = useParams();
