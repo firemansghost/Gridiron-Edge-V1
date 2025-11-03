@@ -1127,7 +1127,19 @@ export async function GET(
       })(),
     };
 
-    return Response.json(response);
+    // Determine cache strategy based on game status
+    const isFinal = game.status === 'final';
+    const cacheHeaders = isFinal
+      ? { 
+          'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=1200' // 10min cache for final games, 20min stale
+        }
+      : { 
+          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=120' // 1min cache for live games, 2min stale
+        };
+
+    return NextResponse.json(response, {
+      headers: cacheHeaders
+    });
 
   } catch (error) {
     console.error('Error fetching game detail:', error);
