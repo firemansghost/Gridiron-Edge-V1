@@ -27,6 +27,7 @@ model Team {
   recruiting     Recruiting[]
   teamGameStats  TeamGameStat[]
   memberships    TeamMembership[]
+  injuries       Injury[]
 
   @@index([conference, division])
   @@index([name])
@@ -56,6 +57,7 @@ model Game {
   matchupOutputs MatchupOutput[]
   teamGameStats  TeamGameStat[]
   weather        Weather?
+  injuries       Injury[]
 
   @@index([season, week])
   @@index([homeTeamId, season])
@@ -382,4 +384,38 @@ model Weather {
   @@index([gameId])
   @@index([forecastTime])
   @@map("weather")
+}
+
+model Injury {
+  id              String      @id @default(cuid())
+  gameId          String      @map("game_id")
+  teamId          String      @map("team_id")
+  season          Int
+  week            Int
+  playerName       String?     @map("player_name") // Optional: player name if available
+  position         String      @map("position") // QB, OL, DL, WR, RB, DB, etc.
+  severity         InjurySeverity @map("severity") // 'out', 'questionable', 'probable'
+  bodyPart         String?     @map("body_part") // Optional: "knee", "shoulder", etc.
+  injuryType       String?     @map("injury_type") // Optional: "ACL", "concussion", etc.
+  status           String?     // Optional: additional status text
+  source           String      @default("manual") // "manual", "cfbd", "espn", etc.
+  reportedAt       DateTime?   @map("reported_at") // When injury was reported
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+  game             Game        @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  team             Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([gameId])
+  @@index([teamId, season])
+  @@index([season, week])
+  @@index([position])
+  @@index([severity])
+  @@map("injuries")
+}
+
+enum InjurySeverity {
+  OUT           // Player will not play
+  QUESTIONABLE  // Player may or may not play
+  PROBABLE      // Player is likely to play
+  DOUBTFUL      // Player unlikely to play
 }
