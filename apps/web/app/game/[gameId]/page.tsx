@@ -791,12 +791,16 @@ export default function GameDetailPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <div className="text-sm text-gray-500">Home Field Advantage</div>
-              <div className="text-lg text-gray-900">{game.model.hfa} points</div>
+              <div className="text-lg text-gray-900">{game.modelConfig?.hfa || 2.0} points</div>
             </div>
             <div>
               <div className="text-sm text-gray-500">Confidence Thresholds</div>
               <div className="text-sm text-gray-900">
-                A ≥ {game.model.thresholds.A} pts, B ≥ {game.model.thresholds.B} pts, C ≥ {game.model.thresholds.C} pts
+                {game.modelConfig?.thresholds ? (
+                  <>A ≥ {game.modelConfig.thresholds.A} pts, B ≥ {game.modelConfig.thresholds.B} pts, C ≥ {game.modelConfig.thresholds.C} pts</>
+                ) : (
+                  <>A ≥ 4.0 pts, B ≥ 3.0 pts, C ≥ 2.0 pts</>
+                )}
               </div>
             </div>
           </div>
