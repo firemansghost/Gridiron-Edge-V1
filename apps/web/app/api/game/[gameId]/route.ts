@@ -1131,7 +1131,7 @@ export async function GET(
 
   } catch (error) {
     console.error('Error fetching game detail:', error);
-    return Response.json(
+    return NextResponse.json(
       { 
         success: false, 
         error: 'Failed to fetch game detail',
