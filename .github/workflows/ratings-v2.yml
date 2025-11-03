@@ -62,21 +62,26 @@ jobs:
           echo "=== Validating season $SEASON (modelVersion='v2') ==="
           
           # Get expected FBS count from team_membership
-          EXPECTED_SQL="SELECT COUNT(*) AS count FROM team_membership WHERE season=$SEASON AND level='fbs';"
-          EXPECTED_OUTPUT=$(npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "$EXPECTED_SQL" 2>&1)
-          EXPECTED=$(echo "$EXPECTED_OUTPUT" | grep -oE '[0-9]+' | head -n 1)
+          EXPECTED_SQL="SELECT COUNT(*) FROM team_membership WHERE season=$SEASON AND level='fbs';"
+          EXPECTED=$(npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "$EXPECTED_SQL" 2>&1 | tail -n 1 | tr -d '[:space:]')
           
-          # Get actual v2 ratings count
-          ACTUAL_SQL="SELECT COUNT(*) AS count FROM team_season_ratings WHERE season=$SEASON AND model_version='v2' AND power_rating IS NOT NULL;"
-          ACTUAL_OUTPUT=$(npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "$ACTUAL_SQL" 2>&1)
-          ACTUAL=$(echo "$ACTUAL_OUTPUT" | grep -oE '[0-9]+' | head -n 1)
+          # Get actual v2 ratings count (use snake_case for DB column names)
+          ACTUAL_SQL="SELECT COUNT(*) FROM team_season_ratings WHERE season=$SEASON AND model_version='v2' AND power_rating IS NOT NULL;"
+          ACTUAL=$(npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "$ACTUAL_SQL" 2>&1 | tail -n 1 | tr -d '[:space:]')
           
           echo "Expected FBS=$EXPECTED, Ratings v2 computed=$ACTUAL (season=$SEASON)"
           
           if [ -z "$EXPECTED" ] || [ -z "$ACTUAL" ]; then
             echo "❌ ERROR: Could not parse counts from database output"
-            echo "Expected output: $EXPECTED_OUTPUT"
-            echo "Actual output: $ACTUAL_OUTPUT"
+            echo "Expected SQL: $EXPECTED_SQL"
+            echo "Actual SQL: $ACTUAL_SQL"
+            echo "Trying alternative query method..."
+            
+            # Try with debug output
+            echo "Expected query output:"
+            npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "$EXPECTED_SQL" 2>&1 || true
+            echo "Actual query output:"
+            npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "$ACTUAL_SQL" 2>&1 || true
             exit 1
           fi
           
