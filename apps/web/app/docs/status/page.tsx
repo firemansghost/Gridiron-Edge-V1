@@ -787,7 +787,7 @@ export default async function StatusPage() {
                 <div>
                   <h3 className="font-medium text-gray-900 mb-2">Talent Data</h3>
                   <p className="text-gray-700">
-                    {totalRecruitingRecords.toLocaleString()} talent records
+                    {rosterTalentCount} roster, {commitsCount} commits
                   </p>
                 </div>
                 <div>
