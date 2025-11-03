@@ -171,20 +171,28 @@ export function computeSpreadPick(
 
 /**
  * Computes total pick details
+ * Returns pick with clear Over/Under direction and edge display
  */
 export function computeTotalPick(impliedTotal: number, marketTotal: number) {
   if (impliedTotal === marketTotal) {
     return {
       totalPick: null,
-      totalPickLabel: null
+      totalPickLabel: null,
+      edgeDisplay: null
     };
   }
   
   const pick = impliedTotal > marketTotal ? 'Over' : 'Under';
   const roundedTotal = roundToHalf(marketTotal);
+  const edge = Math.abs(impliedTotal - marketTotal);
+  
+  // Format: "Over 55.5 by 3.5 (Model 59.0 vs Market 55.5)"
+  const totalPickLabel = `${pick} ${roundedTotal.toFixed(1)}`;
+  const edgeDisplay = `${pick} by ${edge.toFixed(1)} (Model ${impliedTotal.toFixed(1)} vs Market ${marketTotal.toFixed(1)})`;
   
   return {
     totalPick: pick as 'Over' | 'Under',
-    totalPickLabel: `${pick} ${roundedTotal.toFixed(1)}`
+    totalPickLabel,
+    edgeDisplay
   };
 }

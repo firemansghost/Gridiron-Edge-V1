@@ -587,10 +587,15 @@ export default function GameDetailPage() {
               <div className="bg-green-50 p-4 rounded-lg">
                 <div className="text-sm text-gray-500 flex items-center gap-1 mb-1">
                   Total Pick
-                  <InfoTooltip content="Our model recommends over or under the total. Only shown when there's a meaningful edge (2.0+ points)." />
+                  <InfoTooltip content="Our model recommends over or under the total. Total Edge = Model Total - Market Total. Positive means Over (higher scoring), negative means Under (lower scoring)." />
                 </div>
                 <div className="text-lg font-semibold text-gray-900">{game.picks?.total?.totalPickLabel || 'No edge'}</div>
-                {game.picks?.total?.totalPickLabel && (
+                {game.picks?.total?.totalPickLabel && game.picks?.total?.edgeDisplay && (
+                  <div className={`text-sm mt-1 ${game.picks?.total?.edgePts >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {game.picks.total.edgeDisplay}
+                  </div>
+                )}
+                {game.picks?.total?.totalPickLabel && !game.picks?.total?.edgeDisplay && (
                   <div className={`text-sm ${game.picks?.total?.edgePts >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     Edge: {game.picks?.total?.edgePts >= 0 ? '+' : ''}{game.picks?.total?.edgePts?.toFixed(1)} pts
                     {game.picks?.total?.edgePts && (

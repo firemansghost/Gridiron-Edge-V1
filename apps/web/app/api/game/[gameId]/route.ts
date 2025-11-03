@@ -116,27 +116,47 @@ export async function GET(
       computedSpread = homePower - awayPower + HFA;
 
       // Compute total using pace + efficiency
+      // Formula: Total Points = (Home Points Per Play × Home Pace) + (Away Points Per Play × Away Pace)
+      // Where Points Per Play is derived from EPA (Expected Points Added) or YPP (Yards Per Play)
       const homeEpaOff = homeStats?.epaOff ? Number(homeStats.epaOff) : null;
       const awayEpaOff = awayStats?.epaOff ? Number(awayStats.epaOff) : null;
       const homeYppOff = homeStats?.yppOff ? Number(homeStats.yppOff) : null;
       const awayYppOff = awayStats?.yppOff ? Number(awayStats.yppOff) : null;
       
+      // Default pace: ~70 plays per game for college football
       const homePaceOff = homeStats?.paceOff ? Number(homeStats.paceOff) : 70;
       const awayPaceOff = awayStats?.paceOff ? Number(awayStats.paceOff) : 70;
 
+      // Convert EPA to Points Per Play (PPP)
+      // EPA range is typically -0.5 to +0.5, so 7 * EPA gives us ~0-3.5 PPP range
+      // Cap at 0.7 PPP max (realistic upper bound for elite offenses)
       const homePpp = homeEpaOff !== null 
-        ? Math.max(0, Math.min(1.0, 7 * homeEpaOff))
+        ? Math.max(0, Math.min(0.7, 7 * homeEpaOff))
         : homeYppOff !== null 
-          ? 0.8 * homeYppOff
-          : 0.4;
+          ? Math.min(0.7, 0.8 * homeYppOff) // YPP to PPP proxy (capped)
+          : 0.4; // Default: average team scores ~0.4 points per play
       
       const awayPpp = awayEpaOff !== null
-        ? Math.max(0, Math.min(1.0, 7 * awayEpaOff))
+        ? Math.max(0, Math.min(0.7, 7 * awayEpaOff))
         : awayYppOff !== null
-          ? 0.8 * awayYppOff
+          ? Math.min(0.7, 0.8 * awayYppOff)
           : 0.4;
 
+      // Calculate total points: (Home PPP × Home Pace) + (Away PPP × Away Pace)
       computedTotal = (homePpp * homePaceOff) + (awayPpp * awayPaceOff);
+      
+      // Validation: Ensure total is in realistic range (20-90 points)
+      // Flag outliers but don't cap them (they might be legitimate for extreme matchups)
+      if (computedTotal < 20 || computedTotal > 90) {
+        console.warn(`[Game ${gameId}] Total calculation produced outlier: ${computedTotal.toFixed(1)}`, {
+          homePpp,
+          homePaceOff,
+          awayPpp,
+          awayPaceOff,
+          homeEpaOff,
+          awayEpaOff
+        });
+      }
     }
 
     // Use computed values if matchupOutput doesn't exist
@@ -223,6 +243,15 @@ export async function GET(
 
     // Total edge: Model Total - Market Total (positive = model thinks over, negative = under)
     const totalEdgePts = finalImpliedTotal - marketTotal;
+    
+    // Validation: Flag unrealistic total edge magnitudes
+    if (Math.abs(totalEdgePts) > 20) {
+      console.warn(`[Game ${gameId}] Large total edge detected: ${totalEdgePts.toFixed(1)}`, {
+        modelTotal: finalImpliedTotal,
+        marketTotal,
+        gameId
+      });
+    }
 
     // Convert date to America/Chicago timezone
     const kickoffTime = new Date(game.date).toLocaleString('en-US', {
