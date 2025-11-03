@@ -601,7 +601,9 @@ export default function GameDetailPage() {
                 Spread Edge
                 <InfoTooltip content="Difference between our model's spread prediction and the market spread. Higher positive edge = stronger betting opportunity on the spread." />
               </div>
-              <div className="text-xl font-bold text-gray-900">{formatEdge(game.edge.spreadEdge)} pts</div>
+              <div className={`text-xl font-bold ${game.edge?.atsEdge >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                {game.edge?.atsEdge >= 0 ? '+' : ''}{game.edge?.atsEdge?.toFixed(1)} pts
+              </div>
             </div>
             <div className="text-center">
               <div className="text-sm text-gray-500 flex items-center justify-center gap-1 mb-1">
