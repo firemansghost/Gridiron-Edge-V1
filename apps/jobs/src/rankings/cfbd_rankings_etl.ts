@@ -26,7 +26,28 @@ interface CFBDRanking {
 }
 
 /**
+ * Check if poll is FBS-relevant (AP Top 25, Coaches Poll, CFP)
+ * Filters out FCS, Division II, Division III polls
+ */
+function isFBSPoll(cfbdPollName: string): boolean {
+  const normalized = cfbdPollName.toLowerCase();
+  
+  // Skip non-FBS polls
+  if (normalized.includes('fcs')) return false;
+  if (normalized.includes('division ii') || normalized.includes('division 2')) return false;
+  if (normalized.includes('division iii') || normalized.includes('division 3')) return false;
+  
+  // FBS polls we care about
+  if (normalized.includes('ap top 25') || normalized === 'ap poll') return true;
+  if (normalized === 'coaches poll' || (normalized.includes('coach') && !normalized.includes('fcs') && !normalized.includes('division'))) return true;
+  if (normalized.includes('playoff') || normalized.includes('cfp') || normalized.includes('committee')) return true;
+  
+  return false;
+}
+
+/**
  * Map CFBD poll name to our PollType enum
+ * Only called for FBS polls (after isFBSPoll check)
  */
 function mapPollType(cfbdPollName: string): PollType | null {
   const normalized = cfbdPollName.toLowerCase();
@@ -34,7 +55,7 @@ function mapPollType(cfbdPollName: string): PollType | null {
   if (normalized.includes('ap') || normalized.includes('associated press')) {
     return 'AP';
   }
-  if (normalized.includes('coach') || normalized.includes('afca')) {
+  if (normalized.includes('coach')) {
     return 'COACHES';
   }
   if (normalized.includes('playoff') || normalized.includes('cfp') || normalized.includes('committee')) {
@@ -88,7 +109,11 @@ async function fetchCFBDRankings(season: number, week: number): Promise<CFBDRank
     // CFBD returns an array, but we expect one result per season/week
     const ranking = data.find(r => r.season === season && r.week === week) || data[0];
     
-    console.log(`   ✅ Found ${ranking.polls.length} polls for ${season} Week ${week}`);
+    // Count FBS polls only
+    const fbsPolls = ranking.polls.filter(p => isFBSPoll(p.poll));
+    const totalPolls = ranking.polls.length;
+    
+    console.log(`   ✅ Found ${totalPolls} polls (${fbsPolls.length} FBS-relevant) for ${season} Week ${week}`);
     
     return ranking;
   } catch (error) {
@@ -110,13 +135,18 @@ async function upsertRankings(
   let errors = 0;
 
   for (const poll of ranking.polls) {
+    // Skip non-FBS polls (FCS, DII, DIII) to reduce noise
+    if (!isFBSPoll(poll.poll)) {
+      continue; // Silently skip - not an error
+    }
+    
     const pollType = mapPollType(poll.poll);
     
     if (!pollType) {
       console.warn(`   ⚠️  Skipping unknown poll type: "${poll.poll}"`);
       continue;
     }
-
+    
     console.log(`   📋 Processing ${pollType} poll (${poll.poll})...`);
 
     for (const rankEntry of poll.ranks) {
