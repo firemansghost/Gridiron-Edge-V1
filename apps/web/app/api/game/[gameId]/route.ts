@@ -5,7 +5,7 @@
  */
 
 import { prisma } from '@/lib/prisma';
-import { computeSpreadPick, computeTotalPick } from '@/lib/pick-helpers';
+import { computeSpreadPick, computeTotalPick, convertToFavoriteCentric, computeATSEdge } from '@/lib/pick-helpers';
 import { pickMarketLine, getLineValue, pickMoneyline, americanToProb } from '@/lib/market-line-helpers';
 
 export async function GET(
@@ -184,7 +184,24 @@ export async function GET(
       };
     }
 
-    // Compute spread pick details
+    // Convert spreads to favorite-centric format
+    const modelSpreadFC = convertToFavoriteCentric(
+      finalImpliedSpread,
+      game.homeTeamId,
+      game.homeTeam.name,
+      game.awayTeamId,
+      game.awayTeam.name
+    );
+
+    const marketSpreadFC = convertToFavoriteCentric(
+      marketSpread,
+      game.homeTeamId,
+      game.homeTeam.name,
+      game.awayTeamId,
+      game.awayTeam.name
+    );
+
+    // Compute spread pick details (favorite-centric)
     const spreadPick = computeSpreadPick(
       finalImpliedSpread,
       game.homeTeam.name,
@@ -196,9 +213,16 @@ export async function GET(
     // Compute total pick details
     const totalPick = computeTotalPick(finalImpliedTotal, marketTotal);
 
-    // Calculate edge points
-    const spreadEdgePts = Math.abs(finalImpliedSpread - marketSpread);
-    const totalEdgePts = Math.abs(finalImpliedTotal - marketTotal);
+    // Calculate ATS edge (favorite-centric): positive means model thinks favorite should lay more
+    const atsEdge = computeATSEdge(
+      finalImpliedSpread,
+      marketSpread,
+      game.homeTeamId,
+      game.awayTeamId
+    );
+
+    // Total edge: Model Total - Market Total (positive = model thinks over, negative = under)
+    const totalEdgePts = finalImpliedTotal - marketTotal;
 
     // Convert date to America/Chicago timezone
     const kickoffTime = new Date(game.date).toLocaleString('en-US', {
@@ -693,11 +717,21 @@ export async function GET(
         awayScore: game.awayScore
       },
       
-      // Market data
+      // Market data (favorite-centric)
       market: {
-        spread: marketSpread,
+        spread: marketSpread, // Keep original for reference
         total: marketTotal,
         source: spreadLine?.bookName || 'Unknown',
+        favorite: {
+          teamId: marketSpreadFC.favoriteTeamId,
+          teamName: marketSpreadFC.favoriteTeamName,
+          spread: marketSpreadFC.favoriteSpread, // Always negative
+        },
+        underdog: {
+          teamId: marketSpreadFC.underdogTeamId,
+          teamName: marketSpreadFC.underdogTeamName,
+          spread: marketSpreadFC.underdogSpread, // Always positive
+        },
         meta: {
           spread: spreadMeta,
           total: totalMeta,
@@ -705,25 +739,37 @@ export async function GET(
         moneyline
       },
       
-      // Implied data
-      implied: {
-        spread: finalImpliedSpread,
+      // Model data (favorite-centric)
+      model: {
+        spread: finalImpliedSpread, // Keep original for reference
         total: finalImpliedTotal,
+        favorite: {
+          teamId: modelSpreadFC.favoriteTeamId,
+          teamName: modelSpreadFC.favoriteTeamName,
+          spread: modelSpreadFC.favoriteSpread, // Always negative
+        },
+        underdog: {
+          teamId: modelSpreadFC.underdogTeamId,
+          teamName: modelSpreadFC.underdogTeamName,
+          spread: modelSpreadFC.underdogSpread, // Always positive
+        },
         confidence: matchupOutput?.edgeConfidence || 'C'
       },
       
-      // Edge analysis
+      // Edge analysis (favorite-centric)
       edge: {
-        spreadEdge: spreadEdgePts,
-        totalEdge: totalEdgePts,
-        maxEdge: Math.max(spreadEdgePts, totalEdgePts)
+        atsEdge: atsEdge, // Positive = model thinks favorite should lay more
+        totalEdge: totalEdgePts, // Positive = model thinks over, negative = under
+        maxEdge: Math.max(Math.abs(atsEdge), Math.abs(totalEdgePts))
       },
 
       // New explicit pick fields
       picks: {
         spread: {
           ...spreadPick,
-          edgePts: spreadEdgePts
+          edgePts: atsEdge,
+          // For backward compatibility
+          spreadEdge: Math.abs(atsEdge),
         },
         total: {
           ...totalPick,

@@ -138,7 +138,7 @@ export default function GameDetailPage() {
                 href="/docs/changelog"
                 className="text-lg font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors inline-block"
               >
-                {game.model.version}
+                {game.modelConfig.version}
               </Link>
             </div>
           </div>
