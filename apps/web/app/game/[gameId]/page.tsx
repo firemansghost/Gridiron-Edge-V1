@@ -60,6 +60,40 @@ export default function GameDetailPage() {
     return edge >= 1.0 ? `+${edge.toFixed(1)}` : edge.toFixed(1);
   };
 
+  // Helper to render rank chips
+  const renderRankChips = (rankings: any) => {
+    if (!rankings) return null;
+    
+    const chips = [];
+    if (rankings.AP) {
+      chips.push(
+        <span key="AP" className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+          AP #{rankings.AP.rank}
+        </span>
+      );
+    }
+    if (rankings.CFP) {
+      chips.push(
+        <span key="CFP" className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+          CFP #{rankings.CFP.rank}
+        </span>
+      );
+    }
+    if (rankings.COACHES) {
+      chips.push(
+        <span key="COACHES" className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+          Coaches #{rankings.COACHES.rank}
+        </span>
+      );
+    }
+    
+    if (chips.length === 0) {
+      return <span className="text-xs text-gray-400">NR</span>;
+    }
+    
+    return <div className="flex items-center gap-1">{chips}</div>;
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -120,6 +154,34 @@ export default function GameDetailPage() {
               >
                 {game.modelConfig.version}
               </Link>
+            </div>
+          </div>
+
+          {/* Team Header with Rankings */}
+          <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-lg font-semibold text-gray-900">{game.teams?.away?.team?.name || game.game.awayTeam}</div>
+                  <div className="text-sm text-gray-600 mt-1">
+                    {game.teams?.away?.record ? `${game.teams.away.record.wins}-${game.teams.away.record.losses}` : '—'} • {game.teams?.away?.form || '—'}
+                  </div>
+                </div>
+                <div className="text-right">
+                  {renderRankChips(game.rankings?.away)}
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-lg font-semibold text-gray-900">{game.teams?.home?.team?.name || game.game.homeTeam}</div>
+                  <div className="text-sm text-gray-600 mt-1">
+                    {game.teams?.home?.record ? `${game.teams.home.record.wins}-${game.teams.home.record.losses}` : '—'} • {game.teams?.home?.form || '—'}
+                  </div>
+                </div>
+                <div className="text-right">
+                  {renderRankChips(game.rankings?.home)}
+                </div>
+              </div>
             </div>
           </div>
 

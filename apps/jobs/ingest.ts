@@ -660,6 +660,19 @@ async function main() {
     }
 
     // Special handling for ESPN injury adapter (doesn't follow standard flow)
+    if (options.adapter === 'cfbd-rankings' || options.adapter === 'cfbdRankings') {
+      // Special handler for CFBD rankings ETL
+      console.log('📊 Running CFBD Rankings ETL...');
+      const rankingsModule = require('./src/rankings/cfbd_rankings_etl');
+      if (rankingsModule.main) {
+        await rankingsModule.main();
+      } else {
+        throw new Error('CFBD rankings ETL main function not found');
+      }
+      await prisma.$disconnect();
+      process.exit(0);
+    }
+
     if (options.adapter === 'espn-injuries' || options.adapter === 'espnInjuries' || adapter.getName() === 'ESPNInjuries') {
       const { fetchESPNInjuries } = require('../dist/adapters/ESPNInjuryAdapter');
       await fetchESPNInjuries(options.season, options.weeks);

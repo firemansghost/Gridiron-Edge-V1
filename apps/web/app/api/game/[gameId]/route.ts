@@ -1048,6 +1048,60 @@ export async function GET(
           },
         };
       })(),
+
+      // Rankings (pre-computed for client)
+      rankings: await (async () => {
+        // Fetch rankings for both teams for the current week
+        const [homeRankings, awayRankings] = await Promise.all([
+          prisma.teamRanking.findMany({
+            where: {
+              season: game.season,
+              week: game.week,
+              teamId: game.homeTeamId,
+            },
+            select: {
+              pollType: true,
+              rank: true,
+              points: true,
+            },
+          }),
+          prisma.teamRanking.findMany({
+            where: {
+              season: game.season,
+              week: game.week,
+              teamId: game.awayTeamId,
+            },
+            select: {
+              pollType: true,
+              rank: true,
+              points: true,
+            },
+          }),
+        ]);
+
+        // Format rankings as { AP: 10, COACHES: 12, CFP: 11 } or null if not ranked
+        const formatRankings = (rankings: any[]) => {
+          const result: Record<string, { rank: number; points?: number | null } | null> = {
+            AP: null,
+            COACHES: null,
+            CFP: null,
+          };
+          
+          for (const ranking of rankings) {
+            result[ranking.pollType] = {
+              rank: ranking.rank,
+              points: ranking.points,
+            };
+          }
+          
+          return result;
+        };
+
+        return {
+          home: formatRankings(homeRankings),
+          away: formatRankings(awayRankings),
+        };
+      })(),
     };
 
     return Response.json(response);

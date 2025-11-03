@@ -51,7 +51,8 @@
     "src/backtesting/backtest_runner.ts",
     "adapters/ESPNInjuryAdapter.ts",
     "src/talent/cfbd_team_roster_talent.ts",
-    "src/talent/cfbd_team_class_commits.ts"
+    "src/talent/cfbd_team_class_commits.ts",
+    "src/rankings/cfbd_rankings_etl.ts"
   ],
   "exclude": [
     "**/*.test.ts",
