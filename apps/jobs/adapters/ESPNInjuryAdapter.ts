@@ -243,7 +243,18 @@ export async function fetchESPNInjuries(season: number, weeks: number[]): Promis
       const teamDisplayName = teamInjuries.displayName;
       
       // Resolve ESPN team name to our team ID
-      const teamId = teamResolver.resolveTeam(teamDisplayName, 'college-football');
+      // Try with both general aliases and CFBD aliases
+      let teamId = teamResolver.resolveTeam(teamDisplayName, 'college-football');
+      
+      // If not found, try stripping common suffixes (Rainbow Warriors, Hoosiers, etc.)
+      if (!teamId) {
+        const stripped = teamDisplayName
+          .replace(/\s+(Rainbow Warriors|Warriors|Hoosiers|Fighting Illini|Crimson Tide|Tigers|Bulldogs|Wildcats|Spartans|Eagles|Huskies|Aggies|Longhorns|Sooners|Buckeyes|Wolverines|Badgers|Nittany Lions|Fighting Irish|Jayhawks|Seminoles|Gators|Gamecocks|Volunteers|Commodores|Razorbacks|Rebels|Tide|Blue Devils|Demon Deacons|Cavaliers|Yellow Jackets|Hokies|Wolfpack|Tar Heels|Blue Hens|Bears|Mountaineers|Golden Hurricane|Scarlet Knights|Cardinals|Panthers|Cougars|Mustangs|Horned Frogs|Miners|Rebels|Cowboys|Aztecs|Broncos|Rams|Falcons|Golden Flashes|RedHawks|Owls|Midshipmen|Monarchs|Jaguars|Mean Green|Green Wave|Bearcats|Roadrunners|Bobcats|Black Knights|Chanticleers|Dukes|Ragin[ ']?Cajuns|Golden Eagles|Bulldogs|Eagles|Chippewas|Rockets|Cardinal|Bruins|Ducks|Beavers|Golden Bears|Sun Devils|Buffaloes|Utes|Cougars|Aggies|Red Raiders|Golden Hurricane|Hurricane|Hurricanes|Seminoles|Terrapins|Panthers|Orange|Knights|Wildcats|Boilermakers|Cornhuskers|Hawkeyes|Cyclones|Golden Gophers|Golden Hurricane|Rockets|Chippewas|Golden Flashes|RedHawks|Zips|Falcons|Bobcats|Broncos|Rams|Aztecs|Cougars|Aggies|Broncos|Fresno State|San Jose State|San José State)$/i, '')
+          .trim();
+        if (stripped !== teamDisplayName) {
+          teamId = teamResolver.resolveTeam(stripped, 'college-football');
+        }
+      }
       
       if (!teamId) {
         console.log(`   ⚠️  Could not resolve team: ${teamDisplayName}`);
