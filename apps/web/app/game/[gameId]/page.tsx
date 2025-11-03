@@ -582,7 +582,12 @@ export default function GameDetailPage() {
                 </div>
                 <div className="text-lg font-semibold text-gray-900">{game.picks?.total?.totalPickLabel || 'No edge'}</div>
                 {game.picks?.total?.totalPickLabel && (
-                  <div className="text-sm text-green-600">Edge: +{game.picks?.total?.edgePts?.toFixed(1)} pts</div>
+                  <div className={`text-sm ${game.picks?.total?.edgePts >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    Edge: {game.picks?.total?.edgePts >= 0 ? '+' : ''}{game.picks?.total?.edgePts?.toFixed(1)} pts
+                    {game.picks?.total?.edgePts && (
+                      <span className="ml-1 text-xs">({game.picks.total.edgePts >= 0 ? 'Over' : 'Under'})</span>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -610,14 +615,19 @@ export default function GameDetailPage() {
                 Total Edge
                 <InfoTooltip content="Difference between our model's total prediction and the market total. Positive edge suggests over, negative suggests under." />
               </div>
-              <div className="text-xl font-bold text-gray-900">{formatEdge(game.edge.totalEdge)} pts</div>
+              <div className={`text-xl font-bold ${game.edge?.totalEdge >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {game.edge?.totalEdge >= 0 ? '+' : ''}{game.edge?.totalEdge?.toFixed(1)} pts
+                {game.edge?.totalEdge && (
+                  <div className="text-xs mt-1">({game.edge.totalEdge >= 0 ? 'Over' : 'Under'})</div>
+                )}
+              </div>
             </div>
             <div className="text-center">
               <div className="text-sm text-gray-500 flex items-center justify-center gap-1 mb-1">
                 Max Edge
-                <InfoTooltip content="The larger of spread edge or total edge. This is the strongest betting opportunity for this game." />
+                <InfoTooltip content="The larger of ATS edge or Total edge (absolute value). This is the strongest betting opportunity for this game." />
               </div>
-              <div className="text-xl font-bold text-gray-900">{formatEdge(game.edge.maxEdge)} pts</div>
+              <div className="text-xl font-bold text-gray-900">{game.edge?.maxEdge?.toFixed(1)} pts</div>
             </div>
           </div>
         </div>
