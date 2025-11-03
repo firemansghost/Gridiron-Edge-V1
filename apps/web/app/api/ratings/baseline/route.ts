@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get('limit') || '25');
 
     const ratings = await prisma.teamSeasonRating.findMany({
-      where: { season },
+      where: { season, modelVersion: 'v1' },
       orderBy: { rating: 'desc' },
       take: limit,
       select: {

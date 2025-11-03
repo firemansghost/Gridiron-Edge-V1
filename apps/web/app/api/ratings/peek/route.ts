@@ -123,9 +123,10 @@ export async function GET(request: NextRequest) {
     // Load rating from database
     const rating = await prisma.teamSeasonRating.findUnique({
       where: {
-        season_teamId: {
+        season_teamId_modelVersion: {
           season,
           teamId,
+          modelVersion: 'v1',
         },
       },
     });
@@ -217,7 +218,7 @@ export async function GET(request: NextRequest) {
 
       // Last resort: baseline ratings
       const baselineRating = await prisma.teamSeasonRating.findUnique({
-        where: { season_teamId: { season, teamId } }
+        where: { season_teamId_modelVersion: { season, teamId, modelVersion: 'v1' } }
       });
 
       if (baselineRating) {

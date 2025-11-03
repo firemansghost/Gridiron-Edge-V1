@@ -34,12 +34,12 @@ export async function GET(request: NextRequest) {
     const [homeRating, awayRating] = await Promise.all([
       prisma.teamSeasonRating.findUnique({
         where: {
-          season_teamId: { season, teamId: homeId },
+          season_teamId_modelVersion: { season, teamId: homeId, modelVersion: 'v1' },
         },
       }),
       prisma.teamSeasonRating.findUnique({
         where: {
-          season_teamId: { season, teamId: awayId },
+          season_teamId_modelVersion: { season, teamId: awayId, modelVersion: 'v1' },
         },
       }),
     ]);

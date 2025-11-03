@@ -182,9 +182,10 @@ export class FeatureLoader {
     try {
       const baselineRating = await this.prisma.teamSeasonRating.findUnique({
         where: {
-          season_teamId: {
+          season_teamId_modelVersion: {
             season,
             teamId,
+            modelVersion: 'v1',
           }
         }
       });

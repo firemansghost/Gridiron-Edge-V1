@@ -268,9 +268,10 @@ async function upsertTeamSeasonRatings(
 
       await prisma.teamSeasonRating.upsert({
         where: {
-          season_teamId: {
+          season_teamId_modelVersion: {
             season,
-            teamId
+            teamId,
+            modelVersion: 'v1'
           }
         },
         update: {
@@ -286,6 +287,7 @@ async function upsertTeamSeasonRatings(
         create: {
           season,
           teamId,
+          modelVersion: 'v1',
           games: stats.games,
           pointsFor: stats.pointsFor,
           pointsAgainst: stats.pointsAgainst,

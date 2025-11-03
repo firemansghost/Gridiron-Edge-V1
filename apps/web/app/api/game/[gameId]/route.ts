@@ -52,17 +52,19 @@ export async function GET(
     const [homeRating, awayRating] = await Promise.all([
       prisma.teamSeasonRating.findUnique({
         where: {
-          season_teamId: {
+          season_teamId_modelVersion: {
             season: game.season,
             teamId: game.homeTeamId,
+            modelVersion: 'v1',
           },
         },
       }),
       prisma.teamSeasonRating.findUnique({
         where: {
-          season_teamId: {
+          season_teamId_modelVersion: {
             season: game.season,
             teamId: game.awayTeamId,
+            modelVersion: 'v1',
           },
         },
       }),
@@ -294,7 +296,7 @@ export async function GET(
 
       // Last resort: baseline ratings
       const baselineRating = await prisma.teamSeasonRating.findUnique({
-        where: { season_teamId: { season, teamId } }
+        where: { season_teamId_modelVersion: { season, teamId, modelVersion: 'v1' } }
       });
 
       if (baselineRating) {

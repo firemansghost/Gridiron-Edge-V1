@@ -44,9 +44,9 @@ export async function GET(request: NextRequest) {
       orderBy: { date: 'asc' },
     });
 
-    // Load all team ratings for this season in one query
+    // Load all team ratings for this season in one query (v1 model)
     const teamRatings = await prisma.teamSeasonRating.findMany({
-      where: { season },
+      where: { season, modelVersion: 'v1' },
     });
     const ratingsMap = new Map(
       teamRatings.map(r => [r.teamId, r])

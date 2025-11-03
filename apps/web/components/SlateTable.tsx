@@ -67,6 +67,12 @@ export default function SlateTable({
   const [selectedResultIndex, setSelectedResultIndex] = useState(0);
   const [hideGamesWithoutOdds, setHideGamesWithoutOdds] = useState(false);
   
+  // Enhanced filter state
+  const [minEdge, setMinEdge] = useState<number>(0);
+  const [confidenceTier, setConfidenceTier] = useState<'all' | 'A' | 'B' | 'C'>('all');
+  const [timeRange, setTimeRange] = useState<'all' | 'today' | 'tomorrow' | 'thisWeek'>('all');
+  const [sortBy, setSortBy] = useState<'time' | 'edge' | 'confidence'>('time');
+  
   // Refs for scroll synchronization
   const topScrollRef = useRef<HTMLDivElement>(null);
   const bodyScrollRef = useRef<HTMLDivElement>(null);
@@ -126,6 +132,63 @@ export default function SlateTable({
       setCompactMode(JSON.parse(savedCompact));
     }
   }, []);
+
+  // Load filters from URL on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const minEdgeParam = params.get('minEdge');
+      if (minEdgeParam) {
+        setMinEdge(parseFloat(minEdgeParam));
+      }
+      const confidenceParam = params.get('confidence');
+      if (confidenceParam && ['all', 'A', 'B', 'C'].includes(confidenceParam)) {
+        setConfidenceTier(confidenceParam as 'all' | 'A' | 'B' | 'C');
+      }
+      const timeRangeParam = params.get('timeRange');
+      if (timeRangeParam && ['all', 'today', 'tomorrow', 'thisWeek'].includes(timeRangeParam)) {
+        setTimeRange(timeRangeParam as 'all' | 'today' | 'tomorrow' | 'thisWeek');
+      }
+      const sortByParam = params.get('sortBy');
+      if (sortByParam && ['time', 'edge', 'confidence'].includes(sortByParam)) {
+        setSortBy(sortByParam as 'time' | 'edge' | 'confidence');
+      }
+    }
+  }, []);
+
+  // Update URL when filters change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      
+      if (minEdge > 0) {
+        params.set('minEdge', minEdge.toString());
+      } else {
+        params.delete('minEdge');
+      }
+      
+      if (confidenceTier !== 'all') {
+        params.set('confidence', confidenceTier);
+      } else {
+        params.delete('confidence');
+      }
+      
+      if (timeRange !== 'all') {
+        params.set('timeRange', timeRange);
+      } else {
+        params.delete('timeRange');
+      }
+      
+      if (sortBy !== 'time') {
+        params.set('sortBy', sortBy);
+      } else {
+        params.delete('sortBy');
+      }
+      
+      const newUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}`;
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, [minEdge, confidenceTier, timeRange, sortBy]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -639,12 +702,71 @@ export default function SlateTable({
   };
 
   // Group games by date using ISO date strings as keys
-  // Filter out games without odds if checkbox is checked
+  // Apply all filters and sorting
   const groupedGames = useMemo(() => {
-    const filteredGames = hideGamesWithoutOdds 
-      ? games.filter(game => game.hasOdds === true)
-      : games;
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const nextWeek = new Date(today);
+    nextWeek.setDate(nextWeek.getDate() + 7);
+
+    let filteredGames = games;
+
+    // Filter: Hide games without odds
+    if (hideGamesWithoutOdds) {
+      filteredGames = filteredGames.filter(game => game.hasOdds === true);
+    }
+
+    // Filter: Min edge
+    if (minEdge > 0) {
+      filteredGames = filteredGames.filter(game => 
+        game.maxEdge !== null && game.maxEdge !== undefined && game.maxEdge >= minEdge
+      );
+    }
+
+    // Filter: Confidence tier
+    if (confidenceTier !== 'all') {
+      filteredGames = filteredGames.filter(game => game.confidence === confidenceTier);
+    }
+
+    // Filter: Time range
+    if (timeRange !== 'all') {
+      filteredGames = filteredGames.filter(game => {
+        const gameDate = new Date(game.date);
+        switch (timeRange) {
+          case 'today':
+            return gameDate >= today && gameDate < tomorrow;
+          case 'tomorrow':
+            return gameDate >= tomorrow && gameDate < new Date(tomorrow.getTime() + 24 * 60 * 60 * 1000);
+          case 'thisWeek':
+            return gameDate >= today && gameDate < nextWeek;
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Sort games
+    filteredGames = [...filteredGames].sort((a, b) => {
+      switch (sortBy) {
+        case 'edge':
+          const edgeA = a.maxEdge ?? -Infinity;
+          const edgeB = b.maxEdge ?? -Infinity;
+          return edgeB - edgeA; // Descending (highest edge first)
+        case 'confidence':
+          const confOrder = { 'A': 3, 'B': 2, 'C': 1, null: 0 };
+          const confA = confOrder[a.confidence as keyof typeof confOrder] ?? 0;
+          const confB = confOrder[b.confidence as keyof typeof confOrder] ?? 0;
+          return confB - confA; // Descending (A first)
+        case 'time':
+        default:
+          // Sort by date/time
+          return new Date(a.date).getTime() - new Date(b.date).getTime();
+      }
+    });
     
+    // Group by date after filtering and sorting
     return filteredGames.reduce((acc, game) => {
       const dateKey = getDateKey(game.date);
       if (!acc[dateKey]) {
@@ -657,7 +779,7 @@ export default function SlateTable({
       acc[dateKey].games.push(game);
       return acc;
     }, {} as Record<string, { dateKey: string; formattedDate: string; games: SlateGame[] }>);
-  }, [games, hideGamesWithoutOdds]);
+  }, [games, hideGamesWithoutOdds, minEdge, confidenceTier, timeRange, sortBy]);
 
   // Show all dates (no lazy loading to ensure all games show)
   const dateEntries = Object.entries(groupedGames).sort(([a], [b]) => a.localeCompare(b));
@@ -751,6 +873,79 @@ export default function SlateTable({
           </div>
         </div>
       </div>
+      
+      {/* Enhanced Filters */}
+      {showAdvancedColumns && (
+        <div className="px-6 py-3 border-b border-gray-200 bg-gray-50">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {/* Min Edge Filter */}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Min Edge
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                value={minEdge}
+                onChange={(e) => setMinEdge(parseFloat(e.target.value) || 0)}
+                className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="0.0"
+              />
+            </div>
+
+            {/* Confidence Tier Filter */}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Confidence Tier
+              </label>
+              <select
+                value={confidenceTier}
+                onChange={(e) => setConfidenceTier(e.target.value as 'all' | 'A' | 'B' | 'C')}
+                className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Tiers</option>
+                <option value="A">Tier A</option>
+                <option value="B">Tier B</option>
+                <option value="C">Tier C</option>
+              </select>
+            </div>
+
+            {/* Time Range Filter */}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Time Range
+              </label>
+              <select
+                value={timeRange}
+                onChange={(e) => setTimeRange(e.target.value as 'all' | 'today' | 'tomorrow' | 'thisWeek')}
+                className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Games</option>
+                <option value="today">Today</option>
+                <option value="tomorrow">Tomorrow</option>
+                <option value="thisWeek">This Week</option>
+              </select>
+            </div>
+
+            {/* Sort By */}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Sort By
+              </label>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as 'time' | 'edge' | 'confidence')}
+                className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="time">Time</option>
+                <option value="edge">Edge (High to Low)</option>
+                <option value="confidence">Confidence (A→C)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Search bar */}
       <div className="px-6 py-3 border-b border-gray-200 bg-gray-50">

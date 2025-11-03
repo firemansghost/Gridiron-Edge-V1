@@ -155,25 +155,28 @@ model TeamSeasonStat {
 }
 
 model TeamSeasonRating {
-  season         Int      @map("season")
-  teamId         String   @map("team_id")
-  games          Int      @default(0)
-  pointsFor      Int?     @map("points_for")
-  pointsAgainst  Int?     @map("points_against")
-  movAvg         Decimal? @map("mov_avg")
-  rating         Decimal?
-  powerRating    Decimal? @map("power_rating")  // Alias for rating, kept for clarity
-  offenseRating  Decimal? @map("offense_rating")
-  defenseRating  Decimal? @map("defense_rating")
-  sigma          Decimal?
-  confidence     Decimal?                       // 0-1 scale: feature coverage * data_source quality
-  dataSource     String?  @map("data_source")   // 'game+season', 'season_only', 'baseline'
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  season        Int      @map("season")
+  teamId        String   @map("team_id")
+  modelVersion  String   @default("v1") @map("model_version") // Model version (v1, v2, etc.)
+  games         Int      @default(0)
+  pointsFor     Int?     @map("points_for")
+  pointsAgainst Int?     @map("points_against")
+  movAvg        Decimal? @map("mov_avg")
+  rating        Decimal?
+  powerRating   Decimal? @map("power_rating") // Alias for rating, kept for clarity
+  offenseRating Decimal? @map("offense_rating")
+  defenseRating Decimal? @map("defense_rating")
+  sigma         Decimal?
+  confidence    Decimal? // 0-1 scale: feature coverage * data_source quality
+  dataSource    String?  @map("data_source") // 'game+season', 'season_only', 'baseline'
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
-  @@id([season, teamId])
+  @@id([season, teamId, modelVersion])
   @@index([season])
   @@index([teamId])
+  @@index([season, modelVersion])
+  @@index([modelVersion])
   @@index([season, rating(sort: Desc)])
   @@map("team_season_ratings")
 }
@@ -347,10 +350,10 @@ enum BetSource {
 }
 
 model TeamMembership {
-  season  Int
-  teamId  String @map("team_id")
-  level   String // 'fbs', 'fcs', etc.
-  team    Team   @relation(fields: [teamId], references: [id], onDelete: Restrict)
+  season Int
+  teamId String @map("team_id")
+  level  String // 'fbs', 'fcs', etc.
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Restrict)
 
   @@id([season, teamId])
   @@index([season, level])

@@ -202,7 +202,7 @@ export default async function StatusPage() {
       // Get ratings health metrics if ratings exist
       if (teamSeasonRatings2025 > 0) {
         const ratings = await prisma.teamSeasonRating.findMany({
-          where: { season: 2025 },
+          where: { season: 2025, modelVersion: 'v1' },
           select: {
             powerRating: true,
             rating: true,

@@ -82,9 +82,10 @@ export async function GET(request: NextRequest) {
       // Check for baseline ratings
       const baselineRating = await prisma.teamSeasonRating.findUnique({
         where: {
-          season_teamId: {
+          season_teamId_modelVersion: {
             season,
             teamId: team.id,
+            modelVersion: 'v1',
           }
         }
       });
