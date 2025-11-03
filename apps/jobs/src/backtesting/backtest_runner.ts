@@ -220,7 +220,7 @@ export async function runBacktest(config: BacktestConfig): Promise<BacktestResul
   const games = await prisma.game.findMany({
     where: {
       season: config.season,
-      status: { in: ['final', 'complete'] }, // Only completed games
+      status: 'final', // Only completed games
       homeScore: { not: null },
       awayScore: { not: null },
     },

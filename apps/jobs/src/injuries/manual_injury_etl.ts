@@ -56,43 +56,48 @@ async function upsertInjury(input: InjuryInput): Promise<void> {
     }
 
     // Upsert injury
-    await prisma.injury.upsert({
+    // Note: We need to check if injury already exists since there's no unique constraint on game+team+position
+    const existing = await prisma.injury.findFirst({
       where: {
-        // Use a composite key: game + team + position + severity for uniqueness
-        // For simplicity, we'll use playerName + position if provided, otherwise position only
-        id: input.playerName 
-          ? `${input.gameId}-${input.teamId}-${input.position}-${input.playerName}`.toLowerCase().replace(/\s+/g, '-')
-          : undefined,
-      },
-      update: {
-        playerName: input.playerName,
-        position: input.position.toUpperCase(),
-        severity: input.severity,
-        bodyPart: input.bodyPart,
-        injuryType: input.injuryType,
-        status: input.status,
-        source: input.source || 'manual',
-        reportedAt: input.reportedAt || new Date(),
-        updatedAt: new Date(),
-      },
-      create: {
-        id: input.playerName
-          ? `${input.gameId}-${input.teamId}-${input.position}-${input.playerName}`.toLowerCase().replace(/\s+/g, '-')
-          : undefined,
         gameId: input.gameId,
         teamId: input.teamId,
-        season: input.season,
-        week: input.week,
-        playerName: input.playerName,
         position: input.position.toUpperCase(),
-        severity: input.severity,
-        bodyPart: input.bodyPart,
-        injuryType: input.injuryType,
-        status: input.status,
-        source: input.source || 'manual',
-        reportedAt: input.reportedAt || new Date(),
+        ...(input.playerName ? { playerName: input.playerName } : {}),
       },
     });
+
+    if (existing) {
+      await prisma.injury.update({
+        where: { id: existing.id },
+        data: {
+          playerName: input.playerName,
+          position: input.position.toUpperCase(),
+          severity: input.severity,
+          bodyPart: input.bodyPart,
+          injuryType: input.injuryType,
+          status: input.status,
+          source: input.source || 'manual',
+          reportedAt: input.reportedAt || new Date(),
+        },
+      });
+    } else {
+      await prisma.injury.create({
+        data: {
+          gameId: input.gameId,
+          teamId: input.teamId,
+          season: game.season,
+          week: game.week,
+          playerName: input.playerName,
+          position: input.position.toUpperCase(),
+          severity: input.severity,
+          bodyPart: input.bodyPart,
+          injuryType: input.injuryType,
+          status: input.status,
+          source: input.source || 'manual',
+          reportedAt: input.reportedAt || new Date(),
+        },
+      });
+    }
 
     console.log(`✅ Upserted injury: ${input.teamId} - ${input.position} (${input.severity})${input.playerName ? ` - ${input.playerName}` : ''}`);
   } catch (error: any) {
