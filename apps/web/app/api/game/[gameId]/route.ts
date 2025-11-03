@@ -247,12 +247,99 @@ export async function GET(
     // Total edge: Model Total - Market Total (positive = model thinks over, negative = under)
     const totalEdgePts = finalImpliedTotal - marketTotal;
     
-    // Validation: Flag unrealistic total edge magnitudes
-    if (Math.abs(totalEdgePts) > 20) {
-      console.warn(`[Game ${gameId}] Large total edge detected: ${totalEdgePts.toFixed(1)}`, {
+    // ============================================
+    // GUARDRAILS & VALIDATION CHECKS
+    // ============================================
+    
+    // 1. Validate Model Total is in realistic range [20-90]
+    if (finalImpliedTotal !== null && (finalImpliedTotal < 20 || finalImpliedTotal > 90)) {
+      console.warn(`[Game ${gameId}] ⚠️ Model Total out of realistic range: ${finalImpliedTotal.toFixed(1)}`, {
         modelTotal: finalImpliedTotal,
         marketTotal,
-        gameId
+        gameId,
+        homeTeam: game.homeTeam.name,
+        awayTeam: game.awayTeam.name
+      });
+    }
+    
+    // 2. Validate Market Total is in realistic range [20-90]
+    if (marketTotal !== null && (marketTotal < 20 || marketTotal > 90)) {
+      console.warn(`[Game ${gameId}] ⚠️ Market Total out of realistic range: ${marketTotal.toFixed(1)}`, {
+        modelTotal: finalImpliedTotal,
+        marketTotal,
+        gameId,
+        homeTeam: game.homeTeam.name,
+        awayTeam: game.awayTeam.name
+      });
+    }
+    
+    // 3. Validate Model Spread absolute value is not excessive (> 50)
+    if (finalImpliedSpread !== null && Math.abs(finalImpliedSpread) > 50) {
+      console.warn(`[Game ${gameId}] ⚠️ Model Spread absolute value exceeds 50: ${finalImpliedSpread.toFixed(1)}`, {
+        modelSpread: finalImpliedSpread,
+        marketSpread,
+        gameId,
+        homeTeam: game.homeTeam.name,
+        awayTeam: game.awayTeam.name
+      });
+    }
+    
+    // 4. Validate Market Spread absolute value is not excessive (> 50)
+    if (marketSpread !== null && Math.abs(marketSpread) > 50) {
+      console.warn(`[Game ${gameId}] ⚠️ Market Spread absolute value exceeds 50: ${marketSpread.toFixed(1)}`, {
+        modelSpread: finalImpliedSpread,
+        marketSpread,
+        gameId,
+        homeTeam: game.homeTeam.name,
+        awayTeam: game.awayTeam.name
+      });
+    }
+    
+    // 5. Validate ATS Edge magnitude is not excessive (> 20)
+    if (Math.abs(atsEdge) > 20) {
+      console.warn(`[Game ${gameId}] ⚠️ Large ATS edge detected: ${atsEdge.toFixed(1)}`, {
+        modelSpread: finalImpliedSpread,
+        marketSpread,
+        modelFavorite: modelSpreadFC.favoriteTeamName,
+        marketFavorite: marketSpreadFC.favoriteTeamName,
+        atsEdge,
+        gameId,
+        homeTeam: game.homeTeam.name,
+        awayTeam: game.awayTeam.name
+      });
+    }
+    
+    // 6. Validate Total Edge magnitude is not excessive (> 20)
+    if (Math.abs(totalEdgePts) > 20) {
+      console.warn(`[Game ${gameId}] ⚠️ Large total edge detected: ${totalEdgePts.toFixed(1)}`, {
+        modelTotal: finalImpliedTotal,
+        marketTotal,
+        totalEdge: totalEdgePts,
+        gameId,
+        homeTeam: game.homeTeam.name,
+        awayTeam: game.awayTeam.name
+      });
+    }
+    
+    // 7. Validate Favorite Identity Consistency
+    // Model and market should favor the same team (or at least be consistent)
+    const modelFavorsHome = finalImpliedSpread < 0;
+    const marketFavorsHome = marketSpread < 0;
+    const favoriteMismatch = modelFavorsHome !== marketFavorsHome;
+    
+    if (favoriteMismatch && Math.abs(finalImpliedSpread) > 3 && Math.abs(marketSpread) > 3) {
+      // Only warn if both spreads are significant (not close games)
+      console.warn(`[Game ${gameId}] ⚠️ Favorite identity mismatch: Model and Market favor different teams`, {
+        modelSpread: finalImpliedSpread,
+        marketSpread,
+        modelFavorite: modelSpreadFC.favoriteTeamName,
+        marketFavorite: marketSpreadFC.favoriteTeamName,
+        modelFavorsHome,
+        marketFavorsHome,
+        atsEdge,
+        gameId,
+        homeTeam: game.homeTeam.name,
+        awayTeam: game.awayTeam.name
       });
     }
 
