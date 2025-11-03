@@ -174,28 +174,41 @@ export default function GameDetailPage() {
                 </div>
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-gray-500 flex items-center gap-1">
-                    Market Line
-                    <InfoTooltip content="The betting market's consensus spread, reflecting what sportsbooks are offering. This is what you'd actually bet against." />
+                    Best Available Spread
+                    <InfoTooltip content="The best available point spread from the betting market (prefers SGO source, then latest). This is what you'd actually bet against." />
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-lg font-semibold text-gray-900">
-                      {game.market.spread > 0 ? '+' : ''}{game.market.spread.toFixed(1)}
+                  <div className="flex flex-col items-end gap-1">
+                    <div className="flex items-center gap-3">
+                      <div className="text-lg font-semibold text-gray-900">
+                        {game.market.spread > 0 ? '+' : ''}{game.market.spread.toFixed(1)}
+                      </div>
+                      {lineHistory?.history?.spread && lineHistory.history.spread.length > 0 && (
+                        <LineSparkline 
+                          data={lineHistory.history.spread} 
+                          lineType="spread"
+                          width={150}
+                          height={30}
+                        />
+                      )}
                     </div>
-                    {game.market.meta?.spread?.source && (
-                      <span 
-                        className="text-xs rounded px-2 py-0.5 bg-blue-100 text-blue-700 font-medium"
-                        title={formatSourceTooltip(game.market.meta.spread.source, game.market.meta.spread.timestamp)}
-                      >
-                        ({abbrevSource(game.market.meta.spread.source)})
-                      </span>
-                    )}
-                    {lineHistory?.history?.spread && lineHistory.history.spread.length > 0 && (
-                      <LineSparkline 
-                        data={lineHistory.history.spread} 
-                        lineType="spread"
-                        width={150}
-                        height={30}
-                      />
+                    {game.market.meta?.spread && (
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="font-medium text-gray-700">
+                          {game.market.meta.spread.source || 'Unknown'}
+                        </span>
+                        <span className="text-gray-500">
+                          {game.market.meta.spread.timestamp 
+                            ? new Date(game.market.meta.spread.timestamp).toLocaleString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: 'numeric',
+                                minute: '2-digit',
+                                hour12: true,
+                                timeZone: 'America/Chicago'
+                              })
+                            : ''}
+                        </span>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -225,26 +238,39 @@ export default function GameDetailPage() {
                 </div>
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-gray-500 flex items-center gap-1">
-                    Market Total
-                    <InfoTooltip content="The betting market's consensus total points line, reflecting what sportsbooks are offering." />
+                    Best Available Total
+                    <InfoTooltip content="The best available total points line from the betting market (prefers SGO source, then latest). This is what you'd actually bet against." />
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-lg font-semibold text-gray-900">{game.market.total.toFixed(1)}</div>
-                    {game.market.meta?.total?.source && (
-                      <span 
-                        className="text-xs rounded px-2 py-0.5 bg-blue-100 text-blue-700 font-medium"
-                        title={formatSourceTooltip(game.market.meta.total.source, game.market.meta.total.timestamp)}
-                      >
-                        ({abbrevSource(game.market.meta.total.source)})
-                      </span>
-                    )}
-                    {lineHistory?.history?.total && lineHistory.history.total.length > 0 && (
-                      <LineSparkline 
-                        data={lineHistory.history.total} 
-                        lineType="total"
-                        width={150}
-                        height={30}
-                      />
+                  <div className="flex flex-col items-end gap-1">
+                    <div className="flex items-center gap-3">
+                      <div className="text-lg font-semibold text-gray-900">{game.market.total.toFixed(1)}</div>
+                      {lineHistory?.history?.total && lineHistory.history.total.length > 0 && (
+                        <LineSparkline 
+                          data={lineHistory.history.total} 
+                          lineType="total"
+                          width={150}
+                          height={30}
+                        />
+                      )}
+                    </div>
+                    {game.market.meta?.total && (
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="font-medium text-gray-700">
+                          {game.market.meta.total.source || 'Unknown'}
+                        </span>
+                        <span className="text-gray-500">
+                          {game.market.meta.total.timestamp 
+                            ? new Date(game.market.meta.total.timestamp).toLocaleString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: 'numeric',
+                                minute: '2-digit',
+                                hour12: true,
+                                timeZone: 'America/Chicago'
+                              })
+                            : ''}
+                        </span>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -268,24 +294,37 @@ export default function GameDetailPage() {
                     <div className="text-lg font-semibold text-gray-900">{game.market.moneyline.pickLabel}</div>
                   </div>
                   <div className="flex justify-between items-center">
-                    <div className="text-sm text-gray-500">Market ML</div>
-                    <div className="flex items-center">
-                      <div 
-                        className="text-lg font-semibold text-gray-900 cursor-help"
-                        title={game.market.moneyline.impliedProb != null 
-                          ? `Implied prob: ${(game.market.moneyline.impliedProb * 100).toFixed(1)}%` 
-                          : ''
-                        }
-                      >
-                        {game.market.moneyline.price > 0 ? '+' : ''}{game.market.moneyline.price}
-                      </div>
-                      {game.market.moneyline.meta?.source && (
-                        <span 
-                          className="ml-2 text-xs rounded px-2 py-0.5 bg-blue-100 text-blue-700 font-medium"
-                          title={formatSourceTooltip(game.market.moneyline.meta.source, game.market.moneyline.meta.timestamp)}
+                    <div className="text-sm text-gray-500">Best Available Moneyline</div>
+                    <div className="flex flex-col items-end gap-1">
+                      <div className="flex items-center">
+                        <div 
+                          className="text-lg font-semibold text-gray-900 cursor-help"
+                          title={game.market.moneyline.impliedProb != null 
+                            ? `Implied prob: ${(game.market.moneyline.impliedProb * 100).toFixed(1)}%` 
+                            : ''
+                          }
                         >
-                          ({abbrevSource(game.market.moneyline.meta.source)})
-                        </span>
+                          {game.market.moneyline.price > 0 ? '+' : ''}{game.market.moneyline.price}
+                        </div>
+                      </div>
+                      {game.market.moneyline.meta && (
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="font-medium text-gray-700">
+                            {game.market.moneyline.meta.source || 'Unknown'}
+                          </span>
+                          <span className="text-gray-500">
+                            {game.market.moneyline.meta.timestamp 
+                              ? new Date(game.market.moneyline.meta.timestamp).toLocaleString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: 'numeric',
+                                  minute: '2-digit',
+                                  hour12: true,
+                                  timeZone: 'America/Chicago'
+                                })
+                              : ''}
+                          </span>
+                        </div>
                       )}
                     </div>
                   </div>

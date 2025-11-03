@@ -550,6 +550,44 @@ export default function SlateTable({
     return `${line.book} @ ${localTime}`;
   };
 
+  // Format timestamp for display (relative time if recent, otherwise formatted date)
+  const formatTimestamp = (timestamp: string): string => {
+    try {
+      const date = new Date(timestamp);
+      const now = new Date();
+      const diffMs = now.getTime() - date.getTime();
+      const diffHours = diffMs / (1000 * 60 * 60);
+      const diffDays = diffMs / (1000 * 60 * 60 * 24);
+
+      // If less than 1 hour ago, show "X min ago"
+      if (diffHours < 1) {
+        const diffMins = Math.floor(diffMs / (1000 * 60));
+        return `${diffMins}m ago`;
+      }
+      // If less than 24 hours ago, show "X hours ago"
+      if (diffHours < 24) {
+        const hours = Math.floor(diffHours);
+        return `${hours}h ago`;
+      }
+      // If less than 7 days ago, show "X days ago"
+      if (diffDays < 7) {
+        const days = Math.floor(diffDays);
+        return `${days}d ago`;
+      }
+      // Otherwise show formatted date/time
+      return date.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: 'America/Chicago'
+      });
+    } catch {
+      return '';
+    }
+  };
+
   const getStatusBadge = (game: SlateGame) => {
     // Check if game has scores (even if status isn't updated to 'final')
     const hasScores = game.awayScore !== null && game.homeScore !== null;
@@ -963,16 +1001,16 @@ export default function SlateTable({
               <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
                 Time / Score
               </th>
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
+              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
                 <div className="flex items-center justify-center gap-1">
-                  Market Spread
-                  <InfoTooltip content="The betting market's point spread. Negative values mean the home team is favored. This is the line you'd bet against." position="bottom" />
+                  Best Spread
+                  <InfoTooltip content="The best available point spread from the betting market (prefers SGO source, then latest). Negative values mean the home team is favored." position="bottom" />
                 </div>
               </th>
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
+              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
                 <div className="flex items-center justify-center gap-1">
-                  Market Total
-                  <InfoTooltip content="The betting market's total points line (over/under). This is the combined points both teams are expected to score." position="bottom" />
+                  Best Total
+                  <InfoTooltip content="The best available total points line from the betting market (prefers SGO source, then latest). This is the combined points both teams are expected to score." position="bottom" />
                 </div>
               </th>
               <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
@@ -1063,15 +1101,18 @@ export default function SlateTable({
                     </td>
                     <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
                       {game.closingSpread ? (
-                        <div>
+                        <div className="text-center">
                           <div 
-                            className="text-sm font-medium text-gray-900 cursor-help"
+                            className="text-sm font-semibold text-gray-900"
                             title={formatTooltip(game.closingSpread)}
                           >
                             {formatSpread(game.closingSpread)}
                           </div>
-                          <div className="text-xs text-gray-500">
+                          <div className="text-xs text-gray-600 font-medium mt-0.5">
                             {game.closingSpread.book}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-0.5">
+                            {formatTimestamp(game.closingSpread.timestamp)}
                           </div>
                         </div>
                       ) : (
@@ -1082,15 +1123,18 @@ export default function SlateTable({
                     </td>
                     <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
                       {game.closingTotal ? (
-                        <div>
+                        <div className="text-center">
                           <div 
-                            className="text-sm font-medium text-gray-900 cursor-help"
+                            className="text-sm font-semibold text-gray-900"
                             title={formatTooltip(game.closingTotal)}
                           >
                             {formatTotal(game.closingTotal)}
                           </div>
-                          <div className="text-xs text-gray-500">
+                          <div className="text-xs text-gray-600 font-medium mt-0.5">
                             {game.closingTotal.book}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-0.5">
+                            {formatTimestamp(game.closingTotal.timestamp)}
                           </div>
                         </div>
                       ) : (
