@@ -121,6 +121,133 @@ export async function GET(request: NextRequest) {
       },
     });
 
+    // Calculate z-score statistics across all FBS teams for this season
+    const calculateZScoreStats = async () => {
+      try {
+        // Dynamically import FeatureLoader
+        // @ts-ignore - Cross-app import
+        const featureLoaderModule = await import('../../../../../apps/jobs/src/ratings/feature-loader');
+        const FeatureLoader = featureLoaderModule.FeatureLoader;
+
+        // Load all FBS teams
+        const fbsMemberships = await prisma.teamMembership.findMany({
+          where: { season, level: 'fbs' },
+          select: { teamId: true }
+        });
+        const fbsTeamIds = Array.from(new Set(fbsMemberships.map(m => m.teamId.toLowerCase())));
+
+        // Load features for all FBS teams
+        const loader = new FeatureLoader(prisma);
+        const allFeatures: any[] = [];
+        for (const tid of fbsTeamIds) {
+          const teamFeatures = await loader.loadTeamFeatures(tid, season);
+          allFeatures.push(teamFeatures);
+        }
+
+        // Calculate z-score statistics for each feature
+        const calculateZScores = (features: any[], getValue: (f: any) => number | null) => {
+          const values = features
+            .map(f => getValue(f))
+            .filter(v => v !== null && v !== undefined && !isNaN(v))
+            .map(v => v!);
+          
+          if (values.length === 0) {
+            return { mean: 0, stdDev: 1, count: 0 };
+          }
+          
+          const sum = values.reduce((acc, v) => acc + v, 0);
+          const mean = sum / values.length;
+          const variance = values.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / values.length;
+          const stdDev = Math.sqrt(variance) || 1;
+          
+          return { mean, stdDev, count: values.length };
+        };
+
+        const getZScore = (value: number | null, mean: number, stdDev: number): number => {
+          if (value === null || value === undefined || isNaN(value)) return 0;
+          return (value - mean) / stdDev;
+        };
+
+        const zStats = {
+          yppOff: calculateZScores(allFeatures, f => f.yppOff ?? null),
+          passYpaOff: calculateZScores(allFeatures, f => f.passYpaOff ?? null),
+          rushYpcOff: calculateZScores(allFeatures, f => f.rushYpcOff ?? null),
+          successOff: calculateZScores(allFeatures, f => f.successOff ?? null),
+          epaOff: calculateZScores(allFeatures, f => f.epaOff ?? null),
+          yppDef: calculateZScores(allFeatures, f => f.yppDef ?? null),
+          passYpaDef: calculateZScores(allFeatures, f => f.passYpaDef ?? null),
+          rushYpcDef: calculateZScores(allFeatures, f => f.rushYpcDef ?? null),
+          successDef: calculateZScores(allFeatures, f => f.successDef ?? null),
+          epaDef: calculateZScores(allFeatures, f => f.epaDef ?? null),
+        };
+
+        // Load features for the specific team
+        const teamFeatures = await loader.loadTeamFeatures(teamId, season);
+
+        // Define weights (matching compute_ratings_v1.ts)
+        const offensiveWeights = {
+          yppOff: 0.30,
+          passYpaOff: 0.20,
+          rushYpcOff: 0.15,
+          successOff: 0.20,
+          epaOff: 0.15,
+        };
+
+        const hasDefensiveYards = teamFeatures.yppDef !== null || teamFeatures.passYpaDef !== null || teamFeatures.rushYpcDef !== null;
+        const defensiveWeights = hasDefensiveYards ? {
+          yppDef: 0.20,
+          passYpaDef: 0.20,
+          rushYpcDef: 0.15,
+          successDef: 0.25,
+          epaDef: 0.20,
+        } : {
+          successDef: 0.25 / (0.25 + 0.20),
+          epaDef: 0.20 / (0.25 + 0.20),
+          yppDef: 0,
+          passYpaDef: 0,
+          rushYpcDef: 0,
+        };
+
+        // Calculate z-scores and contributions for the team
+        const contributions: Record<string, { zScore: number; weight: number; contribution: number }> = {};
+
+        // Offensive contributions
+        for (const [factor, weight] of Object.entries(offensiveWeights)) {
+          if (weight > 0) {
+            const value = teamFeatures[factor as keyof typeof teamFeatures] as number | null | undefined;
+            const stats = zStats[factor as keyof typeof zStats];
+            const zScore = getZScore(value ?? null, stats.mean, stats.stdDev);
+            const contribution = weight * zScore;
+            contributions[factor] = { zScore, weight, contribution };
+          }
+        }
+
+        // Defensive contributions (inverted)
+        for (const [factor, weight] of Object.entries(defensiveWeights)) {
+          if (weight > 0) {
+            const value = teamFeatures[factor as keyof typeof teamFeatures] as number | null | undefined;
+            const stats = zStats[factor as keyof typeof zStats];
+            const zScore = getZScore(value ?? null, stats.mean, stats.stdDev);
+            const contribution = -weight * zScore; // Inverted for defense
+            contributions[factor] = { zScore, weight, contribution };
+          }
+        }
+
+        return {
+          zScoreStats: zStats,
+          zScores: Object.fromEntries(
+            Object.entries(contributions).map(([factor, data]) => [factor, data.zScore])
+          ),
+          weights: { ...offensiveWeights, ...defensiveWeights },
+          contributions
+        };
+      } catch (error) {
+        console.error('Error calculating z-score stats:', error);
+        return null;
+      }
+    };
+
+    const zScoreData = await calculateZScoreStats();
 
     return NextResponse.json({
       success: true,
@@ -155,6 +282,34 @@ export async function GET(request: NextRequest) {
         dataSource: rating.dataSource || null,
         createdAt: rating.createdAt.toISOString(),
         updatedAt: rating.updatedAt?.toISOString() || null,
+      } : null,
+      zScoreData: zScoreData ? {
+        // Z-score statistics (mean, stdDev, count) for each feature across all FBS teams
+        statistics: Object.fromEntries(
+          Object.entries(zScoreData.zScoreStats).map(([factor, stats]) => [
+            factor,
+            {
+              mean: stats.mean,
+              stdDev: stats.stdDev,
+              count: stats.count
+            }
+          ])
+        ),
+        // Computed z-scores for this team
+        zScores: zScoreData.zScores,
+        // Weights used in calculation
+        weights: zScoreData.weights,
+        // Contribution breakdown (weight × zScore)
+        contributions: Object.fromEntries(
+          Object.entries(zScoreData.contributions).map(([factor, data]) => [
+            factor,
+            {
+              zScore: data.zScore,
+              weight: data.weight,
+              contribution: data.contribution
+            }
+          ])
+        )
       } : null,
     });
   } catch (error) {

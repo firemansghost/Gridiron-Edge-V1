@@ -198,8 +198,134 @@ export async function GET(
       hour12: true
     });
 
-    // Extract factor breakdown - for Ratings v1, we'll use a simplified approach
-    // In the future, we can enhance this to show top contributing features
+    // Compute Top Factors for each team
+    const computeTopFactors = async (teamId: string, season: number): Promise<Array<{factor: string; contribution: number; weight: number; zScore: number}>> => {
+      try {
+        // Dynamically import FeatureLoader to avoid build issues
+        const featureLoaderModule = await import('../../../../../apps/jobs/src/ratings/feature-loader');
+        const FeatureLoader = featureLoaderModule.FeatureLoader;
+        type TeamFeatures = featureLoaderModule.TeamFeatures;
+        
+        // Load all FBS teams for the season
+        const fbsMemberships = await prisma.teamMembership.findMany({
+          where: { season, level: 'fbs' },
+          select: { teamId: true }
+        });
+        const fbsTeamIds = new Set(fbsMemberships.map(m => m.teamId.toLowerCase()));
+
+        // Load features for all FBS teams
+        const loader = new FeatureLoader(prisma);
+        const allFeatures: TeamFeatures[] = [];
+        for (const tid of fbsTeamIds) {
+          const features = await loader.loadTeamFeatures(tid, season);
+          allFeatures.push(features);
+        }
+
+        // Calculate z-score statistics across all teams
+        const calculateZScores = (features: TeamFeatures[], getValue: (f: TeamFeatures) => number | null) => {
+          const values = features
+            .map(f => getValue(f))
+            .filter(v => v !== null && v !== undefined && !isNaN(v))
+            .map(v => v!);
+          
+          if (values.length === 0) {
+            return { mean: 0, stdDev: 1 };
+          }
+          
+          const sum = values.reduce((acc, v) => acc + v, 0);
+          const mean = sum / values.length;
+          const variance = values.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / values.length;
+          const stdDev = Math.sqrt(variance) || 1;
+          
+          return { mean, stdDev };
+        };
+
+        const getZScore = (value: number | null, mean: number, stdDev: number): number => {
+          if (value === null || value === undefined || isNaN(value)) return 0;
+          return (value - mean) / stdDev;
+        };
+
+        const zStats = {
+          yppOff: calculateZScores(allFeatures, f => f.yppOff ?? null),
+          passYpaOff: calculateZScores(allFeatures, f => f.passYpaOff ?? null),
+          rushYpcOff: calculateZScores(allFeatures, f => f.rushYpcOff ?? null),
+          successOff: calculateZScores(allFeatures, f => f.successOff ?? null),
+          epaOff: calculateZScores(allFeatures, f => f.epaOff ?? null),
+          yppDef: calculateZScores(allFeatures, f => f.yppDef ?? null),
+          passYpaDef: calculateZScores(allFeatures, f => f.passYpaDef ?? null),
+          rushYpcDef: calculateZScores(allFeatures, f => f.rushYpcDef ?? null),
+          successDef: calculateZScores(allFeatures, f => f.successDef ?? null),
+          epaDef: calculateZScores(allFeatures, f => f.epaDef ?? null),
+        };
+
+        // Load features for the specific team
+        const teamFeatures = await loader.loadTeamFeatures(teamId, season);
+
+        // Define weights (matching compute_ratings_v1.ts)
+        const offensiveWeights = {
+          yppOff: 0.30,
+          passYpaOff: 0.20,
+          rushYpcOff: 0.15,
+          successOff: 0.20,
+          epaOff: 0.15,
+        };
+
+        const hasDefensiveYards = teamFeatures.yppDef !== null || teamFeatures.passYpaDef !== null || teamFeatures.rushYpcDef !== null;
+        const defensiveWeights = hasDefensiveYards ? {
+          yppDef: 0.20,
+          passYpaDef: 0.20,
+          rushYpcDef: 0.15,
+          successDef: 0.25,
+          epaDef: 0.20,
+        } : {
+          successDef: 0.25 / (0.25 + 0.20),
+          epaDef: 0.20 / (0.25 + 0.20),
+          yppDef: 0,
+          passYpaDef: 0,
+          rushYpcDef: 0,
+        };
+
+        // Calculate contributions for all features
+        const factors: Array<{factor: string; contribution: number; weight: number; zScore: number}> = [];
+
+        // Offensive factors
+        for (const [factor, weight] of Object.entries(offensiveWeights)) {
+          if (weight > 0) {
+            const value = teamFeatures[factor as keyof typeof teamFeatures] as number | null | undefined;
+            const stats = zStats[factor as keyof typeof zStats];
+            const zScore = getZScore(value ?? null, stats.mean, stats.stdDev);
+            const contribution = weight * zScore;
+            factors.push({ factor, contribution, weight, zScore });
+          }
+        }
+
+        // Defensive factors (contribution is inverted for defense)
+        for (const [factor, weight] of Object.entries(defensiveWeights)) {
+          if (weight > 0) {
+            const value = teamFeatures[factor as keyof typeof teamFeatures] as number | null | undefined;
+            const stats = zStats[factor as keyof typeof zStats];
+            const zScore = getZScore(value ?? null, stats.mean, stats.stdDev);
+            // For defense, lower is better, so invert the contribution
+            const contribution = -weight * zScore;
+            factors.push({ factor, contribution, weight, zScore });
+          }
+        }
+
+        // Sort by absolute contribution and return top 5
+        return factors
+          .sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution))
+          .slice(0, 5);
+      } catch (error) {
+        console.error(`Error computing top factors for team ${teamId}:`, error);
+        return [];
+      }
+    };
+
+    // Compute top factors for both teams
+    const [homeFactors, awayFactors] = await Promise.all([
+      computeTopFactors(game.homeTeamId, game.season),
+      computeTopFactors(game.awayTeamId, game.season)
+    ]);
 
     const response = {
       success: true,
@@ -260,13 +386,13 @@ export async function GET(
           team: game.homeTeam.name,
           rating: homeRating ? Number(homeRating.powerRating || homeRating.rating || 0) : 0,
           confidence: homeRating ? Number(homeRating.confidence || 0) : 0,
-          factors: [] // Top factors will be computed separately if needed
+          factors: homeFactors
         },
         away: {
           team: game.awayTeam.name,
           rating: awayRating ? Number(awayRating.powerRating || awayRating.rating || 0) : 0,
           confidence: awayRating ? Number(awayRating.confidence || 0) : 0,
-          factors: [] // Top factors will be computed separately if needed
+          factors: awayFactors
         }
       },
       
