@@ -23,11 +23,13 @@ model Team {
   updatedAt      DateTime         @updatedAt @map("updated_at")
   awayGames      Game[]           @relation("AwayTeam")
   homeGames      Game[]           @relation("HomeTeam")
-  powerRatings   PowerRating[]
-  recruiting     Recruiting[]
-  teamGameStats  TeamGameStat[]
-  memberships    TeamMembership[]
-  injuries       Injury[]
+  powerRatings      PowerRating[]
+  recruiting        Recruiting[]
+  teamSeasonTalent  TeamSeasonTalent[]
+  teamClassCommits  TeamClassCommits[]
+  teamGameStats     TeamGameStat[]
+  memberships       TeamMembership[]
+  injuries          Injury[]
 
   @@index([conference, division])
   @@index([name])
