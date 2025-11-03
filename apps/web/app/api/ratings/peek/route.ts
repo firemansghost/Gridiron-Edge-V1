@@ -34,6 +34,15 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Helper to convert Prisma Decimal to number
+    const toNumber = (value: any): number | null => {
+      if (value === null || value === undefined) return null;
+      if (typeof value === 'number') return value;
+      if (typeof value === 'string') return parseFloat(value);
+      if (value && typeof value.toNumber === 'function') return value.toNumber();
+      return null;
+    };
+
     // Load features - try season stats first (simpler than game-level for peek)
     const seasonStats = await prisma.teamSeasonStat.findUnique({
       where: {
@@ -121,14 +130,147 @@ export async function GET(request: NextRequest) {
       },
     });
 
+    // Load team features with fallback hierarchy
+    const loadTeamFeatures = async (teamId: string, season: number): Promise<any> => {
+      // Try game-level features first
+      const gameStats = await prisma.teamGameStat.findMany({
+        where: {
+          teamId,
+          season,
+          OR: [
+            { yppOff: { not: null } },
+            { yppDef: { not: null } },
+            { successOff: { not: null } },
+            { successDef: { not: null } },
+          ]
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 10,
+      });
+
+      if (gameStats.length > 0) {
+        const validStats = gameStats.filter(s => s.yppOff !== null || s.successOff !== null);
+        if (validStats.length > 0) {
+          const sums = validStats.reduce((acc, stat) => ({
+            yppOff: acc.yppOff + (toNumber(stat.yppOff) || 0),
+            passYpaOff: acc.passYpaOff + (toNumber(stat.passYpaOff) || 0),
+            rushYpcOff: acc.rushYpcOff + (toNumber(stat.rushYpcOff) || 0),
+            successOff: acc.successOff + (toNumber(stat.successOff) || 0),
+            epaOff: acc.epaOff + (toNumber(stat.epaOff) || 0),
+            paceOff: acc.paceOff + (toNumber(stat.pace) || 0),
+            yppDef: acc.yppDef + (toNumber(stat.yppDef) || 0),
+            passYpaDef: acc.passYpaDef + (toNumber(stat.passYpaDef) || 0),
+            rushYpcDef: acc.rushYpcDef + (toNumber(stat.rushYpcDef) || 0),
+            successDef: acc.successDef + (toNumber(stat.successDef) || 0),
+            epaDef: acc.epaDef + (toNumber(stat.epaDef) || 0),
+          }), { yppOff: 0, passYpaOff: 0, rushYpcOff: 0, successOff: 0, epaOff: 0, paceOff: 0, yppDef: 0, passYpaDef: 0, rushYpcDef: 0, successDef: 0, epaDef: 0 });
+          
+          const count = validStats.length;
+          return {
+            teamId,
+            season,
+            yppOff: sums.yppOff / count,
+            passYpaOff: sums.passYpaOff / count,
+            rushYpcOff: sums.rushYpcOff / count,
+            successOff: sums.successOff / count,
+            epaOff: sums.epaOff / count,
+            paceOff: sums.paceOff / count,
+            yppDef: sums.yppDef / count,
+            passYpaDef: sums.passYpaDef / count,
+            rushYpcDef: sums.rushYpcDef / count,
+            successDef: sums.successDef / count,
+            epaDef: sums.epaDef / count,
+            dataSource: 'game',
+            confidence: Math.min(1.0, count / 8),
+            gamesCount: count,
+            lastUpdated: validStats[0]?.updatedAt || null,
+          };
+        }
+      }
+
+      // Fallback to season-level features
+      const seasonStats = await prisma.teamSeasonStat.findUnique({
+        where: { season_teamId: { season, teamId } }
+      });
+
+      if (seasonStats) {
+        return {
+          teamId,
+          season,
+          yppOff: toNumber(seasonStats.yppOff),
+          passYpaOff: toNumber(seasonStats.passYpaOff),
+          rushYpcOff: toNumber(seasonStats.rushYpcOff),
+          successOff: toNumber(seasonStats.successOff),
+          epaOff: toNumber(seasonStats.epaOff),
+          paceOff: toNumber(seasonStats.paceOff),
+          yppDef: toNumber(seasonStats.yppDef),
+          passYpaDef: toNumber(seasonStats.passYpaDef),
+          rushYpcDef: toNumber(seasonStats.rushYpcDef),
+          successDef: toNumber(seasonStats.successDef),
+          epaDef: toNumber(seasonStats.epaDef),
+          dataSource: 'season',
+          confidence: 0.7,
+          gamesCount: 0,
+          lastUpdated: seasonStats.createdAt,
+        };
+      }
+
+      // Last resort: baseline ratings
+      const baselineRating = await prisma.teamSeasonRating.findUnique({
+        where: { season_teamId: { season, teamId } }
+      });
+
+      if (baselineRating) {
+        const offenseRating = toNumber(baselineRating.offenseRating) || 0;
+        const defenseRating = toNumber(baselineRating.defenseRating) || 0;
+        return {
+          teamId,
+          season,
+          yppOff: offenseRating > 0 ? offenseRating / 10 : null,
+          successOff: null,
+          epaOff: offenseRating > 0 ? offenseRating / 20 : null,
+          paceOff: null,
+          passYpaOff: null,
+          rushYpcOff: null,
+          yppDef: defenseRating > 0 ? defenseRating / 10 : null,
+          successDef: null,
+          epaDef: defenseRating > 0 ? defenseRating / 20 : null,
+          paceDef: null,
+          passYpaDef: null,
+          rushYpcDef: null,
+          dataSource: 'baseline',
+          confidence: 0.3,
+          gamesCount: 0,
+          lastUpdated: baselineRating.createdAt,
+        };
+      }
+
+      // No data available
+      return {
+        teamId,
+        season,
+        yppOff: null,
+        successOff: null,
+        epaOff: null,
+        paceOff: null,
+        passYpaOff: null,
+        rushYpcOff: null,
+        yppDef: null,
+        successDef: null,
+        epaDef: null,
+        paceDef: null,
+        passYpaDef: null,
+        rushYpcDef: null,
+        dataSource: 'missing',
+        confidence: 0,
+        gamesCount: 0,
+        lastUpdated: null,
+      };
+    };
+
     // Calculate z-score statistics across all FBS teams for this season
     const calculateZScoreStats = async () => {
       try {
-        // Dynamically import FeatureLoader
-        // @ts-ignore - Cross-app import
-        const featureLoaderModule = await import('../../../../../apps/jobs/src/ratings/feature-loader');
-        const FeatureLoader = featureLoaderModule.FeatureLoader;
-
         // Load all FBS teams
         const fbsMemberships = await prisma.teamMembership.findMany({
           where: { season, level: 'fbs' },
@@ -137,10 +279,9 @@ export async function GET(request: NextRequest) {
         const fbsTeamIds = Array.from(new Set(fbsMemberships.map(m => m.teamId.toLowerCase())));
 
         // Load features for all FBS teams
-        const loader = new FeatureLoader(prisma);
         const allFeatures: any[] = [];
         for (const tid of fbsTeamIds) {
-          const teamFeatures = await loader.loadTeamFeatures(tid, season);
+          const teamFeatures = await loadTeamFeatures(tid, season);
           allFeatures.push(teamFeatures);
         }
 
@@ -182,7 +323,7 @@ export async function GET(request: NextRequest) {
         };
 
         // Load features for the specific team
-        const teamFeatures = await loader.loadTeamFeatures(teamId, season);
+        const teamFeatures = await loadTeamFeatures(teamId, season);
 
         // Define weights (matching compute_ratings_v1.ts)
         const offensiveWeights = {
