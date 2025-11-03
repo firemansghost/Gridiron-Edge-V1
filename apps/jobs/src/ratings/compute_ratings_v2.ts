@@ -37,28 +37,121 @@ export type { TeamFeatures, ZScoreStats };
  * 
  * Adjusts raw features by opponent strength to normalize for schedule difficulty.
  * 
- * TODO: Implement opponent-adjusted feature calculation
- * - For each team, calculate average opponent strength for each metric
- * - Adjust features by opponent average (higher opponent strength = harder schedule)
- * - Return adjusted features for z-score calculation
+ * Logic:
+ * - Query all games for this team in the season
+ * - For each opponent, get their defensive/offensive ratings
+ * - Calculate average opponent strength
+ * - Adjust offensive features based on opponent defensive strength
+ * - Adjust defensive features based on opponent offensive strength
  * 
  * @param features - Raw team features
  * @param season - Season for context
  * @param allTeamRatings - Current ratings map for opponent strength lookup
+ * @param prisma - Prisma client for database queries
  * @returns Adjusted features with SoS corrections applied
  */
-function applyStrengthOfSchedule(
+async function applyStrengthOfSchedule(
   features: TeamFeatures,
   season: number,
-  allTeamRatings: Map<string, { offenseRating: number; defenseRating: number }>
-): TeamFeatures {
-  // TODO: Implement SoS adjustment
-  // For now, return features unchanged (identity function)
-  // Future: Query game results, calculate opponent averages, adjust features
-  
-  console.log(`   [SoS] Placeholder: SoS adjustment not yet implemented for ${features.teamId}`);
-  
-  return features;
+  allTeamRatings: Map<string, { offenseRating: number; defenseRating: number }>,
+  prisma: PrismaClient
+): Promise<TeamFeatures> {
+  try {
+    // Query all games for this team in the season
+    const games = await prisma.game.findMany({
+      where: {
+        season,
+        OR: [
+          { homeTeamId: features.teamId },
+          { awayTeamId: features.teamId }
+        ]
+      },
+      select: {
+        homeTeamId: true,
+        awayTeamId: true,
+      }
+    });
+
+    if (games.length === 0) {
+      // No games played yet, return features unchanged
+      return features;
+    }
+
+    // Collect opponent ratings
+    const opponentDefensiveRatings: number[] = [];
+    const opponentOffensiveRatings: number[] = [];
+    const leagueAvgDefense = 0.0; // League average (z-score mean)
+    const leagueAvgOffense = 0.0; // League average (z-score mean)
+
+    for (const game of games) {
+      const opponentId = game.homeTeamId === features.teamId 
+        ? game.awayTeamId 
+        : game.homeTeamId;
+
+      const opponentRating = allTeamRatings.get(opponentId);
+      if (opponentRating) {
+        // Opponent's defensive rating tells us how strong their defense is
+        // Higher defensive rating (less negative) = weaker defense = easier for offense
+        // Lower defensive rating (more negative) = stronger defense = harder for offense
+        opponentDefensiveRatings.push(opponentRating.defenseRating);
+        
+        // Opponent's offensive rating tells us how strong their offense is
+        // Higher offensive rating = stronger offense = harder for defense
+        // Lower offensive rating = weaker offense = easier for defense
+        opponentOffensiveRatings.push(opponentRating.offenseRating);
+      }
+    }
+
+    if (opponentDefensiveRatings.length === 0 || opponentOffensiveRatings.length === 0) {
+      // No opponent ratings available, return features unchanged
+      return features;
+    }
+
+    // Calculate average opponent strength (relative to league average)
+    const avgOpponentDefense = opponentDefensiveRatings.reduce((sum, r) => sum + r, 0) / opponentDefensiveRatings.length;
+    const avgOpponentOffense = opponentOffensiveRatings.reduce((sum, r) => sum + r, 0) / opponentOffensiveRatings.length;
+
+    // SoS factor: How much harder/easier was the schedule than average?
+    // For offense: stronger opponent defenses (more negative ratings) = harder schedule
+    // For defense: stronger opponent offenses (more positive ratings) = harder schedule
+    // Positive SoS = harder schedule (need to boost stats)
+    // Negative SoS = easier schedule (need to reduce stats)
+    const offensiveSoS = leagueAvgDefense - avgOpponentDefense; // More negative opponent defense = positive SoS = harder
+    const defensiveSoS = avgOpponentOffense - leagueAvgOffense; // More positive opponent offense = positive SoS = harder
+
+    // Adjust features proportionally
+    // For offense: if schedule was harder (positive SoS), raw stats underestimate true ability - boost them
+    // For defense: if schedule was harder (positive SoS), raw stats make defense look worse - boost them
+    // Use 5% adjustment per point of SoS (conservative)
+    const offensiveAdjustmentFactor = 1.0 + (offensiveSoS * 0.05); // 5% adjustment per point of SoS
+    const defensiveAdjustmentFactor = 1.0 + (defensiveSoS * 0.05); // Same for defense
+
+    // Apply adjustments to offensive features
+    const adjustedFeatures: TeamFeatures = {
+      ...features,
+      yppOff: features.yppOff !== null ? features.yppOff * offensiveAdjustmentFactor : null,
+      passYpaOff: features.passYpaOff !== null ? features.passYpaOff * offensiveAdjustmentFactor : null,
+      rushYpcOff: features.rushYpcOff !== null ? features.rushYpcOff * offensiveAdjustmentFactor : null,
+      successOff: features.successOff !== null ? features.successOff * offensiveAdjustmentFactor : null,
+      epaOff: features.epaOff !== null ? features.epaOff * offensiveAdjustmentFactor : null,
+      
+      // For defensive features, invert the logic:
+      // If opponents had strong offenses, our defense looks worse than it is
+      // So we adjust upward (defensive stats are inverted - lower is better)
+      yppDef: features.yppDef !== null ? features.yppDef * defensiveAdjustmentFactor : null,
+      passYpaDef: features.passYpaDef !== null ? features.passYpaDef * defensiveAdjustmentFactor : null,
+      rushYpcDef: features.rushYpcDef !== null ? features.rushYpcDef * defensiveAdjustmentFactor : null,
+      successDef: features.successDef !== null ? features.successDef * defensiveAdjustmentFactor : null,
+      epaDef: features.epaDef !== null ? features.epaDef * defensiveAdjustmentFactor : null,
+    };
+
+    return adjustedFeatures;
+
+  } catch (error) {
+    console.error(`   [SoS] Error adjusting features for ${features.teamId}:`, error);
+    // Return unchanged features on error
+    return features;
+  }
 }
 
 /**
@@ -145,6 +238,10 @@ async function main() {
     const modelConfig = getModelConfig('v2');
     console.log(`⚙️  Using model config: ${modelConfig.name}`);
     console.log(`   HFA: ${modelConfig.hfa} pts, Min Edge: ${modelConfig.min_edge_threshold} pts`);
+    
+    // Check SoS status
+    const sosStatus = modelConfig.sos?.enabled ? 'ENABLED' : 'DISABLED';
+    console.log(`   SoS: ${sosStatus} (${modelConfig.sos?.iterations || 0} iterations, threshold: ${modelConfig.sos?.convergence_threshold || 0.01})`);
 
     // Load FBS teams for this season
     const teamResolver = new TeamResolver();
@@ -183,67 +280,134 @@ async function main() {
       epaDef: calculateZScores(allFeatures, f => f.epaDef),
     };
 
-    // Compute initial ratings (without SoS for first pass)
-    console.log(`\n🧮 Computing initial ratings (v1-style)...`);
-    const initialRatings = allFeatures.map(features => {
-      const offenseRating = computeOffensiveIndex(features, {
-        yppOff: zStats.yppOff,
-        passYpaOff: zStats.passYpaOff,
-        rushYpcOff: zStats.rushYpcOff,
-        successOff: zStats.successOff,
-        epaOff: zStats.epaOff,
-      }, modelConfig);
+    // Check if SoS is enabled
+    const sosEnabled = modelConfig.sos?.enabled ?? false;
+    const maxSoSIterations = modelConfig.sos?.iterations ?? 3;
+    const sosConvergenceThreshold = modelConfig.sos?.convergence_threshold ?? 0.01;
 
-      const defenseRating = computeDefensiveIndex(features, {
-        yppDef: zStats.yppDef,
-        passYpaDef: zStats.passYpaDef,
-        rushYpcDef: zStats.rushYpcDef,
-        successDef: zStats.successDef,
-        epaDef: zStats.epaDef,
-      }, modelConfig);
+    let currentFeatures = allFeatures;
+    let currentRatings: Array<{ teamId: string; offenseRating: number; defenseRating: number; powerRating: number }> = [];
+    let previousRatings: Array<{ teamId: string; powerRating: number }> = [];
 
-      return {
-        teamId: features.teamId,
-        offenseRating,
-        defenseRating,
-        powerRating: offenseRating + defenseRating,
-      };
-    });
+    // Iterative SoS adjustment loop
+    for (let iteration = 0; iteration <= maxSoSIterations; iteration++) {
+      if (iteration === 0) {
+        // Initial pass: compute ratings without SoS
+        console.log(`\n🧮 Computing initial ratings (iteration ${iteration + 1}/${maxSoSIterations + 1})...`);
+      } else if (sosEnabled) {
+        // SoS iterations: adjust features and recompute
+        console.log(`\n📊 SoS iteration ${iteration}/${maxSoSIterations}...`);
+        
+        // Build ratings map from previous iteration
+        const ratingsMap = new Map(
+          currentRatings.map(r => [r.teamId, { offenseRating: r.offenseRating, defenseRating: r.defenseRating }])
+        );
 
-    // Build ratings map for SoS lookup (using initial ratings)
-    const ratingsMap = new Map(
-      initialRatings.map(r => [r.teamId, { offenseRating: r.offenseRating, defenseRating: r.defenseRating }])
-    );
+        // Apply SoS adjustments to all features
+        const adjustedFeaturesPromises = currentFeatures.map(f => 
+          applyStrengthOfSchedule(f, season, ratingsMap, prisma)
+        );
+        currentFeatures = await Promise.all(adjustedFeaturesPromises);
 
-    // TODO: Iterative SoS adjustment
-    // For now, we'll use the initial ratings
-    // Future: Iterate to converge SoS-adjusted ratings
-    console.log(`\n📊 Applying SoS adjustments (placeholder)...`);
-    const sosAdjustedFeatures = allFeatures.map(f => 
-      applyStrengthOfSchedule(f, season, ratingsMap)
-    );
+        // Recalculate z-scores on SoS-adjusted features
+        console.log(`   Recalculating z-scores on SoS-adjusted features...`);
+        zStats.yppOff = calculateZScores(currentFeatures, f => f.yppOff);
+        zStats.passYpaOff = calculateZScores(currentFeatures, f => f.passYpaOff);
+        zStats.rushYpcOff = calculateZScores(currentFeatures, f => f.rushYpcOff);
+        zStats.successOff = calculateZScores(currentFeatures, f => f.successOff);
+        zStats.epaOff = calculateZScores(currentFeatures, f => f.epaOff);
+        zStats.yppDef = calculateZScores(currentFeatures, f => f.yppDef);
+        zStats.passYpaDef = calculateZScores(currentFeatures, f => f.passYpaDef);
+        zStats.rushYpcDef = calculateZScores(currentFeatures, f => f.rushYpcDef);
+        zStats.successDef = calculateZScores(currentFeatures, f => f.successDef);
+        zStats.epaDef = calculateZScores(currentFeatures, f => f.epaDef);
+      } else {
+        // SoS disabled, skip iterations
+        break;
+      }
 
-    // Recalculate z-scores on SoS-adjusted features
-    // TODO: When SoS is implemented, recalculate z-stats here
-    // const sosZStats = { ... }; // Recalculate on adjusted features
+      // Compute ratings with current features and z-stats
+      currentRatings = currentFeatures.map(features => {
+        const offenseRating = computeOffensiveIndex(features, {
+          yppOff: zStats.yppOff,
+          passYpaOff: zStats.passYpaOff,
+          rushYpcOff: zStats.rushYpcOff,
+          successOff: zStats.successOff,
+          epaOff: zStats.epaOff,
+        }, modelConfig);
+
+        const defenseRating = computeDefensiveIndex(features, {
+          yppDef: zStats.yppDef,
+          passYpaDef: zStats.passYpaDef,
+          rushYpcDef: zStats.rushYpcDef,
+          successDef: zStats.successDef,
+          epaDef: zStats.epaDef,
+        }, modelConfig);
+
+        return {
+          teamId: features.teamId,
+          offenseRating,
+          defenseRating,
+          powerRating: offenseRating + defenseRating,
+        };
+      });
+
+      // Check convergence (if not first iteration and SoS enabled)
+      if (iteration > 0 && sosEnabled) {
+        const maxChange = Math.max(
+          ...currentRatings.map((curr, idx) => {
+            const prev = previousRatings.find(p => p.teamId === curr.teamId);
+            if (!prev) return Infinity;
+            return Math.abs(curr.powerRating - prev.powerRating);
+          }).filter(v => isFinite(v))
+        );
+
+        console.log(`   Max rating change: ${maxChange.toFixed(4)} (threshold: ${sosConvergenceThreshold})`);
+
+        if (maxChange < sosConvergenceThreshold) {
+          console.log(`   ✅ SoS converged after ${iteration} iterations`);
+          break;
+        }
+      }
+
+      // Store ratings for next iteration comparison
+      previousRatings = currentRatings.map(r => ({ teamId: r.teamId, powerRating: r.powerRating }));
+    }
+
+    if (sosEnabled) {
+      console.log(`\n✅ Completed SoS adjustment iterations`);
+    }
 
     // Compute final ratings with shrinkage
     console.log(`\n🔧 Applying shrinkage regularization...`);
-    const finalRatings = allFeatures.map((features, idx) => {
-      const initial = initialRatings[idx];
+    const finalRatings = currentFeatures.map((features) => {
+      const currentRating = currentRatings.find(r => r.teamId === features.teamId);
+      if (!currentRating) {
+        // Fallback if rating not found (shouldn't happen)
+        return {
+          season,
+          teamId: features.teamId,
+          offenseRating: 0,
+          defenseRating: 0,
+          powerRating: 0,
+          confidence: calculateConfidence(features),
+          dataSource: getDataSourceString(features),
+          shrinkageFactor: 0,
+        };
+      }
       
       // Calculate shrinkage factor
       const shrinkageFactor = calculateShrinkageFactor(features, modelConfig);
       
       // Shrink toward zero (league average for power ratings)
       const shrunkOffenseRating = applyShrinkage(
-        initial.offenseRating,
+        currentRating.offenseRating,
         0.0, // Prior: league average offense
         shrinkageFactor
       );
       
       const shrunkDefenseRating = applyShrinkage(
-        initial.defenseRating,
+        currentRating.defenseRating,
         0.0, // Prior: league average defense
         shrinkageFactor
       );

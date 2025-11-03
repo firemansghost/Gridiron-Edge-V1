@@ -75,7 +75,7 @@ v2:
   
   # SoS (Strength of Schedule) parameters (new in v2)
   sos:
-    enabled: false        # Set to true when SoS is implemented
+    enabled: true         # Enable SoS adjustments
     iterations: 3         # Number of iterative SoS adjustment passes
     convergence_threshold: 0.01  # Stop iterating when changes < threshold
 
