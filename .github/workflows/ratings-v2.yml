@@ -1,0 +1,137 @@
+name: Ratings v2 Computation
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season to compute ratings for (e.g., 2024, 2025)'
+        required: true
+        default: '2025'
+        type: string
+
+jobs:
+  compute-ratings:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Build jobs
+        run: npm run build:jobs
+
+      - name: Set DATABASE_URL for Prisma
+        run: |
+          if [ -n "${{ secrets.DATABASE_URL }}" ]; then
+            echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
+          else
+            echo "ERROR: DATABASE_URL secret not set"; exit 1
+          fi
+          echo "FORCE_DB_TEAMS=true" >> $GITHUB_ENV
+
+      - name: Set DIRECT_URL for Prisma
+        run: |
+          if [ -n "${{ secrets.DIRECT_URL }}" ]; then
+            echo "DIRECT_URL=${{ secrets.DIRECT_URL }}" >> $GITHUB_ENV
+          else
+            echo "DIRECT_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
+          fi
+
+      - name: Run Ratings v2 Computation
+        run: |
+          SEASON="${{ github.event.inputs.season }}"
+          echo "Computing Ratings v2 for season $SEASON"
+          echo "Note: SoS adjustments are placeholders and will be implemented in a future update"
+          node apps/jobs/dist/src/ratings/compute_ratings_v2.js --season=$SEASON
+
+      - name: Verify ratings were computed
+        run: |
+          SEASON="${{ github.event.inputs.season }}"
+          echo "Verifying Ratings v2 coverage for season $SEASON..."
+          
+          # Query database for v2 ratings count
+          ACTUAL=$(node -e "
+            const { PrismaClient } = require('@prisma/client');
+            const prisma = new PrismaClient();
+            (async () => {
+              const count = await prisma.teamSeasonRating.count({
+                where: { season: parseInt(process.env.SEASON), modelVersion: 'v2' }
+              });
+              console.log(count);
+              await prisma.\$disconnect();
+            })();
+          " SEASON=$SEASON)
+          
+          # Expected: All FBS teams should have ratings
+          # For 2025, expect ~134 FBS teams
+          EXPECTED=134
+          
+          echo "Found $ACTUAL ratings for season $SEASON (modelVersion='v2')"
+          echo "Expected: $EXPECTED FBS teams"
+          
+          COVERAGE_PCT=$((ACTUAL * 100 / EXPECTED))
+          echo "Coverage: $COVERAGE_PCT% ($ACTUAL/$EXPECTED)"
+          
+          MIN_COVERAGE=98
+          if [ "$COVERAGE_PCT" -lt "$MIN_COVERAGE" ]; then
+            echo "❌ ERROR: Coverage $COVERAGE_PCT% is below required minimum of $MIN_COVERAGE%"
+            echo "Only $ACTUAL/$EXPECTED teams have v2 ratings. This is a blocking failure."
+            exit 1
+          else
+            echo "✅ Ratings v2 computed for $ACTUAL/$EXPECTED teams ($COVERAGE_PCT% coverage, >= $MIN_COVERAGE% required)"
+          fi
+
+      - name: Compare v1 vs v2 ratings
+        run: |
+          SEASON="${{ github.event.inputs.season }}"
+          echo "Comparing v1 vs v2 ratings for season $SEASON..."
+          
+          node -e "
+            const { PrismaClient } = require('@prisma/client');
+            const prisma = new PrismaClient();
+            (async () => {
+              const v1Ratings = await prisma.teamSeasonRating.findMany({
+                where: { season: parseInt(process.env.SEASON), modelVersion: 'v1' },
+                select: { teamId: true, powerRating: true }
+              });
+              
+              const v2Ratings = await prisma.teamSeasonRating.findMany({
+                where: { season: parseInt(process.env.SEASON), modelVersion: 'v2' },
+                select: { teamId: true, powerRating: true }
+              });
+              
+              const v1Map = new Map(v1Ratings.map(r => [r.teamId, r.powerRating]));
+              const v2Map = new Map(v2Ratings.map(r => [r.teamId, r.powerRating]));
+              
+              let diffSum = 0;
+              let count = 0;
+              
+              for (const [teamId, v1Rating] of v1Map.entries()) {
+                const v2Rating = v2Map.get(teamId);
+                if (v2Rating !== undefined && v1Rating !== null && v2Rating !== null) {
+                  const diff = Math.abs(Number(v2Rating) - Number(v1Rating));
+                  diffSum += diff;
+                  count++;
+                }
+              }
+              
+              const avgDiff = count > 0 ? diffSum / count : 0;
+              console.log(\`Average absolute difference between v1 and v2: \${avgDiff.toFixed(2)} points\`);
+              console.log(\`Teams compared: \${count}\`);
+              
+              await prisma.\$disconnect();
+            })();
+          " SEASON=$SEASON
+

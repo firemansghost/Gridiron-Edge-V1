@@ -33,6 +33,17 @@ export interface ModelConfig {
     C: number;
   };
   min_edge_threshold: number;
+  // Optional v2-specific fields
+  shrinkage?: {
+    base_factor: number;
+    confidence_weight: number;
+    games_weight: number;
+  };
+  sos?: {
+    enabled: boolean;
+    iterations: number;
+    convergence_threshold: number;
+  };
 }
 
 export interface ModelWeightsConfig {

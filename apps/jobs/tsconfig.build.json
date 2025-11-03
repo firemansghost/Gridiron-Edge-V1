@@ -44,6 +44,7 @@
     "src/ratings/feature-loader.ts",
     "src/ratings/test-feature-loader.ts",
     "src/ratings/compute_ratings_v1.ts",
+    "src/ratings/compute_ratings_v2.ts",
     "src/config/model-weights.ts",
     "src/seed-team-membership.ts"
   ],
