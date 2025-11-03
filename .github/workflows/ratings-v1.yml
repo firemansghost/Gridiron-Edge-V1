@@ -32,6 +32,15 @@ jobs:
       - name: Build jobs
         run: npm run build:jobs
 
+      - name: Run unit tests
+        run: |
+          echo "Running Ratings v1 unit tests..."
+          npm run test:ratings:v1 || {
+            echo "❌ Unit tests failed!"
+            exit 1
+          }
+          echo "✅ All unit tests passed"
+
       - name: Set DATABASE_URL for Prisma
         run: |
           if [ -n "${{ secrets.DATABASE_URL }}" ]; then
@@ -74,13 +83,24 @@ jobs:
           echo "Expected FBS=$EXPECTED, Ratings computed=$ACTUAL (season=$SEASON)"
           
           if [ -z "$EXPECTED" ] || [ -z "$ACTUAL" ]; then
-            echo "⚠️  WARNING: Could not parse counts from database output"
+            echo "❌ ERROR: Could not parse counts from database output"
             echo "Expected output: $EXPECTED_OUTPUT"
             echo "Actual output: $ACTUAL_OUTPUT"
-          elif [ "$ACTUAL" -lt "$((EXPECTED * 80 / 100))" ]; then
-            echo "⚠️  WARNING: Less than 80% of expected teams have ratings ($ACTUAL/$EXPECTED)"
+            exit 1
+          fi
+          
+          # Calculate coverage percentage
+          COVERAGE_PCT=$((ACTUAL * 100 / EXPECTED))
+          echo "Coverage: $COVERAGE_PCT% ($ACTUAL/$EXPECTED)"
+          
+          # Require at least 98% coverage (blocking)
+          MIN_COVERAGE=98
+          if [ "$COVERAGE_PCT" -lt "$MIN_COVERAGE" ]; then
+            echo "❌ ERROR: Coverage $COVERAGE_PCT% is below required minimum of $MIN_COVERAGE%"
+            echo "Only $ACTUAL/$EXPECTED teams have ratings. This is a blocking failure."
+            exit 1
           else
-            echo "✅ Ratings computed for $ACTUAL/$EXPECTED teams"
+            echo "✅ Ratings computed for $ACTUAL/$EXPECTED teams ($COVERAGE_PCT% coverage, >= $MIN_COVERAGE% required)"
           fi
 
       - name: Show ratings summary

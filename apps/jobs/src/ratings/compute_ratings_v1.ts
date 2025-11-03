@@ -13,7 +13,9 @@ import { TeamResolver } from '../../adapters/TeamResolver';
 
 const prisma = new PrismaClient();
 
-interface ZScoreStats {
+// Export types and interfaces for testing
+export type { TeamFeatures };
+export interface ZScoreStats {
   mean: number;
   stdDev: number;
   values: Array<{ teamId: string; value: number }>;
@@ -22,7 +24,7 @@ interface ZScoreStats {
 /**
  * Calculate z-scores for a feature across all teams
  */
-function calculateZScores(features: TeamFeatures[], getValue: (f: TeamFeatures) => number | null): ZScoreStats {
+export function calculateZScores(features: TeamFeatures[], getValue: (f: TeamFeatures) => number | null): ZScoreStats {
   const values = features
     .map(f => ({ teamId: f.teamId, value: getValue(f) }))
     .filter(v => v.value !== null && v.value !== undefined && !isNaN(v.value))
@@ -44,7 +46,7 @@ function calculateZScores(features: TeamFeatures[], getValue: (f: TeamFeatures) 
 /**
  * Get z-score for a value
  */
-function getZScore(value: number | null, stats: ZScoreStats): number {
+export function getZScore(value: number | null, stats: ZScoreStats): number {
   if (value === null || value === undefined || isNaN(value)) return 0;
   return (value - stats.mean) / stats.stdDev;
 }
@@ -52,7 +54,7 @@ function getZScore(value: number | null, stats: ZScoreStats): number {
 /**
  * Compute offensive index from features
  */
-function computeOffensiveIndex(features: TeamFeatures, zStats: {
+export function computeOffensiveIndex(features: TeamFeatures, zStats: {
   yppOff: ZScoreStats;
   passYpaOff: ZScoreStats;
   rushYpcOff: ZScoreStats;
@@ -87,7 +89,7 @@ function computeOffensiveIndex(features: TeamFeatures, zStats: {
 /**
  * Compute defensive index from features (inverted - lower is better for defense)
  */
-function computeDefensiveIndex(features: TeamFeatures, zStats: {
+export function computeDefensiveIndex(features: TeamFeatures, zStats: {
   yppDef: ZScoreStats;
   passYpaDef: ZScoreStats;
   rushYpcDef: ZScoreStats;
@@ -142,7 +144,7 @@ function computeDefensiveIndex(features: TeamFeatures, zStats: {
 /**
  * Calculate confidence score (0-1)
  */
-function calculateConfidence(features: TeamFeatures): number {
+export function calculateConfidence(features: TeamFeatures): number {
   const requiredFeatures = [
     features.yppOff,
     features.passYpaOff,
@@ -168,7 +170,7 @@ function calculateConfidence(features: TeamFeatures): number {
 /**
  * Get data source string for storage
  */
-function getDataSourceString(features: TeamFeatures): string {
+export function getDataSourceString(features: TeamFeatures): string {
   if (features.successOff !== null && features.epaOff !== null) {
     return features.dataSource === 'game' ? 'game+season' : 'season_only';
   }
