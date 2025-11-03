@@ -135,6 +135,48 @@ model Recruiting {
   @@map("recruiting")
 }
 
+model TeamSeasonTalent {
+  season          Int      @map("season")
+  teamId          String   @map("team_id")
+  talentComposite Float    @map("talent_composite")
+  blueChipsPct    Float?   @map("blue_chips_pct")
+  fiveStar        Int      @default(0) @map("five_star")
+  fourStar        Int      @default(0) @map("four_star")
+  threeStar       Int      @default(0) @map("three_star")
+  unrated         Int      @default(0)
+  sourceUpdatedAt DateTime? @map("source_updated_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  team            Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@id([season, teamId])
+  @@index([season], map: "idx_team_season_talent_season")
+  @@index([teamId], map: "idx_team_season_talent_team")
+  @@index([season, talentComposite(sort: Desc)], map: "idx_team_season_talent_composite")
+  @@map("team_season_talent")
+}
+
+model TeamClassCommits {
+  season           Int      @map("season")
+  teamId           String   @map("team_id")
+  commitsTotal     Int      @default(0) @map("commits_total")
+  fiveStarCommits  Int      @default(0) @map("five_star_commits")
+  fourStarCommits  Int      @default(0) @map("four_star_commits")
+  threeStarCommits Int      @default(0) @map("three_star_commits")
+  avgCommitRating  Float?   @map("avg_commit_rating")
+  classRank        Int?     @map("class_rank")
+  sourceUpdatedAt  DateTime? @map("source_updated_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  team             Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@id([season, teamId])
+  @@index([season], map: "idx_team_class_commits_season")
+  @@index([teamId], map: "idx_team_class_commits_team")
+  @@index([season, classRank], map: "idx_team_class_commits_rank")
+  @@map("team_class_commits")
+}
+
 model TeamSeasonStat {
   season     Int      @map("season")
   teamId     String   @map("team_id")
