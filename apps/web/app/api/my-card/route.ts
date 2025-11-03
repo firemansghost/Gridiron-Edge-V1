@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     const marketType = searchParams.get('marketType');
 
     // Default to current week if not specified
-    const current = getCurrentSeasonWeek();
+    const current = await getCurrentSeasonWeek(prisma);
     const filterSeason = season ? parseInt(season) : current.season;
     const filterWeek = week ? parseInt(week) : current.week;
 
