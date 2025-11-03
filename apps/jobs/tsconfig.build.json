@@ -48,7 +48,8 @@
     "src/config/model-weights.ts",
     "src/seed-team-membership.ts",
     "src/injuries/manual_injury_etl.ts",
-    "src/backtesting/backtest_runner.ts"
+    "src/backtesting/backtest_runner.ts",
+    "adapters/ESPNInjuryAdapter.ts"
   ],
   "exclude": [
     "**/*.test.ts",

@@ -659,6 +659,14 @@ async function main() {
       }
     }
 
+    // Special handling for ESPN injury adapter (doesn't follow standard flow)
+    if (options.adapter === 'espn-injuries' || options.adapter === 'espnInjuries' || adapter.getName() === 'ESPNInjuries') {
+      const { fetchESPNInjuries } = require('../dist/adapters/ESPNInjuryAdapter');
+      await fetchESPNInjuries(options.season, options.weeks);
+      console.log('✅ ESPN injury fetch completed!');
+      return; // Skip standard ingestion flow
+    }
+
     // Fetch data from adapter
     console.log('📥 Fetching teams...');
     const teams = await adapter.getTeams(options.season);

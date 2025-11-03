@@ -186,6 +186,52 @@ jobs:
         if: ${{ env.VISUALCROSSING_API_KEY == '' }}
         run: echo "⚠️  VISUALCROSSING_API_KEY not set; skipping weather update."
 
+  ingest-injuries:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: ingest-schedules
+    env:
+      DATABASE_URL: ${{ secrets.DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      TZ: America/Chicago
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run prisma:generate
+
+      - name: Build jobs (for injury ingestion)
+        run: npm run build:jobs
+
+      - name: Calculate current week
+        id: current-week
+        run: |
+          if [ "${{ github.event.inputs.week }}" != "" ]; then
+            POLL_WEEK="${{ github.event.inputs.week }}"
+          else
+            # Calculate current week from database
+            POLL_WEEK=$(node scripts/get-current-week.mjs)
+          fi
+          echo "📅 Using week: $POLL_WEEK"
+          echo "POLL_WEEK=$POLL_WEEK" >> $GITHUB_ENV
+
+      - name: Fetch injury data from ESPN
+        run: |
+          echo "🏥 Fetching injury data for week $POLL_WEEK..."
+          node apps/jobs/dist/ingest.js espn-injuries --season 2025 --weeks $POLL_WEEK
+          echo "✅ Injury data fetched"
+
   calculate-ratings:
     runs-on: ubuntu-latest
     timeout-minutes: 30

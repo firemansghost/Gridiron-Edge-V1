@@ -54,9 +54,16 @@ export class AdapterFactory {
       case 'oddsapi':
         return new OddsApiAdapter(adapterConfig.config as any);
       
+      case 'espn-injuries':
+        // ESPN injuries is handled specially, doesn't need an adapter class
+        return {
+          getName: () => 'ESPNInjuries',
+          isAvailable: async () => true,
+        } as DataSourceAdapter;
+      
       // Future adapters
       case 'espn':
-        throw new Error('ESPN adapter not yet implemented');
+        throw new Error('ESPN adapter not yet implemented (use espn-injuries for injury data)');
       case 'odds-api':
         throw new Error('Odds API adapter not yet implemented (use oddsapi)');
       case 'sports-reference':

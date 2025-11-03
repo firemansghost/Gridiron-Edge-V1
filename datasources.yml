@@ -86,6 +86,13 @@ adapters:
         - spreads
         - totals
 
+  espn-injuries:
+    provider: "espn-injuries"
+    enabled: true  # No API key required, but use responsibly
+    config:
+      baseUrl: "https://site.api.espn.com/apis/site/v2/sports/football/college-football/injuries"
+      timeoutMs: 30000
+
 # Default adapter to use when none specified
 defaultAdapter: "mock"
 
