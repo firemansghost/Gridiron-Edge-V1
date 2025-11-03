@@ -19,6 +19,7 @@ import { ErrorState } from '@/components/ErrorState';
 import { LineSparkline } from '@/components/LineSparkline';
 import { GameDetailSkeleton } from '@/components/GameDetailSkeleton';
 import { TOOLTIP_CONTENT } from '@/lib/tooltip-content';
+import { TeamLogo } from '@/components/TeamLogo';
 
 export default function GameDetailPage() {
   const params = useParams();
@@ -136,58 +137,90 @@ export default function GameDetailPage() {
       <HeaderNav />
       <div className="flex-1">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">{game.game.matchup}</h1>
-              <p className="text-gray-600 mt-2">
-                {game.game.kickoff} • {game.game.venue} {game.game.neutralSite && '(Neutral)'}
-              </p>
-            </div>
-            <div className="text-right">
-              <div className="text-sm text-gray-500 flex items-center justify-end gap-1">
-                Model Version
-                <InfoTooltip content={TOOLTIP_CONTENT.MODEL_VERSION} />
+          {/* Matchup Header */}
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">{game.game.matchup}</h1>
+                <p className="text-gray-600 mt-2">
+                  {game.game.kickoff} • {game.game.venue} {game.game.neutralSite && '(Neutral)'}
+                </p>
               </div>
-              <Link 
-                href="/docs/changelog"
-                className="text-lg font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors inline-block"
-              >
-                {game.modelConfig.version}
-              </Link>
+              <div className="text-right">
+                <div className="text-sm text-gray-500 flex items-center justify-end gap-1">
+                  Model Version
+                  <InfoTooltip content={TOOLTIP_CONTENT.MODEL_VERSION} />
+                </div>
+                <Link 
+                  href="/docs/changelog"
+                  className="text-lg font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors inline-block"
+                >
+                  {game.modelConfig.version}
+                </Link>
+              </div>
             </div>
           </div>
 
-          {/* Team Header with Rankings */}
-          <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
+          {/* Team Strips with Logos, Ranks, Records, Form */}
+          <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6 shadow-sm">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-lg font-semibold text-gray-900">{game.teams?.away?.team?.name || game.game.awayTeam}</div>
-                  <div className="text-sm text-gray-600 mt-1">
-                    {game.teams?.away?.record ? `${game.teams.away.record.wins}-${game.teams.away.record.losses}` : '—'} • {game.teams?.away?.form || '—'}
+              {/* Away Team Strip */}
+              <div className="flex items-center gap-4">
+                <TeamLogo 
+                  teamName={game.teams?.away?.team?.name || game.game.awayTeam}
+                  teamId={game.teams?.away?.team?.id}
+                  size="lg"
+                />
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="text-xl font-bold text-gray-900">{game.teams?.away?.team?.name || game.game.awayTeam}</div>
+                    {renderRankChips(game.rankings?.away)}
                   </div>
-                </div>
-                <div className="text-right">
-                  {renderRankChips(game.rankings?.away)}
+                  <div className="flex items-center gap-3 text-sm text-gray-600">
+                    <span className="font-medium">
+                      {game.teams?.away?.record ? `${game.teams.away.record.wins}-${game.teams.away.record.losses}` : '—'}
+                    </span>
+                    <span className="text-gray-400">•</span>
+                    <span className="font-mono tracking-wider">{game.teams?.away?.form || '—'}</span>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-lg font-semibold text-gray-900">{game.teams?.home?.team?.name || game.game.homeTeam}</div>
-                  <div className="text-sm text-gray-600 mt-1">
-                    {game.teams?.home?.record ? `${game.teams.home.record.wins}-${game.teams.home.record.losses}` : '—'} • {game.teams?.home?.form || '—'}
+
+              {/* Home Team Strip */}
+              <div className="flex items-center gap-4">
+                <TeamLogo 
+                  teamName={game.teams?.home?.team?.name || game.game.homeTeam}
+                  teamId={game.teams?.home?.team?.id}
+                  size="lg"
+                />
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="text-xl font-bold text-gray-900">{game.teams?.home?.team?.name || game.game.homeTeam}</div>
+                    {renderRankChips(game.rankings?.home)}
                   </div>
-                </div>
-                <div className="text-right">
-                  {renderRankChips(game.rankings?.home)}
+                  <div className="flex items-center gap-3 text-sm text-gray-600">
+                    <span className="font-medium">
+                      {game.teams?.home?.record ? `${game.teams.home.record.wins}-${game.teams.home.record.losses}` : '—'}
+                    </span>
+                    <span className="text-gray-400">•</span>
+                    <span className="font-mono tracking-wider">{game.teams?.home?.form || '—'}</span>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Betting Lines Summary - Clear at top */}
+          {/* Game Status (if not scheduled) */}
+          {game.game.status !== 'scheduled' && (
+            <div className="mb-6 bg-white p-4 rounded-lg shadow">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Game Status</h3>
+              <div className="text-2xl font-bold text-gray-900">
+                {game.game.awayTeam} {game.game.awayScore} - {game.game.homeScore} {game.game.homeTeam}
+              </div>
+            </div>
+          )}
+
+          {/* Betting Lines Summary */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
             <h3 className="text-lg font-semibold text-blue-900 mb-3 flex items-center gap-2">
               Betting Lines
@@ -245,7 +278,6 @@ export default function GameDetailPage() {
               </div>
             )}
           </div>
-        </div>
 
         {/* Game Status */}
         {game.game.status !== 'scheduled' && (
