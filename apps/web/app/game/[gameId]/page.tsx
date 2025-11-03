@@ -809,14 +809,14 @@ export default function GameDetailPage() {
               <div>
                 <div className="text-sm text-gray-500 flex items-center gap-1">
                   Power Rating
-                  <InfoTooltip content="A team's overall strength rating combining offensive and defensive capabilities. Higher numbers indicate stronger teams. Used to predict game outcomes and calculate point spreads." />
+                  <InfoTooltip content={TOOLTIP_CONTENT.POWER_RATING} />
                 </div>
                 <div className="text-2xl font-bold text-gray-900">{game.ratings.home.rating.toFixed(2)}</div>
               </div>
               <div>
                 <div className="text-sm text-gray-500 flex items-center gap-1">
                   Confidence
-                  <InfoTooltip content="A measure (0-1 scale) of how reliable this rating is, based on data quality and coverage. Higher confidence means more reliable predictions." />
+                  <InfoTooltip content={TOOLTIP_CONTENT.CONFIDENCE} />
                 </div>
                 <div className="text-lg text-gray-900">{game.ratings.home.confidence.toFixed(2)}</div>
               </div>
@@ -830,14 +830,14 @@ export default function GameDetailPage() {
               <div>
                 <div className="text-sm text-gray-500 flex items-center gap-1">
                   Power Rating
-                  <InfoTooltip content="A team's overall strength rating combining offensive and defensive capabilities. Higher numbers indicate stronger teams. Used to predict game outcomes and calculate point spreads." />
+                  <InfoTooltip content={TOOLTIP_CONTENT.POWER_RATING} />
                 </div>
                 <div className="text-2xl font-bold text-gray-900">{game.ratings.away.rating.toFixed(2)}</div>
               </div>
               <div>
                 <div className="text-sm text-gray-500 flex items-center gap-1">
                   Confidence
-                  <InfoTooltip content="A measure (0-1 scale) of how reliable this rating is, based on data quality and coverage. Higher confidence means more reliable predictions." />
+                  <InfoTooltip content={TOOLTIP_CONTENT.CONFIDENCE} />
                 </div>
                 <div className="text-lg text-gray-900">{game.ratings.away.confidence.toFixed(2)}</div>
               </div>
@@ -895,10 +895,10 @@ export default function GameDetailPage() {
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Model Information</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <div className="text-sm text-gray-500 flex items-center gap-1">
-                Home Field Advantage (HFA)
-                <InfoTooltip content="Additional points awarded to the home team, independent of talent. This is a constant value (typically 2.0-3.0 points) that accounts for home field advantage factors like crowd noise, travel, and familiarity." />
-              </div>
+          <div className="text-sm text-gray-500 flex items-center gap-1">
+            Home Field Advantage (HFA)
+            <InfoTooltip content={TOOLTIP_CONTENT.HFA} />
+          </div>
               <div className="text-lg text-gray-900">{game.modelConfig?.hfa || 2.0} points</div>
               <div className="text-xs text-gray-500 mt-1">Separate from talent component</div>
             </div>
