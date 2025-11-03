@@ -621,19 +621,37 @@ export default async function StatusPage() {
             <h2 className="text-2xl font-semibold text-gray-900 mb-4">
               🎯 Team Talent & Recruiting
             </h2>
-            <div className="bg-teal-50 border border-teal-200 rounded-lg p-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
-                  <h3 className="font-medium text-teal-900 mb-2">Talent Records</h3>
-                  <p className="text-teal-800">
-                    <span className="font-mono font-bold">{totalRecruitingRecords.toLocaleString()}</span> team talent records in {currentSeason}
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Roster Talent</h3>
+                  <p className="text-2xl font-bold text-blue-600">
+                    <span className="font-mono font-bold">{rosterTalentCount.toLocaleString()}</span> teams
                   </p>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Last updated: {rosterTalentLastUpdated ? rosterTalentLastUpdated.toLocaleString() : 'Never'}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">From team_season_talent</p>
                 </div>
                 <div>
-                  <h3 className="font-medium text-teal-900 mb-2">Last Update</h3>
-                  <p className="text-teal-800">
-                    {lastRecruitingUpdate?.updatedAt ? lastRecruitingUpdate.updatedAt.toLocaleString() : 'Never'}
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Recruiting Commits</h3>
+                  <p className="text-2xl font-bold text-green-600">
+                    <span className="font-mono font-bold">{commitsCount.toLocaleString()}</span> teams
                   </p>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Last updated: {commitsLastUpdated ? commitsLastUpdated.toLocaleString() : 'Never'}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">From team_class_commits</p>
+                </div>
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Recruiting (Legacy)</h3>
+                  <p className="text-2xl font-bold text-gray-600">
+                    <span className="font-mono font-bold">{totalRecruitingRecords.toLocaleString()}</span> records
+                  </p>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Last updated: {lastRecruitingUpdate?.updatedAt ? lastRecruitingUpdate.updatedAt.toLocaleString() : 'Never'}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">From recruiting table (deprecated)</p>
                 </div>
               </div>
             </div>
