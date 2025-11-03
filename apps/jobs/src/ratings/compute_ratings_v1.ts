@@ -10,6 +10,7 @@
 import { PrismaClient } from '@prisma/client';
 import { FeatureLoader, TeamFeatures } from './feature-loader';
 import { TeamResolver } from '../../adapters/TeamResolver';
+import { getModelConfig } from '../config/model-weights';
 
 const prisma = new PrismaClient();
 
@@ -60,13 +61,15 @@ export function computeOffensiveIndex(features: TeamFeatures, zStats: {
   rushYpcOff: ZScoreStats;
   successOff: ZScoreStats;
   epaOff: ZScoreStats;
-}): number {
+}, modelConfig?: ReturnType<typeof getModelConfig>): number {
+  // Use provided config or load default v1 config
+  const config = modelConfig || getModelConfig('v1');
   const weights = {
-    yppOff: 0.30,
-    passYpaOff: 0.20,
-    rushYpcOff: 0.15,
-    successOff: 0.20,
-    epaOff: 0.15,
+    yppOff: config.offensive_weights.ypp_off,
+    passYpaOff: config.offensive_weights.pass_ypa_off,
+    rushYpcOff: config.offensive_weights.rush_ypc_off,
+    successOff: config.offensive_weights.success_off,
+    epaOff: config.offensive_weights.epa_off,
   };
 
   const zScores = {
@@ -95,7 +98,10 @@ export function computeDefensiveIndex(features: TeamFeatures, zStats: {
   rushYpcDef: ZScoreStats;
   successDef: ZScoreStats;
   epaDef: ZScoreStats;
-}): number {
+}, modelConfig?: ReturnType<typeof getModelConfig>): number {
+  // Use provided config or load default v1 config
+  const config = modelConfig || getModelConfig('v1');
+  
   // If we don't have defensive ypp/ypa/ypc, use only success/EPA
   const hasDefensiveYards = features.yppDef !== null || features.passYpaDef !== null || features.rushYpcDef !== null;
   
@@ -103,18 +109,18 @@ export function computeDefensiveIndex(features: TeamFeatures, zStats: {
   
   if (hasDefensiveYards) {
     weights = {
-      yppDef: 0.20,
-      passYpaDef: 0.20,
-      rushYpcDef: 0.15,
-      successDef: 0.25,
-      epaDef: 0.20,
+      yppDef: config.defensive_weights.ypp_def,
+      passYpaDef: config.defensive_weights.pass_ypa_def,
+      rushYpcDef: config.defensive_weights.rush_ypc_def,
+      successDef: config.defensive_weights.success_def,
+      epaDef: config.defensive_weights.epa_def,
     };
   } else {
     // Renormalize to use only success/EPA
-    const total = 0.25 + 0.20;
+    const total = config.defensive_weights.success_def + config.defensive_weights.epa_def;
     weights = {
-      successDef: 0.25 / total,
-      epaDef: 0.20 / total,
+      successDef: config.defensive_weights.success_def / total,
+      epaDef: config.defensive_weights.epa_def / total,
       yppDef: 0,
       passYpaDef: 0,
       rushYpcDef: 0,
@@ -192,6 +198,11 @@ async function main() {
 
     console.log(`🚀 Starting Ratings v1 computation for season=${season}...`);
 
+    // Load model configuration
+    const modelConfig = getModelConfig('v1');
+    console.log(`⚙️  Using model config: ${modelConfig.name}`);
+    console.log(`   HFA: ${modelConfig.hfa} pts, Min Edge: ${modelConfig.min_edge_threshold} pts`);
+
     // Load FBS teams for this season
     const teamResolver = new TeamResolver();
     const fbsTeamIds = await teamResolver.loadFBSTeamsForSeason(season);
@@ -238,7 +249,7 @@ async function main() {
         rushYpcOff: zStats.rushYpcOff,
         successOff: zStats.successOff,
         epaOff: zStats.epaOff,
-      });
+      }, modelConfig);
 
       const defenseRating = computeDefensiveIndex(features, {
         yppDef: zStats.yppDef,
@@ -246,7 +257,7 @@ async function main() {
         rushYpcDef: zStats.rushYpcDef,
         successDef: zStats.successDef,
         epaDef: zStats.epaDef,
-      });
+      }, modelConfig);
 
       const powerRating = offenseRating + defenseRating;
       const confidence = calculateConfidence(features);

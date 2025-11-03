@@ -1,0 +1,44 @@
+# Model Configuration
+# Centralized weights, thresholds, and constants for ratings models
+# Versioned per model version
+
+v1:
+  name: "Ratings v1"
+  description: "Feature-based power ratings using z-scores and weighted indices"
+  
+  # Home Field Advantage (in points)
+  hfa: 2.0
+  
+  # Offensive feature weights (must sum to 1.0)
+  offensive_weights:
+    ypp_off: 0.30      # Yards per play offense
+    pass_ypa_off: 0.20 # Passing yards per attempt offense
+    rush_ypc_off: 0.15 # Rushing yards per carry offense
+    success_off: 0.20  # Success rate offense
+    epa_off: 0.15      # Expected points added offense
+  
+  # Defensive feature weights (must sum to 1.0 when all present)
+  # If defensive yardage stats are missing, weights are renormalized to use only success/EPA
+  defensive_weights:
+    ypp_def: 0.20      # Yards per play defense (inverted - lower is better)
+    pass_ypa_def: 0.20 # Passing yards per attempt defense (inverted)
+    rush_ypc_def: 0.15 # Rushing yards per carry defense (inverted)
+    success_def: 0.25  # Success rate defense (inverted)
+    epa_def: 0.20      # Expected points added defense (inverted)
+  
+  # Confidence tier thresholds (in points of edge)
+  confidence_tiers:
+    A: 4.0  # High confidence - strongest opportunities
+    B: 3.0  # Medium confidence - good opportunities
+    C: 2.0  # Low confidence - use with caution
+  
+  # Minimum edge threshold for showing picks
+  min_edge_threshold: 2.0
+
+# v2: Placeholder for future model version
+# v2:
+#   name: "Ratings v2"
+#   description: "Enhanced ratings with Strength of Schedule and shrinkage"
+#   hfa: 2.0
+#   ...
+
