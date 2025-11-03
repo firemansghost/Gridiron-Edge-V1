@@ -122,7 +122,7 @@ export default function GameDetailPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Header */}
         <div className="mb-8">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mb-4">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">{game.game.matchup}</h1>
               <p className="text-gray-600 mt-2">
@@ -141,6 +141,65 @@ export default function GameDetailPage() {
                 {game.model.version}
               </Link>
             </div>
+          </div>
+
+          {/* Betting Lines Summary - Clear at top */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+            <h3 className="text-lg font-semibold text-blue-900 mb-3 flex items-center gap-2">
+              Betting Lines
+              <InfoTooltip content="Current betting market lines for this game. These are the lines you would bet against at sportsbooks." />
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-white p-3 rounded border border-blue-100">
+                <div className="text-xs text-gray-600 mb-1">Spread</div>
+                <div className="text-xl font-bold text-gray-900">
+                  {game.market.spread > 0 ? '+' : ''}{game.market.spread.toFixed(1)}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  {game.market.spread < 0 ? game.game.homeTeam : game.game.awayTeam} favored
+                </div>
+              </div>
+              <div className="bg-white p-3 rounded border border-blue-100">
+                <div className="text-xs text-gray-600 mb-1">Total (Over/Under)</div>
+                <div className="text-xl font-bold text-gray-900">
+                  {game.market.total.toFixed(1)}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  Combined points
+                </div>
+              </div>
+              <div className="bg-white p-3 rounded border border-blue-100">
+                <div className="text-xs text-gray-600 mb-1">Moneyline</div>
+                {game.market.moneyline ? (
+                  <>
+                    <div className="text-xl font-bold text-gray-900">
+                      {game.market.moneyline.pickLabel}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {game.market.moneyline.price > 0 ? '+' : ''}{game.market.moneyline.price}
+                      {game.market.moneyline.impliedProb && ` (${(game.market.moneyline.impliedProb * 100).toFixed(1)}%)`}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-lg text-gray-400">Not available</div>
+                )}
+              </div>
+            </div>
+            {game.market.meta?.spread && (
+              <div className="text-xs text-gray-500 mt-3 text-center">
+                Source: {game.market.meta.spread.source || 'Unknown'} • 
+                {game.market.meta.spread.timestamp && 
+                  ` Updated: ${new Date(game.market.meta.spread.timestamp).toLocaleString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true,
+                    timeZone: 'America/Chicago'
+                  })}`
+                }
+              </div>
+            )}
           </div>
         </div>
 
@@ -347,7 +406,22 @@ export default function GameDetailPage() {
             <div className="mt-6 pt-6 border-t border-gray-200">
               <div className="flex items-center justify-between mb-3">
                 <h4 className="text-md font-medium text-gray-900">Weather Conditions</h4>
-                <InfoTooltip content="Game-time weather forecast from Visual Crossing. Weather can affect scoring, especially wind and precipitation." />
+                <InfoTooltip content="Game-time weather forecast from Visual Crossing for the game date and kickoff time. Weather can affect scoring, especially wind and precipitation." />
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 mb-3">
+                <div className="text-xs text-blue-700 font-medium">
+                  ⏰ Game Day Forecast: {game.game.kickoff}
+                </div>
+                <div className="text-xs text-blue-600 mt-1">
+                  Forecast generated: {game.weather.forecastTime ? new Date(game.weather.forecastTime).toLocaleString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true,
+                    timeZone: 'America/Chicago'
+                  }) : 'Unknown'}
+                </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="bg-gray-50 p-3 rounded-lg">
@@ -371,19 +445,19 @@ export default function GameDetailPage() {
               </div>
               {game.weather.humidity && (
                 <div className="text-xs text-gray-500 mt-2">
-                  Humidity: {game.weather.humidity}% • Source: {game.weather.source} • Forecast: {new Date(game.weather.forecastTime).toLocaleString()}
+                  Humidity: {game.weather.humidity}% • Source: {game.weather.source}
                 </div>
               )}
             </div>
           )}
 
           {/* Injury Data */}
-          {game.injuries && game.injuries.length > 0 && (
-            <div className="mt-6 pt-6 border-t border-gray-200">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-md font-medium text-gray-900">Injuries</h4>
-                <InfoTooltip content="Player injury reports. OUT = confirmed out, QUESTIONABLE = may not play, PROBABLE = likely to play, DOUBTFUL = unlikely to play." />
-              </div>
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-md font-medium text-gray-900">Injuries</h4>
+              <InfoTooltip content="Player injury reports from ESPN. OUT = confirmed out, QUESTIONABLE = may not play, PROBABLE = likely to play, DOUBTFUL = unlikely to play." />
+            </div>
+            {game.injuries && game.injuries.length > 0 ? (
               <div className="space-y-2">
                 {game.injuries.map((injury: any) => (
                   <div key={injury.id} className="bg-gray-50 p-3 rounded-lg">
@@ -427,8 +501,17 @@ export default function GameDetailPage() {
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+                <p className="text-sm text-gray-600">
+                  ✓ No injuries reported for this game
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Injury data is automatically synced from ESPN. If you notice missing injuries, they may not have been reported yet.
+                </p>
+              </div>
+            )}
+          </div>
 
           {lineHistory && (lineHistory.history?.spread?.length > 0 || lineHistory.history?.total?.length > 0) && (
             <div className="mt-6 pt-6 border-t border-gray-200">

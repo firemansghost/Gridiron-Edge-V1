@@ -4,11 +4,15 @@ import { useEffect, useState } from 'react';
 
 interface ETLHeartbeatData {
   recruiting_2025: number;
+  roster_talent_2025?: number; // Phase 3
+  commits_2025?: number; // Phase 3
   team_game_stats_2025: number;
   team_season_stats_2025: number;
   ratings_2025: number;
   lastUpdated: {
     recruiting: string | null;
+    rosterTalent?: string | null; // Phase 3
+    commits?: string | null; // Phase 3
     teamGameStats: string | null;
     teamSeasonStats: string | null;
     ratings: string | null;
@@ -79,11 +83,15 @@ export default function ETLHeartbeat({ fallbackData }: ETLHeartbeatProps) {
   // Use fallback data if API failed
   const displayData = data || {
     recruiting_2025: fallbackData.recruiting2025,
+    roster_talent_2025: 0,
+    commits_2025: 0,
     team_game_stats_2025: fallbackData.teamGameStats2025,
     team_season_stats_2025: fallbackData.teamSeasonStats2025,
     ratings_2025: fallbackData.teamSeasonRatings2025,
     lastUpdated: {
       recruiting: null,
+      rosterTalent: null,
+      commits: null,
       teamGameStats: null,
       teamSeasonStats: null,
       ratings: null,
@@ -99,14 +107,23 @@ export default function ETLHeartbeat({ fallbackData }: ETLHeartbeatProps) {
         {error && <span className="text-sm text-red-500 ml-2">(Error: {error})</span>}
       </h2>
       <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <div>
-            <h3 className="font-medium text-purple-900 mb-2">Recruiting Data</h3>
+            <h3 className="font-medium text-purple-900 mb-2">Roster Talent</h3>
             <p className="text-purple-800">
-              <span className="font-mono font-bold">{displayData.recruiting_2025.toLocaleString()}</span> records
+              <span className="font-mono font-bold">{(displayData.roster_talent_2025 || 0).toLocaleString()}</span> teams
             </p>
-            <p className={`text-xs ${getAgeColor(getDataAge(displayData.lastUpdated.recruiting))}`}>
-              {formatTimestamp(displayData.lastUpdated.recruiting)}
+            <p className={`text-xs ${getAgeColor(getDataAge(displayData.lastUpdated.rosterTalent || null))}`}>
+              {formatTimestamp(displayData.lastUpdated.rosterTalent || null)}
+            </p>
+          </div>
+          <div>
+            <h3 className="font-medium text-purple-900 mb-2">Recruiting Commits</h3>
+            <p className="text-purple-800">
+              <span className="font-mono font-bold">{(displayData.commits_2025 || 0).toLocaleString()}</span> teams
+            </p>
+            <p className={`text-xs ${getAgeColor(getDataAge(displayData.lastUpdated.commits || null))}`}>
+              {formatTimestamp(displayData.lastUpdated.commits || null)}
             </p>
           </div>
           <div>
@@ -134,6 +151,15 @@ export default function ETLHeartbeat({ fallbackData }: ETLHeartbeatProps) {
             </p>
             <p className={`text-xs ${getAgeColor(getDataAge(displayData.lastUpdated.ratings))}`}>
               {formatTimestamp(displayData.lastUpdated.ratings)}
+            </p>
+          </div>
+          <div>
+            <h3 className="font-medium text-purple-900 mb-2">Recruiting (Legacy)</h3>
+            <p className="text-purple-800">
+              <span className="font-mono font-bold">{displayData.recruiting_2025.toLocaleString()}</span> records
+            </p>
+            <p className={`text-xs ${getAgeColor(getDataAge(displayData.lastUpdated.recruiting))}`}>
+              {formatTimestamp(displayData.lastUpdated.recruiting)}
             </p>
           </div>
         </div>

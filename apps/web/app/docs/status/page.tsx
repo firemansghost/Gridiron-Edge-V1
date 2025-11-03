@@ -172,6 +172,39 @@ export default async function StatusPage() {
       select: { updatedAt: true }
     });
 
+    // 9b) Phase 3: Roster Talent and Commits counts
+    let rosterTalentCount = 0;
+    let rosterTalentLastUpdated = null;
+    try {
+      rosterTalentCount = await prisma.teamSeasonTalent.count({
+        where: { season: currentSeason }
+      });
+      const rosterTalentData = await prisma.teamSeasonTalent.findFirst({
+        where: { season: currentSeason },
+        orderBy: { sourceUpdatedAt: 'desc' },
+        select: { sourceUpdatedAt: true }
+      });
+      rosterTalentLastUpdated = rosterTalentData?.sourceUpdatedAt || null;
+    } catch (error) {
+      console.warn('team_season_talent table not accessible:', error);
+    }
+
+    let commitsCount = 0;
+    let commitsLastUpdated = null;
+    try {
+      commitsCount = await prisma.teamClassCommits.count({
+        where: { season: currentSeason }
+      });
+      const commitsData = await prisma.teamClassCommits.findFirst({
+        where: { season: currentSeason },
+        orderBy: { sourceUpdatedAt: 'desc' },
+        select: { sourceUpdatedAt: true }
+      });
+      commitsLastUpdated = commitsData?.sourceUpdatedAt || null;
+    } catch (error) {
+      console.warn('team_class_commits table not accessible:', error);
+    }
+
     // 10) ETL Heartbeat counts (2025 specific)
     const recruiting2025 = await prisma.recruiting.count({
       where: { season: 2025 }
