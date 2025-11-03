@@ -110,10 +110,10 @@
 "Air Force": air-force
 "Boise State": boise-state
 "Fresno State": fresno-state
-"Hawaii": hawaii
-"Hawai'i": hawaii
-"Hawai'i Rainbow Warriors": hawaii
-"Hawaii Rainbow Warriors": hawaii
+"Hawaii": hawai-i
+"Hawai'i": hawai-i
+"Hawai'i Rainbow Warriors": hawai-i
+"Hawaii Rainbow Warriors": hawai-i
 "Nevada": nevada
 "Utah State": utah-state
 "Colorado": colorado
@@ -175,3 +175,5 @@
 
 # Additional mappings for common mismatches
 "Ole Miss": ole-miss
+"Vanderbilt": vanderbilt
+"Jacksonville State": jacksonville-state
