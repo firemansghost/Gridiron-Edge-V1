@@ -1,20 +1,21 @@
-name: CFBD Team Talent Sync
+name: CFBD Team Class Commits Sync
 
 on:
   schedule:
     # Run yearly in February (recruiting season)
-    - cron: '0 2 1 2 *'
+    - cron: '0 3 1 2 *'
   workflow_dispatch:
     inputs:
       season:
-        description: 'Season to sync (e.g., 2025)'
+        description: 'Class year to sync (e.g., 2025)'
         required: true
         default: '2025'
         type: string
 
 jobs:
-  sync-team-talent:
+  sync-class-commits:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     
     steps:
       - name: Checkout code
@@ -23,14 +24,14 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
       - name: Generate Prisma client
-        run: npm run db:generate
+        run: npm run prisma:generate
 
       - name: Build jobs
         run: npm run build:jobs
@@ -49,11 +50,10 @@ jobs:
           if [ -n "${{ secrets.DIRECT_URL }}" ]; then
             echo "DIRECT_URL=${{ secrets.DIRECT_URL }}" >> $GITHUB_ENV
           else
-            # Fallback: use pooled URL if a direct one is not configured yet
             echo "DIRECT_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
           fi
 
-      - name: Run CFBD Team Roster Talent Sync
+      - name: Run CFBD Team Class Commits Sync
         env:
           CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
           CFBD_BASE_URL: ${{ vars.CFBD_BASE_URL }}
@@ -63,12 +63,13 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             SEASON="${{ github.event.inputs.season }}"
           else
+            # For scheduled runs, sync current year
             SEASON=$(date +%Y)
           fi
-          echo "🏈 Syncing roster talent for season $SEASON"
-          node apps/jobs/dist/src/talent/cfbd_team_roster_talent.js --season $SEASON
+          echo "📝 Syncing recruiting class commits for season $SEASON"
+          node apps/jobs/dist/src/talent/cfbd_team_class_commits.js --season $SEASON
 
-      - name: Verify talent data was inserted
+      - name: Verify commits data was inserted
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
@@ -78,5 +79,9 @@ jobs:
           else
             SEASON=$(date +%Y)
           fi
-          echo "Checking team_season_talent table..."
-          npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "SELECT COUNT(*) as total_records, COUNT(DISTINCT season) as seasons, COUNT(DISTINCT team_id) as teams FROM team_season_talent WHERE season = $SEASON;"
+          echo "Checking team_class_commits table..."
+          npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "SELECT COUNT(*) as total_records, COUNT(DISTINCT season) as seasons, COUNT(DISTINCT team_id) as teams FROM team_class_commits WHERE season = $SEASON;"
+          
+          echo "Sample records:"
+          npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "SELECT team_id, commits_total, five_star_commits, four_star_commits, three_star_commits, avg_commit_rating, class_rank FROM team_class_commits WHERE season = $SEASON ORDER BY class_rank ASC NULLS LAST LIMIT 5;"
+

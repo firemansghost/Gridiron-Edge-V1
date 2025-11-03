@@ -49,7 +49,9 @@
     "src/seed-team-membership.ts",
     "src/injuries/manual_injury_etl.ts",
     "src/backtesting/backtest_runner.ts",
-    "adapters/ESPNInjuryAdapter.ts"
+    "adapters/ESPNInjuryAdapter.ts",
+    "src/talent/cfbd_team_roster_talent.ts",
+    "src/talent/cfbd_team_class_commits.ts"
   ],
   "exclude": [
     "**/*.test.ts",

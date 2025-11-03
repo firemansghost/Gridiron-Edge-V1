@@ -1,4 +1,4 @@
-name: CFBD Team Talent Sync
+name: CFBD Team Roster Talent Sync
 
 on:
   schedule:
@@ -13,8 +13,9 @@ on:
         type: string
 
 jobs:
-  sync-team-talent:
+  sync-roster-talent:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     
     steps:
       - name: Checkout code
@@ -23,14 +24,14 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
       - name: Generate Prisma client
-        run: npm run db:generate
+        run: npm run prisma:generate
 
       - name: Build jobs
         run: npm run build:jobs
@@ -49,7 +50,6 @@ jobs:
           if [ -n "${{ secrets.DIRECT_URL }}" ]; then
             echo "DIRECT_URL=${{ secrets.DIRECT_URL }}" >> $GITHUB_ENV
           else
-            # Fallback: use pooled URL if a direct one is not configured yet
             echo "DIRECT_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
           fi
 
@@ -63,6 +63,7 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             SEASON="${{ github.event.inputs.season }}"
           else
+            # For scheduled runs, sync current year
             SEASON=$(date +%Y)
           fi
           echo "🏈 Syncing roster talent for season $SEASON"
@@ -80,3 +81,7 @@ jobs:
           fi
           echo "Checking team_season_talent table..."
           npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "SELECT COUNT(*) as total_records, COUNT(DISTINCT season) as seasons, COUNT(DISTINCT team_id) as teams FROM team_season_talent WHERE season = $SEASON;"
+          
+          echo "Sample records:"
+          npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "SELECT team_id, talent_composite, blue_chips_pct, five_star, four_star, three_star FROM team_season_talent WHERE season = $SEASON ORDER BY talent_composite DESC LIMIT 5;"
+
