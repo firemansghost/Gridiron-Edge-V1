@@ -869,6 +869,185 @@ export async function GET(
         reportedAt: injury.reportedAt,
         source: injury.source,
       })),
+
+      // Line history (pre-computed for client)
+      lineHistory: await (async () => {
+        // Fetch all market lines for this game
+        const allLines = await prisma.marketLine.findMany({
+          where: { gameId },
+          orderBy: { timestamp: 'asc' },
+          select: {
+            id: true,
+            lineType: true,
+            lineValue: true,
+            closingLine: true,
+            timestamp: true,
+            source: true,
+            bookName: true,
+            createdAt: true,
+          }
+        });
+
+        // Group by lineType
+        const grouped = allLines.reduce((acc, line) => {
+          if (!acc[line.lineType]) {
+            acc[line.lineType] = [];
+          }
+          acc[line.lineType].push({
+            id: line.id,
+            lineValue: line.lineValue,
+            closingLine: line.closingLine,
+            timestamp: line.timestamp.toISOString(),
+            source: line.source,
+            bookName: line.bookName,
+            createdAt: line.createdAt.toISOString(),
+          });
+          return acc;
+        }, {} as Record<string, any[]>);
+
+        // Calculate statistics for each line type
+        const stats: Record<string, any> = {};
+        for (const [type, lines] of Object.entries(grouped)) {
+          if (lines.length > 0) {
+            const values = lines.map(l => l.lineValue);
+            const opening = lines[0];
+            const closing = lines[lines.length - 1];
+            
+            stats[type] = {
+              count: lines.length,
+              opening: {
+                value: opening.lineValue,
+                timestamp: opening.timestamp,
+                bookName: opening.bookName,
+                source: opening.source,
+              },
+              closing: {
+                value: closing.closingLine !== null ? closing.closingLine : closing.lineValue,
+                timestamp: closing.timestamp,
+                bookName: closing.bookName,
+                source: closing.source,
+              },
+              movement: closing.closingLine !== null 
+                ? closing.closingLine - opening.lineValue
+                : closing.lineValue - opening.lineValue,
+              min: Math.min(...values),
+              max: Math.max(...values),
+              range: Math.max(...values) - Math.min(...values),
+            };
+          }
+        }
+
+        return {
+          history: grouped,
+          statistics: stats,
+          totalLines: allLines.length,
+        };
+      })(),
+
+      // Team records and form (pre-computed for client)
+      teams: await (async () => {
+        // Calculate records for both teams (season-to-date, up to current week)
+        const calculateTeamRecord = async (teamId: string, season: number, maxWeek: number) => {
+          const completedGames = await prisma.game.findMany({
+            where: {
+              season,
+              week: { lte: maxWeek },
+              status: 'final',
+              OR: [
+                { homeTeamId: teamId },
+                { awayTeamId: teamId }
+              ]
+            },
+            select: {
+              homeTeamId: true,
+              awayTeamId: true,
+              homeScore: true,
+              awayScore: true,
+            }
+          });
+
+          let wins = 0;
+          let losses = 0;
+          
+          for (const game of completedGames) {
+            const isHome = game.homeTeamId === teamId;
+            const teamScore = isHome ? game.homeScore : game.awayScore;
+            const opponentScore = isHome ? game.awayScore : game.homeScore;
+            
+            if (teamScore !== null && opponentScore !== null) {
+              if (teamScore > opponentScore) wins++;
+              else if (teamScore < opponentScore) losses++;
+            }
+          }
+
+          return { wins, losses, total: wins + losses };
+        };
+
+        // Get last 5 games for each team (most recent completed games)
+        const getLast5Games = async (teamId: string, season: number) => {
+          const recentGames = await prisma.game.findMany({
+            where: {
+              season,
+              status: 'final',
+              OR: [
+                { homeTeamId: teamId },
+                { awayTeamId: teamId }
+              ]
+            },
+            orderBy: { date: 'desc' },
+            take: 5,
+            include: {
+              homeTeam: { select: { id: true, name: true } },
+              awayTeam: { select: { id: true, name: true } },
+            }
+          });
+
+          return recentGames.map(game => {
+            const isHome = game.homeTeamId === teamId;
+            const opponent = isHome ? game.awayTeam : game.homeTeam;
+            const teamScore = isHome ? game.homeScore : game.awayScore;
+            const opponentScore = isHome ? game.awayScore : game.homeScore;
+            
+            let result: 'W' | 'L' | 'T' = 'T';
+            if (teamScore !== null && opponentScore !== null) {
+              result = teamScore > opponentScore ? 'W' : teamScore < opponentScore ? 'L' : 'T';
+            }
+
+            return {
+              gameId: game.id,
+              date: game.date.toISOString(),
+              opponent: opponent.name,
+              opponentId: opponent.id,
+              home: isHome,
+              teamScore,
+              opponentScore,
+              result,
+            };
+          });
+        };
+
+        const [homeRecord, awayRecord, homeLast5, awayLast5] = await Promise.all([
+          calculateTeamRecord(game.homeTeamId, game.season, game.week),
+          calculateTeamRecord(game.awayTeamId, game.season, game.week),
+          getLast5Games(game.homeTeamId, game.season),
+          getLast5Games(game.awayTeamId, game.season),
+        ]);
+
+        return {
+          home: {
+            team: game.homeTeam,
+            record: homeRecord,
+            last5Games: homeLast5,
+            form: homeLast5.map(g => g.result).join(''),
+          },
+          away: {
+            team: game.awayTeam,
+            record: awayRecord,
+            last5Games: awayLast5,
+            form: awayLast5.map(g => g.result).join(''),
+          },
+        };
+      })(),
     };
 
     return Response.json(response);

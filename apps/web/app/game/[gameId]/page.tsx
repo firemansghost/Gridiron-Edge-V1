@@ -23,8 +23,6 @@ export default function GameDetailPage() {
   const [game, setGame] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [lineHistory, setLineHistory] = useState<any>(null);
-  const [loadingHistory, setLoadingHistory] = useState(false);
 
   useEffect(() => {
     if (params.gameId) {
@@ -39,8 +37,6 @@ export default function GameDetailPage() {
       
       if (data.success) {
         setGame(data);
-        // Fetch line history
-        fetchLineHistory(params.gameId as string);
       } else {
         setError(data.error || 'Failed to fetch game detail');
       }
@@ -48,22 +44,6 @@ export default function GameDetailPage() {
       setError('Network error: ' + (err instanceof Error ? err.message : 'Unknown error'));
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchLineHistory = async (gameId: string) => {
-    setLoadingHistory(true);
-    try {
-      const response = await fetch(`/api/lines/history?gameId=${gameId}`);
-      const data = await response.json();
-      
-      if (data.success) {
-        setLineHistory(data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch line history:', err);
-    } finally {
-      setLoadingHistory(false);
     }
   };
 
@@ -243,9 +223,9 @@ export default function GameDetailPage() {
                       <div className="text-lg font-semibold text-gray-900">
                         {game.market?.favorite ? `${game.market.favorite.teamName} ${game.market.favorite.spread.toFixed(1)}` : '—'}
                       </div>
-                      {lineHistory?.history?.spread && lineHistory.history.spread.length > 0 && (
+                      {game.lineHistory?.history?.spread && game.lineHistory.history.spread.length > 0 && (
                         <LineSparkline 
-                          data={lineHistory.history.spread} 
+                          data={game.lineHistory.history.spread} 
                           lineType="spread"
                           width={150}
                           height={30}
@@ -307,9 +287,9 @@ export default function GameDetailPage() {
                   <div className="flex flex-col items-end gap-1">
                     <div className="flex items-center gap-3">
                       <div className="text-lg font-semibold text-gray-900">{game.market.total.toFixed(1)}</div>
-                      {lineHistory?.history?.total && lineHistory.history.total.length > 0 && (
+                      {game.lineHistory?.history?.total && game.lineHistory.history.total.length > 0 && (
                         <LineSparkline 
-                          data={lineHistory.history.total} 
+                          data={game.lineHistory.history.total} 
                           lineType="total"
                           width={150}
                           height={30}
@@ -522,45 +502,45 @@ export default function GameDetailPage() {
             )}
           </div>
 
-          {lineHistory && (lineHistory.history?.spread?.length > 0 || lineHistory.history?.total?.length > 0) && (
+          {game.lineHistory && (game.lineHistory.history?.spread?.length > 0 || game.lineHistory.history?.total?.length > 0) && (
             <div className="mt-6 pt-6 border-t border-gray-200">
               <div className="flex items-center justify-between mb-3">
                 <h4 className="text-md font-medium text-gray-900">Line Movement</h4>
                 <InfoTooltip content="Shows how the betting lines have moved over time. Green dot = opening line, Red dot = closing line. Line movement can indicate where sharp money is going." />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {lineHistory.history?.spread && lineHistory.history.spread.length > 0 && (
+                {game.lineHistory.history?.spread && game.lineHistory.history.spread.length > 0 && (
                   <div className="bg-gray-50 p-4 rounded-lg">
                     <div className="text-sm text-gray-600 mb-2">Spread Movement</div>
                     <LineSparkline 
-                      data={lineHistory.history.spread} 
+                      data={game.lineHistory.history.spread} 
                       lineType="spread"
                       width={250}
                       height={50}
                     />
-                    {lineHistory.statistics?.spread && (
+                    {game.lineHistory.statistics?.spread && (
                       <div className="text-xs text-gray-500 mt-2">
-                        Opening: {lineHistory.statistics.spread.opening.value.toFixed(1)} → 
-                        Closing: {lineHistory.statistics.spread.closing.value.toFixed(1)} 
-                        ({lineHistory.statistics.spread.movement > 0 ? '+' : ''}{lineHistory.statistics.spread.movement.toFixed(1)})
+                        Opening: {game.lineHistory.statistics.spread.opening.value.toFixed(1)} → 
+                        Closing: {game.lineHistory.statistics.spread.closing.value.toFixed(1)} 
+                        ({game.lineHistory.statistics.spread.movement > 0 ? '+' : ''}{game.lineHistory.statistics.spread.movement.toFixed(1)})
                       </div>
                     )}
                   </div>
                 )}
-                {lineHistory.history?.total && lineHistory.history.total.length > 0 && (
+                {game.lineHistory.history?.total && game.lineHistory.history.total.length > 0 && (
                   <div className="bg-gray-50 p-4 rounded-lg">
                     <div className="text-sm text-gray-600 mb-2">Total Movement</div>
                     <LineSparkline 
-                      data={lineHistory.history.total} 
+                      data={game.lineHistory.history.total} 
                       lineType="total"
                       width={250}
                       height={50}
                     />
-                    {lineHistory.statistics?.total && (
+                    {game.lineHistory.statistics?.total && (
                       <div className="text-xs text-gray-500 mt-2">
-                        Opening: {lineHistory.statistics.total.opening.value.toFixed(1)} → 
-                        Closing: {lineHistory.statistics.total.closing.value.toFixed(1)} 
-                        ({lineHistory.statistics.total.movement > 0 ? '+' : ''}{lineHistory.statistics.total.movement.toFixed(1)})
+                        Opening: {game.lineHistory.statistics.total.opening.value.toFixed(1)} → 
+                        Closing: {game.lineHistory.statistics.total.closing.value.toFixed(1)} 
+                        ({game.lineHistory.statistics.total.movement > 0 ? '+' : ''}{game.lineHistory.statistics.total.movement.toFixed(1)})
                       </div>
                     )}
                   </div>
