@@ -8,15 +8,59 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    // Get recruiting data with timestamp
-    const recruitingData = await prisma.recruiting.findFirst({
-      where: { season: 2025 },
-      orderBy: { updatedAt: 'desc' },
-      select: { updatedAt: true }
-    });
-    const recruiting2025 = await prisma.recruiting.count({
-      where: { season: 2025 }
-    });
+    // Get roster talent data (Phase 3)
+    let rosterTalent2025 = 0;
+    let rosterTalentLastUpdated = null;
+    try {
+      rosterTalent2025 = await prisma.teamSeasonTalent.count({
+        where: { season: 2025 }
+      });
+      const rosterTalentData = await prisma.teamSeasonTalent.findFirst({
+        where: { season: 2025 },
+        orderBy: { sourceUpdatedAt: 'desc' },
+        select: { sourceUpdatedAt: true }
+      });
+      rosterTalentLastUpdated = rosterTalentData?.sourceUpdatedAt || null;
+    } catch (error) {
+      console.warn('team_season_talent table not accessible:', error);
+      rosterTalent2025 = 0;
+    }
+
+    // Get recruiting commits data (Phase 3)
+    let commits2025 = 0;
+    let commitsLastUpdated = null;
+    try {
+      commits2025 = await prisma.teamClassCommits.count({
+        where: { season: 2025 }
+      });
+      const commitsData = await prisma.teamClassCommits.findFirst({
+        where: { season: 2025 },
+        orderBy: { sourceUpdatedAt: 'desc' },
+        select: { sourceUpdatedAt: true }
+      });
+      commitsLastUpdated = commitsData?.sourceUpdatedAt || null;
+    } catch (error) {
+      console.warn('team_class_commits table not accessible:', error);
+      commits2025 = 0;
+    }
+
+    // Legacy recruiting table (for backward compatibility)
+    let recruiting2025 = 0;
+    let recruitingLastUpdated = null;
+    try {
+      const recruitingData = await prisma.recruiting.findFirst({
+        where: { season: 2025 },
+        orderBy: { updatedAt: 'desc' },
+        select: { updatedAt: true }
+      });
+      recruiting2025 = await prisma.recruiting.count({
+        where: { season: 2025 }
+      });
+      recruitingLastUpdated = recruitingData?.updatedAt?.toISOString() || null;
+    } catch (error) {
+      console.warn('recruiting table not accessible:', error);
+      recruiting2025 = 0;
+    }
 
     // Get team game stats data with timestamp
     const teamGameStatsData = await prisma.teamGameStat.findFirst({
@@ -86,14 +130,18 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({
-      recruiting_2025: recruiting2025,
+      recruiting_2025: recruiting2025, // Legacy table
+      roster_talent_2025: rosterTalent2025, // Phase 3: team_season_talent
+      commits_2025: commits2025, // Phase 3: team_class_commits
       team_game_stats_2025: teamGameStats2025,
       team_season_stats_2025: teamSeasonStats2025,
       expected_fbs_2025: expectedFBS2025,
       advanced_stats_filled: advancedStatsFilled,
       ratings_2025: ratings2025,
       lastUpdated: {
-        recruiting: recruitingData?.updatedAt?.toISOString() || null,
+        recruiting: recruitingLastUpdated,
+        rosterTalent: rosterTalentLastUpdated?.toISOString() || null, // Phase 3
+        commits: commitsLastUpdated?.toISOString() || null, // Phase 3
         teamGameStats: teamGameStatsData?.updatedAt?.toISOString() || null,
         teamSeasonStats: teamSeasonStatsLastUpdated?.toISOString() || null,
         ratings: ratingsLastUpdated?.toISOString() || null,
@@ -107,11 +155,15 @@ export async function GET(request: NextRequest) {
       { 
         error: 'Failed to fetch ETL status',
         recruiting_2025: 0,
+        roster_talent_2025: 0,
+        commits_2025: 0,
         team_game_stats_2025: 0,
         team_season_stats_2025: 0,
         ratings_2025: 0,
         lastUpdated: {
           recruiting: null,
+          rosterTalent: null,
+          commits: null,
           teamGameStats: null,
           teamSeasonStats: null,
           ratings: null,

@@ -220,6 +220,55 @@ export async function GET(
       return null;
     };
 
+      // Load talent features (roster talent and recruiting commits)
+    const loadTalentFeatures = async (teamId: string, season: number): Promise<any> => {
+      try {
+        // Load roster talent
+        const talent = await prisma.teamSeasonTalent.findUnique({
+          where: { season_teamId: { season, teamId } }
+        });
+
+        // Load recruiting commits
+        const commits = await prisma.teamClassCommits.findUnique({
+          where: { season_teamId: { season, teamId } }
+        });
+
+        // Calculate weeks played (count final games)
+        const gamesPlayed = await prisma.game.count({
+          where: {
+            season,
+            status: 'final',
+            OR: [{ homeTeamId: teamId }, { awayTeamId: teamId }]
+          }
+        });
+
+        // Calculate commits signal (weighted star mix: 5*=5, 4*=4, 3*=3)
+        let commitsSignal: number | null = null;
+        if (commits) {
+          const weightedStars = (commits.fiveStarCommits || 0) * 5 +
+                               (commits.fourStarCommits || 0) * 4 +
+                               (commits.threeStarCommits || 0) * 3;
+          const totalCommits = commits.commitsTotal || 0;
+          commitsSignal = totalCommits > 0 ? weightedStars / totalCommits : null;
+        }
+
+        return {
+          talentComposite: talent ? toNumber(talent.talentComposite) : null,
+          blueChipsPct: talent ? toNumber(talent.blueChipsPct) : null,
+          commitsSignal,
+          weeksPlayed: gamesPlayed,
+        };
+      } catch (error) {
+        console.warn(`Failed to load talent features for ${teamId}:`, error);
+        return {
+          talentComposite: null,
+          blueChipsPct: null,
+          commitsSignal: null,
+          weeksPlayed: 0,
+        };
+      }
+    };
+
     // Load team features with fallback hierarchy (replicating FeatureLoader logic)
     const loadTeamFeatures = async (teamId: string, season: number): Promise<any> => {
       // Try game-level features first
@@ -256,6 +305,7 @@ export async function GET(
           }), { yppOff: 0, passYpaOff: 0, rushYpcOff: 0, successOff: 0, epaOff: 0, paceOff: 0, yppDef: 0, passYpaDef: 0, rushYpcDef: 0, successDef: 0, epaDef: 0 });
           
           const count = validStats.length;
+          const talentFeatures = await loadTalentFeatures(teamId, season);
           return {
             teamId,
             season,
@@ -270,6 +320,7 @@ export async function GET(
             rushYpcDef: sums.rushYpcDef / count,
             successDef: sums.successDef / count,
             epaDef: sums.epaDef / count,
+            ...talentFeatures,
             dataSource: 'game',
             confidence: Math.min(1.0, count / 8),
             gamesCount: count,
@@ -284,6 +335,7 @@ export async function GET(
       });
 
       if (seasonStats) {
+        const talentFeatures = await loadTalentFeatures(teamId, season);
         return {
           teamId,
           season,
@@ -298,6 +350,7 @@ export async function GET(
           rushYpcDef: toNumber(seasonStats.rushYpcDef),
           successDef: toNumber(seasonStats.successDef),
           epaDef: toNumber(seasonStats.epaDef),
+          ...talentFeatures,
           dataSource: 'season',
           confidence: 0.7,
           gamesCount: 0,
@@ -313,6 +366,7 @@ export async function GET(
       if (baselineRating) {
         const offenseRating = toNumber(baselineRating.offenseRating) || 0;
         const defenseRating = toNumber(baselineRating.defenseRating) || 0;
+        const talentFeatures = await loadTalentFeatures(teamId, season);
         return {
           teamId,
           season,
@@ -328,6 +382,7 @@ export async function GET(
           paceDef: null,
           passYpaDef: null,
           rushYpcDef: null,
+          ...talentFeatures,
           dataSource: 'baseline',
           confidence: 0.3,
           gamesCount: 0,
@@ -335,7 +390,8 @@ export async function GET(
         };
       }
 
-      // No data available
+      // No data available - but still load talent (for early-season fallback)
+      const talentFeatures = await loadTalentFeatures(teamId, season);
       return {
         teamId,
         season,
@@ -351,6 +407,7 @@ export async function GET(
         paceDef: null,
         passYpaDef: null,
         rushYpcDef: null,
+        ...talentFeatures,
         dataSource: 'missing',
         confidence: 0,
         gamesCount: 0,
@@ -410,6 +467,10 @@ export async function GET(
           rushYpcDef: calculateZScores(allFeatures, f => f.rushYpcDef ?? null),
           successDef: calculateZScores(allFeatures, f => f.successDef ?? null),
           epaDef: calculateZScores(allFeatures, f => f.epaDef ?? null),
+          // Talent z-scores (Phase 3)
+          talentComposite: calculateZScores(allFeatures, f => f.talentComposite ?? null),
+          blueChipsPct: calculateZScores(allFeatures, f => f.blueChipsPct ?? null),
+          commitsSignal: calculateZScores(allFeatures, f => f.commitsSignal ?? null),
         };
 
         // Load features for the specific team
@@ -465,6 +526,45 @@ export async function GET(
           }
         }
 
+        // Talent factors (Phase 3)
+        const talentWeights = { w_talent: 1.0, w_blue: 0.3, w_commits: 0.15 };
+        const weeksPlayed = teamFeatures.weeksPlayed || 0;
+        const decay = Math.max(0, 1 - weeksPlayed / 8); // Decay factor
+        
+        if (teamFeatures.talentComposite !== null) {
+          const talentZ = getZScore(teamFeatures.talentComposite, zStats.talentComposite.mean, zStats.talentComposite.stdDev);
+          const contribution = decay * talentZ * talentWeights.w_talent;
+          factors.push({ 
+            factor: 'talent_composite', 
+            contribution, 
+            weight: talentWeights.w_talent * decay, 
+            zScore: talentZ 
+          });
+        }
+
+        if (teamFeatures.blueChipsPct !== null) {
+          const blueZ = getZScore(teamFeatures.blueChipsPct, zStats.blueChipsPct.mean, zStats.blueChipsPct.stdDev);
+          const contribution = decay * blueZ * talentWeights.w_blue;
+          factors.push({ 
+            factor: 'blue_chips_pct', 
+            contribution, 
+            weight: talentWeights.w_blue * decay, 
+            zScore: blueZ 
+          });
+        }
+
+        if (teamFeatures.commitsSignal !== null) {
+          const commitsZ = getZScore(teamFeatures.commitsSignal, zStats.commitsSignal.mean, zStats.commitsSignal.stdDev);
+          const cappedCommitsSignal = commitsZ * 0.15; // Cap at 15% of roster signal
+          const contribution = decay * cappedCommitsSignal * talentWeights.w_commits;
+          factors.push({ 
+            factor: 'commits_signal', 
+            contribution, 
+            weight: talentWeights.w_commits * decay * 0.15, 
+            zScore: commitsZ 
+          });
+        }
+
         // Sort by absolute contribution and return top 5
         return factors
           .sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution))
@@ -480,6 +580,103 @@ export async function GET(
       computeTopFactors(game.homeTeamId, game.season),
       computeTopFactors(game.awayTeamId, game.season)
     ]);
+
+    // Calculate talent differential (Phase 3)
+    const calculateTalentDifferential = async (homeId: string, awayId: string, season: number) => {
+      try {
+        const [homeFeatures, awayFeatures] = await Promise.all([
+          loadTeamFeatures(homeId, season),
+          loadTeamFeatures(awayId, season)
+        ]);
+
+        // Load all FBS teams for z-score calculation
+        const fbsMemberships = await prisma.teamMembership.findMany({
+          where: { season, level: 'fbs' },
+          select: { teamId: true }
+        });
+        const fbsTeamIds = Array.from(new Set(fbsMemberships.map(m => m.teamId.toLowerCase())));
+        const allFeatures: any[] = [];
+        for (const tid of fbsTeamIds) {
+          const features = await loadTeamFeatures(tid, season);
+          allFeatures.push(features);
+        }
+
+        const calculateZScores = (features: any[], getValue: (f: any) => number | null) => {
+          const values = features
+            .map(f => getValue(f))
+            .filter(v => v !== null && v !== undefined && !isNaN(v))
+            .map(v => v!);
+          
+          if (values.length === 0) {
+            return { mean: 0, stdDev: 1 };
+          }
+          
+          const sum = values.reduce((acc, v) => acc + v, 0);
+          const mean = sum / values.length;
+          const variance = values.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / values.length;
+          const stdDev = Math.sqrt(variance) || 1;
+          
+          return { mean, stdDev };
+        };
+
+        const getZScore = (value: number | null, mean: number, stdDev: number): number => {
+          if (value === null || value === undefined || isNaN(value)) return 0;
+          return (value - mean) / stdDev;
+        };
+
+        const zStats = {
+          talentComposite: calculateZScores(allFeatures, f => f.talentComposite ?? null),
+          blueChipsPct: calculateZScores(allFeatures, f => f.blueChipsPct ?? null),
+          commitsSignal: calculateZScores(allFeatures, f => f.commitsSignal ?? null),
+        };
+
+        const talentWeights = { w_talent: 1.0, w_blue: 0.3, w_commits: 0.15 };
+        
+        // Home talent component
+        const homeWeeksPlayed = homeFeatures.weeksPlayed || 0;
+        const homeDecay = Math.max(0, 1 - homeWeeksPlayed / 8);
+        const homeTalentZ = getZScore(homeFeatures.talentComposite, zStats.talentComposite.mean, zStats.talentComposite.stdDev);
+        const homeBlueZ = getZScore(homeFeatures.blueChipsPct, zStats.blueChipsPct.mean, zStats.blueChipsPct.stdDev);
+        const homeCommitsZ = getZScore(homeFeatures.commitsSignal, zStats.commitsSignal.mean, zStats.commitsSignal.stdDev);
+        const homeTalentPrior = homeTalentZ * talentWeights.w_talent + 
+                                homeBlueZ * talentWeights.w_blue + 
+                                (homeCommitsZ * 0.15) * talentWeights.w_commits;
+        const homeTalentComponent = homeDecay * homeTalentPrior;
+
+        // Away talent component
+        const awayWeeksPlayed = awayFeatures.weeksPlayed || 0;
+        const awayDecay = Math.max(0, 1 - awayWeeksPlayed / 8);
+        const awayTalentZ = getZScore(awayFeatures.talentComposite, zStats.talentComposite.mean, zStats.talentComposite.stdDev);
+        const awayBlueZ = getZScore(awayFeatures.blueChipsPct, zStats.blueChipsPct.mean, zStats.blueChipsPct.stdDev);
+        const awayCommitsZ = getZScore(awayFeatures.commitsSignal, zStats.commitsSignal.mean, zStats.commitsSignal.stdDev);
+        const awayTalentPrior = awayTalentZ * talentWeights.w_talent + 
+                                awayBlueZ * talentWeights.w_blue + 
+                                (awayCommitsZ * 0.15) * talentWeights.w_commits;
+        const awayTalentComponent = awayDecay * awayTalentPrior;
+
+        // Talent differential (home - away, in points)
+        const talentDifferential = homeTalentComponent - awayTalentComponent;
+
+        return {
+          talentDifferential: Math.round(talentDifferential * 10) / 10,
+          homeTalentComponent: Math.round(homeTalentComponent * 10) / 10,
+          awayTalentComponent: Math.round(awayTalentComponent * 10) / 10,
+          homeDecay: Math.round(homeDecay * 100) / 100,
+          awayDecay: Math.round(awayDecay * 100) / 100,
+        };
+      } catch (error) {
+        console.warn('Failed to calculate talent differential:', error);
+        return {
+          talentDifferential: null,
+          homeTalentComponent: null,
+          awayTalentComponent: null,
+          homeDecay: null,
+          awayDecay: null,
+        };
+      }
+    };
+
+    const talentDiff = await calculateTalentDifferential(game.homeTeamId, game.awayTeamId, game.season);
 
     const response = {
       success: true,
@@ -540,14 +737,19 @@ export async function GET(
           team: game.homeTeam.name,
           rating: homeRating ? Number(homeRating.powerRating || homeRating.rating || 0) : 0,
           confidence: homeRating ? Number(homeRating.confidence || 0) : 0,
-          factors: homeFactors
+          factors: homeFactors,
+          talentComponent: talentDiff.homeTalentComponent,
+          decay: talentDiff.homeDecay,
         },
         away: {
           team: game.awayTeam.name,
           rating: awayRating ? Number(awayRating.powerRating || awayRating.rating || 0) : 0,
           confidence: awayRating ? Number(awayRating.confidence || 0) : 0,
-          factors: awayFactors
-        }
+          factors: awayFactors,
+          talentComponent: talentDiff.awayTalentComponent,
+          decay: talentDiff.awayDecay,
+        },
+        talentDifferential: talentDiff.talentDifferential, // Home - Away talent advantage (in points)
       },
       
       // Model info

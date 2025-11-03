@@ -537,6 +537,55 @@ export default function GameDetailPage() {
           </div>
         </div>
 
+        {/* Talent Differential (Phase 3) */}
+        {game.ratings?.talentDifferential !== null && game.ratings?.talentDifferential !== undefined && (
+          <div className="bg-white p-6 rounded-lg shadow mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Talent Advantage</h3>
+              <InfoTooltip content="Talent differential shows how much roster talent advantage contributes to the home team's edge. This decays as the season progresses (100% at week 0, 0% at week 8+)." />
+            </div>
+            <div className="flex items-center justify-center gap-4">
+              <div className="text-center">
+                <div className="text-sm text-gray-500 mb-1">Home Team Talent Component</div>
+                <div className="text-2xl font-bold text-gray-900">
+                  {game.ratings.home.talentComponent !== null ? 
+                    `${game.ratings.home.talentComponent >= 0 ? '+' : ''}${game.ratings.home.talentComponent.toFixed(1)} pts` :
+                    '—'
+                  }
+                </div>
+                {game.ratings.home.decay !== null && (
+                  <div className="text-xs text-gray-400 mt-1">
+                    Decay: {(game.ratings.home.decay * 100).toFixed(0)}%
+                  </div>
+                )}
+              </div>
+              <div className="text-3xl text-gray-400">−</div>
+              <div className="text-center">
+                <div className="text-sm text-gray-500 mb-1">Away Team Talent Component</div>
+                <div className="text-2xl font-bold text-gray-900">
+                  {game.ratings.away.talentComponent !== null ? 
+                    `${game.ratings.away.talentComponent >= 0 ? '+' : ''}${game.ratings.away.talentComponent.toFixed(1)} pts` :
+                    '—'
+                  }
+                </div>
+                {game.ratings.away.decay !== null && (
+                  <div className="text-xs text-gray-400 mt-1">
+                    Decay: {(game.ratings.away.decay * 100).toFixed(0)}%
+                  </div>
+                )}
+              </div>
+              <div className="text-3xl text-gray-400">=</div>
+              <div className="text-center">
+                <div className="text-sm text-gray-500 mb-1">Talent Differential</div>
+                <div className={`text-3xl font-bold ${game.ratings.talentDifferential >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {game.ratings.talentDifferential >= 0 ? '+' : ''}{game.ratings.talentDifferential.toFixed(1)} pts
+                </div>
+                <div className="text-xs text-gray-400 mt-1">(Home advantage)</div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Power Ratings */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           {/* Home Team */}
