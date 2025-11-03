@@ -34,6 +34,12 @@ v1:
   
   # Minimum edge threshold for showing picks
   min_edge_threshold: 2.0
+  
+  # Talent weights (Phase 3)
+  talent_weights:
+    w_talent: 1.0      # Main roster talent composite weight
+    w_blue: 0.3        # Blue chips percentage weight
+    w_commits: 0.15    # Recruiting commits signal weight
 
 v2:
   name: "Ratings v2"
@@ -78,6 +84,12 @@ v2:
     enabled: true         # Enable SoS adjustments
     iterations: 3         # Number of iterative SoS adjustment passes
     convergence_threshold: 0.01  # Stop iterating when changes < threshold
+  
+  # Talent weights (Phase 3) - same defaults as v1
+  talent_weights:
+    w_talent: 1.0      # Main roster talent composite weight
+    w_blue: 0.3        # Blue chips percentage weight
+    w_commits: 0.15    # Recruiting commits signal weight
 
 
 

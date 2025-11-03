@@ -44,6 +44,12 @@ export interface ModelConfig {
     iterations: number;
     convergence_threshold: number;
   };
+  // Talent weights (Phase 3)
+  talent_weights?: {
+    w_talent: number;
+    w_blue: number;
+    w_commits: number;
+  };
 }
 
 export interface ModelWeightsConfig {
@@ -90,6 +96,15 @@ function parseYAML(content: string): ModelWeightsConfig {
         A: 4.0,
         B: 3.0,
         C: 2.0,
+      };
+    }
+    
+    // Ensure talent_weights exist (defaults for Phase 3)
+    if (!cfg.talent_weights) {
+      cfg.talent_weights = {
+        w_talent: 1.0,
+        w_blue: 0.3,
+        w_commits: 0.15,
       };
     }
   }

@@ -16,15 +16,16 @@ import { PrismaClient } from '@prisma/client';
 import { FeatureLoader, TeamFeatures } from './feature-loader';
 import { TeamResolver } from '../../adapters/TeamResolver';
 import { getModelConfig } from '../config/model-weights';
-// Re-use z-score functions from v1
+// Re-use functions from v1
 import { 
   calculateZScores, 
   getZScore, 
+  ZScoreStats,
   computeOffensiveIndex, 
   computeDefensiveIndex,
   calculateConfidence,
   getDataSourceString,
-  type ZScoreStats
+  calculateTalentComponent,
 } from './compute_ratings_v1';
 
 const prisma = new PrismaClient();
@@ -278,6 +279,10 @@ async function main() {
       rushYpcDef: calculateZScores(allFeatures, f => f.rushYpcDef),
       successDef: calculateZScores(allFeatures, f => f.successDef),
       epaDef: calculateZScores(allFeatures, f => f.epaDef),
+      // Talent z-scores (Phase 3)
+      talentComposite: calculateZScores(allFeatures, f => f.talentComposite),
+      blueChipsPct: calculateZScores(allFeatures, f => f.blueChipsPct),
+      commitsSignal: calculateZScores(allFeatures, f => f.commitsSignal),
     };
 
     // Check if SoS is enabled
@@ -288,6 +293,17 @@ async function main() {
     let currentFeatures = allFeatures;
     let currentRatings: Array<{ teamId: string; offenseRating: number; defenseRating: number; powerRating: number }> = [];
     let previousRatings: Array<{ teamId: string; powerRating: number }> = [];
+
+    // Talent z-scores are calculated once and don't change during SoS iterations (season-level data)
+    const talentZStats: {
+      talentComposite: ZScoreStats;
+      blueChipsPct: ZScoreStats;
+      commitsSignal: ZScoreStats;
+    } = {
+      talentComposite: zStats.talentComposite,
+      blueChipsPct: zStats.blueChipsPct,
+      commitsSignal: zStats.commitsSignal,
+    };
 
     // Iterative SoS adjustment loop
     for (let iteration = 0; iteration <= maxSoSIterations; iteration++) {
@@ -321,6 +337,7 @@ async function main() {
         zStats.rushYpcDef = calculateZScores(currentFeatures, f => f.rushYpcDef);
         zStats.successDef = calculateZScores(currentFeatures, f => f.successDef);
         zStats.epaDef = calculateZScores(currentFeatures, f => f.epaDef);
+        // Talent z-scores don't need recalculation (they're season-level, not game-adjusted)
       } else {
         // SoS disabled, skip iterations
         break;
@@ -344,11 +361,27 @@ async function main() {
           epaDef: zStats.epaDef,
         }, modelConfig);
 
+        // Calculate talent component (Phase 3) - same as v1
+        const talentComponent = calculateTalentComponent(features, talentZStats, modelConfig);
+
+        // Base = Offense + Defense composite
+        const base = offenseRating + defenseRating;
+
+        // Early-season fallback: If base features are missing, use talent only
+        const hasBaseFeatures = features.dataSource !== 'missing' && 
+                                 (features.yppOff !== null || features.yppDef !== null ||
+                                  features.successOff !== null || features.successDef !== null);
+        
+        // Score = Base + TalentComponent (HFA added later in matchup calculation)
+        const powerRating = hasBaseFeatures 
+          ? base + talentComponent 
+          : talentComponent; // Early-season: talent-only fallback
+
         return {
           teamId: features.teamId,
           offenseRating,
           defenseRating,
-          powerRating: offenseRating + defenseRating,
+          powerRating,
         };
       });
 
@@ -412,7 +445,22 @@ async function main() {
         shrinkageFactor
       );
 
-      const powerRating = shrunkOffenseRating + shrunkDefenseRating;
+      // Calculate talent component (Phase 3) - applies after shrinkage
+      const talentComponent = calculateTalentComponent(features, talentZStats, modelConfig);
+
+      // Base = Offense + Defense (after shrinkage)
+      const base = shrunkOffenseRating + shrunkDefenseRating;
+
+      // Early-season fallback: If base features are missing, use talent only
+      const hasBaseFeatures = features.dataSource !== 'missing' && 
+                               (features.yppOff !== null || features.yppDef !== null ||
+                                features.successOff !== null || features.successDef !== null);
+      
+      // Score = Base + TalentComponent (HFA added later in matchup calculation)
+      const powerRating = hasBaseFeatures 
+        ? base + talentComponent 
+        : talentComponent; // Early-season: talent-only fallback
+
       const confidence = calculateConfidence(features);
       const dataSource = getDataSourceString(features);
 

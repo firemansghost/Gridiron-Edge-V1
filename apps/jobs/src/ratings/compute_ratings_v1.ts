@@ -148,6 +148,66 @@ export function computeDefensiveIndex(features: TeamFeatures, zStats: {
 }
 
 /**
+ * Calculate talent prior from talent features
+ * TalentPrior = w_talent * talent_z + w_blue * blue_chip_z + w_commits * commits_signal
+ */
+export function calculateTalentPrior(
+  features: TeamFeatures,
+  zStats: {
+    talentComposite: ZScoreStats;
+    blueChipsPct: ZScoreStats;
+    commitsSignal: ZScoreStats;
+  },
+  modelConfig: ReturnType<typeof getModelConfig>
+): number {
+  const talentWeights = modelConfig.talent_weights || {
+    w_talent: 1.0,
+    w_blue: 0.3,
+    w_commits: 0.15,
+  };
+
+  const talentZ = getZScore(features.talentComposite, zStats.talentComposite);
+  const blueChipZ = getZScore(features.blueChipsPct, zStats.blueChipsPct);
+  const commitsSignal = getZScore(features.commitsSignal, zStats.commitsSignal);
+
+  // Cap commits signal at 15% of roster signal (as per spec)
+  const cappedCommitsSignal = commitsSignal * 0.15;
+
+  return (
+    talentZ * talentWeights.w_talent +
+    blueChipZ * talentWeights.w_blue +
+    cappedCommitsSignal * talentWeights.w_commits
+  );
+}
+
+/**
+ * Calculate seasonal decay factor
+ * decay = max(0, 1 - weeks_played / 8)
+ * Returns 1.0 at week 0, 0.0 at week 8+
+ */
+export function calculateDecayFactor(weeksPlayed: number): number {
+  return Math.max(0, 1 - (weeksPlayed || 0) / 8);
+}
+
+/**
+ * Calculate talent component with seasonal decay
+ * TalentComponent = decay * TalentPrior
+ */
+export function calculateTalentComponent(
+  features: TeamFeatures,
+  zStats: {
+    talentComposite: ZScoreStats;
+    blueChipsPct: ZScoreStats;
+    commitsSignal: ZScoreStats;
+  },
+  modelConfig: ReturnType<typeof getModelConfig>
+): number {
+  const talentPrior = calculateTalentPrior(features, zStats, modelConfig);
+  const decay = calculateDecayFactor(features.weeksPlayed || 0);
+  return decay * talentPrior;
+}
+
+/**
  * Calculate confidence score (0-1)
  */
 export function calculateConfidence(features: TeamFeatures): number {
@@ -238,11 +298,16 @@ async function main() {
       rushYpcDef: calculateZScores(allFeatures, f => f.rushYpcDef),
       successDef: calculateZScores(allFeatures, f => f.successDef),
       epaDef: calculateZScores(allFeatures, f => f.epaDef),
+      // Talent z-scores (Phase 3)
+      talentComposite: calculateZScores(allFeatures, f => f.talentComposite),
+      blueChipsPct: calculateZScores(allFeatures, f => f.blueChipsPct),
+      commitsSignal: calculateZScores(allFeatures, f => f.commitsSignal),
     };
 
     // Compute ratings for each team
     console.log(`\n🧮 Computing ratings...`);
     const ratings = allFeatures.map(features => {
+      // Calculate base offensive/defensive ratings
       const offenseRating = computeOffensiveIndex(features, {
         yppOff: zStats.yppOff,
         passYpaOff: zStats.passYpaOff,
@@ -259,7 +324,27 @@ async function main() {
         epaDef: zStats.epaDef,
       }, modelConfig);
 
-      const powerRating = offenseRating + defenseRating;
+      // Calculate talent component (Phase 3)
+      const talentComponent = calculateTalentComponent(features, {
+        talentComposite: zStats.talentComposite,
+        blueChipsPct: zStats.blueChipsPct,
+        commitsSignal: zStats.commitsSignal,
+      }, modelConfig);
+
+      // Base = Offense + Defense composite
+      const base = offenseRating + defenseRating;
+
+      // Early-season fallback: If base features are missing, use talent + HFA only
+      const hasBaseFeatures = features.dataSource !== 'missing' && 
+                               (features.yppOff !== null || features.yppDef !== null ||
+                                features.successOff !== null || features.successDef !== null);
+      
+      // Score = Base + TalentComponent + HFA
+      // If base is missing, Score = TalentComponent + HFA (fallback)
+      const powerRating = hasBaseFeatures 
+        ? base + talentComponent 
+        : talentComponent; // Early-season: talent-only fallback
+
       const confidence = calculateConfidence(features);
       const dataSource = getDataSourceString(features);
 

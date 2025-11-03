@@ -33,6 +33,12 @@ export interface TeamFeatures {
   passYpaDef?: number | null;
   rushYpcDef?: number | null;
   
+  // Talent features (Phase 3)
+  talentComposite?: number | null;
+  blueChipsPct?: number | null;
+  commitsSignal?: number | null; // Weighted star mix from commits
+  weeksPlayed?: number; // Number of completed games this season
+  
   // Data source metadata
   dataSource: 'game' | 'season' | 'baseline' | 'missing';
   confidence: number; // 0-1 scale
@@ -69,23 +75,95 @@ export class FeatureLoader {
     // Try game-level features first (most accurate)
     const gameFeatures = await this.loadGameFeatures(teamId, season);
     if (gameFeatures) {
-      return gameFeatures;
+      // Load talent features and merge
+      const talentFeatures = await this.loadTalentFeatures(teamId, season);
+      return { ...gameFeatures, ...talentFeatures };
     }
 
     // Fallback to season-level features
     const seasonFeatures = await this.loadSeasonFeatures(teamId, season);
     if (seasonFeatures) {
-      return seasonFeatures;
+      // Load talent features and merge
+      const talentFeatures = await this.loadTalentFeatures(teamId, season);
+      return { ...seasonFeatures, ...talentFeatures };
     }
 
     // Last resort: baseline ratings
     const baselineFeatures = await this.loadBaselineFeatures(teamId, season);
     if (baselineFeatures) {
-      return baselineFeatures;
+      // Load talent features and merge
+      const talentFeatures = await this.loadTalentFeatures(teamId, season);
+      return { ...baselineFeatures, ...talentFeatures };
     }
 
-    // No data available
-    return this.createMissingFeatures(teamId, season);
+    // No data available - but still load talent (for early-season fallback)
+    const missingFeatures = this.createMissingFeatures(teamId, season);
+    const talentFeatures = await this.loadTalentFeatures(teamId, season);
+    return { ...missingFeatures, ...talentFeatures };
+  }
+
+  /**
+   * Load talent features (roster talent and recruiting commits)
+   */
+  private async loadTalentFeatures(teamId: string, season: number): Promise<Partial<TeamFeatures>> {
+    try {
+      // Load roster talent
+      const talent = await this.prisma.teamSeasonTalent.findUnique({
+        where: {
+          season_teamId: {
+            season,
+            teamId,
+          }
+        }
+      });
+
+      // Load recruiting commits
+      const commits = await this.prisma.teamClassCommits.findUnique({
+        where: {
+          season_teamId: {
+            season,
+            teamId,
+          }
+        }
+      });
+
+      // Calculate weeks played (count final games)
+      const gamesPlayed = await this.prisma.game.count({
+        where: {
+          season,
+          status: 'final',
+          OR: [
+            { homeTeamId: teamId },
+            { awayTeamId: teamId }
+          ]
+        }
+      });
+
+      // Calculate commits signal (weighted star mix: 5*=5, 4*=4, 3*=3)
+      let commitsSignal: number | null = null;
+      if (commits) {
+        const weightedStars = (commits.fiveStarCommits || 0) * 5 +
+                             (commits.fourStarCommits || 0) * 4 +
+                             (commits.threeStarCommits || 0) * 3;
+        const totalCommits = commits.commitsTotal || 0;
+        commitsSignal = totalCommits > 0 ? weightedStars / totalCommits : null;
+      }
+
+      return {
+        talentComposite: talent ? this.toNumber(talent.talentComposite) : null,
+        blueChipsPct: talent ? this.toNumber(talent.blueChipsPct) : null,
+        commitsSignal,
+        weeksPlayed: gamesPlayed,
+      };
+    } catch (error) {
+      console.warn(`Failed to load talent features for ${teamId} ${season}:`, error);
+      return {
+        talentComposite: null,
+        blueChipsPct: null,
+        commitsSignal: null,
+        weeksPlayed: 0,
+      };
+    }
   }
 
   /**
@@ -244,6 +322,10 @@ export class FeatureLoader {
       paceDef: null,
       passYpaDef: null,
       rushYpcDef: null,
+      talentComposite: null,
+      blueChipsPct: null,
+      commitsSignal: null,
+      weeksPlayed: 0,
       dataSource: 'missing' as const,
       confidence: 0,
       gamesCount: 0,

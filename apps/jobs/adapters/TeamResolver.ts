@@ -320,7 +320,7 @@ export class TeamResolver {
     
     // San José State vs San Diego State - normalize diacritics
     if (name.includes('san josé') || name.includes('san jose')) {
-      return 'san-jose-state';
+      return 'san-jos-state';
     }
     if (name.includes('san diego')) {
       return 'san-diego-state';
