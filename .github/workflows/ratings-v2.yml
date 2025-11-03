@@ -53,7 +53,7 @@ jobs:
         run: |
           SEASON="${{ github.event.inputs.season }}"
           echo "Computing Ratings v2 for season $SEASON"
-          echo "Note: SoS adjustments are placeholders and will be implemented in a future update"
+          echo "SoS adjustments and shrinkage regularization enabled"
           node apps/jobs/dist/src/ratings/compute_ratings_v2.js --season=$SEASON
 
       - name: Verify ratings were computed

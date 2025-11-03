@@ -495,7 +495,9 @@ async function main() {
     console.log(`   Average confidence: ${(avgConfidence * 100).toFixed(1)}%`);
     console.log(`   Average shrinkage factor: ${(avgShrinkage * 100).toFixed(1)}%`);
     
-    console.log(`\n⚠️  Note: SoS adjustments are currently placeholders and will be implemented in a future update.`);
+    if (sosEnabled) {
+      console.log(`\n✅ SoS adjustments applied successfully`);
+    }
 
   } catch (error) {
     console.error('❌ Error computing ratings v2:', error);
