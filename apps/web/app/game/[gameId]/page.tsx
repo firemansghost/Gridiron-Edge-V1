@@ -627,16 +627,19 @@ export default function GameDetailPage() {
                     <InfoTooltip content={TOOLTIP_CONTENT.TOTAL_EDGE_FORMULA} />
                   </div>
                   <div className={`text-sm font-medium ${game.edge?.totalEdge >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {game.edge?.totalEdge && game.market?.total && (
+                    {game.edge?.totalEdge !== null && game.edge?.totalEdge !== undefined && game.market?.total ? (
                       <>
                         {game.edge.totalEdge >= 0 ? 'Over' : 'Under'} {game.market.total.toFixed(1)} (edge {game.edge.totalEdge >= 0 ? '+' : ''}{game.edge.totalEdge.toFixed(1)} pts)
                       </>
-                    )}
-                    {!game.edge?.totalEdge && (
+                    ) : (
                       <>
-                        {game.edge?.totalEdge >= 0 ? '+' : ''}{game.edge?.totalEdge?.toFixed(1)} pts
-                        {game.edge?.totalEdge && (
-                          <span className="ml-1 text-xs">({game.edge.totalEdge >= 0 ? 'Over' : 'Under'})</span>
+                        {game.edge?.totalEdge !== null && game.edge?.totalEdge !== undefined ? (
+                          <>
+                            {game.edge.totalEdge >= 0 ? '+' : ''}{game.edge.totalEdge.toFixed(1)} pts
+                            <span className="ml-1 text-xs">({game.edge.totalEdge >= 0 ? 'Over' : 'Under'})</span>
+                          </>
+                        ) : (
+                          '—'
                         )}
                       </>
                     )}
