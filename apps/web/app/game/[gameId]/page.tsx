@@ -171,12 +171,30 @@ export default function GameDetailPage() {
                   </svg>
                 </div>
                 <div className="flex-1">
-                  <h4 className="text-sm font-semibold text-yellow-900 mb-2">Data Quality Warning</h4>
-                  <ul className="text-sm text-yellow-800 space-y-1">
-                    {game.validation.warnings.map((warning: string, index: number) => (
-                      <li key={index}>• {warning}</li>
-                    ))}
-                  </ul>
+                  <div className="flex items-center gap-2 mb-2">
+                    <h4 className="text-sm font-semibold text-yellow-900">Data Quality Warning</h4>
+                    <InfoTooltip content={`This warning appears when data quality checks detect unusual values. The specific issues are listed below. Invalid Model Total: Model total outside realistic range [20-90 points]. Favorites Disagree: Model and market favor different teams (may indicate model disagreement or market inefficiency). Edge Magnitude > 20: Edge value exceeds 20 points (may indicate calculation error or significant market inefficiency).`} />
+                  </div>
+                  <div className="text-sm text-yellow-800 space-y-1">
+                    {game.validation.invalidModelTotal && (
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">⚠️ Invalid Model Total:</span>
+                        <span>Model total outside realistic range [20-90 points]</span>
+                      </div>
+                    )}
+                    {game.validation.favoritesDisagree && (
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">⚠️ Favorites Disagree:</span>
+                        <span>Model favors {game.model?.favorite?.teamName || 'one team'} while market favors {game.market?.favorite?.teamName || 'another team'}</span>
+                      </div>
+                    )}
+                    {game.validation.edgeAbsGt20 && (
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">⚠️ Large Edge Detected:</span>
+                        <span>Edge magnitude exceeds 20 points (ATS: {game.edge?.atsEdge?.toFixed(1)} pts, Total: {game.edge?.totalEdge?.toFixed(1)} pts)</span>
+                      </div>
+                    )}
+                  </div>
                   <p className="text-xs text-yellow-700 mt-2">
                     This game may have unusual data. Review carefully before making betting decisions.
                   </p>
@@ -257,7 +275,7 @@ export default function GameDetailPage() {
                   {game.market.spread > 0 ? '+' : ''}{game.market.spread.toFixed(1)}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
-                  {game.market.spread < 0 ? game.game.homeTeam : game.game.awayTeam} favored
+                  {game.market.favorite ? `${game.market.favorite.teamName} favored` : game.market.spread < 0 ? game.game.homeTeam : game.game.awayTeam} favored
                 </div>
               </div>
               <div className="bg-white p-3 rounded border border-blue-100">
@@ -302,6 +320,115 @@ export default function GameDetailPage() {
               </div>
             )}
           </div>
+
+          {/* Recommended Picks - Ticket Style */}
+          {(game.picks?.spread?.grade || game.picks?.total?.grade) && (
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Recommended Picks</h3>
+                <InfoTooltip content={TOOLTIP_CONTENT.RECOMMENDED_PICKS + ' ' + TOOLTIP_CONTENT.GRADE_THRESHOLDS} />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* ATS Pick Card */}
+                {game.picks?.spread?.grade && game.picks?.spread?.bettablePick && (
+                  <div className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-300 rounded-lg p-5 shadow-md">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-sm font-medium text-blue-900 uppercase tracking-wide">Against the Spread</div>
+                      <div className={`px-3 py-1 rounded-full text-xs font-bold ${
+                        game.picks.spread.grade === 'A' ? 'bg-green-500 text-white' :
+                        game.picks.spread.grade === 'B' ? 'bg-yellow-500 text-white' :
+                        'bg-orange-500 text-white'
+                      }`}>
+                        Grade {game.picks.spread.grade}
+                      </div>
+                    </div>
+                    <div className="text-2xl font-bold text-gray-900 mb-2">
+                      {game.picks.spread.bettablePick.label}
+                    </div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-sm text-gray-600">
+                        Edge: <span className={`font-semibold ${game.picks.spread.edgePts >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                          {game.picks.spread.edgePts >= 0 ? '+' : ''}{game.picks.spread.edgePts?.toFixed(1)} pts
+                        </span>
+                      </div>
+                      <InfoTooltip content={`${TOOLTIP_CONTENT.ATS_EDGE_FORMULA} ${game.picks.spread.grade === 'A' ? TOOLTIP_CONTENT.GRADE_A : game.picks.spread.grade === 'B' ? TOOLTIP_CONTENT.GRADE_B : TOOLTIP_CONTENT.GRADE_C}`} />
+                    </div>
+                    {/* Edge Rationale Line */}
+                    {game.picks.spread.bettablePick.reasoning && (
+                      <div className="text-xs text-gray-700 mt-2 italic border-t border-blue-200 pt-2">
+                        {game.picks.spread.bettablePick.reasoning}
+                      </div>
+                    )}
+                    {!game.picks.spread.bettablePick.reasoning && game.model?.favorite && game.market?.favorite && (
+                      <div className="text-xs text-gray-700 mt-2 italic border-t border-blue-200 pt-2">
+                        Edge {game.picks.spread.edgePts >= 0 ? '+' : ''}{game.picks.spread.edgePts?.toFixed(1)} because model favors {game.model.favorite.teamName} {game.model.favorite.spread.toFixed(1)} vs market {game.market.favorite.teamName} {game.market.favorite.spread.toFixed(1)} (value on {game.picks.spread.bettablePick.label}).
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Total Pick Card */}
+                {game.picks?.total?.grade && !game.picks?.total?.hidden && (
+                  <div className="bg-gradient-to-br from-green-50 to-green-100 border-2 border-green-300 rounded-lg p-5 shadow-md">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-sm font-medium text-green-900 uppercase tracking-wide">Total (Over/Under)</div>
+                      <div className={`px-3 py-1 rounded-full text-xs font-bold ${
+                        game.picks.total.grade === 'A' ? 'bg-green-500 text-white' :
+                        game.picks.total.grade === 'B' ? 'bg-yellow-500 text-white' :
+                        'bg-orange-500 text-white'
+                      }`}>
+                        Grade {game.picks.total.grade}
+                      </div>
+                    </div>
+                    <div className="text-2xl font-bold text-gray-900 mb-2">
+                      {game.picks.total.totalPickLabel}
+                    </div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-sm text-gray-600">
+                        Edge: <span className={`font-semibold ${game.picks.total.edgePts >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {game.picks.total.edgePts >= 0 ? '+' : ''}{game.picks.total.edgePts?.toFixed(1)} pts
+                          {game.picks.total.edgePts && (
+                            <span className="ml-1">({game.picks.total.edgePts >= 0 ? 'Over' : 'Under'})</span>
+                          )}
+                        </span>
+                      </div>
+                      <InfoTooltip content={`${TOOLTIP_CONTENT.TOTAL_EDGE_FORMULA} ${game.picks.total.grade === 'A' ? TOOLTIP_CONTENT.GRADE_A : game.picks.total.grade === 'B' ? TOOLTIP_CONTENT.GRADE_B : TOOLTIP_CONTENT.GRADE_C}`} />
+                    </div>
+                    {/* Edge Rationale Line */}
+                    {game.picks.total.edgeDisplay && (
+                      <div className="text-xs text-gray-700 mt-2 italic border-t border-green-200 pt-2">
+                        {game.picks.total.edgeDisplay}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Hidden Total Message */}
+                {game.picks?.total?.hidden && (
+                  <div className="md:col-span-2 bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <div className="text-sm text-gray-600 mb-1">
+                      Total pick hidden — model total failed sanity checks (outside [20-90] range)
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Using market total only. Model total: {game.model?.total?.toFixed(1) || 'N/A'}
+                    </div>
+                  </div>
+                )}
+
+                {/* No picks message */}
+                {!game.picks?.spread?.grade && !game.picks?.total?.grade && (
+                  <div className="md:col-span-2 bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
+                    <div className="text-gray-600 mb-2">
+                      No recommended picks (edge below 2.0 pts threshold)
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Picks are only shown when edge meets minimum threshold (Grade C = 2.0+ pts)
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
         {/* Model vs Market Card */}
         <div className="bg-white p-6 rounded-lg shadow mb-8">
