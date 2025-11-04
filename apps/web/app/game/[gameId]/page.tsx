@@ -48,10 +48,42 @@ export default function GameDetailPage() {
         setGame(data);
         const renderTime = Date.now() - renderStart;
         
+        // Calculate ticket render metrics
+        const ticketRenderStart = Date.now();
+        // Ticket is rendered synchronously, so we measure after setGame
+        const ticketRenderTime = Date.now() - ticketRenderStart;
+        
         // Performance telemetry (dev only)
         if (process.env.NODE_ENV === 'development') {
           console.log(`[Game Detail] Performance: Fetch ${fetchTime}ms | Payload ${payloadTime}ms | Render ${renderTime}ms | Revalidated: ${isRevalidated}`);
+          console.log(`[Betting Ticket] Render: ${ticketRenderTime}ms | Cards shown: ${[
+            data.picks?.spread?.grade ? 'Spread' : null,
+            data.picks?.total?.grade && !data.picks?.total?.hidden ? 'Total' : null,
+            data.picks?.moneyline ? 'Moneyline' : null
+          ].filter(Boolean).join(', ') || 'None'}`);
         }
+        
+        // Log ticket telemetry event (production)
+        const ticketTelemetry = {
+          ticket_render_ms: ticketRenderTime,
+          api_latency_ms: payloadTime,
+          fetch_time_ms: fetchTime,
+          render_time_ms: renderTime,
+          revalidated: isRevalidated,
+          flags: {
+            invalidModelTotal: data.validation?.invalidModelTotal || false,
+            favoritesDisagree: data.validation?.favoritesDisagree || false,
+            edgeAbsGt20: data.validation?.edgeAbsGt20 || false
+          },
+          cards_shown: {
+            spread: !!data.picks?.spread?.grade,
+            total: !!(data.picks?.total?.grade && !data.picks?.total?.hidden),
+            moneyline: !!data.picks?.moneyline
+          }
+        };
+        
+        // Log structured event (in production, this could go to analytics)
+        console.log('[Ticket Telemetry]', JSON.stringify(ticketTelemetry));
       } else {
         setError(data.error || 'Failed to fetch game detail');
       }
