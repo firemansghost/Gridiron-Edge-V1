@@ -15,6 +15,7 @@ export async function GET(
   request: Request,
   { params }: { params: { gameId: string } }
 ) {
+  const startTime = Date.now();
   try {
     const { gameId } = params;
 
@@ -1411,14 +1412,32 @@ export async function GET(
       })(),
     };
 
+    // Calculate performance metrics
+    const payloadTime = Date.now() - startTime;
+    const isRevalidated = request.headers.get('x-next-revalidated') === 'true';
+    
+    // Log performance telemetry
+    console.log(`[Game ${gameId}] Render summary: revalidated=${isRevalidated}, payload=${payloadTime}ms`, {
+      gameId,
+      payloadTime,
+      isRevalidated,
+      gameStatus: game.status,
+      season: game.season,
+      week: game.week
+    });
+
     // Determine cache strategy based on game status
     const isFinal = game.status === 'final';
     const cacheHeaders = isFinal
       ? { 
-          'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=1200' // 10min cache for final games, 20min stale
+          'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=1200', // 10min cache for final games, 20min stale
+          'X-Payload-Time': payloadTime.toString(),
+          'X-Revalidated': isRevalidated.toString()
         }
       : { 
-          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=120' // 1min cache for live games, 2min stale
+          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=120', // 1min cache for live games, 2min stale
+          'X-Payload-Time': payloadTime.toString(),
+          'X-Revalidated': isRevalidated.toString()
         };
 
     return NextResponse.json(response, {

@@ -34,12 +34,24 @@ export default function GameDetailPage() {
   }, [params.gameId]);
 
   const fetchGameDetail = async () => {
+    const fetchStart = Date.now();
     try {
       const response = await fetch(`/api/game/${params.gameId}`);
+      const fetchTime = Date.now() - fetchStart;
+      const payloadTime = parseInt(response.headers.get('X-Payload-Time') || '0', 10);
+      const isRevalidated = response.headers.get('X-Revalidated') === 'true';
+      
       const data = await response.json();
       
       if (data.success) {
+        const renderStart = Date.now();
         setGame(data);
+        const renderTime = Date.now() - renderStart;
+        
+        // Performance telemetry (dev only)
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[Game Detail] Performance: Fetch ${fetchTime}ms | Payload ${payloadTime}ms | Render ${renderTime}ms | Revalidated: ${isRevalidated}`);
+        }
       } else {
         setError(data.error || 'Failed to fetch game detail');
       }
@@ -63,14 +75,22 @@ export default function GameDetailPage() {
     return edge >= 1.0 ? `+${edge.toFixed(1)}` : edge.toFixed(1);
   };
 
-  // Helper to render rank chips with freshness tooltip
-  const renderRankChips = (rankings: any, week?: number, season?: number) => {
+  // Helper to render rank chips with freshness tooltip and source/timestamp
+  const renderRankChips = (rankings: any, week?: number, season?: number, source?: string, timestamp?: string) => {
     if (!rankings) return null;
     
     const chips = [];
+    const timestampStr = timestamp ? new Date(timestamp).toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'America/Chicago'
+    }) : null;
     const tooltipContent = week && season 
-      ? `Week ${week}, ${season} season. Rankings update weekly.`
-      : 'Rankings update weekly.';
+      ? `Week ${week}, ${season} season. Rankings update weekly.${source ? ` Source: ${source}.` : ''}${timestampStr ? ` Generated: ${timestampStr}.` : ''}`
+      : `Rankings update weekly.${source ? ` Source: ${source}.` : ''}${timestampStr ? ` Generated: ${timestampStr}.` : ''}`;
     
     if (rankings.AP) {
       chips.push(
@@ -144,23 +164,23 @@ export default function GameDetailPage() {
       <HeaderNav />
       <div className="flex-1">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          {/* Matchup Header */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900">{game.game.matchup}</h1>
-                <p className="text-gray-600 mt-2">
+          {/* Matchup Header - Compact on mobile */}
+          <div className="mb-4 md:mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+              <div className="flex-1">
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{game.game.matchup}</h1>
+                <p className="text-sm sm:text-base text-gray-600 mt-1 sm:mt-2">
                   {game.game.kickoff} • {game.game.venue} {game.game.neutralSite && '(Neutral)'}
                 </p>
               </div>
-              <div className="text-right">
-                <div className="text-sm text-gray-500 flex items-center justify-end gap-1">
+              <div className="text-left sm:text-right">
+                <div className="text-xs sm:text-sm text-gray-500 flex items-center gap-1">
                   Model Version
                   <InfoTooltip content={TOOLTIP_CONTENT.MODEL_VERSION} />
                 </div>
                 <Link 
                   href="/docs/changelog"
-                  className="text-lg font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors inline-block"
+                  className="text-base sm:text-lg font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors inline-block"
                 >
                   {game.modelConfig.version}
                 </Link>
@@ -210,9 +230,9 @@ export default function GameDetailPage() {
             </div>
           )}
 
-          {/* Team Strips with Logos, Ranks, Records, Form */}
-          <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6 shadow-sm">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Team Strips with Logos, Ranks, Records, Form - Priority above fold */}
+          <div className="bg-white border border-gray-200 rounded-lg p-4 sm:p-6 mb-4 md:mb-6 shadow-sm">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
               {/* Away Team Strip */}
               <div className="flex items-center gap-4">
                 <TeamLogo 
@@ -222,8 +242,14 @@ export default function GameDetailPage() {
                 />
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
-                    <div className="text-xl font-bold text-gray-900">{game.teams?.away?.team?.name || game.game.awayTeam}</div>
-                    {renderRankChips(game.rankings?.away, game.game?.week, game.game?.season)}
+                    <Link 
+                      href={`/team/${game.teams?.away?.team?.id || game.game.awayTeam.toLowerCase().replace(/\s+/g, '-')}`}
+                      className="text-xl font-bold text-gray-900 hover:text-blue-600 hover:underline transition-colors"
+                      aria-label={`View ${game.teams?.away?.team?.name || game.game.awayTeam} team details`}
+                    >
+                      {game.teams?.away?.team?.name || game.game.awayTeam}
+                    </Link>
+                    {renderRankChips(game.rankings?.away, game.game?.week, game.game?.season, 'CFBD', undefined)}
                   </div>
                   <div className="flex items-center gap-3 text-sm text-gray-600">
                     <span className="font-medium">
@@ -244,8 +270,14 @@ export default function GameDetailPage() {
                 />
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
-                    <div className="text-xl font-bold text-gray-900">{game.teams?.home?.team?.name || game.game.homeTeam}</div>
-                    {renderRankChips(game.rankings?.home, game.game?.week, game.game?.season)}
+                    <Link 
+                      href={`/team/${game.teams?.home?.team?.id || game.game.homeTeam.toLowerCase().replace(/\s+/g, '-')}`}
+                      className="text-xl font-bold text-gray-900 hover:text-blue-600 hover:underline transition-colors"
+                      aria-label={`View ${game.teams?.home?.team?.name || game.game.homeTeam} team details`}
+                    >
+                      {game.teams?.home?.team?.name || game.game.homeTeam}
+                    </Link>
+                    {renderRankChips(game.rankings?.home, game.game?.week, game.game?.season, 'CFBD', undefined)}
                   </div>
                   <div className="flex items-center gap-3 text-sm text-gray-600">
                     <span className="font-medium">
@@ -269,13 +301,13 @@ export default function GameDetailPage() {
             </div>
           )}
 
-          {/* Betting Lines Summary */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-            <h3 className="text-lg font-semibold text-blue-900 mb-3 flex items-center gap-2">
+          {/* Betting Lines Summary - Priority above fold */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4 mb-4 md:mb-6">
+            <h3 className="text-base sm:text-lg font-semibold text-blue-900 mb-2 sm:mb-3 flex items-center gap-2">
               Betting Lines
               <InfoTooltip content={TOOLTIP_CONTENT.MARKET_LINES} />
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-3 gap-2 sm:gap-4">
               <div className="bg-white p-3 rounded border border-blue-100">
                 <div className="text-xs text-gray-600 mb-1">Spread</div>
                 <div className="text-xl font-bold text-gray-900">
@@ -359,14 +391,14 @@ export default function GameDetailPage() {
             </div>
           )}
 
-          {/* Recommended Picks - Ticket Style */}
+          {/* Recommended Picks - Ticket Style - Priority above fold */}
           {(game.picks?.spread?.grade || game.picks?.total?.grade) && (
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">Recommended Picks</h3>
+            <div className="mb-4 md:mb-6">
+              <div className="flex items-center justify-between mb-3 sm:mb-4">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900">Recommended Picks</h3>
                 <InfoTooltip content={TOOLTIP_CONTENT.RECOMMENDED_PICKS + ' ' + TOOLTIP_CONTENT.GRADE_THRESHOLDS} />
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
                 {/* ATS Pick Card */}
                 {game.picks?.spread?.grade && game.picks?.spread?.bettablePick && (
                   <div className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-300 rounded-lg p-5 shadow-md">
@@ -562,7 +594,18 @@ export default function GameDetailPage() {
                     ATS Edge
                     <InfoTooltip content={TOOLTIP_CONTENT.ATS_EDGE_FORMULA} />
                   </div>
-                  <div className={`text-sm font-medium ${game.edge?.atsEdge >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                  <div className={`text-sm font-medium flex items-center gap-1 ${game.edge?.atsEdge >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                    {game.edge?.atsEdge >= 0 ? (
+                      <>
+                        <span aria-hidden="true">↑</span>
+                        <span className="sr-only">Positive edge</span>
+                      </>
+                    ) : (
+                      <>
+                        <span aria-hidden="true">↓</span>
+                        <span className="sr-only">Negative edge</span>
+                      </>
+                    )}
                     {game.edge?.atsEdge >= 0 ? '+' : ''}{game.edge?.atsEdge?.toFixed(1)} pts
                   </div>
                 </div>
@@ -626,7 +669,18 @@ export default function GameDetailPage() {
                     Total Edge
                     <InfoTooltip content={TOOLTIP_CONTENT.TOTAL_EDGE_FORMULA} />
                   </div>
-                  <div className={`text-sm font-medium ${game.edge?.totalEdge >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  <div className={`text-sm font-medium flex items-center gap-1 ${game.edge?.totalEdge >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {game.edge?.totalEdge >= 0 ? (
+                      <>
+                        <span aria-hidden="true">↑ Over</span>
+                        <span className="sr-only">Over edge</span>
+                      </>
+                    ) : (
+                      <>
+                        <span aria-hidden="true">↓ Under</span>
+                        <span className="sr-only">Under edge</span>
+                      </>
+                    )}
                     {game.edge?.totalEdge !== null && game.edge?.totalEdge !== undefined && game.market?.total ? (
                       <>
                         {game.edge.totalEdge >= 0 ? 'Over' : 'Under'} {game.market.total.toFixed(1)} (edge {game.edge.totalEdge >= 0 ? '+' : ''}{game.edge.totalEdge.toFixed(1)} pts)
@@ -748,11 +802,18 @@ export default function GameDetailPage() {
                   </div>
                 )}
               </div>
-              {game.weather.humidity && (
-                <div className="text-xs text-gray-500 mt-2">
-                  Humidity: {game.weather.humidity}% • Source: {game.weather.source}
-                </div>
-              )}
+              <div className="text-xs text-gray-500 mt-2">
+                {game.weather.humidity && `Humidity: ${game.weather.humidity}% • `}
+                Source: {game.weather.source || 'VisualCrossing'} • 
+                {game.weather.forecastTime && ` Generated: ${new Date(game.weather.forecastTime).toLocaleString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  hour12: true,
+                  timeZone: 'America/Chicago'
+                })}`}
+              </div>
             </div>
           )}
 
