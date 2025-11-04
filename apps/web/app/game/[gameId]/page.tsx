@@ -244,7 +244,18 @@ export default function GameDetailPage() {
                     {game.validation.favoritesDisagree && (
                       <div className="flex items-center gap-2">
                         <span className="font-medium">⚠️ Model vs Market Mismatch:</span>
-                        <span>Model and market favor different teams</span>
+                        <span>
+                          {game.model?.favorite && game.market?.favorite && game.picks?.spread?.bettablePick ? (
+                            <>
+                              Model prices {game.model.favorite.teamName} {game.model.favorite.spread >= 0 ? '+' : ''}{game.model.favorite.spread.toFixed(1)} while market prices {game.market.favorite.teamName} {game.market.favorite.spread.toFixed(1)} — value exists on {game.picks.spread.bettablePick.teamName} {game.picks.spread.bettablePick.line >= 0 ? '+' : ''}{game.picks.spread.bettablePick.line.toFixed(1)}
+                              {game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && (
+                                <> (up to {game.picks.spread.betTo >= 0 ? '+' : ''}{game.picks.spread.betTo.toFixed(1)})</>
+                              )}
+                            </>
+                          ) : (
+                            'Model and market favor different teams'
+                          )}
+                        </span>
                       </div>
                     )}
                     {game.validation.edgeAbsGt20 && (
@@ -517,24 +528,47 @@ export default function GameDetailPage() {
                 </div>
               )}
 
-              {/* Total Card */}
-              {game.picks?.total?.hidden ? (
+              {/* Total Card - Three States: pick, no_edge, no_model_total */}
+              {game.picks?.total?.totalState === 'no_model_total' ? (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                   <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">TOTAL (Over/Under)</h3>
                   <div className="text-lg font-bold text-gray-700 mb-1">
                     No model total this week
                   </div>
                   <div className="text-xs text-gray-600 mb-2">
-                    Reason: {game.picks.total.modelTotalWarning || 'missing inputs'}. Context: {game.picks.total.lean ? `Lean ${game.picks.total.lean.direction} (market ${game.picks.total.marketTotal?.toFixed(1)}).` : 'No lean.'}
+                    {game.picks.total.modelTotalWarning ? (
+                      <span>{game.picks.total.modelTotalWarning}</span>
+                    ) : (
+                      <span>Missing inputs for a reliable forecast.</span>
+                    )}
+                    {game.picks.total.lean && (
+                      <span className="mt-1 block">Lean: {game.picks.total.lean.direction} {game.picks.total.marketTotal?.toFixed(1)} (model unavailable)</span>
+                    )}
                   </div>
                 </div>
-              ) : game.picks?.total?.modelTotal !== null && game.picks?.total?.modelTotal !== undefined ? (
-                <div className={`bg-white border-2 rounded-lg p-4 shadow-sm ${game.picks.total.validationFlagged ? 'border-amber-300 bg-amber-50' : 'border-green-300'}`}>
-                  {game.picks.total.validationFlagged && (
-                    <div className="mb-2 px-2 py-1 bg-amber-100 border border-amber-200 rounded text-xs text-amber-800">
-                      {game.picks.total.modelTotalWarning || 'Model total flagged by validation. Use with caution.'}
+              ) : game.picks?.total?.totalState === 'no_edge' ? (
+                <div className="bg-white border-2 border-gray-300 rounded-lg p-4 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">TOTAL (Over/Under)</h3>
+                  </div>
+                  {/* Headline: Bold model total */}
+                  <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Model total ${game.picks.total.modelTotal?.toFixed(1)}`}>
+                    Total {game.picks.total.modelTotal?.toFixed(1)}
+                    <InfoTooltip content="Our forecast of combined points this week (predicted pace, efficiency, and adjustments)." />
+                  </div>
+                  {/* Subhead: No edge */}
+                  <div className="text-sm text-gray-600 mb-2">
+                    No edge at current market total {game.picks.total.marketTotal?.toFixed(1) || 'N/A'}
+                  </div>
+                  {/* Rationale line */}
+                  {game.picks.total.rationale && (
+                    <div className="text-xs text-gray-500 mt-2 italic border-t border-gray-200 pt-2">
+                      {game.picks.total.rationale}
                     </div>
                   )}
+                </div>
+              ) : game.picks?.total?.totalState === 'pick' && game.picks?.total?.modelTotal !== null && game.picks?.total?.modelTotal !== undefined ? (
+                <div className="bg-white border-2 border-green-300 rounded-lg p-4 shadow-sm">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">TOTAL (Over/Under)</h3>
                     {game.picks.total.grade && (
@@ -555,12 +589,8 @@ export default function GameDetailPage() {
                     Total {game.picks.total.modelTotal.toFixed(1)}
                     <InfoTooltip content="Our forecast of combined points this week (predicted pace, efficiency, and adjustments)." />
                   </div>
-                  {/* Subhead: Pick/Edge/Bet-to OR No edge */}
-                  {game.picks.total.hasNoEdge ? (
-                    <div className="text-sm text-gray-600 mb-2">
-                      No edge at current market total {game.picks.total.marketTotal?.toFixed(1) || 'N/A'}
-                    </div>
-                  ) : game.picks.total.totalPickLabel && game.picks.total.edgePts !== null ? (
+                  {/* Subhead: Pick/Edge/Bet-to */}
+                  {game.picks.total.totalPickLabel && game.picks.total.edgePts !== null ? (
                     <div className="text-sm text-gray-600 mb-2">
                       Pick: <span className="font-semibold text-gray-900">{game.picks.total.totalPickLabel}</span>
                       {' • '}
@@ -579,7 +609,7 @@ export default function GameDetailPage() {
                   ) : null}
                   {/* Rationale line */}
                   {game.picks.total.rationale && (
-                    <div className="text-xs text-gray-700 mt-2 italic border-t border-gray-200 pt-2">
+                    <div className="text-xs text-gray-500 mt-2 italic border-t border-gray-200 pt-2">
                       {game.picks.total.rationale}
                     </div>
                   )}
@@ -589,16 +619,6 @@ export default function GameDetailPage() {
                       Drift toward model ({game.clvHint.totalDrift.drift >= 0 ? '+' : ''}{game.clvHint.totalDrift.drift.toFixed(1)})
                     </div>
                   )}
-                </div>
-              ) : game.picks?.total?.validationFlagged ? (
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">TOTAL (Over/Under)</h3>
-                  <div className="text-lg font-bold text-gray-700 mb-1">
-                    No model total this week
-                  </div>
-                  <div className="text-xs text-gray-600 mb-2">
-                    Reason: {game.picks.total.modelTotalWarning || 'missing inputs'}. Context: {game.picks.total.lean ? `Lean ${game.picks.total.lean.direction} (market ${game.picks.total.marketTotal?.toFixed(1)}).` : 'No lean.'}
-                  </div>
                 </div>
               ) : (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
@@ -1181,17 +1201,20 @@ export default function GameDetailPage() {
             </div>
             
             {/* OU Edge Chip */}
-            <div className={`bg-green-50 border-2 rounded-lg p-4 text-center ${game.picks?.total?.validationFlagged ? 'border-amber-300 bg-amber-50' : 'border-green-200'}`}>
+            <div className={`bg-green-50 border-2 rounded-lg p-4 text-center ${game.picks?.total?.totalState === 'no_model_total' ? 'border-amber-300 bg-amber-50' : 'border-green-200'}`}>
               <div className="text-sm text-gray-600 flex items-center justify-center gap-1 mb-2">
                 OU Edge
                 <InfoTooltip content="Difference between market total and model total, in points. Positive = more value at current number." />
               </div>
-              {game.picks?.total?.validationFlagged ? (
+              {game.picks?.total?.totalState === 'no_model_total' ? (
                 <>
                   <div className="text-lg text-gray-400 mb-1">—</div>
-                  <div className="text-xs text-amber-700 flex items-center justify-center gap-1">
-                    <InfoTooltip content={game.picks.total.modelTotalWarning || 'Model total suppressed by validation gates.'} />
-                    <span className="cursor-help">Why?</span>
+                  <div className="text-xs text-amber-700 mt-2">
+                    {game.picks.total.modelTotalWarning ? (
+                      <span>No model total ({game.picks.total.modelTotalWarning})</span>
+                    ) : (
+                      <span>No model total (missing inputs)</span>
+                    )}
                   </div>
                 </>
               ) : game.edge?.totalEdge !== null && game.edge?.totalEdge !== undefined ? (
@@ -1220,7 +1243,12 @@ export default function GameDetailPage() {
                   )}
                 </>
               ) : (
-                <div className="text-lg text-gray-400">—</div>
+                <>
+                  <div className="text-lg text-gray-400 mb-1">—</div>
+                  <div className="text-xs text-gray-500 mt-2">
+                    No model total available
+                  </div>
+                </>
               )}
             </div>
             

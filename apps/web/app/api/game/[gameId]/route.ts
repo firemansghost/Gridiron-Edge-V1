@@ -409,6 +409,11 @@ export async function GET(
         ? 'computedFromRatings' 
         : 'fallback';
     
+    // ============================================
+    // MODEL TOTAL VALIDATION - Only Missing Inputs & Computation Failure
+    // ============================================
+    // No range-based gating - if pipeline produces a number, we show it
+    
     // Gate 1: Inputs Ready - check if required inputs are available
     const inputsReady = {
       homeEpaOff: homeStats?.epaOff !== null && homeStats?.epaOff !== undefined,
@@ -422,10 +427,7 @@ export async function GET(
     };
     const inputsReadyFlag = inputsReady.homeEpaOff || inputsReady.homeYppOff || inputsReady.awayEpaOff || inputsReady.awayYppOff;
     
-    // Gate 2: Plausibility - modelTotal ∈ [28, 88] (tighter than old [20, 90])
-    const plausibilityFlag = finalImpliedTotal >= 28 && finalImpliedTotal <= 88;
-    
-    // Gate 3: Consistency - team implied scores sum to total within ±0.2
+    // Gate 2: Consistency - team implied scores sum to total within ±0.5 (computation check)
     // Calculate implied scores for consistency check (only if spread is valid)
     const spreadValidForConsistency = finalImpliedSpread !== null && 
                                       finalImpliedSpread >= -50 && 
@@ -436,90 +438,53 @@ export async function GET(
     const impliedAwayScoreForCheck = spreadValidForConsistency && finalImpliedTotal !== null
       ? (finalImpliedTotal - finalImpliedSpread) / 2
       : null;
-    const consistencyCheck = impliedHomeScoreForCheck !== null && impliedAwayScoreForCheck !== null
-      ? Math.abs((impliedHomeScoreForCheck + impliedAwayScoreForCheck) - finalImpliedTotal) <= 0.2
-      : true; // Pass if we can't check (no implied scores)
-    const consistencyFlag = consistencyCheck;
-    
-    // Gate 4: Stability - modelTotal change vs prior game ≤ ±10 points
-    // (Simplified: we'll skip this for now as it requires querying prior games)
-    const stabilityFlag = true; // TODO: Implement when we have prior game data
-    
-    // Gate 5: Weather sanity - if extreme weather, ensure adjustment sign matches
-    // (Simplified: we'll skip this for now as weather adjustments aren't explicitly tracked in total calc)
-    const weatherSanityFlag = true; // TODO: Implement when weather adjustments are explicit
-    
-    // Combined validation: soft flags (show muted banner) vs hard fail (hide)
-    const validationFlags = {
-      inputsReady: inputsReadyFlag,
-      plausibility: plausibilityFlag,
-      consistency: consistencyFlag,
-      stability: stabilityFlag,
-      weatherSanity: weatherSanityFlag
-    };
-    
-    // Determine specific warning reasons (only for actual issues)
-    const missingInputs: string[] = [];
-    if (!inputsReady.homeEpaOff && !inputsReady.homeYppOff) {
-      missingInputs.push(`pace/efficiency for ${game.homeTeam.name}`);
-    }
-    if (!inputsReady.awayEpaOff && !inputsReady.awayYppOff) {
-      missingInputs.push(`pace/efficiency for ${game.awayTeam.name}`);
-    }
-    if (!inputsReady.homePaceOff) {
-      missingInputs.push(`pace for ${game.homeTeam.name}`);
-    }
-    if (!inputsReady.awayPaceOff) {
-      missingInputs.push(`pace for ${game.awayTeam.name}`);
-    }
-    
     const consistencyDelta = impliedHomeScoreForCheck !== null && impliedAwayScoreForCheck !== null
       ? Math.abs((impliedHomeScoreForCheck + impliedAwayScoreForCheck) - finalImpliedTotal)
       : null;
+    const consistencyFlag = consistencyDelta === null || consistencyDelta <= 0.5;
     
-    // Check for computation failure (NaN/inf or extreme inconsistency)
+    // Determine specific missing inputs for warning messages
+    const missingInputs: string[] = [];
+    if (!inputsReady.homeEpaOff && !inputsReady.homeYppOff && !inputsReady.homePaceOff) {
+      missingInputs.push(`pace/efficiency for ${game.homeTeam.name}`);
+    }
+    if (!inputsReady.awayEpaOff && !inputsReady.awayYppOff && !inputsReady.awayPaceOff) {
+      missingInputs.push(`pace/efficiency for ${game.awayTeam.name}`);
+    }
+    
+    // Check for computation failure (NaN/inf or failed consistency check)
     const computationFailed = finalImpliedTotal === null || 
                              isNaN(finalImpliedTotal) || 
                              !isFinite(finalImpliedTotal) ||
                              (consistencyDelta !== null && consistencyDelta > 0.5);
     
-    // Extreme outlier (only if inputs are valid and computation succeeded)
-    const extremeOutlier = inputsReadyFlag && !computationFailed && 
-                           (finalImpliedTotal < 28 || finalImpliedTotal > 90);
-    
-    // Generate specific warning message
+    // Generate specific warning message (only for missing inputs or computation failure)
     let modelTotalWarning: string | null = null;
+    let calcError = false;
     if (computationFailed) {
+      calcError = true;
       if (consistencyDelta !== null && consistencyDelta > 0.5) {
-        modelTotalWarning = `Model total suppressed: implied scores don't sum (Δ=${consistencyDelta.toFixed(1)}).`;
+        modelTotalWarning = `Computation failed: inconsistent implied scores (Δ=${consistencyDelta.toFixed(1)}).`;
       } else {
-        modelTotalWarning = `Model total suppressed: computation failed (NaN/inf).`;
+        modelTotalWarning = `Computation failed: NaN/inf.`;
       }
     } else if (missingInputs.length > 0) {
-      modelTotalWarning = `Model total suppressed: missing inputs (${missingInputs.join(', ')}).`;
-    } else if (extremeOutlier) {
-      modelTotalWarning = `Model total suppressed: extreme outlier (calc=${finalImpliedTotal.toFixed(1)}).`;
+      modelTotalWarning = `Missing inputs: ${missingInputs.join(', ')}.`;
     }
     
-    // Soft flag: show warning if we have a specific reason
-    const validationFlagged = modelTotalWarning !== null;
-    
-    // Hard fail: only if truly invalid (NaN/null) or computation failed
+    // Model total is valid if it exists and computation didn't fail (no range checks)
     const isModelTotalValid = !computationFailed && finalImpliedTotal !== null && 
                              !isNaN(finalImpliedTotal) && 
-                             isFinite(finalImpliedTotal) &&
-                             (inputsReadyFlag || finalImpliedTotal >= 28 && finalImpliedTotal <= 90);
+                             isFinite(finalImpliedTotal);
     const validModelTotal = isModelTotalValid ? finalImpliedTotal : null;
     
-    // Log pipeline diagnostics
-    console.log(`[Game ${gameId}] Model Total Pipeline:`, {
-      computationPath,
-      modelTotal: finalImpliedTotal,
-      inputs: inputsReady,
-      validationFlags,
-      validationFlagged,
-      isModelTotalValid
-    });
+    // Validation flags (for diagnostics only, not for gating)
+    const validationFlags = {
+      inputsReady: inputsReadyFlag,
+      consistency: consistencyFlag,
+      computationFailed: computationFailed,
+      missingInputs: missingInputs.length > 0
+    };
     
     // Compute the actual bettable pick based on edge (handles model/market disagreement)
     const edgeFloor = 2.0; // Minimum edge threshold
@@ -535,7 +500,7 @@ export async function GET(
     );
 
     // Total edge: Model Total - Market Total (positive = model thinks over, negative = under)
-    // Only compute if model total is valid
+    // Compute if model total exists (no range checks)
     const totalEdgePts = isModelTotalValid ? (finalImpliedTotal - marketTotal) : null;
     
     // Determine "No edge" condition: edge < 2.0 OR model total ≈ market total within 0.5
@@ -551,6 +516,24 @@ export async function GET(
     const totalBetTo = isModelTotalValid && totalEdgePts !== null && Math.abs(totalEdgePts) >= edgeFloor && !hasNoEdge
       ? computeTotalBetTo(finalImpliedTotal, marketTotal, edgeFloor)
       : null;
+    
+    // Determine OU card state: "pick" | "no_edge" | "no_model_total"
+    const totalState: 'pick' | 'no_edge' | 'no_model_total' = 
+      !isModelTotalValid ? 'no_model_total' :
+      hasNoEdge ? 'no_edge' :
+      'pick';
+    
+    // Log pipeline diagnostics
+    console.log(`[Game ${gameId}] Model Total Pipeline:`, {
+      computationPath,
+      modelTotal: finalImpliedTotal,
+      inputs: inputsReady,
+      validationFlags,
+      isModelTotalValid,
+      totalState,
+      missingInputs,
+      calcError
+    });
     
     // Calculate lean when model total is suppressed (Task #4)
     // Use median CFB total of 55 as baseline
@@ -574,27 +557,8 @@ export async function GET(
     // GUARDRAILS & VALIDATION CHECKS
     // ============================================
     
-    // 1. Validate Model Total is in realistic range [20-90]
-    if (finalImpliedTotal !== null && (finalImpliedTotal < 20 || finalImpliedTotal > 90)) {
-      console.warn(`[Game ${gameId}] ⚠️ Model Total out of realistic range: ${finalImpliedTotal.toFixed(1)}`, {
-        modelTotal: finalImpliedTotal,
-        marketTotal,
-        gameId,
-        homeTeam: game.homeTeam.name,
-        awayTeam: game.awayTeam.name
-      });
-    }
-    
-    // 2. Validate Market Total is in realistic range [20-90]
-    if (marketTotal !== null && (marketTotal < 20 || marketTotal > 90)) {
-      console.warn(`[Game ${gameId}] ⚠️ Market Total out of realistic range: ${marketTotal.toFixed(1)}`, {
-        modelTotal: finalImpliedTotal,
-        marketTotal,
-        gameId,
-        homeTeam: game.homeTeam.name,
-        awayTeam: game.awayTeam.name
-      });
-    }
+    // Note: Removed range-based validation - model is the arbiter
+    // Only log warnings for computation failures or missing inputs
     
     // 3. Validate Model Spread absolute value is not excessive (> 50)
     if (finalImpliedSpread !== null && Math.abs(finalImpliedSpread) > 50) {
@@ -725,8 +689,9 @@ export async function GET(
           favoritesDisagree,
           edgeAbsGt20,
           validationFlags: validationFlags, // Include all model total validation gates
-          validationFlagged: validationFlagged,
-          modelTotalWarning: modelTotalWarning // Specific warning message for model total
+          totalState: totalState, // "pick" | "no_edge" | "no_model_total"
+          missingInputs: missingInputs, // List of missing inputs
+          calcError: calcError // Boolean for computation failure
         },
         
         // Additional context
@@ -737,37 +702,35 @@ export async function GET(
       }
     };
     
-    // Telemetry for gated totals (Task #7) - only when card_state ≠ "pick"
-    const cardState = isModelTotalValid && !hasNoEdge && totalPick.totalPickLabel ? 'pick' : 
-                      validationFlagged && hasLean ? 'lean' : 
-                      validationFlagged ? 'no_lean' : 'pick';
-    
-    if (cardState !== 'pick') {
-      const gatedTotalTelemetry = {
-        event: 'total_gated',
+    // Telemetry for totals (only when not in "pick" state)
+    if (totalState !== 'pick') {
+      const totalTelemetry = {
+        event: 'total_state',
         gameId,
         season: game.season,
         week: game.week,
         timestamp: new Date().toISOString(),
-        gates: validationFlags,
-        missingFields: missingInputs,
+        totalState: totalState,
+        missingInputs: missingInputs,
+        calcError: calcError,
         modelTotal: finalImpliedTotal,
         marketTotal: marketTotal,
-        cardState: cardState,
-        lean: validationFlagged && hasLean ? leanDirection : null
+        lean: totalState === 'no_model_total' && hasLean ? leanDirection : null
       };
-      console.log(`[TELEMETRY] ${JSON.stringify(gatedTotalTelemetry)}`);
+      console.log(`[TELEMETRY] ${JSON.stringify(totalTelemetry)}`);
     }
     
     // Log structured event (only in non-production or when flags are raised)
-    if (process.env.NODE_ENV !== 'production' || validationFlagged || favoritesDisagree || edgeAbsGt20) {
+    if (process.env.NODE_ENV !== 'production' || totalState !== 'pick' || favoritesDisagree || edgeAbsGt20) {
       console.log(`[TELEMETRY] ${JSON.stringify(telemetryEvent)}`);
     }
     
     // Log warnings if any flags are raised
-    if (validationFlagged || favoritesDisagree || edgeAbsGt20) {
+    if (totalState !== 'pick' || favoritesDisagree || edgeAbsGt20) {
       console.warn(`[Game ${gameId}] ⚠️ Validation flags raised:`, {
-        modelTotalWarning,
+        totalState,
+        missingInputs,
+        calcError,
         favoritesDisagree,
         edgeAbsGt20,
         gameId,
@@ -1436,26 +1399,27 @@ export async function GET(
           betTo: totalBetTo, // "Bet to" number for total
           grade: totalGrade, // A, B, C, or null
           hasNoEdge: hasNoEdge, // Flag for "No edge" display
-          // Hide only if model total is truly invalid (NaN/null), not just out of range
-          hidden: finalImpliedTotal === null || isNaN(finalImpliedTotal),
-          // Validation flags (soft flag - show muted banner if any fail)
-          validationFlagged: validationFlagged,
-          validationFlags: validationFlags, // Include all gate flags for diagnostics
-          modelTotalWarning: modelTotalWarning, // Specific warning message
-          // Lean when model total is suppressed
-          lean: validationFlagged && hasLean ? {
+          // Hide only if model total is truly invalid (NaN/null/inf)
+          hidden: !isModelTotalValid,
+          // OU card state: "pick" | "no_edge" | "no_model_total"
+          totalState: totalState,
+          // Missing inputs list (for "no_model_total" state)
+          missingInputs: missingInputs,
+          // Computation error flag
+          calcError: calcError,
+          // Specific warning message (only for missing inputs or computation failure)
+          modelTotalWarning: modelTotalWarning,
+          // Lean when model total is unavailable
+          lean: totalState === 'no_model_total' && hasLean ? {
             direction: leanDirection,
             marketTotal: marketTotal,
             medianTotal: medianConfTotal
           } : null,
-          cardState: isModelTotalValid && !hasNoEdge && totalPick.totalPickLabel ? 'pick' : 
-                    validationFlagged && hasLean ? 'lean' : 
-                    validationFlagged ? 'no_lean' : 'pick',
           // Rationale line for ticket
-          rationale: isModelTotalValid && !hasNoEdge && totalPick.totalPickLabel && totalEdgePts !== null
+          rationale: totalState === 'pick' && totalEdgePts !== null && totalPick.totalPickLabel
             ? `Model total ${finalImpliedTotal.toFixed(1)} vs market ${marketTotal.toFixed(1)} (${totalEdgePts >= 0 ? '+' : ''}${totalEdgePts.toFixed(1)}) → ${totalPick.totalPick} value.`
-            : hasNoEdge && isModelTotalValid
-            ? `Model and market are aligned (Δ < ${edgeFloor.toFixed(1)}) → No bet.`
+            : totalState === 'no_edge' && isModelTotalValid
+            ? `Model ${finalImpliedTotal.toFixed(1)} vs market ${marketTotal.toFixed(1)} (Δ ${Math.abs(finalImpliedTotal - marketTotal).toFixed(1)}).`
             : null
         },
         moneyline: {
