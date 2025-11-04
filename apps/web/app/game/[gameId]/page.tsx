@@ -510,11 +510,11 @@ export default function GameDetailPage() {
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-gray-500 flex items-center gap-1">
-                    Model Favorite
+                    Model favorite
                     <InfoTooltip content={TOOLTIP_CONTENT.MODEL_FAVORITE} />
                   </div>
                   <div className="text-lg font-semibold text-gray-900">
-                    {game.model?.favorite ? `${game.model.favorite.teamName} ${game.model.favorite.spread.toFixed(1)}` : '—'}
+                    {game.model?.favorite ? `Model favorite: ${game.model.favorite.teamName} ${game.model.favorite.spread.toFixed(1)}` : '—'}
                   </div>
                 </div>
                 <div className="flex justify-between items-center">
@@ -627,9 +627,18 @@ export default function GameDetailPage() {
                     <InfoTooltip content={TOOLTIP_CONTENT.TOTAL_EDGE_FORMULA} />
                   </div>
                   <div className={`text-sm font-medium ${game.edge?.totalEdge >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {game.edge?.totalEdge >= 0 ? '+' : ''}{game.edge?.totalEdge?.toFixed(1)} pts
-                    {game.edge?.totalEdge && (
-                      <span className="ml-1 text-xs">({game.edge.totalEdge >= 0 ? 'Over' : 'Under'})</span>
+                    {game.edge?.totalEdge && game.market?.total && (
+                      <>
+                        {game.edge.totalEdge >= 0 ? 'Over' : 'Under'} {game.market.total.toFixed(1)} (edge {game.edge.totalEdge >= 0 ? '+' : ''}{game.edge.totalEdge.toFixed(1)} pts)
+                      </>
+                    )}
+                    {!game.edge?.totalEdge && (
+                      <>
+                        {game.edge?.totalEdge >= 0 ? '+' : ''}{game.edge?.totalEdge?.toFixed(1)} pts
+                        {game.edge?.totalEdge && (
+                          <span className="ml-1 text-xs">({game.edge.totalEdge >= 0 ? 'Over' : 'Under'})</span>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
