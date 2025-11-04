@@ -5,7 +5,7 @@
  */
 
 import { prisma } from '@/lib/prisma';
-import { computeSpreadPick, computeTotalPick, convertToFavoriteCentric, computeATSEdge } from '@/lib/pick-helpers';
+import { computeSpreadPick, computeTotalPick, convertToFavoriteCentric, computeATSEdge, computeBettableSpreadPick } from '@/lib/pick-helpers';
 import { pickMarketLine, getLineValue, pickMoneyline, americanToProb } from '@/lib/market-line-helpers';
 import { NextResponse } from 'next/server';
 
@@ -162,9 +162,38 @@ export async function GET(
       }
     }
 
-    // Use computed values if matchupOutput doesn't exist
-    const finalImpliedSpread = matchupOutput?.impliedSpread ?? computedSpread;
-    const finalImpliedTotal = matchupOutput?.impliedTotal ?? computedTotal;
+    // Use computed values if matchupOutput doesn't exist or has invalid values
+    // Validate that matchupOutput values are in realistic ranges before using them
+    const isValidSpread = matchupOutput?.impliedSpread !== null && 
+                          matchupOutput?.impliedSpread !== undefined &&
+                          Math.abs(matchupOutput.impliedSpread) <= 50;
+    const isValidTotal = matchupOutput?.impliedTotal !== null && 
+                         matchupOutput?.impliedTotal !== undefined &&
+                         matchupOutput.impliedTotal >= 20 && 
+                         matchupOutput.impliedTotal <= 90;
+    
+    const finalImpliedSpread = (isValidSpread ? matchupOutput.impliedSpread : null) ?? computedSpread;
+    const finalImpliedTotal = (isValidTotal ? matchupOutput.impliedTotal : null) ?? computedTotal;
+    
+    // Log if we're using computed values due to invalid matchupOutput data
+    if (matchupOutput && !isValidTotal) {
+      console.warn(`[Game ${gameId}] ⚠️ Invalid matchupOutput.impliedTotal (${matchupOutput.impliedTotal}), using computed total: ${computedTotal.toFixed(1)}`, {
+        matchupTotal: matchupOutput.impliedTotal,
+        computedTotal,
+        gameId,
+        homeTeam: game.homeTeam.name,
+        awayTeam: game.awayTeam.name
+      });
+    }
+    if (matchupOutput && !isValidSpread) {
+      console.warn(`[Game ${gameId}] ⚠️ Invalid matchupOutput.impliedSpread (${matchupOutput.impliedSpread}), using computed spread: ${computedSpread.toFixed(1)}`, {
+        matchupSpread: matchupOutput.impliedSpread,
+        computedSpread,
+        gameId,
+        homeTeam: game.homeTeam.name,
+        awayTeam: game.awayTeam.name
+      });
+    }
 
     // Get line values (prefers closingLine, falls back to lineValue)
     const marketSpread = getLineValue(spreadLine) ?? 0;
@@ -224,7 +253,15 @@ export async function GET(
       game.awayTeam.name
     );
 
-    // Compute spread pick details (favorite-centric)
+    // Calculate ATS edge (favorite-centric): positive means model thinks favorite should lay more
+    const atsEdge = computeATSEdge(
+      finalImpliedSpread,
+      marketSpread,
+      game.homeTeamId,
+      game.awayTeamId
+    );
+
+    // Compute spread pick details (favorite-centric) - this is the model's favorite
     const spreadPick = computeSpreadPick(
       finalImpliedSpread,
       game.homeTeam.name,
@@ -233,16 +270,21 @@ export async function GET(
       game.awayTeamId
     );
 
-    // Compute total pick details
-    const totalPick = computeTotalPick(finalImpliedTotal, marketTotal);
-
-    // Calculate ATS edge (favorite-centric): positive means model thinks favorite should lay more
-    const atsEdge = computeATSEdge(
+    // Compute the actual bettable pick based on edge (handles model/market disagreement)
+    const bettablePick = computeBettableSpreadPick(
       finalImpliedSpread,
       marketSpread,
       game.homeTeamId,
-      game.awayTeamId
+      game.homeTeam.name,
+      game.awayTeamId,
+      game.awayTeam.name,
+      atsEdge
     );
+
+    // Compute total pick details (only if model total is valid)
+    const totalPick = (finalImpliedTotal >= 20 && finalImpliedTotal <= 90) 
+      ? computeTotalPick(finalImpliedTotal, marketTotal)
+      : { totalPick: null, totalPickLabel: null, edgeDisplay: null };
 
     // Total edge: Model Total - Market Total (positive = model thinks over, negative = under)
     const totalEdgePts = finalImpliedTotal - marketTotal;
@@ -904,6 +946,14 @@ export async function GET(
       picks: {
         spread: {
           ...spreadPick,
+          // Add bettable pick info (the actual side to bet)
+          bettablePick: {
+            teamId: bettablePick.teamId,
+            teamName: bettablePick.teamName,
+            line: bettablePick.line,
+            label: bettablePick.label,
+            reasoning: bettablePick.reasoning
+          },
           edgePts: atsEdge,
           // For backward compatibility
           spreadEdge: Math.abs(atsEdge),
@@ -913,6 +963,8 @@ export async function GET(
           ...totalPick,
           edgePts: totalEdgePts,
           grade: totalGrade, // A, B, C, or null
+          // Hide if model total is invalid
+          hidden: finalImpliedTotal < 20 || finalImpliedTotal > 90
         }
       },
       

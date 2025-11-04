@@ -136,6 +136,7 @@ export function computeATSEdge(
 
 /**
  * Computes spread pick details (favorite-centric)
+ * Returns the model's favorite team and spread
  */
 export function computeSpreadPick(
   impliedSpread: number,
@@ -167,6 +168,107 @@ export function computeSpreadPick(
     },
     spreadPickLabel: formatFavoriteSpread(fc.favoriteTeamName, fc.favoriteSpread)
   };
+}
+
+/**
+ * Computes the actual bettable pick based on model vs market edge
+ * When model and market favor different teams, determines which side to bet
+ * Returns: { teamId, teamName, line, label, edgePts }
+ */
+export function computeBettableSpreadPick(
+  modelSpread: number, // home-minus-away
+  marketSpread: number, // home-minus-away
+  homeTeamId: string,
+  homeTeamName: string,
+  awayTeamId: string,
+  awayTeamName: string,
+  atsEdge: number
+) {
+  const modelFC = convertToFavoriteCentric(modelSpread, homeTeamId, homeTeamName, awayTeamId, awayTeamName);
+  const marketFC = convertToFavoriteCentric(marketSpread, homeTeamId, homeTeamName, awayTeamId, awayTeamName);
+  
+  // If same team favored, bet the model's favorite at market line
+  if (modelFC.favoriteTeamId === marketFC.favoriteTeamId) {
+    // Model and market both favor same team
+    // If edge is positive, model thinks favorite should lay more → take underdog +market
+    // If edge is negative, model thinks favorite should lay less → take favorite -market
+    if (atsEdge > 0) {
+      // Model thinks favorite should lay more → take underdog getting points
+      return {
+        teamId: marketFC.underdogTeamId,
+        teamName: marketFC.underdogTeamName,
+        line: marketFC.underdogSpread, // Positive (underdog getting points)
+        label: formatUnderdogSpread(marketFC.underdogTeamName, marketFC.underdogSpread),
+        edgePts: atsEdge,
+        reasoning: `Model thinks ${modelFC.favoriteTeamName} should lay more than market, so take ${marketFC.underdogTeamName} +${marketFC.underdogSpread}`
+      };
+    } else {
+      // Model thinks favorite should lay less → take favorite laying points
+      return {
+        teamId: marketFC.favoriteTeamId,
+        teamName: marketFC.favoriteTeamName,
+        line: marketFC.favoriteSpread, // Negative (favorite laying points)
+        label: formatFavoriteSpread(marketFC.favoriteTeamName, marketFC.favoriteSpread),
+        edgePts: Math.abs(atsEdge),
+        reasoning: `Model thinks ${modelFC.favoriteTeamName} should lay less than market, so take ${marketFC.favoriteTeamName} ${marketFC.favoriteSpread}`
+      };
+    }
+  }
+  
+  // If different teams favored, determine which side has the edge
+  // Edge = modelHomeSpread - marketHomeSpread (from home perspective)
+  // Positive edge = model favors home more → take home +market (if market favors away)
+  // Negative edge = model favors away more → take away +market (if market favors home)
+  
+  if (atsEdge > 0) {
+    // Model favors home more than market does
+    // If market favors away, take home +market
+    // If market favors home, take home -market (but this shouldn't happen if edge is positive)
+    if (marketFC.favoriteTeamId === awayTeamId) {
+      // Market favors away, model favors home → take home +market
+      return {
+        teamId: homeTeamId,
+        teamName: homeTeamName,
+        line: -marketSpread, // Flip market spread: if market says away -10, home gets +10
+        label: formatUnderdogSpread(homeTeamName, -marketSpread),
+        edgePts: atsEdge,
+        reasoning: `Model favors ${homeTeamName} more than market favors ${awayTeamName}, so take ${homeTeamName} +${-marketSpread}`
+      };
+    } else {
+      // Market also favors home, but model more so → take home -market (less than model thinks)
+      return {
+        teamId: homeTeamId,
+        teamName: homeTeamName,
+        line: marketFC.favoriteSpread,
+        label: formatFavoriteSpread(homeTeamName, marketFC.favoriteSpread),
+        edgePts: atsEdge,
+        reasoning: `Model favors ${homeTeamName} more than market, so take ${homeTeamName} ${marketFC.favoriteSpread}`
+      };
+    }
+  } else {
+    // Model favors away more than market does (or market favors home more)
+    if (marketFC.favoriteTeamId === homeTeamId) {
+      // Market favors home, model favors away → take away +market
+      return {
+        teamId: awayTeamId,
+        teamName: awayTeamName,
+        line: marketSpread, // Market spread is positive (away favored), so away gets +market
+        label: formatUnderdogSpread(awayTeamName, marketSpread),
+        edgePts: Math.abs(atsEdge),
+        reasoning: `Model favors ${awayTeamName} more than market favors ${homeTeamName}, so take ${awayTeamName} +${marketSpread}`
+      };
+    } else {
+      // Market also favors away, but model more so → take away -market (less than model thinks)
+      return {
+        teamId: awayTeamId,
+        teamName: awayTeamName,
+        line: marketFC.favoriteSpread,
+        label: formatFavoriteSpread(awayTeamName, marketFC.favoriteSpread),
+        edgePts: Math.abs(atsEdge),
+        reasoning: `Model favors ${awayTeamName} more than market, so take ${awayTeamName} ${marketFC.favoriteSpread}`
+      };
+    }
+  }
 }
 
 /**
