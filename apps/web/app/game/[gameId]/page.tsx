@@ -608,6 +608,7 @@ export default function GameDetailPage() {
                       movement={game.lineHistory.statistics.spread.movement}
                       showLabels={true}
                       showCaption={true}
+                      favoriteTeamName={game.market?.favorite?.teamName}
                     />
                   </div>
                 )}

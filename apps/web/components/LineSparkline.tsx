@@ -26,6 +26,7 @@ interface LineSparklineProps {
   movement?: number; // Movement amount (closing - opening)
   showLabels?: boolean; // Whether to show Open/Close labels on chart
   showCaption?: boolean; // Whether to show caption below chart
+  favoriteTeamName?: string; // For spreads: the favorite team name (e.g., "Alabama Crimson Tide")
 }
 
 export function LineSparkline({ 
@@ -38,7 +39,8 @@ export function LineSparkline({
   closingValue,
   movement,
   showLabels = true,
-  showCaption = true
+  showCaption = true,
+  favoriteTeamName
 }: LineSparklineProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -159,10 +161,21 @@ export function LineSparkline({
       </div>
       {showCaption && openingValue !== undefined && closingValue !== undefined && movement !== undefined && (
         <div className="text-xs text-gray-600 mt-1 font-medium text-center">
-          Open: {openingValue.toFixed(1)} → Close: {closingValue.toFixed(1)} 
-          <span className={`ml-1 ${movement >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-            ({movement >= 0 ? '+' : ''}{movement.toFixed(1)})
-          </span>
+          {lineType === 'spread' && favoriteTeamName ? (
+            <>
+              Favorite spread: <span className="font-semibold">{favoriteTeamName}</span> {openingValue.toFixed(1)} → {closingValue.toFixed(1)}
+              <span className={`ml-1 ${movement >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                ({movement >= 0 ? '+' : ''}{movement.toFixed(1)})
+              </span>
+            </>
+          ) : (
+            <>
+              Open: {openingValue.toFixed(1)} → Close: {closingValue.toFixed(1)} 
+              <span className={`ml-1 ${movement >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                ({movement >= 0 ? '+' : ''}{movement.toFixed(1)})
+              </span>
+            </>
+          )}
         </div>
       )}
     </div>
