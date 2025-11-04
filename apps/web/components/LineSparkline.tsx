@@ -171,6 +171,7 @@ export function LineSparkline({
         <div className="text-xs text-gray-600 mt-1 font-medium text-center">
           {lineType === 'spread' && favoriteTeamName ? (
             <>
+              {/* Display favorite-centric format: favorite always shows negative (laying points) */}
               Favorite spread: <span className="font-semibold">{favoriteTeamName}</span> {openingValue.toFixed(1)} → {closingValue.toFixed(1)}
               <span className={`ml-1 ${movement >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 ({movement >= 0 ? '+' : ''}{movement.toFixed(1)})

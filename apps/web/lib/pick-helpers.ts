@@ -209,6 +209,10 @@ export function computeBettableSpreadPick(
       betTo = Math.max(0, roundToHalf(marketFC.underdogSpread - edgeFloor));
     }
     
+    // Determine model spread in favorite-centric format (for neutral site reference)
+    const modelSpreadForDisplay = modelFC.favoriteSpread; // Always negative (favorite laying points)
+    const modelUnderdogSpread = modelFC.underdogSpread; // Always positive (underdog getting points)
+    
     return {
       teamId: marketFC.underdogTeamId,
       teamName: marketFC.underdogTeamName,
@@ -217,7 +221,7 @@ export function computeBettableSpreadPick(
       edgePts: Math.abs(atsEdge),
       betTo: betTo,
       favoritesDisagree: true,
-      reasoning: `Model makes ${modelFC.favoriteTeamName} a ${Math.abs(modelFC.favoriteSpread).toFixed(1)}-pt favorite vs market ${marketFC.favoriteTeamName} ${marketFC.favoriteSpread.toFixed(1)} — value on ${marketFC.underdogTeamName} +${bettableLine.toFixed(1)}.`
+      reasoning: `Model rates ${modelFC.favoriteTeamName} ${modelSpreadForDisplay.toFixed(1)} on neutral. Market price is ${marketFC.favoriteTeamName} ${marketFC.favoriteSpread.toFixed(1)}. Value exists on ${marketFC.underdogTeamName} at +${bettableLine.toFixed(1)} or better.`
     };
   }
   

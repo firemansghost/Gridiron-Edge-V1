@@ -200,6 +200,33 @@ export async function GET(
     const marketSpread = getLineValue(spreadLine) ?? 0;
     const marketTotal = getLineValue(totalLine) ?? 45;
 
+    // ============================================
+    // DEBUG: Market Spread & Team Identity Tracing (Task #1 & #2)
+    // ============================================
+    // Log raw market line data for debugging favorite identification
+    console.log(`[Game ${gameId}] Market Spread Debug:`, {
+      gameId,
+      feedSpread: {
+        rawValue: marketSpread,
+        closingLine: spreadLine?.closingLine,
+        lineValue: spreadLine?.lineValue,
+        source: spreadLine?.source,
+        bookName: spreadLine?.bookName,
+        timestamp: spreadLine?.timestamp
+      },
+      mappedTeams: {
+        home: { id: game.homeTeamId, name: game.homeTeam.name },
+        away: { id: game.awayTeamId, name: game.awayTeam.name }
+      },
+      spreadInterpretation: {
+        homeMinusAway: marketSpread,
+        homeFavored: marketSpread < 0,
+        awayFavored: marketSpread > 0,
+        expectedFavorite: marketSpread < 0 ? game.homeTeam.name : game.awayTeam.name,
+        expectedFavoriteSpread: marketSpread < 0 ? marketSpread : -marketSpread
+      }
+    });
+
     // Extract market metadata for source badges
     const spreadMeta = spreadLine ? {
       source: spreadLine.source ?? null,
@@ -326,6 +353,34 @@ export async function GET(
       game.awayTeam.name
     );
 
+    // ============================================
+    // DEBUG: Favorite-Centric Conversion Audit (Task #3)
+    // ============================================
+    console.log(`[Game ${gameId}] Favorite-Centric Conversion:`, {
+      input: {
+        marketSpread: marketSpread,
+        homeTeamId: game.homeTeamId,
+        homeTeamName: game.homeTeam.name,
+        awayTeamId: game.awayTeamId,
+        awayTeamName: game.awayTeam.name
+      },
+      output: {
+        favoriteTeamId: marketSpreadFC.favoriteTeamId,
+        favoriteTeamName: marketSpreadFC.favoriteTeamName,
+        favoriteSpread: marketSpreadFC.favoriteSpread,
+        underdogTeamId: marketSpreadFC.underdogTeamId,
+        underdogTeamName: marketSpreadFC.underdogTeamName,
+        underdogSpread: marketSpreadFC.underdogSpread
+      },
+      validation: {
+        favoriteSpreadIsNegative: marketSpreadFC.favoriteSpread < 0,
+        underdogSpreadIsPositive: marketSpreadFC.underdogSpread > 0,
+        lineMatchesAbs: Math.abs(marketSpreadFC.favoriteSpread) === Math.abs(marketSpreadFC.underdogSpread),
+        expectedFavoriteFromSpread: marketSpread < 0 ? game.homeTeam.name : game.awayTeam.name,
+        actualFavoriteMatches: marketSpreadFC.favoriteTeamName === (marketSpread < 0 ? game.homeTeam.name : game.awayTeam.name)
+      }
+    });
+
     // Calculate ATS edge (favorite-centric): positive means model thinks favorite should lay more
     const atsEdge = computeATSEdge(
       finalImpliedSpread,
@@ -403,11 +458,57 @@ export async function GET(
       weatherSanity: weatherSanityFlag
     };
     
-    // Soft flag: any gate fails but total is still usable (out of range but not NaN)
-    const validationFlagged = !plausibilityFlag || !consistencyFlag || !inputsReadyFlag;
+    // Determine specific warning reasons (only for actual issues)
+    const missingInputs: string[] = [];
+    if (!inputsReady.homeEpaOff && !inputsReady.homeYppOff) {
+      missingInputs.push(`pace/efficiency for ${game.homeTeam.name}`);
+    }
+    if (!inputsReady.awayEpaOff && !inputsReady.awayYppOff) {
+      missingInputs.push(`pace/efficiency for ${game.awayTeam.name}`);
+    }
+    if (!inputsReady.homePaceOff) {
+      missingInputs.push(`pace for ${game.homeTeam.name}`);
+    }
+    if (!inputsReady.awayPaceOff) {
+      missingInputs.push(`pace for ${game.awayTeam.name}`);
+    }
     
-    // Hard fail: only if truly invalid (NaN/null)
-    const isModelTotalValid = finalImpliedTotal !== null && !isNaN(finalImpliedTotal) && finalImpliedTotal >= 28 && finalImpliedTotal <= 88;
+    const consistencyDelta = impliedHomeScoreForCheck !== null && impliedAwayScoreForCheck !== null
+      ? Math.abs((impliedHomeScoreForCheck + impliedAwayScoreForCheck) - finalImpliedTotal)
+      : null;
+    
+    // Check for computation failure (NaN/inf or extreme inconsistency)
+    const computationFailed = finalImpliedTotal === null || 
+                             isNaN(finalImpliedTotal) || 
+                             !isFinite(finalImpliedTotal) ||
+                             (consistencyDelta !== null && consistencyDelta > 0.5);
+    
+    // Extreme outlier (only if inputs are valid and computation succeeded)
+    const extremeOutlier = inputsReadyFlag && !computationFailed && 
+                           (finalImpliedTotal < 28 || finalImpliedTotal > 90);
+    
+    // Generate specific warning message
+    let modelTotalWarning: string | null = null;
+    if (computationFailed) {
+      if (consistencyDelta !== null && consistencyDelta > 0.5) {
+        modelTotalWarning = `Model total suppressed: implied scores don't sum (Δ=${consistencyDelta.toFixed(1)}).`;
+      } else {
+        modelTotalWarning = `Model total suppressed: computation failed (NaN/inf).`;
+      }
+    } else if (missingInputs.length > 0) {
+      modelTotalWarning = `Model total suppressed: missing inputs (${missingInputs.join(', ')}).`;
+    } else if (extremeOutlier) {
+      modelTotalWarning = `Model total suppressed: extreme outlier (calc=${finalImpliedTotal.toFixed(1)}).`;
+    }
+    
+    // Soft flag: show warning if we have a specific reason
+    const validationFlagged = modelTotalWarning !== null;
+    
+    // Hard fail: only if truly invalid (NaN/null) or computation failed
+    const isModelTotalValid = !computationFailed && finalImpliedTotal !== null && 
+                             !isNaN(finalImpliedTotal) && 
+                             isFinite(finalImpliedTotal) &&
+                             (inputsReadyFlag || finalImpliedTotal >= 28 && finalImpliedTotal <= 90);
     const validModelTotal = isModelTotalValid ? finalImpliedTotal : null;
     
     // Log pipeline diagnostics
@@ -449,6 +550,15 @@ export async function GET(
     // Compute "Bet to" for total (only if valid and has edge)
     const totalBetTo = isModelTotalValid && totalEdgePts !== null && Math.abs(totalEdgePts) >= edgeFloor && !hasNoEdge
       ? computeTotalBetTo(finalImpliedTotal, marketTotal, edgeFloor)
+      : null;
+    
+    // Calculate lean when model total is suppressed (Task #4)
+    // Use median CFB total of 55 as baseline
+    const medianConfTotal = 55.0;
+    const marketTotalDeviation = Math.abs(marketTotal - medianConfTotal);
+    const hasLean = marketTotalDeviation >= 3.0;
+    const leanDirection = hasLean 
+      ? (marketTotal > medianConfTotal ? 'Under' : 'Over')
       : null;
     
     // Calculate implied team scores from model spread and total
@@ -579,8 +689,7 @@ export async function GET(
     // TELEMETRY & VALIDATION FLAGS
     // ============================================
     
-    // Compute validation flags
-    const invalidModelTotal = finalImpliedTotal < 20 || finalImpliedTotal > 90;
+    // Compute validation flags (removed generic invalidModelTotal - use specific warnings instead)
     const favoritesDisagree = modelSpreadFC.favoriteTeamId !== marketSpreadFC.favoriteTeamId;
     const edgeAbsGt20 = Math.abs(atsEdge) > 20 || (totalEdgePts !== null && Math.abs(totalEdgePts) > 20);
     
@@ -613,11 +722,11 @@ export async function GET(
         
         // Validation flags
         flags: {
-          invalidModelTotal,
           favoritesDisagree,
           edgeAbsGt20,
           validationFlags: validationFlags, // Include all model total validation gates
-          validationFlagged: validationFlagged
+          validationFlagged: validationFlagged,
+          modelTotalWarning: modelTotalWarning // Specific warning message for model total
         },
         
         // Additional context
@@ -628,15 +737,37 @@ export async function GET(
       }
     };
     
+    // Telemetry for gated totals (Task #7) - only when card_state ≠ "pick"
+    const cardState = isModelTotalValid && !hasNoEdge && totalPick.totalPickLabel ? 'pick' : 
+                      validationFlagged && hasLean ? 'lean' : 
+                      validationFlagged ? 'no_lean' : 'pick';
+    
+    if (cardState !== 'pick') {
+      const gatedTotalTelemetry = {
+        event: 'total_gated',
+        gameId,
+        season: game.season,
+        week: game.week,
+        timestamp: new Date().toISOString(),
+        gates: validationFlags,
+        missingFields: missingInputs,
+        modelTotal: finalImpliedTotal,
+        marketTotal: marketTotal,
+        cardState: cardState,
+        lean: validationFlagged && hasLean ? leanDirection : null
+      };
+      console.log(`[TELEMETRY] ${JSON.stringify(gatedTotalTelemetry)}`);
+    }
+    
     // Log structured event (only in non-production or when flags are raised)
-    if (process.env.NODE_ENV !== 'production' || invalidModelTotal || favoritesDisagree || edgeAbsGt20) {
+    if (process.env.NODE_ENV !== 'production' || validationFlagged || favoritesDisagree || edgeAbsGt20) {
       console.log(`[TELEMETRY] ${JSON.stringify(telemetryEvent)}`);
     }
     
     // Log warnings if any flags are raised
-    if (invalidModelTotal || favoritesDisagree || edgeAbsGt20) {
+    if (validationFlagged || favoritesDisagree || edgeAbsGt20) {
       console.warn(`[Game ${gameId}] ⚠️ Validation flags raised:`, {
-        invalidModelTotal,
+        modelTotalWarning,
         favoritesDisagree,
         edgeAbsGt20,
         gameId,
@@ -1266,11 +1397,11 @@ export async function GET(
       
       // Validation flags (for UI display of warnings)
       validation: {
-        invalidModelTotal,
         favoritesDisagree,
         edgeAbsGt20,
+        modelTotalWarning: modelTotalWarning, // Specific warning message (null if no issue)
         warnings: [
-          ...(invalidModelTotal ? ['Model total outside realistic range [20-90]'] : []),
+          ...(modelTotalWarning ? [modelTotalWarning] : []),
           ...(favoritesDisagree ? ['Model and market favor different teams'] : []),
           ...(edgeAbsGt20 ? ['Edge magnitude exceeds 20 points'] : [])
         ]
@@ -1310,6 +1441,16 @@ export async function GET(
           // Validation flags (soft flag - show muted banner if any fail)
           validationFlagged: validationFlagged,
           validationFlags: validationFlags, // Include all gate flags for diagnostics
+          modelTotalWarning: modelTotalWarning, // Specific warning message
+          // Lean when model total is suppressed
+          lean: validationFlagged && hasLean ? {
+            direction: leanDirection,
+            marketTotal: marketTotal,
+            medianTotal: medianConfTotal
+          } : null,
+          cardState: isModelTotalValid && !hasNoEdge && totalPick.totalPickLabel ? 'pick' : 
+                    validationFlagged && hasLean ? 'lean' : 
+                    validationFlagged ? 'no_lean' : 'pick',
           // Rationale line for ticket
           rationale: isModelTotalValid && !hasNoEdge && totalPick.totalPickLabel && totalEdgePts !== null
             ? `Model total ${finalImpliedTotal.toFixed(1)} vs market ${marketTotal.toFixed(1)} (${totalEdgePts >= 0 ? '+' : ''}${totalEdgePts.toFixed(1)}) → ${totalPick.totalPick} value.`
@@ -1435,16 +1576,34 @@ export async function GET(
             const opening = lines[0];
             const closing = lines[lines.length - 1];
             
+            // For spreads, convert to favorite-centric format for display
+            // Opening/closing values are in home-minus-away format
+            // Favorite-centric: always negative for favorite (favorite laying points)
+            let openingValue = opening.lineValue;
+            let closingValue = closing.closingLine !== null ? closing.closingLine : closing.lineValue;
+            
+            if (type === 'spread') {
+              // Convert to favorite-centric format for caption display
+              // Favorite-centric: always negative (favorite laying points)
+              // Use absolute value and apply negative sign to show as favorite laying points
+              // Note: This assumes the favorite hasn't changed over time. If it has, 
+              // the conversion might be incorrect, but the debug logs will show this.
+              openingValue = -Math.abs(opening.lineValue);
+              closingValue = -Math.abs(closingValue);
+            }
+            
             stats[type] = {
               count: lines.length,
               opening: {
-                value: opening.lineValue,
+                value: opening.lineValue, // Keep original for reference
+                favoriteCentricValue: type === 'spread' ? openingValue : opening.lineValue, // Favorite-centric for display
                 timestamp: opening.timestamp,
                 bookName: opening.bookName,
                 source: opening.source,
               },
               closing: {
-                value: closing.closingLine !== null ? closing.closingLine : closing.lineValue,
+                value: closing.closingLine !== null ? closing.closingLine : closing.lineValue, // Keep original for reference
+                favoriteCentricValue: type === 'spread' ? closingValue : (closing.closingLine !== null ? closing.closingLine : closing.lineValue), // Favorite-centric for display
                 timestamp: closing.timestamp,
                 bookName: closing.bookName,
                 source: closing.source,
@@ -1555,18 +1714,36 @@ export async function GET(
           getLast5Games(game.awayTeamId, game.season),
         ]);
 
+        // Calculate current streak for each team
+        const calculateStreak = (last5Games: any[]): string => {
+          if (last5Games.length === 0) return '';
+          const results = last5Games.map(g => g.result);
+          const firstResult = results[0];
+          let streakCount = 1;
+          for (let i = 1; i < results.length; i++) {
+            if (results[i] === firstResult) {
+              streakCount++;
+            } else {
+              break;
+            }
+          }
+          return `${firstResult}${streakCount}`;
+        };
+
         return {
           home: {
             team: game.homeTeam,
             record: homeRecord,
             last5Games: homeLast5,
             form: homeLast5.map(g => g.result).join(''),
+            streak: calculateStreak(homeLast5),
           },
           away: {
             team: game.awayTeam,
             record: awayRecord,
             last5Games: awayLast5,
             form: awayLast5.map(g => g.result).join(''),
+            streak: calculateStreak(awayLast5),
           },
         };
       })(),

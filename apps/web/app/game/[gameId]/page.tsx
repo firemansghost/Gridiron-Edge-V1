@@ -220,8 +220,8 @@ export default function GameDetailPage() {
             </div>
           </div>
 
-          {/* Validation Warnings (if any flags raised) */}
-          {game.validation && (game.validation.invalidModelTotal || game.validation.favoritesDisagree || game.validation.edgeAbsGt20) && (
+          {/* Validation Warnings (if any flags raised) - only show specific warnings */}
+          {game.validation && (game.validation.modelTotalWarning || game.validation.favoritesDisagree || game.validation.edgeAbsGt20) && (
             <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <div className="flex items-start gap-3">
                 <div className="flex-shrink-0">
@@ -232,19 +232,19 @@ export default function GameDetailPage() {
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
                     <h4 className="text-sm font-semibold text-yellow-900">Data Quality Warning</h4>
-                    <InfoTooltip content={`This warning appears when data quality checks detect unusual values. The specific issues are listed below. Invalid Model Total: Model total outside realistic range [20-90 points]. Favorites Disagree: Model and market favor different teams (may indicate model disagreement or market inefficiency). Edge Magnitude > 20: Edge value exceeds 20 points (may indicate calculation error or significant market inefficiency).`} />
+                    <InfoTooltip content="This warning appears when data quality checks detect specific issues. The exact problems are listed below." />
                   </div>
                   <div className="text-sm text-yellow-800 space-y-1">
-                    {game.validation.invalidModelTotal && (
+                    {game.validation.modelTotalWarning && (
                       <div className="flex items-center gap-2">
-                        <span className="font-medium">⚠️ Invalid Model Total:</span>
-                        <span>Model total outside realistic range [20-90 points]</span>
+                        <span className="font-medium">⚠️</span>
+                        <span>{game.validation.modelTotalWarning}</span>
                       </div>
                     )}
                     {game.validation.favoritesDisagree && (
                       <div className="flex items-center gap-2">
-                        <span className="font-medium">⚠️ Favorites Disagree:</span>
-                        <span>Model favors {game.model?.favorite?.teamName || 'one team'} while market favors {game.market?.favorite?.teamName || 'another team'}</span>
+                        <span className="font-medium">⚠️ Model vs Market Mismatch:</span>
+                        <span>Model and market favor different teams</span>
                       </div>
                     )}
                     {game.validation.edgeAbsGt20 && (
@@ -273,7 +273,7 @@ export default function GameDetailPage() {
                   size="lg"
                 />
                 <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <Link 
                       href={`/team/${game.teams?.away?.team?.id || game.game.awayTeam.toLowerCase().replace(/\s+/g, '-')}`}
                       className="text-xl font-bold text-gray-900 hover:text-blue-600 hover:underline transition-colors"
@@ -281,14 +281,33 @@ export default function GameDetailPage() {
                     >
                       {game.teams?.away?.team?.name || game.game.awayTeam}
                     </Link>
-                    {renderRankChips(game.rankings?.away, game.game?.week, game.game?.season, 'CFBD', undefined)}
-                  </div>
-                  <div className="flex items-center gap-3 text-sm text-gray-600">
-                    <span className="font-medium">
-                      {game.teams?.away?.record ? `${game.teams.away.record.wins}-${game.teams.away.record.losses}` : '—'}
-                    </span>
-                    <span className="text-gray-400">•</span>
-                    <span className="font-mono tracking-wider">{game.teams?.away?.form || '—'}</span>
+                    {/* Rank chips or Unranked */}
+                    {renderRankChips(game.rankings?.away, game.game?.week, game.game?.season, 'CFBD', undefined) || (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                        Unranked
+                      </span>
+                    )}
+                    {/* Record chip */}
+                    {game.teams?.away?.record && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                        <InfoTooltip content="Overall record" />
+                        Record: {game.teams.away.record.wins}–{game.teams.away.record.losses}
+                      </span>
+                    )}
+                    {/* Last 5 chip */}
+                    {game.teams?.away?.form && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 font-mono tracking-wider">
+                        <InfoTooltip content="Last five results" />
+                        Last 5: {game.teams.away.form}
+                      </span>
+                    )}
+                    {/* Streak chip */}
+                    {game.teams?.away?.streak && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                        <InfoTooltip content="Current streak" />
+                        Streak: {game.teams.away.streak}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -301,7 +320,7 @@ export default function GameDetailPage() {
                   size="lg"
                 />
                 <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <Link 
                       href={`/team/${game.teams?.home?.team?.id || game.game.homeTeam.toLowerCase().replace(/\s+/g, '-')}`}
                       className="text-xl font-bold text-gray-900 hover:text-blue-600 hover:underline transition-colors"
@@ -309,14 +328,33 @@ export default function GameDetailPage() {
                     >
                       {game.teams?.home?.team?.name || game.game.homeTeam}
                     </Link>
-                    {renderRankChips(game.rankings?.home, game.game?.week, game.game?.season, 'CFBD', undefined)}
-                  </div>
-                  <div className="flex items-center gap-3 text-sm text-gray-600">
-                    <span className="font-medium">
-                      {game.teams?.home?.record ? `${game.teams.home.record.wins}-${game.teams.home.record.losses}` : '—'}
-                    </span>
-                    <span className="text-gray-400">•</span>
-                    <span className="font-mono tracking-wider">{game.teams?.home?.form || '—'}</span>
+                    {/* Rank chips or Unranked */}
+                    {renderRankChips(game.rankings?.home, game.game?.week, game.game?.season, 'CFBD', undefined) || (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                        Unranked
+                      </span>
+                    )}
+                    {/* Record chip */}
+                    {game.teams?.home?.record && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                        <InfoTooltip content="Overall record" />
+                        Record: {game.teams.home.record.wins}–{game.teams.home.record.losses}
+                      </span>
+                    )}
+                    {/* Last 5 chip */}
+                    {game.teams?.home?.form && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 font-mono tracking-wider">
+                        <InfoTooltip content="Last five results" />
+                        Last 5: {game.teams.home.form}
+                      </span>
+                    )}
+                    {/* Streak chip */}
+                    {game.teams?.home?.streak && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                        <InfoTooltip content="Current streak" />
+                        Streak: {game.teams.home.streak}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -427,8 +465,8 @@ export default function GameDetailPage() {
                     <div className="flex items-center gap-2">
                       {game.picks.spread.favoritesDisagree && (
                         <div className="px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
-                          <InfoTooltip content="Model and market favor different teams. We back the underdog at the market number." />
-                          <span>Favorites Disagree</span>
+                          <InfoTooltip content={`Model rates ${game.model?.favorite?.teamName || 'one team'} ${game.model?.favorite?.spread.toFixed(1) || ''} on neutral. Market price is ${game.market?.favorite?.teamName || 'another team'} ${game.market?.favorite?.spread.toFixed(1) || ''}. Value exists on ${game.picks?.spread?.bettablePick?.teamName || 'the underdog'} at ${game.picks?.spread?.bettablePick?.line?.toFixed(1) || ''} or better.`} />
+                          <span>Model vs Market Mismatch</span>
                         </div>
                       )}
                       <div 
@@ -483,18 +521,18 @@ export default function GameDetailPage() {
               {game.picks?.total?.hidden ? (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                   <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">TOTAL (Over/Under)</h3>
-                  <div className="text-sm text-gray-600 mb-1">
+                  <div className="text-lg font-bold text-gray-700 mb-1">
                     No model total this week
                   </div>
-                  <div className="text-xs text-gray-500 mt-1 italic">
-                    Missing inputs for a reliable forecast.
+                  <div className="text-xs text-gray-600 mb-2">
+                    Reason: {game.picks.total.modelTotalWarning || 'missing inputs'}. Context: {game.picks.total.lean ? `Lean ${game.picks.total.lean.direction} (market ${game.picks.total.marketTotal?.toFixed(1)}).` : 'No lean.'}
                   </div>
                 </div>
               ) : game.picks?.total?.modelTotal !== null && game.picks?.total?.modelTotal !== undefined ? (
                 <div className={`bg-white border-2 rounded-lg p-4 shadow-sm ${game.picks.total.validationFlagged ? 'border-amber-300 bg-amber-50' : 'border-green-300'}`}>
                   {game.picks.total.validationFlagged && (
                     <div className="mb-2 px-2 py-1 bg-amber-100 border border-amber-200 rounded text-xs text-amber-800">
-                      Model total flagged by validation. Use with caution.
+                      {game.picks.total.modelTotalWarning || 'Model total flagged by validation. Use with caution.'}
                     </div>
                   )}
                   <div className="flex items-center justify-between mb-3">
@@ -551,6 +589,16 @@ export default function GameDetailPage() {
                       Drift toward model ({game.clvHint.totalDrift.drift >= 0 ? '+' : ''}{game.clvHint.totalDrift.drift.toFixed(1)})
                     </div>
                   )}
+                </div>
+              ) : game.picks?.total?.validationFlagged ? (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">TOTAL (Over/Under)</h3>
+                  <div className="text-lg font-bold text-gray-700 mb-1">
+                    No model total this week
+                  </div>
+                  <div className="text-xs text-gray-600 mb-2">
+                    Reason: {game.picks.total.modelTotalWarning || 'missing inputs'}. Context: {game.picks.total.lean ? `Lean ${game.picks.total.lean.direction} (market ${game.picks.total.marketTotal?.toFixed(1)}).` : 'No lean.'}
+                  </div>
                 </div>
               ) : (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
@@ -1066,8 +1114,8 @@ export default function GameDetailPage() {
                       lineType="spread"
                       width={280}
                       height={60}
-                      openingValue={game.lineHistory.statistics.spread.opening.value}
-                      closingValue={game.lineHistory.statistics.spread.closing.value}
+                      openingValue={game.lineHistory.statistics.spread.opening.favoriteCentricValue ?? game.lineHistory.statistics.spread.opening.value}
+                      closingValue={game.lineHistory.statistics.spread.closing.favoriteCentricValue ?? game.lineHistory.statistics.spread.closing.value}
                       movement={game.lineHistory.statistics.spread.movement}
                       showLabels={true}
                       showCaption={true}
@@ -1138,7 +1186,15 @@ export default function GameDetailPage() {
                 OU Edge
                 <InfoTooltip content="Difference between market total and model total, in points. Positive = more value at current number." />
               </div>
-              {game.edge?.totalEdge !== null && game.edge?.totalEdge !== undefined ? (
+              {game.picks?.total?.validationFlagged ? (
+                <>
+                  <div className="text-lg text-gray-400 mb-1">—</div>
+                  <div className="text-xs text-amber-700 flex items-center justify-center gap-1">
+                    <InfoTooltip content={game.picks.total.modelTotalWarning || 'Model total suppressed by validation gates.'} />
+                    <span className="cursor-help">Why?</span>
+                  </div>
+                </>
+              ) : game.edge?.totalEdge !== null && game.edge?.totalEdge !== undefined ? (
                 <>
                   <div className={`text-2xl font-bold flex items-center justify-center gap-1 ${game.edge.totalEdge >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {game.edge.totalEdge >= 0 ? (
@@ -1157,11 +1213,6 @@ export default function GameDetailPage() {
                   <div className="text-sm font-semibold text-gray-700 mt-1">
                     {game.edge.totalEdge >= 0 ? 'Over' : 'Under'} {game.market?.total?.toFixed(1) || 'N/A'} → {game.model?.total?.toFixed(1) || 'N/A'}
                   </div>
-                  {game.picks?.total?.validationFlagged && (
-                    <div className="text-xs text-amber-700 mt-1 italic">
-                      Validation caution on this input
-                    </div>
-                  )}
                   {(game.model?.total !== null && game.model?.total !== undefined) && game.market?.total && (
                     <div className="text-xs text-gray-500 mt-2">
                       Model: {game.model.total.toFixed(1)} • Market: {game.market.total.toFixed(1)}
