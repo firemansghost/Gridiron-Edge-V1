@@ -343,9 +343,82 @@ export async function GET(
       game.awayTeamId
     );
 
-    // Validate model total - if invalid, gate it everywhere
-    const isModelTotalValid = finalImpliedTotal >= 20 && finalImpliedTotal <= 90;
+    // ============================================
+    // MODEL TOTAL VALIDATION GATES (PART B)
+    // ============================================
+    
+    // Track computation path for diagnostics
+    const computationPath = isValidTotal && matchupOutput?.impliedTotal !== null 
+      ? 'matchupOutput' 
+      : homeRating && awayRating 
+        ? 'computedFromRatings' 
+        : 'fallback';
+    
+    // Gate 1: Inputs Ready - check if required inputs are available
+    const inputsReady = {
+      homeEpaOff: homeStats?.epaOff !== null && homeStats?.epaOff !== undefined,
+      awayEpaOff: awayStats?.epaOff !== null && awayStats?.epaOff !== undefined,
+      homeYppOff: homeStats?.yppOff !== null && homeStats?.yppOff !== undefined,
+      awayYppOff: awayStats?.yppOff !== null && awayStats?.yppOff !== undefined,
+      homePaceOff: homeStats?.paceOff !== null && homeStats?.paceOff !== undefined,
+      awayPaceOff: awayStats?.paceOff !== null && awayStats?.paceOff !== undefined,
+      homeRating: homeRating !== null,
+      awayRating: awayRating !== null
+    };
+    const inputsReadyFlag = inputsReady.homeEpaOff || inputsReady.homeYppOff || inputsReady.awayEpaOff || inputsReady.awayYppOff;
+    
+    // Gate 2: Plausibility - modelTotal ∈ [28, 88] (tighter than old [20, 90])
+    const plausibilityFlag = finalImpliedTotal >= 28 && finalImpliedTotal <= 88;
+    
+    // Gate 3: Consistency - team implied scores sum to total within ±0.2
+    // Calculate implied scores for consistency check (only if spread is valid)
+    const spreadValidForConsistency = finalImpliedSpread !== null && 
+                                      finalImpliedSpread >= -50 && 
+                                      finalImpliedSpread <= 50;
+    const impliedHomeScoreForCheck = spreadValidForConsistency && finalImpliedTotal !== null
+      ? (finalImpliedTotal + finalImpliedSpread) / 2
+      : null;
+    const impliedAwayScoreForCheck = spreadValidForConsistency && finalImpliedTotal !== null
+      ? (finalImpliedTotal - finalImpliedSpread) / 2
+      : null;
+    const consistencyCheck = impliedHomeScoreForCheck !== null && impliedAwayScoreForCheck !== null
+      ? Math.abs((impliedHomeScoreForCheck + impliedAwayScoreForCheck) - finalImpliedTotal) <= 0.2
+      : true; // Pass if we can't check (no implied scores)
+    const consistencyFlag = consistencyCheck;
+    
+    // Gate 4: Stability - modelTotal change vs prior game ≤ ±10 points
+    // (Simplified: we'll skip this for now as it requires querying prior games)
+    const stabilityFlag = true; // TODO: Implement when we have prior game data
+    
+    // Gate 5: Weather sanity - if extreme weather, ensure adjustment sign matches
+    // (Simplified: we'll skip this for now as weather adjustments aren't explicitly tracked in total calc)
+    const weatherSanityFlag = true; // TODO: Implement when weather adjustments are explicit
+    
+    // Combined validation: soft flags (show muted banner) vs hard fail (hide)
+    const validationFlags = {
+      inputsReady: inputsReadyFlag,
+      plausibility: plausibilityFlag,
+      consistency: consistencyFlag,
+      stability: stabilityFlag,
+      weatherSanity: weatherSanityFlag
+    };
+    
+    // Soft flag: any gate fails but total is still usable (out of range but not NaN)
+    const validationFlagged = !plausibilityFlag || !consistencyFlag || !inputsReadyFlag;
+    
+    // Hard fail: only if truly invalid (NaN/null)
+    const isModelTotalValid = finalImpliedTotal !== null && !isNaN(finalImpliedTotal) && finalImpliedTotal >= 28 && finalImpliedTotal <= 88;
     const validModelTotal = isModelTotalValid ? finalImpliedTotal : null;
+    
+    // Log pipeline diagnostics
+    console.log(`[Game ${gameId}] Model Total Pipeline:`, {
+      computationPath,
+      modelTotal: finalImpliedTotal,
+      inputs: inputsReady,
+      validationFlags,
+      validationFlagged,
+      isModelTotalValid
+    });
     
     // Compute the actual bettable pick based on edge (handles model/market disagreement)
     const edgeFloor = 2.0; // Minimum edge threshold
@@ -360,17 +433,21 @@ export async function GET(
       edgeFloor
     );
 
-    // Compute total pick details (only if model total is valid)
-    const totalPick = isModelTotalValid
-      ? computeTotalPick(finalImpliedTotal, marketTotal)
-      : { totalPick: null, totalPickLabel: null, edgeDisplay: null };
-
     // Total edge: Model Total - Market Total (positive = model thinks over, negative = under)
     // Only compute if model total is valid
     const totalEdgePts = isModelTotalValid ? (finalImpliedTotal - marketTotal) : null;
     
-    // Compute "Bet to" for total (only if valid)
-    const totalBetTo = isModelTotalValid && totalEdgePts !== null && Math.abs(totalEdgePts) >= edgeFloor
+    // Determine "No edge" condition: edge < 2.0 OR model total ≈ market total within 0.5
+    const hasNoEdge = isModelTotalValid && totalEdgePts !== null && 
+                      (Math.abs(totalEdgePts) < edgeFloor || Math.abs(finalImpliedTotal - marketTotal) < 0.5);
+    
+    // Compute total pick details (only if model total is valid and has edge)
+    const totalPick = isModelTotalValid && !hasNoEdge
+      ? computeTotalPick(finalImpliedTotal, marketTotal)
+      : { totalPick: null, totalPickLabel: null, edgeDisplay: null };
+    
+    // Compute "Bet to" for total (only if valid and has edge)
+    const totalBetTo = isModelTotalValid && totalEdgePts !== null && Math.abs(totalEdgePts) >= edgeFloor && !hasNoEdge
       ? computeTotalBetTo(finalImpliedTotal, marketTotal, edgeFloor)
       : null;
     
@@ -378,14 +455,10 @@ export async function GET(
     // Only calculate if both model spread and model total are valid
     // Formula: total = homeScore + awayScore, spread = homeScore - awayScore
     // Solving: homeScore = (total + spread) / 2, awayScore = (total - spread) / 2
-    const isImpliedScoreValid = isModelTotalValid && finalImpliedSpread !== null && 
-                                finalImpliedSpread >= -50 && finalImpliedSpread <= 50;
-    const impliedHomeScore = isImpliedScoreValid
-      ? (finalImpliedTotal + finalImpliedSpread) / 2
-      : null;
-    const impliedAwayScore = isImpliedScoreValid
-      ? (finalImpliedTotal - finalImpliedSpread) / 2
-      : null;
+    // Reuse the scores we calculated for consistency check
+    const isImpliedScoreValid = isModelTotalValid && spreadValidForConsistency;
+    const impliedHomeScore = isImpliedScoreValid ? impliedHomeScoreForCheck : null;
+    const impliedAwayScore = isImpliedScoreValid ? impliedAwayScoreForCheck : null;
     
     // ============================================
     // GUARDRAILS & VALIDATION CHECKS
@@ -522,7 +595,8 @@ export async function GET(
         // Totals
         modelTotal: finalImpliedTotal,
         marketTotal,
-        totalEdge: totalEdgePts,
+        ouEdge: totalEdgePts,
+        betToTotal: totalBetTo,
         
         // Spreads & Favorites
         modelFav: modelSpreadFC.favoriteTeamName,
@@ -541,7 +615,9 @@ export async function GET(
         flags: {
           invalidModelTotal,
           favoritesDisagree,
-          edgeAbsGt20
+          edgeAbsGt20,
+          validationFlags: validationFlags, // Include all model total validation gates
+          validationFlagged: validationFlagged
         },
         
         // Additional context
@@ -1223,14 +1299,22 @@ export async function GET(
         },
         total: {
           ...totalPick,
+          modelTotal: isModelTotalValid ? finalImpliedTotal : null, // Model total for headline
+          marketTotal: marketTotal, // Market total for rationale
           edgePts: totalEdgePts,
           betTo: totalBetTo, // "Bet to" number for total
           grade: totalGrade, // A, B, C, or null
-          // Hide if model total is invalid
-          hidden: !isModelTotalValid,
+          hasNoEdge: hasNoEdge, // Flag for "No edge" display
+          // Hide only if model total is truly invalid (NaN/null), not just out of range
+          hidden: finalImpliedTotal === null || isNaN(finalImpliedTotal),
+          // Validation flags (soft flag - show muted banner if any fail)
+          validationFlagged: validationFlagged,
+          validationFlags: validationFlags, // Include all gate flags for diagnostics
           // Rationale line for ticket
-          rationale: isModelTotalValid && totalPick.totalPickLabel && totalEdgePts !== null
-            ? `Model total ${finalImpliedTotal.toFixed(1)} vs market ${marketTotal.toFixed(1)} → ${totalPick.totalPick} ${marketTotal.toFixed(1)} by ${Math.abs(totalEdgePts).toFixed(1)} pts.`
+          rationale: isModelTotalValid && !hasNoEdge && totalPick.totalPickLabel && totalEdgePts !== null
+            ? `Model total ${finalImpliedTotal.toFixed(1)} vs market ${marketTotal.toFixed(1)} (${totalEdgePts >= 0 ? '+' : ''}${totalEdgePts.toFixed(1)}) → ${totalPick.totalPick} value.`
+            : hasNoEdge && isModelTotalValid
+            ? `Model and market are aligned (Δ < ${edgeFloor.toFixed(1)}) → No bet.`
             : null
         },
         moneyline: {

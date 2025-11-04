@@ -484,52 +484,71 @@ export default function GameDetailPage() {
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                   <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">TOTAL (Over/Under)</h3>
                   <div className="text-sm text-gray-600 mb-1">
-                    Total pick unavailable — model total did not pass sanity checks this week.
+                    No model total this week
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">
-                    <InfoTooltip content="We hide total picks when the model total falls outside the realistic 20–90 range or fails validation." />
-                    Using market total {game.market?.total?.toFixed(1) || 'N/A'} for reference only.
+                  <div className="text-xs text-gray-500 mt-1 italic">
+                    Missing inputs for a reliable forecast.
                   </div>
                 </div>
-              ) : game.picks?.total?.grade && game.picks?.total?.totalPickLabel && game.picks?.total?.edgePts !== null ? (
-                <div className="bg-white border-2 border-green-300 rounded-lg p-4 shadow-sm">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">TOTAL (Over/Under)</h3>
-                    <div 
-                      className={`px-2 py-1 rounded text-xs font-bold ${
-                        game.picks.total.grade === 'A' ? 'bg-green-500 text-white' :
-                        game.picks.total.grade === 'B' ? 'bg-yellow-500 text-white' :
-                        'bg-orange-500 text-white'
-                      }`}
-                      aria-label={`Grade ${game.picks.total.grade} total pick`}
-                    >
-                      Grade {game.picks.total.grade}
-                    </div>
-                  </div>
-                  <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Total pick ${game.picks.total.totalPickLabel}`}>
-                    {game.picks.total.totalPickLabel}
-                  </div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-sm text-gray-600">
-                      Edge: <span className={`font-semibold ${game.picks.total.edgePts >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {game.picks.total.edgePts >= 0 ? '+' : ''}{Math.abs(game.picks.total.edgePts).toFixed(1)} pts ({game.picks.total.edgePts >= 0 ? 'Over' : 'Under'})
-                      </span>
-                    </span>
-                    <InfoTooltip content="Model total minus market total. Positive favors Over; negative favors Under. A ≥ 4.0 pts, B ≥ 3.0 pts, C ≥ 2.0 pts." />
-                  </div>
-                  {game.picks.total.betTo !== null && game.picks.total.betTo !== undefined && (
-                    <div className="text-xs text-gray-500 mt-1 mb-2">
-                      Bet to: {game.picks.total.betTo.toFixed(1)} (edge floor 2.0 pts)
+              ) : game.picks?.total?.modelTotal !== null && game.picks?.total?.modelTotal !== undefined ? (
+                <div className={`bg-white border-2 rounded-lg p-4 shadow-sm ${game.picks.total.validationFlagged ? 'border-amber-300 bg-amber-50' : 'border-green-300'}`}>
+                  {game.picks.total.validationFlagged && (
+                    <div className="mb-2 px-2 py-1 bg-amber-100 border border-amber-200 rounded text-xs text-amber-800">
+                      Model total flagged by validation. Use with caution.
                     </div>
                   )}
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">TOTAL (Over/Under)</h3>
+                    {game.picks.total.grade && (
+                      <div 
+                        className={`px-2 py-1 rounded text-xs font-bold ${
+                          game.picks.total.grade === 'A' ? 'bg-green-500 text-white' :
+                          game.picks.total.grade === 'B' ? 'bg-yellow-500 text-white' :
+                          'bg-orange-500 text-white'
+                        }`}
+                        aria-label={`Grade ${game.picks.total.grade} total pick`}
+                      >
+                        Grade {game.picks.total.grade}
+                      </div>
+                    )}
+                  </div>
+                  {/* Headline: Bold model total */}
+                  <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Model total ${game.picks.total.modelTotal.toFixed(1)}`}>
+                    Total {game.picks.total.modelTotal.toFixed(1)}
+                    <InfoTooltip content="Our forecast of combined points this week (predicted pace, efficiency, and adjustments)." />
+                  </div>
+                  {/* Subhead: Pick/Edge/Bet-to OR No edge */}
+                  {game.picks.total.hasNoEdge ? (
+                    <div className="text-sm text-gray-600 mb-2">
+                      No edge at current market total {game.picks.total.marketTotal?.toFixed(1) || 'N/A'}
+                    </div>
+                  ) : game.picks.total.totalPickLabel && game.picks.total.edgePts !== null ? (
+                    <div className="text-sm text-gray-600 mb-2">
+                      Pick: <span className="font-semibold text-gray-900">{game.picks.total.totalPickLabel}</span>
+                      {' • '}
+                      Edge: <span className={`font-semibold ${game.picks.total.edgePts >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {game.picks.total.edgePts >= 0 ? '+' : ''}{Math.abs(game.picks.total.edgePts).toFixed(1)} pts
+                      </span>
+                      <InfoTooltip content="How far market total must move to match the model. Positive = stronger value." />
+                      {game.picks.total.betTo !== null && game.picks.total.betTo !== undefined && (
+                        <>
+                          {' • '}
+                          Bet to: <span className="font-semibold text-gray-700">{game.picks.total.betTo.toFixed(1)}</span>
+                          <InfoTooltip content="Lowest (Under) or highest (Over) number to keep ≥2.0 pts edge." />
+                        </>
+                      )}
+                    </div>
+                  ) : null}
+                  {/* Rationale line */}
                   {game.picks.total.rationale && (
                     <div className="text-xs text-gray-700 mt-2 italic border-t border-gray-200 pt-2">
                       {game.picks.total.rationale}
                     </div>
                   )}
+                  {/* CLV hint */}
                   {game.clvHint?.totalDrift?.significant && (
                     <div className="text-xs text-green-700 mt-2 italic" aria-label={`Closing line value drift ${game.clvHint.totalDrift.drift >= 0 ? '+' : ''}${game.clvHint.totalDrift.drift.toFixed(1)} points`}>
-                      Total drift: {game.clvHint.totalDrift.opening.toFixed(1)} → {game.clvHint.totalDrift.closing.toFixed(1)} ({game.clvHint.totalDrift.drift >= 0 ? '+' : ''}{game.clvHint.totalDrift.drift.toFixed(1)}) toward model.
+                      Drift toward model ({game.clvHint.totalDrift.drift >= 0 ? '+' : ''}{game.clvHint.totalDrift.drift.toFixed(1)})
                     </div>
                   )}
                 </div>
@@ -537,7 +556,7 @@ export default function GameDetailPage() {
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                   <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">TOTAL (Over/Under)</h3>
                   <div className="text-sm text-gray-600 italic">
-                    No total pick (edge below 2.0 pts threshold)
+                    No model total available
                   </div>
                 </div>
               )}
@@ -652,7 +671,7 @@ export default function GameDetailPage() {
             <div className="bg-white p-6 rounded-lg shadow mb-8">
               <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
                 Model Implied Score
-                <InfoTooltip content="Predicted final scores derived from model spread and total. These are the model's expected point totals for each team." />
+                <InfoTooltip content="We split the model total using the model spread to produce predicted team scores." />
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="bg-gray-50 p-4 rounded-lg">
@@ -660,24 +679,22 @@ export default function GameDetailPage() {
                   <div className="text-2xl font-bold text-gray-900">
                     {game.model.impliedScores.away?.toFixed(1) || '—'}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">Predicted score</div>
                 </div>
                 <div className="bg-gray-50 p-4 rounded-lg">
                   <div className="text-sm text-gray-600 mb-2">{game.model.impliedScores.homeTeam}</div>
                   <div className="text-2xl font-bold text-gray-900">
                     {game.model.impliedScores.home?.toFixed(1) || '—'}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">Predicted score</div>
                 </div>
               </div>
-              <div className="text-xs text-gray-500 mt-3 text-center">
-                Derived from model spread ({game.model?.spread?.toFixed(1) || '—'}) + model total ({game.model?.total?.toFixed(1) || '—'})
+              <div className="text-xs text-gray-500 mt-3 text-center italic">
+                Scores derived from model spread and model total.
               </div>
             </div>
           ) : (
             <div className="bg-gray-50 p-4 rounded-lg mb-8">
               <div className="text-sm text-gray-600 italic">
-                Implied score unavailable — model total not reliable this week.
+                Implied score unavailable — inputs not reliable this week.
               </div>
             </div>
           )}
@@ -1086,33 +1103,94 @@ export default function GameDetailPage() {
             <InfoTooltip content={TOOLTIP_CONTENT.EDGE_GENERAL} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="text-center">
-              <div className="text-sm text-gray-500 flex items-center justify-center gap-1 mb-1">
-                Spread Edge
-                <InfoTooltip content={TOOLTIP_CONTENT.SPREAD_EDGE} />
+            {/* ATS Edge Chip */}
+            <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4 text-center">
+              <div className="text-sm text-gray-600 flex items-center justify-center gap-1 mb-2">
+                ATS Edge
+                <InfoTooltip content="Difference between market spread and model spread expressed as points of value. Positive = more value at current number." />
               </div>
-              <div className={`text-xl font-bold ${game.edge?.atsEdge >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+              <div className={`text-2xl font-bold flex items-center justify-center gap-1 ${game.edge?.atsEdge >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                {game.edge?.atsEdge >= 0 ? (
+                  <>
+                    <span aria-hidden="true">↑</span>
+                    <span className="sr-only">Positive edge</span>
+                  </>
+                ) : (
+                  <>
+                    <span aria-hidden="true">↓</span>
+                    <span className="sr-only">Negative edge</span>
+                  </>
+                )}
                 {game.edge?.atsEdge >= 0 ? '+' : ''}{game.edge?.atsEdge?.toFixed(1)} pts
               </div>
+              {game.model?.favorite && game.market?.favorite && (
+                <div className="text-xs text-gray-500 mt-2">
+                  Model: {game.model.favorite.teamName} {game.model.favorite.spread.toFixed(1)}
+                  {' • '}
+                  Market: {game.market.favorite.teamName} {game.market.favorite.spread.toFixed(1)}
+                </div>
+              )}
             </div>
-            <div className="text-center">
-              <div className="text-sm text-gray-500 flex items-center justify-center gap-1 mb-1">
-                Total Edge
-                <InfoTooltip content={TOOLTIP_CONTENT.TOTAL_EDGE_VALUE} />
+            
+            {/* OU Edge Chip */}
+            <div className={`bg-green-50 border-2 rounded-lg p-4 text-center ${game.picks?.total?.validationFlagged ? 'border-amber-300 bg-amber-50' : 'border-green-200'}`}>
+              <div className="text-sm text-gray-600 flex items-center justify-center gap-1 mb-2">
+                OU Edge
+                <InfoTooltip content="Difference between market total and model total, in points. Positive = more value at current number." />
               </div>
-              <div className={`text-xl font-bold ${game.edge?.totalEdge >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {game.edge?.totalEdge >= 0 ? '+' : ''}{game.edge?.totalEdge?.toFixed(1)} pts
-                {game.edge?.totalEdge && (
-                  <div className="text-xs mt-1">({game.edge.totalEdge >= 0 ? 'Over' : 'Under'})</div>
-                )}
-              </div>
+              {game.edge?.totalEdge !== null && game.edge?.totalEdge !== undefined ? (
+                <>
+                  <div className={`text-2xl font-bold flex items-center justify-center gap-1 ${game.edge.totalEdge >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {game.edge.totalEdge >= 0 ? (
+                      <>
+                        <span aria-hidden="true">↑</span>
+                        <span className="sr-only">Over edge</span>
+                      </>
+                    ) : (
+                      <>
+                        <span aria-hidden="true">↓</span>
+                        <span className="sr-only">Under edge</span>
+                      </>
+                    )}
+                    {game.edge.totalEdge >= 0 ? '+' : ''}{game.edge.totalEdge.toFixed(1)} pts
+                  </div>
+                  <div className="text-sm font-semibold text-gray-700 mt-1">
+                    {game.edge.totalEdge >= 0 ? 'Over' : 'Under'} {game.market?.total?.toFixed(1) || 'N/A'} → {game.model?.total?.toFixed(1) || 'N/A'}
+                  </div>
+                  {game.picks?.total?.validationFlagged && (
+                    <div className="text-xs text-amber-700 mt-1 italic">
+                      Validation caution on this input
+                    </div>
+                  )}
+                  {(game.model?.total !== null && game.model?.total !== undefined) && game.market?.total && (
+                    <div className="text-xs text-gray-500 mt-2">
+                      Model: {game.model.total.toFixed(1)} • Market: {game.market.total.toFixed(1)}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-lg text-gray-400">—</div>
+              )}
             </div>
-            <div className="text-center">
-              <div className="text-sm text-gray-500 flex items-center justify-center gap-1 mb-1">
-                Max Edge
-                <InfoTooltip content={TOOLTIP_CONTENT.MAX_EDGE} />
+            
+            {/* Stronger Edge Chip */}
+            <div className="bg-purple-50 border-2 border-purple-200 rounded-lg p-4 text-center">
+              <div className="text-sm text-gray-600 flex items-center justify-center gap-1 mb-2">
+                Stronger Edge
+                <InfoTooltip content="The larger of ATS/OU edges this game, with the market where it occurs." />
               </div>
-              <div className="text-xl font-bold text-gray-900">{game.edge?.maxEdge?.toFixed(1)} pts</div>
+              {game.edge?.maxEdge !== null && game.edge?.maxEdge !== undefined ? (
+                <>
+                  <div className="text-2xl font-bold text-purple-600">
+                    {game.edge.maxEdge.toFixed(1)} pts
+                  </div>
+                  <div className="text-sm font-semibold text-gray-700 mt-1">
+                    {Math.abs(game.edge?.atsEdge || 0) >= Math.abs(game.edge?.totalEdge || 0) ? 'ATS' : 'OU'}
+                  </div>
+                </>
+              ) : (
+                <div className="text-lg text-gray-400">—</div>
+              )}
             </div>
           </div>
         </div>
