@@ -63,29 +63,36 @@ export default function GameDetailPage() {
     return edge >= 1.0 ? `+${edge.toFixed(1)}` : edge.toFixed(1);
   };
 
-  // Helper to render rank chips
-  const renderRankChips = (rankings: any) => {
+  // Helper to render rank chips with freshness tooltip
+  const renderRankChips = (rankings: any, week?: number, season?: number) => {
     if (!rankings) return null;
     
     const chips = [];
+    const tooltipContent = week && season 
+      ? `Week ${week}, ${season} season. Rankings update weekly.`
+      : 'Rankings update weekly.';
+    
     if (rankings.AP) {
       chips.push(
         <span key="AP" className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-          AP #{rankings.AP.rank}
+          <span>AP #{rankings.AP.rank}</span>
+          <InfoTooltip content={`AP Poll #${rankings.AP.rank}${rankings.AP.points ? ` (${rankings.AP.points} pts)` : ''}. ${tooltipContent}`} />
         </span>
       );
     }
     if (rankings.CFP) {
       chips.push(
         <span key="CFP" className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-          CFP #{rankings.CFP.rank}
+          <span>CFP #{rankings.CFP.rank}</span>
+          <InfoTooltip content={`College Football Playoff Rankings #${rankings.CFP.rank}${rankings.CFP.points ? ` (${rankings.CFP.points} pts)` : ''}. ${tooltipContent}`} />
         </span>
       );
     }
     if (rankings.COACHES) {
       chips.push(
         <span key="COACHES" className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-          Coaches #{rankings.COACHES.rank}
+          <span>Coaches #{rankings.COACHES.rank}</span>
+          <InfoTooltip content={`Coaches Poll #${rankings.COACHES.rank}${rankings.COACHES.points ? ` (${rankings.COACHES.points} pts)` : ''}. ${tooltipContent}`} />
         </span>
       );
     }
@@ -216,7 +223,7 @@ export default function GameDetailPage() {
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
                     <div className="text-xl font-bold text-gray-900">{game.teams?.away?.team?.name || game.game.awayTeam}</div>
-                    {renderRankChips(game.rankings?.away)}
+                    {renderRankChips(game.rankings?.away, game.game?.week, game.game?.season)}
                   </div>
                   <div className="flex items-center gap-3 text-sm text-gray-600">
                     <span className="font-medium">
@@ -238,7 +245,7 @@ export default function GameDetailPage() {
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
                     <div className="text-xl font-bold text-gray-900">{game.teams?.home?.team?.name || game.game.homeTeam}</div>
-                    {renderRankChips(game.rankings?.home)}
+                    {renderRankChips(game.rankings?.home, game.game?.week, game.game?.season)}
                   </div>
                   <div className="flex items-center gap-3 text-sm text-gray-600">
                     <span className="font-medium">
@@ -430,7 +437,36 @@ export default function GameDetailPage() {
             </div>
           )}
 
-        {/* Model vs Market Card */}
+          {/* Implied Score Breakdown (optional but powerful) */}
+          {game.model?.impliedScores?.home !== null && game.model?.impliedScores?.away !== null && (
+            <div className="bg-white p-6 rounded-lg shadow mb-8">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                Model Implied Score
+                <InfoTooltip content="Predicted final scores derived from model spread and total. These are the model's expected point totals for each team." />
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <div className="text-sm text-gray-600 mb-2">{game.model.impliedScores.awayTeam}</div>
+                  <div className="text-2xl font-bold text-gray-900">
+                    {game.model.impliedScores.away?.toFixed(1) || '—'}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">Predicted score</div>
+                </div>
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <div className="text-sm text-gray-600 mb-2">{game.model.impliedScores.homeTeam}</div>
+                  <div className="text-2xl font-bold text-gray-900">
+                    {game.model.impliedScores.home?.toFixed(1) || '—'}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">Predicted score</div>
+                </div>
+              </div>
+              <div className="text-xs text-gray-500 mt-3 text-center">
+                Derived from model spread ({game.model?.spread?.toFixed(1) || '—'}) + model total ({game.model?.total?.toFixed(1) || '—'})
+              </div>
+            </div>
+          )}
+
+          {/* Model vs Market Card */}
         <div className="bg-white p-6 rounded-lg shadow mb-8">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Model vs Market</h3>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

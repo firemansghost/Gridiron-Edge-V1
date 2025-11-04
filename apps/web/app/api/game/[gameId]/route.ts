@@ -289,6 +289,16 @@ export async function GET(
     // Total edge: Model Total - Market Total (positive = model thinks over, negative = under)
     const totalEdgePts = finalImpliedTotal - marketTotal;
     
+    // Calculate implied team scores from model spread and total
+    // Formula: total = homeScore + awayScore, spread = homeScore - awayScore
+    // Solving: homeScore = (total + spread) / 2, awayScore = (total - spread) / 2
+    const impliedHomeScore = finalImpliedTotal !== null && finalImpliedSpread !== null
+      ? (finalImpliedTotal + finalImpliedSpread) / 2
+      : null;
+    const impliedAwayScore = finalImpliedTotal !== null && finalImpliedSpread !== null
+      ? (finalImpliedTotal - finalImpliedSpread) / 2
+      : null;
+    
     // ============================================
     // GUARDRAILS & VALIDATION CHECKS
     // ============================================
@@ -999,7 +1009,14 @@ export async function GET(
           teamName: modelSpreadFC.underdogTeamName,
           spread: modelSpreadFC.underdogSpread, // Always positive
         },
-        confidence: matchupOutput?.edgeConfidence || 'C'
+        confidence: matchupOutput?.edgeConfidence || 'C',
+        // Implied scores (derived from spread + total)
+        impliedScores: {
+          home: impliedHomeScore,
+          away: impliedAwayScore,
+          homeTeam: game.homeTeam.name,
+          awayTeam: game.awayTeam.name
+        }
       },
       
       // Edge analysis (favorite-centric)
@@ -1008,6 +1025,55 @@ export async function GET(
         totalEdge: totalEdgePts, // Positive = model thinks over, negative = under
         maxEdge: Math.max(Math.abs(atsEdge), Math.abs(totalEdgePts))
       },
+      
+      // CLV (Closing Line Value) hint - detect if market moved toward model
+      clvHint: await (async () => {
+        // Calculate if market moved toward model since opening
+        const spreadLines = await prisma.marketLine.findMany({
+          where: { gameId, lineType: 'spread' },
+          orderBy: { timestamp: 'asc' },
+          take: 1
+        });
+        const totalLines = await prisma.marketLine.findMany({
+          where: { gameId, lineType: 'total' },
+          orderBy: { timestamp: 'asc' },
+          take: 1
+        });
+        
+        const openingSpread = spreadLines[0]?.lineValue ?? null;
+        const openingTotal = totalLines[0]?.lineValue ?? null;
+        
+        if (openingSpread !== null && openingTotal !== null) {
+          // Calculate opening vs closing edge
+          const openingSpreadEdge = finalImpliedSpread - openingSpread;
+          const closingSpreadEdge = atsEdge;
+          const spreadMovedTowardModel = Math.abs(closingSpreadEdge) < Math.abs(openingSpreadEdge);
+          
+          const openingTotalEdge = finalImpliedTotal - openingTotal;
+          const closingTotalEdge = totalEdgePts;
+          const totalMovedTowardModel = Math.abs(closingTotalEdge) < Math.abs(openingTotalEdge);
+          
+          if (spreadMovedTowardModel || totalMovedTowardModel) {
+            return {
+              hasCLV: true,
+              spreadMoved: spreadMovedTowardModel,
+              totalMoved: totalMovedTowardModel,
+              openingSpread,
+              closingSpread: marketSpread,
+              openingTotal,
+              closingTotal: marketTotal,
+              modelSpread: finalImpliedSpread,
+              modelTotal: finalImpliedTotal
+            };
+          }
+        }
+        
+        return {
+          hasCLV: false,
+          spreadMoved: false,
+          totalMoved: false
+        };
+      })(),
       
       // Validation flags (for UI display of warnings)
       validation: {
