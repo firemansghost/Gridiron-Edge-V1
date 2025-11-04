@@ -328,6 +328,37 @@ export default function GameDetailPage() {
             )}
           </div>
 
+          {/* CLV Hint - if market moved toward model */}
+          {game.clvHint && game.clvHint.hasCLV && (game.clvHint.spreadMoved || game.clvHint.totalMoved) && (
+            <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="flex items-center gap-2">
+                <svg className="h-5 w-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+                <div className="flex-1">
+                  <div className="text-sm font-semibold text-green-900 mb-1">CLV Drift Detected</div>
+                  <div className="text-xs text-green-800">
+                    {game.clvHint.spreadMoved && game.lineHistory?.statistics?.spread && (
+                      <div>
+                        Spread: {game.lineHistory.statistics.spread.opening.value.toFixed(1)} → {game.lineHistory.statistics.spread.closing.value.toFixed(1)}, 
+                        drifting toward model ({game.model?.favorite?.spread.toFixed(1) || game.model?.spread?.toFixed(1)})
+                      </div>
+                    )}
+                    {game.clvHint.totalMoved && game.lineHistory?.statistics?.total && (
+                      <div>
+                        Total: {game.lineHistory.statistics.total.opening.value.toFixed(1)} → {game.lineHistory.statistics.total.closing.value.toFixed(1)}, 
+                        drifting toward model ({game.model?.total?.toFixed(1)})
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-xs text-green-700 mt-1 italic">
+                    Market movement suggests the model's view is gaining traction
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Recommended Picks - Ticket Style */}
           {(game.picks?.spread?.grade || game.picks?.total?.grade) && (
             <div className="mb-6">
