@@ -140,6 +140,12 @@ export function LineSparkline({
     );
   }
 
+  const altText = lineType === 'spread' && favoriteTeamName
+    ? `Spread moved from ${openingValue?.toFixed(1) || 'N/A'} to ${closingValue?.toFixed(1) || 'N/A'} for ${favoriteTeamName}`
+    : lineType === 'total'
+    ? `Total moved from ${openingValue?.toFixed(1) || 'N/A'} to ${closingValue?.toFixed(1) || 'N/A'}`
+    : `${lineType} line movement chart`;
+
   return (
     <div className="inline-block">
       <canvas
@@ -148,6 +154,8 @@ export function LineSparkline({
         height={height}
         className="block"
         style={{ imageRendering: 'crisp-edges' }}
+        aria-label={altText}
+        role="img"
       />
       <div className="text-xs text-gray-500 mt-1 flex justify-between">
         <span className="flex items-center gap-1">
