@@ -403,6 +403,73 @@ export async function GET(
     const spreadGrade = getGrade(atsEdge);
     const totalGrade = getGrade(totalEdgePts);
 
+    // ============================================
+    // TELEMETRY & VALIDATION FLAGS
+    // ============================================
+    
+    // Compute validation flags
+    const invalidModelTotal = finalImpliedTotal < 20 || finalImpliedTotal > 90;
+    const favoritesDisagree = modelSpreadFC.favoriteTeamId !== marketSpreadFC.favoriteTeamId;
+    const edgeAbsGt20 = Math.abs(atsEdge) > 20 || Math.abs(totalEdgePts) > 20;
+    
+    // Structured telemetry event for each game render
+    const telemetryEvent = {
+      event: 'game_detail_render',
+      gameId,
+      season: game.season,
+      week: game.week,
+      timestamp: new Date().toISOString(),
+      data: {
+        // Totals
+        modelTotal: finalImpliedTotal,
+        marketTotal,
+        totalEdge: totalEdgePts,
+        
+        // Spreads & Favorites
+        modelFav: modelSpreadFC.favoriteTeamName,
+        modelFavPts: modelSpreadFC.favoriteSpread,
+        marketFav: marketSpreadFC.favoriteTeamName,
+        marketFavPts: marketSpreadFC.favoriteSpread,
+        atsEdge,
+        
+        // Picks
+        pickATS: bettablePick.label,
+        pickTotal: totalPick.totalPickLabel,
+        gradeATS: spreadGrade,
+        gradeTotal: totalGrade,
+        
+        // Validation flags
+        flags: {
+          invalidModelTotal,
+          favoritesDisagree,
+          edgeAbsGt20
+        },
+        
+        // Additional context
+        homeTeam: game.homeTeam.name,
+        awayTeam: game.awayTeam.name,
+        modelSpread: finalImpliedSpread,
+        marketSpread
+      }
+    };
+    
+    // Log structured event (only in non-production or when flags are raised)
+    if (process.env.NODE_ENV !== 'production' || invalidModelTotal || favoritesDisagree || edgeAbsGt20) {
+      console.log(`[TELEMETRY] ${JSON.stringify(telemetryEvent)}`);
+    }
+    
+    // Log warnings if any flags are raised
+    if (invalidModelTotal || favoritesDisagree || edgeAbsGt20) {
+      console.warn(`[Game ${gameId}] ⚠️ Validation flags raised:`, {
+        invalidModelTotal,
+        favoritesDisagree,
+        edgeAbsGt20,
+        gameId,
+        homeTeam: game.homeTeam.name,
+        awayTeam: game.awayTeam.name
+      });
+    }
+
     // Convert date to America/Chicago timezone
     const kickoffTime = new Date(game.date).toLocaleString('en-US', {
       timeZone: 'America/Chicago',
@@ -940,6 +1007,18 @@ export async function GET(
         atsEdge: atsEdge, // Positive = model thinks favorite should lay more
         totalEdge: totalEdgePts, // Positive = model thinks over, negative = under
         maxEdge: Math.max(Math.abs(atsEdge), Math.abs(totalEdgePts))
+      },
+      
+      // Validation flags (for UI display of warnings)
+      validation: {
+        invalidModelTotal,
+        favoritesDisagree,
+        edgeAbsGt20,
+        warnings: [
+          ...(invalidModelTotal ? ['Model total outside realistic range [20-90]'] : []),
+          ...(favoritesDisagree ? ['Model and market favor different teams'] : []),
+          ...(edgeAbsGt20 ? ['Edge magnitude exceeds 20 points'] : [])
+        ]
       },
 
       // New explicit pick fields (ticket-style with grades)
