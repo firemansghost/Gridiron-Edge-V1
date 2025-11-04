@@ -424,15 +424,23 @@ export default function GameDetailPage() {
                 <div className="bg-white border-2 border-blue-300 rounded-lg p-4 shadow-sm">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">AGAINST THE SPREAD</h3>
-                    <div 
-                      className={`px-2 py-1 rounded text-xs font-bold ${
-                        game.picks.spread.grade === 'A' ? 'bg-green-500 text-white' :
-                        game.picks.spread.grade === 'B' ? 'bg-yellow-500 text-white' :
-                        'bg-orange-500 text-white'
-                      }`}
-                      aria-label={`Grade ${game.picks.spread.grade} spread pick`}
-                    >
-                      Grade {game.picks.spread.grade}
+                    <div className="flex items-center gap-2">
+                      {game.picks.spread.favoritesDisagree && (
+                        <div className="px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
+                          <InfoTooltip content="Model and market favor different teams. We back the underdog at the market number." />
+                          <span>Favorites Disagree</span>
+                        </div>
+                      )}
+                      <div 
+                        className={`px-2 py-1 rounded text-xs font-bold ${
+                          game.picks.spread.grade === 'A' ? 'bg-green-500 text-white' :
+                          game.picks.spread.grade === 'B' ? 'bg-yellow-500 text-white' :
+                          'bg-orange-500 text-white'
+                        }`}
+                        aria-label={`Grade ${game.picks.spread.grade} spread pick`}
+                      >
+                        Grade {game.picks.spread.grade}
+                      </div>
                     </div>
                   </div>
                   <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Spread pick ${game.picks.spread.bettablePick.label}`}>
@@ -444,8 +452,13 @@ export default function GameDetailPage() {
                         {game.picks.spread.edgePts >= 0 ? '+' : ''}{Math.abs(game.picks.spread.edgePts).toFixed(1)} pts
                       </span>
                     </span>
-                    <InfoTooltip content="ATS Edge = (Model favorite spread) - (Market favorite spread). A ≥ 4.0 pts, B ≥ 3.0 pts, C ≥ 2.0 pts." />
+                    <InfoTooltip content="ATS Edge = Model line vs market line, expressed in points of advantage for this ticket's side. A ≥ 4.0 pts, B ≥ 3.0 pts, C ≥ 2.0 pts." />
                   </div>
+                  {game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && (
+                    <div className="text-xs text-gray-500 mt-1 mb-2">
+                      Bet to: {game.picks.spread.betTo >= 0 ? '+' : ''}{game.picks.spread.betTo.toFixed(1)} (edge floor 2.0 pts)
+                    </div>
+                  )}
                   {game.picks.spread.rationale && (
                     <div className="text-xs text-gray-700 mt-2 italic border-t border-gray-200 pt-2">
                       {game.picks.spread.rationale}
@@ -471,13 +484,14 @@ export default function GameDetailPage() {
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                   <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">TOTAL (Over/Under)</h3>
                   <div className="text-sm text-gray-600 mb-1">
-                    Total pick hidden — model total failed sanity checks (outside [20-90] range)
+                    Total pick unavailable — model total did not pass sanity checks this week.
                   </div>
-                  <div className="text-xs text-gray-500">
-                    Using market total {game.market?.total?.toFixed(1) || 'N/A'} for reference only; no recommendation.
+                  <div className="text-xs text-gray-500 mt-1">
+                    <InfoTooltip content="We hide total picks when the model total falls outside the realistic 20–90 range or fails validation." />
+                    Using market total {game.market?.total?.toFixed(1) || 'N/A'} for reference only.
                   </div>
                 </div>
-              ) : game.picks?.total?.grade && game.picks?.total?.totalPickLabel ? (
+              ) : game.picks?.total?.grade && game.picks?.total?.totalPickLabel && game.picks?.total?.edgePts !== null ? (
                 <div className="bg-white border-2 border-green-300 rounded-lg p-4 shadow-sm">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">TOTAL (Over/Under)</h3>
@@ -498,11 +512,16 @@ export default function GameDetailPage() {
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-sm text-gray-600">
                       Edge: <span className={`font-semibold ${game.picks.total.edgePts >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {game.picks.total.edgePts >= 0 ? '+' : ''}{Math.abs(game.picks.total.edgePts).toFixed(1)} pts
+                        {game.picks.total.edgePts >= 0 ? '+' : ''}{Math.abs(game.picks.total.edgePts).toFixed(1)} pts ({game.picks.total.edgePts >= 0 ? 'Over' : 'Under'})
                       </span>
                     </span>
-                    <InfoTooltip content="Total Edge = Model Total - Market Total. Positive favors Over, negative favors Under. A ≥ 4.0 pts, B ≥ 3.0 pts, C ≥ 2.0 pts." />
+                    <InfoTooltip content="Model total minus market total. Positive favors Over; negative favors Under. A ≥ 4.0 pts, B ≥ 3.0 pts, C ≥ 2.0 pts." />
                   </div>
+                  {game.picks.total.betTo !== null && game.picks.total.betTo !== undefined && (
+                    <div className="text-xs text-gray-500 mt-1 mb-2">
+                      Bet to: {game.picks.total.betTo.toFixed(1)} (edge floor 2.0 pts)
+                    </div>
+                  )}
                   {game.picks.total.rationale && (
                     <div className="text-xs text-gray-700 mt-2 italic border-t border-gray-200 pt-2">
                       {game.picks.total.rationale}
@@ -628,8 +647,8 @@ export default function GameDetailPage() {
             </div>
           </div>
 
-          {/* Implied Score Breakdown (optional but powerful) */}
-          {game.model?.impliedScores?.home !== null && game.model?.impliedScores?.away !== null && (
+          {/* Implied Score Breakdown (only when valid) */}
+          {game.model?.impliedScores && game.model.impliedScores.home !== null && game.model.impliedScores.away !== null ? (
             <div className="bg-white p-6 rounded-lg shadow mb-8">
               <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
                 Model Implied Score
@@ -653,6 +672,12 @@ export default function GameDetailPage() {
               </div>
               <div className="text-xs text-gray-500 mt-3 text-center">
                 Derived from model spread ({game.model?.spread?.toFixed(1) || '—'}) + model total ({game.model?.total?.toFixed(1) || '—'})
+              </div>
+            </div>
+          ) : (
+            <div className="bg-gray-50 p-4 rounded-lg mb-8">
+              <div className="text-sm text-gray-600 italic">
+                Implied score unavailable — model total not reliable this week.
               </div>
             </div>
           )}
@@ -752,7 +777,9 @@ export default function GameDetailPage() {
                     Model Total
                     <InfoTooltip content={TOOLTIP_CONTENT.MODEL_TOTAL} />
                   </div>
-                  <div className="text-lg font-semibold text-gray-900">{game.model?.total?.toFixed(1) || '—'}</div>
+                  <div className="text-lg font-semibold text-gray-900">
+                    {game.model?.total !== null && game.model?.total !== undefined ? game.model.total.toFixed(1) : '—'}
+                  </div>
                 </div>
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-gray-500 flex items-center gap-1">

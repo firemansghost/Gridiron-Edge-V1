@@ -5,7 +5,7 @@
  */
 
 import { prisma } from '@/lib/prisma';
-import { computeSpreadPick, computeTotalPick, convertToFavoriteCentric, computeATSEdge, computeBettableSpreadPick } from '@/lib/pick-helpers';
+import { computeSpreadPick, computeTotalPick, convertToFavoriteCentric, computeATSEdge, computeBettableSpreadPick, computeTotalBetTo } from '@/lib/pick-helpers';
 import { pickMarketLine, getLineValue, pickMoneyline, americanToProb } from '@/lib/market-line-helpers';
 import { NextResponse } from 'next/server';
 
@@ -343,7 +343,12 @@ export async function GET(
       game.awayTeamId
     );
 
+    // Validate model total - if invalid, gate it everywhere
+    const isModelTotalValid = finalImpliedTotal >= 20 && finalImpliedTotal <= 90;
+    const validModelTotal = isModelTotalValid ? finalImpliedTotal : null;
+    
     // Compute the actual bettable pick based on edge (handles model/market disagreement)
+    const edgeFloor = 2.0; // Minimum edge threshold
     const bettablePick = computeBettableSpreadPick(
       finalImpliedSpread,
       marketSpread,
@@ -351,24 +356,34 @@ export async function GET(
       game.homeTeam.name,
       game.awayTeamId,
       game.awayTeam.name,
-      atsEdge
+      atsEdge,
+      edgeFloor
     );
 
     // Compute total pick details (only if model total is valid)
-    const totalPick = (finalImpliedTotal >= 20 && finalImpliedTotal <= 90) 
+    const totalPick = isModelTotalValid
       ? computeTotalPick(finalImpliedTotal, marketTotal)
       : { totalPick: null, totalPickLabel: null, edgeDisplay: null };
 
     // Total edge: Model Total - Market Total (positive = model thinks over, negative = under)
-    const totalEdgePts = finalImpliedTotal - marketTotal;
+    // Only compute if model total is valid
+    const totalEdgePts = isModelTotalValid ? (finalImpliedTotal - marketTotal) : null;
+    
+    // Compute "Bet to" for total (only if valid)
+    const totalBetTo = isModelTotalValid && totalEdgePts !== null && Math.abs(totalEdgePts) >= edgeFloor
+      ? computeTotalBetTo(finalImpliedTotal, marketTotal, edgeFloor)
+      : null;
     
     // Calculate implied team scores from model spread and total
+    // Only calculate if both model spread and model total are valid
     // Formula: total = homeScore + awayScore, spread = homeScore - awayScore
     // Solving: homeScore = (total + spread) / 2, awayScore = (total - spread) / 2
-    const impliedHomeScore = finalImpliedTotal !== null && finalImpliedSpread !== null
+    const isImpliedScoreValid = isModelTotalValid && finalImpliedSpread !== null && 
+                                finalImpliedSpread >= -50 && finalImpliedSpread <= 50;
+    const impliedHomeScore = isImpliedScoreValid
       ? (finalImpliedTotal + finalImpliedSpread) / 2
       : null;
-    const impliedAwayScore = finalImpliedTotal !== null && finalImpliedSpread !== null
+    const impliedAwayScore = isImpliedScoreValid
       ? (finalImpliedTotal - finalImpliedSpread) / 2
       : null;
     
@@ -435,7 +450,7 @@ export async function GET(
     }
     
     // 6. Validate Total Edge magnitude is not excessive (> 20)
-    if (Math.abs(totalEdgePts) > 20) {
+    if (totalEdgePts !== null && Math.abs(totalEdgePts) > 20) {
       console.warn(`[Game ${gameId}] ⚠️ Large total edge detected: ${totalEdgePts.toFixed(1)}`, {
         modelTotal: finalImpliedTotal,
         marketTotal,
@@ -475,7 +490,8 @@ export async function GET(
       C: 2.0
     };
 
-    const getGrade = (edge: number): 'A' | 'B' | 'C' | null => {
+    const getGrade = (edge: number | null): 'A' | 'B' | 'C' | null => {
+      if (edge === null) return null;
       const absEdge = Math.abs(edge);
       if (absEdge >= thresholds.A) return 'A';
       if (absEdge >= thresholds.B) return 'B';
@@ -493,7 +509,7 @@ export async function GET(
     // Compute validation flags
     const invalidModelTotal = finalImpliedTotal < 20 || finalImpliedTotal > 90;
     const favoritesDisagree = modelSpreadFC.favoriteTeamId !== marketSpreadFC.favoriteTeamId;
-    const edgeAbsGt20 = Math.abs(atsEdge) > 20 || Math.abs(totalEdgePts) > 20;
+    const edgeAbsGt20 = Math.abs(atsEdge) > 20 || (totalEdgePts !== null && Math.abs(totalEdgePts) > 20);
     
     // Structured telemetry event for each game render
     const telemetryEvent = {
@@ -1071,7 +1087,7 @@ export async function GET(
       // Model data (favorite-centric)
       model: {
         spread: finalImpliedSpread, // Keep original for reference
-        total: finalImpliedTotal,
+        total: validModelTotal, // Only show if valid (null if invalid)
         favorite: {
           teamId: modelSpreadFC.favoriteTeamId,
           teamName: modelSpreadFC.favoriteTeamName,
@@ -1083,20 +1099,20 @@ export async function GET(
           spread: modelSpreadFC.underdogSpread, // Always positive
         },
         confidence: matchupOutput?.edgeConfidence || 'C',
-        // Implied scores (derived from spread + total)
-        impliedScores: {
+        // Implied scores (derived from spread + total) - only if valid
+        impliedScores: isImpliedScoreValid ? {
           home: impliedHomeScore,
           away: impliedAwayScore,
           homeTeam: game.homeTeam.name,
           awayTeam: game.awayTeam.name
-        }
+        } : null
       },
       
       // Edge analysis (favorite-centric)
       edge: {
         atsEdge: atsEdge, // Positive = model thinks favorite should lay more
         totalEdge: totalEdgePts, // Positive = model thinks over, negative = under
-        maxEdge: Math.max(Math.abs(atsEdge), Math.abs(totalEdgePts))
+        maxEdge: Math.max(Math.abs(atsEdge), totalEdgePts !== null ? Math.abs(totalEdgePts) : 0)
       },
       
       // CLV (Closing Line Value) hint - detect if market moved toward model
@@ -1122,9 +1138,10 @@ export async function GET(
           const closingSpreadEdge = atsEdge;
           const spreadMovedTowardModel = Math.abs(closingSpreadEdge) < Math.abs(openingSpreadEdge);
           
-          const openingTotalEdge = finalImpliedTotal - openingTotal;
+          const openingTotalEdge = isModelTotalValid ? (finalImpliedTotal - openingTotal) : null;
           const closingTotalEdge = totalEdgePts;
-          const totalMovedTowardModel = Math.abs(closingTotalEdge) < Math.abs(openingTotalEdge);
+          const totalMovedTowardModel = openingTotalEdge !== null && closingTotalEdge !== null && 
+                                        Math.abs(closingTotalEdge) < Math.abs(openingTotalEdge);
           
           // Calculate drift amounts for per-card CLV hints
           const spreadDrift = marketSpread - openingSpread;
@@ -1196,21 +1213,24 @@ export async function GET(
             reasoning: bettablePick.reasoning
           },
           edgePts: atsEdge,
+          betTo: bettablePick.betTo, // "Bet to" number
+          favoritesDisagree: bettablePick.favoritesDisagree, // Flag when model ≠ market favorite
           // For backward compatibility
           spreadEdge: Math.abs(atsEdge),
           grade: spreadGrade, // A, B, C, or null
-          // Rationale line for ticket
-          rationale: `Model favors ${spreadPick.favoredTeamName} by ${Math.abs(spreadPick.favoriteSpread).toFixed(1)} vs market ${marketSpreadFC.favoriteTeamName} ${marketSpreadFC.favoriteSpread.toFixed(1)} → ${atsEdge >= 0 ? '+' : ''}${Math.abs(atsEdge).toFixed(1)} pts edge on ${bettablePick.label}.`
+          // Rationale line for ticket (use bettablePick.reasoning which already has the correct format)
+          rationale: bettablePick.reasoning
         },
         total: {
           ...totalPick,
           edgePts: totalEdgePts,
+          betTo: totalBetTo, // "Bet to" number for total
           grade: totalGrade, // A, B, C, or null
           // Hide if model total is invalid
-          hidden: finalImpliedTotal < 20 || finalImpliedTotal > 90,
+          hidden: !isModelTotalValid,
           // Rationale line for ticket
-          rationale: totalPick.totalPickLabel 
-            ? `Model total ${finalImpliedTotal.toFixed(1)} vs market ${marketTotal.toFixed(1)} → ${totalEdgePts >= 0 ? 'Over' : 'Under'} by ${Math.abs(totalEdgePts).toFixed(1)} pts.`
+          rationale: isModelTotalValid && totalPick.totalPickLabel && totalEdgePts !== null
+            ? `Model total ${finalImpliedTotal.toFixed(1)} vs market ${marketTotal.toFixed(1)} → ${totalPick.totalPick} ${marketTotal.toFixed(1)} by ${Math.abs(totalEdgePts).toFixed(1)} pts.`
             : null
         },
         moneyline: {
