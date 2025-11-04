@@ -360,145 +360,241 @@ export default function GameDetailPage() {
             )}
           </div>
 
-          {/* CLV Hint - if market moved toward model */}
-          {game.clvHint && game.clvHint.hasCLV && (game.clvHint.spreadMoved || game.clvHint.totalMoved) && (
-            <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
+          {/* Betting Ticket - Single unified block above fold */}
+          <div className="mb-4 md:mb-6">
+            <div className="flex items-center justify-between mb-3 sm:mb-4">
+              <h2 className="text-lg sm:text-xl font-bold text-gray-900">Betting Ticket</h2>
               <div className="flex items-center gap-2">
-                <svg className="h-5 w-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-                <div className="flex-1">
-                  <div className="text-sm font-semibold text-green-900 mb-1">CLV Drift Detected</div>
-                  <div className="text-xs text-green-800">
-                    {game.clvHint.spreadMoved && game.lineHistory?.statistics?.spread && (
-                      <div>
-                        Spread: {game.lineHistory.statistics.spread.opening.value.toFixed(1)} → {game.lineHistory.statistics.spread.closing.value.toFixed(1)}, 
-                        drifting toward model ({game.model?.favorite?.spread.toFixed(1) || game.model?.spread?.toFixed(1)})
-                      </div>
-                    )}
-                    {game.clvHint.totalMoved && game.lineHistory?.statistics?.total && (
-                      <div>
-                        Total: {game.lineHistory.statistics.total.opening.value.toFixed(1)} → {game.lineHistory.statistics.total.closing.value.toFixed(1)}, 
-                        drifting toward model ({game.model?.total?.toFixed(1)})
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-xs text-green-700 mt-1 italic">
-                    Market movement suggests the model's view is gaining traction
-                  </div>
-                </div>
+                {game.modelConfig?.version && (
+                  <span className="text-xs text-gray-500">
+                    Model {game.modelConfig.version}
+                  </span>
+                )}
+                {game.market?.meta?.spread?.timestamp && (
+                  <span className="text-xs text-gray-500">
+                    • Updated {new Date(game.market.meta.spread.timestamp).toLocaleString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true,
+                      timeZone: 'America/Chicago'
+                    })}
+                  </span>
+                )}
+                {renderRankChips(game.rankings?.home, game.game?.week, game.game?.season, 'CFBD', undefined)}
               </div>
             </div>
-          )}
-
-          {/* Recommended Picks - Ticket Style - Priority above fold */}
-          {(game.picks?.spread?.grade || game.picks?.total?.grade) && (
-            <div className="mb-4 md:mb-6">
-              <div className="flex items-center justify-between mb-3 sm:mb-4">
-                <h3 className="text-base sm:text-lg font-semibold text-gray-900">Recommended Picks</h3>
-                <InfoTooltip content={TOOLTIP_CONTENT.RECOMMENDED_PICKS + ' ' + TOOLTIP_CONTENT.GRADE_THRESHOLDS} />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-                {/* ATS Pick Card */}
-                {game.picks?.spread?.grade && game.picks?.spread?.bettablePick && (
-                  <div className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-300 rounded-lg p-5 shadow-md">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="text-sm font-medium text-blue-900 uppercase tracking-wide">Against the Spread</div>
-                      <div className={`px-3 py-1 rounded-full text-xs font-bold ${
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Spread Card */}
+              {game.picks?.spread?.grade && game.picks?.spread?.bettablePick ? (
+                <div className="bg-white border-2 border-blue-300 rounded-lg p-4 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">AGAINST THE SPREAD</h3>
+                    <div 
+                      className={`px-2 py-1 rounded text-xs font-bold ${
                         game.picks.spread.grade === 'A' ? 'bg-green-500 text-white' :
                         game.picks.spread.grade === 'B' ? 'bg-yellow-500 text-white' :
                         'bg-orange-500 text-white'
-                      }`}>
-                        Grade {game.picks.spread.grade}
-                      </div>
+                      }`}
+                      aria-label={`Grade ${game.picks.spread.grade} spread pick`}
+                    >
+                      Grade {game.picks.spread.grade}
                     </div>
-                    <div className="text-2xl font-bold text-gray-900 mb-2">
-                      {game.picks.spread.bettablePick.label}
-                    </div>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="text-sm text-gray-600">
-                        Edge: <span className={`font-semibold ${game.picks.spread.edgePts >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                          {game.picks.spread.edgePts >= 0 ? '+' : ''}{game.picks.spread.edgePts?.toFixed(1)} pts
-                        </span>
-                      </div>
-                      <InfoTooltip content={`${TOOLTIP_CONTENT.ATS_EDGE_FORMULA} ${game.picks.spread.grade === 'A' ? TOOLTIP_CONTENT.GRADE_A : game.picks.spread.grade === 'B' ? TOOLTIP_CONTENT.GRADE_B : TOOLTIP_CONTENT.GRADE_C}`} />
-                    </div>
-                    {/* Edge Rationale Line */}
-                    {game.picks.spread.bettablePick.reasoning && (
-                      <div className="text-xs text-gray-700 mt-2 italic border-t border-blue-200 pt-2">
-                        {game.picks.spread.bettablePick.reasoning}
-                      </div>
-                    )}
-                    {!game.picks.spread.bettablePick.reasoning && game.model?.favorite && game.market?.favorite && (
-                      <div className="text-xs text-gray-700 mt-2 italic border-t border-blue-200 pt-2">
-                        Edge {game.picks.spread.edgePts >= 0 ? '+' : ''}{game.picks.spread.edgePts?.toFixed(1)} because model favors {game.model.favorite.teamName} {game.model.favorite.spread.toFixed(1)} vs market {game.market.favorite.teamName} {game.market.favorite.spread.toFixed(1)} (value on {game.picks.spread.bettablePick.label}).
-                      </div>
-                    )}
                   </div>
-                )}
+                  <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Spread pick ${game.picks.spread.bettablePick.label}`}>
+                    {game.picks.spread.bettablePick.label}
+                  </div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-sm text-gray-600">
+                      Edge: <span className={`font-semibold ${Math.abs(game.picks.spread.edgePts) >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                        {game.picks.spread.edgePts >= 0 ? '+' : ''}{Math.abs(game.picks.spread.edgePts).toFixed(1)} pts
+                      </span>
+                    </span>
+                    <InfoTooltip content="ATS Edge = (Model favorite spread) - (Market favorite spread). A ≥ 4.0 pts, B ≥ 3.0 pts, C ≥ 2.0 pts." />
+                  </div>
+                  {game.picks.spread.rationale && (
+                    <div className="text-xs text-gray-700 mt-2 italic border-t border-gray-200 pt-2">
+                      {game.picks.spread.rationale}
+                    </div>
+                  )}
+                  {game.clvHint?.spreadDrift?.significant && (
+                    <div className="text-xs text-green-700 mt-2 italic" aria-label={`Closing line value drift ${game.clvHint.spreadDrift.drift >= 0 ? '+' : ''}${game.clvHint.spreadDrift.drift.toFixed(1)} points`}>
+                      Line drift: {game.clvHint.spreadDrift.opening.toFixed(1)} → {game.clvHint.spreadDrift.closing.toFixed(1)} ({game.clvHint.spreadDrift.drift >= 0 ? '+' : ''}{game.clvHint.spreadDrift.drift.toFixed(1)}) toward model.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">AGAINST THE SPREAD</h3>
+                  <div className="text-sm text-gray-600 italic">
+                    Spread pick hidden — inputs failed validation. No ATS recommendation.
+                  </div>
+                </div>
+              )}
 
-                {/* Total Pick Card */}
-                {game.picks?.total?.grade && !game.picks?.total?.hidden && (
-                  <div className="bg-gradient-to-br from-green-50 to-green-100 border-2 border-green-300 rounded-lg p-5 shadow-md">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="text-sm font-medium text-green-900 uppercase tracking-wide">Total (Over/Under)</div>
-                      <div className={`px-3 py-1 rounded-full text-xs font-bold ${
+              {/* Total Card */}
+              {game.picks?.total?.hidden ? (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">TOTAL (Over/Under)</h3>
+                  <div className="text-sm text-gray-600 mb-1">
+                    Total pick hidden — model total failed sanity checks (outside [20-90] range)
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Using market total {game.market?.total?.toFixed(1) || 'N/A'} for reference only; no recommendation.
+                  </div>
+                </div>
+              ) : game.picks?.total?.grade && game.picks?.total?.totalPickLabel ? (
+                <div className="bg-white border-2 border-green-300 rounded-lg p-4 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">TOTAL (Over/Under)</h3>
+                    <div 
+                      className={`px-2 py-1 rounded text-xs font-bold ${
                         game.picks.total.grade === 'A' ? 'bg-green-500 text-white' :
                         game.picks.total.grade === 'B' ? 'bg-yellow-500 text-white' :
                         'bg-orange-500 text-white'
-                      }`}>
-                        Grade {game.picks.total.grade}
-                      </div>
+                      }`}
+                      aria-label={`Grade ${game.picks.total.grade} total pick`}
+                    >
+                      Grade {game.picks.total.grade}
                     </div>
-                    <div className="text-2xl font-bold text-gray-900 mb-2">
-                      {game.picks.total.totalPickLabel}
+                  </div>
+                  <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Total pick ${game.picks.total.totalPickLabel}`}>
+                    {game.picks.total.totalPickLabel}
+                  </div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-sm text-gray-600">
+                      Edge: <span className={`font-semibold ${game.picks.total.edgePts >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {game.picks.total.edgePts >= 0 ? '+' : ''}{Math.abs(game.picks.total.edgePts).toFixed(1)} pts
+                      </span>
+                    </span>
+                    <InfoTooltip content="Total Edge = Model Total - Market Total. Positive favors Over, negative favors Under. A ≥ 4.0 pts, B ≥ 3.0 pts, C ≥ 2.0 pts." />
+                  </div>
+                  {game.picks.total.rationale && (
+                    <div className="text-xs text-gray-700 mt-2 italic border-t border-gray-200 pt-2">
+                      {game.picks.total.rationale}
                     </div>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="text-sm text-gray-600">
-                        Edge: <span className={`font-semibold ${game.picks.total.edgePts >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {game.picks.total.edgePts >= 0 ? '+' : ''}{game.picks.total.edgePts?.toFixed(1)} pts
-                          {game.picks.total.edgePts && (
-                            <span className="ml-1">({game.picks.total.edgePts >= 0 ? 'Over' : 'Under'})</span>
-                          )}
-                        </span>
-                      </div>
-                      <InfoTooltip content={`${TOOLTIP_CONTENT.TOTAL_EDGE_FORMULA} ${game.picks.total.grade === 'A' ? TOOLTIP_CONTENT.GRADE_A : game.picks.total.grade === 'B' ? TOOLTIP_CONTENT.GRADE_B : TOOLTIP_CONTENT.GRADE_C}`} />
+                  )}
+                  {game.clvHint?.totalDrift?.significant && (
+                    <div className="text-xs text-green-700 mt-2 italic" aria-label={`Closing line value drift ${game.clvHint.totalDrift.drift >= 0 ? '+' : ''}${game.clvHint.totalDrift.drift.toFixed(1)} points`}>
+                      Total drift: {game.clvHint.totalDrift.opening.toFixed(1)} → {game.clvHint.totalDrift.closing.toFixed(1)} ({game.clvHint.totalDrift.drift >= 0 ? '+' : ''}{game.clvHint.totalDrift.drift.toFixed(1)}) toward model.
                     </div>
-                    {/* Edge Rationale Line */}
-                    {game.picks.total.edgeDisplay && (
-                      <div className="text-xs text-gray-700 mt-2 italic border-t border-green-200 pt-2">
-                        {game.picks.total.edgeDisplay}
+                  )}
+                </div>
+              ) : (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">TOTAL (Over/Under)</h3>
+                  <div className="text-sm text-gray-600 italic">
+                    No total pick (edge below 2.0 pts threshold)
+                  </div>
+                </div>
+              )}
+
+              {/* Moneyline Card */}
+              {game.picks?.moneyline ? (
+                <div className="bg-white border-2 border-purple-300 rounded-lg p-4 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">MONEYLINE</h3>
+                    {game.picks.moneyline.grade && (
+                      <div 
+                        className={`px-2 py-1 rounded text-xs font-bold ${
+                          game.picks.moneyline.grade === 'A' ? 'bg-green-500 text-white' :
+                          game.picks.moneyline.grade === 'B' ? 'bg-yellow-500 text-white' :
+                          'bg-orange-500 text-white'
+                        }`}
+                        aria-label={`Moneyline value ${game.picks.moneyline.valuePercent?.toFixed(1)} percent, grade ${game.picks.moneyline.grade}`}
+                      >
+                        Grade {game.picks.moneyline.grade}
                       </div>
                     )}
                   </div>
-                )}
-
-                {/* Hidden Total Message */}
-                {game.picks?.total?.hidden && (
-                  <div className="md:col-span-2 bg-gray-50 border border-gray-200 rounded-lg p-4">
-                    <div className="text-sm text-gray-600 mb-1">
-                      Total pick hidden — model total failed sanity checks (outside [20-90] range)
+                  {game.picks.moneyline.price != null ? (
+                    <>
+                      <div className="text-2xl font-bold text-gray-900 mb-2">
+                        {game.picks.moneyline.pickLabel}
+                      </div>
+                      <div className="text-sm text-gray-600 mb-2">
+                        Market: {game.picks.moneyline.price > 0 ? '+' : ''}{game.picks.moneyline.price}
+                      </div>
+                      {game.picks.moneyline.valuePercent != null && (
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className={`text-sm font-semibold ${game.picks.moneyline.valuePercent >= 0 ? 'text-green-600' : 'text-gray-600'}`}>
+                            Value: {game.picks.moneyline.valuePercent >= 0 ? '+' : ''}{game.picks.moneyline.valuePercent.toFixed(1)}%
+                          </span>
+                          <InfoTooltip content="Value % = Model probability minus market implied probability. A ≥ 4.0% value, B ≥ 2.5%, C ≥ 1.5%." />
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-xl font-bold text-gray-900 mb-1">
+                        {game.picks.moneyline.modelFavoriteTeam} — Model fair ML
+                      </div>
+                      <div className="text-lg font-semibold text-gray-700 mb-2">
+                        {game.picks.moneyline.modelFairML! > 0 ? '+' : ''}{game.picks.moneyline.modelFairML}
+                      </div>
+                      <div className="text-xs text-gray-500 italic mb-2">
+                        (No book ML yet)
+                      </div>
+                    </>
+                  )}
+                  {game.picks.moneyline.rationale && (
+                    <div className="text-xs text-gray-700 mt-2 italic border-t border-gray-200 pt-2">
+                      {game.picks.moneyline.rationale}
                     </div>
-                    <div className="text-xs text-gray-500">
-                      Using market total only. Model total: {game.model?.total?.toFixed(1) || 'N/A'}
-                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">MONEYLINE</h3>
+                  <div className="text-sm text-gray-600 italic">
+                    Moneyline unavailable — no valid market price or model probability.
                   </div>
-                )}
+                </div>
+              )}
+            </div>
 
-                {/* No picks message */}
-                {!game.picks?.spread?.grade && !game.picks?.total?.grade && (
-                  <div className="md:col-span-2 bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
-                    <div className="text-gray-600 mb-2">
-                      No recommended picks (edge below 2.0 pts threshold)
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      Picks are only shown when edge meets minimum threshold (Grade C = 2.0+ pts)
-                    </div>
-                  </div>
+            {/* Footer with sources and tooltips */}
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <div className="flex flex-wrap items-center justify-center gap-3 text-xs text-gray-500">
+                <span>
+                  Odds: {game.market?.meta?.spread?.source || 'Unknown'}
+                  {game.market?.meta?.spread?.timestamp && ` • ${new Date(game.market.meta.spread.timestamp).toLocaleString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true,
+                    timeZone: 'America/Chicago'
+                  })}`}
+                </span>
+                <span>•</span>
+                <span>Rankings: CFBD (AP/Coaches/CFP)</span>
+                <span>•</span>
+                <span>Talent: 247 Composite via CFBD</span>
+                {game.weather && (
+                  <>
+                    <span>•</span>
+                    <span>
+                      Weather: {game.weather.source || 'VisualCrossing'}
+                      {game.weather.forecastTime && ` • ${new Date(game.weather.forecastTime).toLocaleString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true,
+                        timeZone: 'America/Chicago'
+                      })}`}
+                    </span>
+                  </>
                 )}
+                <span>•</span>
+                <InfoTooltip content="Spreads are shown with the favorite team attached to the number (favorite-centric display), never by home/away." />
+                <span className="text-gray-400 cursor-help">Favorite-centric display</span>
               </div>
             </div>
-          )}
+          </div>
 
           {/* Implied Score Breakdown (optional but powerful) */}
           {game.model?.impliedScores?.home !== null && game.model?.impliedScores?.away !== null && (

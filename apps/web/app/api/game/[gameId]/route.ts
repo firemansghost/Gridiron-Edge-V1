@@ -222,18 +222,90 @@ export async function GET(
       timestamp: mlLine.timestamp ?? null,
     } : null;
 
-    // Only create moneyline object if we have actual moneyline data
+    // Calculate model win probability from model spread
+    // Using standard NFL/CFB conversion: prob = normcdf(spread / (2 * sqrt(variance)))
+    // For college football, we use a standard deviation of ~14 points
+    // Simplified: prob = 0.5 + (spread / (2 * 14)) * 0.5, clamped to [0.05, 0.95]
+    const stdDev = 14; // Standard deviation for CFB point spreads
+    const modelHomeWinProb = Math.max(0.05, Math.min(0.95, 
+      0.5 + (finalImpliedSpread / (2 * stdDev)) * 0.5
+    ));
+    const modelAwayWinProb = 1 - modelHomeWinProb;
+
+    // Convert model win probability to fair moneyline (American odds)
+    // For home team: if prob > 0.5, negative odds; else positive
+    // Formula: if prob >= 0.5: odds = -100 * prob / (1 - prob)
+    //          if prob < 0.5: odds = 100 * (1 - prob) / prob
+    const modelFairMLHome = modelHomeWinProb >= 0.5
+      ? Math.round(-100 * modelHomeWinProb / (1 - modelHomeWinProb))
+      : Math.round(100 * (1 - modelHomeWinProb) / modelHomeWinProb);
+    const modelFairMLAway = modelAwayWinProb >= 0.5
+      ? Math.round(-100 * modelAwayWinProb / (1 - modelAwayWinProb))
+      : Math.round(100 * (1 - modelAwayWinProb) / modelAwayWinProb);
+
+    // Determine which team the model favors for ML
+    const modelMLFavorite = modelHomeWinProb >= 0.5 ? game.homeTeam : game.awayTeam;
+    const modelMLFavoriteProb = modelHomeWinProb >= 0.5 ? modelHomeWinProb : modelAwayWinProb;
+    const modelMLFavoriteFairML = modelHomeWinProb >= 0.5 ? modelFairMLHome : modelFairMLAway;
+
+    // Calculate moneyline value and grade (if market ML exists)
     let moneyline = null;
     if (mlVal != null) {
       // Determine moneyline pick label
-      const fav = mlVal < 0 ? game.homeTeam.name : game.awayTeam.name;
-      const moneylinePickLabel = `${fav} ML`;
+      const marketFav = mlVal < 0 ? game.homeTeam.name : game.awayTeam.name;
+      const marketMLFavProb = americanToProb(mlVal)!;
+      
+      // Determine which team's probability to compare
+      // If market favors home and model favors home, compare home probs
+      // If they disagree, compare the model's favorite vs market's favorite
+      let valuePercent: number | null = null;
+      let moneylineGrade: 'A' | 'B' | 'C' | null = null;
+      
+      if (mlVal < 0) {
+        // Market favors home
+        valuePercent = (modelHomeWinProb - marketMLFavProb) * 100;
+      } else {
+        // Market favors away
+        valuePercent = (modelAwayWinProb - marketMLFavProb) * 100;
+      }
+      
+      // Grade thresholds: A ≥ 4%, B ≥ 2.5%, C ≥ 1.5%
+      if (valuePercent >= 4.0) {
+        moneylineGrade = 'A';
+      } else if (valuePercent >= 2.5) {
+        moneylineGrade = 'B';
+      } else if (valuePercent >= 1.5) {
+        moneylineGrade = 'C';
+      }
+
+      const moneylinePickLabel = `${marketFav} ML`;
 
       moneyline = {
         price: mlVal,
         pickLabel: moneylinePickLabel,
-        impliedProb: americanToProb(mlVal),
-        meta: mlMeta
+        impliedProb: marketMLFavProb,
+        meta: mlMeta,
+        // Model comparison data
+        modelWinProb: modelMLFavoriteProb,
+        modelFairML: modelMLFavoriteFairML,
+        modelFavoriteTeam: modelMLFavorite.name,
+        valuePercent: valuePercent,
+        grade: moneylineGrade
+      };
+    } else {
+      // No market ML, but show model fair ML
+      moneyline = {
+        price: null,
+        pickLabel: null,
+        impliedProb: null,
+        meta: null,
+        // Model fair line only
+        modelWinProb: modelMLFavoriteProb,
+        modelFairML: modelMLFavoriteFairML,
+        modelFavoriteTeam: modelMLFavorite.name,
+        valuePercent: null,
+        grade: null,
+        isModelFairLineOnly: true
       };
     }
 
@@ -1054,6 +1126,14 @@ export async function GET(
           const closingTotalEdge = totalEdgePts;
           const totalMovedTowardModel = Math.abs(closingTotalEdge) < Math.abs(openingTotalEdge);
           
+          // Calculate drift amounts for per-card CLV hints
+          const spreadDrift = marketSpread - openingSpread;
+          const totalDrift = marketTotal - openingTotal;
+          
+          // Thresholds: spread ≥ 0.5 pts, total ≥ 1.0 pt
+          const spreadDriftSignificant = Math.abs(spreadDrift) >= 0.5 && spreadMovedTowardModel;
+          const totalDriftSignificant = Math.abs(totalDrift) >= 1.0 && totalMovedTowardModel;
+          
           if (spreadMovedTowardModel || totalMovedTowardModel) {
             return {
               hasCLV: true,
@@ -1064,7 +1144,20 @@ export async function GET(
               openingTotal,
               closingTotal: marketTotal,
               modelSpread: finalImpliedSpread,
-              modelTotal: finalImpliedTotal
+              modelTotal: finalImpliedTotal,
+              // Per-card CLV data
+              spreadDrift: spreadDriftSignificant ? {
+                opening: openingSpread,
+                closing: marketSpread,
+                drift: spreadDrift,
+                significant: true
+              } : null,
+              totalDrift: totalDriftSignificant ? {
+                opening: openingTotal,
+                closing: marketTotal,
+                drift: totalDrift,
+                significant: true
+              } : null
             };
           }
         }
@@ -1072,7 +1165,9 @@ export async function GET(
         return {
           hasCLV: false,
           spreadMoved: false,
-          totalMoved: false
+          totalMoved: false,
+          spreadDrift: null,
+          totalDrift: null
         };
       })(),
       
@@ -1104,13 +1199,28 @@ export async function GET(
           // For backward compatibility
           spreadEdge: Math.abs(atsEdge),
           grade: spreadGrade, // A, B, C, or null
+          // Rationale line for ticket
+          rationale: `Model favors ${spreadPick.favoredTeamName} by ${Math.abs(spreadPick.favoriteSpread).toFixed(1)} vs market ${marketSpreadFC.favoriteTeamName} ${marketSpreadFC.favoriteSpread.toFixed(1)} → ${atsEdge >= 0 ? '+' : ''}${Math.abs(atsEdge).toFixed(1)} pts edge on ${bettablePick.label}.`
         },
         total: {
           ...totalPick,
           edgePts: totalEdgePts,
           grade: totalGrade, // A, B, C, or null
           // Hide if model total is invalid
-          hidden: finalImpliedTotal < 20 || finalImpliedTotal > 90
+          hidden: finalImpliedTotal < 20 || finalImpliedTotal > 90,
+          // Rationale line for ticket
+          rationale: totalPick.totalPickLabel 
+            ? `Model total ${finalImpliedTotal.toFixed(1)} vs market ${marketTotal.toFixed(1)} → ${totalEdgePts >= 0 ? 'Over' : 'Under'} by ${Math.abs(totalEdgePts).toFixed(1)} pts.`
+            : null
+        },
+        moneyline: {
+          ...moneyline,
+          // Rationale line for ticket
+          rationale: moneyline?.price != null && moneyline?.valuePercent != null
+            ? `Model ${modelMLFavorite.name} win prob ${(modelMLFavoriteProb * 100).toFixed(1)}% vs market ${(moneyline.impliedProb! * 100).toFixed(1)}% → fair ${modelMLFavoriteFairML > 0 ? '+' : ''}${modelMLFavoriteFairML} vs market ${mlVal! > 0 ? '+' : ''}${mlVal!} (${moneyline.valuePercent >= 0 ? '+' : ''}${moneyline.valuePercent.toFixed(1)}% value).`
+            : moneyline?.isModelFairLineOnly
+            ? `Model ${modelMLFavorite.name} win prob ${(modelMLFavoriteProb * 100).toFixed(1)}% → fair ${modelMLFavoriteFairML > 0 ? '+' : ''}${modelMLFavoriteFairML}. Awaiting book price.`
+            : null
         }
       },
       
