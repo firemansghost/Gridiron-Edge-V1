@@ -760,10 +760,11 @@ export async function GET(
     // Assert 2: The team with more negative price matches marketFavorite.teamId
     // Assert 3: marketSpread sign correctly determines favorite
     const favoriteLineValid = favoriteByRule.line < 0;
-    const expectedFavoriteFromSpread = marketSpread < 0 ? game.awayTeamId : game.homeTeamId;
+    // CORRECTED: marketSpread < 0 means HOME is favored (home-minus-away convention)
+    const expectedFavoriteFromSpread = marketSpread < 0 ? game.homeTeamId : game.awayTeamId;
     const favoriteMatchesExpected = favoriteByRule.teamId === expectedFavoriteFromSpread;
-    const spreadSignCorrect = (marketSpread < 0 && favoriteByRule.teamId === game.awayTeamId) ||
-                              (marketSpread > 0 && favoriteByRule.teamId === game.homeTeamId) ||
+    const spreadSignCorrect = (marketSpread < 0 && favoriteByRule.teamId === game.homeTeamId) ||
+                              (marketSpread > 0 && favoriteByRule.teamId === game.awayTeamId) ||
                               (marketSpread === 0);
     
     if (!favoriteLineValid || !favoriteMatchesExpected || !spreadSignCorrect) {
