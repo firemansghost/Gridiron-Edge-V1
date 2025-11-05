@@ -136,16 +136,10 @@ aliases:
   "Ohio State Buckeyes": ohio-state
   "Michigan": michigan
   "Michigan Wolverines": michigan
-  "Alabama": alabama
-  "Alabama Crimson Tide": alabama
-  "Duke": duke
-  "Duke Blue Devils": duke
   "Northwestern": northwestern
   "Northwestern Wildcats": northwestern
   "Northern Illinois": northern-illinois
   "Northern Illinois Huskies": northern-illinois
-  "Notre Dame": notre-dame
-  "Notre Dame Fighting Irish": notre-dame
   "Rutgers": rutgers
   "Rutgers Scarlet Knights": rutgers
   "Eastern Michigan": eastern-michigan
@@ -188,10 +182,6 @@ aliases:
   "USC Trojans": usc
   
   # Additional FBS aliases for better coverage
-  "Kent State": kent-state
-  "Kent State Golden Flashes": kent-state
-  "Southern Mississippi": southern-miss
-  "Southern Mississippi Golden Eagles": southern-miss
   "Southern Miss": southern-miss
   "Southern Miss Golden Eagles": southern-miss
   "Boston College": boston-college
