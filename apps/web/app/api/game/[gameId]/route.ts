@@ -478,6 +478,28 @@ export async function GET(
     });
     
     // Determine which team SHOULD be favored using multiple signals
+    // Priority: 1) AP Rankings, 2) Power Ratings + HFA, 3) Home team default
+    
+    // Fetch AP rankings for both teams
+    const [homeRanking, awayRanking] = await Promise.all([
+      prisma.teamRanking.findFirst({
+        where: {
+          season: game.season,
+          week: game.week,
+          pollType: 'AP',
+          teamId: game.homeTeamId
+        }
+      }),
+      prisma.teamRanking.findFirst({
+        where: {
+          season: game.season,
+          week: game.week,
+          pollType: 'AP',
+          teamId: game.awayTeamId
+        }
+      })
+    ]);
+    
     const homePower = homeRating ? Number(homeRating.powerRating || homeRating.rating || 0) : 0;
     const awayPower = awayRating ? Number(awayRating.powerRating || awayRating.rating || 0) : 0;
     
@@ -487,20 +509,52 @@ export async function GET(
     const homeEffectivePower = homePower + HFA;
     const awayEffectivePower = awayPower;
     
-    console.log(`[Game ${gameId}] 🔍 POWER RATINGS FOR FAVORITE DETERMINATION:`, {
+    console.log(`[Game ${gameId}] 🔍 FAVORITE DETERMINATION SIGNALS:`, {
+      homeTeam: game.homeTeam.name,
+      awayTeam: game.awayTeam.name,
+      homeAPRank: homeRanking?.rank || 'unranked',
+      awayAPRank: awayRanking?.rank || 'unranked',
       homePower,
       awayPower,
       HFA,
       homeEffectivePower,
       awayEffectivePower,
-      homeTeam: game.homeTeam.name,
-      awayTeam: game.awayTeam.name,
-      neutralSite: game.neutralSite,
-      expectedFavorite: homeEffectivePower > awayEffectivePower ? 'home' : 'away'
+      neutralSite: game.neutralSite
     });
     
-    // Determine which team is favored based on effective power (including HFA)
-    const favoriteIsHome = homeEffectivePower > awayEffectivePower;
+    // Determine which team is favored using the following logic:
+    // 1. If only one team is ranked, they're the favorite
+    // 2. If both are ranked, lower rank number (better) is favorite
+    // 3. If neither is ranked, use effective power ratings (including HFA)
+    // 4. If no power ratings, default to home team
+    let favoriteIsHome: boolean;
+    let favoriteReason: string;
+    
+    if (homeRanking && !awayRanking) {
+      favoriteIsHome = true;
+      favoriteReason = `home ranked #${homeRanking.rank}, away unranked`;
+    } else if (awayRanking && !homeRanking) {
+      favoriteIsHome = false;
+      favoriteReason = `away ranked #${awayRanking.rank}, home unranked`;
+    } else if (homeRanking && awayRanking) {
+      // Both ranked - lower number (better rank) is favorite
+      favoriteIsHome = homeRanking.rank < awayRanking.rank;
+      favoriteReason = `both ranked: home #${homeRanking.rank} vs away #${awayRanking.rank}`;
+    } else if (homePower !== 0 || awayPower !== 0) {
+      // Use power ratings with HFA
+      favoriteIsHome = homeEffectivePower > awayEffectivePower;
+      favoriteReason = `power ratings: home ${homeEffectivePower.toFixed(1)} vs away ${awayEffectivePower.toFixed(1)}`;
+    } else {
+      // Default to home team
+      favoriteIsHome = true;
+      favoriteReason = 'default to home team (no rankings or power ratings)';
+    }
+    
+    console.log(`[Game ${gameId}] 🎯 FAVORITE DETERMINATION:`, {
+      favoriteIsHome,
+      favoriteTeam: favoriteIsHome ? game.homeTeam.name : game.awayTeam.name,
+      reason: favoriteReason
+    });
     
     // Assign the negative line to the favorite and positive line to the underdog
     let homePrice: number;
