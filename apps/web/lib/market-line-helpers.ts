@@ -31,10 +31,23 @@ export function pickMarketLine<T extends MarketLineInput>(
   type: 'spread' | 'total' | 'moneyline'
 ): T | null {
   // Filter to matching line type
-  const sameType = lines.filter(l => l.lineType === type);
+  let sameType = lines.filter(l => l.lineType === type);
   
   if (sameType.length === 0) {
     return null;
+  }
+  
+  // CRITICAL FIX: For spreads, always pick the NEGATIVE line (favorite's line)
+  // The database stores TWO spread lines per game (one for each team)
+  // We must pick the favorite's line (negative value) as the canonical representation
+  if (type === 'spread') {
+    const negativeLines = sameType.filter(l => {
+      const value = l.closingLine !== null && l.closingLine !== undefined ? l.closingLine : l.lineValue;
+      return value !== null && value !== undefined && value < 0;
+    });
+    if (negativeLines.length > 0) {
+      sameType = negativeLines;
+    }
   }
 
   // 1) Prefer SGO source

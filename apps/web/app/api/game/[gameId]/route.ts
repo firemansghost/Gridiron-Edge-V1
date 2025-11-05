@@ -99,14 +99,29 @@ export async function GET(
       }
     }
 
-    const pickPreferredLine = (lines: typeof game.marketLines) => {
+    const pickPreferredLine = (lines: typeof game.marketLines, lineType?: 'spread' | 'total' | 'moneyline') => {
       if (!lines || lines.length === 0) return null;
-      const withClosing = lines.filter((line) => line.closingLine !== null && line.closingLine !== undefined);
-      const candidates = withClosing.length > 0 ? withClosing : lines;
-      return candidates.reduce((latest, line) => {
+      
+      // CRITICAL FIX: For spreads, always pick the NEGATIVE line (favorite's line)
+      // The database stores TWO spread lines per game (one for each team)
+      // We must pick the favorite's line (negative value) as the canonical representation
+      let candidates = lines;
+      if (lineType === 'spread') {
+        const negativeLines = lines.filter((line) => {
+          const value = line.closingLine !== null && line.closingLine !== undefined ? line.closingLine : line.lineValue;
+          return value !== null && value !== undefined && value < 0;
+        });
+        if (negativeLines.length > 0) {
+          candidates = negativeLines;
+        }
+      }
+      
+      const withClosing = candidates.filter((line) => line.closingLine !== null && line.closingLine !== undefined);
+      const finalCandidates = withClosing.length > 0 ? withClosing : candidates;
+      return finalCandidates.reduce((latest, line) => {
         if (!latest) return line;
         return new Date(line.timestamp).getTime() > new Date(latest.timestamp).getTime() ? line : latest;
-      }, null as typeof candidates[0] | null);
+      }, null as typeof finalCandidates[0] | null);
     };
 
     let selectedSpreadLine: typeof game.marketLines[number] | null = null;
@@ -120,9 +135,9 @@ export async function GET(
     let bestLatestTimestamp = 0;
 
     groupedByBook.forEach((group) => {
-      const spreadCandidate = pickPreferredLine(group.spreadLines);
-      const totalCandidate = pickPreferredLine(group.totalLines);
-      const moneylineCandidate = pickPreferredLine(group.moneylineLines);
+      const spreadCandidate = pickPreferredLine(group.spreadLines, 'spread');
+      const totalCandidate = pickPreferredLine(group.totalLines, 'total');
+      const moneylineCandidate = pickPreferredLine(group.moneylineLines, 'moneyline');
 
       const coverageScore = (spreadCandidate ? 100 : 0) + (totalCandidate ? 10 : 0) + (moneylineCandidate ? 1 : 0);
       const latestTimestamp = Math.max(
