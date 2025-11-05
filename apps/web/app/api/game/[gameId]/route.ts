@@ -202,10 +202,21 @@ export async function GET(
           ? Math.min(0.7, 0.8 * awayYppOff)
           : 0.4;
       
+      // Unit handshake: rates should be in [0, 1] range (points per play)
+      const homePppValid = homePpp >= -1 && homePpp <= 1;
+      const awayPppValid = awayPpp >= -1 && awayPpp <= 1;
+      // Counts should be in [100, 180] plays range
+      const homePaceValid = homePaceOff >= 100 && homePaceOff <= 180;
+      const awayPaceValid = awayPaceOff >= 100 && awayPaceOff <= 180;
+      
       const baseTeamScores = {
         home: homePpp * homePaceOff,
         away: awayPpp * awayPaceOff
       };
+      
+      // Unit handshake: final team points should be in [0, 70] before any adjustments
+      const homeScoreValid = baseTeamScores.home >= 0 && baseTeamScores.home <= 70;
+      const awayScoreValid = baseTeamScores.away >= 0 && baseTeamScores.away <= 70;
       
       totalDiag.steps.push({
         name: 'baseTeamScores',
@@ -214,14 +225,28 @@ export async function GET(
         homePpp: homePpp,
         homePace: homePaceOff,
         awayPpp: awayPpp,
-        awayPace: awayPaceOff
+        awayPace: awayPaceOff,
+        units: {
+          homePppValid,
+          awayPppValid,
+          homePaceValid,
+          awayPaceValid,
+          homeScoreValid,
+          awayScoreValid
+        }
       });
+      
+      const finalTotal = baseTeamScores.home + baseTeamScores.away;
       
       totalDiag.steps.push({
         name: 'finalTeamScores',
         home: baseTeamScores.home,
         away: baseTeamScores.away,
-        total: baseTeamScores.home + baseTeamScores.away
+        total: finalTotal,
+        units: {
+          totalValid: finalTotal >= 0 && finalTotal <= 120,
+          suspect: finalTotal < 5 || finalTotal > 120 ? 'suspect' : 'ok'
+        }
       });
     }
     
@@ -586,7 +611,10 @@ export async function GET(
     // Generate specific warning message (only for missing inputs or computation failure)
     let modelTotalWarning: string | null = null;
     let calcError = false;
-    if (computationFailed) {
+    if (unitsIssue) {
+      calcError = true;
+      modelTotalWarning = `Computation not in points (see diagnostics). Value ${finalImpliedTotal.toFixed(1)} likely a ratio/rate.`;
+    } else if (computationFailed) {
       calcError = true;
       if (consistencyDelta !== null && consistencyDelta > 0.5) {
         modelTotalWarning = `Computation failed: inconsistent implied scores (Δ=${consistencyDelta.toFixed(1)}).`;
@@ -599,11 +627,30 @@ export async function GET(
     
     // Model total is valid if it exists and computation didn't fail (no range checks)
     // CRITICAL: Add type safety - ensure it's a finite number in points, not a percentage/ratio
+    // MINIMAL SAFETY CAP: Units sanity guard (15-120) to catch unit bugs (e.g., 1.3)
+    // This is NOT a range gate on legit numbers; it's a unit sanity check
     const isModelTotalValid = !computationFailed && 
                              finalImpliedTotal !== null && 
                              !isNaN(finalImpliedTotal) && 
                              isFinite(finalImpliedTotal) &&
-                             typeof finalImpliedTotal === 'number';
+                             typeof finalImpliedTotal === 'number' &&
+                             finalImpliedTotal >= 15 && 
+                             finalImpliedTotal <= 120; // Units sanity guard
+    
+    // If computation succeeded but outside safety cap, treat as units issue
+    const unitsIssue = finalImpliedTotal !== null && 
+                      !isNaN(finalImpliedTotal) && 
+                      isFinite(finalImpliedTotal) &&
+                      (finalImpliedTotal < 15 || finalImpliedTotal > 120);
+    
+    if (unitsIssue) {
+      console.warn(`[Game ${gameId}] ⚠️ Model total units issue: ${finalImpliedTotal.toFixed(1)} is outside safety cap [15-120]. Likely a ratio/rate, not points.`, {
+        finalImpliedTotal,
+        gameId,
+        homeTeam: game.homeTeam.name,
+        awayTeam: game.awayTeam.name
+      });
+    }
     
     // Plausibility check (log only, don't suppress)
     let plausibilityNote: string | null = null;
@@ -1369,15 +1416,18 @@ export async function GET(
       },
       
       // Market data (favorite-centric)
+      // SINGLE SOURCE OF TRUTH: marketFavorite from favoriteByRule
       market: {
-        spread: marketSpread, // Keep original for reference
+        spread: marketSpread, // Keep original for reference (home-minus-away)
         total: marketTotal,
         source: spreadLine?.bookName || 'Unknown',
-        favorite: {
-          teamId: marketSpreadFC.favoriteTeamId,
-          teamName: marketSpreadFC.favoriteTeamName,
-          spread: marketSpreadFC.favoriteSpread, // Always negative
+        // Single source of truth: favoriteByRule (team with more negative price)
+        marketFavorite: {
+          teamId: favoriteByRule.teamId,
+          teamName: favoriteByRule.teamName,
+          line: favoriteByRule.line, // Always negative (favorite-centric)
         },
+        // Keep underdog for reference, but UI should use marketFavorite
         underdog: {
           teamId: marketSpreadFC.underdogTeamId,
           teamName: marketSpreadFC.underdogTeamName,
@@ -1387,7 +1437,13 @@ export async function GET(
           spread: spreadMeta,
           total: totalMeta,
         },
-        moneyline
+        moneyline,
+        // Dev diagnostics (only in non-production)
+        _devDiagnostics: process.env.NODE_ENV !== 'production' ? {
+          feedHome: { id: game.homeTeamId, name: game.homeTeam.name, price: homePrice },
+          feedAway: { id: game.awayTeamId, name: game.awayTeam.name, price: awayPrice },
+          favorite: { teamId: favoriteByRule.teamId, teamName: favoriteByRule.teamName, line: favoriteByRule.line }
+        } : undefined
       },
       
       // Model data (favorite-centric)

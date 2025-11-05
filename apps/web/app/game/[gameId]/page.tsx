@@ -395,8 +395,16 @@ export default function GameDetailPage() {
                   {game.market.spread > 0 ? '+' : ''}{game.market.spread.toFixed(1)}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
-                  {game.market.favorite ? `${game.market.favorite.teamName} favored` : game.market.spread < 0 ? game.game.homeTeam : game.game.awayTeam} favored
+                  {game.market.marketFavorite ? `${game.market.marketFavorite.teamName} favored` : 'Favorite unavailable'}
                 </div>
+                {/* Dev diagnostic (only in dev mode) */}
+                {process.env.NODE_ENV !== 'production' && game.market._devDiagnostics && (
+                  <div className="text-xs text-gray-400 mt-1 font-mono">
+                    feed home: {game.market._devDiagnostics.feedHome.name} {game.market._devDiagnostics.feedHome.price >= 0 ? '+' : ''}{game.market._devDiagnostics.feedHome.price} | 
+                    feed away: {game.market._devDiagnostics.feedAway.name} {game.market._devDiagnostics.feedAway.price >= 0 ? '+' : ''}{game.market._devDiagnostics.feedAway.price} | 
+                    favorite: {game.market._devDiagnostics.favorite.teamName} {game.market._devDiagnostics.favorite.line.toFixed(1)}
+                  </div>
+                )}
               </div>
               <div className="bg-white p-3 rounded border border-blue-100">
                 <div className="text-xs text-gray-600 mb-1">Total (Over/Under)</div>
@@ -618,6 +626,15 @@ export default function GameDetailPage() {
                     <div className="text-xs text-green-700 mt-2 italic" aria-label={`Closing line value drift ${game.clvHint.totalDrift.drift >= 0 ? '+' : ''}${game.clvHint.totalDrift.drift.toFixed(1)} points`}>
                       Drift toward model ({game.clvHint.totalDrift.drift >= 0 ? '+' : ''}{game.clvHint.totalDrift.drift.toFixed(1)})
                     </div>
+                  )}
+                  {/* Dev diagnostics (only in dev mode) */}
+                  {process.env.NODE_ENV !== 'production' && game.total_diag && (
+                    <details className="mt-3 pt-3 border-t border-gray-200">
+                      <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">Diagnostics</summary>
+                      <div className="mt-2 text-xs font-mono bg-gray-50 p-2 rounded overflow-auto max-h-64">
+                        <pre>{JSON.stringify(game.total_diag, null, 2)}</pre>
+                      </div>
+                    </details>
                   )}
                 </div>
               ) : (
@@ -1139,7 +1156,7 @@ export default function GameDetailPage() {
                       movement={game.lineHistory.statistics.spread.movement}
                       showLabels={true}
                       showCaption={true}
-                      favoriteTeamName={game.market?.favorite?.teamName}
+                      favoriteTeamName={game.market?.marketFavorite?.teamName}
                     />
                   </div>
                 )}
