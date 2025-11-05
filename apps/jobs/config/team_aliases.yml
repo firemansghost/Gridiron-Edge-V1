@@ -1,6 +1,7 @@
 # Team name aliases for Odds API → CFBD team slug mapping
 # Format: "Odds API team name": cfbd-team-slug
 # CRITICAL: All targets must be FBS teams only
+# Last updated: 2025-11-05
 
 aliases:
   # Non-State schools (must NOT map to -state)
