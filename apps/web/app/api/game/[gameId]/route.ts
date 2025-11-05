@@ -608,6 +608,26 @@ export async function GET(
                              !isFinite(finalImpliedTotal) ||
                              (consistencyDelta !== null && consistencyDelta > 0.5);
     
+    // Model total is valid if it exists and computation didn't fail (no range checks)
+    // CRITICAL: Add type safety - ensure it's a finite number in points, not a percentage/ratio
+    // MINIMAL SAFETY CAP: Units sanity guard (15-120) to catch unit bugs (e.g., 1.3)
+    // This is NOT a range gate on legit numbers; it's a unit sanity check
+    
+    // If computation succeeded but outside safety cap, treat as units issue
+    const unitsIssue = finalImpliedTotal !== null && 
+                      !isNaN(finalImpliedTotal) && 
+                      isFinite(finalImpliedTotal) &&
+                      (finalImpliedTotal < 15 || finalImpliedTotal > 120);
+    
+    const isModelTotalValid = !computationFailed && 
+                             !unitsIssue &&
+                             finalImpliedTotal !== null && 
+                             !isNaN(finalImpliedTotal) && 
+                             isFinite(finalImpliedTotal) &&
+                             typeof finalImpliedTotal === 'number' &&
+                             finalImpliedTotal >= 15 && 
+                             finalImpliedTotal <= 120; // Units sanity guard
+    
     // Generate specific warning message (only for missing inputs or computation failure)
     let modelTotalWarning: string | null = null;
     let calcError = false;
@@ -624,24 +644,6 @@ export async function GET(
     } else if (missingInputs.length > 0) {
       modelTotalWarning = `Missing inputs: ${missingInputs.join(', ')}.`;
     }
-    
-    // Model total is valid if it exists and computation didn't fail (no range checks)
-    // CRITICAL: Add type safety - ensure it's a finite number in points, not a percentage/ratio
-    // MINIMAL SAFETY CAP: Units sanity guard (15-120) to catch unit bugs (e.g., 1.3)
-    // This is NOT a range gate on legit numbers; it's a unit sanity check
-    const isModelTotalValid = !computationFailed && 
-                             finalImpliedTotal !== null && 
-                             !isNaN(finalImpliedTotal) && 
-                             isFinite(finalImpliedTotal) &&
-                             typeof finalImpliedTotal === 'number' &&
-                             finalImpliedTotal >= 15 && 
-                             finalImpliedTotal <= 120; // Units sanity guard
-    
-    // If computation succeeded but outside safety cap, treat as units issue
-    const unitsIssue = finalImpliedTotal !== null && 
-                      !isNaN(finalImpliedTotal) && 
-                      isFinite(finalImpliedTotal) &&
-                      (finalImpliedTotal < 15 || finalImpliedTotal > 120);
     
     if (unitsIssue) {
       console.warn(`[Game ${gameId}] ⚠️ Model total units issue: ${finalImpliedTotal.toFixed(1)} is outside safety cap [15-120]. Likely a ratio/rate, not points.`, {
