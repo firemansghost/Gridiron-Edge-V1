@@ -452,35 +452,86 @@ export async function GET(
       });
     }
 
-    // Get line values (prefers closingLine, falls back to lineValue)
-    const marketSpreadValue = getLineValue(spreadLine);
-    if (marketSpreadValue === null || marketSpreadValue === undefined) {
-      throw new Error(`Selected snapshot missing spread value for game ${gameId}`);
+    // CRITICAL FIX: The database stores BOTH spread lines (one for each team)
+    // but doesn't track which team each line belongs to.
+    // We need to use power ratings to determine which team SHOULD be favored,
+    // then assign the negative line to that team.
+    
+    // Get all spread lines for this game from the same book/timestamp
+    const allSpreadLines = game.marketLines.filter(
+      (l) => l.lineType === 'spread' && 
+             l.bookName === spreadLine.bookName &&
+             Math.abs(new Date(l.timestamp).getTime() - new Date(spreadLine.timestamp).getTime()) < 1000
+    );
+    
+    // Find the negative line (favorite) and positive line (underdog)
+    const spreadValues = allSpreadLines.map(l => getLineValue(l)).filter(v => v !== null) as number[];
+    const negativeValue = spreadValues.find(v => v < 0);
+    const positiveValue = spreadValues.find(v => v > 0);
+    
+    console.log(`[Game ${gameId}] 🔍 SPREAD LINES ANALYSIS:`, {
+      allValues: spreadValues,
+      negativeValue,
+      positiveValue,
+      homeTeam: game.homeTeam.name,
+      awayTeam: game.awayTeam.name
+    });
+    
+    // Determine which team SHOULD be favored based on power ratings
+    const homePower = homeRating ? Number(homeRating.powerRating || homeRating.rating || 0) : 0;
+    const awayPower = awayRating ? Number(awayRating.powerRating || awayRating.rating || 0) : 0;
+    
+    console.log(`[Game ${gameId}] 🔍 POWER RATINGS FOR FAVORITE DETERMINATION:`, {
+      homePower,
+      awayPower,
+      homeTeam: game.homeTeam.name,
+      awayTeam: game.awayTeam.name,
+      expectedFavorite: awayPower > homePower ? 'away' : 'home'
+    });
+    
+    // Determine which team is favored based on power ratings
+    const favoriteIsHome = homePower > awayPower;
+    
+    // Assign the negative line to the favorite and positive line to the underdog
+    let homePrice: number;
+    let awayPrice: number;
+    let marketSpread: number;
+    
+    if (negativeValue !== undefined && positiveValue !== undefined) {
+      // We have both lines - ideal case
+      if (favoriteIsHome) {
+        homePrice = negativeValue; // Home is favorite (negative)
+        awayPrice = positiveValue; // Away is underdog (positive)
+      } else {
+        homePrice = positiveValue; // Home is underdog (positive)
+        awayPrice = negativeValue; // Away is favorite (negative)
+      }
+      marketSpread = negativeValue; // Always use the favorite's line (negative)
+    } else {
+      // Fallback: only one line available
+      console.warn(`[Game ${gameId}] ⚠️ Only one spread line found, using fallback logic`);
+      const marketSpreadValue = getLineValue(spreadLine);
+      if (marketSpreadValue === null || marketSpreadValue === undefined) {
+        throw new Error(`Selected snapshot missing spread value for game ${gameId}`);
+      }
+      
+      // Use power ratings to determine which team should have which line
+      const absValue = Math.abs(marketSpreadValue);
+      if (favoriteIsHome) {
+        homePrice = -absValue; // Home is favorite (negative)
+        awayPrice = absValue; // Away is underdog (positive)
+      } else {
+        homePrice = absValue; // Home is underdog (positive)
+        awayPrice = -absValue; // Away is favorite (negative)
+      }
+      marketSpread = -absValue; // Always negative for favorite
     }
-    const marketSpread = marketSpreadValue;
+    
     const marketTotalRaw = totalLine ? getLineValue(totalLine) : null;
     const marketTotal = marketTotalRaw !== null && marketTotalRaw !== undefined ? marketTotalRaw : null;
     
     // Add marketTotal to diagnostics now that it's declared
     totalDiag.marketTotal = marketTotal;
-    
-    // Derive home_price and away_price from marketSpread (home-minus-away convention)
-    // marketSpread = homeScore - awayScore (from database)
-    // If marketSpread < 0: home team is favored (home laying points, e.g., Alabama -10 → marketSpread = -10)
-    // If marketSpread > 0: away team is favored (away laying points, e.g., OSU @ Purdue, OSU -29.5 → marketSpread = +29.5)
-    // Favorite always has negative price in favorite-centric format
-    let homePrice: number;
-    let awayPrice: number;
-    
-    if (marketSpread < 0) {
-      // Home team is favored (e.g., Alabama -10 → marketSpread = -10)
-      homePrice = marketSpread; // Negative (favorite)
-      awayPrice = -marketSpread; // Positive (underdog)
-    } else {
-      // Away team is favored (e.g., OSU @ Purdue, OSU -29.5 → marketSpread = +29.5)
-      awayPrice = -marketSpread; // Negative (favorite)
-      homePrice = marketSpread; // Positive (underdog)
-    }
     
     // Favorite selection rule: team with more negative price (always the favorite)
     const homeIsFavorite = homePrice < awayPrice;
@@ -664,16 +715,17 @@ export async function GET(
     // Invariant guard: Verify favorite mapping is correct
     // Assert 1: marketFavorite.line < 0 (favorite lines must be negative)
     // Assert 2: The team with more negative price matches marketFavorite.teamId
-    // Assert 3: marketSpread sign correctly determines favorite
+    // Assert 3: homePrice and awayPrice are correctly assigned (one negative, one positive)
     const favoriteLineValid = favoriteByRule.line < 0;
-    // CORRECTED: marketSpread < 0 means HOME is favored (home-minus-away convention)
-    const expectedFavoriteFromSpread = marketSpread < 0 ? game.homeTeamId : game.awayTeamId;
-    const favoriteMatchesExpected = favoriteByRule.teamId === expectedFavoriteFromSpread;
-    const spreadSignCorrect = (marketSpread < 0 && favoriteByRule.teamId === game.homeTeamId) ||
-                              (marketSpread > 0 && favoriteByRule.teamId === game.awayTeamId) ||
-                              (marketSpread === 0);
+    const pricesCorrectlySigned = (homePrice < 0 && awayPrice > 0) || (homePrice > 0 && awayPrice < 0);
+    const favoriteMatchesPrices = (homePrice < awayPrice && favoriteByRule.teamId === game.homeTeamId) ||
+                                   (awayPrice < homePrice && favoriteByRule.teamId === game.awayTeamId);
     
-    if (!favoriteLineValid || !favoriteMatchesExpected || !spreadSignCorrect) {
+    // NEW: Verify that the favorite determined by power ratings matches the favorite determined by prices
+    const expectedFavoriteFromPowerRatings = favoriteIsHome ? game.homeTeamId : game.awayTeamId;
+    const favoriteMatchesPowerRatings = favoriteByRule.teamId === expectedFavoriteFromPowerRatings;
+    
+    if (!favoriteLineValid || !pricesCorrectlySigned || !favoriteMatchesPrices || !favoriteMatchesPowerRatings) {
       const telemetryEvent = {
         event: 'FAVORITE_MISMATCH',
         gameId,
@@ -685,16 +737,19 @@ export async function GET(
         marketSpread: marketSpread,
         homePrice: homePrice,
         awayPrice: awayPrice,
+        homePower: homePower,
+        awayPower: awayPower,
         chosenFavorite: {
           teamId: favoriteByRule.teamId,
           teamName: favoriteByRule.teamName,
           line: favoriteByRule.line
         },
-        expectedFavorite: expectedFavoriteFromSpread,
+        expectedFavoriteFromPowerRatings: expectedFavoriteFromPowerRatings,
         validation: {
           favoriteLineValid,
-          favoriteMatchesExpected,
-          spreadSignCorrect
+          pricesCorrectlySigned,
+          favoriteMatchesPrices,
+          favoriteMatchesPowerRatings
         }
       };
       console.error(`[Game ${gameId}] ⚠️ FAVORITE_MISMATCH:`, JSON.stringify(telemetryEvent, null, 2));
@@ -714,7 +769,9 @@ export async function GET(
       },
       validation: {
         favoriteLineValid,
-        favoriteMatchesExpected
+        pricesCorrectlySigned,
+        favoriteMatchesPrices,
+        favoriteMatchesPowerRatings
       }
     });
 
@@ -1043,11 +1100,14 @@ export async function GET(
     if (!favoriteLineValid) {
       mappingNotes.push(`Favorite line is not negative: ${favoriteByRule.line}`);
     }
-    if (!favoriteMatchesExpected) {
-      mappingNotes.push(`Favorite team mismatch: expected ${expectedFavoriteFromSpread}, got ${favoriteByRule.teamId}`);
+    if (!pricesCorrectlySigned) {
+      mappingNotes.push(`Prices not correctly signed: homePrice=${homePrice}, awayPrice=${awayPrice}`);
     }
-    if (!spreadSignCorrect) {
-      mappingNotes.push(`Spread sign mismatch: marketSpread=${marketSpread}, favoriteTeamId=${favoriteByRule.teamId}`);
+    if (!favoriteMatchesPrices) {
+      mappingNotes.push(`Favorite team doesn't match prices: favoriteTeamId=${favoriteByRule.teamId}, homePrice=${homePrice}, awayPrice=${awayPrice}`);
+    }
+    if (!favoriteMatchesPowerRatings) {
+      mappingNotes.push(`Favorite team mismatch with power ratings: expected ${expectedFavoriteFromPowerRatings}, got ${favoriteByRule.teamId}`);
     }
     if (totalSourceMismatch) {
       mappingNotes.push('Total line sourced from a different book than the spread snapshot.');
