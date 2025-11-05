@@ -285,91 +285,50 @@ export async function GET(
       }),
     ]);
 
-    // Get initial values from matchupOutput if available
-    const initialSpread = matchupOutput?.impliedSpread || 0;
-    const initialTotal = matchupOutput?.impliedTotal || 45;
+    // ============================================
+    // CRITICAL FIX: Use pre-calculated values from matchupOutput
+    // DO NOT recalculate spread/total on the fly - this causes bugs!
+    // ============================================
+    // The matchupOutput table contains pre-calculated implied lines from the ratings pipeline
+    // This is the SINGLE SOURCE OF TRUTH for model predictions
+    // The Current Slate page uses these same values - we must stay consistent!
     
-    // Compute model spread and total if ratings are available
-    let computedSpread = initialSpread;
-    let computedTotal = initialTotal;
+    let computedSpread = matchupOutput?.impliedSpread || 0;
+    let computedTotal = matchupOutput?.impliedTotal || 45;
     
-    if (homeRating && awayRating) {
+    // OPTIONAL: Can still compute spread if ratings exist AND matchupOutput is missing
+    // But NEVER override matchupOutput if it exists!
+    if (!matchupOutput && homeRating && awayRating) {
       const homePower = Number(homeRating.powerRating || homeRating.rating || 0);
       const awayPower = Number(awayRating.powerRating || awayRating.rating || 0);
       const HFA = game.neutralSite ? 0 : 2.0;
       computedSpread = homePower - awayPower + HFA;
-
-      // Compute total using pace + efficiency
-      // Formula: Total Points = (Home Points Per Play × Home Pace) + (Away Points Per Play × Away Pace)
-      // Where Points Per Play is derived from EPA (Expected Points Added) or YPP (Yards Per Play)
-      const homeEpaOff = homeStats?.epaOff ? Number(homeStats.epaOff) : null;
-      const awayEpaOff = awayStats?.epaOff ? Number(awayStats.epaOff) : null;
-      const homeYppOff = homeStats?.yppOff ? Number(homeStats.yppOff) : null;
-      const awayYppOff = awayStats?.yppOff ? Number(awayStats.yppOff) : null;
       
-      // Default pace: ~70 plays per game for college football
-      const homePaceOff = homeStats?.paceOff ? Number(homeStats.paceOff) : 70;
-      const awayPaceOff = awayStats?.paceOff ? Number(awayStats.paceOff) : 70;
-
-      // Convert EPA to Points Per Play (PPP)
-      // EPA range is typically -0.5 to +0.5, so 7 * EPA gives us ~0-3.5 PPP range
-      // Cap at 0.7 PPP max (realistic upper bound for elite offenses)
-      const homePpp = homeEpaOff !== null 
-        ? Math.max(0, Math.min(0.7, 7 * homeEpaOff))
-        : homeYppOff !== null 
-          ? Math.min(0.7, 0.8 * homeYppOff) // YPP to PPP proxy (capped)
-          : 0.4; // Default: average team scores ~0.4 points per play
-      
-      const awayPpp = awayEpaOff !== null
-        ? Math.max(0, Math.min(0.7, 7 * awayEpaOff))
-        : awayYppOff !== null
-          ? Math.min(0.7, 0.8 * awayYppOff)
-          : 0.4;
-      
-      // CRITICAL FIX: Validate pace values before using them
-      // Pace should be 60-90 plays per game for CFB
-      // If pace is < 10, it's likely stored in wrong units (e.g., possessions per minute)
-      const homePaceValidated = homePaceOff >= 10 ? homePaceOff : 70; // Default to 70 if invalid
-      const awayPaceValidated = awayPaceOff >= 10 ? awayPaceOff : 70; // Default to 70 if invalid
-      
-      if (homePaceOff < 10 || awayPaceOff < 10) {
-        console.warn(`[Game ${gameId}] ⚠️ PACE VALUES TOO LOW - likely wrong units:`, {
-          homePaceOff,
-          awayPaceOff,
-          homePaceValidated,
-          awayPaceValidated,
-          note: 'Pace should be 60-90 plays per game. Using default 70 for invalid values.'
-        });
-      }
-
-      // Calculate total points: (Home PPP × Home Pace) + (Away PPP × Away Pace)
-      computedTotal = (homePpp * homePaceValidated) + (awayPpp * awayPaceValidated);
-      
-      // Validation: Ensure total is in realistic range (20-90 points)
-      // Flag outliers but don't cap them (they might be legitimate for extreme matchups)
-      if (computedTotal < 20 || computedTotal > 90) {
-        console.warn(`[Game ${gameId}] Total calculation produced outlier: ${computedTotal.toFixed(1)}`, {
-          homePpp,
-          homePaceOff,
-          awayPpp,
-          awayPaceOff,
-          homeEpaOff,
-          awayEpaOff
-        });
-      }
+      console.log(`[Game ${gameId}] ⚠️ NO MATCHUP OUTPUT - computing spread on the fly:`, {
+        homePower,
+        awayPower,
+        HFA,
+        computedSpread
+      });
     }
+    
+    // Log the source of our model values
+    console.log(`[Game ${gameId}] 📊 MODEL DATA SOURCE:`, {
+      hasMatchupOutput: !!matchupOutput,
+      modelSpread: computedSpread,
+      modelTotal: computedTotal,
+      source: matchupOutput ? 'matchupOutput (pre-calculated)' : 'fallback (computed on-the-fly)'
+    });
 
     // ============================================
-    // TOTAL DIAGNOSTICS (B) - Track computation path
+    // TOTAL DIAGNOSTICS (B) - Track data source and validation
     // ============================================
     const totalDiag: any = {
+      source: matchupOutput ? 'matchupOutput (pre-calculated)' : 'fallback (default 45)',
       inputs: {
-        homeEpaOff: homeStats?.epaOff ? Number(homeStats.epaOff) : null,
-        awayEpaOff: awayStats?.epaOff ? Number(awayStats.epaOff) : null,
-        homeYppOff: homeStats?.yppOff ? Number(homeStats.yppOff) : null,
-        awayYppOff: awayStats?.yppOff ? Number(awayStats.yppOff) : null,
-        homePaceOff: homeStats?.paceOff ? Number(homeStats.paceOff) : 70,
-        awayPaceOff: awayStats?.paceOff ? Number(awayStats.paceOff) : 70,
+        matchupOutputExists: !!matchupOutput,
+        matchupOutputSpread: matchupOutput?.impliedSpread || null,
+        matchupOutputTotal: matchupOutput?.impliedTotal || null,
         homeRating: homeRating ? Number(homeRating.powerRating || homeRating.rating || 0) : null,
         awayRating: awayRating ? Number(awayRating.powerRating || awayRating.rating || 0) : null
       },
@@ -378,106 +337,6 @@ export async function GET(
       firstFailureStep: null as string | null,
       unitsInvalid: false
     };
-    
-    // Track computation steps
-    if (homeRating && awayRating) {
-      const homeEpaOff = homeStats?.epaOff ? Number(homeStats.epaOff) : null;
-      const awayEpaOff = awayStats?.epaOff ? Number(awayStats.epaOff) : null;
-      const homeYppOff = homeStats?.yppOff ? Number(homeStats.yppOff) : null;
-      const awayYppOff = awayStats?.yppOff ? Number(awayStats.yppOff) : null;
-      const homePaceOffRaw = homeStats?.paceOff ? Number(homeStats.paceOff) : 70;
-      const awayPaceOffRaw = awayStats?.paceOff ? Number(awayStats.paceOff) : 70;
-      
-      // Validate pace values (same logic as main computation)
-      const homePaceOff = homePaceOffRaw >= 10 ? homePaceOffRaw : 70;
-      const awayPaceOff = awayPaceOffRaw >= 10 ? awayPaceOffRaw : 70;
-      
-      const homePpp = homeEpaOff !== null 
-        ? Math.max(0, Math.min(0.7, 7 * homeEpaOff))
-        : homeYppOff !== null 
-          ? Math.min(0.7, 0.8 * homeYppOff)
-          : 0.4;
-      
-      const awayPpp = awayEpaOff !== null
-        ? Math.max(0, Math.min(0.7, 7 * awayEpaOff))
-        : awayYppOff !== null
-          ? Math.min(0.7, 0.8 * awayYppOff)
-          : 0.4;
-      
-      // Unit handshake: rates should be in [-1, 1] range (points per play, EPA can be negative)
-      const homePppValid = homePpp >= -1 && homePpp <= 1;
-      const awayPppValid = awayPpp >= -1 && awayPpp <= 1;
-      // Counts should be in [10, 100] plays per team range (relaxed to catch pace unit errors)
-      const homePaceValid = homePaceOff >= 10 && homePaceOff <= 100;
-      const awayPaceValid = awayPaceOff >= 10 && awayPaceOff <= 100;
-      const homePaceUnitError = homePaceOffRaw < 10;
-      const awayPaceUnitError = awayPaceOffRaw < 10;
-      
-      const baseTeamScores = {
-        home: homePpp * homePaceOff,
-        away: awayPpp * awayPaceOff
-      };
-      
-      // Unit handshake: final team points should be in [0, 70] before any adjustments
-      const homeScoreValid = baseTeamScores.home >= 0 && baseTeamScores.home <= 70;
-      const awayScoreValid = baseTeamScores.away >= 0 && baseTeamScores.away <= 70;
-      
-      // Store typed values with units annotations
-      totalDiag.steps.push({
-        name: 'team_rate_ppp',
-        home_rate_ppp: homePpp,
-        away_rate_ppp: awayPpp,
-        units: 'points_per_play',
-        units_valid: {
-          home: homePppValid,
-          away: awayPppValid,
-          expected_range: '≈ -0.5 to +1.5'
-        }
-      });
-      
-      totalDiag.steps.push({
-        name: 'expected_plays',
-        home_expected_plays: homePaceOff,
-        away_expected_plays: awayPaceOff,
-        home_pace_raw: homePaceOffRaw,
-        away_pace_raw: awayPaceOffRaw,
-        units: 'plays_per_game',
-        units_valid: {
-          home: homePaceValid,
-          away: awayPaceValid,
-          expected_range: '10-100 plays per team',
-          home_unit_error: homePaceUnitError ? `Raw pace ${homePaceOffRaw} < 10, using default 70` : null,
-          away_unit_error: awayPaceUnitError ? `Raw pace ${awayPaceOffRaw} < 10, using default 70` : null
-        }
-      });
-      
-      totalDiag.steps.push({
-        name: 'team_points_before_adj',
-        home_team_points: baseTeamScores.home,
-        away_team_points: baseTeamScores.away,
-        units: 'points',
-        calculation: 'rate × count',
-        units_valid: {
-          home: homeScoreValid,
-          away: awayScoreValid,
-          expected_range: '0-70 points per team'
-        }
-      });
-      
-      const finalTotal = baseTeamScores.home + baseTeamScores.away;
-      
-      totalDiag.steps.push({
-        name: 'modelTotal_sum',
-        modelTotal: finalTotal,
-        units: 'points',
-        calculation: 'sum(team_points)',
-        units_valid: {
-          totalValid: finalTotal >= 0 && finalTotal <= 120,
-          suspect: finalTotal < 5 || finalTotal > 120 ? 'suspect' : 'ok',
-          expected_range: '0-120 points total'
-        }
-      });
-    }
     
     // Use computed values if matchupOutput doesn't exist or has invalid values
     // Validate that matchupOutput values are in realistic ranges before using them
