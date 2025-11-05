@@ -303,7 +303,29 @@ export async function GET(
     }
     
     const finalImpliedSpread = (isValidSpread ? matchupOutput.impliedSpread : null) ?? computedSpread;
+    
+    // Never use matchupOutput.impliedTotal unless it passes the units handshake
+    // Only use computedTotal if matchupOutput fails validation
     const finalImpliedTotal = (isValidTotal ? matchupTotalRaw : null) ?? computedTotal;
+    
+    // Track which source we're using and if units failed
+    let totalSource = 'unknown';
+    let firstFailureStep: string | null = null;
+    if (isValidTotal && matchupTotalRaw !== null) {
+      totalSource = 'matchupOutput';
+    } else if (computedTotal !== null && !isNaN(computedTotal) && isFinite(computedTotal)) {
+      totalSource = 'computed';
+      // Check if computedTotal passes units validation
+      if (computedTotal < 15 || computedTotal > 120) {
+        firstFailureStep = 'modelTotal_sum';
+        totalDiag.firstFailureStep = firstFailureStep;
+        totalDiag.unitsInvalid = true;
+      }
+    } else {
+      firstFailureStep = 'all';
+      totalDiag.firstFailureStep = firstFailureStep;
+      totalDiag.unitsInvalid = true;
+    }
     
     // Note: marketTotal will be added to totalDiag after it's declared below
     totalDiag.modelTotal = finalImpliedTotal;
@@ -351,23 +373,35 @@ export async function GET(
     totalDiag.marketTotal = marketTotal;
     
     // Derive home_price and away_price from marketSpread (home-minus-away convention)
-    // If marketSpread = -30, then home_price = -30, away_price = +30
-    // If marketSpread = +30, then home_price = +30, away_price = -30
-    const homePrice = marketSpread; // Already in home-minus-away format
-    const awayPrice = -marketSpread; // Opposite sign
+    // marketSpread = homeScore - awayScore
+    // If marketSpread < 0: away team is favored (awayScore > homeScore)
+    // If marketSpread > 0: home team is favored (homeScore > awayScore)
+    // Favorite always has negative price in favorite-centric format
+    let homePrice: number;
+    let awayPrice: number;
     
-    // Favorite selection rule: team with more negative price
+    if (marketSpread < 0) {
+      // Away team is favored (e.g., OSU @ Purdue, OSU -29.5 → marketSpread = -29.5)
+      awayPrice = -Math.abs(marketSpread); // Negative (favorite)
+      homePrice = Math.abs(marketSpread); // Positive (underdog)
+    } else {
+      // Home team is favored (e.g., Alabama -10 → marketSpread = +10)
+      homePrice = -Math.abs(marketSpread); // Negative (favorite)
+      awayPrice = Math.abs(marketSpread); // Positive (underdog)
+    }
+    
+    // Favorite selection rule: team with more negative price (always the favorite)
     const homeIsFavorite = homePrice < awayPrice;
     const favoriteByRule = homeIsFavorite ? {
       teamId: game.homeTeamId,
       teamName: game.homeTeam.name,
       price: homePrice,
-      line: -Math.abs(homePrice) // Favorite-centric: always negative
+      line: homePrice // Already negative (favorite-centric)
     } : {
       teamId: game.awayTeamId,
       teamName: game.awayTeam.name,
       price: awayPrice,
-      line: -Math.abs(awayPrice) // Favorite-centric: always negative
+      line: awayPrice // Already negative (favorite-centric)
     };
     
     // Tolerance check: abs(homePrice + awayPrice) should be <= 0.5
@@ -538,13 +572,17 @@ export async function GET(
     };
 
     // Invariant guard: Verify favorite mapping is correct
-    // Assert: marketFavorite.line < 0 (favorite lines must be negative)
-    // Assert: The team with more negative price matches marketFavorite.teamId
+    // Assert 1: marketFavorite.line < 0 (favorite lines must be negative)
+    // Assert 2: The team with more negative price matches marketFavorite.teamId
+    // Assert 3: marketSpread sign correctly determines favorite
     const favoriteLineValid = favoriteByRule.line < 0;
-    const expectedFavoriteFromSpread = homePrice < awayPrice ? game.homeTeamId : game.awayTeamId;
+    const expectedFavoriteFromSpread = marketSpread < 0 ? game.awayTeamId : game.homeTeamId;
     const favoriteMatchesExpected = favoriteByRule.teamId === expectedFavoriteFromSpread;
+    const spreadSignCorrect = (marketSpread < 0 && favoriteByRule.teamId === game.awayTeamId) ||
+                              (marketSpread > 0 && favoriteByRule.teamId === game.homeTeamId) ||
+                              (marketSpread === 0);
     
-    if (!favoriteLineValid || !favoriteMatchesExpected) {
+    if (!favoriteLineValid || !favoriteMatchesExpected || !spreadSignCorrect) {
       const telemetryEvent = {
         event: 'FAVORITE_MISMATCH',
         gameId,
@@ -553,6 +591,7 @@ export async function GET(
         homeTeamName: game.homeTeam.name,
         awayTeamId: game.awayTeamId,
         awayTeamName: game.awayTeam.name,
+        marketSpread: marketSpread,
         homePrice: homePrice,
         awayPrice: awayPrice,
         chosenFavorite: {
@@ -563,10 +602,16 @@ export async function GET(
         expectedFavorite: expectedFavoriteFromSpread,
         validation: {
           favoriteLineValid,
-          favoriteMatchesExpected
+          favoriteMatchesExpected,
+          spreadSignCorrect
         }
       };
       console.error(`[Game ${gameId}] ⚠️ FAVORITE_MISMATCH:`, JSON.stringify(telemetryEvent, null, 2));
+      
+      // In dev, fail loud; in prod, warn
+      if (process.env.NODE_ENV !== 'production') {
+        throw new Error(`FAVORITE_MISMATCH: Invalid favorite mapping for game ${gameId}`);
+      }
     }
     
     // Log validation of favorite mapping
