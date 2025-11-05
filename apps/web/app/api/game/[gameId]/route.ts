@@ -59,9 +59,142 @@ export async function GET(
 
     const matchupOutput = game.matchupOutputs[0];
     
-    // Use helper to pick best market lines (prefers SGO, then latest)
-    const spreadLine = pickMarketLine(game.marketLines, 'spread');
-    const totalLine = pickMarketLine(game.marketLines, 'total');
+    // ============================================
+    // BUILD SINGLE SOURCE OF TRUTH SNAPSHOT (MARKET)
+    // ============================================
+    type OddsGroup = {
+      key: string;
+      source: string | null;
+      bookName: string | null;
+      spreadLines: typeof game.marketLines;
+      totalLines: typeof game.marketLines;
+      moneylineLines: typeof game.marketLines;
+    };
+
+    const groupedByBook = new Map<string, OddsGroup>();
+
+    for (const line of game.marketLines) {
+      const sourceKey = (line.source || 'unknown').toLowerCase();
+      const bookKey = (line.bookName || 'unknown').toLowerCase();
+      const groupKey = `${sourceKey}::${bookKey}`;
+
+      if (!groupedByBook.has(groupKey)) {
+        groupedByBook.set(groupKey, {
+          key: groupKey,
+          source: line.source || null,
+          bookName: line.bookName || null,
+          spreadLines: [],
+          totalLines: [],
+          moneylineLines: [],
+        });
+      }
+
+      const group = groupedByBook.get(groupKey)!;
+      if (line.lineType === 'spread') {
+        group.spreadLines.push(line);
+      } else if (line.lineType === 'total') {
+        group.totalLines.push(line);
+      } else if (line.lineType === 'moneyline') {
+        group.moneylineLines.push(line);
+      }
+    }
+
+    const pickPreferredLine = (lines: typeof game.marketLines) => {
+      if (!lines || lines.length === 0) return null;
+      const withClosing = lines.filter((line) => line.closingLine !== null && line.closingLine !== undefined);
+      const candidates = withClosing.length > 0 ? withClosing : lines;
+      return candidates.reduce((latest, line) => {
+        if (!latest) return line;
+        return new Date(line.timestamp).getTime() > new Date(latest.timestamp).getTime() ? line : latest;
+      }, null as typeof candidates[0] | null);
+    };
+
+    let selectedSpreadLine: typeof game.marketLines[number] | null = null;
+    let selectedTotalLine: typeof game.marketLines[number] | null = null;
+    let selectedMoneylineLine: typeof game.marketLines[number] | null = null;
+    let selectedGroupSource: string | null = null;
+    let selectedGroupBook: string | null = null;
+    let selectedGroupTimestamp = 0;
+
+    let bestCoverageScore = -1;
+    let bestLatestTimestamp = 0;
+
+    groupedByBook.forEach((group) => {
+      const spreadCandidate = pickPreferredLine(group.spreadLines);
+      const totalCandidate = pickPreferredLine(group.totalLines);
+      const moneylineCandidate = pickPreferredLine(group.moneylineLines);
+
+      const coverageScore = (spreadCandidate ? 100 : 0) + (totalCandidate ? 10 : 0) + (moneylineCandidate ? 1 : 0);
+      const latestTimestamp = Math.max(
+        spreadCandidate ? new Date(spreadCandidate.timestamp).getTime() : 0,
+        totalCandidate ? new Date(totalCandidate.timestamp).getTime() : 0,
+        moneylineCandidate ? new Date(moneylineCandidate.timestamp).getTime() : 0
+      );
+
+      if (
+        coverageScore > bestCoverageScore ||
+        (coverageScore === bestCoverageScore && latestTimestamp > bestLatestTimestamp)
+      ) {
+        bestCoverageScore = coverageScore;
+        bestLatestTimestamp = latestTimestamp;
+        selectedSpreadLine = spreadCandidate;
+        selectedTotalLine = totalCandidate;
+        selectedMoneylineLine = moneylineCandidate;
+        selectedGroupSource = group.source || null;
+        selectedGroupBook = group.bookName || null;
+        selectedGroupTimestamp = latestTimestamp;
+      }
+    });
+
+    const diagnosticsMessages: string[] = [];
+    let totalSourceMismatch = false;
+    let moneylineSourceMismatch = false;
+
+    // Fallbacks if any market is missing from the primary group
+    const fallbackSpreadLine = pickMarketLine(game.marketLines, 'spread');
+    if (!selectedSpreadLine && fallbackSpreadLine) {
+      selectedSpreadLine = fallbackSpreadLine;
+      selectedGroupSource = fallbackSpreadLine.source || null;
+      selectedGroupBook = fallbackSpreadLine.bookName || null;
+      selectedGroupTimestamp = new Date(fallbackSpreadLine.timestamp).getTime();
+      diagnosticsMessages.push('Primary odds source missing spread — using fallback snapshot.');
+    }
+
+    if (!selectedSpreadLine) {
+      throw new Error(`No spread market available for game ${gameId}`);
+    }
+
+    if (!selectedTotalLine) {
+      const fallbackTotalLine = pickMarketLine(game.marketLines, 'total');
+      if (fallbackTotalLine) {
+        selectedTotalLine = fallbackTotalLine;
+        diagnosticsMessages.push(`Odds source mismatch: total line sourced from ${fallbackTotalLine.bookName || 'Unknown book'}.`);
+        totalSourceMismatch = true;
+      }
+    }
+
+    if (!selectedMoneylineLine) {
+      const fallbackMoneylineLine = pickMoneyline(game.marketLines);
+      if (fallbackMoneylineLine) {
+        selectedMoneylineLine = fallbackMoneylineLine;
+        diagnosticsMessages.push(`Odds source mismatch: moneyline sourced from ${fallbackMoneylineLine.bookName || 'Unknown book'}.`);
+        moneylineSourceMismatch = true;
+      }
+    }
+
+    const spreadLine = selectedSpreadLine;
+    const totalLine = selectedTotalLine;
+    const mlLine = selectedMoneylineLine;
+
+    const mlVal = mlLine ? getLineValue(mlLine) : null;
+
+    const bookSource = [selectedGroupBook, selectedGroupSource].filter(Boolean).join(' • ') || spreadLine.bookName || 'Unknown';
+    const oddsTimestamps: number[] = [];
+    if (spreadLine?.timestamp) oddsTimestamps.push(new Date(spreadLine.timestamp).getTime());
+    if (totalLine?.timestamp) oddsTimestamps.push(new Date(totalLine.timestamp).getTime());
+    if (mlLine?.timestamp) oddsTimestamps.push(new Date(mlLine.timestamp).getTime());
+    const updatedAtDate = oddsTimestamps.length > 0 ? new Date(Math.max(...oddsTimestamps)) : new Date(selectedGroupTimestamp || Date.now());
+    const snapshotId = `${bookSource}::${updatedAtDate.toISOString()}`;
 
     // Get power ratings from team_season_ratings (Ratings v1)
     const [homeRating, awayRating] = await Promise.all([
@@ -368,8 +501,13 @@ export async function GET(
     }
 
     // Get line values (prefers closingLine, falls back to lineValue)
-    const marketSpread = getLineValue(spreadLine) ?? 0;
-    const marketTotal = getLineValue(totalLine) ?? 45;
+    const marketSpreadValue = getLineValue(spreadLine);
+    if (marketSpreadValue === null || marketSpreadValue === undefined) {
+      throw new Error(`Selected snapshot missing spread value for game ${gameId}`);
+    }
+    const marketSpread = marketSpreadValue;
+    const marketTotalRaw = totalLine ? getLineValue(totalLine) : null;
+    const marketTotal = marketTotalRaw !== null && marketTotalRaw !== undefined ? marketTotalRaw : null;
     
     // Add marketTotal to diagnostics now that it's declared
     totalDiag.marketTotal = marketTotal;
@@ -456,9 +594,7 @@ export async function GET(
       timestamp: totalLine.timestamp ?? null,
     } : null;
 
-    // Pick moneyline and extract metadata
-    const mlLine = pickMoneyline(game.marketLines);
-    const mlVal = getLineValue(mlLine); // American odds (negative favorite, positive dog)
+    // mlVal computed earlier (single snapshot moneyline value)
     const mlMeta = mlLine ? {
       source: mlLine.source ?? null,
       bookName: mlLine.bookName ?? null,
@@ -637,12 +773,30 @@ export async function GET(
     const dogTeamName = favoriteByRule.teamId === game.homeTeamId ? game.awayTeam.name : game.homeTeam.name;
     const dogLine = Math.abs(favoriteByRule.line); // Always positive (underdog getting points)
     
-    // Create timestamp/snapshot ID
-    const snapshotTimestamp = spreadLine?.timestamp || new Date();
-    const snapshotId = typeof snapshotTimestamp === 'string' 
-      ? snapshotTimestamp 
-      : snapshotTimestamp.toISOString();
-    
+    let moneylineFavoritePrice: number | null = null;
+    let moneylineDogPrice: number | null = null;
+    let moneylineFavoriteTeamId: string | null = null;
+    let moneylineDogTeamId: string | null = null;
+    if (mlVal !== null && mlVal !== undefined) {
+      if (mlVal < 0) {
+        moneylineFavoriteTeamId = game.homeTeamId;
+        moneylineDogTeamId = game.awayTeamId;
+        moneylineFavoritePrice = mlVal;
+      } else if (mlVal > 0) {
+        moneylineFavoriteTeamId = game.awayTeamId;
+        moneylineDogTeamId = game.homeTeamId;
+        moneylineDogPrice = mlVal;
+      }
+    }
+
+    if (moneylineFavoriteTeamId && moneylineFavoriteTeamId !== favoriteByRule.teamId) {
+      diagnosticsMessages.push('Moneyline favorite differs from spread favorite in selected snapshot.');
+    }
+
+    if (mlVal !== null && moneylineDogPrice === null) {
+      diagnosticsMessages.push('Moneyline dog price unavailable from selected snapshot.');
+    }
+
     const market_snapshot = {
       favoriteTeamId: favoriteByRule.teamId,
       favoriteTeamName: favoriteByRule.teamName,
@@ -651,8 +805,13 @@ export async function GET(
       favoriteLine: favoriteByRule.line, // < 0 (favorite-centric)
       dogLine: dogLine, // > 0 (underdog getting points)
       marketTotal: marketTotal !== null ? marketTotal : null,
-      bookSource: spreadLine?.bookName || 'Unknown',
-      updatedAt: snapshotId
+      moneylineFavorite: moneylineFavoritePrice,
+      moneylineDog: moneylineDogPrice,
+      moneylineFavoriteTeamId,
+      moneylineDogTeamId,
+      bookSource,
+      updatedAt: updatedAtDate.toISOString(),
+      snapshotId
     };
 
     // Calculate ATS edge (favorite-centric): positive means model thinks favorite should lay more
@@ -765,8 +924,9 @@ export async function GET(
     if (unitsIssue) {
       calcError = true;
       const valueDisplay = finalImpliedTotal !== null ? finalImpliedTotal.toFixed(1) : 'unknown';
-      modelTotalWarning = `Computation not in points (e.g., ${valueDisplay} is a rate).`;
-      unitsNote = `Model returned ${valueDisplay} (rate/ratio), not points.`;
+      const unitsFailureCopy = `model returned ${valueDisplay}, which isn’t in points (likely a rate/ratio). We’re not going to guess.`;
+      modelTotalWarning = unitsFailureCopy;
+      unitsNote = unitsFailureCopy;
     } else if (computationFailed) {
       calcError = true;
       if (consistencyDelta !== null && consistencyDelta > 0.5) {
@@ -813,7 +973,7 @@ export async function GET(
 
     // Total edge: Model Total - Market Total (positive = model thinks over, negative = under)
     // Compute if model total exists (no range checks)
-    const totalEdgePts = isModelTotalValid ? (finalImpliedTotal - marketTotal) : null;
+    const totalEdgePts = isModelTotalValid && marketTotal !== null ? (finalImpliedTotal - marketTotal) : null;
     
     // ============================================
     // SINGLE SOURCE OF TRUTH: model_view
@@ -834,6 +994,10 @@ export async function GET(
     
     // Model total (null if units invalid)
     const modelTotal = isModelTotalValid ? finalImpliedTotal : null;
+    const winProbFavorite = modelFavoriteTeamId
+      ? (modelFavoriteTeamId === game.homeTeamId ? modelHomeWinProb : modelAwayWinProb)
+      : null;
+    const winProbDog = winProbFavorite !== null ? 1 - winProbFavorite : null;
     
     // Edges (favorite-centric)
     // atsEdgePts: modelFavoriteLine - marketFavoriteLine (positive = model thinks favorite should lay more)
@@ -851,6 +1015,8 @@ export async function GET(
       modelFavoriteName: modelFavoriteName,
       modelFavoriteLine: modelFavoriteLine, // Favorite-centric, negative (or 0.0 for pick'em)
       modelTotal: modelTotal, // Points or null if units invalid
+      winProbFavorite,
+      winProbDog,
       edges: {
         atsEdgePts: atsEdgePts, // Favorite-centric edge
         ouEdgePts: ouEdgePts // Over/Under edge
@@ -860,41 +1026,78 @@ export async function GET(
     // ============================================
     // SINGLE SOURCE OF TRUTH: diagnostics
     // ============================================
+    const mappingNotes: string[] = [];
+    if (!favoriteLineValid) {
+      mappingNotes.push(`Favorite line is not negative: ${favoriteByRule.line}`);
+    }
+    if (!favoriteMatchesExpected) {
+      mappingNotes.push(`Favorite team mismatch: expected ${expectedFavoriteFromSpread}, got ${favoriteByRule.teamId}`);
+    }
+    if (!spreadSignCorrect) {
+      mappingNotes.push(`Spread sign mismatch: marketSpread=${marketSpread}, favoriteTeamId=${favoriteByRule.teamId}`);
+    }
+    if (totalSourceMismatch) {
+      mappingNotes.push('Total line sourced from a different book than the spread snapshot.');
+    }
+    if (moneylineSourceMismatch) {
+      mappingNotes.push('Moneyline sourced from a different book than the spread snapshot.');
+    }
+    const moneylineMatchesFavorite = !moneylineFavoriteTeamId || moneylineFavoriteTeamId === favoriteByRule.teamId;
+    if (!moneylineMatchesFavorite) {
+      mappingNotes.push('Moneyline favorite does not match spread favorite in selected snapshot.');
+    }
+
+    const mappingPassed = mappingNotes.length === 0;
+    if (!mappingPassed) {
+      diagnosticsMessages.push('Rendering mismatch detected — a component tried to recompute favorite locally. Using server snapshot instead.');
+    }
+
     const diagnostics = {
-      unitsInvalid: unitsIssue || computationFailed || missingInputs.length > 0,
-      unitsNote: unitsNote,
-      mappingAssertionsPassed: favoriteLineValid && favoriteMatchesExpected && spreadSignCorrect,
-      snapshotId: snapshotId,
-      messages: [] as string[]
+      snapshotId,
+      mappingAssertions: {
+        passed: mappingPassed,
+        notes: mappingNotes
+      },
+      totalsUnits: {
+        isPoints: isModelTotalValid,
+        reason: !isModelTotalValid ? unitsNote : undefined,
+        modelValue: finalImpliedTotal
+      },
+      messages: diagnosticsMessages
     };
-    
-    // Add messages if assertions failed
-    if (!diagnostics.mappingAssertionsPassed) {
-      if (!favoriteLineValid) {
-        diagnostics.messages.push(`Favorite line is not negative: ${favoriteByRule.line}`);
-      }
-      if (!favoriteMatchesExpected) {
-        diagnostics.messages.push(`Favorite team mismatch: expected ${expectedFavoriteFromSpread}, got ${favoriteByRule.teamId}`);
-      }
-      if (!spreadSignCorrect) {
-        diagnostics.messages.push(`Spread sign mismatch: marketSpread=${marketSpread}, favoriteTeamId=${favoriteByRule.teamId}`);
-      }
+
+    if (!isModelTotalValid && unitsNote) {
+      console.log('[TELEMETRY]', JSON.stringify({
+        event: 'total_units_failure',
+        gameId,
+        snapshotId,
+        modelValue: finalImpliedTotal,
+        marketTotal,
+        reason: unitsNote
+      }));
     }
     
     // Determine "No edge" condition: edge < 2.0 OR model total ≈ market total within 0.5
-    const hasNoEdge = isModelTotalValid && totalEdgePts !== null && 
+    const hasNoEdge = isModelTotalValid && totalEdgePts !== null && marketTotal !== null && 
                       (Math.abs(totalEdgePts) < edgeFloor || Math.abs(finalImpliedTotal - marketTotal) < 0.5);
     
     // Compute total pick details (only if model total is valid and has edge)
-    const totalPick = isModelTotalValid && !hasNoEdge
+    const totalPick = isModelTotalValid && !hasNoEdge && marketTotal !== null
       ? computeTotalPick(finalImpliedTotal, marketTotal)
       : { totalPick: null, totalPickLabel: null, edgeDisplay: null };
     
     // Compute "Bet to" for total (only if valid and has edge)
-    const totalBetTo = isModelTotalValid && totalEdgePts !== null && Math.abs(totalEdgePts) >= edgeFloor && !hasNoEdge
+    const totalBetTo = isModelTotalValid && totalEdgePts !== null && Math.abs(totalEdgePts) >= edgeFloor && !hasNoEdge && marketTotal !== null
       ? computeTotalBetTo(finalImpliedTotal, marketTotal, edgeFloor)
       : null;
     
+    if (isModelTotalValid && marketTotal !== null) {
+      const totalDelta = Math.abs(finalImpliedTotal - marketTotal);
+      if (totalDelta > 20) {
+        diagnosticsMessages.push(`Model total is far from market (Δ ${totalDelta.toFixed(1)} pts). Treat with caution.`);
+      }
+    }
+
     // Determine OU card state: "pick" | "no_edge" | "no_model_total"
     const totalState: 'pick' | 'no_edge' | 'no_model_total' = 
       !isModelTotalValid ? 'no_model_total' :
@@ -916,9 +1119,9 @@ export async function GET(
     // Calculate lean when model total is suppressed (Task #4)
     // Use median CFB total of 55 as baseline
     const medianConfTotal = 55.0;
-    const marketTotalDeviation = Math.abs(marketTotal - medianConfTotal);
-    const hasLean = marketTotalDeviation >= 3.0;
-    const leanDirection = hasLean 
+    const marketTotalDeviation = marketTotal !== null ? Math.abs(marketTotal - medianConfTotal) : null;
+    const hasLean = marketTotalDeviation !== null && marketTotalDeviation >= 3.0;
+    const leanDirection = hasLean && marketTotal !== null
       ? (marketTotal > medianConfTotal ? 'Under' : 'Over')
       : null;
     
@@ -1043,6 +1246,13 @@ export async function GET(
       week: game.week,
       timestamp: new Date().toISOString(),
       data: {
+        snapshot: {
+          id: snapshotId,
+          bookSource,
+          spreadLine: marketSpread,
+          totalLine: marketTotal,
+          moneylinePrice: mlVal
+        },
         // Totals
         modelTotal: finalImpliedTotal,
         marketTotal,
@@ -1608,32 +1818,46 @@ export async function GET(
       }
     }
     
-    // Assert 2: ATS Ticket headline alignment (if model has edge)
-    // This will be validated in UI binding, but we can check here that edges are computed correctly
-    let assertion2 = true;
-    let assertion2Message = '';
-    if (model_view.edges.atsEdgePts !== null) {
-      // If atsEdgePts > +0.5, value on dog → headline should be dogTeam +dogLine
-      // If atsEdgePts < -0.5, value on favorite → headline should be favoriteTeam favoriteLine
-      const valueOnDog = model_view.edges.atsEdgePts > 0.5;
-      const valueOnFavorite = model_view.edges.atsEdgePts < -0.5;
-      // We'll validate this in the response structure
-      assertion2 = true; // Will be validated by UI
-      assertion2Message = `ATS edge: ${model_view.edges.atsEdgePts.toFixed(1)}, value on ${valueOnDog ? 'dog' : valueOnFavorite ? 'favorite' : 'no edge'}`;
+    // Assert 2: ATS edge matches SSOT definition (modelFavoriteLine − market favorite line)
+    const expectedAtsEdge = model_view.edges.atsEdgePts !== null
+      ? model_view.modelFavoriteLine - market_snapshot.favoriteLine
+      : null;
+    const assertion2 = model_view.edges.atsEdgePts === null
+      ? true
+      : Math.abs(model_view.edges.atsEdgePts - (model_view.modelFavoriteLine - market_snapshot.favoriteLine)) < 1e-6;
+
+    // Assert 3: Snapshot identifier is present for all consumers
+    const assertion3 = Boolean(diagnostics.snapshotId);
+
+    // Assert 4: Model favorite identity matches favorite-centric conversion
+    const assertion4 = model_view.modelFavoriteTeamId === null
+      ? model_view.modelFavoriteLine === 0
+      : model_view.modelFavoriteTeamId === modelSpreadFC.favoriteTeamId;
+
+    const assertionFailures: string[] = [];
+    if (!assertion1) {
+      assertionFailures.push(`Assertion 1 failed: favoriteLine=${market_snapshot.favoriteLine}, dogLine=${market_snapshot.dogLine}`);
     }
-    
-    // Assert 3: All consumers read the same snapshotId
-    const assertion3 = true; // Ensured by using same snapshotId throughout
-    
-    if (!assertion1 || !assertion2 || !assertion3) {
-      console.error(`[Game ${gameId}] ⚠️ Assertions failed:`, {
-        assertion1,
-        assertion2,
-        assertion3,
+    if (!assertion2) {
+      assertionFailures.push(`Assertion 2 failed: atsEdgePts=${model_view.edges.atsEdgePts}, expected=${expectedAtsEdge}`);
+    }
+    if (!assertion3) {
+      assertionFailures.push('Assertion 3 failed: snapshotId missing');
+    }
+    if (!assertion4) {
+      assertionFailures.push('Assertion 4 failed: model favorite not aligned with favorite-centric conversion');
+    }
+
+    if (assertionFailures.length > 0) {
+      console.error(`[Game ${gameId}] ⚠️ SSOT assertions failed:`, {
+        failures: assertionFailures,
         snapshotId,
         market_snapshot,
         model_view
       });
+      if (process.env.NODE_ENV !== 'production') {
+        throw new Error(assertionFailures.join(' | '));
+      }
     }
 
     const response = {
@@ -1745,11 +1969,11 @@ export async function GET(
           
           // Calculate drift amounts for per-card CLV hints
           const spreadDrift = marketSpread - openingSpread;
-          const totalDrift = marketTotal - openingTotal;
+          const totalDrift = marketTotal !== null && openingTotal !== null ? marketTotal - openingTotal : null;
           
           // Thresholds: spread ≥ 0.5 pts, total ≥ 1.0 pt
           const spreadDriftSignificant = Math.abs(spreadDrift) >= 0.5 && spreadMovedTowardModel;
-          const totalDriftSignificant = Math.abs(totalDrift) >= 1.0 && totalMovedTowardModel;
+          const totalDriftSignificant = totalDrift !== null && Math.abs(totalDrift) >= 1.0 && totalMovedTowardModel;
           
           if (spreadMovedTowardModel || totalMovedTowardModel) {
             return {
@@ -1759,7 +1983,7 @@ export async function GET(
               openingSpread,
               closingSpread: marketSpread,
               openingTotal,
-              closingTotal: marketTotal,
+              closingTotal: marketTotal !== null ? marketTotal : null,
               modelSpread: finalImpliedSpread,
               modelTotal: finalImpliedTotal,
               // Per-card CLV data
@@ -1769,9 +1993,9 @@ export async function GET(
                 drift: spreadDrift,
                 significant: true
               } : null,
-              totalDrift: totalDriftSignificant ? {
+              totalDrift: totalDriftSignificant && totalDrift !== null ? {
                 opening: openingTotal,
-                closing: marketTotal,
+                closing: marketTotal !== null ? marketTotal : null,
                 drift: totalDrift,
                 significant: true
               } : null
@@ -1850,8 +2074,8 @@ export async function GET(
           } : null,
           // Rationale line for ticket
           rationale: totalState === 'pick' && totalEdgePts !== null && totalPick.totalPickLabel
-            ? `Model total ${finalImpliedTotal.toFixed(1)} vs market ${marketTotal.toFixed(1)} (${totalEdgePts >= 0 ? '+' : ''}${totalEdgePts.toFixed(1)}) → ${totalPick.totalPick} value.`
-            : totalState === 'no_edge' && isModelTotalValid
+            ? `Model total ${finalImpliedTotal.toFixed(1)} vs market ${marketTotal !== null ? marketTotal.toFixed(1) : 'N/A'} (${totalEdgePts >= 0 ? '+' : ''}${totalEdgePts.toFixed(1)}) → ${totalPick.totalPick} value.`
+            : totalState === 'no_edge' && isModelTotalValid && marketTotal !== null
             ? `Model ${finalImpliedTotal.toFixed(1)} vs market ${marketTotal.toFixed(1)} (Δ ${Math.abs(finalImpliedTotal - marketTotal).toFixed(1)}).`
             : null
         },

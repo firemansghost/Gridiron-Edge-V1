@@ -191,6 +191,60 @@ export default function GameDetailPage() {
     );
   }
 
+  const snapshot = game.market_snapshot;
+  const diagnostics = game.diagnostics ?? {};
+  const allDiagnosticsMessages: string[] = Array.isArray(diagnostics.messages) ? diagnostics.messages : [];
+  const modelView = game.model_view ?? {};
+  const atsEdgePts = modelView.edges?.atsEdgePts ?? null;
+  const ouEdgePts = modelView.edges?.ouEdgePts ?? null;
+  const atsEdgeValue = atsEdgePts;
+  const ouEdgeValue = ouEdgePts;
+  const atsEdgeForDisplay = atsEdgeValue ?? game.picks?.spread?.edgePts ?? 0;
+  const ouEdgeForDisplay = ouEdgeValue ?? game.picks?.total?.edgePts ?? 0;
+  const atsEdgeMagnitude = Math.abs(atsEdgeForDisplay);
+  const ouEdgeMagnitude = Math.abs(ouEdgeForDisplay);
+  const atsEdgeSign = atsEdgeValue ?? 0;
+  const ouEdgeSign = ouEdgeValue ?? 0;
+  const atsValueSide = atsEdgeValue !== null
+    ? (atsEdgeValue > 0.5 ? 'dog' : atsEdgeValue < -0.5 ? 'favorite' : null)
+    : null;
+  const ouValueSide = ouEdgeValue !== null
+    ? (ouEdgeValue > 0.5 ? 'Over' : ouEdgeValue < -0.5 ? 'Under' : null)
+    : null;
+  const formatUpdated = (iso: string | undefined | null) => {
+    if (!iso) return 'Unknown';
+    try {
+      const date = new Date(iso);
+      return date.toLocaleString('en-US', {
+        timeZone: 'America/Chicago',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      });
+    } catch (err) {
+      return 'Unknown';
+    }
+  };
+  const bookStamp = snapshot
+    ? `${snapshot.bookSource || 'Unknown'} • Updated ${formatUpdated(snapshot.updatedAt)} • Snapshot ${snapshot.snapshotId}`
+    : null;
+  const totalsReason = diagnostics.totalsUnits?.reason;
+  const totalsCaution = allDiagnosticsMessages.find((msg) => msg.includes('Model total is far from market'));
+  const diagnosticsMessages = totalsCaution
+    ? allDiagnosticsMessages.filter((msg) => msg !== totalsCaution)
+    : allDiagnosticsMessages;
+  const formatMoneyline = (price: number | null | undefined) => {
+    if (price === null || price === undefined) return '—';
+    return `${price > 0 ? '+' : ''}${price}`;
+  };
+  const spreadBetTo = game.picks?.spread?.betTo ?? null;
+  const totalBetTo = game.picks?.total?.betTo ?? null;
+  const maxEdgeValue = Math.max(atsEdgeMagnitude, ouEdgeMagnitude);
+  const strongerEdgeLabel = atsEdgeMagnitude >= ouEdgeMagnitude ? 'ATS' : 'OU';
+  const hasEdgeData = (atsEdgeValue !== null && !Number.isNaN(atsEdgeValue)) || (ouEdgeValue !== null && !Number.isNaN(ouEdgeValue));
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <HeaderNav />
@@ -261,7 +315,7 @@ export default function GameDetailPage() {
                     {game.validation.edgeAbsGt20 && (
                       <div className="flex items-center gap-2">
                         <span className="font-medium">⚠️ Large Edge Detected:</span>
-                        <span>Edge magnitude exceeds 20 points (ATS: {game.edge?.atsEdge?.toFixed(1)} pts, Total: {game.edge?.totalEdge?.toFixed(1)} pts)</span>
+                        <span>Edge magnitude exceeds 20 points (ATS: {atsEdgeValue !== null ? atsEdgeValue.toFixed(1) : '0.0'} pts, Total: {ouEdgeValue !== null ? ouEdgeValue.toFixed(1) : '0.0'} pts)</span>
                       </div>
                     )}
                   </div>
@@ -270,6 +324,19 @@ export default function GameDetailPage() {
                   </p>
                 </div>
               </div>
+            </div>
+          )}
+
+          {diagnosticsMessages.length > 0 && (
+            <div className="space-y-2 mb-6">
+              {diagnosticsMessages.map((msg, index) => (
+                <div
+                  key={index}
+                  className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+                >
+                  {msg}
+                </div>
+              ))}
             </div>
           )}
 
@@ -388,11 +455,16 @@ export default function GameDetailPage() {
               Betting Lines
               <InfoTooltip content={TOOLTIP_CONTENT.MARKET_LINES} />
             </h3>
+            {bookStamp && (
+              <div className="text-xs text-blue-700 mb-2 sm:mb-3">{bookStamp}</div>
+            )}
             <div className="grid grid-cols-3 gap-2 sm:gap-4">
               <div className="bg-white p-3 rounded border border-blue-100">
                 <div className="text-xs text-gray-600 mb-1">Spread</div>
                 <div className="text-xl font-bold text-gray-900">
-                  {game.market.spread > 0 ? '+' : ''}{game.market.spread.toFixed(1)}
+                  {snapshot?.favoriteLine !== undefined && snapshot?.favoriteLine !== null
+                    ? snapshot.favoriteLine.toFixed(1)
+                    : '—'}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
                   {game.market_snapshot?.favoriteTeamName ? `${game.market_snapshot.favoriteTeamName} favored` : 'Favorite unavailable'}
@@ -407,15 +479,28 @@ export default function GameDetailPage() {
               <div className="bg-white p-3 rounded border border-blue-100">
                 <div className="text-xs text-gray-600 mb-1">Total (Over/Under)</div>
                 <div className="text-xl font-bold text-gray-900">
-                  {game.market.total.toFixed(1)}
+                  {snapshot?.marketTotal !== undefined && snapshot?.marketTotal !== null
+                    ? snapshot.marketTotal.toFixed(1)
+                    : '—'}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
-                  Combined points
+                  {snapshot?.marketTotal !== undefined && snapshot?.marketTotal !== null
+                    ? `Market total ${snapshot.marketTotal.toFixed(1)}`
+                    : 'Total unavailable'}
                 </div>
               </div>
               <div className="bg-white p-3 rounded border border-blue-100">
                 <div className="text-xs text-gray-600 mb-1">Moneyline</div>
-                {game.market.moneyline ? (
+                {snapshot && (snapshot.moneylineFavorite !== null || snapshot.moneylineDog !== null) ? (
+                  <>
+                    <div className="text-sm text-gray-700">
+                      {snapshot.favoriteTeamName}: <span className="font-semibold text-gray-900">{formatMoneyline(snapshot.moneylineFavorite)}</span>
+                    </div>
+                    <div className="text-sm text-gray-700 mt-1">
+                      {snapshot.dogTeamName}: <span className="font-semibold text-gray-900">{formatMoneyline(snapshot.moneylineDog)}</span>
+                    </div>
+                  </>
+                ) : game.market.moneyline ? (
                   <>
                     <div className="text-xl font-bold text-gray-900">
                       {game.market.moneyline.pickLabel}
@@ -430,20 +515,8 @@ export default function GameDetailPage() {
                 )}
               </div>
             </div>
-            {game.market.meta?.spread && (
-              <div className="text-xs text-gray-500 mt-3 text-center">
-                Source: {game.market.meta.spread.source || 'Unknown'} • 
-                {game.market.meta.spread.timestamp && 
-                  ` Updated: ${new Date(game.market.meta.spread.timestamp).toLocaleString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    hour: 'numeric',
-                    minute: '2-digit',
-                    hour12: true,
-                    timeZone: 'America/Chicago'
-                  })}`
-                }
-              </div>
+            {bookStamp && (
+              <div className="text-xs text-gray-500 mt-3 text-center">{bookStamp}</div>
             )}
           </div>
 
@@ -455,18 +528,6 @@ export default function GameDetailPage() {
                 {game.modelConfig?.version && (
                   <span className="text-xs text-gray-500">
                     Model {game.modelConfig.version}
-                  </span>
-                )}
-                {game.market?.meta?.spread?.timestamp && (
-                  <span className="text-xs text-gray-500">
-                    • Updated {new Date(game.market.meta.spread.timestamp).toLocaleString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: 'numeric',
-                      minute: '2-digit',
-                      hour12: true,
-                      timeZone: 'America/Chicago'
-                    })}
                   </span>
                 )}
                 {renderRankChips(game.rankings?.home, game.game?.week, game.game?.season, 'CFBD', undefined)}
@@ -499,30 +560,23 @@ export default function GameDetailPage() {
                     </div>
                   </div>
                   <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Spread pick ${game.picks.spread.bettablePick.label}`}>
-                    {/* Value side logic: if atsEdgePts > +0.5, value on dog; if < -0.5, value on favorite */}
-                    {game.model_view?.edges?.atsEdgePts !== null && game.market_snapshot ? (
-                      game.model_view.edges.atsEdgePts > 0.5 ? (
-                        `${game.market_snapshot.dogTeamName} +${game.market_snapshot.dogLine.toFixed(1)}`
-                      ) : game.model_view.edges.atsEdgePts < -0.5 ? (
-                        `${game.market_snapshot.favoriteTeamName} ${game.market_snapshot.favoriteLine.toFixed(1)}`
-                      ) : (
-                        'No edge at current number.'
-                      )
+                    {snapshot && atsValueSide ? (
+                      atsValueSide === 'dog'
+                        ? `${snapshot.dogTeamName} +${snapshot.dogLine.toFixed(1)}`
+                        : `${snapshot.favoriteTeamName} ${snapshot.favoriteLine.toFixed(1)}`
                     ) : (
-                      game.picks.spread.bettablePick.label
+                      'No edge at current number.'
                     )}
                   </div>
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-sm text-gray-600">
-                      Edge: <span className={`font-semibold ${Math.abs(game.picks.spread.edgePts) >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                        {game.picks.spread.edgePts >= 0 ? '+' : ''}{Math.abs(game.picks.spread.edgePts).toFixed(1)} pts
-                      </span>
+                      Edge: <span className="font-semibold text-blue-600">{atsEdgeMagnitude.toFixed(1)} pts</span>
                     </span>
                     <InfoTooltip content="ATS Edge = Model line vs market line, expressed in points of advantage for this ticket's side. A ≥ 4.0 pts, B ≥ 3.0 pts, C ≥ 2.0 pts." />
                   </div>
-                  {game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && (
+                  {snapshot && atsValueSide && spreadBetTo !== null && spreadBetTo !== undefined && (
                     <div className="text-xs text-gray-500 mt-1 mb-2">
-                      Bet to: {game.picks.spread.betTo >= 0 ? '+' : ''}{game.picks.spread.betTo.toFixed(1)} (edge floor 2.0 pts)
+                      Bet to: {atsValueSide === 'dog' ? `+${spreadBetTo.toFixed(1)}` : spreadBetTo.toFixed(1)} (edge floor 2.0 pts)
                     </div>
                   )}
                   {game.picks.spread.rationale && (
@@ -553,11 +607,9 @@ export default function GameDetailPage() {
                     No model total this week
                   </div>
                   <div className="text-sm text-gray-600 mb-2">
-                    {game.picks.total.modelTotalWarning ? (
-                      <span>No model total this week — {game.picks.total.modelTotalWarning}</span>
-                    ) : (
-                      <span>No model total this week — Missing inputs for a reliable forecast.</span>
-                    )}
+                    <span>
+                      No model total this week — {totalsReason || game.picks.total.modelTotalWarning || 'Missing inputs for a reliable forecast.'}
+                    </span>
                   </div>
                   {game.picks.total.lean && (
                     <div className="text-xs text-gray-500 mt-2">
@@ -586,7 +638,7 @@ export default function GameDetailPage() {
                   </div>
                   {/* Subhead: No edge */}
                   <div className="text-sm text-gray-600 mb-2">
-                    No edge at current market total {game.picks.total.marketTotal?.toFixed(1) || 'N/A'}
+                    No edge at current number — market {snapshot?.marketTotal?.toFixed(1) ?? 'N/A'}
                   </div>
                   {/* Rationale line */}
                   {game.picks.total.rationale && (
@@ -627,23 +679,35 @@ export default function GameDetailPage() {
                     <InfoTooltip content="Our forecast of combined points this week (predicted pace, efficiency, and adjustments)." />
                   </div>
                   {/* Subhead: Pick/Edge/Bet-to */}
-                  {game.picks.total.totalPickLabel && game.picks.total.edgePts !== null ? (
-                    <div className="text-sm text-gray-600 mb-2">
-                      Pick: <span className="font-semibold text-gray-900">{game.picks.total.totalPickLabel}</span>
-                      {' • '}
-                      Edge: <span className={`font-semibold ${game.picks.total.edgePts >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {game.picks.total.edgePts >= 0 ? '+' : ''}{Math.abs(game.picks.total.edgePts).toFixed(1)} pts
-                      </span>
-                      <InfoTooltip content="How far market total must move to match the model. Positive = stronger value." />
-                      {game.picks.total.betTo !== null && game.picks.total.betTo !== undefined && (
-                        <>
-                          {' • '}
-                          Bet to: <span className="font-semibold text-gray-700">{game.picks.total.betTo.toFixed(1)}</span>
-                          <InfoTooltip content="Lowest (Under) or highest (Over) number to keep ≥2.0 pts edge." />
-                        </>
-                      )}
+                  <div className="text-sm text-gray-600 mb-2">
+                    {ouValueSide && snapshot?.marketTotal !== undefined && snapshot?.marketTotal !== null ? (
+                      <>
+                        Pick: <span className="font-semibold text-gray-900">{ouValueSide} {snapshot.marketTotal.toFixed(1)}</span>
+                        {' • '}
+                        Edge: <span className="font-semibold text-green-600">{ouEdgeMagnitude.toFixed(1)} pts</span>
+                        {totalBetTo !== null && totalBetTo !== undefined && (
+                          <>
+                            {' • '}
+                            Bet to: <span className="font-semibold text-gray-900">{totalBetTo.toFixed(1)}</span>
+                            {' '}(edge floor 2.0 pts)
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <>No edge at current number — market {snapshot?.marketTotal?.toFixed(1) ?? 'N/A'}</>
+                    )}
+                  </div>
+                  {ouValueSide && (
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 mb-2">
+                      <InfoTooltip content="Edge = difference between model total and current market total." />
+                      <span>Edge from model-vs-market; Bet to enforces the 2.0 pt edge floor.</span>
                     </div>
-                  ) : null}
+                  )}
+                  {totalsCaution && (
+                    <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-2">
+                      {totalsCaution}
+                    </div>
+                  )}
                   {/* Rationale line */}
                   {game.picks.total.rationale && (
                     <div className="text-xs text-gray-500 mt-2 italic border-t border-gray-200 pt-2">
@@ -852,25 +916,6 @@ export default function GameDetailPage() {
                         />
                       )}
                     </div>
-                    {game.market.meta?.spread && (
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="font-medium text-gray-700">
-                          {game.market.meta.spread.source || 'Unknown'}
-                        </span>
-                        <span className="text-gray-500">
-                          {game.market.meta.spread.timestamp 
-                            ? new Date(game.market.meta.spread.timestamp).toLocaleString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: 'numeric',
-                                minute: '2-digit',
-                                hour12: true,
-                                timeZone: 'America/Chicago'
-                              })
-                            : ''}
-                        </span>
-                      </div>
-                    )}
                   </div>
                 </div>
                 <div className="flex justify-between items-center">
@@ -878,8 +923,8 @@ export default function GameDetailPage() {
                     ATS Edge
                     <InfoTooltip content={TOOLTIP_CONTENT.ATS_EDGE_FORMULA} />
                   </div>
-                  <div className={`text-sm font-medium flex items-center gap-1 ${game.edge?.atsEdge >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                    {game.edge?.atsEdge >= 0 ? (
+                  <div className={`text-sm font-medium flex items-center gap-1 ${atsEdgeSign >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                    {atsEdgeSign >= 0 ? (
                       <>
                         <span aria-hidden="true">↑</span>
                         <span className="sr-only">Positive edge</span>
@@ -890,7 +935,7 @@ export default function GameDetailPage() {
                         <span className="sr-only">Negative edge</span>
                       </>
                     )}
-                    {game.edge?.atsEdge >= 0 ? '+' : ''}{game.edge?.atsEdge?.toFixed(1)} pts
+                    {atsEdgeSign >= 0 ? '+' : ''}{atsEdgeForDisplay.toFixed(1)} pts
                   </div>
                 </div>
               </div>
@@ -909,7 +954,7 @@ export default function GameDetailPage() {
                     <InfoTooltip content={TOOLTIP_CONTENT.MODEL_TOTAL} />
                   </div>
                   <div className="text-lg font-semibold text-gray-900">
-                    {game.model?.total !== null && game.model?.total !== undefined ? game.model.total.toFixed(1) : '—'}
+                    {modelView.modelTotal !== null && modelView.modelTotal !== undefined ? modelView.modelTotal.toFixed(1) : '—'}
                   </div>
                 </div>
                 <div className="flex justify-between items-center">
@@ -919,7 +964,7 @@ export default function GameDetailPage() {
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <div className="flex items-center gap-3">
-                      <div className="text-lg font-semibold text-gray-900">{game.market.total.toFixed(1)}</div>
+                    <div className="text-lg font-semibold text-gray-900">{snapshot?.marketTotal !== null && snapshot?.marketTotal !== undefined ? snapshot.marketTotal.toFixed(1) : '—'}</div>
                       {game.lineHistory?.history?.total && game.lineHistory.history.total.length > 0 && (
                         <LineSparkline 
                           data={game.lineHistory.history.total} 
@@ -929,25 +974,6 @@ export default function GameDetailPage() {
                         />
                       )}
                     </div>
-                    {game.market.meta?.total && (
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="font-medium text-gray-700">
-                          {game.market.meta.total.source || 'Unknown'}
-                        </span>
-                        <span className="text-gray-500">
-                          {game.market.meta.total.timestamp 
-                            ? new Date(game.market.meta.total.timestamp).toLocaleString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: 'numeric',
-                                minute: '2-digit',
-                                hour12: true,
-                                timeZone: 'America/Chicago'
-                              })
-                            : ''}
-                        </span>
-                      </div>
-                    )}
                   </div>
                 </div>
                 <div className="flex justify-between items-center">
@@ -955,33 +981,15 @@ export default function GameDetailPage() {
                     Total Edge
                     <InfoTooltip content={TOOLTIP_CONTENT.TOTAL_EDGE_FORMULA} />
                   </div>
-                  <div className={`text-sm font-medium flex items-center gap-1 ${game.edge?.totalEdge >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {game.edge?.totalEdge >= 0 ? (
+                  <div className={`text-sm font-medium flex items-center gap-1 ${ouEdgeSign >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {ouValueSide ? (
                       <>
-                        <span aria-hidden="true">↑ Over</span>
-                        <span className="sr-only">Over edge</span>
+                        <span aria-hidden="true">{ouEdgeSign >= 0 ? '↑ Over' : '↓ Under'}</span>
+                        <span className="sr-only">{ouEdgeSign >= 0 ? 'Over edge' : 'Under edge'}</span>
+                        {ouValueSide} {snapshot?.marketTotal !== undefined && snapshot?.marketTotal !== null ? snapshot.marketTotal.toFixed(1) : 'N/A'} (edge {ouEdgeSign >= 0 ? '+' : ''}{ouEdgeForDisplay.toFixed(1)} pts)
                       </>
                     ) : (
-                      <>
-                        <span aria-hidden="true">↓ Under</span>
-                        <span className="sr-only">Under edge</span>
-                      </>
-                    )}
-                    {game.edge?.totalEdge !== null && game.edge?.totalEdge !== undefined && game.market?.total ? (
-                      <>
-                        {game.edge.totalEdge >= 0 ? 'Over' : 'Under'} {game.market.total.toFixed(1)} (edge {game.edge.totalEdge >= 0 ? '+' : ''}{game.edge.totalEdge.toFixed(1)} pts)
-                      </>
-                    ) : (
-                      <>
-                        {game.edge?.totalEdge !== null && game.edge?.totalEdge !== undefined ? (
-                          <>
-                            {game.edge.totalEdge >= 0 ? '+' : ''}{game.edge.totalEdge.toFixed(1)} pts
-                            <span className="ml-1 text-xs">({game.edge.totalEdge >= 0 ? 'Over' : 'Under'})</span>
-                          </>
-                        ) : (
-                          '—'
-                        )}
-                      </>
+                      <>No edge at current number</>
                     )}
                   </div>
                 </div>
@@ -1223,8 +1231,8 @@ export default function GameDetailPage() {
                 ATS Edge
                 <InfoTooltip content="Difference between market spread and model spread expressed as points of value. Positive = more value at current number." />
               </div>
-              <div className={`text-2xl font-bold flex items-center justify-center gap-1 ${game.edge?.atsEdge >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                {game.edge?.atsEdge >= 0 ? (
+              <div className={`text-2xl font-bold flex items-center justify-center gap-1 ${atsEdgeSign >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                {atsEdgeSign >= 0 ? (
                   <>
                     <span aria-hidden="true">↑</span>
                     <span className="sr-only">Positive edge</span>
@@ -1235,7 +1243,7 @@ export default function GameDetailPage() {
                     <span className="sr-only">Negative edge</span>
                   </>
                 )}
-                {game.edge?.atsEdge >= 0 ? '+' : ''}{game.edge?.atsEdge?.toFixed(1)} pts
+                {atsEdgeSign >= 0 ? '+' : ''}{atsEdgeForDisplay.toFixed(1)} pts
               </div>
               {game.model_view?.modelFavoriteName && game.market_snapshot?.favoriteTeamName && (
                 <div className="text-xs text-gray-500 mt-2">
@@ -1254,17 +1262,17 @@ export default function GameDetailPage() {
                 <>
                   <div className="text-lg text-gray-400 mb-1">—</div>
                   <div className="text-xs text-amber-700 mt-2">
-                    {game.picks.total.modelTotalWarning ? (
-                      <span>No model total ({game.picks.total.modelTotalWarning})</span>
+                    {totalsReason ? (
+                      <span>No model total — {totalsReason}</span>
                     ) : (
-                      <span>No model total (missing inputs)</span>
+                      <span>No model total — missing inputs</span>
                     )}
                   </div>
                 </>
-              ) : game.edge?.totalEdge !== null && game.edge?.totalEdge !== undefined ? (
+              ) : ouEdgeValue !== null ? (
                 <>
-                  <div className={`text-2xl font-bold flex items-center justify-center gap-1 ${game.edge.totalEdge >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {game.edge.totalEdge >= 0 ? (
+                  <div className={`text-2xl font-bold flex items-center justify-center gap-1 ${ouEdgeSign >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {ouEdgeSign >= 0 ? (
                       <>
                         <span aria-hidden="true">↑</span>
                         <span className="sr-only">Over edge</span>
@@ -1275,23 +1283,23 @@ export default function GameDetailPage() {
                         <span className="sr-only">Under edge</span>
                       </>
                     )}
-                    {game.edge.totalEdge >= 0 ? '+' : ''}{game.edge.totalEdge.toFixed(1)} pts
+                    {ouEdgeSign >= 0 ? '+' : ''}{ouEdgeForDisplay.toFixed(1)} pts
                   </div>
                   <div className="text-sm font-semibold text-gray-700 mt-1">
-                    {game.edge.totalEdge >= 0 ? 'Over' : 'Under'} {game.market?.total?.toFixed(1) || 'N/A'} → {game.model?.total?.toFixed(1) || 'N/A'}
+                    {ouValueSide && snapshot?.marketTotal !== undefined && snapshot?.marketTotal !== null
+                      ? `${ouValueSide} ${snapshot.marketTotal.toFixed(1)} → ${modelView.modelTotal !== null && modelView.modelTotal !== undefined ? modelView.modelTotal.toFixed(1) : 'N/A'}`
+                      : 'No edge at current number'}
                   </div>
-                  {(game.model?.total !== null && game.model?.total !== undefined) && game.market?.total && (
+                  {modelView.modelTotal !== null && modelView.modelTotal !== undefined && snapshot?.marketTotal !== null && snapshot?.marketTotal !== undefined && (
                     <div className="text-xs text-gray-500 mt-2">
-                      Model total: {game.model.total.toFixed(1)} • Market: {game.market.total.toFixed(1)}
+                      Model total: {modelView.modelTotal.toFixed(1)} • Market: {snapshot.marketTotal.toFixed(1)}
                     </div>
                   )}
                 </>
               ) : (
                 <>
                   <div className="text-lg text-gray-400 mb-1">—</div>
-                  <div className="text-xs text-gray-500 mt-2">
-                    No model total available
-                  </div>
+                  <div className="text-xs text-gray-500 mt-2">No model total available</div>
                 </>
               )}
             </div>
@@ -1300,19 +1308,19 @@ export default function GameDetailPage() {
             <div className="bg-purple-50 border-2 border-purple-200 rounded-lg p-4 text-center">
               <div className="text-sm text-gray-600 flex items-center justify-center gap-1 mb-2">
                 Stronger Edge
-                <InfoTooltip content="The larger of ATS/OU edges this game, with the market where it occurs." />
+                <InfoTooltip content="The larger of ATS/OU edges this game, based on the SSOT snapshot." />
               </div>
-              {game.edge?.maxEdge !== null && game.edge?.maxEdge !== undefined ? (
+              {hasEdgeData ? (
                 <>
                   <div className="text-2xl font-bold text-purple-600">
-                    {game.edge.maxEdge.toFixed(1)} pts
+                    {maxEdgeValue.toFixed(1)} pts
                   </div>
                   <div className="text-sm font-semibold text-gray-700 mt-1">
-                    {Math.abs(game.edge?.atsEdge || 0) >= Math.abs(game.edge?.totalEdge || 0) ? 'ATS' : 'OU'}
+                    {strongerEdgeLabel} edge
                   </div>
                 </>
               ) : (
-                <div className="text-lg text-gray-400">—</div>
+                <div className="text-lg text-gray-400">No edge data</div>
               )}
             </div>
           </div>
@@ -1511,6 +1519,9 @@ export default function GameDetailPage() {
         </div>
       </div>
       <Footer />
+      {bookStamp && (
+        <div className="mt-6 text-xs text-gray-500 text-center">{bookStamp}</div>
+      )}
     </div>
   );
 }

@@ -189,78 +189,53 @@ export function computeBettableSpreadPick(
   const marketFC = convertToFavoriteCentric(marketSpread, homeTeamId, homeTeamName, awayTeamId, awayTeamName);
   
   const favoritesDisagree = modelFC.favoriteTeamId !== marketFC.favoriteTeamId;
-  
-  // If different teams favored, always bet the underdog at the market number
-  if (favoritesDisagree) {
-    // Market underdog is the bettable side
-    const bettableLine = marketFC.underdogSpread; // Always positive (underdog getting points)
-    // Calculate "Bet to" number: reduce market line toward model until edge hits floor
-    // If market has Away +10 and model favors Away, we want to find the line where edge = floor
-    // Edge = |modelSpread - marketSpread|, so we need: |modelSpread - betTo| = floor
-    // But we need to think in terms of the underdog spread
-    // If model favors the underdog team, then betTo = modelUnderdogSpread + edgeFloor
-    // If model favors the favorite, then betTo = marketUnderdogSpread - edgeFloor (but not below 0)
-    let betTo: number | null = null;
-    if (modelFC.favoriteTeamId === marketFC.underdogTeamId) {
-      // Model favors the underdog → betTo = modelUnderdogSpread + edgeFloor
-      betTo = roundToHalf(modelFC.underdogSpread + edgeFloor);
-    } else {
-      // Model favors the favorite → betTo = marketUnderdogSpread - edgeFloor
-      betTo = Math.max(0, roundToHalf(marketFC.underdogSpread - edgeFloor));
-    }
-    
-    // Determine model spread in favorite-centric format (for neutral site reference)
-    const modelSpreadForDisplay = modelFC.favoriteSpread; // Always negative (favorite laying points)
-    const modelUnderdogSpread = modelFC.underdogSpread; // Always positive (underdog getting points)
-    
+  const valueOnDog = atsEdge > 0;
+  const valueOnFavorite = atsEdge < 0;
+  const modelFavoriteLine = modelFC.favoriteSpread; // Negative when model favors a team
+  const targetFavoriteLineForDog = roundToHalf(modelFavoriteLine - edgeFloor);
+  const targetFavoriteLineForFavorite = roundToHalf(modelFavoriteLine + edgeFloor);
+  const betToDog = Math.max(0, Math.abs(targetFavoriteLineForDog));
+  const betToFavorite = Math.min(-0.5, targetFavoriteLineForFavorite);
+  const edgeMagnitude = Math.abs(atsEdge);
+
+  if (favoritesDisagree || valueOnDog) {
+    const bettableLine = marketFC.underdogSpread;
     return {
       teamId: marketFC.underdogTeamId,
       teamName: marketFC.underdogTeamName,
       line: bettableLine,
       label: formatUnderdogSpread(marketFC.underdogTeamName, bettableLine),
-      edgePts: Math.abs(atsEdge),
-      betTo: betTo,
-      favoritesDisagree: true,
-      reasoning: `Model rates ${modelFC.favoriteTeamName} ${modelSpreadForDisplay.toFixed(1)} on neutral. Market price is ${marketFC.favoriteTeamName} ${marketFC.favoriteSpread.toFixed(1)}. Value exists on ${marketFC.underdogTeamName} at +${bettableLine.toFixed(1)} or better.`
+      edgePts: edgeMagnitude,
+      betTo: betToDog,
+      favoritesDisagree,
+      reasoning: `Model makes ${modelFC.favoriteTeamName} ${Math.abs(modelFavoriteLine).toFixed(1)} on neutral vs market ${marketFC.favoriteTeamName} ${Math.abs(marketFC.favoriteSpread).toFixed(1)} — value on ${marketFC.underdogTeamName} +${bettableLine.toFixed(1)}.`
     };
   }
-  
-  // If same team favored, bet based on edge direction
-  if (atsEdge > 0) {
-    // Model thinks favorite should lay more → take underdog getting points
-    const bettableLine = marketFC.underdogSpread;
-    // BetTo: reduce underdog spread until edge hits floor
-    // Edge decreases as we move toward model, so betTo = marketUnderdogSpread - edgeFloor
-    const betTo = Math.max(0, roundToHalf(marketFC.underdogSpread - edgeFloor));
-    
-    return {
-      teamId: marketFC.underdogTeamId,
-      teamName: marketFC.underdogTeamName,
-      line: bettableLine,
-      label: formatUnderdogSpread(marketFC.underdogTeamName, bettableLine),
-      edgePts: atsEdge,
-      betTo: betTo,
-      favoritesDisagree: false,
-      reasoning: `Model makes ${modelFC.favoriteTeamName} a ${Math.abs(modelFC.favoriteSpread).toFixed(1)}-pt favorite vs market ${marketFC.favoriteTeamName} ${marketFC.favoriteSpread.toFixed(1)} — value on ${marketFC.underdogTeamName} +${bettableLine.toFixed(1)}.`
-    };
-  } else {
-    // Model thinks favorite should lay less → take favorite laying points
+
+  if (valueOnFavorite) {
     const bettableLine = marketFC.favoriteSpread;
-    // BetTo: increase favorite spread until edge hits floor
-    // Edge decreases as we move toward model, so betTo = marketFavoriteSpread + edgeFloor (less negative)
-    const betTo = roundToHalf(marketFC.favoriteSpread + edgeFloor);
-    
     return {
       teamId: marketFC.favoriteTeamId,
       teamName: marketFC.favoriteTeamName,
       line: bettableLine,
       label: formatFavoriteSpread(marketFC.favoriteTeamName, bettableLine),
-      edgePts: Math.abs(atsEdge),
-      betTo: betTo,
+      edgePts: edgeMagnitude,
+      betTo: betToFavorite,
       favoritesDisagree: false,
-      reasoning: `Model makes ${modelFC.favoriteTeamName} a ${Math.abs(modelFC.favoriteSpread).toFixed(1)}-pt favorite vs market ${marketFC.favoriteTeamName} ${marketFC.favoriteSpread.toFixed(1)} — value on ${marketFC.favoriteTeamName} ${bettableLine.toFixed(1)}.`
+      reasoning: `Model makes ${modelFC.favoriteTeamName} ${Math.abs(modelFavoriteLine).toFixed(1)} vs market ${marketFC.favoriteTeamName} ${Math.abs(marketFC.favoriteSpread).toFixed(1)} — value on ${marketFC.favoriteTeamName} ${bettableLine.toFixed(1)}.`
     };
   }
+
+  return {
+    teamId: marketFC.favoriteTeamId,
+    teamName: marketFC.favoriteTeamName,
+    line: marketFC.favoriteSpread,
+    label: formatFavoriteSpread(marketFC.favoriteTeamName, marketFC.favoriteSpread),
+    edgePts: edgeMagnitude,
+    betTo: null,
+    favoritesDisagree,
+    reasoning: `Edge below actionable threshold (≤ ${edgeFloor.toFixed(1)} pts).`
+  };
 }
 
 /**
@@ -278,11 +253,11 @@ export function computeTotalBetTo(
   }
   
   if (edge > 0) {
-    // Model thinks Over → betTo = marketTotal + edgeFloor (higher total = less edge)
-    return roundToHalf(marketTotal + edgeFloor);
+    // Model thinks Over → move market total toward model until remaining edge = floor
+    return roundToHalf(modelTotal - edgeFloor);
   } else {
-    // Model thinks Under → betTo = marketTotal - edgeFloor (lower total = less edge)
-    return roundToHalf(marketTotal - edgeFloor);
+    // Model thinks Under → move market total toward model until remaining edge = floor
+    return roundToHalf(modelTotal + edgeFloor);
   }
 }
 
