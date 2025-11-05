@@ -202,12 +202,12 @@ export async function GET(
           ? Math.min(0.7, 0.8 * awayYppOff)
           : 0.4;
       
-      // Unit handshake: rates should be in [0, 1] range (points per play)
+      // Unit handshake: rates should be in [-1, 1] range (points per play, EPA can be negative)
       const homePppValid = homePpp >= -1 && homePpp <= 1;
       const awayPppValid = awayPpp >= -1 && awayPpp <= 1;
-      // Counts should be in [100, 180] plays range
-      const homePaceValid = homePaceOff >= 100 && homePaceOff <= 180;
-      const awayPaceValid = awayPaceOff >= 100 && awayPaceOff <= 180;
+      // Counts should be in [60, 90] plays per team range (college football pace)
+      const homePaceValid = homePaceOff >= 60 && homePaceOff <= 90;
+      const awayPaceValid = awayPaceOff >= 60 && awayPaceOff <= 90;
       
       const baseTeamScores = {
         home: homePpp * homePaceOff,
@@ -643,15 +643,6 @@ export async function GET(
       }
     } else if (missingInputs.length > 0) {
       modelTotalWarning = `Missing inputs: ${missingInputs.join(', ')}.`;
-    }
-    
-    if (unitsIssue) {
-      console.warn(`[Game ${gameId}] ⚠️ Model total units issue: ${finalImpliedTotal.toFixed(1)} is outside safety cap [15-120]. Likely a ratio/rate, not points.`, {
-        finalImpliedTotal,
-        gameId,
-        homeTeam: game.homeTeam.name,
-        awayTeam: game.awayTeam.name
-      });
     }
     
     // Plausibility check (log only, don't suppress)
