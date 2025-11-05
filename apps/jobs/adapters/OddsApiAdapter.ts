@@ -35,10 +35,19 @@ function loadTeamAliasesFromYAML(): Record<string, string> {
       throw new Error('Invalid YAML structure: missing "aliases" key');
     }
     
-    const rawCount = Object.keys(config.aliases).length;
+    // CRITICAL: Normalize alias keys to lowercase for matching
+    // The resolveTeamId() function normalizes input names to lowercase,
+    // so we need to normalize the alias keys as well
+    const normalizedAliases: Record<string, string> = {};
+    for (const [key, value] of Object.entries(config.aliases)) {
+      const normalizedKey = key.toLowerCase().replace(/[^a-z0-9\s-]/g, '');
+      normalizedAliases[normalizedKey] = value;
+    }
+    
+    const rawCount = Object.keys(normalizedAliases).length;
     console.log(`[ALIASES] Loaded ${rawCount} aliases from YAML (validation deferred)`);
     
-    return config.aliases;
+    return normalizedAliases;
   } catch (error) {
     console.error('[ALIASES] FATAL: Failed to load/parse team_aliases.yml');
     console.error('[ALIASES] Error:', (error as Error).message);
