@@ -278,9 +278,25 @@ export async function GET(
         : awayYppOff !== null
           ? Math.min(0.7, 0.8 * awayYppOff)
           : 0.4;
+      
+      // CRITICAL FIX: Validate pace values before using them
+      // Pace should be 60-90 plays per game for CFB
+      // If pace is < 10, it's likely stored in wrong units (e.g., possessions per minute)
+      const homePaceValidated = homePaceOff >= 10 ? homePaceOff : 70; // Default to 70 if invalid
+      const awayPaceValidated = awayPaceOff >= 10 ? awayPaceOff : 70; // Default to 70 if invalid
+      
+      if (homePaceOff < 10 || awayPaceOff < 10) {
+        console.warn(`[Game ${gameId}] ⚠️ PACE VALUES TOO LOW - likely wrong units:`, {
+          homePaceOff,
+          awayPaceOff,
+          homePaceValidated,
+          awayPaceValidated,
+          note: 'Pace should be 60-90 plays per game. Using default 70 for invalid values.'
+        });
+      }
 
       // Calculate total points: (Home PPP × Home Pace) + (Away PPP × Away Pace)
-      computedTotal = (homePpp * homePaceOff) + (awayPpp * awayPaceOff);
+      computedTotal = (homePpp * homePaceValidated) + (awayPpp * awayPaceValidated);
       
       // Validation: Ensure total is in realistic range (20-90 points)
       // Flag outliers but don't cap them (they might be legitimate for extreme matchups)
@@ -322,8 +338,12 @@ export async function GET(
       const awayEpaOff = awayStats?.epaOff ? Number(awayStats.epaOff) : null;
       const homeYppOff = homeStats?.yppOff ? Number(homeStats.yppOff) : null;
       const awayYppOff = awayStats?.yppOff ? Number(awayStats.yppOff) : null;
-      const homePaceOff = homeStats?.paceOff ? Number(homeStats.paceOff) : 70;
-      const awayPaceOff = awayStats?.paceOff ? Number(awayStats.paceOff) : 70;
+      const homePaceOffRaw = homeStats?.paceOff ? Number(homeStats.paceOff) : 70;
+      const awayPaceOffRaw = awayStats?.paceOff ? Number(awayStats.paceOff) : 70;
+      
+      // Validate pace values (same logic as main computation)
+      const homePaceOff = homePaceOffRaw >= 10 ? homePaceOffRaw : 70;
+      const awayPaceOff = awayPaceOffRaw >= 10 ? awayPaceOffRaw : 70;
       
       const homePpp = homeEpaOff !== null 
         ? Math.max(0, Math.min(0.7, 7 * homeEpaOff))
@@ -340,9 +360,11 @@ export async function GET(
       // Unit handshake: rates should be in [-1, 1] range (points per play, EPA can be negative)
       const homePppValid = homePpp >= -1 && homePpp <= 1;
       const awayPppValid = awayPpp >= -1 && awayPpp <= 1;
-      // Counts should be in [60, 90] plays per team range (college football pace)
-      const homePaceValid = homePaceOff >= 60 && homePaceOff <= 90;
-      const awayPaceValid = awayPaceOff >= 60 && awayPaceOff <= 90;
+      // Counts should be in [10, 100] plays per team range (relaxed to catch pace unit errors)
+      const homePaceValid = homePaceOff >= 10 && homePaceOff <= 100;
+      const awayPaceValid = awayPaceOff >= 10 && awayPaceOff <= 100;
+      const homePaceUnitError = homePaceOffRaw < 10;
+      const awayPaceUnitError = awayPaceOffRaw < 10;
       
       const baseTeamScores = {
         home: homePpp * homePaceOff,
@@ -370,11 +392,15 @@ export async function GET(
         name: 'expected_plays',
         home_expected_plays: homePaceOff,
         away_expected_plays: awayPaceOff,
+        home_pace_raw: homePaceOffRaw,
+        away_pace_raw: awayPaceOffRaw,
         units: 'plays_per_game',
         units_valid: {
           home: homePaceValid,
           away: awayPaceValid,
-          expected_range: '60-90 plays per team'
+          expected_range: '10-100 plays per team',
+          home_unit_error: homePaceUnitError ? `Raw pace ${homePaceOffRaw} < 10, using default 70` : null,
+          away_unit_error: awayPaceUnitError ? `Raw pace ${awayPaceOffRaw} < 10, using default 70` : null
         }
       });
       
@@ -533,21 +559,21 @@ export async function GET(
     totalDiag.marketTotal = marketTotal;
     
     // Derive home_price and away_price from marketSpread (home-minus-away convention)
-    // marketSpread = homeScore - awayScore
-    // If marketSpread < 0: away team is favored (awayScore > homeScore)
-    // If marketSpread > 0: home team is favored (homeScore > awayScore)
+    // marketSpread = homeScore - awayScore (from database)
+    // If marketSpread < 0: home team is favored (home laying points, e.g., Alabama -10 → marketSpread = -10)
+    // If marketSpread > 0: away team is favored (away laying points, e.g., OSU @ Purdue, OSU -29.5 → marketSpread = +29.5)
     // Favorite always has negative price in favorite-centric format
     let homePrice: number;
     let awayPrice: number;
     
     if (marketSpread < 0) {
-      // Away team is favored (e.g., OSU @ Purdue, OSU -29.5 → marketSpread = -29.5)
-      awayPrice = -Math.abs(marketSpread); // Negative (favorite)
-      homePrice = Math.abs(marketSpread); // Positive (underdog)
+      // Home team is favored (e.g., Alabama -10 → marketSpread = -10)
+      homePrice = marketSpread; // Negative (favorite)
+      awayPrice = -marketSpread; // Positive (underdog)
     } else {
-      // Home team is favored (e.g., Alabama -10 → marketSpread = +10)
-      homePrice = -Math.abs(marketSpread); // Negative (favorite)
-      awayPrice = Math.abs(marketSpread); // Positive (underdog)
+      // Away team is favored (e.g., OSU @ Purdue, OSU -29.5 → marketSpread = +29.5)
+      awayPrice = -marketSpread; // Negative (favorite)
+      homePrice = marketSpread; // Positive (underdog)
     }
     
     // Favorite selection rule: team with more negative price (always the favorite)
