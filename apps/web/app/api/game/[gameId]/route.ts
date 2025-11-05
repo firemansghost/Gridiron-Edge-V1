@@ -107,10 +107,31 @@ export async function GET(
       // We must pick the favorite's line (negative value) as the canonical representation
       let candidates = lines;
       if (lineType === 'spread') {
+        // Log all spread lines for debugging
+        console.log(`[Game ${gameId}] 🔍 SPREAD LINE SELECTION:`, {
+          totalLines: lines.length,
+          allValues: lines.map(l => ({
+            lineValue: l.lineValue,
+            closingLine: l.closingLine,
+            timestamp: l.timestamp,
+            bookName: l.bookName
+          }))
+        });
+        
         const negativeLines = lines.filter((line) => {
           const value = line.closingLine !== null && line.closingLine !== undefined ? line.closingLine : line.lineValue;
           return value !== null && value !== undefined && value < 0;
         });
+        
+        console.log(`[Game ${gameId}] 🔍 NEGATIVE LINES FILTERED:`, {
+          negativeCount: negativeLines.length,
+          negativeValues: negativeLines.map(l => ({
+            lineValue: l.lineValue,
+            closingLine: l.closingLine,
+            timestamp: l.timestamp
+          }))
+        });
+        
         if (negativeLines.length > 0) {
           candidates = negativeLines;
         }
@@ -118,10 +139,21 @@ export async function GET(
       
       const withClosing = candidates.filter((line) => line.closingLine !== null && line.closingLine !== undefined);
       const finalCandidates = withClosing.length > 0 ? withClosing : candidates;
-      return finalCandidates.reduce((latest, line) => {
+      const selected = finalCandidates.reduce((latest, line) => {
         if (!latest) return line;
         return new Date(line.timestamp).getTime() > new Date(latest.timestamp).getTime() ? line : latest;
       }, null as typeof finalCandidates[0] | null);
+      
+      if (lineType === 'spread' && selected) {
+        console.log(`[Game ${gameId}] ✅ SELECTED SPREAD LINE:`, {
+          lineValue: selected.lineValue,
+          closingLine: selected.closingLine,
+          bookName: selected.bookName,
+          timestamp: selected.timestamp
+        });
+      }
+      
+      return selected;
     };
 
     let selectedSpreadLine: typeof game.marketLines[number] | null = null;
