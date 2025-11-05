@@ -25,7 +25,7 @@ function parseArgs() {
       dryRun: false,
       historical: false,
       historicalStrict: false,
-      markets: 'spreads,totals',
+      markets: 'spreads,totals,h2h',
       regions: 'us',
       creditsLimit: 3000,
       maxEvents: null

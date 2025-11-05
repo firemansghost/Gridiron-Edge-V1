@@ -31,6 +31,7 @@ model Team {
   memberships       TeamMembership[]
   injuries          Injury[]
   rankings          TeamRanking[]
+  marketLines       MarketLine[]
 
   @@index([conference, division])
   @@index([name])
@@ -240,14 +241,18 @@ model MarketLine {
   source      String
   closingLine Float    @map("closing_line")
   bookName    String   @map("book_name")
+  teamId      String?  @map("team_id") // The team this line belongs to (for spreads/moneylines)
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
   game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  team        Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
-  @@unique([gameId, lineType, bookName, timestamp], map: "market_lines_game_line_book_timestamp_unique")
+  @@unique([gameId, lineType, bookName, timestamp, teamId], map: "market_lines_game_line_book_timestamp_team_unique")
   @@index([gameId, lineType])
+  @@index([gameId, lineType, teamId])
   @@index([timestamp])
   @@index([season, week])
+  @@index([teamId])
   @@map("market_lines")
 }
 

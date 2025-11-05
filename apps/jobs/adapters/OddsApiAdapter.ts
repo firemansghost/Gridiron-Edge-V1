@@ -1221,6 +1221,11 @@ export class OddsApiAdapter implements DataSourceAdapter {
           if (market.key === 'spreads' && market.outcomes) {
             console.log(`   [PARSER] Found ${market.outcomes.length} spread outcomes from ${bookName}`);
             for (const outcome of market.outcomes) {
+              // Resolve team name to teamId
+              const teamId = this.resolveTeamId(outcome.name);
+              if (!teamId) {
+                console.warn(`   [PARSER] Could not resolve team name "${outcome.name}" to teamId for spread line`);
+              }
               lines.push({
                 gameId,
                 season,
@@ -1231,7 +1236,8 @@ export class OddsApiAdapter implements DataSourceAdapter {
                 bookName,
                 source: 'oddsapi',
                 timestamp: snapshotTimestamp,
-                closingLine: true
+                closingLine: true,
+                teamId: teamId || undefined
               });
             }
           }
@@ -1330,6 +1336,11 @@ export class OddsApiAdapter implements DataSourceAdapter {
           // Moneyline
           for (const outcome of market.outcomes) {
             if (outcome.price !== undefined && outcome.price !== null) {
+              // Resolve team name to teamId
+              const teamId = this.resolveTeamId(outcome.name);
+              if (!teamId) {
+                console.warn(`   [ODDSAPI] Could not resolve team name "${outcome.name}" to teamId for moneyline`);
+              }
               lines.push({
                 gameId,
                 season: actualSeason,
@@ -1340,6 +1351,7 @@ export class OddsApiAdapter implements DataSourceAdapter {
                 bookName,
                 source: 'oddsapi',
                 timestamp,
+                teamId: teamId || undefined, // Store teamId if resolved
               });
             } else {
               // Debug: log missing price
@@ -1350,6 +1362,11 @@ export class OddsApiAdapter implements DataSourceAdapter {
           // Spread
           for (const outcome of market.outcomes) {
             if (outcome.point !== undefined && outcome.point !== null) {
+              // Resolve team name to teamId
+              const teamId = this.resolveTeamId(outcome.name);
+              if (!teamId) {
+                console.warn(`   [ODDSAPI] Could not resolve team name "${outcome.name}" to teamId for spread line`);
+              }
               lines.push({
                 gameId,
                 season: actualSeason,
@@ -1360,6 +1377,7 @@ export class OddsApiAdapter implements DataSourceAdapter {
                 bookName,
                 source: 'oddsapi',
                 timestamp,
+                teamId: teamId || undefined, // Store teamId if resolved
               });
             }
           }
