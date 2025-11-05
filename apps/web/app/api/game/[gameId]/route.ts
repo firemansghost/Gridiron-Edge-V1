@@ -477,20 +477,30 @@ export async function GET(
       awayTeam: game.awayTeam.name
     });
     
-    // Determine which team SHOULD be favored based on power ratings
+    // Determine which team SHOULD be favored using multiple signals
     const homePower = homeRating ? Number(homeRating.powerRating || homeRating.rating || 0) : 0;
     const awayPower = awayRating ? Number(awayRating.powerRating || awayRating.rating || 0) : 0;
+    
+    // CRITICAL: Add home field advantage (HFA) to home team's effective power
+    // Standard HFA in college football is ~2-3 points
+    const HFA = game.neutralSite ? 0 : 2.5;
+    const homeEffectivePower = homePower + HFA;
+    const awayEffectivePower = awayPower;
     
     console.log(`[Game ${gameId}] 🔍 POWER RATINGS FOR FAVORITE DETERMINATION:`, {
       homePower,
       awayPower,
+      HFA,
+      homeEffectivePower,
+      awayEffectivePower,
       homeTeam: game.homeTeam.name,
       awayTeam: game.awayTeam.name,
-      expectedFavorite: awayPower > homePower ? 'away' : 'home'
+      neutralSite: game.neutralSite,
+      expectedFavorite: homeEffectivePower > awayEffectivePower ? 'home' : 'away'
     });
     
-    // Determine which team is favored based on power ratings
-    const favoriteIsHome = homePower > awayPower;
+    // Determine which team is favored based on effective power (including HFA)
+    const favoriteIsHome = homeEffectivePower > awayEffectivePower;
     
     // Assign the negative line to the favorite and positive line to the underdog
     let homePrice: number;
