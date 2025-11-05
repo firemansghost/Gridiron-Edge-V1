@@ -462,6 +462,26 @@ export async function GET(
       totalDiag.unitsInvalid = true;
     }
     
+    // Enhanced logging for totals calculation diagnostics
+    console.log(`[Game ${gameId}] 🔍 TOTALS CALCULATION TRACE:`, {
+      matchupTotalRaw,
+      isValidTotal,
+      computedTotal,
+      finalImpliedTotal,
+      totalSource,
+      firstFailureStep,
+      unitsInvalid: totalDiag.unitsInvalid,
+      computationDetails: homeRating && awayRating ? {
+        homeEpaOff: homeStats?.epaOff,
+        awayEpaOff: awayStats?.epaOff,
+        homePaceOff: homeStats?.paceOff,
+        awayPaceOff: awayStats?.paceOff,
+        homePpp: (homeStats && homeStats.epaOff !== null) ? Math.max(0, Math.min(0.7, 7 * Number(homeStats.epaOff))) : 'fallback',
+        awayPpp: (awayStats && awayStats.epaOff !== null) ? Math.max(0, Math.min(0.7, 7 * Number(awayStats.epaOff))) : 'fallback',
+        formula: '(homePpp × homePace) + (awayPpp × awayPace)'
+      } : 'no_ratings'
+    });
+    
     // Note: marketTotal will be added to totalDiag after it's declared below
     totalDiag.modelTotal = finalImpliedTotal;
     // marketTotal will be set later when it's declared
@@ -999,11 +1019,50 @@ export async function GET(
       : null;
     const winProbDog = winProbFavorite !== null ? 1 - winProbFavorite : null;
     
-    // Edges (favorite-centric)
-    // atsEdgePts: modelFavoriteLine - marketFavoriteLine (positive = model thinks favorite should lay more)
-    const atsEdgePts = modelFavoriteTeamId && modelFavoriteLine !== null
-      ? modelFavoriteLine - market_snapshot.favoriteLine
-      : null;
+    // ============================================
+    // EDGES (FAVORITE-CENTRIC) - FIX FOR PICK'EM
+    // ============================================
+    // atsEdgePts: Always compute edge relative to market favorite, even when model is pick'em
+    // For market favorite coordinate system:
+    //   - Market favorite line is negative (e.g., -30)
+    //   - Model line in same coordinate system
+    //   - If model is pick'em but market is -30, edge should be +30 (value on dog)
+    //   - Edge = model line - market line (in favorite-centric coords)
+    
+    // Convert model spread to market favorite's coordinate system
+    let modelLineInMarketFavCoords: number;
+    if (modelFavoriteTeamId === null) {
+      // Model is pick'em (0.0) - express as 0.0 in market favorite coords
+      modelLineInMarketFavCoords = 0.0;
+    } else if (modelFavoriteTeamId === market_snapshot.favoriteTeamId) {
+      // Model and market agree on favorite - use model's line directly
+      modelLineInMarketFavCoords = modelFavoriteLine;
+    } else {
+      // Model and market disagree on favorite - flip the sign
+      // If model says Team A -10 but market has Team B as favorite,
+      // then in market coords, Team B is getting +10
+      modelLineInMarketFavCoords = -modelFavoriteLine;
+    }
+    
+    const atsEdgePts = modelLineInMarketFavCoords - market_snapshot.favoriteLine;
+    
+    // Log ATS decision trace before rendering
+    console.log(`[Game ${gameId}] 📊 ATS DECISION TRACE:`, {
+      modelFavoriteTeamId,
+      modelFavoriteName,
+      modelFavoriteLine,
+      marketFavoriteTeamId: market_snapshot.favoriteTeamId,
+      marketFavoriteName: market_snapshot.favoriteTeamName,
+      marketFavoriteLine: market_snapshot.favoriteLine,
+      modelLineInMarketFavCoords,
+      atsEdgePts,
+      edgeFloor: 2.0,
+      expectedHeadline: atsEdgePts > 0.5 
+        ? `${market_snapshot.dogTeamName} +${market_snapshot.dogLine.toFixed(1)}` 
+        : atsEdgePts < -0.5 
+          ? `${market_snapshot.favoriteTeamName} ${market_snapshot.favoriteLine.toFixed(1)}`
+          : 'No edge at current number'
+    });
     
     // ouEdgePts: modelTotal - marketTotal (positive = model thinks over, negative = under)
     const ouEdgePts = modelTotal !== null && market_snapshot.marketTotal !== null
@@ -1022,6 +1081,27 @@ export async function GET(
         ouEdgePts: ouEdgePts // Over/Under edge
       }
     };
+    
+    // ============================================
+    // TOTALS PROVENANCE LOGGING
+    // ============================================
+    console.log(`[Game ${gameId}] 📊 TOTALS PROVENANCE:`, {
+      finalImpliedTotal,
+      modelTotal,
+      marketTotal: market_snapshot.marketTotal,
+      isModelTotalValid,
+      unitsIssue,
+      computationFailed,
+      totalSource,
+      firstFailureStep: totalDiag.firstFailureStep,
+      unitsNote,
+      ouEdgePts,
+      diagnostics: {
+        inputs: totalDiag.inputs,
+        steps: totalDiag.steps,
+        unitsInvalid: totalDiag.unitsInvalid
+      }
+    });
     
     // ============================================
     // SINGLE SOURCE OF TRUTH: diagnostics
@@ -2436,6 +2516,43 @@ export async function GET(
       gameStatus: game.status,
       season: game.season,
       week: game.week
+    });
+    
+    // ============================================
+    // RENDER SNAPSHOT (SSOT AUDIT LOG)
+    // ============================================
+    console.log(`[Game ${gameId}] 🎯 RENDER SNAPSHOT (SSOT):`, {
+      snapshotId: response.diagnostics?.snapshotId,
+      bookSource: response.market_snapshot?.bookSource,
+      updatedAt: response.market_snapshot?.updatedAt,
+      market_snapshot: {
+        favoriteTeamId: response.market_snapshot?.favoriteTeamId,
+        favoriteTeamName: response.market_snapshot?.favoriteTeamName,
+        favoriteLine: response.market_snapshot?.favoriteLine,
+        dogTeamId: response.market_snapshot?.dogTeamId,
+        dogTeamName: response.market_snapshot?.dogTeamName,
+        dogLine: response.market_snapshot?.dogLine,
+        marketTotal: response.market_snapshot?.marketTotal,
+        moneylineFavorite: response.market_snapshot?.moneylineFavorite,
+        moneylineDog: response.market_snapshot?.moneylineDog
+      },
+      model_view: {
+        modelFavoriteTeamId: response.model_view?.modelFavoriteTeamId,
+        modelFavoriteName: response.model_view?.modelFavoriteName,
+        modelFavoriteLine: response.model_view?.modelFavoriteLine,
+        modelTotal: response.model_view?.modelTotal,
+        winProbFavorite: response.model_view?.winProbFavorite,
+        winProbDog: response.model_view?.winProbDog
+      },
+      edges: {
+        atsEdgePts: response.model_view?.edges?.atsEdgePts,
+        ouEdgePts: response.model_view?.edges?.ouEdgePts
+      },
+      diagnostics_summary: {
+        mappingAssertionsPassed: response.diagnostics?.mappingAssertions?.passed,
+        totalsUnitsValid: response.diagnostics?.totalsUnits?.isPoints,
+        messageCount: response.diagnostics?.messages?.length || 0
+      }
     });
 
     // Determine cache strategy based on game status

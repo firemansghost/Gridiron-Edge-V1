@@ -589,6 +589,15 @@ export default function GameDetailPage() {
                       Line drift: {game.clvHint.spreadDrift.opening.toFixed(1)} → {game.clvHint.spreadDrift.closing.toFixed(1)} ({game.clvHint.spreadDrift.drift >= 0 ? '+' : ''}{game.clvHint.spreadDrift.drift.toFixed(1)}) toward model.
                     </div>
                   )}
+                  {/* Dev diagnostic - ATS decision trace */}
+                  {process.env.NODE_ENV !== 'production' && snapshot && (
+                    <div className="text-xs text-gray-400 mt-2 font-mono border-t border-gray-200 pt-2">
+                      <div>atsEdgePts: {atsEdgePts?.toFixed(1) ?? 'null'} | edgeFloor: 2.0</div>
+                      <div>marketFav: {snapshot.favoriteTeamName} {snapshot.favoriteLine.toFixed(1)} | marketDog: {snapshot.dogTeamName} +{snapshot.dogLine.toFixed(1)}</div>
+                      <div>modelFav: {game.model_view?.modelFavoriteName ?? 'pick\'em'} {game.model_view?.modelFavoriteLine?.toFixed(1) ?? '0.0'}</div>
+                      <div>valueSide: {atsValueSide ?? 'none'} → headline: {atsValueSide === 'dog' ? `${snapshot.dogTeamName} +${snapshot.dogLine.toFixed(1)}` : atsValueSide === 'favorite' ? `${snapshot.favoriteTeamName} ${snapshot.favoriteLine.toFixed(1)}` : 'No edge'}</div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
