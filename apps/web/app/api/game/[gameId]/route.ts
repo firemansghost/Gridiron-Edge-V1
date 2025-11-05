@@ -178,7 +178,9 @@ export async function GET(
         awayRating: awayRating ? Number(awayRating.powerRating || awayRating.rating || 0) : null
       },
       steps: [] as any[],
-      sourceFlags: {} as any
+      sourceFlags: {} as any,
+      firstFailureStep: null as string | null,
+      unitsInvalid: false
     };
     
     // Track computation steps
@@ -724,12 +726,19 @@ export async function GET(
                              finalImpliedTotal >= 15 && 
                              finalImpliedTotal <= 120; // Units sanity guard
     
+    // Track which step first broke units (if not already set)
+    if (unitsIssue && totalDiag.firstFailureStep === null) {
+      totalDiag.firstFailureStep = totalSource === 'matchupOutput' ? 'matchupOutput.impliedTotal' : 'modelTotal_sum';
+      totalDiag.unitsInvalid = true;
+    }
+    
     // Generate specific warning message (only for missing inputs or computation failure)
     let modelTotalWarning: string | null = null;
     let calcError = false;
     if (unitsIssue) {
       calcError = true;
-      modelTotalWarning = `Computation not in points (see diagnostics). Value ${finalImpliedTotal.toFixed(1)} likely a ratio/rate.`;
+      const valueDisplay = finalImpliedTotal !== null ? finalImpliedTotal.toFixed(1) : 'unknown';
+      modelTotalWarning = `Computation not in points (e.g., ${valueDisplay} is a rate).`;
     } else if (computationFailed) {
       calcError = true;
       if (consistencyDelta !== null && consistencyDelta > 0.5) {
