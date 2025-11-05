@@ -163,18 +163,119 @@ export async function GET(
       }
     }
 
+    // ============================================
+    // TOTAL DIAGNOSTICS (B) - Track computation path
+    // ============================================
+    const totalDiag: any = {
+      inputs: {
+        homeEpaOff: homeStats?.epaOff ? Number(homeStats.epaOff) : null,
+        awayEpaOff: awayStats?.epaOff ? Number(awayStats.epaOff) : null,
+        homeYppOff: homeStats?.yppOff ? Number(homeStats.yppOff) : null,
+        awayYppOff: awayStats?.yppOff ? Number(awayStats.yppOff) : null,
+        homePaceOff: homeStats?.paceOff ? Number(homeStats.paceOff) : 70,
+        awayPaceOff: awayStats?.paceOff ? Number(awayStats.paceOff) : 70,
+        homeRating: homeRating ? Number(homeRating.powerRating || homeRating.rating || 0) : null,
+        awayRating: awayRating ? Number(awayRating.powerRating || awayRating.rating || 0) : null
+      },
+      steps: [] as any[],
+      sourceFlags: {} as any
+    };
+    
+    // Track computation steps
+    if (homeRating && awayRating) {
+      const homeEpaOff = homeStats?.epaOff ? Number(homeStats.epaOff) : null;
+      const awayEpaOff = awayStats?.epaOff ? Number(awayStats.epaOff) : null;
+      const homeYppOff = homeStats?.yppOff ? Number(homeStats.yppOff) : null;
+      const awayYppOff = awayStats?.yppOff ? Number(awayStats.yppOff) : null;
+      const homePaceOff = homeStats?.paceOff ? Number(homeStats.paceOff) : 70;
+      const awayPaceOff = awayStats?.paceOff ? Number(awayStats.paceOff) : 70;
+      
+      const homePpp = homeEpaOff !== null 
+        ? Math.max(0, Math.min(0.7, 7 * homeEpaOff))
+        : homeYppOff !== null 
+          ? Math.min(0.7, 0.8 * homeYppOff)
+          : 0.4;
+      
+      const awayPpp = awayEpaOff !== null
+        ? Math.max(0, Math.min(0.7, 7 * awayEpaOff))
+        : awayYppOff !== null
+          ? Math.min(0.7, 0.8 * awayYppOff)
+          : 0.4;
+      
+      const baseTeamScores = {
+        home: homePpp * homePaceOff,
+        away: awayPpp * awayPaceOff
+      };
+      
+      totalDiag.steps.push({
+        name: 'baseTeamScores',
+        home: baseTeamScores.home,
+        away: baseTeamScores.away,
+        homePpp: homePpp,
+        homePace: homePaceOff,
+        awayPpp: awayPpp,
+        awayPace: awayPaceOff
+      });
+      
+      totalDiag.steps.push({
+        name: 'finalTeamScores',
+        home: baseTeamScores.home,
+        away: baseTeamScores.away,
+        total: baseTeamScores.home + baseTeamScores.away
+      });
+    }
+    
     // Use computed values if matchupOutput doesn't exist or has invalid values
     // Validate that matchupOutput values are in realistic ranges before using them
+    // CRITICAL: Check for type/unit issues (e.g., 1.3 might be a percentage, not points)
     const isValidSpread = matchupOutput?.impliedSpread !== null && 
                           matchupOutput?.impliedSpread !== undefined &&
+                          !isNaN(matchupOutput.impliedSpread) &&
+                          isFinite(matchupOutput.impliedSpread) &&
                           Math.abs(matchupOutput.impliedSpread) <= 50;
-    const isValidTotal = matchupOutput?.impliedTotal !== null && 
-                         matchupOutput?.impliedTotal !== undefined &&
-                         matchupOutput.impliedTotal >= 20 && 
-                         matchupOutput.impliedTotal <= 90;
+    
+    // For total: be very strict - must be in points, not a percentage or ratio
+    const matchupTotalRaw = matchupOutput?.impliedTotal;
+    const isValidTotal = matchupTotalRaw !== null && 
+                         matchupTotalRaw !== undefined &&
+                         !isNaN(matchupTotalRaw) &&
+                         isFinite(matchupTotalRaw) &&
+                         matchupTotalRaw >= 20 && 
+                         matchupTotalRaw <= 90;
+    
+    // Log if matchupOutput total looks suspicious (e.g., 1.3)
+    if (matchupTotalRaw !== null && matchupTotalRaw !== undefined && !isValidTotal) {
+      console.warn(`[Game ${gameId}] ⚠️ Suspicious matchupOutput.impliedTotal: ${matchupTotalRaw}`, {
+        matchupTotal: matchupTotalRaw,
+        isValidTotal: isValidTotal,
+        computedTotal: computedTotal,
+        possibleIssue: matchupTotalRaw < 20 ? 'Likely a percentage/ratio, not points' : 'Out of range',
+        gameId,
+        homeTeam: game.homeTeam.name,
+        awayTeam: game.awayTeam.name
+      });
+    }
     
     const finalImpliedSpread = (isValidSpread ? matchupOutput.impliedSpread : null) ?? computedSpread;
-    const finalImpliedTotal = (isValidTotal ? matchupOutput.impliedTotal : null) ?? computedTotal;
+    const finalImpliedTotal = (isValidTotal ? matchupTotalRaw : null) ?? computedTotal;
+    
+    // Note: marketTotal will be added to totalDiag after it's declared below
+    totalDiag.modelTotal = finalImpliedTotal;
+    // marketTotal will be set later when it's declared
+    totalDiag.sourceFlags = {
+      usedFallback: !isValidTotal && matchupTotalRaw !== null && matchupTotalRaw !== undefined,
+      missingInputs: [
+        ...(homeStats?.epaOff === null && homeStats?.yppOff === null ? [`pace/efficiency for ${game.homeTeam.name}`] : []),
+        ...(awayStats?.epaOff === null && awayStats?.yppOff === null ? [`pace/efficiency for ${game.awayTeam.name}`] : [])
+      ],
+      matchupOutputExists: matchupOutput !== null && matchupOutput !== undefined,
+      matchupOutputValid: isValidTotal,
+      matchupOutputRaw: matchupTotalRaw,
+      computedTotal: computedTotal
+    };
+    
+    // Log total diagnostics
+    console.log(`[Game ${gameId}] Total Diagnostics:`, JSON.stringify(totalDiag, null, 2));
     
     // Log if we're using computed values due to invalid matchupOutput data
     if (matchupOutput && !isValidTotal) {
@@ -199,15 +300,43 @@ export async function GET(
     // Get line values (prefers closingLine, falls back to lineValue)
     const marketSpread = getLineValue(spreadLine) ?? 0;
     const marketTotal = getLineValue(totalLine) ?? 45;
-
-    // ============================================
-    // DEBUG: Market Spread & Team Identity Tracing (Task #1 & #2)
-    // ============================================
-    // Log raw market line data for debugging favorite identification
-    console.log(`[Game ${gameId}] Market Spread Debug:`, {
+    
+    // Add marketTotal to diagnostics now that it's declared
+    totalDiag.marketTotal = marketTotal;
+    
+    // Derive home_price and away_price from marketSpread (home-minus-away convention)
+    // If marketSpread = -30, then home_price = -30, away_price = +30
+    // If marketSpread = +30, then home_price = +30, away_price = -30
+    const homePrice = marketSpread; // Already in home-minus-away format
+    const awayPrice = -marketSpread; // Opposite sign
+    
+    // Favorite selection rule: team with more negative price
+    const homeIsFavorite = homePrice < awayPrice;
+    const favoriteByRule = homeIsFavorite ? {
+      teamId: game.homeTeamId,
+      teamName: game.homeTeam.name,
+      price: homePrice,
+      line: -Math.abs(homePrice) // Favorite-centric: always negative
+    } : {
+      teamId: game.awayTeamId,
+      teamName: game.awayTeam.name,
+      price: awayPrice,
+      line: -Math.abs(awayPrice) // Favorite-centric: always negative
+    };
+    
+    // Tolerance check: abs(homePrice + awayPrice) should be <= 0.5
+    const priceSum = Math.abs(homePrice + awayPrice);
+    if (priceSum > 0.5) {
+      console.warn(`[Game ${gameId}] ⚠️ Price sum tolerance check failed: abs(${homePrice} + ${awayPrice}) = ${priceSum.toFixed(2)}`);
+    }
+    
+    // Comprehensive mapping audit log
+    console.log(`[Game ${gameId}] Favorite Mapping Audit:`, {
       gameId,
-      feedSpread: {
-        rawValue: marketSpread,
+      feedData: {
+        homePrice: homePrice,
+        awayPrice: awayPrice,
+        marketSpread: marketSpread, // home-minus-away
         closingLine: spreadLine?.closingLine,
         lineValue: spreadLine?.lineValue,
         source: spreadLine?.source,
@@ -218,12 +347,17 @@ export async function GET(
         home: { id: game.homeTeamId, name: game.homeTeam.name },
         away: { id: game.awayTeamId, name: game.awayTeam.name }
       },
-      spreadInterpretation: {
-        homeMinusAway: marketSpread,
-        homeFavored: marketSpread < 0,
-        awayFavored: marketSpread > 0,
-        expectedFavorite: marketSpread < 0 ? game.homeTeam.name : game.awayTeam.name,
-        expectedFavoriteSpread: marketSpread < 0 ? marketSpread : -marketSpread
+      favorite: {
+        byRuleTeam: favoriteByRule.teamId,
+        byRuleTeamName: favoriteByRule.teamName,
+        byRuleLine: favoriteByRule.line,
+        byRulePrice: favoriteByRule.price
+      },
+      validation: {
+        priceSum: priceSum,
+        priceSumWithinTolerance: priceSum <= 0.5,
+        homeIsFavorite: homeIsFavorite,
+        interpretation: homeIsFavorite ? `${game.homeTeam.name} favored by ${Math.abs(homePrice)}` : `${game.awayTeam.name} favored by ${Math.abs(awayPrice)}`
       }
     });
 
@@ -337,6 +471,7 @@ export async function GET(
     }
 
     // Convert spreads to favorite-centric format
+    // For market spread, use the favoriteByRule we computed (single source of truth)
     const modelSpreadFC = convertToFavoriteCentric(
       finalImpliedSpread,
       game.homeTeamId,
@@ -345,40 +480,30 @@ export async function GET(
       game.awayTeam.name
     );
 
-    const marketSpreadFC = convertToFavoriteCentric(
-      marketSpread,
-      game.homeTeamId,
-      game.homeTeam.name,
-      game.awayTeamId,
-      game.awayTeam.name
-    );
+    // Use favoriteByRule for market spread to ensure correct team mapping
+    // This ensures we use the "more negative price" rule consistently
+    const marketSpreadFC = {
+      favoriteTeamId: favoriteByRule.teamId,
+      favoriteTeamName: favoriteByRule.teamName,
+      favoriteSpread: favoriteByRule.line, // Already negative (favorite-centric)
+      underdogTeamId: favoriteByRule.teamId === game.homeTeamId ? game.awayTeamId : game.homeTeamId,
+      underdogTeamName: favoriteByRule.teamId === game.homeTeamId ? game.awayTeam.name : game.homeTeam.name,
+      underdogSpread: Math.abs(favoriteByRule.line) // Always positive (underdog getting points)
+    };
 
-    // ============================================
-    // DEBUG: Favorite-Centric Conversion Audit (Task #3)
-    // ============================================
-    console.log(`[Game ${gameId}] Favorite-Centric Conversion:`, {
-      input: {
-        marketSpread: marketSpread,
-        homeTeamId: game.homeTeamId,
-        homeTeamName: game.homeTeam.name,
-        awayTeamId: game.awayTeamId,
-        awayTeamName: game.awayTeam.name
-      },
-      output: {
+    // Log validation of favorite mapping
+    console.log(`[Game ${gameId}] Favorite Mapping Validation:`, {
+      marketSpreadFC: {
         favoriteTeamId: marketSpreadFC.favoriteTeamId,
         favoriteTeamName: marketSpreadFC.favoriteTeamName,
-        favoriteSpread: marketSpreadFC.favoriteSpread,
-        underdogTeamId: marketSpreadFC.underdogTeamId,
-        underdogTeamName: marketSpreadFC.underdogTeamName,
-        underdogSpread: marketSpreadFC.underdogSpread
+        favoriteSpread: marketSpreadFC.favoriteSpread
       },
-      validation: {
-        favoriteSpreadIsNegative: marketSpreadFC.favoriteSpread < 0,
-        underdogSpreadIsPositive: marketSpreadFC.underdogSpread > 0,
-        lineMatchesAbs: Math.abs(marketSpreadFC.favoriteSpread) === Math.abs(marketSpreadFC.underdogSpread),
-        expectedFavoriteFromSpread: marketSpread < 0 ? game.homeTeam.name : game.awayTeam.name,
-        actualFavoriteMatches: marketSpreadFC.favoriteTeamName === (marketSpread < 0 ? game.homeTeam.name : game.awayTeam.name)
-      }
+      favoriteByRule: {
+        teamId: favoriteByRule.teamId,
+        teamName: favoriteByRule.teamName,
+        line: favoriteByRule.line
+      },
+      matches: marketSpreadFC.favoriteTeamId === favoriteByRule.teamId
     });
 
     // Calculate ATS edge (favorite-centric): positive means model thinks favorite should lay more
@@ -473,9 +598,20 @@ export async function GET(
     }
     
     // Model total is valid if it exists and computation didn't fail (no range checks)
-    const isModelTotalValid = !computationFailed && finalImpliedTotal !== null && 
+    // CRITICAL: Add type safety - ensure it's a finite number in points, not a percentage/ratio
+    const isModelTotalValid = !computationFailed && 
+                             finalImpliedTotal !== null && 
                              !isNaN(finalImpliedTotal) && 
-                             isFinite(finalImpliedTotal);
+                             isFinite(finalImpliedTotal) &&
+                             typeof finalImpliedTotal === 'number';
+    
+    // Plausibility check (log only, don't suppress)
+    let plausibilityNote: string | null = null;
+    if (isModelTotalValid && (finalImpliedTotal < 25 || finalImpliedTotal > 95)) {
+      plausibilityNote = `Model total ${finalImpliedTotal.toFixed(1)} is outside typical CFB range [25-95].`;
+      console.warn(`[Game ${gameId}] ${plausibilityNote}`);
+    }
+    
     const validModelTotal = isModelTotalValid ? finalImpliedTotal : null;
     
     // Validation flags (for diagnostics only, not for gating)
@@ -1369,6 +1505,9 @@ export async function GET(
           ...(edgeAbsGt20 ? ['Edge magnitude exceeds 20 points'] : [])
         ]
       },
+      
+      // Total diagnostics (for debugging model total pipeline)
+      total_diag: process.env.NODE_ENV !== 'production' ? totalDiag : undefined,
 
       // New explicit pick fields (ticket-style with grades)
       picks: {
