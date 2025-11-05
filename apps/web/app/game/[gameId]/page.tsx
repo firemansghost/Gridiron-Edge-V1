@@ -245,9 +245,9 @@ export default function GameDetailPage() {
                       <div className="flex items-center gap-2">
                         <span className="font-medium">⚠️ Price Mismatch:</span>
                         <span>
-                          {game.model?.favorite && game.market?.marketFavorite && game.picks?.spread?.bettablePick ? (
+                          {game.model_view?.modelFavoriteName && game.market_snapshot?.favoriteTeamName && game.model_view?.edges?.atsEdgePts !== null ? (
                             <>
-                              Model prices {game.model.favorite.teamName} {game.model.favorite.spread >= 0 ? '+' : ''}{game.model.favorite.spread.toFixed(1)} while market prices {game.market.marketFavorite.teamName} {game.market.marketFavorite.line.toFixed(1)} — value exists on {game.picks.spread.bettablePick.teamName} {game.picks.spread.bettablePick.line >= 0 ? '+' : ''}{game.picks.spread.bettablePick.line.toFixed(1)}
+                              Model prices {game.model_view.modelFavoriteName} {game.model_view.modelFavoriteLine.toFixed(1)} while market prices {game.market_snapshot.favoriteTeamName} {game.market_snapshot.favoriteLine.toFixed(1)} — value exists on {game.model_view.edges.atsEdgePts > 0.5 ? game.market_snapshot.dogTeamName : game.model_view.edges.atsEdgePts < -0.5 ? game.market_snapshot.favoriteTeamName : 'no edge'} {game.model_view.edges.atsEdgePts > 0.5 ? `+${game.market_snapshot.dogLine.toFixed(1)}` : game.model_view.edges.atsEdgePts < -0.5 ? game.market_snapshot.favoriteLine.toFixed(1) : ''}
                               {game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && (
                                 <> (up to {game.picks.spread.betTo >= 0 ? '+' : ''}{game.picks.spread.betTo.toFixed(1)})</>
                               )}
@@ -395,12 +395,12 @@ export default function GameDetailPage() {
                   {game.market.spread > 0 ? '+' : ''}{game.market.spread.toFixed(1)}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
-                  {game.market.marketFavorite ? `${game.market.marketFavorite.teamName} favored` : 'Favorite unavailable'}
+                  {game.market_snapshot?.favoriteTeamName ? `${game.market_snapshot.favoriteTeamName} favored` : 'Favorite unavailable'}
                 </div>
                 {/* Dev diagnostic (only in dev mode) */}
-                {process.env.NODE_ENV !== 'production' && game.market._devDiagnostics && (
+                {process.env.NODE_ENV !== 'production' && game.market_snapshot && (
                   <div className="text-xs text-gray-400 mt-1 font-mono">
-                    feed: home {game.market._devDiagnostics.feedHome.name} {game.market._devDiagnostics.feedHome.price >= 0 ? '+' : ''}{game.market._devDiagnostics.feedHome.price} | away {game.market._devDiagnostics.feedAway.name} {game.market._devDiagnostics.feedAway.price >= 0 ? '+' : ''}{game.market._devDiagnostics.feedAway.price} | favorite {game.market.marketFavorite?.teamName} {game.market.marketFavorite?.line.toFixed(1)}
+                    snapshot: {game.market_snapshot.favoriteTeamName} {game.market_snapshot.favoriteLine.toFixed(1)} | {game.market_snapshot.dogTeamName} +{game.market_snapshot.dogLine.toFixed(1)} | snapshotId: {game.diagnostics?.snapshotId?.substring(0, 19)}
                   </div>
                 )}
               </div>
@@ -499,7 +499,18 @@ export default function GameDetailPage() {
                     </div>
                   </div>
                   <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Spread pick ${game.picks.spread.bettablePick.label}`}>
-                    {game.picks.spread.bettablePick.label}
+                    {/* Value side logic: if atsEdgePts > +0.5, value on dog; if < -0.5, value on favorite */}
+                    {game.model_view?.edges?.atsEdgePts !== null && game.market_snapshot ? (
+                      game.model_view.edges.atsEdgePts > 0.5 ? (
+                        `${game.market_snapshot.dogTeamName} +${game.market_snapshot.dogLine.toFixed(1)}`
+                      ) : game.model_view.edges.atsEdgePts < -0.5 ? (
+                        `${game.market_snapshot.favoriteTeamName} ${game.market_snapshot.favoriteLine.toFixed(1)}`
+                      ) : (
+                        'No edge at current number.'
+                      )
+                    ) : (
+                      game.picks.spread.bettablePick.label
+                    )}
                   </div>
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-sm text-gray-600">
@@ -830,7 +841,7 @@ export default function GameDetailPage() {
                   <div className="flex flex-col items-end gap-1">
                     <div className="flex items-center gap-3">
                       <div className="text-lg font-semibold text-gray-900">
-                        {game.market?.marketFavorite ? `${game.market.marketFavorite.teamName} ${game.market.marketFavorite.line.toFixed(1)}` : '—'}
+                        {game.market_snapshot?.favoriteTeamName ? `${game.market_snapshot.favoriteTeamName} ${game.market_snapshot.favoriteLine.toFixed(1)}` : '—'}
                       </div>
                       {game.lineHistory?.history?.spread && game.lineHistory.history.spread.length > 0 && (
                         <LineSparkline 
@@ -1174,7 +1185,7 @@ export default function GameDetailPage() {
                       movement={game.lineHistory.statistics.spread.movement}
                       showLabels={true}
                       showCaption={true}
-                      favoriteTeamName={game.market?.marketFavorite?.teamName}
+                      favoriteTeamName={game.market_snapshot?.favoriteTeamName}
                     />
                   </div>
                 )}
@@ -1226,9 +1237,9 @@ export default function GameDetailPage() {
                 )}
                 {game.edge?.atsEdge >= 0 ? '+' : ''}{game.edge?.atsEdge?.toFixed(1)} pts
               </div>
-              {game.model?.favorite && game.market?.marketFavorite && (
+              {game.model_view?.modelFavoriteName && game.market_snapshot?.favoriteTeamName && (
                 <div className="text-xs text-gray-500 mt-2">
-                  Model: {game.model.favorite.teamName} {game.model.favorite.spread.toFixed(1)} • Market: {game.market.marketFavorite.teamName} {game.market.marketFavorite.line.toFixed(1)}
+                  Model: {game.model_view.modelFavoriteName} {game.model_view.modelFavoriteLine.toFixed(1)} • Market: {game.market_snapshot.favoriteTeamName} {game.market_snapshot.favoriteLine.toFixed(1)}
                 </div>
               )}
             </div>
