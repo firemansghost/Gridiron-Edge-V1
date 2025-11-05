@@ -243,11 +243,11 @@ export default function GameDetailPage() {
                     )}
                     {game.validation.favoritesDisagree && (
                       <div className="flex items-center gap-2">
-                        <span className="font-medium">⚠️ Model vs Market Mismatch:</span>
+                        <span className="font-medium">⚠️ Price Mismatch:</span>
                         <span>
-                          {game.model?.favorite && game.market?.favorite && game.picks?.spread?.bettablePick ? (
+                          {game.model?.favorite && game.market?.marketFavorite && game.picks?.spread?.bettablePick ? (
                             <>
-                              Model prices {game.model.favorite.teamName} {game.model.favorite.spread >= 0 ? '+' : ''}{game.model.favorite.spread.toFixed(1)} while market prices {game.market.favorite.teamName} {game.market.favorite.spread.toFixed(1)} — value exists on {game.picks.spread.bettablePick.teamName} {game.picks.spread.bettablePick.line >= 0 ? '+' : ''}{game.picks.spread.bettablePick.line.toFixed(1)}
+                              Model prices {game.model.favorite.teamName} {game.model.favorite.spread >= 0 ? '+' : ''}{game.model.favorite.spread.toFixed(1)} while market prices {game.market.marketFavorite.teamName} {game.market.marketFavorite.line.toFixed(1)} — value exists on {game.picks.spread.bettablePick.teamName} {game.picks.spread.bettablePick.line >= 0 ? '+' : ''}{game.picks.spread.bettablePick.line.toFixed(1)}
                               {game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && (
                                 <> (up to {game.picks.spread.betTo >= 0 ? '+' : ''}{game.picks.spread.betTo.toFixed(1)})</>
                               )}
@@ -400,9 +400,7 @@ export default function GameDetailPage() {
                 {/* Dev diagnostic (only in dev mode) */}
                 {process.env.NODE_ENV !== 'production' && game.market._devDiagnostics && (
                   <div className="text-xs text-gray-400 mt-1 font-mono">
-                    feed home: {game.market._devDiagnostics.feedHome.name} {game.market._devDiagnostics.feedHome.price >= 0 ? '+' : ''}{game.market._devDiagnostics.feedHome.price} | 
-                    feed away: {game.market._devDiagnostics.feedAway.name} {game.market._devDiagnostics.feedAway.price >= 0 ? '+' : ''}{game.market._devDiagnostics.feedAway.price} | 
-                    favorite: {game.market._devDiagnostics.favorite.teamName} {game.market._devDiagnostics.favorite.line.toFixed(1)}
+                    feed: home {game.market._devDiagnostics.feedHome.name} {game.market._devDiagnostics.feedHome.price >= 0 ? '+' : ''}{game.market._devDiagnostics.feedHome.price} | away {game.market._devDiagnostics.feedAway.name} {game.market._devDiagnostics.feedAway.price >= 0 ? '+' : ''}{game.market._devDiagnostics.feedAway.price} | favorite {game.market.marketFavorite?.teamName} {game.market.marketFavorite?.line.toFixed(1)}
                   </div>
                 )}
               </div>
@@ -540,19 +538,30 @@ export default function GameDetailPage() {
               {game.picks?.total?.totalState === 'no_model_total' ? (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                   <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">TOTAL (Over/Under)</h3>
-                  <div className="text-lg font-bold text-gray-700 mb-1">
+                  <div className="text-2xl font-bold text-gray-900 mb-2">
                     No model total this week
                   </div>
-                  <div className="text-xs text-gray-600 mb-2">
+                  <div className="text-sm text-gray-600 mb-2">
                     {game.picks.total.modelTotalWarning ? (
-                      <span>{game.picks.total.modelTotalWarning}</span>
+                      <span>No model total this week — {game.picks.total.modelTotalWarning}</span>
                     ) : (
-                      <span>Missing inputs for a reliable forecast.</span>
-                    )}
-                    {game.picks.total.lean && (
-                      <span className="mt-1 block">Lean: {game.picks.total.lean.direction} {game.picks.total.marketTotal?.toFixed(1)} (model unavailable)</span>
+                      <span>No model total this week — Missing inputs for a reliable forecast.</span>
                     )}
                   </div>
+                  {game.picks.total.lean && (
+                    <div className="text-xs text-gray-500 mt-2">
+                      Lean: {game.picks.total.lean.direction} {game.picks.total.marketTotal?.toFixed(1)} (model unavailable)
+                    </div>
+                  )}
+                  {/* Dev diagnostics (only in dev mode) */}
+                  {process.env.NODE_ENV !== 'production' && game.total_diag && (
+                    <details className="mt-3 pt-3 border-t border-gray-200">
+                      <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">Diagnostics</summary>
+                      <div className="mt-2 text-xs font-mono bg-gray-50 p-2 rounded overflow-auto max-h-64">
+                        <pre>{JSON.stringify(game.total_diag, null, 2)}</pre>
+                      </div>
+                    </details>
+                  )}
                 </div>
               ) : game.picks?.total?.totalState === 'no_edge' ? (
                 <div className="bg-white border-2 border-gray-300 rounded-lg p-4 shadow-sm">
@@ -573,6 +582,15 @@ export default function GameDetailPage() {
                     <div className="text-xs text-gray-500 mt-2 italic border-t border-gray-200 pt-2">
                       {game.picks.total.rationale}
                     </div>
+                  )}
+                  {/* Dev diagnostics (only in dev mode) */}
+                  {process.env.NODE_ENV !== 'production' && game.total_diag && (
+                    <details className="mt-3 pt-3 border-t border-gray-200">
+                      <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">Diagnostics</summary>
+                      <div className="mt-2 text-xs font-mono bg-gray-50 p-2 rounded overflow-auto max-h-64">
+                        <pre>{JSON.stringify(game.total_diag, null, 2)}</pre>
+                      </div>
+                    </details>
                   )}
                 </div>
               ) : game.picks?.total?.totalState === 'pick' && game.picks?.total?.modelTotal !== null && game.picks?.total?.modelTotal !== undefined ? (
@@ -812,7 +830,7 @@ export default function GameDetailPage() {
                   <div className="flex flex-col items-end gap-1">
                     <div className="flex items-center gap-3">
                       <div className="text-lg font-semibold text-gray-900">
-                        {game.market?.favorite ? `${game.market.favorite.teamName} ${game.market.favorite.spread.toFixed(1)}` : '—'}
+                        {game.market?.marketFavorite ? `${game.market.marketFavorite.teamName} ${game.market.marketFavorite.line.toFixed(1)}` : '—'}
                       </div>
                       {game.lineHistory?.history?.spread && game.lineHistory.history.spread.length > 0 && (
                         <LineSparkline 
@@ -1208,11 +1226,9 @@ export default function GameDetailPage() {
                 )}
                 {game.edge?.atsEdge >= 0 ? '+' : ''}{game.edge?.atsEdge?.toFixed(1)} pts
               </div>
-              {game.model?.favorite && game.market?.favorite && (
+              {game.model?.favorite && game.market?.marketFavorite && (
                 <div className="text-xs text-gray-500 mt-2">
-                  Model: {game.model.favorite.teamName} {game.model.favorite.spread.toFixed(1)}
-                  {' • '}
-                  Market: {game.market.favorite.teamName} {game.market.favorite.spread.toFixed(1)}
+                  Model: {game.model.favorite.teamName} {game.model.favorite.spread.toFixed(1)} • Market: {game.market.marketFavorite.teamName} {game.market.marketFavorite.line.toFixed(1)}
                 </div>
               )}
             </div>
@@ -1255,7 +1271,7 @@ export default function GameDetailPage() {
                   </div>
                   {(game.model?.total !== null && game.model?.total !== undefined) && game.market?.total && (
                     <div className="text-xs text-gray-500 mt-2">
-                      Model: {game.model.total.toFixed(1)} • Market: {game.market.total.toFixed(1)}
+                      Model total: {game.model.total.toFixed(1)} • Market: {game.market.total.toFixed(1)}
                     </div>
                   )}
                 </>

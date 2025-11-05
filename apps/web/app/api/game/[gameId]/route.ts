@@ -218,34 +218,55 @@ export async function GET(
       const homeScoreValid = baseTeamScores.home >= 0 && baseTeamScores.home <= 70;
       const awayScoreValid = baseTeamScores.away >= 0 && baseTeamScores.away <= 70;
       
+      // Store typed values with units annotations
       totalDiag.steps.push({
-        name: 'baseTeamScores',
-        home: baseTeamScores.home,
-        away: baseTeamScores.away,
-        homePpp: homePpp,
-        homePace: homePaceOff,
-        awayPpp: awayPpp,
-        awayPace: awayPaceOff,
-        units: {
-          homePppValid,
-          awayPppValid,
-          homePaceValid,
-          awayPaceValid,
-          homeScoreValid,
-          awayScoreValid
+        name: 'team_rate_ppp',
+        home_rate_ppp: homePpp,
+        away_rate_ppp: awayPpp,
+        units: 'points_per_play',
+        units_valid: {
+          home: homePppValid,
+          away: awayPppValid,
+          expected_range: '≈ -0.5 to +1.5'
+        }
+      });
+      
+      totalDiag.steps.push({
+        name: 'expected_plays',
+        home_expected_plays: homePaceOff,
+        away_expected_plays: awayPaceOff,
+        units: 'plays_per_game',
+        units_valid: {
+          home: homePaceValid,
+          away: awayPaceValid,
+          expected_range: '60-90 plays per team'
+        }
+      });
+      
+      totalDiag.steps.push({
+        name: 'team_points_before_adj',
+        home_team_points: baseTeamScores.home,
+        away_team_points: baseTeamScores.away,
+        units: 'points',
+        calculation: 'rate × count',
+        units_valid: {
+          home: homeScoreValid,
+          away: awayScoreValid,
+          expected_range: '0-70 points per team'
         }
       });
       
       const finalTotal = baseTeamScores.home + baseTeamScores.away;
       
       totalDiag.steps.push({
-        name: 'finalTeamScores',
-        home: baseTeamScores.home,
-        away: baseTeamScores.away,
-        total: finalTotal,
-        units: {
+        name: 'modelTotal_sum',
+        modelTotal: finalTotal,
+        units: 'points',
+        calculation: 'sum(team_points)',
+        units_valid: {
           totalValid: finalTotal >= 0 && finalTotal <= 120,
-          suspect: finalTotal < 5 || finalTotal > 120 ? 'suspect' : 'ok'
+          suspect: finalTotal < 5 || finalTotal > 120 ? 'suspect' : 'ok',
+          expected_range: '0-120 points total'
         }
       });
     }
@@ -516,19 +537,49 @@ export async function GET(
       underdogSpread: Math.abs(favoriteByRule.line) // Always positive (underdog getting points)
     };
 
+    // Invariant guard: Verify favorite mapping is correct
+    // Assert: marketFavorite.line < 0 (favorite lines must be negative)
+    // Assert: The team with more negative price matches marketFavorite.teamId
+    const favoriteLineValid = favoriteByRule.line < 0;
+    const expectedFavoriteFromSpread = homePrice < awayPrice ? game.homeTeamId : game.awayTeamId;
+    const favoriteMatchesExpected = favoriteByRule.teamId === expectedFavoriteFromSpread;
+    
+    if (!favoriteLineValid || !favoriteMatchesExpected) {
+      const telemetryEvent = {
+        event: 'FAVORITE_MISMATCH',
+        gameId,
+        bookId: spreadLine?.bookName || 'Unknown',
+        homeTeamId: game.homeTeamId,
+        homeTeamName: game.homeTeam.name,
+        awayTeamId: game.awayTeamId,
+        awayTeamName: game.awayTeam.name,
+        homePrice: homePrice,
+        awayPrice: awayPrice,
+        chosenFavorite: {
+          teamId: favoriteByRule.teamId,
+          teamName: favoriteByRule.teamName,
+          line: favoriteByRule.line
+        },
+        expectedFavorite: expectedFavoriteFromSpread,
+        validation: {
+          favoriteLineValid,
+          favoriteMatchesExpected
+        }
+      };
+      console.error(`[Game ${gameId}] ⚠️ FAVORITE_MISMATCH:`, JSON.stringify(telemetryEvent, null, 2));
+    }
+    
     // Log validation of favorite mapping
     console.log(`[Game ${gameId}] Favorite Mapping Validation:`, {
-      marketSpreadFC: {
-        favoriteTeamId: marketSpreadFC.favoriteTeamId,
-        favoriteTeamName: marketSpreadFC.favoriteTeamName,
-        favoriteSpread: marketSpreadFC.favoriteSpread
-      },
       favoriteByRule: {
         teamId: favoriteByRule.teamId,
         teamName: favoriteByRule.teamName,
         line: favoriteByRule.line
       },
-      matches: marketSpreadFC.favoriteTeamId === favoriteByRule.teamId
+      validation: {
+        favoriteLineValid,
+        favoriteMatchesExpected
+      }
     });
 
     // Calculate ATS edge (favorite-centric): positive means model thinks favorite should lay more
@@ -1410,6 +1461,7 @@ export async function GET(
       
       // Market data (favorite-centric)
       // SINGLE SOURCE OF TRUTH: marketFavorite from favoriteByRule
+      // Remove all legacy favorite fields - UI must use marketFavorite only
       market: {
         spread: marketSpread, // Keep original for reference (home-minus-away)
         total: marketTotal,
@@ -1419,12 +1471,6 @@ export async function GET(
           teamId: favoriteByRule.teamId,
           teamName: favoriteByRule.teamName,
           line: favoriteByRule.line, // Always negative (favorite-centric)
-        },
-        // Keep underdog for reference, but UI should use marketFavorite
-        underdog: {
-          teamId: marketSpreadFC.underdogTeamId,
-          teamName: marketSpreadFC.underdogTeamName,
-          spread: marketSpreadFC.underdogSpread, // Always positive
         },
         meta: {
           spread: spreadMeta,
