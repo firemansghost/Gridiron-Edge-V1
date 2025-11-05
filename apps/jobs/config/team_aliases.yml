@@ -4,6 +4,8 @@
 
 aliases:
   # Non-State schools (must NOT map to -state)
+  "Alabama": alabama
+  "Alabama Crimson Tide": alabama
   "Arkansas": arkansas
   "Arkansas Razorbacks": arkansas
   "Utah": utah
@@ -32,6 +34,16 @@ aliases:
   "Delaware Blue Hens": delaware  # Delaware is FBS in 2025
   "Missouri State": missouri-state
   "Missouri State Bears": missouri-state  # Missouri State is FBS in 2025
+  "Duke": duke
+  "Duke Blue Devils": duke
+  "Notre Dame": notre-dame
+  "Notre Dame Fighting Irish": notre-dame
+  "Southern Mississippi": southern-miss
+  "Southern Mississippi Golden Eagles": southern-miss
+  "Kent State": kent-state
+  "Kent State Golden Flashes": kent-state
+  "Arkansas State": arkansas-state
+  "Arkansas State Red Wolves": arkansas-state
   
   # Ole Miss - IMPORTANT: "Mississippi" alone maps to Ole Miss (Mississippi State always includes "State")
   "Ole Miss": ole-miss
