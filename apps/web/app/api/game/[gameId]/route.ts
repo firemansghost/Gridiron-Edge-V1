@@ -815,66 +815,9 @@ export async function GET(
     const modelMLFavoriteProb = modelHomeWinProb >= 0.5 ? modelHomeWinProb : modelAwayWinProb;
     const modelMLFavoriteFairML = modelHomeWinProb >= 0.5 ? modelFairMLHome : modelFairMLAway;
 
-    // Calculate moneyline value and grade (if market ML exists)
+    // Calculate moneyline value and grade (deferred until after moneyline variables are set)
+    // This will be computed after moneylineFavoritePrice and moneylineDogPrice are determined
     let moneyline = null;
-    if (mlVal != null) {
-      // Determine moneyline pick label
-      const marketFav = mlVal < 0 ? game.homeTeam.name : game.awayTeam.name;
-      const marketMLFavProb = americanToProb(mlVal)!;
-      
-      // Determine which team's probability to compare
-      // If market favors home and model favors home, compare home probs
-      // If they disagree, compare the model's favorite vs market's favorite
-      let valuePercent: number | null = null;
-      let moneylineGrade: 'A' | 'B' | 'C' | null = null;
-      
-      if (mlVal < 0) {
-        // Market favors home
-        valuePercent = (modelHomeWinProb - marketMLFavProb) * 100;
-      } else {
-        // Market favors away
-        valuePercent = (modelAwayWinProb - marketMLFavProb) * 100;
-      }
-      
-      // Grade thresholds: A ≥ 4%, B ≥ 2.5%, C ≥ 1.5%
-      if (valuePercent >= 4.0) {
-        moneylineGrade = 'A';
-      } else if (valuePercent >= 2.5) {
-        moneylineGrade = 'B';
-      } else if (valuePercent >= 1.5) {
-        moneylineGrade = 'C';
-      }
-
-      const moneylinePickLabel = `${marketFav} ML`;
-
-      moneyline = {
-        price: mlVal,
-        pickLabel: moneylinePickLabel,
-        impliedProb: marketMLFavProb,
-        meta: mlMeta,
-        // Model comparison data
-        modelWinProb: modelMLFavoriteProb,
-        modelFairML: modelMLFavoriteFairML,
-        modelFavoriteTeam: modelMLFavorite.name,
-        valuePercent: valuePercent,
-        grade: moneylineGrade
-      };
-    } else {
-      // No market ML, but show model fair ML
-      moneyline = {
-        price: null,
-        pickLabel: null,
-        impliedProb: null,
-        meta: null,
-        // Model fair line only
-        modelWinProb: modelMLFavoriteProb,
-        modelFairML: modelMLFavoriteFairML,
-        modelFavoriteTeam: modelMLFavorite.name,
-        valuePercent: null,
-        grade: null,
-        isModelFairLineOnly: true
-      };
-    }
 
     // Convert spreads to favorite-centric format
     // For market spread, use the favoriteByRule we computed (single source of truth)
@@ -1045,6 +988,102 @@ export async function GET(
           source: 'fallback (single moneyline value)'
         });
       }
+    }
+
+    // NOW: Calculate moneyline value and grade (moneyline variables are now set)
+    if (moneylineFavoritePrice !== null || moneylineDogPrice !== null) {
+      const marketMLFavPrice = moneylineFavoritePrice !== null ? moneylineFavoritePrice : (moneylineDogPrice && moneylineDogPrice < 0 ? moneylineDogPrice : null);
+      const marketMLFavProb = marketMLFavPrice !== null ? americanToProb(marketMLFavPrice)! : null;
+      
+      // Determine which team's probability to compare
+      // Compare model's favorite probability vs market's favorite probability
+      let valuePercent: number | null = null;
+      let moneylineGrade: 'A' | 'B' | 'C' | null = null;
+      let moneylinePickTeam: string | null = null;
+      let moneylinePickPrice: number | null = null;
+      
+      if (marketMLFavProb !== null) {
+        // Compare model favorite vs market favorite
+        const modelFavProb = favoriteTeamId === game.homeTeamId ? modelHomeWinProb : modelAwayWinProb;
+        valuePercent = (modelFavProb - marketMLFavProb) * 100;
+        
+        // Determine pick: if value is positive, bet the model's favorite; if negative, bet the market's favorite
+        if (valuePercent > 0) {
+          // Model favorite has value
+          moneylinePickTeam = favoriteTeamId === game.homeTeamId ? game.homeTeam.name : game.awayTeam.name;
+          moneylinePickPrice = marketMLFavPrice;
+        } else if (valuePercent < 0 && moneylineDogPrice !== null) {
+          // Market favorite has value (bet against model)
+          moneylinePickTeam = moneylineDogTeamId === game.homeTeamId ? game.homeTeam.name : game.awayTeam.name;
+          moneylinePickPrice = moneylineDogPrice;
+        } else {
+          // No clear value, default to market favorite
+          moneylinePickTeam = moneylineFavoriteTeamId === game.homeTeamId ? game.homeTeam.name : game.awayTeam.name;
+          moneylinePickPrice = marketMLFavPrice;
+        }
+        
+        // Grade thresholds: A ≥ 4%, B ≥ 2.5%, C ≥ 1.5%
+        if (Math.abs(valuePercent) >= 4.0) {
+          moneylineGrade = 'A';
+        } else if (Math.abs(valuePercent) >= 2.5) {
+          moneylineGrade = 'B';
+        } else if (Math.abs(valuePercent) >= 1.5) {
+          moneylineGrade = 'C';
+        }
+      }
+
+      const moneylinePickLabel = moneylinePickTeam ? `${moneylinePickTeam} ML` : null;
+      
+      // CRITICAL: The price must match the pick team
+      // If pick is favorite, use favorite price; if pick is dog, use dog price
+      const finalPickPrice = moneylinePickTeam === (moneylineFavoriteTeamId === game.homeTeamId ? game.homeTeam.name : game.awayTeam.name)
+        ? marketMLFavPrice
+        : (moneylineDogPrice !== null ? moneylineDogPrice : moneylinePickPrice);
+
+      moneyline = {
+        price: finalPickPrice, // Price must match the pick team
+        pickLabel: moneylinePickLabel,
+        impliedProb: marketMLFavProb,
+        meta: mlMeta,
+        // Model comparison data
+        modelWinProb: modelMLFavoriteProb,
+        modelFairML: modelMLFavoriteFairML,
+        modelFavoriteTeam: modelMLFavorite.name,
+        valuePercent: valuePercent,
+        grade: moneylineGrade
+      };
+    } else if (mlVal !== null) {
+      // Fallback: Use mlVal if moneyline variables weren't set
+      const marketMLFavProb = americanToProb(mlVal)!;
+      const modelFavProb = favoriteTeamId === game.homeTeamId ? modelHomeWinProb : modelAwayWinProb;
+      const valuePercent = (modelFavProb - marketMLFavProb) * 100;
+      
+      moneyline = {
+        price: mlVal,
+        pickLabel: mlVal < 0 ? `${game.homeTeam.name} ML` : `${game.awayTeam.name} ML`,
+        impliedProb: marketMLFavProb,
+        meta: mlMeta,
+        modelWinProb: modelMLFavoriteProb,
+        modelFairML: modelMLFavoriteFairML,
+        modelFavoriteTeam: modelMLFavorite.name,
+        valuePercent: valuePercent,
+        grade: null
+      };
+    } else {
+      // No market ML, but show model fair ML
+      moneyline = {
+        price: null,
+        pickLabel: null,
+        impliedProb: null,
+        meta: null,
+        // Model fair line only
+        modelWinProb: modelMLFavoriteProb,
+        modelFairML: modelMLFavoriteFairML,
+        modelFavoriteTeam: modelMLFavorite.name,
+        valuePercent: null,
+        grade: null,
+        isModelFairLineOnly: true
+      };
     }
 
     if (moneylineFavoriteTeamId && moneylineFavoriteTeamId !== favoriteByRule.teamId) {

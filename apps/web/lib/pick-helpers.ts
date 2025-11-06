@@ -200,6 +200,11 @@ export function computeBettableSpreadPick(
 
   if (favoritesDisagree || valueOnDog) {
     const bettableLine = marketFC.underdogSpread;
+    // Format model spread description (handle pick'em case)
+    const modelSpreadDesc = Math.abs(modelFavoriteLine) < 0.1 
+      ? 'pick\'em (0.0)' 
+      : `${modelFC.favoriteTeamName} ${Math.abs(modelFavoriteLine).toFixed(1)}`;
+    
     return {
       teamId: marketFC.underdogTeamId,
       teamName: marketFC.underdogTeamName,
@@ -208,7 +213,7 @@ export function computeBettableSpreadPick(
       edgePts: edgeMagnitude,
       betTo: betToDog,
       favoritesDisagree,
-      reasoning: `Model makes ${modelFC.favoriteTeamName} ${Math.abs(modelFavoriteLine).toFixed(1)} on neutral vs market ${marketFC.favoriteTeamName} ${Math.abs(marketFC.favoriteSpread).toFixed(1)} — value on ${marketFC.underdogTeamName} +${bettableLine.toFixed(1)}.`
+      reasoning: `Model makes ${modelSpreadDesc} on neutral vs market ${marketFC.favoriteTeamName} ${Math.abs(marketFC.favoriteSpread).toFixed(1)} — value on ${marketFC.underdogTeamName} +${bettableLine.toFixed(1)}.`
     };
   }
 
