@@ -102,34 +102,32 @@ export async function GET(
     const pickPreferredLine = (lines: typeof game.marketLines, lineType?: 'spread' | 'total' | 'moneyline') => {
       if (!lines || lines.length === 0) return null;
       
+      // Type assertion to access teamId field
+      type MarketLineWithTeamId = typeof game.marketLines[0] & { teamId?: string | null };
+      const linesWithTeamId = lines as MarketLineWithTeamId[];
+      
+      // CRITICAL: Prefer lines with teamId populated (new data with definitive team association)
+      const linesWithTeamIdPopulated = linesWithTeamId.filter(l => {
+        const teamId = l.teamId;
+        return teamId !== null && teamId !== undefined && teamId !== 'NULL';
+      });
+      
+      const linesWithoutTeamId = linesWithTeamId.filter(l => {
+        const teamId = l.teamId;
+        return teamId === null || teamId === undefined || teamId === 'NULL';
+      });
+      
+      // Prefer lines with teamId (new data)
+      let candidatePool = linesWithTeamIdPopulated.length > 0 ? linesWithTeamIdPopulated : linesWithoutTeamId;
+      
       // CRITICAL FIX: For spreads, always pick the NEGATIVE line (favorite's line)
       // The database stores TWO spread lines per game (one for each team)
       // We must pick the favorite's line (negative value) as the canonical representation
-      let candidates = lines;
+      let candidates = candidatePool;
       if (lineType === 'spread') {
-        // Log all spread lines for debugging
-        console.log(`[Game ${gameId}] 🔍 SPREAD LINE SELECTION:`, {
-          totalLines: lines.length,
-          allValues: lines.map(l => ({
-            lineValue: l.lineValue,
-            closingLine: l.closingLine,
-            timestamp: l.timestamp,
-            bookName: l.bookName
-          }))
-        });
-        
-        const negativeLines = lines.filter((line) => {
+        const negativeLines = candidatePool.filter((line) => {
           const value = line.closingLine !== null && line.closingLine !== undefined ? line.closingLine : line.lineValue;
           return value !== null && value !== undefined && value < 0;
-        });
-        
-        console.log(`[Game ${gameId}] 🔍 NEGATIVE LINES FILTERED:`, {
-          negativeCount: negativeLines.length,
-          negativeValues: negativeLines.map(l => ({
-            lineValue: l.lineValue,
-            closingLine: l.closingLine,
-            timestamp: l.timestamp
-          }))
         });
         
         if (negativeLines.length > 0) {
@@ -145,11 +143,14 @@ export async function GET(
       }, null as typeof finalCandidates[0] | null);
       
       if (lineType === 'spread' && selected) {
+        const selectedWithTeamId = selected as MarketLineWithTeamId;
         console.log(`[Game ${gameId}] ✅ SELECTED SPREAD LINE:`, {
           lineValue: selected.lineValue,
           closingLine: selected.closingLine,
           bookName: selected.bookName,
-          timestamp: selected.timestamp
+          timestamp: selected.timestamp,
+          teamId: selectedWithTeamId.teamId || 'NULL',
+          hasTeamId: !!(selectedWithTeamId.teamId && selectedWithTeamId.teamId !== 'NULL')
         });
       }
       
@@ -171,7 +172,16 @@ export async function GET(
       const totalCandidate = pickPreferredLine(group.totalLines, 'total');
       const moneylineCandidate = pickPreferredLine(group.moneylineLines, 'moneyline');
 
-      const coverageScore = (spreadCandidate ? 100 : 0) + (totalCandidate ? 10 : 0) + (moneylineCandidate ? 1 : 0);
+      // Check if spread candidate has teamId (data quality bonus)
+      type MarketLineWithTeamId = typeof game.marketLines[0] & { teamId?: string | null };
+      const spreadWithTeamId = spreadCandidate as MarketLineWithTeamId | null;
+      const hasTeamId = !!(spreadWithTeamId?.teamId && spreadWithTeamId.teamId !== 'NULL');
+      
+      // Coverage score: base score + bonus for teamId (ensures we prefer new data)
+      const baseCoverageScore = (spreadCandidate ? 100 : 0) + (totalCandidate ? 10 : 0) + (moneylineCandidate ? 1 : 0);
+      const teamIdBonus = hasTeamId ? 1000 : 0; // Large bonus to ensure teamId lines are always preferred
+      const coverageScore = baseCoverageScore + teamIdBonus;
+      
       const latestTimestamp = Math.max(
         spreadCandidate ? new Date(spreadCandidate.timestamp).getTime() : 0,
         totalCandidate ? new Date(totalCandidate.timestamp).getTime() : 0,

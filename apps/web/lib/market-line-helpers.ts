@@ -14,7 +14,7 @@ interface MarketLineInput {
 }
 
 /**
- * Pick the best market line from a list, preferring SGO and latest timestamp
+ * Pick the best market line from a list, preferring lines with teamId, then SGO and latest timestamp
  * 
  * @param lines - Array of market lines to choose from
  * @param type - Type of line to find ('spread', 'total', 'moneyline')
@@ -22,9 +22,11 @@ interface MarketLineInput {
  * 
  * Selection logic:
  * 1. Filter to matching line type
- * 2. Prefer SGO source (most reliable)
- * 3. Within same source, prefer latest timestamp
- * 4. If no SGO, use latest from any source
+ * 2. For spreads: prefer lines with teamId populated (new data), then pick negative line (favorite's line)
+ * 3. Prefer lines with teamId populated (data quality - ensures we have definitive team association)
+ * 4. Prefer SGO source (most reliable)
+ * 5. Within same source, prefer latest timestamp
+ * 6. If no SGO, use latest from any source
  */
 export function pickMarketLine<T extends MarketLineInput>(
   lines: T[],
@@ -37,16 +39,46 @@ export function pickMarketLine<T extends MarketLineInput>(
     return null;
   }
   
-  // CRITICAL FIX: For spreads, always pick the NEGATIVE line (favorite's line)
+  // CRITICAL: For spreads, prefer lines with teamId populated (new data with definitive team association)
+  // Then pick the NEGATIVE line (favorite's line)
   // The database stores TWO spread lines per game (one for each team)
   // We must pick the favorite's line (negative value) as the canonical representation
   if (type === 'spread') {
-    const negativeLines = sameType.filter(l => {
+    // First, separate lines with teamId from those without
+    const linesWithTeamId = sameType.filter(l => {
+      const teamId = (l as any).teamId;
+      return teamId !== null && teamId !== undefined && teamId !== 'NULL';
+    });
+    
+    const linesWithoutTeamId = sameType.filter(l => {
+      const teamId = (l as any).teamId;
+      return teamId === null || teamId === undefined || teamId === 'NULL';
+    });
+    
+    // Prefer lines with teamId (new data)
+    let candidateLines = linesWithTeamId.length > 0 ? linesWithTeamId : linesWithoutTeamId;
+    
+    // Within candidate lines, filter to negative lines (favorite's line)
+    const negativeLines = candidateLines.filter(l => {
       const value = l.closingLine !== null && l.closingLine !== undefined ? l.closingLine : l.lineValue;
       return value !== null && value !== undefined && value < 0;
     });
+    
     if (negativeLines.length > 0) {
       sameType = negativeLines;
+    } else {
+      // If no negative lines in candidate set, use all candidate lines
+      sameType = candidateLines;
+    }
+  } else {
+    // For totals and moneylines, prefer lines with teamId populated
+    const linesWithTeamId = sameType.filter(l => {
+      const teamId = (l as any).teamId;
+      return teamId !== null && teamId !== undefined && teamId !== 'NULL';
+    });
+    
+    if (linesWithTeamId.length > 0) {
+      sameType = linesWithTeamId;
     }
   }
 
