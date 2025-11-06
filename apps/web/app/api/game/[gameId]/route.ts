@@ -949,7 +949,21 @@ export async function GET(
     let moneylineFavoriteTeamId: string | null = null;
     let moneylineDogTeamId: string | null = null;
     
-    // DIAGNOSTIC: Log what we found
+    // DIAGNOSTIC: Log what we found and what's available in database
+    const allMoneylinesInDb = game.marketLines.filter(l => l.lineType === 'moneyline');
+    const moneylinesWithTeamId = allMoneylinesInDb.filter(l => {
+      const ml = l as MarketLineWithTeamId;
+      return !!(ml.teamId && ml.teamId !== 'NULL');
+    });
+    const homeMLLinesInDb = moneylinesWithTeamId.filter(l => {
+      const ml = l as MarketLineWithTeamId;
+      return ml.teamId === game.homeTeamId;
+    });
+    const awayMLLinesInDb = moneylinesWithTeamId.filter(l => {
+      const ml = l as MarketLineWithTeamId;
+      return ml.teamId === game.awayTeamId;
+    });
+    
     console.log(`[Game ${gameId}] 🔍 MONEYLINE LOOKUP DIAGNOSTIC:`, {
       homeMoneylineLine: homeMoneylineLine ? {
         teamId: homeMoneylineLine.teamId,
@@ -965,7 +979,25 @@ export async function GET(
       } : null,
       favoriteTeamId,
       homeTeamId: game.homeTeamId,
-      awayTeamId: game.awayTeamId
+      awayTeamId: game.awayTeamId,
+      databaseStats: {
+        totalMoneylines: allMoneylinesInDb.length,
+        moneylinesWithTeamId: moneylinesWithTeamId.length,
+        homeMLLinesInDb: homeMLLinesInDb.length,
+        awayMLLinesInDb: awayMLLinesInDb.length,
+        sampleHomeML: homeMLLinesInDb.slice(0, 3).map(l => ({
+          teamId: (l as MarketLineWithTeamId).teamId,
+          lineValue: getLineValue(l),
+          bookName: l.bookName,
+          timestamp: l.timestamp
+        })),
+        sampleAwayML: awayMLLinesInDb.slice(0, 3).map(l => ({
+          teamId: (l as MarketLineWithTeamId).teamId,
+          lineValue: getLineValue(l),
+          bookName: l.bookName,
+          timestamp: l.timestamp
+        }))
+      }
     });
     
     if (homeMoneylineLine && awayMoneylineLine) {
@@ -999,35 +1031,83 @@ export async function GET(
       
       // If we found one, try to find the other using the same strategy
       if (homeMoneylineLine && !awayMoneylineLine) {
+        console.log(`[Game ${gameId}] 🔍 FALLBACK: Found home moneyline, searching for away (teamId: ${game.awayTeamId})...`);
+        
         // Found home, need away - try same timestamp, any book
         awayMoneylineLine = marketLinesWithTeamId.find(
           (l) => l.lineType === 'moneyline' && 
                  l.teamId === game.awayTeamId &&
                  Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 1000
         );
-        // If still not found, try any with teamId
-        if (!awayMoneylineLine) {
+        
+        if (awayMoneylineLine) {
+          console.log(`[Game ${gameId}] ✅ FALLBACK: Found away moneyline (same timestamp):`, {
+            teamId: awayMoneylineLine.teamId,
+            lineValue: getLineValue(awayMoneylineLine),
+            bookName: awayMoneylineLine.bookName,
+            timestamp: awayMoneylineLine.timestamp
+          });
+        } else {
+          // If still not found, try any with teamId (most recent)
           const awayMLLines = marketLinesWithTeamId.filter(
             (l) => l.lineType === 'moneyline' && l.teamId === game.awayTeamId
           ).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          
+          console.log(`[Game ${gameId}] 🔍 FALLBACK: Found ${awayMLLines.length} away moneyline(s) with teamId (any timestamp)`);
+          
           if (awayMLLines.length > 0) {
             awayMoneylineLine = awayMLLines[0];
+            console.log(`[Game ${gameId}] ✅ FALLBACK: Using most recent away moneyline:`, {
+              teamId: awayMoneylineLine.teamId,
+              lineValue: getLineValue(awayMoneylineLine),
+              bookName: awayMoneylineLine.bookName,
+              timestamp: awayMoneylineLine.timestamp
+            });
+          } else {
+            console.warn(`[Game ${gameId}] ❌ FALLBACK: No away moneyline found with teamId=${game.awayTeamId}`);
+            // Last resort: search all moneylines for this game (without teamId requirement)
+            const allAwayML = game.marketLines.filter(
+              (l) => l.lineType === 'moneyline' && 
+                     (l as any).teamId === game.awayTeamId
+            );
+            console.log(`[Game ${gameId}] 🔍 FALLBACK: Checking all moneylines (including without teamId): ${allAwayML.length} found`);
           }
         }
       } else if (!homeMoneylineLine && awayMoneylineLine) {
+        console.log(`[Game ${gameId}] 🔍 FALLBACK: Found away moneyline, searching for home (teamId: ${game.homeTeamId})...`);
+        
         // Found away, need home - try same timestamp, any book
         homeMoneylineLine = marketLinesWithTeamId.find(
           (l) => l.lineType === 'moneyline' && 
                  l.teamId === game.homeTeamId &&
                  Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 1000
         );
-        // If still not found, try any with teamId
-        if (!homeMoneylineLine) {
+        
+        if (homeMoneylineLine) {
+          console.log(`[Game ${gameId}] ✅ FALLBACK: Found home moneyline (same timestamp):`, {
+            teamId: homeMoneylineLine.teamId,
+            lineValue: getLineValue(homeMoneylineLine),
+            bookName: homeMoneylineLine.bookName,
+            timestamp: homeMoneylineLine.timestamp
+          });
+        } else {
+          // If still not found, try any with teamId (most recent)
           const homeMLLines = marketLinesWithTeamId.filter(
             (l) => l.lineType === 'moneyline' && l.teamId === game.homeTeamId
           ).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          
+          console.log(`[Game ${gameId}] 🔍 FALLBACK: Found ${homeMLLines.length} home moneyline(s) with teamId (any timestamp)`);
+          
           if (homeMLLines.length > 0) {
             homeMoneylineLine = homeMLLines[0];
+            console.log(`[Game ${gameId}] ✅ FALLBACK: Using most recent home moneyline:`, {
+              teamId: homeMoneylineLine.teamId,
+              lineValue: getLineValue(homeMoneylineLine),
+              bookName: homeMoneylineLine.bookName,
+              timestamp: homeMoneylineLine.timestamp
+            });
+          } else {
+            console.warn(`[Game ${gameId}] ❌ FALLBACK: No home moneyline found with teamId=${game.homeTeamId}`);
           }
         }
       }
