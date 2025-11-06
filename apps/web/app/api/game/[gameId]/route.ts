@@ -310,63 +310,77 @@ export async function GET(
     // Type assertion to access teamId field (needed for both spreads and moneylines)
     const marketLinesWithTeamId = game.marketLines as MarketLineWithTeamId[];
 
-    // Get both moneyline lines (favorite and dog) using teamId
-    // Strategy: First try same book/timestamp, then same timestamp (any book), then any with teamId
+    // Get both moneyline lines - NEW APPROACH: Don't rely on teamId
+    // Moneylines come in pairs (one negative for favorite, one positive for dog) from same book/timestamp
+    // We'll grab both values and assign based on which team is the favorite (known from spread)
     const spreadTimestamp = new Date(spreadLine.timestamp).getTime();
     const targetBook = mlLine?.bookName || spreadLine.bookName;
     
-    // Pass 1: Same book and timestamp (most reliable)
-    let homeMoneylineLine = marketLinesWithTeamId.find(
+    // Find all moneylines from the target book around the spread timestamp
+    const moneylinesFromTargetBook = game.marketLines.filter(
       (l) => l.lineType === 'moneyline' && 
-             l.teamId === game.homeTeamId &&
              l.bookName === targetBook &&
              Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 1000
     );
     
-    let awayMoneylineLine = marketLinesWithTeamId.find(
-      (l) => l.lineType === 'moneyline' && 
-             l.teamId === game.awayTeamId &&
-             l.bookName === targetBook &&
-             Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 1000
-    );
+    // Extract the positive and negative moneyline values
+    const mlValues = moneylinesFromTargetBook
+      .map(l => getLineValue(l))
+      .filter(v => v !== null && v !== undefined) as number[];
     
-    // Pass 2: Same timestamp, any book (if Pass 1 failed)
+    const negativeML = mlValues.find(v => v < 0);
+    const positiveML = mlValues.find(v => v > 0);
+    
+    // Find the actual line objects for these values
+    let homeMoneylineLine: MarketLineWithTeamId | undefined = undefined;
+    let awayMoneylineLine: MarketLineWithTeamId | undefined = undefined;
+    
+    if (negativeML !== undefined && positiveML !== undefined) {
+      const negativeMLLine = moneylinesFromTargetBook.find(l => getLineValue(l) === negativeML);
+      const positiveMLLine = moneylinesFromTargetBook.find(l => getLineValue(l) === positiveML);
+      
+      console.log(`[Game ${gameId}] 🎯 Found both moneylines from ${targetBook}:`, {
+        negativeML,
+        positiveML,
+        timestamp: spreadLine.timestamp
+      });
+      
+      // Assign to home/away based on which team is favorite (we'll determine this later from spread)
+      // For now, just store both as generic lines
+      homeMoneylineLine = negativeMLLine as MarketLineWithTeamId;
+      awayMoneylineLine = positiveMLLine as MarketLineWithTeamId;
+    }
+    
+    // Fallback: Try any book if target book didn't have both
     if (!homeMoneylineLine || !awayMoneylineLine) {
-      if (!homeMoneylineLine) {
-        homeMoneylineLine = marketLinesWithTeamId.find(
-          (l) => l.lineType === 'moneyline' && 
-                 l.teamId === game.homeTeamId &&
-                 Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 1000
-        );
-      }
-      if (!awayMoneylineLine) {
-        awayMoneylineLine = marketLinesWithTeamId.find(
-          (l) => l.lineType === 'moneyline' && 
-                 l.teamId === game.awayTeamId &&
-                 Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 1000
-        );
+      const allMoneylinesNearSpread = game.marketLines.filter(
+        (l) => l.lineType === 'moneyline' && 
+               Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 5000 // Within 5 seconds
+      );
+      
+      const allMLValues = allMoneylinesNearSpread
+        .map(l => getLineValue(l))
+        .filter(v => v !== null && v !== undefined) as number[];
+      
+      const fallbackNegativeML = allMLValues.find(v => v < 0);
+      const fallbackPositiveML = allMLValues.find(v => v > 0);
+      
+      if (fallbackNegativeML !== undefined && fallbackPositiveML !== undefined) {
+        const negativeMLLine = allMoneylinesNearSpread.find(l => getLineValue(l) === fallbackNegativeML);
+        const positiveMLLine = allMoneylinesNearSpread.find(l => getLineValue(l) === fallbackPositiveML);
+        
+        console.log(`[Game ${gameId}] 🔄 FALLBACK: Found both moneylines from any book:`, {
+          negativeML: fallbackNegativeML,
+          positiveML: fallbackPositiveML,
+          book: negativeMLLine?.bookName
+        });
+        
+        homeMoneylineLine = negativeMLLine as MarketLineWithTeamId;
+        awayMoneylineLine = positiveMLLine as MarketLineWithTeamId;
       }
     }
     
-    // Pass 3: Any with teamId (if Pass 2 failed) - prefer most recent
-    if (!homeMoneylineLine || !awayMoneylineLine) {
-      const homeMLLines = marketLinesWithTeamId.filter(
-        (l) => l.lineType === 'moneyline' && l.teamId === game.homeTeamId
-      ).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      
-      const awayMLLines = marketLinesWithTeamId.filter(
-        (l) => l.lineType === 'moneyline' && l.teamId === game.awayTeamId
-      ).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      
-      if (!homeMoneylineLine && homeMLLines.length > 0) {
-        homeMoneylineLine = homeMLLines[0];
-      }
-      if (!awayMoneylineLine && awayMLLines.length > 0) {
-        awayMoneylineLine = awayMLLines[0];
-      }
-    }
-    
-    // Fallback: if teamId lookup fails, use the selected mlLine (old behavior)
+    // Fallback: if still no moneylines, use the selected mlLine (old behavior)
     const mlVal = mlLine ? getLineValue(mlLine) : null;
 
     const bookSource = [selectedGroupBook, selectedGroupSource].filter(Boolean).join(' • ') || spreadLine.bookName || 'Unknown';
@@ -1001,262 +1015,59 @@ export async function GET(
     });
     
     if (homeMoneylineLine && awayMoneylineLine) {
-      // IDEAL CASE: We have both moneylines with teamId
-      const homeMLPrice = getLineValue(homeMoneylineLine);
-      const awayMLPrice = getLineValue(awayMoneylineLine);
+      // NEW APPROACH: We have negative and positive moneylines (stored temporarily as home/away)
+      // Assign based on which is negative (favorite) and which is positive (dog)
+      const line1Price = getLineValue(homeMoneylineLine);
+      const line2Price = getLineValue(awayMoneylineLine);
       
-      // Assign based on which team is the favorite
-      if (favoriteTeamId === game.homeTeamId) {
-        moneylineFavoritePrice = homeMLPrice;
-        moneylineDogPrice = awayMLPrice;
-        moneylineFavoriteTeamId = game.homeTeamId;
-        moneylineDogTeamId = game.awayTeamId;
-      } else {
-        moneylineFavoritePrice = awayMLPrice;
-        moneylineDogPrice = homeMLPrice;
-        moneylineFavoriteTeamId = game.awayTeamId;
-        moneylineDogTeamId = game.homeTeamId;
-      }
-      
-      console.log(`[Game ${gameId}] ✅ DEFINITIVE MONEYLINE (from teamId):`, {
-        favoriteTeamId: moneylineFavoriteTeamId,
-        favoritePrice: moneylineFavoritePrice,
-        dogTeamId: moneylineDogTeamId,
-        dogPrice: moneylineDogPrice,
-        source: 'teamId field (definitive)'
-      });
-    } else {
-      // FALLBACK: One or both moneylines not found in 3-pass lookup
-      // Try to find the missing one(s) using broader search
-      
-      // If we found one, try to find the other using the same strategy
-      if (homeMoneylineLine && !awayMoneylineLine) {
-        console.log(`[Game ${gameId}] 🔍 FALLBACK: Found home moneyline, searching for away (teamId: ${game.awayTeamId})...`);
-        
-        // Found home, need away - try same timestamp, any book
-        awayMoneylineLine = marketLinesWithTeamId.find(
-          (l) => l.lineType === 'moneyline' && 
-                 l.teamId === game.awayTeamId &&
-                 Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 1000
-        );
-        
-        if (awayMoneylineLine) {
-          console.log(`[Game ${gameId}] ✅ FALLBACK: Found away moneyline (same timestamp):`, {
-            teamId: awayMoneylineLine.teamId,
-            lineValue: getLineValue(awayMoneylineLine),
-            bookName: awayMoneylineLine.bookName,
-            timestamp: awayMoneylineLine.timestamp
-          });
-        } else {
-          // If still not found, try any with teamId (most recent)
-          const awayMLLines = marketLinesWithTeamId.filter(
-            (l) => l.lineType === 'moneyline' && l.teamId === game.awayTeamId
-          ).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-          
-          console.log(`[Game ${gameId}] 🔍 FALLBACK: Found ${awayMLLines.length} away moneyline(s) with teamId (any timestamp)`);
-          
-          if (awayMLLines.length > 0) {
-            awayMoneylineLine = awayMLLines[0];
-            console.log(`[Game ${gameId}] ✅ FALLBACK: Using most recent away moneyline:`, {
-              teamId: awayMoneylineLine.teamId,
-              lineValue: getLineValue(awayMoneylineLine),
-              bookName: awayMoneylineLine.bookName,
-              timestamp: awayMoneylineLine.timestamp
-            });
-          } else {
-            console.warn(`[Game ${gameId}] ❌ FALLBACK: No away moneyline found with teamId=${game.awayTeamId}`);
-            // Last resort: Find opposite-sign moneyline from same book/timestamp (even without teamId)
-            if (homeMoneylineLine) {
-              const homeMLPrice = getLineValue(homeMoneylineLine);
-              const homeBook = homeMoneylineLine.bookName;
-              const homeTimestamp = new Date(homeMoneylineLine.timestamp).getTime();
-              
-              // Find opposite-sign moneyline from same book/timestamp
-              const oppositeML = game.marketLines.find(
-                (l) => l.lineType === 'moneyline' &&
-                       l.bookName === homeBook &&
-                       Math.abs(new Date(l.timestamp).getTime() - homeTimestamp) < 1000 &&
-                       getLineValue(l) !== null &&
-                       ((homeMLPrice! < 0 && getLineValue(l)! > 0) || (homeMLPrice! > 0 && getLineValue(l)! < 0))
-              );
-              
-              if (oppositeML) {
-                awayMoneylineLine = oppositeML as MarketLineWithTeamId;
-                console.log(`[Game ${gameId}] ✅ FALLBACK: Found away moneyline by opposite sign (same book/timestamp):`, {
-                  teamId: (oppositeML as any).teamId || 'NULL',
-                  lineValue: getLineValue(oppositeML),
-                  bookName: oppositeML.bookName,
-                  timestamp: oppositeML.timestamp,
-                  note: 'Found by matching opposite sign, may not have teamId'
-                });
-              } else {
-                console.log(`[Game ${gameId}] 🔍 FALLBACK: No opposite-sign moneyline found from same book/timestamp`);
-              }
-            }
-          }
-        }
-      } else if (!homeMoneylineLine && awayMoneylineLine) {
-        console.log(`[Game ${gameId}] 🔍 FALLBACK: Found away moneyline, searching for home (teamId: ${game.homeTeamId})...`);
-        
-        // Found away, need home - try same timestamp, any book
-        homeMoneylineLine = marketLinesWithTeamId.find(
-          (l) => l.lineType === 'moneyline' && 
-                 l.teamId === game.homeTeamId &&
-                 Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 1000
-        );
-        
-        if (homeMoneylineLine) {
-          console.log(`[Game ${gameId}] ✅ FALLBACK: Found home moneyline (same timestamp):`, {
-            teamId: homeMoneylineLine.teamId,
-            lineValue: getLineValue(homeMoneylineLine),
-            bookName: homeMoneylineLine.bookName,
-            timestamp: homeMoneylineLine.timestamp
-          });
-        } else {
-          // If still not found, try any with teamId (most recent)
-          const homeMLLines = marketLinesWithTeamId.filter(
-            (l) => l.lineType === 'moneyline' && l.teamId === game.homeTeamId
-          ).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-          
-          console.log(`[Game ${gameId}] 🔍 FALLBACK: Found ${homeMLLines.length} home moneyline(s) with teamId (any timestamp)`);
-          
-          if (homeMLLines.length > 0) {
-            homeMoneylineLine = homeMLLines[0];
-            console.log(`[Game ${gameId}] ✅ FALLBACK: Using most recent home moneyline:`, {
-              teamId: homeMoneylineLine.teamId,
-              lineValue: getLineValue(homeMoneylineLine),
-              bookName: homeMoneylineLine.bookName,
-              timestamp: homeMoneylineLine.timestamp
-            });
-          } else {
-            console.warn(`[Game ${gameId}] ❌ FALLBACK: No home moneyline found with teamId=${game.homeTeamId}`);
-            // Last resort: Find opposite-sign moneyline from same book/timestamp (even without teamId)
-            if (awayMoneylineLine) {
-              const awayMLPrice = getLineValue(awayMoneylineLine);
-              const awayBook = awayMoneylineLine.bookName;
-              const awayTimestamp = new Date(awayMoneylineLine.timestamp).getTime();
-              
-              // Find opposite-sign moneyline from same book/timestamp
-              const oppositeML = game.marketLines.find(
-                (l) => l.lineType === 'moneyline' &&
-                       l.bookName === awayBook &&
-                       Math.abs(new Date(l.timestamp).getTime() - awayTimestamp) < 1000 &&
-                       getLineValue(l) !== null &&
-                       ((awayMLPrice! < 0 && getLineValue(l)! > 0) || (awayMLPrice! > 0 && getLineValue(l)! < 0))
-              );
-              
-              if (oppositeML) {
-                homeMoneylineLine = oppositeML as MarketLineWithTeamId;
-                console.log(`[Game ${gameId}] ✅ FALLBACK: Found home moneyline by opposite sign (same book/timestamp):`, {
-                  teamId: (oppositeML as any).teamId || 'NULL',
-                  lineValue: getLineValue(oppositeML),
-                  bookName: oppositeML.bookName,
-                  timestamp: oppositeML.timestamp,
-                  note: 'Found by matching opposite sign, may not have teamId'
-                });
-              } else {
-                console.log(`[Game ${gameId}] 🔍 FALLBACK: No opposite-sign moneyline found from same book/timestamp`);
-              }
-            }
-          }
-        }
-      }
-      
-      // If we now have both, use them
-      if (homeMoneylineLine && awayMoneylineLine) {
-        const homeMLPrice = getLineValue(homeMoneylineLine);
-        const awayMLPrice = getLineValue(awayMoneylineLine);
-        
-        if (favoriteTeamId === game.homeTeamId) {
-          moneylineFavoritePrice = homeMLPrice;
-          moneylineDogPrice = awayMLPrice;
-          moneylineFavoriteTeamId = game.homeTeamId;
-          moneylineDogTeamId = game.awayTeamId;
-        } else {
-          moneylineFavoritePrice = awayMLPrice;
-          moneylineDogPrice = homeMLPrice;
-          moneylineFavoriteTeamId = game.awayTeamId;
-          moneylineDogTeamId = game.homeTeamId;
+      // The negative line is the favorite, positive is the dog
+      if (line1Price !== null && line2Price !== null) {
+        if (line1Price < 0 && line2Price > 0) {
+          // line1 is favorite (negative), line2 is dog (positive)
+          moneylineFavoritePrice = line1Price;
+          moneylineDogPrice = line2Price;
+        } else if (line2Price < 0 && line1Price > 0) {
+          // line2 is favorite (negative), line1 is dog (positive)
+          moneylineFavoritePrice = line2Price;
+          moneylineDogPrice = line1Price;
         }
         
-        console.log(`[Game ${gameId}] ✅ FALLBACK MONEYLINE (found both after extended search):`, {
+        // Always assign teamIds based on the favorite from spread
+        moneylineFavoriteTeamId = favoriteTeamId;
+        moneylineDogTeamId = favoriteTeamId === game.homeTeamId ? game.awayTeamId : game.homeTeamId;
+        
+        console.log(`[Game ${gameId}] ✅ MONEYLINE ASSIGNED (by sign):`, {
           favoriteTeamId: moneylineFavoriteTeamId,
           favoritePrice: moneylineFavoritePrice,
           dogTeamId: moneylineDogTeamId,
           dogPrice: moneylineDogPrice,
-          source: 'fallback (extended search with teamId)'
+          source: 'sign-based assignment (negative=favorite, positive=dog)'
         });
-      } else {
-        // Still missing one or both - try to find both from same book/timestamp
-        // First try with teamId, then try without teamId requirement
-        let allMoneylineLines = marketLinesWithTeamId.filter(
-          (l) => l.lineType === 'moneyline' && 
-                 l.bookName === (mlLine?.bookName || spreadLine.bookName) &&
-                 Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 1000
-        );
-        
-        // If we don't have both, try searching all moneylines (including without teamId)
-        const mlValuesWithTeamId = allMoneylineLines.map(l => getLineValue(l)).filter(v => v !== null) as number[];
-        const negativeMLWithTeamId = mlValuesWithTeamId.find(v => v < 0);
-        const positiveMLWithTeamId = mlValuesWithTeamId.find(v => v > 0);
-        
-        if (negativeMLWithTeamId === undefined || positiveMLWithTeamId === undefined) {
-          // Try searching all moneylines (not just with teamId)
-          allMoneylineLines = game.marketLines.filter(
-            (l) => l.lineType === 'moneyline' && 
-                   l.bookName === (mlLine?.bookName || spreadLine.bookName) &&
-                   Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 1000
-          ) as MarketLineWithTeamId[];
-          console.log(`[Game ${gameId}] 🔍 FALLBACK: Expanded search to all moneylines (including without teamId): ${allMoneylineLines.length} found`);
+      }
+    } else {
+      // FALLBACK: Couldn't find both moneylines from the new approach
+      // Use mlVal if available (old behavior)
+      console.warn(`[Game ${gameId}] ⚠️ Could not find both moneylines, falling back to mlVal`);
+      
+      if (mlVal !== null && mlVal !== undefined) {
+        if (mlVal < 0) {
+          moneylineFavoriteTeamId = favoriteTeamId;
+          moneylineDogTeamId = favoriteTeamId === game.homeTeamId ? game.awayTeamId : game.homeTeamId;
+          moneylineFavoritePrice = mlVal;
+        } else if (mlVal > 0) {
+          moneylineFavoriteTeamId = favoriteTeamId === game.homeTeamId ? game.awayTeamId : game.homeTeamId;
+          moneylineDogTeamId = favoriteTeamId;
+          moneylineDogPrice = mlVal;
         }
         
-        // Find negative (favorite) and positive (dog) moneyline values
-        const mlValues = allMoneylineLines.map(l => getLineValue(l)).filter(v => v !== null) as number[];
-        const negativeML = mlValues.find(v => v < 0);
-        const positiveML = mlValues.find(v => v > 0);
-        
-        if (negativeML !== undefined && positiveML !== undefined) {
-          // We have both moneylines - assign based on favorite determined from spread
-          if (favoriteTeamId === game.homeTeamId) {
-            moneylineFavoritePrice = negativeML;
-            moneylineDogPrice = positiveML;
-            moneylineFavoriteTeamId = game.homeTeamId;
-            moneylineDogTeamId = game.awayTeamId;
-          } else {
-            moneylineFavoritePrice = negativeML;
-            moneylineDogPrice = positiveML;
-            moneylineFavoriteTeamId = game.awayTeamId;
-            moneylineDogTeamId = game.homeTeamId;
-          }
-          
-          console.log(`[Game ${gameId}] ✅ FALLBACK MONEYLINE (both values found from same book):`, {
-            favoriteTeamId: moneylineFavoriteTeamId,
-            favoritePrice: moneylineFavoritePrice,
-            dogTeamId: moneylineDogTeamId,
-            dogPrice: moneylineDogPrice,
-            source: 'fallback (both moneylines from same book)'
-          });
-        } else if (mlVal !== null && mlVal !== undefined) {
-          // Only one moneyline value available - use old behavior
-          if (mlVal < 0) {
-            moneylineFavoriteTeamId = favoriteTeamId; // Use favorite from spread determination
-            moneylineDogTeamId = favoriteTeamId === game.homeTeamId ? game.awayTeamId : game.homeTeamId;
-            moneylineFavoritePrice = mlVal;
-          } else if (mlVal > 0) {
-            moneylineFavoriteTeamId = favoriteTeamId === game.homeTeamId ? game.awayTeamId : game.homeTeamId;
-            moneylineDogTeamId = favoriteTeamId;
-            moneylineDogPrice = mlVal;
-          }
-          
-          console.log(`[Game ${gameId}] ⚠️ FALLBACK MONEYLINE (single value):`, {
-            mlVal,
-            favoriteTeamId: moneylineFavoriteTeamId,
-            favoritePrice: moneylineFavoritePrice,
-            dogTeamId: moneylineDogTeamId,
-            dogPrice: moneylineDogPrice,
-            source: 'fallback (single moneyline value)'
-          });
-        }
+        console.log(`[Game ${gameId}] ⚠️ FALLBACK MONEYLINE (single value from mlVal):`, {
+          mlVal,
+          favoriteTeamId: moneylineFavoriteTeamId,
+          favoritePrice: moneylineFavoritePrice,
+          dogTeamId: moneylineDogTeamId,
+          dogPrice: moneylineDogPrice,
+          source: 'mlVal fallback'
+        });
       }
     }
 
