@@ -59,6 +59,9 @@ export async function GET(
 
     const matchupOutput = game.matchupOutputs[0];
     
+    // Type assertion to access teamId field (defined once for reuse)
+    type MarketLineWithTeamId = typeof game.marketLines[0] & { teamId?: string | null };
+    
     // ============================================
     // BUILD SINGLE SOURCE OF TRUTH SNAPSHOT (MARKET)
     // ============================================
@@ -103,7 +106,6 @@ export async function GET(
       if (!lines || lines.length === 0) return null;
       
       // Type assertion to access teamId field
-      type MarketLineWithTeamId = typeof game.marketLines[0] & { teamId?: string | null };
       const linesWithTeamId = lines as MarketLineWithTeamId[];
       
       // CRITICAL: Prefer lines with teamId populated (new data with definitive team association)
@@ -164,44 +166,83 @@ export async function GET(
     let selectedGroupBook: string | null = null;
     let selectedGroupTimestamp = 0;
 
-    let bestCoverageScore = -1;
-    let bestLatestTimestamp = 0;
+    // TWO-PASS SELECTION: First pass only considers groups with teamId, fallback to all groups if none exist
+    const selectBestGroup = (groups: OddsGroup[]) => {
+      let bestCoverageScore = -1;
+      let bestLatestTimestamp = 0;
+      let bestSpreadLine: typeof game.marketLines[number] | null = null;
+      let bestTotalLine: typeof game.marketLines[number] | null = null;
+      let bestMoneylineLine: typeof game.marketLines[number] | null = null;
+      let bestSource: string | null = null;
+      let bestBook: string | null = null;
+      let bestTimestamp = 0;
 
-    groupedByBook.forEach((group) => {
-      const spreadCandidate = pickPreferredLine(group.spreadLines, 'spread');
-      const totalCandidate = pickPreferredLine(group.totalLines, 'total');
-      const moneylineCandidate = pickPreferredLine(group.moneylineLines, 'moneyline');
+      for (const group of groups) {
+        const spreadCandidate = pickPreferredLine(group.spreadLines, 'spread');
+        const totalCandidate = pickPreferredLine(group.totalLines, 'total');
+        const moneylineCandidate = pickPreferredLine(group.moneylineLines, 'moneyline');
 
-      // Check if spread candidate has teamId (data quality bonus)
-      type MarketLineWithTeamId = typeof game.marketLines[0] & { teamId?: string | null };
-      const spreadWithTeamId = spreadCandidate as MarketLineWithTeamId | null;
-      const hasTeamId = !!(spreadWithTeamId?.teamId && spreadWithTeamId.teamId !== 'NULL');
-      
-      // Coverage score: base score + bonus for teamId (ensures we prefer new data)
-      const baseCoverageScore = (spreadCandidate ? 100 : 0) + (totalCandidate ? 10 : 0) + (moneylineCandidate ? 1 : 0);
-      const teamIdBonus = hasTeamId ? 1000 : 0; // Large bonus to ensure teamId lines are always preferred
-      const coverageScore = baseCoverageScore + teamIdBonus;
-      
-      const latestTimestamp = Math.max(
-        spreadCandidate ? new Date(spreadCandidate.timestamp).getTime() : 0,
-        totalCandidate ? new Date(totalCandidate.timestamp).getTime() : 0,
-        moneylineCandidate ? new Date(moneylineCandidate.timestamp).getTime() : 0
-      );
+        // Check if spread candidate has teamId
+        const spreadWithTeamId = spreadCandidate as MarketLineWithTeamId | null;
+        const hasTeamId = !!(spreadWithTeamId?.teamId && spreadWithTeamId.teamId !== 'NULL');
+        
+        // Coverage score: base score
+        const coverageScore = (spreadCandidate ? 100 : 0) + (totalCandidate ? 10 : 0) + (moneylineCandidate ? 1 : 0);
+        
+        const latestTimestamp = Math.max(
+          spreadCandidate ? new Date(spreadCandidate.timestamp).getTime() : 0,
+          totalCandidate ? new Date(totalCandidate.timestamp).getTime() : 0,
+          moneylineCandidate ? new Date(moneylineCandidate.timestamp).getTime() : 0
+        );
 
-      if (
-        coverageScore > bestCoverageScore ||
-        (coverageScore === bestCoverageScore && latestTimestamp > bestLatestTimestamp)
-      ) {
-        bestCoverageScore = coverageScore;
-        bestLatestTimestamp = latestTimestamp;
-        selectedSpreadLine = spreadCandidate;
-        selectedTotalLine = totalCandidate;
-        selectedMoneylineLine = moneylineCandidate;
-        selectedGroupSource = group.source || null;
-        selectedGroupBook = group.bookName || null;
-        selectedGroupTimestamp = latestTimestamp;
+        if (
+          coverageScore > bestCoverageScore ||
+          (coverageScore === bestCoverageScore && latestTimestamp > bestLatestTimestamp)
+        ) {
+          bestCoverageScore = coverageScore;
+          bestLatestTimestamp = latestTimestamp;
+          bestSpreadLine = spreadCandidate;
+          bestTotalLine = totalCandidate;
+          bestMoneylineLine = moneylineCandidate;
+          bestSource = group.source || null;
+          bestBook = group.bookName || null;
+          bestTimestamp = latestTimestamp;
+        }
       }
+
+      return {
+        spreadLine: bestSpreadLine,
+        totalLine: bestTotalLine,
+        moneylineLine: bestMoneylineLine,
+        source: bestSource,
+        book: bestBook,
+        timestamp: bestTimestamp
+      };
+    };
+
+    // PASS 1: Only consider groups where spread line has teamId
+    const groupsWithTeamId = Array.from(groupedByBook.values()).filter(group => {
+      const spreadCandidate = pickPreferredLine(group.spreadLines, 'spread');
+      if (!spreadCandidate) return false;
+      const spreadWithTeamId = spreadCandidate as MarketLineWithTeamId;
+      return !!(spreadWithTeamId?.teamId && spreadWithTeamId.teamId !== 'NULL');
     });
+
+    let selected: ReturnType<typeof selectBestGroup>;
+    if (groupsWithTeamId.length > 0) {
+      console.log(`[Game ${gameId}] ✅ Found ${groupsWithTeamId.length} groups with teamId - using PASS 1 (teamId only)`);
+      selected = selectBestGroup(groupsWithTeamId);
+    } else {
+      console.warn(`[Game ${gameId}] ⚠️ No groups with teamId found - using PASS 2 (fallback to all groups)`);
+      selected = selectBestGroup(Array.from(groupedByBook.values()));
+    }
+
+    selectedSpreadLine = selected.spreadLine;
+    selectedTotalLine = selected.totalLine;
+    selectedMoneylineLine = selected.moneylineLine;
+    selectedGroupSource = selected.source;
+    selectedGroupBook = selected.book;
+    selectedGroupTimestamp = selected.timestamp;
 
     const diagnosticsMessages: string[] = [];
     let totalSourceMismatch = false;
@@ -471,7 +512,6 @@ export async function GET(
     
     // Get spread lines for both teams from the same book/timestamp
     // Type assertion: teamId field exists after schema migration
-    type MarketLineWithTeamId = typeof game.marketLines[0] & { teamId?: string | null };
     const marketLinesWithTeamId = game.marketLines as MarketLineWithTeamId[];
     
     const homeSpreadLine = marketLinesWithTeamId.find(
