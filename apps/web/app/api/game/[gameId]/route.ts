@@ -662,8 +662,8 @@ export async function GET(
         });
       } else {
         // CRITICAL: No teamId available at all - this is old data
-        // We cannot definitively determine the favorite without teamId
-        console.error(`[Game ${gameId}] ❌ CRITICAL: No teamId available for spread lines. This game needs re-ingestion.`);
+        // Use power ratings to determine which team SHOULD be favored, then assign the line
+        console.error(`[Game ${gameId}] ❌ CRITICAL: No teamId available for spread lines. Using power ratings fallback.`);
         console.error(`[Game ${gameId}] Spread lines found:`, allSpreadLinesForGame.map(l => ({
           lineValue: getLineValue(l),
           teamId: l.teamId || 'NULL',
@@ -671,35 +671,49 @@ export async function GET(
           timestamp: l.timestamp
         })));
         
-        // Last resort: use the selected spreadLine value and assume it's the favorite's line
+        // Last resort: use power ratings to determine favorite, then assign the negative line to that team
         const marketSpreadValue = getLineValue(spreadLine);
         if (marketSpreadValue === null || marketSpreadValue === undefined) {
           throw new Error(`Selected snapshot missing spread value for game ${gameId}`);
         }
         
-        // The spreadLine is negative (favorite's line), but we don't know which team
-        // This is a critical data quality issue - we should fail in dev, warn in prod
-        const absValue = Math.abs(marketSpreadValue);
-        homePrice = -absValue; // Assume home is favorite (WRONG - but we have no data)
-        awayPrice = absValue;
-        marketSpread = -absValue;
-        favoriteTeamId = game.homeTeamId; // WRONG - but we have no way to know
-        favoriteTeamName = game.homeTeam.name;
+        // Use power ratings to determine which team should be favored
+        const homePower = homeRating ? Number(homeRating.powerRating || homeRating.rating || 0) : 0;
+        const awayPower = awayRating ? Number(awayRating.powerRating || awayRating.rating || 0) : 0;
+        const HFA = game.neutralSite ? 0 : 2.5;
+        const homeEffectivePower = homePower + HFA;
+        const awayEffectivePower = awayPower;
         
-        console.error(`[Game ${gameId}] ⚠️ FALLBACK FAVORITE DETERMINATION (UNRELIABLE):`, {
+        // Determine favorite based on effective power
+        const favoriteIsHome = homeEffectivePower > awayEffectivePower;
+        const absValue = Math.abs(marketSpreadValue);
+        
+        if (favoriteIsHome) {
+          homePrice = -absValue; // Home is favorite (negative)
+          awayPrice = absValue; // Away is underdog (positive)
+          favoriteTeamId = game.homeTeamId;
+          favoriteTeamName = game.homeTeam.name;
+        } else {
+          homePrice = absValue; // Home is underdog (positive)
+          awayPrice = -absValue; // Away is favorite (negative)
+          favoriteTeamId = game.awayTeamId;
+          favoriteTeamName = game.awayTeam.name;
+        }
+        marketSpread = -absValue; // Always negative (favorite's line)
+        
+        console.warn(`[Game ${gameId}] ⚠️ FALLBACK FAVORITE DETERMINATION (using power ratings):`, {
           favoriteTeamId,
           favoriteTeamName,
           favoriteLine: marketSpread,
           homePrice,
           awayPrice,
-          source: 'fallback heuristic (NO teamId - DATA QUALITY ISSUE)',
+          homePower,
+          awayPower,
+          homeEffectivePower,
+          awayEffectivePower,
+          source: 'fallback heuristic (power ratings - NO teamId)',
           warning: 'This game needs re-ingestion to populate teamId field'
         });
-        
-        // In dev, fail loud
-        if (process.env.NODE_ENV !== 'production') {
-          throw new Error(`CRITICAL DATA QUALITY ISSUE: No teamId available for game ${gameId}. This game must be re-ingested.`);
-        }
       }
     }
     
@@ -976,26 +990,61 @@ export async function GET(
         dogPrice: moneylineDogPrice,
         source: 'teamId field (definitive)'
       });
-    } else if (mlVal !== null && mlVal !== undefined) {
-      // FALLBACK: Use single mlVal (old behavior)
-      if (mlVal < 0) {
-        moneylineFavoriteTeamId = game.homeTeamId;
-        moneylineDogTeamId = game.awayTeamId;
-        moneylineFavoritePrice = mlVal;
-      } else if (mlVal > 0) {
-        moneylineFavoriteTeamId = game.awayTeamId;
-        moneylineDogTeamId = game.homeTeamId;
-        moneylineDogPrice = mlVal;
-      }
+    } else {
+      // FALLBACK: Try to find both moneyline lines from the same book/timestamp
+      const allMoneylineLines = marketLinesWithTeamId.filter(
+        (l) => l.lineType === 'moneyline' && 
+               l.bookName === (mlLine?.bookName || spreadLine.bookName) &&
+               Math.abs(new Date(l.timestamp).getTime() - new Date(mlLine?.timestamp || spreadLine.timestamp).getTime()) < 1000
+      );
       
-      console.log(`[Game ${gameId}] ⚠️ FALLBACK MONEYLINE (single value):`, {
-        mlVal,
-        favoriteTeamId: moneylineFavoriteTeamId,
-        favoritePrice: moneylineFavoritePrice,
-        dogTeamId: moneylineDogTeamId,
-        dogPrice: moneylineDogPrice,
-        source: 'fallback (teamId unavailable)'
-      });
+      // Find negative (favorite) and positive (dog) moneyline values
+      const mlValues = allMoneylineLines.map(l => getLineValue(l)).filter(v => v !== null) as number[];
+      const negativeML = mlValues.find(v => v < 0);
+      const positiveML = mlValues.find(v => v > 0);
+      
+      if (negativeML !== undefined && positiveML !== undefined) {
+        // We have both moneylines - assign based on favorite determined from spread
+        if (favoriteTeamId === game.homeTeamId) {
+          moneylineFavoritePrice = negativeML;
+          moneylineDogPrice = positiveML;
+          moneylineFavoriteTeamId = game.homeTeamId;
+          moneylineDogTeamId = game.awayTeamId;
+        } else {
+          moneylineFavoritePrice = negativeML;
+          moneylineDogPrice = positiveML;
+          moneylineFavoriteTeamId = game.awayTeamId;
+          moneylineDogTeamId = game.homeTeamId;
+        }
+        
+        console.log(`[Game ${gameId}] ✅ FALLBACK MONEYLINE (both values found):`, {
+          favoriteTeamId: moneylineFavoriteTeamId,
+          favoritePrice: moneylineFavoritePrice,
+          dogTeamId: moneylineDogTeamId,
+          dogPrice: moneylineDogPrice,
+          source: 'fallback (both moneylines from same book)'
+        });
+      } else if (mlVal !== null && mlVal !== undefined) {
+        // Only one moneyline value available - use old behavior
+        if (mlVal < 0) {
+          moneylineFavoriteTeamId = favoriteTeamId; // Use favorite from spread determination
+          moneylineDogTeamId = favoriteTeamId === game.homeTeamId ? game.awayTeamId : game.homeTeamId;
+          moneylineFavoritePrice = mlVal;
+        } else if (mlVal > 0) {
+          moneylineFavoriteTeamId = favoriteTeamId === game.homeTeamId ? game.awayTeamId : game.homeTeamId;
+          moneylineDogTeamId = favoriteTeamId;
+          moneylineDogPrice = mlVal;
+        }
+        
+        console.log(`[Game ${gameId}] ⚠️ FALLBACK MONEYLINE (single value):`, {
+          mlVal,
+          favoriteTeamId: moneylineFavoriteTeamId,
+          favoritePrice: moneylineFavoritePrice,
+          dogTeamId: moneylineDogTeamId,
+          dogPrice: moneylineDogPrice,
+          source: 'fallback (single moneyline value)'
+        });
+      }
     }
 
     if (moneylineFavoriteTeamId && moneylineFavoriteTeamId !== favoriteByRule.teamId) {
