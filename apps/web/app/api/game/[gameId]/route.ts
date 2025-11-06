@@ -1065,12 +1065,34 @@ export async function GET(
             });
           } else {
             console.warn(`[Game ${gameId}] ❌ FALLBACK: No away moneyline found with teamId=${game.awayTeamId}`);
-            // Last resort: search all moneylines for this game (without teamId requirement)
-            const allAwayML = game.marketLines.filter(
-              (l) => l.lineType === 'moneyline' && 
-                     (l as any).teamId === game.awayTeamId
-            );
-            console.log(`[Game ${gameId}] 🔍 FALLBACK: Checking all moneylines (including without teamId): ${allAwayML.length} found`);
+            // Last resort: Find opposite-sign moneyline from same book/timestamp (even without teamId)
+            if (homeMoneylineLine) {
+              const homeMLPrice = getLineValue(homeMoneylineLine);
+              const homeBook = homeMoneylineLine.bookName;
+              const homeTimestamp = new Date(homeMoneylineLine.timestamp).getTime();
+              
+              // Find opposite-sign moneyline from same book/timestamp
+              const oppositeML = game.marketLines.find(
+                (l) => l.lineType === 'moneyline' &&
+                       l.bookName === homeBook &&
+                       Math.abs(new Date(l.timestamp).getTime() - homeTimestamp) < 1000 &&
+                       getLineValue(l) !== null &&
+                       ((homeMLPrice! < 0 && getLineValue(l)! > 0) || (homeMLPrice! > 0 && getLineValue(l)! < 0))
+              );
+              
+              if (oppositeML) {
+                awayMoneylineLine = oppositeML as MarketLineWithTeamId;
+                console.log(`[Game ${gameId}] ✅ FALLBACK: Found away moneyline by opposite sign (same book/timestamp):`, {
+                  teamId: (oppositeML as any).teamId || 'NULL',
+                  lineValue: getLineValue(oppositeML),
+                  bookName: oppositeML.bookName,
+                  timestamp: oppositeML.timestamp,
+                  note: 'Found by matching opposite sign, may not have teamId'
+                });
+              } else {
+                console.log(`[Game ${gameId}] 🔍 FALLBACK: No opposite-sign moneyline found from same book/timestamp`);
+              }
+            }
           }
         }
       } else if (!homeMoneylineLine && awayMoneylineLine) {
@@ -1108,6 +1130,34 @@ export async function GET(
             });
           } else {
             console.warn(`[Game ${gameId}] ❌ FALLBACK: No home moneyline found with teamId=${game.homeTeamId}`);
+            // Last resort: Find opposite-sign moneyline from same book/timestamp (even without teamId)
+            if (awayMoneylineLine) {
+              const awayMLPrice = getLineValue(awayMoneylineLine);
+              const awayBook = awayMoneylineLine.bookName;
+              const awayTimestamp = new Date(awayMoneylineLine.timestamp).getTime();
+              
+              // Find opposite-sign moneyline from same book/timestamp
+              const oppositeML = game.marketLines.find(
+                (l) => l.lineType === 'moneyline' &&
+                       l.bookName === awayBook &&
+                       Math.abs(new Date(l.timestamp).getTime() - awayTimestamp) < 1000 &&
+                       getLineValue(l) !== null &&
+                       ((awayMLPrice! < 0 && getLineValue(l)! > 0) || (awayMLPrice! > 0 && getLineValue(l)! < 0))
+              );
+              
+              if (oppositeML) {
+                homeMoneylineLine = oppositeML as MarketLineWithTeamId;
+                console.log(`[Game ${gameId}] ✅ FALLBACK: Found home moneyline by opposite sign (same book/timestamp):`, {
+                  teamId: (oppositeML as any).teamId || 'NULL',
+                  lineValue: getLineValue(oppositeML),
+                  bookName: oppositeML.bookName,
+                  timestamp: oppositeML.timestamp,
+                  note: 'Found by matching opposite sign, may not have teamId'
+                });
+              } else {
+                console.log(`[Game ${gameId}] 🔍 FALLBACK: No opposite-sign moneyline found from same book/timestamp`);
+              }
+            }
           }
         }
       }
@@ -1138,11 +1188,27 @@ export async function GET(
         });
       } else {
         // Still missing one or both - try to find both from same book/timestamp
-        const allMoneylineLines = marketLinesWithTeamId.filter(
+        // First try with teamId, then try without teamId requirement
+        let allMoneylineLines = marketLinesWithTeamId.filter(
           (l) => l.lineType === 'moneyline' && 
                  l.bookName === (mlLine?.bookName || spreadLine.bookName) &&
                  Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 1000
         );
+        
+        // If we don't have both, try searching all moneylines (including without teamId)
+        const mlValuesWithTeamId = allMoneylineLines.map(l => getLineValue(l)).filter(v => v !== null) as number[];
+        const negativeMLWithTeamId = mlValuesWithTeamId.find(v => v < 0);
+        const positiveMLWithTeamId = mlValuesWithTeamId.find(v => v > 0);
+        
+        if (negativeMLWithTeamId === undefined || positiveMLWithTeamId === undefined) {
+          // Try searching all moneylines (not just with teamId)
+          allMoneylineLines = game.marketLines.filter(
+            (l) => l.lineType === 'moneyline' && 
+                   l.bookName === (mlLine?.bookName || spreadLine.bookName) &&
+                   Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 1000
+          ) as MarketLineWithTeamId[];
+          console.log(`[Game ${gameId}] 🔍 FALLBACK: Expanded search to all moneylines (including without teamId): ${allMoneylineLines.length} found`);
+        }
         
         // Find negative (favorite) and positive (dog) moneyline values
         const mlValues = allMoneylineLines.map(l => getLineValue(l)).filter(v => v !== null) as number[];
