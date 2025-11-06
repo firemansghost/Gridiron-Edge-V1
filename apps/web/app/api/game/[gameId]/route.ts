@@ -478,14 +478,28 @@ export async function GET(
              Math.abs(new Date(l.timestamp).getTime() - new Date(spreadLine.timestamp).getTime()) < 1000
     );
     
+    // Log all spread lines with teamId for debugging
+    const allSpreadLinesForGame = marketLinesWithTeamId.filter(
+      (l) => l.lineType === 'spread' && 
+             l.bookName === spreadLine.bookName &&
+             Math.abs(new Date(l.timestamp).getTime() - new Date(spreadLine.timestamp).getTime()) < 1000
+    );
+    
     console.log(`[Game ${gameId}] 🔍 SPREAD LINES BY TEAM:`, {
       homeTeam: game.homeTeam.name,
       homeTeamId: game.homeTeamId,
       homeSpreadLine: homeSpreadLine ? getLineValue(homeSpreadLine) : null,
+      homeSpreadLineTeamId: homeSpreadLine?.teamId || 'NULL',
       awayTeam: game.awayTeam.name,
       awayTeamId: game.awayTeamId,
       awaySpreadLine: awaySpreadLine ? getLineValue(awaySpreadLine) : null,
-      bookName: spreadLine.bookName
+      awaySpreadLineTeamId: awaySpreadLine?.teamId || 'NULL',
+      bookName: spreadLine.bookName,
+      allSpreadLines: allSpreadLinesForGame.map(l => ({
+        lineValue: getLineValue(l),
+        teamId: l.teamId || 'NULL',
+        timestamp: l.timestamp
+      }))
     });
     
     // Determine home and away prices from the teamId-tagged lines
@@ -521,57 +535,83 @@ export async function GET(
       });
     } else {
       // FALLBACK: teamId not available for one or both lines
-      // This shouldn't happen with the new ingestion, but handle gracefully
-      console.warn(`[Game ${gameId}] ⚠️ teamId not available for spread lines, using fallback logic`);
+      // Try to use the selected spreadLine's teamId if available
+      const spreadLineWithTeamId = spreadLine as MarketLineWithTeamId;
       
-      const marketSpreadValue = getLineValue(spreadLine);
-      if (marketSpreadValue === null || marketSpreadValue === undefined) {
-        throw new Error(`Selected snapshot missing spread value for game ${gameId}`);
-      }
-      
-      // Find both spread values from the same book
-      const allSpreadLines = game.marketLines.filter(
-        (l) => l.lineType === 'spread' && 
-               l.bookName === spreadLine.bookName &&
-               Math.abs(new Date(l.timestamp).getTime() - new Date(spreadLine.timestamp).getTime()) < 1000
-      );
-      
-      const spreadValues = allSpreadLines.map(l => getLineValue(l)).filter(v => v !== null) as number[];
-      const negativeValue = spreadValues.find(v => v < 0);
-      const positiveValue = spreadValues.find(v => v > 0);
-      
-      if (negativeValue !== undefined && positiveValue !== undefined) {
-        // Assume the negative line belongs to the better team (use absolute value comparison)
-        // This is a heuristic, but better than nothing
-        homePrice = Math.abs(negativeValue) > Math.abs(positiveValue) / 2 ? negativeValue : positiveValue;
-        awayPrice = homePrice === negativeValue ? positiveValue : negativeValue;
-        marketSpread = negativeValue;
+      if (spreadLineWithTeamId.teamId) {
+        // The selected spreadLine has a teamId - use it!
+        const spreadLineValue = getLineValue(spreadLine);
+        if (spreadLineValue === null || spreadLineValue === undefined) {
+          throw new Error(`Selected snapshot missing spread value for game ${gameId}`);
+        }
         
-        if (homePrice < awayPrice) {
+        // The spreadLine is the favorite's line (negative), and we know which team it belongs to
+        if (spreadLineWithTeamId.teamId === game.homeTeamId) {
+          // Home team is the favorite
+          homePrice = spreadLineValue; // Negative (favorite)
+          awayPrice = -spreadLineValue; // Positive (underdog)
           favoriteTeamId = game.homeTeamId;
           favoriteTeamName = game.homeTeam.name;
-        } else {
+        } else if (spreadLineWithTeamId.teamId === game.awayTeamId) {
+          // Away team is the favorite
+          homePrice = -spreadLineValue; // Positive (underdog)
+          awayPrice = spreadLineValue; // Negative (favorite)
           favoriteTeamId = game.awayTeamId;
           favoriteTeamName = game.awayTeam.name;
+        } else {
+          throw new Error(`Selected spreadLine teamId (${spreadLineWithTeamId.teamId}) doesn't match home (${game.homeTeamId}) or away (${game.awayTeamId}) for game ${gameId}`);
         }
+        marketSpread = spreadLineValue; // Always negative (favorite's line)
+        
+        console.log(`[Game ${gameId}] ✅ FALLBACK USING SPREADLINE teamId:`, {
+          favoriteTeamId,
+          favoriteTeamName,
+          favoriteLine: marketSpread,
+          homePrice,
+          awayPrice,
+          source: 'spreadLine.teamId (partial fallback)'
+        });
       } else {
-        // Last resort: use absolute value and default to home
+        // CRITICAL: No teamId available at all - this is old data
+        // We cannot definitively determine the favorite without teamId
+        console.error(`[Game ${gameId}] ❌ CRITICAL: No teamId available for spread lines. This game needs re-ingestion.`);
+        console.error(`[Game ${gameId}] Spread lines found:`, allSpreadLinesForGame.map(l => ({
+          lineValue: getLineValue(l),
+          teamId: l.teamId || 'NULL',
+          bookName: l.bookName,
+          timestamp: l.timestamp
+        })));
+        
+        // Last resort: use the selected spreadLine value and assume it's the favorite's line
+        const marketSpreadValue = getLineValue(spreadLine);
+        if (marketSpreadValue === null || marketSpreadValue === undefined) {
+          throw new Error(`Selected snapshot missing spread value for game ${gameId}`);
+        }
+        
+        // The spreadLine is negative (favorite's line), but we don't know which team
+        // This is a critical data quality issue - we should fail in dev, warn in prod
         const absValue = Math.abs(marketSpreadValue);
-        homePrice = -absValue;
+        homePrice = -absValue; // Assume home is favorite (WRONG - but we have no data)
         awayPrice = absValue;
         marketSpread = -absValue;
-        favoriteTeamId = game.homeTeamId;
+        favoriteTeamId = game.homeTeamId; // WRONG - but we have no way to know
         favoriteTeamName = game.homeTeam.name;
+        
+        console.error(`[Game ${gameId}] ⚠️ FALLBACK FAVORITE DETERMINATION (UNRELIABLE):`, {
+          favoriteTeamId,
+          favoriteTeamName,
+          favoriteLine: marketSpread,
+          homePrice,
+          awayPrice,
+          source: 'fallback heuristic (NO teamId - DATA QUALITY ISSUE)',
+          warning: 'This game needs re-ingestion to populate teamId field'
+        });
+        
+        // In dev, fail loud
+        if (process.env.NODE_ENV !== 'production') {
+          throw new Error(`CRITICAL DATA QUALITY ISSUE: No teamId available for game ${gameId}. This game must be re-ingested.`);
+        }
       }
-      
-      console.log(`[Game ${gameId}] ⚠️ FALLBACK FAVORITE DETERMINATION:`, {
-        favoriteTeamId,
-        favoriteTeamName,
-        favoriteLine: marketSpread,
-        homePrice,
-        awayPrice,
-        source: 'fallback heuristic (teamId unavailable)'
-      });
     }
     
     const marketTotalRaw = totalLine ? getLineValue(totalLine) : null;
