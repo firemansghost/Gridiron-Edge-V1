@@ -74,6 +74,29 @@ export async function GET(
       moneylineLines: typeof game.marketLines;
     };
 
+    // DIAGNOSTIC: Log all spread lines with teamId to see what's in the database
+    const allSpreadLines = game.marketLines.filter(l => l.lineType === 'spread');
+    const spreadLinesWithTeamId = allSpreadLines.filter(l => {
+      const lineWithTeamId = l as MarketLineWithTeamId;
+      return !!(lineWithTeamId.teamId && lineWithTeamId.teamId !== 'NULL');
+    });
+    console.log(`[Game ${gameId}] 🔍 DATABASE DIAGNOSTIC - Spread Lines:`, {
+      totalSpreadLines: allSpreadLines.length,
+      linesWithTeamId: spreadLinesWithTeamId.length,
+      linesWithoutTeamId: allSpreadLines.length - spreadLinesWithTeamId.length,
+      sampleLines: allSpreadLines.slice(0, 5).map(l => {
+        const lineWithTeamId = l as MarketLineWithTeamId;
+        return {
+          lineValue: l.lineValue,
+          closingLine: l.closingLine,
+          bookName: l.bookName,
+          source: l.source,
+          timestamp: l.timestamp,
+          teamId: lineWithTeamId.teamId || 'NULL'
+        };
+      })
+    });
+
     const groupedByBook = new Map<string, OddsGroup>();
 
     for (const line of game.marketLines) {
@@ -284,6 +307,25 @@ export async function GET(
     const totalLine = selectedTotalLine;
     const mlLine = selectedMoneylineLine;
 
+    // Type assertion to access teamId field (needed for both spreads and moneylines)
+    const marketLinesWithTeamId = game.marketLines as MarketLineWithTeamId[];
+
+    // Get both moneyline lines (favorite and dog) using teamId, similar to spreads
+    const homeMoneylineLine = marketLinesWithTeamId.find(
+      (l) => l.lineType === 'moneyline' && 
+             l.teamId === game.homeTeamId &&
+             l.bookName === (mlLine?.bookName || spreadLine.bookName) &&
+             Math.abs(new Date(l.timestamp).getTime() - new Date(mlLine?.timestamp || spreadLine.timestamp).getTime()) < 1000
+    );
+    
+    const awayMoneylineLine = marketLinesWithTeamId.find(
+      (l) => l.lineType === 'moneyline' && 
+             l.teamId === game.awayTeamId &&
+             l.bookName === (mlLine?.bookName || spreadLine.bookName) &&
+             Math.abs(new Date(l.timestamp).getTime() - new Date(mlLine?.timestamp || spreadLine.timestamp).getTime()) < 1000
+    );
+    
+    // Fallback: if teamId lookup fails, use the selected mlLine (old behavior)
     const mlVal = mlLine ? getLineValue(mlLine) : null;
 
     const bookSource = [selectedGroupBook, selectedGroupSource].filter(Boolean).join(' • ') || spreadLine.bookName || 'Unknown';
@@ -511,9 +553,6 @@ export async function GET(
     // NO MORE HEURISTICS! The market tells us who the favorite is.
     
     // Get spread lines for both teams from the same book/timestamp
-    // Type assertion: teamId field exists after schema migration
-    const marketLinesWithTeamId = game.marketLines as MarketLineWithTeamId[];
-    
     const homeSpreadLine = marketLinesWithTeamId.find(
       (l) => l.lineType === 'spread' && 
              l.teamId === game.homeTeamId &&
@@ -906,11 +945,39 @@ export async function GET(
     const dogTeamName = favoriteByRule.teamId === game.homeTeamId ? game.awayTeam.name : game.homeTeam.name;
     const dogLine = Math.abs(favoriteByRule.line); // Always positive (underdog getting points)
     
+    // Get moneyline prices from both team-specific lines
     let moneylineFavoritePrice: number | null = null;
     let moneylineDogPrice: number | null = null;
     let moneylineFavoriteTeamId: string | null = null;
     let moneylineDogTeamId: string | null = null;
-    if (mlVal !== null && mlVal !== undefined) {
+    
+    if (homeMoneylineLine && awayMoneylineLine) {
+      // IDEAL CASE: We have both moneylines with teamId
+      const homeMLPrice = getLineValue(homeMoneylineLine);
+      const awayMLPrice = getLineValue(awayMoneylineLine);
+      
+      // Assign based on which team is the favorite
+      if (favoriteTeamId === game.homeTeamId) {
+        moneylineFavoritePrice = homeMLPrice;
+        moneylineDogPrice = awayMLPrice;
+        moneylineFavoriteTeamId = game.homeTeamId;
+        moneylineDogTeamId = game.awayTeamId;
+      } else {
+        moneylineFavoritePrice = awayMLPrice;
+        moneylineDogPrice = homeMLPrice;
+        moneylineFavoriteTeamId = game.awayTeamId;
+        moneylineDogTeamId = game.homeTeamId;
+      }
+      
+      console.log(`[Game ${gameId}] ✅ DEFINITIVE MONEYLINE (from teamId):`, {
+        favoriteTeamId: moneylineFavoriteTeamId,
+        favoritePrice: moneylineFavoritePrice,
+        dogTeamId: moneylineDogTeamId,
+        dogPrice: moneylineDogPrice,
+        source: 'teamId field (definitive)'
+      });
+    } else if (mlVal !== null && mlVal !== undefined) {
+      // FALLBACK: Use single mlVal (old behavior)
       if (mlVal < 0) {
         moneylineFavoriteTeamId = game.homeTeamId;
         moneylineDogTeamId = game.awayTeamId;
@@ -920,6 +987,15 @@ export async function GET(
         moneylineDogTeamId = game.homeTeamId;
         moneylineDogPrice = mlVal;
       }
+      
+      console.log(`[Game ${gameId}] ⚠️ FALLBACK MONEYLINE (single value):`, {
+        mlVal,
+        favoriteTeamId: moneylineFavoriteTeamId,
+        favoritePrice: moneylineFavoritePrice,
+        dogTeamId: moneylineDogTeamId,
+        dogPrice: moneylineDogPrice,
+        source: 'fallback (teamId unavailable)'
+      });
     }
 
     if (moneylineFavoriteTeamId && moneylineFavoriteTeamId !== favoriteByRule.teamId) {
