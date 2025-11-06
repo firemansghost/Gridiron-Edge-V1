@@ -310,20 +310,61 @@ export async function GET(
     // Type assertion to access teamId field (needed for both spreads and moneylines)
     const marketLinesWithTeamId = game.marketLines as MarketLineWithTeamId[];
 
-    // Get both moneyline lines (favorite and dog) using teamId, similar to spreads
-    const homeMoneylineLine = marketLinesWithTeamId.find(
+    // Get both moneyline lines (favorite and dog) using teamId
+    // Strategy: First try same book/timestamp, then same timestamp (any book), then any with teamId
+    const spreadTimestamp = new Date(spreadLine.timestamp).getTime();
+    const targetBook = mlLine?.bookName || spreadLine.bookName;
+    
+    // Pass 1: Same book and timestamp (most reliable)
+    let homeMoneylineLine = marketLinesWithTeamId.find(
       (l) => l.lineType === 'moneyline' && 
              l.teamId === game.homeTeamId &&
-             l.bookName === (mlLine?.bookName || spreadLine.bookName) &&
-             Math.abs(new Date(l.timestamp).getTime() - new Date(mlLine?.timestamp || spreadLine.timestamp).getTime()) < 1000
+             l.bookName === targetBook &&
+             Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 1000
     );
     
-    const awayMoneylineLine = marketLinesWithTeamId.find(
+    let awayMoneylineLine = marketLinesWithTeamId.find(
       (l) => l.lineType === 'moneyline' && 
              l.teamId === game.awayTeamId &&
-             l.bookName === (mlLine?.bookName || spreadLine.bookName) &&
-             Math.abs(new Date(l.timestamp).getTime() - new Date(mlLine?.timestamp || spreadLine.timestamp).getTime()) < 1000
+             l.bookName === targetBook &&
+             Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 1000
     );
+    
+    // Pass 2: Same timestamp, any book (if Pass 1 failed)
+    if (!homeMoneylineLine || !awayMoneylineLine) {
+      if (!homeMoneylineLine) {
+        homeMoneylineLine = marketLinesWithTeamId.find(
+          (l) => l.lineType === 'moneyline' && 
+                 l.teamId === game.homeTeamId &&
+                 Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 1000
+        );
+      }
+      if (!awayMoneylineLine) {
+        awayMoneylineLine = marketLinesWithTeamId.find(
+          (l) => l.lineType === 'moneyline' && 
+                 l.teamId === game.awayTeamId &&
+                 Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 1000
+        );
+      }
+    }
+    
+    // Pass 3: Any with teamId (if Pass 2 failed) - prefer most recent
+    if (!homeMoneylineLine || !awayMoneylineLine) {
+      const homeMLLines = marketLinesWithTeamId.filter(
+        (l) => l.lineType === 'moneyline' && l.teamId === game.homeTeamId
+      ).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      
+      const awayMLLines = marketLinesWithTeamId.filter(
+        (l) => l.lineType === 'moneyline' && l.teamId === game.awayTeamId
+      ).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      
+      if (!homeMoneylineLine && homeMLLines.length > 0) {
+        homeMoneylineLine = homeMLLines[0];
+      }
+      if (!awayMoneylineLine && awayMLLines.length > 0) {
+        awayMoneylineLine = awayMLLines[0];
+      }
+    }
     
     // Fallback: if teamId lookup fails, use the selected mlLine (old behavior)
     const mlVal = mlLine ? getLineValue(mlLine) : null;

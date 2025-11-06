@@ -201,8 +201,32 @@ async function main() {
       gameGroups[line.gameId].push(line);
     });
 
-    console.log(`📊 Processed ${Object.keys(gameGroups).length} games`);
-    console.log(`📈 Total market lines: ${marketLines.length}`);
+    // Calculate statistics
+    const uniqueGames = Object.keys(gameGroups).length;
+    const spreads = marketLines.filter((l: any) => l.lineType === 'spread').length;
+    const totals = marketLines.filter((l: any) => l.lineType === 'total').length;
+    const moneylines = marketLines.filter((l: any) => l.lineType === 'moneyline').length;
+    
+    // Count lines with teamId
+    const spreadsWithTeamId = marketLines.filter((l: any) => l.lineType === 'spread' && l.teamId).length;
+    const moneylinesWithTeamId = marketLines.filter((l: any) => l.lineType === 'moneyline' && l.teamId).length;
+    
+    // Count games with complete moneyline coverage (both teams)
+    const gamesWithBothMoneylines = Object.values(gameGroups).filter((gameLines: any) => {
+      const mlLines = gameLines.filter((l: any) => l.lineType === 'moneyline' && l.teamId);
+      const uniqueTeamIds = new Set(mlLines.map((l: any) => l.teamId));
+      return uniqueTeamIds.size >= 2;
+    }).length;
+
+    console.log(`\n📊 INGESTION SUMMARY:`);
+    console.log(`   Games processed: ${uniqueGames} (ALL games, not a sample)`);
+    console.log(`   Total market lines: ${marketLines.length}`);
+    console.log(`   Breakdown:`);
+    console.log(`     • Spreads: ${spreads} (${spreadsWithTeamId} with teamId)`);
+    console.log(`     • Totals: ${totals}`);
+    console.log(`     • Moneylines: ${moneylines} (${moneylinesWithTeamId} with teamId)`);
+    console.log(`   Moneyline coverage: ${gamesWithBothMoneylines}/${uniqueGames} games have both teams' moneylines with teamId`);
+    console.log(`   Lines per game: ${(marketLines.length / uniqueGames).toFixed(1)} average`);
     
     // Prepare rows for database
     const rowsToInsert = marketLines.map((line: any) => ({
@@ -246,11 +270,8 @@ async function main() {
         throw new Error('createMany returned but DB count is 0 — check DATABASE_URL or column mapping.');
       }
       
-      // Summary line
-      const spreads = marketLines.filter((l: any) => l.lineType === 'spread').length;
-      const totals = marketLines.filter((l: any) => l.lineType === 'total').length;
-      const uniqueGames = Object.keys(gameGroups).length;
-      console.log(`[SUMMARY] mapped_games=${uniqueGames} parsed_spreads=${spreads} parsed_totals=${totals} toInsert=${rowsToInsert.length} inserted=${result.count} postCount=${postCount}`);
+      // Final summary line (for parsing/automation)
+      console.log(`\n[SUMMARY] mapped_games=${uniqueGames} parsed_spreads=${spreads} parsed_totals=${totals} parsed_moneylines=${moneylines} toInsert=${rowsToInsert.length} inserted=${result.count} postCount=${postCount}`);
       
     } else if (options.dryRun) {
       console.log('[DB] Skipped createMany (dryRun mode)');
