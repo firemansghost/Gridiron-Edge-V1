@@ -458,8 +458,9 @@ async function upsertMarketLines(marketLines) {
   for (const line of marketLines) {
     const gameId = normalizeId(line.gameId);
     
-    // Create dedup key: gameId + lineType + bookName + source + timestamp
-    const dedupKey = `${gameId}|${line.lineType}|${line.bookName || ''}|${line.source || ''}|${line.timestamp || ''}`;
+    // Create dedup key: gameId + lineType + bookName + source + timestamp + teamId
+    // CRITICAL: Include teamId to prevent overwriting one team's line with another's
+    const dedupKey = `${gameId}|${line.lineType}|${line.bookName || ''}|${line.source || ''}|${line.timestamp || ''}|${line.teamId || ''}`;
     
     // Keep only the latest record per key (if duplicates appear)
     const existing = dedupMap.get(dedupKey);
@@ -473,7 +474,8 @@ async function upsertMarketLines(marketLines) {
         closingLine: line.closingLine,
         timestamp: line.timestamp,
         source: line.source || line.bookName,
-        bookName: line.bookName
+        bookName: line.bookName,
+        teamId: line.teamId || null // CRITICAL: Include teamId for spreads and moneylines
       });
     } else {
       deduplicated++;

@@ -214,7 +214,8 @@ async function main() {
       closingLine: line.price || line.closingLine || 0,
       bookName: line.bookName,
       source: line.source || 'oddsapi',
-      timestamp: new Date(line.timestamp)
+      timestamp: new Date(line.timestamp),
+      teamId: line.teamId || null // CRITICAL: Include teamId for spreads and moneylines
     }));
     
     // Log first 2 rows for inspection
