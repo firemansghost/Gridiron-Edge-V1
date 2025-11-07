@@ -523,7 +523,18 @@ export default function GameDetailPage() {
           {/* Betting Ticket - Single unified block above fold */}
           <div className="mb-4 md:mb-6">
             <div className="flex items-center justify-between mb-3 sm:mb-4">
-              <h2 className="text-lg sm:text-xl font-bold text-gray-900">Betting Ticket</h2>
+              <div className="flex items-center gap-3">
+                <h2 className="text-lg sm:text-xl font-bold text-gray-900">Betting Ticket</h2>
+                {/* Trust-Market Mode Badge */}
+                {game.modelConfig?.mode === 'trust_market' && (
+                  <div className="bg-blue-50 border border-blue-300 rounded-md px-3 py-1 flex items-center gap-2">
+                    <span className="text-xs font-semibold text-blue-800">
+                      Mode: Trust-Market
+                    </span>
+                    <InfoTooltip content={game.modelConfig?.description || "Trust-Market mode: Uses market as baseline with small model overlays (capped at ±3.0 pts)"} />
+                  </div>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 {game.modelConfig?.version && (
                   <span className="text-xs text-gray-500">
@@ -582,6 +593,22 @@ export default function GameDetailPage() {
                   {game.picks.spread.rationale && (
                     <div className="text-xs text-gray-700 mt-2 italic border-t border-gray-200 pt-2">
                       {game.picks.spread.rationale}
+                    </div>
+                  )}
+                  {/* Trust-Market Overlay Note */}
+                  {game.picks.spread.overlay && (
+                    <div className="text-xs text-gray-600 mt-2 border-t border-gray-200 pt-2">
+                      <div className="mb-1">
+                        <span className="font-semibold">Model overlay:</span> {game.picks.spread.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.spread.overlay.overlayValue.toFixed(1)} pts (cap ±{game.picks.spread.overlay.cap})
+                      </div>
+                      {game.picks.spread.overlay.confidenceDegraded && (
+                        <div className="mt-2 text-yellow-800 bg-yellow-50 border border-yellow-300 rounded p-2 flex items-start gap-2">
+                          <span className="text-lg">⚠️</span>
+                          <span className="flex-1">
+                            <span className="font-semibold">Large raw disagreement:</span> Model spread differs from market by {game.picks.spread.overlay.rawDisagreement.toFixed(1)} pts. Overlay capped in Trust-Market mode.
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
                   {game.clvHint?.spreadDrift?.significant && (
@@ -721,6 +748,22 @@ export default function GameDetailPage() {
                   {game.picks.total.rationale && (
                     <div className="text-xs text-gray-500 mt-2 italic border-t border-gray-200 pt-2">
                       {game.picks.total.rationale}
+                    </div>
+                  )}
+                  {/* Trust-Market Overlay Note */}
+                  {game.picks.total.overlay && (
+                    <div className="text-xs text-gray-600 mt-2 border-t border-gray-200 pt-2">
+                      <div className="mb-1">
+                        <span className="font-semibold">Model overlay:</span> {game.picks.total.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.total.overlay.overlayValue.toFixed(1)} pts (cap ±{game.picks.total.overlay.cap})
+                      </div>
+                      {game.picks.total.overlay.confidenceDegraded && (
+                        <div className="mt-2 text-yellow-800 bg-yellow-50 border border-yellow-300 rounded p-2 flex items-start gap-2">
+                          <span className="text-lg">⚠️</span>
+                          <span className="flex-1">
+                            <span className="font-semibold">Large raw disagreement:</span> Model total differs from market by {game.picks.total.overlay.rawDisagreement.toFixed(1)} pts. Overlay capped in Trust-Market mode.
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
                   {/* CLV hint */}
