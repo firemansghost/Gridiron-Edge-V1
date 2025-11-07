@@ -546,6 +546,9 @@ export async function GET(
     
     const finalImpliedSpread = (isValidSpread ? matchupOutput.impliedSpread : null) ?? computedSpread;
     
+    // Initialize finalSpreadWithOverlay (will be updated later with Trust-Market overlay)
+    let finalSpreadWithOverlay = finalImpliedSpread;
+    
     // Never use matchupOutput.impliedTotal unless it passes the units handshake
     // Only use computedTotal if matchupOutput fails validation
     const finalImpliedTotal = (isValidTotal ? matchupTotalRaw : null) ?? computedTotal;
@@ -871,15 +874,25 @@ export async function GET(
       timestamp: mlLine.timestamp ?? null,
     } : null;
 
-    // Calculate model win probability from model spread
+    // ============================================
+    // TRUST-MARKET MODE: Moneyline from Final Spread (with overlay)
+    // ============================================
+    // Calculate model win probability from FINAL spread (after overlay)
+    // This ensures ML is coherent with the overlay-adjusted spread
     // Using standard NFL/CFB conversion: prob = normcdf(spread / (2 * sqrt(variance)))
     // For college football, we use a standard deviation of ~14 points
     // Simplified: prob = 0.5 + (spread / (2 * 14)) * 0.5, clamped to [0.05, 0.95]
     const stdDev = 14; // Standard deviation for CFB point spreads
     const modelHomeWinProb = Math.max(0.05, Math.min(0.95, 
-      0.5 + (finalImpliedSpread / (2 * stdDev)) * 0.5
+      0.5 + (finalSpreadWithOverlay / (2 * stdDev)) * 0.5
     ));
     const modelAwayWinProb = 1 - modelHomeWinProb;
+    
+    console.log(`[Game ${gameId}] 🎯 Moneyline from Final Spread:`, {
+      finalSpreadWithOverlay: finalSpreadWithOverlay.toFixed(2),
+      modelHomeWinProb: (modelHomeWinProb * 100).toFixed(1) + '%',
+      modelAwayWinProb: (modelAwayWinProb * 100).toFixed(1) + '%'
+    });
 
     // Convert model win probability to fair moneyline (American odds)
     // For home team: if prob > 0.5, negative odds; else positive
@@ -1296,8 +1309,8 @@ export async function GET(
       OVERLAY_CAP_SPREAD
     );
     
-    // Final spread = market baseline + overlay
-    const finalSpreadWithOverlay = marketSpread + spreadOverlay;
+    // Final spread = market baseline + overlay (update the pre-declared variable)
+    finalSpreadWithOverlay = marketSpread + spreadOverlay;
     
     // Check if we should degrade confidence due to large disagreement
     const shouldDegradeSpreadConfidence = rawSpreadDisagreement > LARGE_DISAGREEMENT_THRESHOLD;
@@ -1506,9 +1519,54 @@ export async function GET(
       });
     }
 
-    // Total edge: Model Total - Market Total (positive = model thinks over, negative = under)
-    // Compute if model total exists (no range checks)
-    const totalEdgePts = isModelTotalValid && marketTotal !== null ? (finalImpliedTotal - marketTotal) : null;
+    // ============================================
+    // TRUST-MARKET MODE: Total Overlay Logic
+    // ============================================
+    // Similar to spread: use market as baseline, apply small model adjustment
+    
+    let totalOverlay = 0;
+    let finalTotalWithOverlay = marketTotal;
+    let rawTotalDisagreement = 0;
+    let shouldDegradeTotalConfidence = false;
+    let hasTotalEdge = false;
+    
+    if (isModelTotalValid && marketTotal !== null) {
+      const modelTotalRaw = finalImpliedTotal;
+      rawTotalDisagreement = Math.abs(modelTotalRaw - marketTotal);
+      
+      // Calculate overlay: clamp(λ × (model - market), -cap, +cap)
+      totalOverlay = clampOverlay(
+        LAMBDA_TOTAL * (modelTotalRaw - marketTotal),
+        OVERLAY_CAP_TOTAL
+      );
+      
+      // Final total = market baseline + overlay
+      finalTotalWithOverlay = marketTotal + totalOverlay;
+      
+      // Check if we should degrade confidence
+      shouldDegradeTotalConfidence = rawTotalDisagreement > LARGE_DISAGREEMENT_THRESHOLD;
+      
+      // Edge is the absolute overlay value
+      const totalEdgeAbs = Math.abs(totalOverlay);
+      hasTotalEdge = totalEdgeAbs >= OVERLAY_EDGE_FLOOR;
+      
+      console.log(`[Game ${gameId}] 🎯 Trust-Market Total Overlay:`, {
+        modelTotalRaw: modelTotalRaw.toFixed(2),
+        marketTotal: marketTotal.toFixed(2),
+        rawDisagreement: rawTotalDisagreement.toFixed(2),
+        lambda: LAMBDA_TOTAL,
+        overlayRaw: (LAMBDA_TOTAL * (modelTotalRaw - marketTotal)).toFixed(2),
+        overlayCapped: totalOverlay.toFixed(2),
+        finalTotal: finalTotalWithOverlay.toFixed(2),
+        edge: totalEdgeAbs.toFixed(2),
+        hasTotalEdge,
+        shouldDegradeConfidence: shouldDegradeTotalConfidence,
+        mode: MODEL_MODE
+      });
+    }
+
+    // Total edge: In Trust-Market mode, edge IS the overlay (not model - market)
+    const totalEdgePts = isModelTotalValid && marketTotal !== null ? totalOverlay : null;
     
     // ============================================
     // SINGLE SOURCE OF TRUTH: model_view
@@ -1672,19 +1730,50 @@ export async function GET(
       }));
     }
     
-    // Determine "No edge" condition: edge < 2.0 OR model total ≈ market total within 0.5
-    const hasNoEdge = isModelTotalValid && totalEdgePts !== null && marketTotal !== null && 
-                      (Math.abs(totalEdgePts) < edgeFloor || Math.abs(finalImpliedTotal - marketTotal) < 0.5);
+    // ============================================
+    // TRUST-MARKET MODE: Total Pick Logic
+    // ============================================
+    // Only show pick if overlay >= 2.0 pts (same as spread)
     
-    // Compute total pick details (only if model total is valid and has edge)
-    const totalPick = isModelTotalValid && !hasNoEdge && marketTotal !== null
-      ? computeTotalPick(finalImpliedTotal, marketTotal)
-      : { totalPick: null, totalPickLabel: null, edgeDisplay: null };
+    // In Trust-Market mode, "hasNoEdge" means overlay < edge floor
+    const hasNoEdge = !hasTotalEdge; // hasTotalEdge was computed in overlay section
     
-    // Compute "Bet to" for total (only if valid and has edge)
-    const totalBetTo = isModelTotalValid && totalEdgePts !== null && Math.abs(totalEdgePts) >= edgeFloor && !hasNoEdge && marketTotal !== null
-      ? computeTotalBetTo(finalImpliedTotal, marketTotal, edgeFloor)
-      : null;
+    let totalPick: any;
+    let totalBetTo: number | null = null;
+    
+    if (!isModelTotalValid) {
+      // Units invalid - suppress pick entirely, no "Lean"
+      totalPick = { totalPick: null, totalPickLabel: null, edgeDisplay: null };
+      console.log(`[Game ${gameId}] ℹ️ No total pick - units invalid`);
+    } else if (!hasTotalEdge) {
+      // No edge - overlay too small
+      totalPick = { totalPick: null, totalPickLabel: null, edgeDisplay: null };
+      console.log(`[Game ${gameId}] ℹ️ No total pick - overlay below threshold:`, {
+        overlay: totalOverlay.toFixed(2),
+        edgeFloor: OVERLAY_EDGE_FLOOR,
+        reason: 'Overlay < edge floor'
+      });
+    } else {
+      // Has edge - compute pick from overlay direction
+      // Pick direction = sign(overlay): positive overlay = Over, negative = Under
+      const pickDirection = totalOverlay > 0 ? 'Over' : 'Under';
+      totalPick = {
+        totalPick: pickDirection,
+        totalPickLabel: `${pickDirection} ${marketTotal?.toFixed(1)}`,
+        edgeDisplay: `${Math.abs(totalOverlay).toFixed(1)} pts`
+      };
+      
+      // Bet-to: move market total toward zero overlay until edge = edgeFloor
+      // If overlay is +3.0 and edgeFloor is 2.0, bet to market + 2.0
+      totalBetTo = marketTotal! + Math.sign(totalOverlay) * OVERLAY_EDGE_FLOOR;
+      
+      console.log(`[Game ${gameId}] ✅ Total pick generated:`, {
+        pick: totalPick.totalPickLabel,
+        overlay: totalOverlay.toFixed(2),
+        edge: Math.abs(totalOverlay).toFixed(2),
+        betTo: totalBetTo.toFixed(1)
+      });
+    }
     
     if (isModelTotalValid && marketTotal !== null) {
       const totalDelta = Math.abs(finalImpliedTotal - marketTotal);
@@ -1823,7 +1912,7 @@ export async function GET(
     };
 
     let spreadGrade = getGrade(atsEdge);
-    const totalGrade = getGrade(totalEdgePts);
+    let totalGrade = getGrade(totalEdgePts);
 
     // ============================================
     // TRUST-MARKET MODE: Confidence Degradation
@@ -1834,11 +1923,22 @@ export async function GET(
     if (shouldDegradeSpreadConfidence && spreadGrade !== null) {
       const originalGrade = spreadGrade;
       spreadGrade = degradeGrade(spreadGrade, true);
-      console.log(`[Game ${gameId}] ⚠️ Confidence degraded due to large raw disagreement:`, {
+      console.log(`[Game ${gameId}] ⚠️ Spread confidence degraded due to large raw disagreement:`, {
         rawDisagreement: rawSpreadDisagreement.toFixed(2),
         threshold: LARGE_DISAGREEMENT_THRESHOLD,
         originalGrade,
         degradedGrade: spreadGrade || 'null'
+      });
+    }
+    
+    if (shouldDegradeTotalConfidence && totalGrade !== null) {
+      const originalGrade = totalGrade;
+      totalGrade = degradeGrade(totalGrade, true);
+      console.log(`[Game ${gameId}] ⚠️ Total confidence degraded due to large raw disagreement:`, {
+        rawDisagreement: rawTotalDisagreement.toFixed(2),
+        threshold: LARGE_DISAGREEMENT_THRESHOLD,
+        originalGrade,
+        degradedGrade: totalGrade || 'null'
       });
     }
 
@@ -2682,6 +2782,18 @@ export async function GET(
           hasNoEdge: hasNoEdge, // Flag for "No edge" display
           // Hide only if model total is truly invalid (NaN/null/inf)
           hidden: !isModelTotalValid,
+          // Trust-Market Mode overlay diagnostics
+          overlay: {
+            modelRaw: isModelTotalValid ? finalImpliedTotal : null,
+            market: marketTotal,
+            rawDisagreement: rawTotalDisagreement,
+            lambda: LAMBDA_TOTAL,
+            overlayValue: totalOverlay,
+            cap: OVERLAY_CAP_TOTAL,
+            final: finalTotalWithOverlay,
+            confidenceDegraded: shouldDegradeTotalConfidence,
+            mode: MODEL_MODE
+          },
           // OU card state: "pick" | "no_edge" | "no_model_total"
           totalState: totalState,
           // Missing inputs list (for "no_model_total" state)
