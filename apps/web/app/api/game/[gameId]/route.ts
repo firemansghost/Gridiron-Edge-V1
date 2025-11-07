@@ -1515,7 +1515,22 @@ export async function GET(
     const edgeFloor = OVERLAY_EDGE_FLOOR; // 2.0 pts minimum
     const hasSpreadEdge = atsEdgeAbs >= edgeFloor;
     
+    // ============================================
+    // EXTREME FAVORITE GUARD
+    // ============================================
+    // Don't headline 20+ point dogs even if overlay points that way
+    const isExtremeFavorite = Math.abs(marketSpread) >= 21;
+    
+    // Determine if overlay direction points to the dog
+    // If marketSpread < 0 (home favored), spreadOverlay > 0 means model likes away (dog)
+    // If marketSpread > 0 (away favored), spreadOverlay < 0 means model likes home (dog)
+    const overlayFavorsDog = (marketSpread < 0 && spreadOverlay > 0) || (marketSpread > 0 && spreadOverlay < 0);
+    
+    // Block dog headline if extreme favorite AND overlay points to dog
+    const blockDogHeadline = isExtremeFavorite && overlayFavorsDog && hasSpreadEdge;
+    
     let bettablePick: any;
+    let ats_dog_headline_blocked = false;
     
     if (!hasSpreadEdge) {
       // No pick - overlay too small to bet
@@ -1526,12 +1541,37 @@ export async function GET(
         label: null,
         reasoning: `No edge at current number. Model overlay is ${spreadOverlay >= 0 ? '+' : ''}${spreadOverlay.toFixed(1)} pts (below ${edgeFloor.toFixed(1)} pt threshold in Trust-Market mode).`,
         betTo: null,
-        favoritesDisagree: false
+        favoritesDisagree: false,
+        suppressHeadline: false,
+        extremeFavoriteBlocked: false
       };
       console.log(`[Game ${gameId}] ℹ️ No spread pick - overlay below threshold:`, {
         overlay: spreadOverlay.toFixed(2),
         edgeFloor,
         reason: 'Overlay < edge floor'
+      });
+    } else if (blockDogHeadline) {
+      // Has edge BUT extreme favorite + dog direction → suppress dog headline, show range only
+      ats_dog_headline_blocked = true;
+      bettablePick = {
+        teamId: null,
+        teamName: null,
+        line: null,
+        label: null,
+        reasoning: `Extreme favorite game (${Math.abs(marketSpread).toFixed(1)} pts). Model overlay ${spreadOverlay >= 0 ? '+' : ''}${spreadOverlay.toFixed(1)} pts favors the underdog, but we don't recommend 20+ point dogs. Range guidance provided.`,
+        betTo: spreadBetTo,
+        favoritesDisagree: false,
+        suppressHeadline: true, // Flag for UI to show "No edge" headline but keep range
+        extremeFavoriteBlocked: true,
+        flip: spreadFlip
+      };
+      console.log(`[Game ${gameId}] 🚫 Dog headline blocked (extreme favorite):`, {
+        marketSpread: marketSpread.toFixed(2),
+        overlay: spreadOverlay.toFixed(2),
+        edge: atsEdge.toFixed(2),
+        betTo: spreadBetTo?.toFixed(1),
+        flip: spreadFlip?.toFixed(1),
+        reason: 'Overlay points to 20+ pt dog - suppressing headline but keeping range'
       });
     } else {
       // Compute pick using original helper (it handles direction correctly)
@@ -1549,9 +1589,11 @@ export async function GET(
       // Add overlay context to reasoning
       bettablePick.reasoning = `${bettablePick.reasoning} (Trust-Market overlay: ${spreadOverlay >= 0 ? '+' : ''}${spreadOverlay.toFixed(1)} pts, capped at ±${OVERLAY_CAP_SPREAD})`;
       
-      // Add range info
+      // Add range info and flags
       bettablePick.flip = spreadFlip;
       bettablePick.betTo = spreadBetTo; // Override with consistent value
+      bettablePick.suppressHeadline = false;
+      bettablePick.extremeFavoriteBlocked = false;
       
       console.log(`[Game ${gameId}] ✅ Spread pick generated:`, {
         pick: bettablePick.label,
@@ -1559,6 +1601,18 @@ export async function GET(
         edge: atsEdge.toFixed(2),
         betTo: spreadBetTo?.toFixed(1),
         flip: spreadFlip?.toFixed(1)
+      });
+    }
+    
+    // Telemetry: Log when dog headline is blocked for extreme favorites
+    if (ats_dog_headline_blocked) {
+      console.log(`[Game ${gameId}] 📊 TELEMETRY: ats_dog_headline_blocked`, {
+        gameId,
+        marketSpread: marketSpread.toFixed(2),
+        overlay: spreadOverlay.toFixed(2),
+        homeTeam: game.homeTeam.name,
+        awayTeam: game.awayTeam.name,
+        reason: 'Extreme favorite (|line| >= 21), overlay favors dog'
       });
     }
 
@@ -2811,6 +2865,9 @@ export async function GET(
         ou_inputs_ok,
         ats_reason,
         ou_reason,
+        // Telemetry flags
+        ats_dog_headline_blocked, // True when extreme favorite dog pick was suppressed
+        totals_nan_stage: firstFailureStep, // Stage where NaN/inf occurred
         // Legacy flags
         favoritesDisagree,
         edgeAbsGt20,
@@ -2835,7 +2892,11 @@ export async function GET(
             teamName: bettablePick.teamName,
             line: bettablePick.line,
             label: bettablePick.label,
-            reasoning: bettablePick.reasoning
+            reasoning: bettablePick.reasoning,
+            suppressHeadline: bettablePick.suppressHeadline || false,
+            extremeFavoriteBlocked: bettablePick.extremeFavoriteBlocked || false,
+            betTo: bettablePick.betTo,
+            flip: bettablePick.flip
           },
           edgePts: atsEdge,
           betTo: bettablePick.betTo, // "Bet to" number
@@ -2890,12 +2951,8 @@ export async function GET(
           calcError: calcError,
           // Specific warning message (only for missing inputs or computation failure)
           modelTotalWarning: modelTotalWarning,
-          // Lean when model total is unavailable
-          lean: totalState === 'no_model_total' && hasLean ? {
-            direction: leanDirection,
-            marketTotal: marketTotal,
-            medianTotal: medianConfTotal
-          } : null,
+          // REMOVED: Don't show "lean" when model total is null (no guessing)
+          // lean: null,
           // Rationale line for ticket
           rationale: totalState === 'pick' && totalEdgePts !== null && totalPick.totalPickLabel && finalImpliedTotal !== null
             ? `Model total ${finalImpliedTotal.toFixed(1)} vs market ${marketTotal !== null ? marketTotal.toFixed(1) : 'N/A'} (${totalEdgePts >= 0 ? '+' : ''}${totalEdgePts.toFixed(1)}) → ${totalPick.totalPick} value.`

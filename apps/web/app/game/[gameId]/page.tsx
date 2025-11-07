@@ -571,8 +571,11 @@ export default function GameDetailPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Spread pick ${game.picks.spread.bettablePick.label}`}>
-                      {snapshot && atsValueSide ? (
+                    <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Spread pick ${game.picks.spread.bettablePick.label || 'No edge'}`}>
+                      {game.picks.spread.bettablePick?.suppressHeadline || game.picks.spread.bettablePick?.extremeFavoriteBlocked ? (
+                        /* EXTREME FAVORITE: Suppress dog headline, show market line instead */
+                        snapshot ? `No edge at current number — market ${snapshot.favoriteTeamName} ${snapshot.favoriteLine.toFixed(1)}` : 'No edge at current number.'
+                      ) : snapshot && atsValueSide ? (
                         atsValueSide === 'dog'
                           ? `${snapshot.dogTeamName} +${snapshot.dogLine.toFixed(1)}`
                           : `${snapshot.favoriteTeamName} ${snapshot.favoriteLine.toFixed(1)}`
@@ -591,10 +594,10 @@ export default function GameDetailPage() {
                         Bet to: {atsValueSide === 'dog' ? `+${spreadBetTo.toFixed(1)}` : spreadBetTo.toFixed(1)} (edge floor 2.0 pts)
                       </div>
                     )}
-                    {/* RANGE: Flip Point */}
-                    {game.picks.spread.bettablePick?.flip !== null && game.picks.spread.bettablePick?.flip !== undefined && snapshot && atsValueSide && (
+                    {/* RANGE: Flip Point - Show when we have flip data, even if headline suppressed */}
+                    {game.picks.spread.bettablePick?.flip !== null && game.picks.spread.bettablePick?.flip !== undefined && game.picks.spread.bettablePick?.betTo !== null && game.picks.spread.bettablePick?.betTo !== undefined && snapshot && (
                       <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
-                        <span className="font-semibold">Range:</span> Value now to {atsValueSide === 'dog' ? `+${spreadBetTo?.toFixed(1)}` : spreadBetTo?.toFixed(1)}; flips to {atsValueSide === 'dog' ? snapshot.favoriteTeamName : snapshot.dogTeamName} at {atsValueSide === 'dog' ? game.picks.spread.bettablePick.flip.toFixed(1) : `+${Math.abs(game.picks.spread.bettablePick.flip).toFixed(1)}`}
+                        <span className="font-semibold">Range:</span> Value on {snapshot.favoriteTeamName} to {game.picks.spread.bettablePick.betTo.toFixed(1)}; flips to {snapshot.dogTeamName} at {game.picks.spread.bettablePick.flip > 0 ? `+${game.picks.spread.bettablePick.flip.toFixed(1)}` : game.picks.spread.bettablePick.flip.toFixed(1)}
                       </div>
                     )}
                   {game.picks.spread.rationale && (
@@ -608,6 +611,15 @@ export default function GameDetailPage() {
                       <div className="mb-1">
                         <span className="font-semibold">Model overlay:</span> {game.picks.spread.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.spread.overlay.overlayValue.toFixed(1)} pts (cap ±{game.picks.spread.overlay.cap})
                       </div>
+                      {/* Yellow banner for extreme favorite dog picks */}
+                      {game.picks.spread.bettablePick?.extremeFavoriteBlocked && (
+                        <div className="mt-2 text-yellow-800 bg-yellow-50 border border-yellow-300 rounded p-2 flex items-start gap-2">
+                          <span className="text-lg">🚫</span>
+                          <span className="flex-1">
+                            <span className="font-semibold">Extreme favorite game:</span> Model overlay favors the underdog, but we don't recommend 20+ point dogs. Range guidance provided.
+                          </span>
+                        </div>
+                      )}
                       {game.picks.spread.overlay.confidenceDegraded && (
                         <div className="mt-2 text-yellow-800 bg-yellow-50 border border-yellow-300 rounded p-2 flex items-start gap-2">
                           <span className="text-lg">⚠️</span>
