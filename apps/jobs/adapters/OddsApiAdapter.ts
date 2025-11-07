@@ -1343,13 +1343,25 @@ export class OddsApiAdapter implements DataSourceAdapter {
       for (const market of bookmaker.markets) {
         if (market.key === 'h2h') {
           // Moneyline
+          // DEBUG: Log all outcomes for LSU @ Alabama
+          if (gameId === '2025-wk11-lsu-alabama') {
+            console.log(`   [DEBUG-LSU] Moneyline outcomes for ${bookName}:`, 
+              market.outcomes.map(o => ({ name: o.name, price: o.price })));
+          }
+          
           for (const outcome of market.outcomes) {
             if (outcome.price !== undefined && outcome.price !== null) {
               // Resolve team name to teamId
               const teamId = this.resolveTeamId(outcome.name);
               if (!teamId) {
-                console.warn(`   [ODDSAPI] Could not resolve team name "${outcome.name}" to teamId for moneyline`);
+                console.warn(`   [ODDSAPI] Could not resolve team name "${outcome.name}" to teamId for moneyline (gameId: ${gameId})`);
               }
+              
+              // DEBUG: Log resolution for LSU @ Alabama
+              if (gameId === '2025-wk11-lsu-alabama') {
+                console.log(`   [DEBUG-LSU] Resolved "${outcome.name}" → teamId="${teamId || 'NULL'}" (price: ${outcome.price})`);
+              }
+              
               lines.push({
                 gameId,
                 season: actualSeason,
