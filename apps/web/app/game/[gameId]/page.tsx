@@ -650,7 +650,7 @@ export default function GameDetailPage() {
                   <div className="bg-white border-2 border-gray-300 rounded-lg p-4 shadow-sm">
                     <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">AGAINST THE SPREAD</h3>
                     <div className="text-lg font-semibold text-gray-900 mb-2">
-                      No edge at current number — market {snapshot ? (atsValueSide === 'dog' ? `+${snapshot.dogLine.toFixed(1)}` : snapshot.favoriteLine.toFixed(1)) : 'N/A'}
+                      No edge at current number — market {snapshot ? `${snapshot.favoriteTeamName} ${snapshot.favoriteLine.toFixed(1)}` : 'N/A'}
                     </div>
                     {game.picks?.spread?.overlay && (
                       <div className="text-xs text-gray-600">

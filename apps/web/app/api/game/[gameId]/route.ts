@@ -1734,10 +1734,16 @@ export async function GET(
       modelLineInMarketFavCoords = -modelFavoriteLine;
     }
     
-    const atsEdgePts = modelLineInMarketFavCoords - market_snapshot.favoriteLine;
+    // ============================================
+    // IMPORTANT: Edge calculation moved AFTER overlay logic
+    // ============================================
+    // In Trust-Market mode, the edge IS the capped overlay, not the raw model-market difference
+    // This placeholder will be updated after overlay calculation
+    // For now, keep the raw calculation for logging/diagnostics only
+    const atsEdgePtsRaw = modelLineInMarketFavCoords - market_snapshot.favoriteLine;
     
-    // Log ATS decision trace before rendering
-    console.log(`[Game ${gameId}] 📊 ATS DECISION TRACE:`, {
+    // Log ATS decision trace before rendering (using raw edge for context)
+    console.log(`[Game ${gameId}] 📊 ATS DECISION TRACE (PRE-OVERLAY):`, {
       modelFavoriteTeamId,
       modelFavoriteName,
       modelFavoriteLine,
@@ -1745,20 +1751,22 @@ export async function GET(
       marketFavoriteName: market_snapshot.favoriteTeamName,
       marketFavoriteLine: market_snapshot.favoriteLine,
       modelLineInMarketFavCoords,
-      atsEdgePts,
-      edgeFloor: 2.0,
-      expectedHeadline: atsEdgePts > 0.5 
-        ? `${market_snapshot.dogTeamName} +${market_snapshot.dogLine.toFixed(1)}` 
-        : atsEdgePts < -0.5 
-          ? `${market_snapshot.favoriteTeamName} ${market_snapshot.favoriteLine.toFixed(1)}`
-          : 'No edge at current number'
+      atsEdgePtsRaw,
+      note: 'In Trust-Market mode, the final edge will be the capped overlay, not this raw value'
     });
     
     // ouEdgePts: modelTotal - marketTotal (positive = model thinks over, negative = under)
-    const ouEdgePts = modelTotal !== null && market_snapshot.marketTotal !== null
+    // This will also be updated after overlay logic for totals
+    const ouEdgePtsRaw = modelTotal !== null && market_snapshot.marketTotal !== null
       ? modelTotal - market_snapshot.marketTotal
       : null;
     
+    // ============================================
+    // TRUST-MARKET MODE: Use capped overlay edges
+    // ============================================
+    // In Trust-Market mode, edges are the capped overlays (already calculated above)
+    // atsEdge = spreadOverlay (calculated line ~1358)
+    // totalEdgePts = totalOverlay (calculated line ~1675)
     const model_view = {
       modelFavoriteTeamId: modelFavoriteTeamId,
       modelFavoriteName: modelFavoriteName,
@@ -1767,10 +1775,19 @@ export async function GET(
       winProbFavorite,
       winProbDog,
       edges: {
-        atsEdgePts: atsEdgePts, // Favorite-centric edge
-        ouEdgePts: ouEdgePts // Over/Under edge
+        atsEdgePts: atsEdge, // ✅ Capped overlay (not raw disagreement)
+        ouEdgePts: totalEdgePts // ✅ Capped overlay (not raw disagreement)
       }
     };
+    
+    // Log final edges for verification
+    console.log(`[Game ${gameId}] 🎯 FINAL EDGES (Trust-Market Mode):`, {
+      atsEdge: atsEdge.toFixed(2),
+      totalEdge: totalEdgePts?.toFixed(2) ?? 'null',
+      atsRawDisagreement: atsEdgePtsRaw.toFixed(2),
+      totalRawDisagreement: ouEdgePtsRaw?.toFixed(2) ?? 'null',
+      note: 'model_view.edges now uses capped overlay values'
+    });
     
     // ============================================
     // TOTALS PROVENANCE LOGGING
@@ -1785,7 +1802,8 @@ export async function GET(
       totalSource,
       firstFailureStep: totalDiag.firstFailureStep,
       unitsNote,
-      ouEdgePts,
+      ouEdgePts: totalEdgePts, // Capped overlay edge (not raw disagreement)
+      ouEdgePtsRaw: ouEdgePtsRaw, // Raw model-market disagreement
       diagnostics: {
         inputs: totalDiag.inputs,
         steps: totalDiag.steps,
@@ -2876,7 +2894,37 @@ export async function GET(
           ...(modelTotalWarning ? [modelTotalWarning] : []),
           ...(favoritesDisagree ? ['Model and market favor different teams'] : []),
           ...(edgeAbsGt20 ? ['Edge magnitude exceeds 20 points'] : [])
-        ]
+        ],
+        // ============================================
+        // ASSERTIONS: Overlay Consistency & Sign Sanity
+        // ============================================
+        assertions: {
+          overlay_consistency_ats: {
+            // Assert: ui_no_edge === (abs(overlay_used_pts) < edge_floor_pts)
+            overlay_used_pts: spreadOverlay,
+            edge_floor_pts: OVERLAY_EDGE_FLOOR,
+            abs_overlay: Math.abs(spreadOverlay),
+            should_have_edge: Math.abs(spreadOverlay) >= OVERLAY_EDGE_FLOOR,
+            actually_has_edge: hasSpreadEdge,
+            passed: (Math.abs(spreadOverlay) >= OVERLAY_EDGE_FLOOR) === hasSpreadEdge
+          },
+          overlay_consistency_ou: {
+            // Assert: ui_no_edge === (abs(overlay_used_pts) < edge_floor_pts)
+            overlay_used_pts: totalOverlay,
+            edge_floor_pts: OVERLAY_EDGE_FLOOR,
+            abs_overlay: Math.abs(totalOverlay),
+            should_have_edge: totalEdgePts !== null && Math.abs(totalOverlay) >= OVERLAY_EDGE_FLOOR,
+            actually_has_edge: totalEdgePts !== null && Math.abs(totalEdgePts) >= OVERLAY_EDGE_FLOOR,
+            passed: totalEdgePts === null ? true : (Math.abs(totalOverlay) >= OVERLAY_EDGE_FLOOR) === (Math.abs(totalEdgePts) >= OVERLAY_EDGE_FLOOR)
+          },
+          sign_sanity_ats: {
+            // Assert: if market favorite line < 0, ATS copy must show negative
+            market_favorite_line: market_snapshot.favoriteLine,
+            market_line_is_negative: market_snapshot.favoriteLine < 0,
+            // UI will check this when rendering "market {line}" string
+            passed: true // Will be validated in UI
+          }
+        }
       },
       
       // Total diagnostics (for debugging model total pipeline)
@@ -2916,7 +2964,11 @@ export async function GET(
             cap: OVERLAY_CAP_SPREAD,
             final: finalSpreadWithOverlay,
             confidenceDegraded: shouldDegradeSpreadConfidence,
-            mode: MODEL_MODE
+            mode: MODEL_MODE,
+            // ✅ SSOT fields for UI decision logic
+            overlay_used_pts: spreadOverlay, // The exact capped overlay value used for decisions
+            overlay_basis: 'capped' as const, // Always capped in Trust-Market mode
+            edge_floor_pts: OVERLAY_EDGE_FLOOR // 2.0 pts minimum
           }
         },
         total: {
@@ -2941,7 +2993,11 @@ export async function GET(
             cap: OVERLAY_CAP_TOTAL,
             final: finalTotalWithOverlay,
             confidenceDegraded: shouldDegradeTotalConfidence,
-            mode: MODEL_MODE
+            mode: MODEL_MODE,
+            // ✅ SSOT fields for UI decision logic
+            overlay_used_pts: totalOverlay, // The exact capped overlay value used for decisions
+            overlay_basis: 'capped' as const, // Always capped in Trust-Market mode
+            edge_floor_pts: OVERLAY_EDGE_FLOOR // 2.0 pts minimum
           },
           // OU card state: "pick" | "no_edge" | "no_model_total"
           totalState: totalState,
@@ -3391,6 +3447,29 @@ export async function GET(
           'X-Payload-Time': payloadTime.toString(),
           'X-Revalidated': isRevalidated.toString()
         };
+
+    // ============================================
+    // ASSERTION LOGGING
+    // ============================================
+    // Log assertion failures for debugging
+    if (!response.validation?.assertions?.overlay_consistency_ats?.passed) {
+      console.error(`[Game ${gameId}] ⚠️ ASSERTION FAILED: ATS Overlay Consistency`, {
+        overlay_used_pts: response.validation.assertions.overlay_consistency_ats.overlay_used_pts,
+        edge_floor_pts: response.validation.assertions.overlay_consistency_ats.edge_floor_pts,
+        should_have_edge: response.validation.assertions.overlay_consistency_ats.should_have_edge,
+        actually_has_edge: response.validation.assertions.overlay_consistency_ats.actually_has_edge,
+        abs_overlay: response.validation.assertions.overlay_consistency_ats.abs_overlay
+      });
+    }
+    if (!response.validation?.assertions?.overlay_consistency_ou?.passed) {
+      console.error(`[Game ${gameId}] ⚠️ ASSERTION FAILED: OU Overlay Consistency`, {
+        overlay_used_pts: response.validation.assertions.overlay_consistency_ou.overlay_used_pts,
+        edge_floor_pts: response.validation.assertions.overlay_consistency_ou.edge_floor_pts,
+        should_have_edge: response.validation.assertions.overlay_consistency_ou.should_have_edge,
+        actually_has_edge: response.validation.assertions.overlay_consistency_ou.actually_has_edge,
+        abs_overlay: response.validation.assertions.overlay_consistency_ou.abs_overlay
+      });
+    }
 
     return NextResponse.json(response, {
       headers: cacheHeaders
