@@ -1289,6 +1289,38 @@ export async function GET(
     };
 
     // ============================================
+    // INDEPENDENT VALIDATION FLAGS (Decouple ATS and OU)
+    // ============================================
+    // ATS and OU validate independently - one cannot block the other
+    const ats_inputs_ok = finalImpliedSpread !== null && 
+                          !isNaN(finalImpliedSpread) && 
+                          isFinite(finalImpliedSpread);
+    
+    const ou_inputs_ok = finalImpliedTotal !== null && 
+                         !isNaN(finalImpliedTotal) && 
+                         isFinite(finalImpliedTotal) &&
+                         finalImpliedTotal >= 15 && 
+                         finalImpliedTotal <= 120;
+    
+    const ats_reason = !ats_inputs_ok ? 'Model spread unavailable or invalid (NaN/inf)' : null;
+    const ou_reason = !ou_inputs_ok 
+      ? (finalImpliedTotal === null 
+          ? 'Model total unavailable' 
+          : finalImpliedTotal < 15 || finalImpliedTotal > 120
+            ? `Model returned ${finalImpliedTotal.toFixed(1)}, not in points (likely rate/ratio)`
+            : 'Model total invalid (NaN/inf)')
+      : null;
+    
+    console.log(`[Game ${gameId}] 🔍 Independent Validation:`, {
+      ats_inputs_ok,
+      ou_inputs_ok,
+      ats_reason,
+      ou_reason,
+      finalImpliedSpread,
+      finalImpliedTotal
+    });
+    
+    // ============================================
     // TRUST-MARKET MODE: Spread Overlay Logic
     // ============================================
     // Use market as baseline, apply small model adjustment (±3.0 cap)
@@ -1325,6 +1357,18 @@ export async function GET(
     // The overlay represents how much value we see at the current market number
     const atsEdge = spreadOverlay; // Edge is the overlay value
     const atsEdgeAbs = Math.abs(atsEdge);
+    
+    // ============================================
+    // RANGE LOGIC: Bet-To and Flip Point
+    // ============================================
+    // Bet-to: Stop line where edge = edge_floor
+    // Flip: First price where the other side becomes a bet
+    const spreadBetTo = atsEdgeAbs >= OVERLAY_EDGE_FLOOR 
+      ? marketSpread + Math.sign(spreadOverlay) * OVERLAY_EDGE_FLOOR
+      : null;
+    const spreadFlip = atsEdgeAbs >= OVERLAY_EDGE_FLOOR
+      ? marketSpread - Math.sign(spreadOverlay) * OVERLAY_EDGE_FLOOR
+      : null;
 
     // Compute spread pick details (favorite-centric) - this is the model's favorite
     const spreadPick = computeSpreadPick(
@@ -1505,11 +1549,16 @@ export async function GET(
       // Add overlay context to reasoning
       bettablePick.reasoning = `${bettablePick.reasoning} (Trust-Market overlay: ${spreadOverlay >= 0 ? '+' : ''}${spreadOverlay.toFixed(1)} pts, capped at ±${OVERLAY_CAP_SPREAD})`;
       
+      // Add range info
+      bettablePick.flip = spreadFlip;
+      bettablePick.betTo = spreadBetTo; // Override with consistent value
+      
       console.log(`[Game ${gameId}] ✅ Spread pick generated:`, {
         pick: bettablePick.label,
         overlay: spreadOverlay.toFixed(2),
         edge: atsEdge.toFixed(2),
-        betTo: bettablePick.betTo
+        betTo: spreadBetTo?.toFixed(1),
+        flip: spreadFlip?.toFixed(1)
       });
     }
 
@@ -1570,6 +1619,17 @@ export async function GET(
     // Total edge: In Trust-Market mode, edge IS the overlay (not model - market)
     // If model is null, edge is null (no pick)
     const totalEdgePts = finalImpliedTotal !== null && marketTotal !== null ? totalOverlay : null;
+    
+    // ============================================
+    // RANGE LOGIC: Bet-To and Flip Point (Totals)
+    // ============================================
+    const totalEdgeAbs = totalEdgePts !== null ? Math.abs(totalEdgePts) : 0;
+    const totalBetToCalc = totalEdgeAbs >= OVERLAY_EDGE_FLOOR && marketTotal !== null
+      ? marketTotal + Math.sign(totalOverlay) * OVERLAY_EDGE_FLOOR
+      : null;
+    const totalFlip = totalEdgeAbs >= OVERLAY_EDGE_FLOOR && marketTotal !== null
+      ? marketTotal - Math.sign(totalOverlay) * OVERLAY_EDGE_FLOOR
+      : null;
     
     // ============================================
     // SINGLE SOURCE OF TRUTH: model_view
@@ -1774,21 +1834,24 @@ export async function GET(
       // Has edge - compute pick from overlay direction
       // Pick direction = sign(overlay): positive overlay = Over, negative = Under
       const pickDirection = totalOverlay > 0 ? 'Over' : 'Under';
+      const oppositeDirection = totalOverlay > 0 ? 'Under' : 'Over';
       totalPick = {
         totalPick: pickDirection,
         totalPickLabel: `${pickDirection} ${marketTotal?.toFixed(1)}`,
-        edgeDisplay: `${Math.abs(totalOverlay).toFixed(1)} pts`
+        edgeDisplay: `${Math.abs(totalOverlay).toFixed(1)} pts`,
+        flip: totalFlip // Add flip point
       };
       
-      // Bet-to: move market total toward zero overlay until edge = edgeFloor
-      // If overlay is +3.0 and edgeFloor is 2.0, bet to market + 2.0
-      totalBetTo = marketTotal! + Math.sign(totalOverlay) * OVERLAY_EDGE_FLOOR;
+      // Use pre-calculated totalBetToCalc
+      totalBetTo = totalBetToCalc;
       
       console.log(`[Game ${gameId}] ✅ Total pick generated:`, {
         pick: totalPick.totalPickLabel,
         overlay: totalOverlay.toFixed(2),
         edge: Math.abs(totalOverlay).toFixed(2),
-        betTo: totalBetTo.toFixed(1)
+        betTo: totalBetTo?.toFixed(1),
+        flip: totalFlip?.toFixed(1),
+        oppositeAt: `${oppositeDirection} at ${totalFlip?.toFixed(1)}`
       });
     }
     
@@ -2743,6 +2806,12 @@ export async function GET(
       
       // Validation flags (for UI display of warnings)
       validation: {
+        // Independent validation flags (decouple ATS and OU)
+        ats_inputs_ok,
+        ou_inputs_ok,
+        ats_reason,
+        ou_reason,
+        // Legacy flags
         favoritesDisagree,
         edgeAbsGt20,
         modelTotalWarning: modelTotalWarning, // Specific warning message (null if no issue)
