@@ -248,6 +248,21 @@ async function main() {
       console.log(JSON.stringify(rowsToInsert.slice(0, 2), null, 2));
     }
     
+    // DEBUG: Log LSU @ Alabama moneyline rows
+    const lsuMoneylines = rowsToInsert.filter((r: any) => 
+      r.gameId === '2025-wk11-lsu-alabama' && r.lineType === 'moneyline'
+    );
+    if (lsuMoneylines.length > 0) {
+      console.log(`[DEBUG-LSU-DB] Found ${lsuMoneylines.length} moneyline rows for LSU @ Alabama in rowsToInsert:`);
+      console.log(JSON.stringify(lsuMoneylines.slice(0, 4), null, 2));
+      
+      const alabamaRows = lsuMoneylines.filter((r: any) => r.teamId === 'alabama');
+      const lsuRows = lsuMoneylines.filter((r: any) => r.teamId === 'lsu');
+      const nullRows = lsuMoneylines.filter((r: any) => r.teamId === null);
+      
+      console.log(`[DEBUG-LSU-DB] Breakdown: Alabama=${alabamaRows.length}, LSU=${lsuRows.length}, NULL=${nullRows.length}`);
+    }
+    
     // REAL DATABASE WRITE
     if (!options.dryRun && rowsToInsert.length > 0) {
       console.log('[DB] Executing createMany...');
