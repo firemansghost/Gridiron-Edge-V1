@@ -749,7 +749,7 @@ export default function GameDetailPage() {
               )}
 
               {/* Moneyline Card */}
-              {game.picks?.moneyline ? (
+              {game.picks?.moneyline && game.picks.moneyline.pickLabel ? (
                 <div className="bg-white border-2 border-purple-300 rounded-lg p-4 shadow-sm">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">MONEYLINE</h3>
@@ -766,35 +766,19 @@ export default function GameDetailPage() {
                       </div>
                     )}
                   </div>
-                  {game.picks.moneyline.price != null ? (
-                    <>
-                      <div className="text-2xl font-bold text-gray-900 mb-2">
-                        {game.picks.moneyline.pickLabel}
-                      </div>
-                      <div className="text-sm text-gray-600 mb-2">
-                        Market: {game.picks.moneyline.price > 0 ? '+' : ''}{game.picks.moneyline.price}
-                      </div>
-                      {game.picks.moneyline.valuePercent != null && (
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className={`text-sm font-semibold ${game.picks.moneyline.valuePercent >= 0 ? 'text-green-600' : 'text-gray-600'}`}>
-                            Value: {game.picks.moneyline.valuePercent >= 0 ? '+' : ''}{game.picks.moneyline.valuePercent.toFixed(1)}%
-                          </span>
-                          <InfoTooltip content="Value % = Model probability minus market implied probability. A ≥ 4.0% value, B ≥ 2.5%, C ≥ 1.5%." />
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <div className="text-xl font-bold text-gray-900 mb-1">
-                        {game.picks.moneyline.modelFavoriteTeam} — Model fair ML
-                      </div>
-                      <div className="text-lg font-semibold text-gray-700 mb-2">
-                        {game.picks.moneyline.modelFairML! > 0 ? '+' : ''}{game.picks.moneyline.modelFairML}
-                      </div>
-                      <div className="text-xs text-gray-500 italic mb-2">
-                        (No book ML yet)
-                      </div>
-                    </>
+                  <div className="text-2xl font-bold text-gray-900 mb-2">
+                    {game.picks.moneyline.pickLabel}
+                  </div>
+                  <div className="text-sm text-gray-600 mb-2">
+                    Market: {game.picks.moneyline.price! > 0 ? '+' : ''}{game.picks.moneyline.price}
+                  </div>
+                  {game.picks.moneyline.valuePercent != null && (
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={`text-sm font-semibold ${game.picks.moneyline.valuePercent >= 0 ? 'text-green-600' : 'text-gray-600'}`}>
+                        Value: {game.picks.moneyline.valuePercent >= 0 ? '+' : ''}{game.picks.moneyline.valuePercent.toFixed(1)}%
+                      </span>
+                      <InfoTooltip content="Value % = Model probability minus market implied probability. A ≥ 4.0% value, B ≥ 2.5%, C ≥ 1.5%." />
+                    </div>
                   )}
                   {game.picks.moneyline.rationale && (
                     <div className="text-xs text-gray-700 mt-2 italic border-t border-gray-200 pt-2">
@@ -802,11 +786,40 @@ export default function GameDetailPage() {
                     </div>
                   )}
                 </div>
+              ) : game.picks?.moneyline && game.picks.moneyline.isModelFairLineOnly ? (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">MONEYLINE</h3>
+                  <div className="text-xl font-bold text-gray-900 mb-1">
+                    {game.picks.moneyline.modelFavoriteTeam} — Model fair ML
+                  </div>
+                  <div className="text-lg font-semibold text-gray-700 mb-2">
+                    {game.picks.moneyline.modelFairML! > 0 ? '+' : ''}{game.picks.moneyline.modelFairML}
+                  </div>
+                  <div className="text-xs text-gray-500 italic">
+                    (No book ML available yet)
+                  </div>
+                </div>
               ) : (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                   <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">MONEYLINE</h3>
-                  <div className="text-sm text-gray-600 italic">
-                    Moneyline unavailable — no valid market price or model probability.
+                  <div className="text-sm text-gray-600">
+                    <div className="mb-2">
+                      {snapshot && (snapshot.moneylineFavorite !== null || snapshot.moneylineDog !== null) ? (
+                        <>
+                          <div className="text-sm text-gray-700 mb-1">
+                            {snapshot.favoriteTeamName}: <span className="font-semibold">{formatMoneyline(snapshot.moneylineFavorite)}</span>
+                          </div>
+                          <div className="text-sm text-gray-700">
+                            {snapshot.dogTeamName}: <span className="font-semibold">{formatMoneyline(snapshot.moneylineDog)}</span>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-gray-500 italic">No market moneylines available</div>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-500 italic border-t border-gray-300 pt-2 mt-2">
+                      No moneyline bet recommended. Model does not see sufficient value at these odds, or the odds are too long (extreme longshot).
+                    </div>
                   </div>
                 </div>
               )}
