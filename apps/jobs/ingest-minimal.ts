@@ -265,12 +265,39 @@ async function main() {
     
     // REAL DATABASE WRITE
     if (!options.dryRun && rowsToInsert.length > 0) {
-      console.log('[DB] Executing createMany...');
-      const result = await prisma.marketLine.createMany({
-        data: rowsToInsert,
-        skipDuplicates: true,
+      // WORKAROUND: Delete existing market lines for this week first to avoid Prisma skipDuplicates bug with NULL teamId
+      console.log(`[DB] Deleting existing market lines for ${options.season} Week ${options.weeks[0]}...`);
+      const deleteResult = await prisma.marketLine.deleteMany({
+        where: {
+          season: options.season,
+          week: options.weeks[0],
+          source: 'oddsapi'
+        }
       });
-      console.log('[DB] createMany result:', result);
+      console.log(`[DB] Deleted ${deleteResult.count} existing rows`);
+      
+      console.log('[DB] Executing createMany...');
+      let insertResult;
+      try {
+        insertResult = await prisma.marketLine.createMany({
+          data: rowsToInsert,
+          skipDuplicates: false, // Changed: No longer needed since we deleted first
+        });
+        console.log('[DB] createMany result:', insertResult);
+        
+        // Verify all rows inserted
+        const expectedInserts = rowsToInsert.length;
+        const actualInserts = insertResult.count;
+        
+        if (actualInserts === expectedInserts) {
+          console.log(`[DB] ✅ All ${actualInserts} rows inserted successfully`);
+        } else {
+          console.error(`[DB] ❌ Mismatch: Expected ${expectedInserts} inserts, got ${actualInserts}`);
+        }
+      } catch (error) {
+        console.error('[DB] ❌ createMany failed:', error);
+        throw error;
+      }
       
       // Same-process verification
       const verifyResult = await prisma.$queryRawUnsafe<any[]>(`
@@ -286,7 +313,7 @@ async function main() {
       }
       
       // Final summary line (for parsing/automation)
-      console.log(`\n[SUMMARY] mapped_games=${uniqueGames} parsed_spreads=${spreads} parsed_totals=${totals} parsed_moneylines=${moneylines} toInsert=${rowsToInsert.length} inserted=${result.count} postCount=${postCount}`);
+      console.log(`\n[SUMMARY] mapped_games=${uniqueGames} parsed_spreads=${spreads} parsed_totals=${totals} parsed_moneylines=${moneylines} toInsert=${rowsToInsert.length} inserted=${insertResult.count} postCount=${postCount}`);
       
     } else if (options.dryRun) {
       console.log('[DB] Skipped createMany (dryRun mode)');
