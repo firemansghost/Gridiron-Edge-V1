@@ -9,6 +9,34 @@ import { computeSpreadPick, computeTotalPick, convertToFavoriteCentric, computeA
 import { pickMarketLine, getLineValue, pickMoneyline, americanToProb } from '@/lib/market-line-helpers';
 import { NextResponse } from 'next/server';
 
+// === TRUST-MARKET MODE CONFIGURATION ===
+// Phase 1 Hotfix: Use market as baseline, apply small model overlays
+const MODEL_MODE = 'trust_market' as const; // Feature flag
+const LAMBDA_SPREAD = 0.25; // 25% weight to model for spreads
+const LAMBDA_TOTAL = 0.35; // 35% weight for totals
+const OVERLAY_CAP_SPREAD = 3.0; // ±3.0 pts max for spread overlay
+const OVERLAY_CAP_TOTAL = 3.0; // ±3.0 pts max for total overlay
+const OVERLAY_EDGE_FLOOR = 2.0; // Only show pick if overlay ≥ 2.0 pts
+const LARGE_DISAGREEMENT_THRESHOLD = 10.0; // Drop confidence grade if raw disagreement > 10 pts
+
+/**
+ * Clamp overlay to prevent catastrophic picks
+ */
+function clampOverlay(value: number, cap: number): number {
+  return Math.max(-cap, Math.min(cap, value));
+}
+
+/**
+ * Degrade confidence grade if large raw disagreement
+ */
+function degradeGrade(grade: 'A' | 'B' | 'C' | null, shouldDegrade: boolean): 'A' | 'B' | 'C' | null {
+  if (!grade || !shouldDegrade) return grade;
+  
+  if (grade === 'A') return 'B';
+  if (grade === 'B') return 'C';
+  return null; // C degrades to no grade
+}
+
 export const revalidate = 300; // Revalidate every 5 minutes (ISR-like caching)
 
 export async function GET(
@@ -1253,13 +1281,43 @@ export async function GET(
       snapshotId
     };
 
-    // Calculate ATS edge (favorite-centric): positive means model thinks favorite should lay more
-    const atsEdge = computeATSEdge(
-      finalImpliedSpread,
-      marketSpread,
-      game.homeTeamId,
-      game.awayTeamId
+    // ============================================
+    // TRUST-MARKET MODE: Spread Overlay Logic
+    // ============================================
+    // Use market as baseline, apply small model adjustment (±3.0 cap)
+    // This prevents catastrophic picks while still allowing model signals
+    
+    const modelSpreadRaw = finalImpliedSpread; // Model's raw prediction (home-minus-away)
+    const rawSpreadDisagreement = Math.abs(modelSpreadRaw - marketSpread);
+    
+    // Calculate overlay: clamp(λ × (model - market), -cap, +cap)
+    const spreadOverlay = clampOverlay(
+      LAMBDA_SPREAD * (modelSpreadRaw - marketSpread),
+      OVERLAY_CAP_SPREAD
     );
+    
+    // Final spread = market baseline + overlay
+    const finalSpreadWithOverlay = marketSpread + spreadOverlay;
+    
+    // Check if we should degrade confidence due to large disagreement
+    const shouldDegradeSpreadConfidence = rawSpreadDisagreement > LARGE_DISAGREEMENT_THRESHOLD;
+    
+    console.log(`[Game ${gameId}] 🎯 Trust-Market Spread Overlay:`, {
+      modelSpreadRaw: modelSpreadRaw.toFixed(2),
+      marketSpread: marketSpread.toFixed(2),
+      rawDisagreement: rawSpreadDisagreement.toFixed(2),
+      lambda: LAMBDA_SPREAD,
+      overlayRaw: (LAMBDA_SPREAD * (modelSpreadRaw - marketSpread)).toFixed(2),
+      overlayCapped: spreadOverlay.toFixed(2),
+      finalSpread: finalSpreadWithOverlay.toFixed(2),
+      shouldDegradeConfidence: shouldDegradeSpreadConfidence,
+      mode: MODEL_MODE
+    });
+
+    // Calculate ATS edge - in Trust-Market mode, the edge IS the overlay (not model - market)
+    // The overlay represents how much value we see at the current market number
+    const atsEdge = spreadOverlay; // Edge is the overlay value
+    const atsEdgeAbs = Math.abs(atsEdge);
 
     // Compute spread pick details (favorite-centric) - this is the model's favorite
     const spreadPick = computeSpreadPick(
@@ -1397,18 +1455,56 @@ export async function GET(
       missingInputs: missingInputs.length > 0
     };
     
-    // Compute the actual bettable pick based on edge (handles model/market disagreement)
-    const edgeFloor = 2.0; // Minimum edge threshold
-    const bettablePick = computeBettableSpreadPick(
-      finalImpliedSpread,
-      marketSpread,
-      game.homeTeamId,
-      game.homeTeam.name,
-      game.awayTeamId,
-      game.awayTeam.name,
-      atsEdge,
-      edgeFloor
-    );
+    // ============================================
+    // TRUST-MARKET MODE: Spread Pick Logic
+    // ============================================
+    // Only show pick if overlay creates >= 2.0 pts of edge
+    // This prevents showing picks when model barely disagrees with market
+    
+    const edgeFloor = OVERLAY_EDGE_FLOOR; // 2.0 pts minimum
+    const hasSpreadEdge = atsEdgeAbs >= edgeFloor;
+    
+    let bettablePick: any;
+    
+    if (!hasSpreadEdge) {
+      // No pick - overlay too small to bet
+      bettablePick = {
+        teamId: null,
+        teamName: null,
+        line: null,
+        label: null,
+        reasoning: `No edge at current number. Model overlay is ${spreadOverlay >= 0 ? '+' : ''}${spreadOverlay.toFixed(1)} pts (below ${edgeFloor.toFixed(1)} pt threshold in Trust-Market mode).`,
+        betTo: null,
+        favoritesDisagree: false
+      };
+      console.log(`[Game ${gameId}] ℹ️ No spread pick - overlay below threshold:`, {
+        overlay: spreadOverlay.toFixed(2),
+        edgeFloor,
+        reason: 'Overlay < edge floor'
+      });
+    } else {
+      // Compute pick using original helper (it handles direction correctly)
+      bettablePick = computeBettableSpreadPick(
+        finalImpliedSpread,
+        marketSpread,
+        game.homeTeamId,
+        game.homeTeam.name,
+        game.awayTeamId,
+        game.awayTeam.name,
+        atsEdge,
+        edgeFloor
+      );
+      
+      // Add overlay context to reasoning
+      bettablePick.reasoning = `${bettablePick.reasoning} (Trust-Market overlay: ${spreadOverlay >= 0 ? '+' : ''}${spreadOverlay.toFixed(1)} pts, capped at ±${OVERLAY_CAP_SPREAD})`;
+      
+      console.log(`[Game ${gameId}] ✅ Spread pick generated:`, {
+        pick: bettablePick.label,
+        overlay: spreadOverlay.toFixed(2),
+        edge: atsEdge.toFixed(2),
+        betTo: bettablePick.betTo
+      });
+    }
 
     // Total edge: Model Total - Market Total (positive = model thinks over, negative = under)
     // Compute if model total exists (no range checks)
@@ -1726,8 +1822,25 @@ export async function GET(
       return null; // No grade if edge is below minimum threshold
     };
 
-    const spreadGrade = getGrade(atsEdge);
+    let spreadGrade = getGrade(atsEdge);
     const totalGrade = getGrade(totalEdgePts);
+
+    // ============================================
+    // TRUST-MARKET MODE: Confidence Degradation
+    // ============================================
+    // Drop grade one tier if raw disagreement > 10 pts
+    // This flags situations where the model strongly disagrees but overlay is capped
+    
+    if (shouldDegradeSpreadConfidence && spreadGrade !== null) {
+      const originalGrade = spreadGrade;
+      spreadGrade = degradeGrade(spreadGrade, true);
+      console.log(`[Game ${gameId}] ⚠️ Confidence degraded due to large raw disagreement:`, {
+        rawDisagreement: rawSpreadDisagreement.toFixed(2),
+        threshold: LARGE_DISAGREEMENT_THRESHOLD,
+        originalGrade,
+        degradedGrade: spreadGrade || 'null'
+      });
+    }
 
     // ============================================
     // TELEMETRY & VALIDATION FLAGS
@@ -2545,7 +2658,19 @@ export async function GET(
           spreadEdge: Math.abs(atsEdge),
           grade: spreadGrade, // A, B, C, or null
           // Rationale line for ticket (use bettablePick.reasoning which already has the correct format)
-          rationale: bettablePick.reasoning
+          rationale: bettablePick.reasoning,
+          // Trust-Market Mode overlay diagnostics
+          overlay: {
+            modelRaw: modelSpreadRaw,
+            market: marketSpread,
+            rawDisagreement: rawSpreadDisagreement,
+            lambda: LAMBDA_SPREAD,
+            overlayValue: spreadOverlay,
+            cap: OVERLAY_CAP_SPREAD,
+            final: finalSpreadWithOverlay,
+            confidenceDegraded: shouldDegradeSpreadConfidence,
+            mode: MODEL_MODE
+          }
         },
         total: {
           ...totalPick,
@@ -2621,15 +2746,26 @@ export async function GET(
         talentDifferential: talentDiff.talentDifferential, // Home - Away talent advantage (in points)
       },
       
-      // Model configuration
+      // Model configuration (includes Trust-Market overlay config)
       modelConfig: {
-        version: matchupOutput?.modelVersion || 'v0.0.1',
+        version: matchupOutput?.modelVersion || 'v0.0.1-hotfix',
+        mode: MODEL_MODE, // 'trust_market'
         hfa: 2.0, // Constant HFA for v1
         thresholds: {
           A: 4.0,
           B: 3.0,
           C: 2.0
-        }
+        },
+        // Trust-Market overlay configuration
+        overlayConfig: {
+          lambdaSpread: LAMBDA_SPREAD,
+          lambdaTotal: LAMBDA_TOTAL,
+          capSpread: OVERLAY_CAP_SPREAD,
+          capTotal: OVERLAY_CAP_TOTAL,
+          edgeFloor: OVERLAY_EDGE_FLOOR,
+          largeDisagreementThreshold: LARGE_DISAGREEMENT_THRESHOLD
+        },
+        description: 'Trust-Market mode: Uses market as baseline with small model overlays (capped at ±3.0 pts)'
       },
 
       // Sign convention
@@ -2931,7 +3067,7 @@ export async function GET(
           home: formatRankings(homeRankings),
           away: formatRankings(awayRankings),
         };
-      })(),
+      })()
     };
 
     // Calculate performance metrics
