@@ -1100,22 +1100,46 @@ export async function GET(
         const dogValuePercent = moneylineDogPrice !== null ? (modelDogProb - marketMLDogProb) * 100 : null;
         
         // Determine pick: Choose the side with positive value, with sanity checks for longshots
-        // CRITICAL: Don't recommend extreme longshots (> +500) unless there's extreme value (> 10%)
-        const isDogLongshot = moneylineDogPrice !== null && moneylineDogPrice > 500;
-        const isDogExtremeValue = dogValuePercent !== null && dogValuePercent > 10;
+        // CRITICAL: Be very conservative with longshots
+        // - Moderate longshots (+500 to +1000): Require > 10% value
+        // - Extreme longshots (> +1000): Require > 25% value (very high bar)
+        // - Super longshots (> +2000): Don't recommend regardless of value (too risky)
+        const isDogModerateLongshot = moneylineDogPrice !== null && moneylineDogPrice > 500 && moneylineDogPrice <= 1000;
+        const isDogExtremeLongshot = moneylineDogPrice !== null && moneylineDogPrice > 1000 && moneylineDogPrice <= 2000;
+        const isDogSuperLongshot = moneylineDogPrice !== null && moneylineDogPrice > 2000;
+        const isDogModerateValue = dogValuePercent !== null && dogValuePercent > 10;
+        const isDogExtremeValue = dogValuePercent !== null && dogValuePercent > 25;
         
         if (favoriteValuePercent > 0 && (dogValuePercent === null || favoriteValuePercent >= dogValuePercent)) {
           // Favorite has positive value (and more value than dog, or dog not available)
           moneylinePickTeam = favoriteTeamId === game.homeTeamId ? game.homeTeam.name : game.awayTeam.name;
           moneylinePickPrice = marketMLFavPrice;
           valuePercent = favoriteValuePercent;
-        } else if (dogValuePercent !== null && dogValuePercent > 0 && (!isDogLongshot || isDogExtremeValue)) {
-          // Dog has positive value AND (not a longshot OR has extreme value)
-          moneylinePickTeam = moneylineDogTeamId === game.homeTeamId ? game.homeTeam.name : game.awayTeam.name;
-          moneylinePickPrice = moneylineDogPrice;
-          valuePercent = dogValuePercent;
+        } else if (dogValuePercent !== null && dogValuePercent > 0) {
+          // Dog has positive value - apply longshot restrictions
+          if (isDogSuperLongshot) {
+            // Never recommend super longshots (> +2000) - too risky regardless of value
+            moneylinePickTeam = null;
+            moneylinePickPrice = null;
+            valuePercent = null;
+          } else if (isDogExtremeLongshot && !isDogExtremeValue) {
+            // Extreme longshots (+1000 to +2000) need > 25% value
+            moneylinePickTeam = null;
+            moneylinePickPrice = null;
+            valuePercent = null;
+          } else if (isDogModerateLongshot && !isDogModerateValue) {
+            // Moderate longshots (+500 to +1000) need > 10% value
+            moneylinePickTeam = null;
+            moneylinePickPrice = null;
+            valuePercent = null;
+          } else {
+            // Dog has value and passes longshot checks
+            moneylinePickTeam = moneylineDogTeamId === game.homeTeamId ? game.homeTeam.name : game.awayTeam.name;
+            moneylinePickPrice = moneylineDogPrice;
+            valuePercent = dogValuePercent;
+          }
         } else {
-          // Neither side has positive value, or dog is a longshot without extreme value
+          // Neither side has positive value
           // Don't recommend a moneyline bet
           moneylinePickTeam = null;
           moneylinePickPrice = null;
@@ -2556,9 +2580,20 @@ export async function GET(
         },
         moneyline: {
           ...moneyline,
-          // Rationale line for ticket - show data for the PICKED team
+          // Rationale line for ticket - show data for the PICKED team with clear explanation
           rationale: moneyline?.price != null && moneyline?.valuePercent != null && moneyline?.pickLabel != null
-            ? `Model ${moneyline.pickLabel.replace(' ML', '')} win prob ${((moneyline.modelWinProb || 0) * 100).toFixed(1)}% vs market ${((moneyline.impliedProb || 0) * 100).toFixed(1)}% → fair ${(moneyline.modelFairML || 0) > 0 ? '+' : ''}${moneyline.modelFairML || 0} vs market ${moneyline.price! > 0 ? '+' : ''}${moneyline.price!} (${moneyline.valuePercent >= 0 ? '+' : ''}${moneyline.valuePercent.toFixed(1)}% value).`
+            ? (() => {
+                const teamName = moneyline.pickLabel.replace(' ML', '');
+                const modelProb = ((moneyline.modelWinProb || 0) * 100).toFixed(1);
+                const marketProb = ((moneyline.impliedProb || 0) * 100).toFixed(1);
+                const fairOdds = (moneyline.modelFairML || 0) > 0 ? `+${moneyline.modelFairML}` : `${moneyline.modelFairML}`;
+                const marketOdds = moneyline.price! > 0 ? `+${moneyline.price}` : `${moneyline.price}`;
+                const valueSign = moneyline.valuePercent >= 0 ? '+' : '';
+                const valueAbs = Math.abs(moneyline.valuePercent).toFixed(1);
+                
+                // Clear explanation: Model probability vs market probability, with value interpretation
+                return `Model gives ${teamName} a ${modelProb}% win probability (fair odds: ${fairOdds}), while the market's ${marketOdds} odds imply only ${marketProb}%. The ${valueSign}${valueAbs}% value represents how much the model's probability exceeds the market's implied probability.`;
+              })()
             : moneyline?.isModelFairLineOnly
             ? `Model ${modelMLFavorite.name} win prob ${(modelMLFavoriteProb * 100).toFixed(1)}% → fair ${modelMLFavoriteFairML > 0 ? '+' : ''}${modelMLFavoriteFairML}. Awaiting book price.`
             : null
