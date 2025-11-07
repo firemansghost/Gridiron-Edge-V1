@@ -642,7 +642,7 @@ export default function GameDetailPage() {
                     </div>
                     {game.picks?.spread?.overlay && (
                       <div className="text-xs text-gray-600">
-                        Model overlay {game.picks.spread.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.spread.overlay.overlayValue.toFixed(1)} pts (< 2.0 threshold)
+                        Model overlay {game.picks.spread.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.spread.overlay.overlayValue.toFixed(1)} pts ({'<'} 2.0 threshold)
                       </div>
                     )}
                   </div>
@@ -771,7 +771,7 @@ export default function GameDetailPage() {
                     </div>
                     {game.picks?.total?.overlay && (
                       <div className="text-xs text-gray-600">
-                        Model overlay {game.picks.total.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.total.overlay.overlayValue.toFixed(1)} pts (< 2.0 threshold)
+                        Model overlay {game.picks.total.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.total.overlay.overlayValue.toFixed(1)} pts ({'<'} 2.0 threshold)
                       </div>
                     )}
                   </div>
