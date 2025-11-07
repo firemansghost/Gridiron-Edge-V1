@@ -311,73 +311,72 @@ export async function GET(
     const marketLinesWithTeamId = game.marketLines as MarketLineWithTeamId[];
 
     // Get both moneyline lines - NEW APPROACH: Don't rely on teamId
-    // Moneylines come in pairs (one negative for favorite, one positive for dog) from same book/timestamp
-    // We'll grab both values and assign based on which team is the favorite (known from spread)
+    // Moneylines come in pairs (one negative for favorite, one positive for dog)
+    // Search broadly for any negative and positive moneylines near the spread timestamp
     const spreadTimestamp = new Date(spreadLine.timestamp).getTime();
-    const targetBook = mlLine?.bookName || spreadLine.bookName;
     
-    // Find all moneylines from the target book around the spread timestamp
-    const moneylinesFromTargetBook = game.marketLines.filter(
+    // Strategy: Search ALL moneylines near the spread timestamp (don't filter by book first)
+    // This is more lenient and works even if books report moneylines at slightly different times
+    const allMoneylinesNearSpread = game.marketLines.filter(
       (l) => l.lineType === 'moneyline' && 
-             l.bookName === targetBook &&
-             Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 1000
+             Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 10000 // Within 10 seconds
     );
     
-    // Extract the positive and negative moneyline values
-    const mlValues = moneylinesFromTargetBook
-      .map(l => getLineValue(l))
-      .filter(v => v !== null && v !== undefined) as number[];
+    console.log(`[Game ${gameId}] 🔍 Searching for moneylines near spread timestamp:`, {
+      spreadTimestamp: new Date(spreadTimestamp).toISOString(),
+      spreadBook: spreadLine.bookName,
+      foundMoneylines: allMoneylinesNearSpread.length,
+      totalMoneylines: game.marketLines.filter(l => l.lineType === 'moneyline').length
+    });
     
-    const negativeML = mlValues.find(v => v < 0);
-    const positiveML = mlValues.find(v => v > 0);
+    // Extract ALL positive and negative moneyline values
+    const allMLValues = allMoneylinesNearSpread
+      .map(l => ({value: getLineValue(l), line: l}))
+      .filter(item => item.value !== null && item.value !== undefined);
     
-    // Find the actual line objects for these values
+    // Group by positive and negative
+    const negativeMLs = allMLValues.filter(item => item.value! < 0);
+    const positiveMLs = allMLValues.filter(item => item.value! > 0);
+    
+    console.log(`[Game ${gameId}] 🔍 Moneyline values found:`, {
+      negativeCount: negativeMLs.length,
+      positiveCount: positiveMLs.length,
+      negativeValues: negativeMLs.slice(0, 3).map(item => item.value),
+      positiveValues: positiveMLs.slice(0, 3).map(item => item.value)
+    });
+    
+    // Find the actual line objects - prefer most recent
     let homeMoneylineLine: MarketLineWithTeamId | undefined = undefined;
     let awayMoneylineLine: MarketLineWithTeamId | undefined = undefined;
     
-    if (negativeML !== undefined && positiveML !== undefined) {
-      const negativeMLLine = moneylinesFromTargetBook.find(l => getLineValue(l) === negativeML);
-      const positiveMLLine = moneylinesFromTargetBook.find(l => getLineValue(l) === positiveML);
+    if (negativeMLs.length > 0 && positiveMLs.length > 0) {
+      // Sort by timestamp to get most recent
+      negativeMLs.sort((a, b) => new Date(b.line.timestamp).getTime() - new Date(a.line.timestamp).getTime());
+      positiveMLs.sort((a, b) => new Date(b.line.timestamp).getTime() - new Date(a.line.timestamp).getTime());
       
-      console.log(`[Game ${gameId}] 🎯 Found both moneylines from ${targetBook}:`, {
+      const negativeML = negativeMLs[0].value!;
+      const positiveML = positiveMLs[0].value!;
+      const negativeMLLine = negativeMLs[0].line;
+      const positiveMLLine = positiveMLs[0].line;
+      
+      console.log(`[Game ${gameId}] 🎯 Found both moneylines:`, {
         negativeML,
         positiveML,
-        timestamp: spreadLine.timestamp
+        negativeBook: negativeMLLine.bookName,
+        positiveBook: positiveMLLine.bookName,
+        negativeTimestamp: negativeMLLine.timestamp,
+        positiveTimestamp: positiveMLLine.timestamp
       });
       
-      // Assign to home/away based on which team is favorite (we'll determine this later from spread)
-      // For now, just store both as generic lines
+      // Store both (we'll assign to favorite/dog later based on spread)
       homeMoneylineLine = negativeMLLine as MarketLineWithTeamId;
       awayMoneylineLine = positiveMLLine as MarketLineWithTeamId;
-    }
-    
-    // Fallback: Try any book if target book didn't have both
-    if (!homeMoneylineLine || !awayMoneylineLine) {
-      const allMoneylinesNearSpread = game.marketLines.filter(
-        (l) => l.lineType === 'moneyline' && 
-               Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 5000 // Within 5 seconds
-      );
-      
-      const allMLValues = allMoneylinesNearSpread
-        .map(l => getLineValue(l))
-        .filter(v => v !== null && v !== undefined) as number[];
-      
-      const fallbackNegativeML = allMLValues.find(v => v < 0);
-      const fallbackPositiveML = allMLValues.find(v => v > 0);
-      
-      if (fallbackNegativeML !== undefined && fallbackPositiveML !== undefined) {
-        const negativeMLLine = allMoneylinesNearSpread.find(l => getLineValue(l) === fallbackNegativeML);
-        const positiveMLLine = allMoneylinesNearSpread.find(l => getLineValue(l) === fallbackPositiveML);
-        
-        console.log(`[Game ${gameId}] 🔄 FALLBACK: Found both moneylines from any book:`, {
-          negativeML: fallbackNegativeML,
-          positiveML: fallbackPositiveML,
-          book: negativeMLLine?.bookName
-        });
-        
-        homeMoneylineLine = negativeMLLine as MarketLineWithTeamId;
-        awayMoneylineLine = positiveMLLine as MarketLineWithTeamId;
-      }
+    } else {
+      console.warn(`[Game ${gameId}] ❌ Could not find both positive and negative moneylines`, {
+        negativeCount: negativeMLs.length,
+        positiveCount: positiveMLs.length,
+        allMoneylinesNearSpread: allMoneylinesNearSpread.length
+      });
     }
     
     // Fallback: if still no moneylines, use the selected mlLine (old behavior)
