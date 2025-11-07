@@ -546,50 +546,57 @@ export default function GameDetailPage() {
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Spread Card */}
-              {game.picks?.spread?.grade && game.picks?.spread?.bettablePick ? (
-                <div className="bg-white border-2 border-blue-300 rounded-lg p-4 shadow-sm">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">AGAINST THE SPREAD</h3>
-                    <div className="flex items-center gap-2">
-                      {game.picks.spread.favoritesDisagree && (
-                        <div className="px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
-                          <InfoTooltip content={`Model rates ${game.model?.favorite?.teamName || 'one team'} ${game.model?.favorite?.spread.toFixed(1) || ''} on neutral. Market price is ${game.market?.favorite?.teamName || 'another team'} ${game.market?.favorite?.spread.toFixed(1) || ''}. Value exists on ${game.picks?.spread?.bettablePick?.teamName || 'the underdog'} at ${game.picks?.spread?.bettablePick?.line?.toFixed(1) || ''} or better.`} />
-                          <span>Model vs Market Mismatch</span>
+              {/* Spread Card - Independent Validation */}
+              {game.validation?.ats_inputs_ok ? (
+                game.picks?.spread?.grade && game.picks?.spread?.bettablePick ? (
+                  <div className="bg-white border-2 border-blue-300 rounded-lg p-4 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">AGAINST THE SPREAD</h3>
+                      <div className="flex items-center gap-2">
+                        {game.picks.spread.favoritesDisagree && (
+                          <div className="px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
+                            <InfoTooltip content={`Model rates ${game.model?.favorite?.teamName || 'one team'} ${game.model?.favorite?.spread.toFixed(1) || ''} on neutral. Market price is ${game.market?.favorite?.teamName || 'another team'} ${game.market?.favorite?.spread.toFixed(1) || ''}. Value exists on ${game.picks?.spread?.bettablePick?.teamName || 'the underdog'} at ${game.picks?.spread?.bettablePick?.line?.toFixed(1) || ''} or better.`} />
+                            <span>Model vs Market Mismatch</span>
+                          </div>
+                        )}
+                        <div 
+                          className={`px-2 py-1 rounded text-xs font-bold ${
+                            game.picks.spread.grade === 'A' ? 'bg-green-500 text-white' :
+                            game.picks.spread.grade === 'B' ? 'bg-yellow-500 text-white' :
+                            'bg-orange-500 text-white'
+                          }`}
+                          aria-label={`Grade ${game.picks.spread.grade} spread pick`}
+                        >
+                          Grade {game.picks.spread.grade}
                         </div>
-                      )}
-                      <div 
-                        className={`px-2 py-1 rounded text-xs font-bold ${
-                          game.picks.spread.grade === 'A' ? 'bg-green-500 text-white' :
-                          game.picks.spread.grade === 'B' ? 'bg-yellow-500 text-white' :
-                          'bg-orange-500 text-white'
-                        }`}
-                        aria-label={`Grade ${game.picks.spread.grade} spread pick`}
-                      >
-                        Grade {game.picks.spread.grade}
                       </div>
                     </div>
-                  </div>
-                  <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Spread pick ${game.picks.spread.bettablePick.label}`}>
-                    {snapshot && atsValueSide ? (
-                      atsValueSide === 'dog'
-                        ? `${snapshot.dogTeamName} +${snapshot.dogLine.toFixed(1)}`
-                        : `${snapshot.favoriteTeamName} ${snapshot.favoriteLine.toFixed(1)}`
-                    ) : (
-                      'No edge at current number.'
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-sm text-gray-600">
-                      Edge: <span className="font-semibold text-blue-600">{atsEdgeMagnitude.toFixed(1)} pts</span>
-                    </span>
-                    <InfoTooltip content="ATS Edge = Model line vs market line, expressed in points of advantage for this ticket's side. A ≥ 4.0 pts, B ≥ 3.0 pts, C ≥ 2.0 pts." />
-                  </div>
-                  {snapshot && atsValueSide && spreadBetTo !== null && spreadBetTo !== undefined && (
-                    <div className="text-xs text-gray-500 mt-1 mb-2">
-                      Bet to: {atsValueSide === 'dog' ? `+${spreadBetTo.toFixed(1)}` : spreadBetTo.toFixed(1)} (edge floor 2.0 pts)
+                    <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Spread pick ${game.picks.spread.bettablePick.label}`}>
+                      {snapshot && atsValueSide ? (
+                        atsValueSide === 'dog'
+                          ? `${snapshot.dogTeamName} +${snapshot.dogLine.toFixed(1)}`
+                          : `${snapshot.favoriteTeamName} ${snapshot.favoriteLine.toFixed(1)}`
+                      ) : (
+                        'No edge at current number.'
+                      )}
                     </div>
-                  )}
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-sm text-gray-600">
+                        Edge: <span className="font-semibold text-blue-600">{atsEdgeMagnitude.toFixed(1)} pts</span>
+                      </span>
+                      <InfoTooltip content="ATS Edge = Model line vs market line, expressed in points of advantage for this ticket's side. A ≥ 4.0 pts, B ≥ 3.0 pts, C ≥ 2.0 pts." />
+                    </div>
+                    {snapshot && atsValueSide && spreadBetTo !== null && spreadBetTo !== undefined && (
+                      <div className="text-xs text-gray-500 mt-1 mb-2">
+                        Bet to: {atsValueSide === 'dog' ? `+${spreadBetTo.toFixed(1)}` : spreadBetTo.toFixed(1)} (edge floor 2.0 pts)
+                      </div>
+                    )}
+                    {/* RANGE: Flip Point */}
+                    {game.picks.spread.bettablePick?.flip !== null && game.picks.spread.bettablePick?.flip !== undefined && snapshot && atsValueSide && (
+                      <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
+                        <span className="font-semibold">Range:</span> Value now to {atsValueSide === 'dog' ? `+${spreadBetTo?.toFixed(1)}` : spreadBetTo?.toFixed(1)}; flips to {atsValueSide === 'dog' ? snapshot.favoriteTeamName : snapshot.dogTeamName} at {atsValueSide === 'dog' ? game.picks.spread.bettablePick.flip.toFixed(1) : `+${Math.abs(game.picks.spread.bettablePick.flip).toFixed(1)}`}
+                      </div>
+                    )}
                   {game.picks.spread.rationale && (
                     <div className="text-xs text-gray-700 mt-2 italic border-t border-gray-200 pt-2">
                       {game.picks.spread.rationale}
@@ -626,73 +633,37 @@ export default function GameDetailPage() {
                     </div>
                   )}
                 </div>
+                ) : (
+                  /* No Edge State - ats_inputs_ok but overlay < floor */
+                  <div className="bg-white border-2 border-gray-300 rounded-lg p-4 shadow-sm">
+                    <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">AGAINST THE SPREAD</h3>
+                    <div className="text-lg font-semibold text-gray-900 mb-2">
+                      No edge at current number — market {snapshot ? (atsValueSide === 'dog' ? `+${snapshot.dogLine.toFixed(1)}` : snapshot.favoriteLine.toFixed(1)) : 'N/A'}
+                    </div>
+                    {game.picks?.spread?.overlay && (
+                      <div className="text-xs text-gray-600">
+                        Model overlay {game.picks.spread.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.spread.overlay.overlayValue.toFixed(1)} pts (< 2.0 threshold)
+                      </div>
+                    )}
+                  </div>
+                )
               ) : (
+                /* Invalid Inputs State - !ats_inputs_ok */
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                   <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">AGAINST THE SPREAD</h3>
-                  <div className="text-sm text-gray-600 italic">
-                    Spread pick hidden — inputs failed validation. No ATS recommendation.
+                  <div className="text-lg font-semibold text-gray-900 mb-2">
+                    ATS unavailable
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {game.validation?.ats_reason || 'Model spread unavailable this week.'}
                   </div>
                 </div>
               )}
 
-              {/* Total Card - Three States: pick, no_edge, no_model_total */}
-              {game.picks?.total?.totalState === 'no_model_total' ? (
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">TOTAL (Over/Under)</h3>
-                  <div className="text-2xl font-bold text-gray-900 mb-2">
-                    No model total this week
-                  </div>
-                  <div className="text-sm text-gray-600 mb-2">
-                    <span>
-                      No model total this week — {totalsReason || game.picks.total.modelTotalWarning || 'Missing inputs for a reliable forecast.'}
-                    </span>
-                  </div>
-                  {game.picks.total.lean && (
-                    <div className="text-xs text-gray-500 mt-2">
-                      Lean: {game.picks.total.lean.direction} {game.picks.total.marketTotal?.toFixed(1)} (model unavailable)
-                    </div>
-                  )}
-                  {/* Dev diagnostics (only in dev mode) */}
-                  {process.env.NODE_ENV !== 'production' && game.total_diag && (
-                    <details className="mt-3 pt-3 border-t border-gray-200">
-                      <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">Diagnostics</summary>
-                      <div className="mt-2 text-xs font-mono bg-gray-50 p-2 rounded overflow-auto max-h-64">
-                        <pre>{JSON.stringify(game.total_diag, null, 2)}</pre>
-                      </div>
-                    </details>
-                  )}
-                </div>
-              ) : game.picks?.total?.totalState === 'no_edge' ? (
-                <div className="bg-white border-2 border-gray-300 rounded-lg p-4 shadow-sm">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">TOTAL (Over/Under)</h3>
-                  </div>
-                  {/* Headline: ALWAYS market total (not model) */}
-                  <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Market total ${game.picks.total.headlineTotal?.toFixed(1)}`}>
-                    Total {game.picks.total.headlineTotal?.toFixed(1)}
-                    <InfoTooltip content="The current market total. Model predictions are used only to assess edge, not displayed in headline." />
-                  </div>
-                  {/* Subhead: No edge */}
-                  <div className="text-sm text-gray-600 mb-2">
-                    No edge at current number — market {snapshot?.marketTotal?.toFixed(1) ?? 'N/A'}
-                  </div>
-                  {/* Rationale line */}
-                  {game.picks.total.rationale && (
-                    <div className="text-xs text-gray-500 mt-2 italic border-t border-gray-200 pt-2">
-                      {game.picks.total.rationale}
-                    </div>
-                  )}
-                  {/* Dev diagnostics (only in dev mode) */}
-                  {process.env.NODE_ENV !== 'production' && game.total_diag && (
-                    <details className="mt-3 pt-3 border-t border-gray-200">
-                      <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">Diagnostics</summary>
-                      <div className="mt-2 text-xs font-mono bg-gray-50 p-2 rounded overflow-auto max-h-64">
-                        <pre>{JSON.stringify(game.total_diag, null, 2)}</pre>
-                      </div>
-                    </details>
-                  )}
-                </div>
-              ) : game.picks?.total?.totalState === 'pick' && game.picks?.total?.modelTotal !== null && game.picks?.total?.modelTotal !== undefined ? (
+              {/* Total Card - Independent Validation */}
+              {game.validation?.ou_inputs_ok ? (
+                game.picks?.total?.totalState === 'pick' && game.picks?.total?.grade ? (
+                  /* Pick State - Has edge */
                 <div className="bg-white border-2 border-green-300 rounded-lg p-4 shadow-sm">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">TOTAL (Over/Under)</h3>
@@ -733,6 +704,12 @@ export default function GameDetailPage() {
                       <>No edge at current number — market {snapshot?.marketTotal?.toFixed(1) ?? 'N/A'}</>
                     )}
                   </div>
+                  {/* RANGE: Flip Point */}
+                  {game.picks.total?.flip !== null && game.picks.total?.flip !== undefined && ouValueSide && totalBetTo !== null && (
+                    <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
+                      <span className="font-semibold">Range:</span> Value now to {totalBetTo.toFixed(1)}; flips to {ouValueSide === 'Over' ? 'Under' : 'Over'} at {game.picks.total.flip.toFixed(1)}
+                    </div>
+                  )}
                   {ouValueSide && (
                     <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 mb-2">
                       <InfoTooltip content="Edge = difference between model total and current market total." />
@@ -782,11 +759,35 @@ export default function GameDetailPage() {
                     </details>
                   )}
                 </div>
+                ) : (
+                  /* No Edge State - ou_inputs_ok but overlay < floor */
+                  <div className="bg-white border-2 border-gray-300 rounded-lg p-4 shadow-sm">
+                    <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">TOTAL (Over/Under)</h3>
+                    <div className="text-lg font-semibold text-gray-900 mb-2">
+                      Total {game.picks?.total?.headlineTotal?.toFixed(1) || snapshot?.marketTotal?.toFixed(1) || 'N/A'}
+                    </div>
+                    <div className="text-sm text-gray-600 mb-2">
+                      No edge at current number — market {snapshot?.marketTotal?.toFixed(1) ?? 'N/A'}
+                    </div>
+                    {game.picks?.total?.overlay && (
+                      <div className="text-xs text-gray-600">
+                        Model overlay {game.picks.total.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.total.overlay.overlayValue.toFixed(1)} pts (< 2.0 threshold)
+                      </div>
+                    )}
+                  </div>
+                )
               ) : (
+                /* Invalid Inputs State - !ou_inputs_ok */
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                   <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">TOTAL (Over/Under)</h3>
-                  <div className="text-sm text-gray-600 italic">
-                    No model total available
+                  <div className="text-lg font-semibold text-gray-900 mb-2">
+                    Total unavailable
+                  </div>
+                  <div className="text-sm text-gray-600 mb-2">
+                    {game.validation?.ou_reason || 'Model total unavailable this week.'}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Headline shows market number: {snapshot?.marketTotal?.toFixed(1) ?? 'N/A'}
                   </div>
                 </div>
               )}
