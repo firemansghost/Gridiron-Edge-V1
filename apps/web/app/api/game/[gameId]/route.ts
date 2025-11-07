@@ -2948,6 +2948,7 @@ export async function GET(
           },
           edgePts: atsEdge,
           betTo: bettablePick.betTo, // "Bet to" number
+          flip: bettablePick.flip, // Flip point (where value switches to other side)
           favoritesDisagree: bettablePick.favoritesDisagree, // Flag when model ≠ market favorite
           // For backward compatibility
           spreadEdge: Math.abs(atsEdge),
@@ -2979,6 +2980,7 @@ export async function GET(
           marketTotal: marketTotal, // Market total for reference
           edgePts: totalEdgePts,
           betTo: totalBetTo, // "Bet to" number for total
+          flip: totalFlip, // Flip point (where value switches from Over to Under or vice versa)
           grade: totalGrade, // A, B, C, or null
           hasNoEdge: hasNoEdge, // Flag for "No edge" display
           // Hide card only if model total is unavailable AND no market total

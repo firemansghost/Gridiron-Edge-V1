@@ -583,21 +583,26 @@ export default function GameDetailPage() {
                         'No edge at current number.'
                       )}
                     </div>
+                    {/* ============================================ */}
+                    {/* ALWAYS SHOW: Edge, Bet-to, Range when ats_inputs_ok */}
+                    {/* ============================================ */}
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-sm text-gray-600">
                         Edge: <span className="font-semibold text-blue-600">{atsEdgeMagnitude.toFixed(1)} pts</span>
                       </span>
-                      <InfoTooltip content="ATS Edge = Model line vs market line, expressed in points of advantage for this ticket's side. A ≥ 4.0 pts, B ≥ 3.0 pts, C ≥ 2.0 pts." />
+                      {game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && (
+                        <>
+                          {' • '}
+                          <span className="text-sm text-gray-600">
+                            Bet to: <span className="font-semibold">{game.picks.spread.betTo.toFixed(1)}</span>
+                          </span>
+                        </>
+                      )}
                     </div>
-                    {snapshot && atsValueSide && spreadBetTo !== null && spreadBetTo !== undefined && (
-                      <div className="text-xs text-gray-500 mt-1 mb-2">
-                        Bet to: {atsValueSide === 'dog' ? `+${spreadBetTo.toFixed(1)}` : spreadBetTo.toFixed(1)} (edge floor 2.0 pts)
-                      </div>
-                    )}
-                    {/* RANGE: Flip Point - Show when we have flip data, even if headline suppressed */}
-                    {game.picks.spread.bettablePick?.flip !== null && game.picks.spread.bettablePick?.flip !== undefined && game.picks.spread.bettablePick?.betTo !== null && game.picks.spread.bettablePick?.betTo !== undefined && snapshot && (
+                    {/* RANGE: Flip Point - Show when we have flip data from API */}
+                    {game.picks.spread.flip !== null && game.picks.spread.flip !== undefined && game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && snapshot && (
                       <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
-                        <span className="font-semibold">Range:</span> Value on {snapshot.favoriteTeamName} to {game.picks.spread.bettablePick.betTo.toFixed(1)}; flips to {snapshot.dogTeamName} at {game.picks.spread.bettablePick.flip > 0 ? `+${game.picks.spread.bettablePick.flip.toFixed(1)}` : game.picks.spread.bettablePick.flip.toFixed(1)}
+                        <span className="font-semibold">Range:</span> Value on {snapshot.favoriteTeamName} to {game.picks.spread.betTo.toFixed(1)}; flips to {snapshot.dogTeamName} at {game.picks.spread.flip > 0 ? `+${game.picks.spread.flip.toFixed(1)}` : game.picks.spread.flip.toFixed(1)}
                       </div>
                     )}
                   {game.picks.spread.rationale && (
@@ -652,9 +657,31 @@ export default function GameDetailPage() {
                     <div className="text-lg font-semibold text-gray-900 mb-2">
                       No edge at current number — market {snapshot ? `${snapshot.favoriteTeamName} ${snapshot.favoriteLine.toFixed(1)}` : 'N/A'}
                     </div>
+                    {/* ============================================ */}
+                    {/* ALWAYS SHOW: Edge, Bet-to, Range even in no-edge state */}
+                    {/* ============================================ */}
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-sm text-gray-600">
+                        Edge: <span className="font-semibold text-blue-600">{atsEdgeMagnitude.toFixed(1)} pts</span>
+                      </span>
+                      {game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && (
+                        <>
+                          {' • '}
+                          <span className="text-sm text-gray-600">
+                            Bet to: <span className="font-semibold">{game.picks.spread.betTo.toFixed(1)}</span>
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    {/* RANGE: Flip Point */}
+                    {game.picks.spread.flip !== null && game.picks.spread.flip !== undefined && game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && snapshot && (
+                      <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
+                        <span className="font-semibold">Range:</span> Value on {snapshot.favoriteTeamName} to {game.picks.spread.betTo.toFixed(1)}; flips to {snapshot.dogTeamName} at {game.picks.spread.flip > 0 ? `+${game.picks.spread.flip.toFixed(1)}` : game.picks.spread.flip.toFixed(1)}
+                      </div>
+                    )}
                     {game.picks?.spread?.overlay && (
-                      <div className="text-xs text-gray-600">
-                        Model overlay {game.picks.spread.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.spread.overlay.overlayValue.toFixed(1)} pts ({'<'} 2.0 threshold)
+                      <div className="text-xs text-gray-600 mt-2 border-t border-gray-200 pt-2">
+                        <span className="font-semibold">Model overlay:</span> {game.picks.spread.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.spread.overlay.overlayValue.toFixed(1)} pts ({'<'} 2.0 threshold)
                       </div>
                     )}
                   </div>
@@ -781,9 +808,31 @@ export default function GameDetailPage() {
                     <div className="text-sm text-gray-600 mb-2">
                       No edge at current number — market {snapshot?.marketTotal?.toFixed(1) ?? 'N/A'}
                     </div>
+                    {/* ============================================ */}
+                    {/* ALWAYS SHOW: Edge, Bet-to, Range even in no-edge state */}
+                    {/* ============================================ */}
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-sm text-gray-600">
+                        Edge: <span className="font-semibold text-green-600">{ouEdgeMagnitude.toFixed(1)} pts</span>
+                      </span>
+                      {game.picks.total.betTo !== null && game.picks.total.betTo !== undefined && (
+                        <>
+                          {' • '}
+                          <span className="text-sm text-gray-600">
+                            Bet to: <span className="font-semibold">{game.picks.total.betTo.toFixed(1)}</span>
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    {/* RANGE: Flip Point */}
+                    {game.picks.total?.flip !== null && game.picks.total?.flip !== undefined && game.picks.total.betTo !== null && snapshot?.marketTotal !== undefined && (
+                      <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
+                        <span className="font-semibold">Range:</span> Value now to {game.picks.total.betTo.toFixed(1)}; flips to {game.picks.total.overlay.overlayValue > 0 ? 'Under' : 'Over'} at {game.picks.total.flip.toFixed(1)}
+                      </div>
+                    )}
                     {game.picks?.total?.overlay && (
-                      <div className="text-xs text-gray-600">
-                        Model overlay {game.picks.total.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.total.overlay.overlayValue.toFixed(1)} pts ({'<'} 2.0 threshold)
+                      <div className="text-xs text-gray-600 mt-2 border-t border-gray-200 pt-2">
+                        <span className="font-semibold">Model overlay:</span> {game.picks.total.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.total.overlay.overlayValue.toFixed(1)} pts ({'<'} 2.0 threshold)
                       </div>
                     )}
                   </div>
