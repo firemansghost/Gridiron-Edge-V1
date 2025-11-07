@@ -469,7 +469,7 @@ export async function GET(
     // The Current Slate page uses these same values - we must stay consistent!
     
     let computedSpread = matchupOutput?.impliedSpread || 0;
-    let computedTotal = matchupOutput?.impliedTotal || 45;
+    let computedTotal = matchupOutput?.impliedTotal || null; // ✅ NO HARDCODED FALLBACK - null if unavailable
     
     // OPTIONAL: Can still compute spread if ratings exist AND matchupOutput is missing
     // But NEVER override matchupOutput if it exists!
@@ -499,7 +499,7 @@ export async function GET(
     // TOTAL DIAGNOSTICS (B) - Track data source and validation
     // ============================================
     const totalDiag: any = {
-      source: matchupOutput ? 'matchupOutput (pre-calculated)' : 'fallback (default 45)',
+      source: matchupOutput ? 'matchupOutput (pre-calculated)' : 'no matchupOutput (null)',
       inputs: {
         matchupOutputExists: !!matchupOutput,
         matchupOutputSpread: matchupOutput?.impliedSpread || null,
@@ -550,24 +550,18 @@ export async function GET(
     let finalSpreadWithOverlay = finalImpliedSpread;
     
     // Never use matchupOutput.impliedTotal unless it passes the units handshake
-    // Only use computedTotal if matchupOutput fails validation
-    const finalImpliedTotal = (isValidTotal ? matchupTotalRaw : null) ?? computedTotal;
+    // If invalid, leave as null - DO NOT substitute a number
+    const finalImpliedTotal = isValidTotal && matchupTotalRaw !== null ? matchupTotalRaw : null;
     
     // Track which source we're using and if units failed
     let totalSource = 'unknown';
     let firstFailureStep: string | null = null;
     if (isValidTotal && matchupTotalRaw !== null) {
       totalSource = 'matchupOutput';
-    } else if (computedTotal !== null && !isNaN(computedTotal) && isFinite(computedTotal)) {
-      totalSource = 'computed';
-      // Check if computedTotal passes units validation
-      if (computedTotal < 15 || computedTotal > 120) {
-        firstFailureStep = 'modelTotal_sum';
-        totalDiag.firstFailureStep = firstFailureStep;
-        totalDiag.unitsInvalid = true;
-      }
     } else {
-      firstFailureStep = 'all';
+      // Model total is unavailable or not in points
+      totalSource = 'unavailable';
+      firstFailureStep = 'model_total_unavailable_or_invalid';
       totalDiag.firstFailureStep = firstFailureStep;
       totalDiag.unitsInvalid = true;
     }
@@ -612,7 +606,7 @@ export async function GET(
     
     // Log if we're using computed values due to invalid matchupOutput data
     if (matchupOutput && !isValidTotal) {
-      console.warn(`[Game ${gameId}] ⚠️ Invalid matchupOutput.impliedTotal (${matchupOutput.impliedTotal}), using computed total: ${computedTotal.toFixed(1)}`, {
+      console.warn(`[Game ${gameId}] ⚠️ Invalid matchupOutput.impliedTotal (${matchupOutput.impliedTotal}), no fallback total available`, {
         matchupTotal: matchupOutput.impliedTotal,
         computedTotal,
         gameId,
@@ -1381,7 +1375,7 @@ export async function GET(
     const impliedAwayScoreForCheck = spreadValidForConsistency && finalImpliedTotal !== null
       ? (finalImpliedTotal - finalImpliedSpread) / 2
       : null;
-    const consistencyDelta = impliedHomeScoreForCheck !== null && impliedAwayScoreForCheck !== null
+    const consistencyDelta = impliedHomeScoreForCheck !== null && impliedAwayScoreForCheck !== null && finalImpliedTotal !== null
       ? Math.abs((impliedHomeScoreForCheck + impliedAwayScoreForCheck) - finalImpliedTotal)
       : null;
     const consistencyFlag = consistencyDelta === null || consistencyDelta <= 0.5;
@@ -1522,7 +1516,8 @@ export async function GET(
     // ============================================
     // TRUST-MARKET MODE: Total Overlay Logic
     // ============================================
-    // Similar to spread: use market as baseline, apply small model adjustment
+    // Use market as baseline, apply small model adjustment
+    // If model total is null/invalid, NO PICK (don't guess)
     
     let totalOverlay = 0;
     let finalTotalWithOverlay = marketTotal;
@@ -1530,15 +1525,14 @@ export async function GET(
     let shouldDegradeTotalConfidence = false;
     let hasTotalEdge = false;
     
-    if (isModelTotalValid && marketTotal !== null) {
-      const modelTotalRaw = finalImpliedTotal;
-      rawTotalDisagreement = Math.abs(modelTotalRaw - marketTotal);
+    // CRITICAL: Only compute overlay if model total is valid (not null, in points)
+    if (finalImpliedTotal !== null && marketTotal !== null) {
+      const modelTotalPts = finalImpliedTotal; // Model total in points
+      rawTotalDisagreement = Math.abs(modelTotalPts - marketTotal);
       
       // Calculate overlay: clamp(λ × (model - market), -cap, +cap)
-      totalOverlay = clampOverlay(
-        LAMBDA_TOTAL * (modelTotalRaw - marketTotal),
-        OVERLAY_CAP_TOTAL
-      );
+      const overlayRaw = LAMBDA_TOTAL * (modelTotalPts - marketTotal);
+      totalOverlay = clampOverlay(overlayRaw, OVERLAY_CAP_TOTAL);
       
       // Final total = market baseline + overlay
       finalTotalWithOverlay = marketTotal + totalOverlay;
@@ -1551,22 +1545,31 @@ export async function GET(
       hasTotalEdge = totalEdgeAbs >= OVERLAY_EDGE_FLOOR;
       
       console.log(`[Game ${gameId}] 🎯 Trust-Market Total Overlay:`, {
-        modelTotalRaw: modelTotalRaw.toFixed(2),
+        modelTotalPts: modelTotalPts.toFixed(2),
         marketTotal: marketTotal.toFixed(2),
+        rawDelta: (modelTotalPts - marketTotal).toFixed(2),
         rawDisagreement: rawTotalDisagreement.toFixed(2),
         lambda: LAMBDA_TOTAL,
-        overlayRaw: (LAMBDA_TOTAL * (modelTotalRaw - marketTotal)).toFixed(2),
+        overlayRaw: overlayRaw.toFixed(2),
         overlayCapped: totalOverlay.toFixed(2),
         finalTotal: finalTotalWithOverlay.toFixed(2),
-        edge: totalEdgeAbs.toFixed(2),
+        edgeAbs: totalEdgeAbs.toFixed(2),
         hasTotalEdge,
         shouldDegradeConfidence: shouldDegradeTotalConfidence,
         mode: MODEL_MODE
       });
+    } else {
+      // Model total is null or market total is null - cannot compute overlay
+      console.log(`[Game ${gameId}] ℹ️ Total overlay skipped:`, {
+        modelTotalAvailable: finalImpliedTotal !== null,
+        marketTotalAvailable: marketTotal !== null,
+        reason: finalImpliedTotal === null ? 'Model total unavailable/invalid (not in points)' : 'Market total unavailable'
+      });
     }
 
     // Total edge: In Trust-Market mode, edge IS the overlay (not model - market)
-    const totalEdgePts = isModelTotalValid && marketTotal !== null ? totalOverlay : null;
+    // If model is null, edge is null (no pick)
+    const totalEdgePts = finalImpliedTotal !== null && marketTotal !== null ? totalOverlay : null;
     
     // ============================================
     // SINGLE SOURCE OF TRUTH: model_view
@@ -1734,6 +1737,7 @@ export async function GET(
     // TRUST-MARKET MODE: Total Pick Logic
     // ============================================
     // Only show pick if overlay >= 2.0 pts (same as spread)
+    // CRITICAL: If model total is null/invalid, NO PICK (don't guess)
     
     // In Trust-Market mode, "hasNoEdge" means overlay < edge floor
     const hasNoEdge = !hasTotalEdge; // hasTotalEdge was computed in overlay section
@@ -1741,10 +1745,23 @@ export async function GET(
     let totalPick: any;
     let totalBetTo: number | null = null;
     
-    if (!isModelTotalValid) {
-      // Units invalid - suppress pick entirely, no "Lean"
-      totalPick = { totalPick: null, totalPickLabel: null, edgeDisplay: null };
-      console.log(`[Game ${gameId}] ℹ️ No total pick - units invalid`);
+    if (finalImpliedTotal === null) {
+      // Model total unavailable/invalid - suppress pick entirely, no "Lean"
+      const unitsReason = matchupTotalRaw !== null && matchupTotalRaw !== undefined
+        ? `Model returned ${matchupTotalRaw.toFixed(2)}, which isn't in points (likely a rate/ratio). We're not going to guess.`
+        : 'Model total unavailable this week.';
+      
+      totalPick = { 
+        totalPick: null, 
+        totalPickLabel: null, 
+        edgeDisplay: null,
+        unitsReason // Add reason for display
+      };
+      console.log(`[Game ${gameId}] ℹ️ No total pick - model unavailable:`, {
+        finalImpliedTotal,
+        matchupTotalRaw,
+        reason: unitsReason
+      });
     } else if (!hasTotalEdge) {
       // No edge - overlay too small
       totalPick = { totalPick: null, totalPickLabel: null, edgeDisplay: null };
@@ -2774,14 +2791,16 @@ export async function GET(
         },
         total: {
           ...totalPick,
-          modelTotal: isModelTotalValid ? finalImpliedTotal : null, // Model total for headline
-          marketTotal: marketTotal, // Market total for rationale
+          // CRITICAL: Headline MUST show market total (not model)
+          headlineTotal: marketTotal, // ✅ ALWAYS market total for headline display
+          modelTotal: finalImpliedTotal, // Model total for diagnostics/rationale (can be null)
+          marketTotal: marketTotal, // Market total for reference
           edgePts: totalEdgePts,
           betTo: totalBetTo, // "Bet to" number for total
           grade: totalGrade, // A, B, C, or null
           hasNoEdge: hasNoEdge, // Flag for "No edge" display
-          // Hide only if model total is truly invalid (NaN/null/inf)
-          hidden: !isModelTotalValid,
+          // Hide card only if model total is unavailable AND no market total
+          hidden: finalImpliedTotal === null,
           // Trust-Market Mode overlay diagnostics
           overlay: {
             modelRaw: isModelTotalValid ? finalImpliedTotal : null,
@@ -2809,9 +2828,9 @@ export async function GET(
             medianTotal: medianConfTotal
           } : null,
           // Rationale line for ticket
-          rationale: totalState === 'pick' && totalEdgePts !== null && totalPick.totalPickLabel
+          rationale: totalState === 'pick' && totalEdgePts !== null && totalPick.totalPickLabel && finalImpliedTotal !== null
             ? `Model total ${finalImpliedTotal.toFixed(1)} vs market ${marketTotal !== null ? marketTotal.toFixed(1) : 'N/A'} (${totalEdgePts >= 0 ? '+' : ''}${totalEdgePts.toFixed(1)}) → ${totalPick.totalPick} value.`
-            : totalState === 'no_edge' && isModelTotalValid && marketTotal !== null
+            : totalState === 'no_edge' && finalImpliedTotal !== null && marketTotal !== null
             ? `Model ${finalImpliedTotal.toFixed(1)} vs market ${marketTotal.toFixed(1)} (Δ ${Math.abs(finalImpliedTotal - marketTotal).toFixed(1)}).`
             : null
         },

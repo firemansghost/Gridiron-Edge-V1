@@ -667,10 +667,10 @@ export default function GameDetailPage() {
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">TOTAL (Over/Under)</h3>
                   </div>
-                  {/* Headline: Bold model total */}
-                  <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Model total ${game.picks.total.modelTotal?.toFixed(1)}`}>
-                    Total {game.picks.total.modelTotal?.toFixed(1)}
-                    <InfoTooltip content="Our forecast of combined points this week (predicted pace, efficiency, and adjustments)." />
+                  {/* Headline: ALWAYS market total (not model) */}
+                  <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Market total ${game.picks.total.headlineTotal?.toFixed(1)}`}>
+                    Total {game.picks.total.headlineTotal?.toFixed(1)}
+                    <InfoTooltip content="The current market total. Model predictions are used only to assess edge, not displayed in headline." />
                   </div>
                   {/* Subhead: No edge */}
                   <div className="text-sm text-gray-600 mb-2">
@@ -709,10 +709,10 @@ export default function GameDetailPage() {
                       </div>
                     )}
                   </div>
-                  {/* Headline: Bold model total */}
-                  <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Model total ${game.picks.total.modelTotal.toFixed(1)}`}>
-                    Total {game.picks.total.modelTotal.toFixed(1)}
-                    <InfoTooltip content="Our forecast of combined points this week (predicted pace, efficiency, and adjustments)." />
+                  {/* Headline: ALWAYS market total (not model) */}
+                  <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Market total ${game.picks.total.headlineTotal?.toFixed(1)}`}>
+                    Total {game.picks.total.headlineTotal?.toFixed(1)}
+                    <InfoTooltip content="The current market total. Model predictions are used only to assess edge, not displayed in headline." />
                   </div>
                   {/* Subhead: Pick/Edge/Bet-to */}
                   <div className="text-sm text-gray-600 mb-2">
