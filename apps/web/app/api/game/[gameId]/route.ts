@@ -1119,12 +1119,25 @@ export async function GET(
       const marketMLFavPrice = moneylineFavoritePrice !== null ? moneylineFavoritePrice : (moneylineDogPrice && moneylineDogPrice < 0 ? moneylineDogPrice : null);
       const marketMLFavProb = marketMLFavPrice !== null ? americanToProb(marketMLFavPrice)! : null;
       
+      // ============================================
+      // MONEYLINE SANITY CONSTRAINTS (Trust-Market Mode)
+      // ============================================
+      const ML_MAX_SPREAD = 7.0; // Only consider ML if |finalSpreadWithOverlay| <= 7
+      const EXTREME_FAVORITE_THRESHOLD = 21; // Never recommend dog ML if |market favorite line| >= 21
+      
+      // Check if this is an extreme favorite game (use favoriteByRule.line which is already declared)
+      const isExtremeFavoriteGame = Math.abs(favoriteByRule.line) >= EXTREME_FAVORITE_THRESHOLD;
+      
+      // Check if overlay-adjusted spread is within ML range
+      const spreadWithinMLRange = Math.abs(finalSpreadWithOverlay) <= ML_MAX_SPREAD;
+      
       // Determine which team's probability to compare
       // Compare model's favorite probability vs market's favorite probability
       let valuePercent: number | null = null;
       let moneylineGrade: 'A' | 'B' | 'C' | null = null;
       let moneylinePickTeam: string | null = null;
       let moneylinePickPrice: number | null = null;
+      let mlSuppressionReason: string | null = null;
       
       if (marketMLFavProb !== null) {
         // Compare model probability vs market probability for EACH team separately
@@ -1138,51 +1151,97 @@ export async function GET(
         const favoriteValuePercent = (modelFavProb - marketMLFavProb) * 100;
         const dogValuePercent = moneylineDogPrice !== null ? (modelDogProb - marketMLDogProb) * 100 : null;
         
-        // Determine pick: Choose the side with positive value, with sanity checks for longshots
-        // CRITICAL: Be very conservative with longshots
-        // - Moderate longshots (+500 to +1000): Require > 10% value
-        // - Extreme longshots (> +1000): Require > 25% value (very high bar)
-        // - Super longshots (> +2000): Don't recommend regardless of value (too risky)
-        const isDogModerateLongshot = moneylineDogPrice !== null && moneylineDogPrice > 500 && moneylineDogPrice <= 1000;
-        const isDogExtremeLongshot = moneylineDogPrice !== null && moneylineDogPrice > 1000 && moneylineDogPrice <= 2000;
-        const isDogSuperLongshot = moneylineDogPrice !== null && moneylineDogPrice > 2000;
-        const isDogModerateValue = dogValuePercent !== null && dogValuePercent > 10;
-        const isDogExtremeValue = dogValuePercent !== null && dogValuePercent > 25;
+        // ============================================
+        // SANITY CHECKS (apply before longshot checks)
+        // ============================================
         
-        if (favoriteValuePercent > 0 && (dogValuePercent === null || favoriteValuePercent >= dogValuePercent)) {
-          // Favorite has positive value (and more value than dog, or dog not available)
-          moneylinePickTeam = favoriteTeamId === game.homeTeamId ? game.homeTeam.name : game.awayTeam.name;
-          moneylinePickPrice = marketMLFavPrice;
-          valuePercent = favoriteValuePercent;
-        } else if (dogValuePercent !== null && dogValuePercent > 0) {
-          // Dog has positive value - apply longshot restrictions
-          if (isDogSuperLongshot) {
-            // Never recommend super longshots (> +2000) - too risky regardless of value
-            moneylinePickTeam = null;
-            moneylinePickPrice = null;
-            valuePercent = null;
-          } else if (isDogExtremeLongshot && !isDogExtremeValue) {
-            // Extreme longshots (+1000 to +2000) need > 25% value
-            moneylinePickTeam = null;
-            moneylinePickPrice = null;
-            valuePercent = null;
-          } else if (isDogModerateLongshot && !isDogModerateValue) {
-            // Moderate longshots (+500 to +1000) need > 10% value
-            moneylinePickTeam = null;
-            moneylinePickPrice = null;
-            valuePercent = null;
-          } else {
-            // Dog has value and passes longshot checks
-            moneylinePickTeam = moneylineDogTeamId === game.homeTeamId ? game.homeTeam.name : game.awayTeam.name;
-            moneylinePickPrice = moneylineDogPrice;
-            valuePercent = dogValuePercent;
-          }
-        } else {
-          // Neither side has positive value
-          // Don't recommend a moneyline bet
+        // 1. Extreme favorite guard: Never recommend dog ML if |market favorite line| >= 21
+        if (isExtremeFavoriteGame && dogValuePercent !== null && dogValuePercent > 0) {
+          mlSuppressionReason = `Extreme favorite: ML suppressed (market spread ${Math.abs(favoriteByRule.line).toFixed(1)} pts)`;
           moneylinePickTeam = null;
           moneylinePickPrice = null;
           valuePercent = null;
+          console.log(`[Game ${gameId}] 🚫 ML suppressed (extreme favorite):`, {
+            marketSpread: favoriteByRule.line,
+            dogValue: dogValuePercent,
+            reason: mlSuppressionReason
+          });
+        }
+        // 2. Spread range guard: Only consider ML if |finalSpreadWithOverlay| <= 7
+        else if (!spreadWithinMLRange) {
+          mlSuppressionReason = `Not within spread range (±${ML_MAX_SPREAD} pts). Overlay-adjusted spread: ${finalSpreadWithOverlay.toFixed(1)}`;
+          moneylinePickTeam = null;
+          moneylinePickPrice = null;
+          valuePercent = null;
+          console.log(`[Game ${gameId}] 🚫 ML suppressed (spread out of range):`, {
+            finalSpreadWithOverlay: finalSpreadWithOverlay.toFixed(2),
+            maxSpread: ML_MAX_SPREAD,
+            reason: mlSuppressionReason
+          });
+        }
+        // 3. Winprob vs spread coherence: If underdog and winProb >= 0.40 and market spread >= 14, suppress
+        else if (dogValuePercent !== null && dogValuePercent > 0 && modelDogProb >= 0.40 && Math.abs(favoriteByRule.line) >= 14) {
+          mlSuppressionReason = `Win probability vs spread incoherent: Underdog has ${(modelDogProb * 100).toFixed(1)}% win prob but market spread is ${Math.abs(favoriteByRule.line).toFixed(1)} pts`;
+          moneylinePickTeam = null;
+          moneylinePickPrice = null;
+          valuePercent = null;
+          console.log(`[Game ${gameId}] 🚫 ML suppressed (winprob vs spread incoherent):`, {
+            modelDogProb: (modelDogProb * 100).toFixed(1) + '%',
+            marketSpread: favoriteByRule.line,
+            reason: mlSuppressionReason
+          });
+        }
+        // 4. Determine pick: Choose the side with positive value, with sanity checks for longshots
+        else {
+          // CRITICAL: Be very conservative with longshots
+          // - Moderate longshots (+500 to +1000): Require > 10% value
+          // - Extreme longshots (> +1000): Require > 25% value (very high bar)
+          // - Super longshots (> +2000): Don't recommend regardless of value (too risky)
+          const isDogModerateLongshot = moneylineDogPrice !== null && moneylineDogPrice > 500 && moneylineDogPrice <= 1000;
+          const isDogExtremeLongshot = moneylineDogPrice !== null && moneylineDogPrice > 1000 && moneylineDogPrice <= 2000;
+          const isDogSuperLongshot = moneylineDogPrice !== null && moneylineDogPrice > 2000;
+          const isDogModerateValue = dogValuePercent !== null && dogValuePercent > 10;
+          const isDogExtremeValue = dogValuePercent !== null && dogValuePercent > 25;
+          
+          if (favoriteValuePercent > 0 && (dogValuePercent === null || favoriteValuePercent >= dogValuePercent)) {
+            // Favorite has positive value (and more value than dog, or dog not available)
+            moneylinePickTeam = favoriteTeamId === game.homeTeamId ? game.homeTeam.name : game.awayTeam.name;
+            moneylinePickPrice = marketMLFavPrice;
+            valuePercent = favoriteValuePercent;
+          } else if (dogValuePercent !== null && dogValuePercent > 0) {
+            // Dog has positive value - apply longshot restrictions
+            if (isDogSuperLongshot) {
+              // Never recommend super longshots (> +2000) - too risky regardless of value
+              moneylinePickTeam = null;
+              moneylinePickPrice = null;
+              valuePercent = null;
+              mlSuppressionReason = 'Super longshot (> +2000): Too risky regardless of value';
+            } else if (isDogExtremeLongshot && !isDogExtremeValue) {
+              // Extreme longshots (+1000 to +2000) need > 25% value
+              moneylinePickTeam = null;
+              moneylinePickPrice = null;
+              valuePercent = null;
+              mlSuppressionReason = `Extreme longshot (+${moneylineDogPrice}): Requires > 25% value (got ${dogValuePercent.toFixed(1)}%)`;
+            } else if (isDogModerateLongshot && !isDogModerateValue) {
+              // Moderate longshots (+500 to +1000) need > 10% value
+              moneylinePickTeam = null;
+              moneylinePickPrice = null;
+              valuePercent = null;
+              mlSuppressionReason = `Moderate longshot (+${moneylineDogPrice}): Requires > 10% value (got ${dogValuePercent.toFixed(1)}%)`;
+            } else {
+              // Dog has value and passes longshot checks
+              moneylinePickTeam = moneylineDogTeamId === game.homeTeamId ? game.homeTeam.name : game.awayTeam.name;
+              moneylinePickPrice = moneylineDogPrice;
+              valuePercent = dogValuePercent;
+            }
+          } else {
+            // Neither side has positive value
+            // Don't recommend a moneyline bet
+            moneylinePickTeam = null;
+            moneylinePickPrice = null;
+            valuePercent = null;
+            mlSuppressionReason = 'No positive value on either side';
+          }
         }
         
         // Grade thresholds: A ≥ 4%, B ≥ 2.5%, C ≥ 1.5%
@@ -1231,7 +1290,10 @@ export async function GET(
         modelFairML: pickedTeamFairML,
         modelFavoriteTeam: modelMLFavorite.name,
         valuePercent: valuePercent,
-        grade: moneylineGrade
+        grade: moneylineGrade,
+        // Trust-Market mode: Win prob derived from overlay-adjusted spread
+        winprob_basis: 'overlay_spread' as const,
+        suppressionReason: mlSuppressionReason // Reason why ML was suppressed (if applicable)
       };
     } else if (mlVal !== null) {
       // Fallback: Use mlVal if moneyline variables weren't set

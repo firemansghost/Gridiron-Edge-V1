@@ -679,11 +679,16 @@ export default function GameDetailPage() {
                         <span className="font-semibold">Range:</span> Value on {snapshot.favoriteTeamName} to {game.picks.spread.betTo.toFixed(1)}; flips to {snapshot.dogTeamName} at {game.picks.spread.flip > 0 ? `+${game.picks.spread.flip.toFixed(1)}` : game.picks.spread.flip.toFixed(1)}
                       </div>
                     )}
-                    {game.picks?.spread?.overlay && (
-                      <div className="text-xs text-gray-600 mt-2 border-t border-gray-200 pt-2">
-                        <span className="font-semibold">Model overlay:</span> {game.picks.spread.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.spread.overlay.overlayValue.toFixed(1)} pts ({'<'} 2.0 threshold)
-                      </div>
-                    )}
+                    {game.picks?.spread?.overlay && (() => {
+                      const overlayAbs = Math.abs(game.picks.spread.overlay.overlayValue);
+                      const edgeFloor = game.picks.spread.overlay.edge_floor_pts || 2.0;
+                      const meetsFloor = overlayAbs >= edgeFloor;
+                      return (
+                        <div className="text-xs text-gray-600 mt-2 border-t border-gray-200 pt-2">
+                          <span className="font-semibold">Model overlay:</span> {game.picks.spread.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.spread.overlay.overlayValue.toFixed(1)} pts ({meetsFloor ? '≥' : '<'} {edgeFloor.toFixed(1)} threshold)
+                        </div>
+                      );
+                    })()}
                   </div>
                 )
               ) : (
@@ -831,11 +836,16 @@ export default function GameDetailPage() {
                         <span className="font-semibold">Range:</span> Value now to {game.picks.total.betTo.toFixed(1)}; flips to {game.picks.total.overlay?.overlayValue && game.picks.total.overlay.overlayValue > 0 ? 'Under' : 'Over'} at {game.picks.total.flip.toFixed(1)}
                       </div>
                     )}
-                    {game.picks?.total?.overlay && (
-                      <div className="text-xs text-gray-600 mt-2 border-t border-gray-200 pt-2">
-                        <span className="font-semibold">Model overlay:</span> {game.picks.total.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.total.overlay.overlayValue.toFixed(1)} pts ({'<'} 2.0 threshold)
-                      </div>
-                    )}
+                    {game.picks?.total?.overlay && (() => {
+                      const overlayAbs = Math.abs(game.picks.total.overlay.overlayValue);
+                      const edgeFloor = game.picks.total.overlay.edge_floor_pts || 2.0;
+                      const meetsFloor = overlayAbs >= edgeFloor;
+                      return (
+                        <div className="text-xs text-gray-600 mt-2 border-t border-gray-200 pt-2">
+                          <span className="font-semibold">Model overlay:</span> {game.picks.total.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.total.overlay.overlayValue.toFixed(1)} pts ({meetsFloor ? '≥' : '<'} {edgeFloor.toFixed(1)} threshold)
+                        </div>
+                      );
+                    })()}
                   </div>
                   )
                 ) : (
@@ -940,7 +950,21 @@ export default function GameDetailPage() {
                       )}
                     </div>
                     <div className="text-xs text-gray-500 italic border-t border-gray-300 pt-2 mt-2">
-                      No moneyline bet recommended. Model does not see sufficient value at these odds, or the odds are too long (extreme longshot).
+                      {game.picks?.moneyline?.suppressionReason ? (
+                        <>
+                          <div className="font-semibold text-gray-700 mb-1">No moneyline bet — {game.picks.moneyline.suppressionReason}</div>
+                          <div className="text-gray-500 mt-1">
+                            Win prob derived from overlay-adjusted spread (Trust-Market).
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          No moneyline bet recommended. Model does not see sufficient value at these odds, or the odds are too long (extreme longshot).
+                          <div className="text-gray-500 mt-1">
+                            Win prob derived from overlay-adjusted spread (Trust-Market).
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
