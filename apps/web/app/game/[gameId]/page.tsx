@@ -744,10 +744,10 @@ export default function GameDetailPage() {
                       <>No edge at current number — market {snapshot?.marketTotal?.toFixed(1) ?? 'N/A'}</>
                     )}
                   </div>
-                  {/* RANGE: Flip Point */}
-                  {game.picks.total?.flip !== null && game.picks.total?.flip !== undefined && ouValueSide && totalBetTo !== null && (
+                  {/* RANGE: Flip Point - Always show when ou_model_valid === true */}
+                  {game.validation?.ou_model_valid && game.picks.total?.flip !== null && game.picks.total?.flip !== undefined && game.picks.total.betTo !== null && (
                     <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
-                      <span className="font-semibold">Range:</span> Value now to {totalBetTo.toFixed(1)}; flips to {ouValueSide === 'Over' ? 'Under' : 'Over'} at {game.picks.total.flip.toFixed(1)}
+                      <span className="font-semibold">Range:</span> Value now to {game.picks.total.betTo.toFixed(1)}; flips to {ouValueSide === 'Over' ? 'Under' : 'Over'} at {game.picks.total.flip.toFixed(1)}
                     </div>
                   )}
                   {ouValueSide && (
@@ -825,10 +825,10 @@ export default function GameDetailPage() {
                         </>
                       )}
                     </div>
-                    {/* RANGE: Flip Point */}
-                    {game.picks.total?.flip !== null && game.picks.total?.flip !== undefined && game.picks.total.betTo !== null && snapshot?.marketTotal !== undefined && (
+                    {/* RANGE: Flip Point - Always show when ou_model_valid === true */}
+                    {game.validation?.ou_model_valid && game.picks.total?.flip !== null && game.picks.total?.flip !== undefined && game.picks.total.betTo !== null && (
                       <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
-                        <span className="font-semibold">Range:</span> Value now to {game.picks.total.betTo.toFixed(1)}; flips to {game.picks.total.overlay.overlayValue > 0 ? 'Under' : 'Over'} at {game.picks.total.flip.toFixed(1)}
+                        <span className="font-semibold">Range:</span> Value now to {game.picks.total.betTo.toFixed(1)}; flips to {game.picks.total.overlay?.overlayValue && game.picks.total.overlay.overlayValue > 0 ? 'Under' : 'Over'} at {game.picks.total.flip.toFixed(1)}
                       </div>
                     )}
                     {game.picks?.total?.overlay && (

@@ -46,6 +46,10 @@ export async function GET(
   const startTime = Date.now();
   try {
     const { gameId } = params;
+    
+    // Check for debug query parameter
+    const url = new URL(request.url);
+    const debugMode = url.searchParams.get('debug') === '1';
 
     // Get game with all related data
     const game = await prisma.game.findUnique({
@@ -1316,13 +1320,22 @@ export async function GET(
     const ats_reason = !ats_inputs_ok ? 'Model spread unavailable or invalid (NaN/inf)' : null;
     
     // OU reason: Only set when model is invalid (card still shows, just with muted reason)
-    const ou_reason = !ou_model_valid 
-      ? (finalImpliedTotal === null 
-          ? 'Model total unavailable' 
-          : finalImpliedTotal < 15 || finalImpliedTotal > 120
-            ? `Model returned ${finalImpliedTotal.toFixed(1)}, not in points (likely rate/ratio)`
-            : 'Model total invalid (NaN/inf)')
-      : null;
+    // Use specific failure information from diagnostics when available
+    let ou_reason: string | null = null;
+    if (!ou_model_valid) {
+      if (finalImpliedTotal === null) {
+        ou_reason = 'Model total unavailable';
+      } else if (finalImpliedTotal < 15 || finalImpliedTotal > 120) {
+        // Units mismatch: model returned a rate/ratio instead of points
+        ou_reason = `Model returned ${finalImpliedTotal.toFixed(1)}, not in points (likely rate/ratio)`;
+      } else if (!isFinite(finalImpliedTotal) || isNaN(finalImpliedTotal)) {
+        // NaN/inf case - use failure stage if available
+        const failureStage = totalDiag.firstFailureStep || 'unknown_stage';
+        ou_reason = `Model total invalid (NaN/inf) at stage: ${failureStage}`;
+      } else {
+        ou_reason = 'Model total invalid';
+      }
+    }
     
     console.log(`[Game ${gameId}] 🔍 Independent Validation:`, {
       ats_inputs_ok,
@@ -1379,10 +1392,12 @@ export async function GET(
     // ============================================
     // Bet-to: Stop line where edge = edge_floor
     // Flip: First price where the other side becomes a bet
-    const spreadBetTo = atsEdgeAbs >= OVERLAY_EDGE_FLOOR 
+    // CRITICAL: Always compute these when ats_inputs_ok === true (even if edge < floor)
+    // This ensures UI can always show range guidance for transparency
+    const spreadBetTo = ats_inputs_ok && marketSpread !== null
       ? marketSpread + Math.sign(spreadOverlay) * OVERLAY_EDGE_FLOOR
       : null;
-    const spreadFlip = atsEdgeAbs >= OVERLAY_EDGE_FLOOR
+    const spreadFlip = ats_inputs_ok && marketSpread !== null
       ? marketSpread - Math.sign(spreadOverlay) * OVERLAY_EDGE_FLOOR
       : null;
 
@@ -1550,13 +1565,15 @@ export async function GET(
     
     if (!hasSpreadEdge) {
       // No pick - overlay too small to bet
+      // BUT: Still populate betTo and flip for range guidance (transparency)
       bettablePick = {
         teamId: null,
         teamName: null,
         line: null,
         label: null,
         reasoning: `No edge at current number. Model overlay is ${spreadOverlay >= 0 ? '+' : ''}${spreadOverlay.toFixed(1)} pts (below ${edgeFloor.toFixed(1)} pt threshold in Trust-Market mode).`,
-        betTo: null,
+        betTo: spreadBetTo, // Always populate when ats_inputs_ok (for range guidance)
+        flip: spreadFlip,   // Always populate when ats_inputs_ok (for range guidance)
         favoritesDisagree: false,
         suppressHeadline: false,
         extremeFavoriteBlocked: false
@@ -1564,7 +1581,9 @@ export async function GET(
       console.log(`[Game ${gameId}] ℹ️ No spread pick - overlay below threshold:`, {
         overlay: spreadOverlay.toFixed(2),
         edgeFloor,
-        reason: 'Overlay < edge floor'
+        betTo: spreadBetTo?.toFixed(1),
+        flip: spreadFlip?.toFixed(1),
+        reason: 'Overlay < edge floor, but range guidance still provided'
       });
     } else if (blockDogHeadline) {
       // Has edge BUT extreme favorite + dog direction → suppress dog headline, show range only
@@ -1696,11 +1715,13 @@ export async function GET(
     // ============================================
     // RANGE LOGIC: Bet-To and Flip Point (Totals)
     // ============================================
+    // CRITICAL: Always compute these when ou_model_valid === true (even if edge < floor)
+    // This ensures UI can always show range guidance for transparency
     const totalEdgeAbs = totalEdgePts !== null ? Math.abs(totalEdgePts) : 0;
-    const totalBetToCalc = totalEdgeAbs >= OVERLAY_EDGE_FLOOR && marketTotal !== null
+    const totalBetToCalc = ou_model_valid && marketTotal !== null
       ? marketTotal + Math.sign(totalOverlay) * OVERLAY_EDGE_FLOOR
       : null;
-    const totalFlip = totalEdgeAbs >= OVERLAY_EDGE_FLOOR && marketTotal !== null
+    const totalFlip = ou_model_valid && marketTotal !== null
       ? marketTotal - Math.sign(totalOverlay) * OVERLAY_EDGE_FLOOR
       : null;
     
@@ -2957,8 +2978,10 @@ export async function GET(
             // Assert: if market favorite line < 0, ATS copy must show negative
             market_favorite_line: market_snapshot.favoriteLine,
             market_line_is_negative: market_snapshot.favoriteLine < 0,
-            // UI will check this when rendering "market {line}" string
-            passed: true // Will be validated in UI
+            // Validation: favorite line should always be negative (or 0 for pick'em)
+            // Log warning if favorite line is positive (should never happen)
+            passed: market_snapshot.favoriteLine <= 0,
+            warning: market_snapshot.favoriteLine > 0 ? `WARNING: Favorite line is positive (${market_snapshot.favoriteLine.toFixed(1)}). Expected negative or zero.` : null
           }
         }
       },
@@ -3507,6 +3530,38 @@ export async function GET(
         actually_has_edge: response.validation.assertions.overlay_consistency_ou.actually_has_edge,
         abs_overlay: response.validation.assertions.overlay_consistency_ou.abs_overlay
       });
+    }
+    if (!response.validation?.assertions?.sign_sanity_ats?.passed) {
+      console.error(`[Game ${gameId}] ⚠️ ASSERTION FAILED: ATS Sign Sanity`, {
+        market_favorite_line: response.validation.assertions.sign_sanity_ats.market_favorite_line,
+        warning: response.validation.assertions.sign_sanity_ats.warning,
+        note: 'Favorite line should be negative (or 0 for pick\'em). Positive values indicate a data issue.'
+      });
+    }
+
+    // ============================================
+    // DEBUG MODE: Echo specific values for canary games
+    // ============================================
+    if (debugMode) {
+      (response as any).debug = {
+        ats: {
+          market_favorite_line: response.market_snapshot.favoriteLine,
+          model_edge_ats: response.model_view.edges.atsEdgePts,
+          picks_spread_edgePts: response.picks.spread.edgePts,
+          picks_spread_betTo: response.picks.spread.betTo,
+          picks_spread_flip: response.picks.spread.flip,
+          picks_spread_overlay_used_pts: response.picks.spread.overlay.overlay_used_pts
+        },
+        ou: {
+          ou_inputs_ok: response.validation.ou_inputs_ok,
+          ou_model_valid: response.validation.ou_model_valid,
+          ou_reason: response.validation.ou_reason,
+          picks_total_edgePts: response.picks.total.edgePts,
+          picks_total_betTo: response.picks.total.betTo,
+          picks_total_flip: response.picks.total.flip,
+          picks_total_overlay_used_pts: response.picks.total.overlay.overlay_used_pts
+        }
+      };
     }
 
     return NextResponse.json(response, {
