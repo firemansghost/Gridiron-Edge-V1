@@ -701,9 +701,10 @@ export default function GameDetailPage() {
 
               {/* Total Card - Independent Validation */}
               {game.validation?.ou_inputs_ok ? (
-                game.picks?.total?.totalState === 'pick' && game.picks?.total?.grade ? (
-                  /* Pick State - Has edge */
-                <div className="bg-white border-2 border-green-300 rounded-lg p-4 shadow-sm">
+                game.validation?.ou_model_valid ? (
+                  game.picks?.total?.totalState === 'pick' && game.picks?.total?.grade ? (
+                    /* Pick State - Model valid, has edge >= floor */
+                  <div className="bg-white border-2 border-green-300 rounded-lg p-4 shadow-sm">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">TOTAL (Over/Under)</h3>
                     {game.picks.total.grade && (
@@ -836,19 +837,35 @@ export default function GameDetailPage() {
                       </div>
                     )}
                   </div>
+                  )
+                ) : (
+                  /* Invalid Model State - ou_inputs_ok but !ou_model_valid */
+                  /* Model total is invalid (NaN/not in points), but we have market total */
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">TOTAL (Over/Under)</h3>
+                    <div className="text-lg font-semibold text-gray-900 mb-2">
+                      Total {game.picks?.total?.headlineTotal?.toFixed(1) || snapshot?.marketTotal?.toFixed(1) || 'N/A'}
+                    </div>
+                    <div className="text-sm text-gray-600 mb-2">
+                      Total unavailable — {game.validation?.ou_reason || 'Model total unavailable'}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Headline shows market number: {snapshot?.marketTotal?.toFixed(1) ?? 'N/A'}
+                    </div>
+                  </div>
                 )
               ) : (
-                /* Invalid Inputs State - !ou_inputs_ok */
+                /* Invalid Inputs State - !ou_inputs_ok (market not available - shouldn't happen for live games) */
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                   <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">TOTAL (Over/Under)</h3>
                   <div className="text-lg font-semibold text-gray-900 mb-2">
                     Total unavailable
                   </div>
                   <div className="text-sm text-gray-600 mb-2">
-                    {game.validation?.ou_reason || 'Model total unavailable this week.'}
+                    Market total not available
                   </div>
                   <div className="text-xs text-gray-500">
-                    Headline shows market number: {snapshot?.marketTotal?.toFixed(1) ?? 'N/A'}
+                    {game.validation?.ou_reason || 'Model total unavailable this week.'}
                   </div>
                 </div>
               )}

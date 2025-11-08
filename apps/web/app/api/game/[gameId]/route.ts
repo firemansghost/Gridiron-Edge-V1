@@ -1291,19 +1291,32 @@ export async function GET(
     // ============================================
     // INDEPENDENT VALIDATION FLAGS (Decouple ATS and OU)
     // ============================================
-    // ATS and OU validate independently - one cannot block the other
+    // ============================================
+    // VALIDATION: ATS and OU independently
+    // ============================================
+    // KEY INSIGHT: OU card should ALWAYS show (we always have market total)
+    // We just need to know if the MODEL total is valid for computing overlay
+    
+    // ATS validation: Do we have a valid model spread?
     const ats_inputs_ok = finalImpliedSpread !== null && 
                           !isNaN(finalImpliedSpread) && 
                           isFinite(finalImpliedSpread);
     
-    const ou_inputs_ok = finalImpliedTotal !== null && 
-                         !isNaN(finalImpliedTotal) && 
-                         isFinite(finalImpliedTotal) &&
-                         finalImpliedTotal >= 15 && 
-                         finalImpliedTotal <= 120;
+    // OU model validation: Is the model total valid (numeric, in points)?
+    const ou_model_valid = finalImpliedTotal !== null && 
+                           !isNaN(finalImpliedTotal) && 
+                           isFinite(finalImpliedTotal) &&
+                           finalImpliedTotal >= 15 && 
+                           finalImpliedTotal <= 120;
+    
+    // OU inputs validation: Do we have a market total to show?
+    // ALWAYS true for live games (we always have market lines)
+    const ou_inputs_ok = marketTotal !== null && !isNaN(marketTotal) && isFinite(marketTotal);
     
     const ats_reason = !ats_inputs_ok ? 'Model spread unavailable or invalid (NaN/inf)' : null;
-    const ou_reason = !ou_inputs_ok 
+    
+    // OU reason: Only set when model is invalid (card still shows, just with muted reason)
+    const ou_reason = !ou_model_valid 
       ? (finalImpliedTotal === null 
           ? 'Model total unavailable' 
           : finalImpliedTotal < 15 || finalImpliedTotal > 120
@@ -1314,10 +1327,13 @@ export async function GET(
     console.log(`[Game ${gameId}] 🔍 Independent Validation:`, {
       ats_inputs_ok,
       ou_inputs_ok,
+      ou_model_valid, // NEW: Track if model total is usable
       ats_reason,
       ou_reason,
       finalImpliedSpread,
-      finalImpliedTotal
+      finalImpliedTotal,
+      marketTotal,
+      note: 'OU card shows when ou_inputs_ok (have market), computes overlay when ou_model_valid'
     });
     
     // ============================================
@@ -1628,9 +1644,10 @@ export async function GET(
     let shouldDegradeTotalConfidence = false;
     let hasTotalEdge = false;
     
-    // CRITICAL: Only compute overlay if model total is valid (not null, in points)
-    if (finalImpliedTotal !== null && marketTotal !== null) {
-      const modelTotalPts = finalImpliedTotal; // Model total in points
+    // CRITICAL: Only compute overlay if model total is VALID (ou_model_valid = true)
+    // We always have market total (ou_inputs_ok), but only compute overlay when model is usable
+    if (ou_model_valid && marketTotal !== null) {
+      const modelTotalPts = finalImpliedTotal!; // Model total in points (guaranteed by ou_model_valid)
       rawTotalDisagreement = Math.abs(modelTotalPts - marketTotal);
       
       // Calculate overlay: clamp(λ × (model - market), -cap, +cap)
@@ -1662,17 +1679,19 @@ export async function GET(
         mode: MODEL_MODE
       });
     } else {
-      // Model total is null or market total is null - cannot compute overlay
+      // Model total is invalid or market total missing - cannot compute overlay
       console.log(`[Game ${gameId}] ℹ️ Total overlay skipped:`, {
+        ou_model_valid,
         modelTotalAvailable: finalImpliedTotal !== null,
         marketTotalAvailable: marketTotal !== null,
-        reason: finalImpliedTotal === null ? 'Model total unavailable/invalid (not in points)' : 'Market total unavailable'
+        reason: !ou_model_valid ? 'Model total invalid (not in points)' : 'Market total unavailable',
+        note: 'OU card still shows with market headline when ou_inputs_ok'
       });
     }
 
     // Total edge: In Trust-Market mode, edge IS the overlay (not model - market)
-    // If model is null, edge is null (no pick)
-    const totalEdgePts = finalImpliedTotal !== null && marketTotal !== null ? totalOverlay : null;
+    // If model is invalid, edge is null (no pick, but card still shows)
+    const totalEdgePts = ou_model_valid && marketTotal !== null ? totalOverlay : null;
     
     // ============================================
     // RANGE LOGIC: Bet-To and Flip Point (Totals)
@@ -1850,6 +1869,22 @@ export async function GET(
         isPoints: isModelTotalValid,
         reason: !isModelTotalValid ? unitsNote : undefined,
         modelValue: finalImpliedTotal
+      },
+      // OU pipeline diagnostics (for debugging OU validation issues)
+      // NOTE: overlay, betTo, flip are computed later and available in picks.total
+      ou_debug: {
+        marketTotal,
+        modelTotalRaw: finalImpliedTotal,
+        unitsCheck: {
+          isPoints: isModelTotalValid,
+          reason: !isModelTotalValid ? unitsNote : 'Model total is valid'
+        },
+        ou_model_valid,
+        ou_inputs_ok,
+        lambda: LAMBDA_TOTAL,
+        cap: OVERLAY_CAP_TOTAL,
+        edgeFloor: OVERLAY_EDGE_FLOOR,
+        note: 'OU card shows when ou_inputs_ok (market available). Overlay computed when ou_model_valid (model is valid). See picks.total for overlay/betTo/flip values.'
       },
       messages: diagnosticsMessages
     };
@@ -2881,6 +2916,7 @@ export async function GET(
         // Independent validation flags (decouple ATS and OU)
         ats_inputs_ok,
         ou_inputs_ok,
+        ou_model_valid, // NEW: Is model total valid? (ou_inputs_ok = have market; ou_model_valid = have model)
         ats_reason,
         ou_reason,
         // Telemetry flags
