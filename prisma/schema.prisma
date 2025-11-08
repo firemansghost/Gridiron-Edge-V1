@@ -218,6 +218,12 @@ model TeamSeasonRating {
   sigma         Decimal?
   confidence    Decimal? // 0-1 scale: feature coverage * data_source quality
   dataSource    String?  @map("data_source") // 'game+season', 'season_only', 'baseline'
+  // PHASE 2.3: Team-specific HFA
+  hfaTeam       Decimal? @map("hfa_team") // Shrunk HFA used in model
+  hfaRaw        Decimal? @map("hfa_raw") // Raw HFA before shrinkage
+  hfaNHome      Int?     @default(0) @map("hfa_n_home") // Number of home games used
+  hfaNAway      Int?     @default(0) @map("hfa_n_away") // Number of away games used
+  hfaShrinkW    Decimal? @map("hfa_shrink_w") // Shrinkage weight (0-1)
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
@@ -227,6 +233,7 @@ model TeamSeasonRating {
   @@index([season, modelVersion])
   @@index([modelVersion])
   @@index([season, rating(sort: Desc)])
+  @@index([season, hfaTeam(sort: Desc)], map: "team_season_ratings_hfa_idx")
   @@map("team_season_ratings")
 }
 

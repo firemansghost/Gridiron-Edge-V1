@@ -419,6 +419,21 @@ export default function GameDetailPage() {
                         Record: {game.teams.home.record.wins}–{game.teams.home.record.losses}
                       </span>
                     )}
+                    {/* PHASE 2.3: Home Edge chip */}
+                    {game.model_view?.features?.hfa && !game.model_view.features.hfa.neutral_site && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                        <InfoTooltip 
+                          content={`Team-specific HFA used this week. Raw ${game.model_view.features.hfa.raw?.toFixed(1) ?? 'N/A'} (n:${game.model_view.features.hfa.n_home ?? 0}H/${game.model_view.features.hfa.n_away ?? 0}A), shrink w=${game.model_view.features.hfa.shrink_w?.toFixed(2) ?? 'N/A'}, league mean ${game.model_view.features.hfa.league_mean?.toFixed(1) ?? 'N/A'}.`}
+                        />
+                        Home Edge: {game.model_view.features.hfa.used?.toFixed(1) ?? '2.0'} pts
+                      </span>
+                    )}
+                    {/* Neutral site indicator */}
+                    {game.model_view?.features?.hfa?.neutral_site && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                        Neutral site — HFA = 0
+                      </span>
+                    )}
                     {/* Last 5 chip */}
                     {game.teams?.home?.form && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 font-mono tracking-wider">

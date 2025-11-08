@@ -36,6 +36,8 @@
     "ratings:baseline": "ts-node apps/jobs/src/ratings/baseline_from_scores.ts",
     "ratings:v1": "node apps/jobs/dist/src/ratings/compute_ratings_v1.js",
     "verify:jobs": "node scripts/validate-team-aliases.mjs && node scripts/verify-job-assets.mjs",
+    "check:canaries": "BASE_URL=https://gridiron-edge-v1.vercel.app npx tsx scripts/check_canaries.ts",
+    "check:canaries:local": "BASE_URL=http://localhost:3000 npx tsx scripts/check_canaries.ts",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "postinstall": "npm run prisma:generate"
   },

@@ -469,6 +469,255 @@ export async function GET(
     ]);
 
     // ============================================
+    // PHASE 2.1: Talent Gap Feature (247 Composite) - COMPLETE
+    // ============================================
+    // Load talent data for both teams
+    const [homeTalent, awayTalent] = await Promise.all([
+      prisma.teamSeasonTalent.findUnique({
+        where: {
+          season_teamId: {
+            season: game.season,
+            teamId: game.homeTeamId,
+          },
+        },
+      }),
+      prisma.teamSeasonTalent.findUnique({
+        where: {
+          season_teamId: {
+            season: game.season,
+            teamId: game.awayTeamId,
+          },
+        },
+      }),
+    ]);
+
+    // Raw talent values (null if missing/FCS)
+    const homeTalentRaw = homeTalent?.talentComposite ?? null;
+    const awayTalentRaw = awayTalent?.talentComposite ?? null;
+
+    // Get all season talent data for G5 p10 calculation and normalization
+    const allSeasonTalent = await prisma.teamSeasonTalent.findMany({
+      where: { season: game.season },
+      select: { 
+        talentComposite: true,
+        teamId: true,
+      },
+    });
+
+    // Get all team conferences for G5 identification (batch query)
+    const teamIds = Array.from(new Set(allSeasonTalent.map(t => t.teamId)));
+    const teamConferences = await prisma.team.findMany({
+      where: { id: { in: teamIds } },
+      select: { id: true, conference: true },
+    });
+    const conferenceMap = new Map(teamConferences.map(t => [t.id, t.conference]));
+
+    // Get home/away team conference info
+    const homeTeamInfo = teamConferences.find(t => t.id === game.homeTeamId);
+    const awayTeamInfo = teamConferences.find(t => t.id === game.awayTeamId);
+
+    // G5 conferences (non-P5, non-FCS) - for talent imputation
+    const G5_CONFERENCES_TALENT = new Set([
+      'American Athletic', 'Conference USA', 'Mid-American', 'Mountain West', 'Sun Belt'
+    ]);
+    const isG5ForTalent = (conf: string | null) => conf !== null && G5_CONFERENCES_TALENT.has(conf);
+
+    // Calculate G5 p10 (10th percentile) for imputation
+    // Cap at 5th-25th percentile band to avoid freak seasons
+    let g5P10: number | null = null;
+    let g5P5: number | null = null;
+    let g5P25: number | null = null;
+    
+    const g5TalentValues: number[] = [];
+    for (const talent of allSeasonTalent) {
+      if (talent.talentComposite !== null && isFinite(talent.talentComposite)) {
+        const conf = conferenceMap.get(talent.teamId);
+        if (conf && isG5ForTalent(conf)) {
+          g5TalentValues.push(talent.talentComposite);
+        }
+      }
+    }
+
+    if (g5TalentValues.length >= 10) {
+      // Sort for percentile calculation
+      g5TalentValues.sort((a, b) => a - b);
+      const n = g5TalentValues.length;
+      g5P5 = g5TalentValues[Math.floor(n * 0.05)];
+      g5P10 = g5TalentValues[Math.floor(n * 0.10)];
+      g5P25 = g5TalentValues[Math.floor(n * 0.25)];
+      
+      // Cap p10 at 5th-25th percentile band
+      if (g5P10 < g5P5) g5P10 = g5P5;
+      if (g5P10 > g5P25) g5P10 = g5P25;
+    }
+
+    // Imputation logic: if missing, use G5 p10
+    const homeImputation: 'none' | 'g5_p10' = homeTalentRaw !== null ? 'none' : 'g5_p10';
+    const awayImputation: 'none' | 'g5_p10' = awayTalentRaw !== null ? 'none' : 'g5_p10';
+    
+    const homeTalentUsed = homeTalentRaw ?? g5P10;
+    const awayTalentUsed = awayTalentRaw ?? g5P10;
+
+    // Calculate difference using imputed values
+    const talentGapDiff = homeTalentUsed !== null && awayTalentUsed !== null
+      ? homeTalentUsed - awayTalentUsed
+      : null;
+
+    // Normalization: 0-mean, unit variance within season
+    const allTalentValues = allSeasonTalent
+      .map(t => t.talentComposite)
+      .filter(v => v !== null && isFinite(v)) as number[];
+    
+    let talentDiffZ: number | null = null;
+    let talentDiffMean: number | null = null;
+    let talentDiffStd: number | null = null;
+    let talentZDisabled = false;
+    
+    if (allTalentValues.length > 0) {
+      // Calculate mean and std for normalization
+      talentDiffMean = allTalentValues.reduce((a, b) => a + b, 0) / allTalentValues.length;
+      const variance = allTalentValues.reduce((sum, val) => sum + Math.pow(val - talentDiffMean!, 2), 0) / allTalentValues.length;
+      talentDiffStd = Math.sqrt(variance);
+      
+      // Stability guard: if std < 0.1, disable z-score (tiny variance shouldn't explode coefficients)
+      if (talentDiffStd < 0.1) {
+        talentZDisabled = true;
+        talentDiffZ = 0;
+      } else if (homeTalentUsed !== null && awayTalentUsed !== null) {
+        // Normalize each team's talent, then difference
+        const homeTalentZ = (homeTalentUsed - talentDiffMean!) / talentDiffStd;
+        const awayTalentZ = (awayTalentUsed - talentDiffMean!) / talentDiffStd;
+        talentDiffZ = homeTalentZ - awayTalentZ;
+      }
+    }
+
+    // Sanity check: diff === home_used - away_used (within 1e-6)
+    if (talentGapDiff !== null && homeTalentUsed !== null && awayTalentUsed !== null) {
+      const expectedDiff = homeTalentUsed - awayTalentUsed;
+      if (Math.abs(talentGapDiff - expectedDiff) > 1e-6) {
+        console.warn(`[Game ${gameId}] ⚠️ Talent diff sanity check failed: ${talentGapDiff} vs ${expectedDiff}`);
+      }
+    }
+    
+    console.log(`[Game ${gameId}] 🎯 Talent Gap (Phase 2.1 Complete):`, {
+      homeRaw: homeTalentRaw?.toFixed(2) ?? 'null',
+      awayRaw: awayTalentRaw?.toFixed(2) ?? 'null',
+      homeUsed: homeTalentUsed?.toFixed(2) ?? 'null',
+      awayUsed: awayTalentUsed?.toFixed(2) ?? 'null',
+      diff: talentGapDiff?.toFixed(2) ?? 'null',
+      diffZ: talentDiffZ?.toFixed(2) ?? 'null',
+      imputation: { home: homeImputation, away: awayImputation },
+      g5P10: g5P10?.toFixed(2) ?? 'null',
+      zDisabled: talentZDisabled,
+      note: 'Complete Phase 2.1 with FCS imputation and stability guards'
+    });
+
+    // ============================================
+    // PHASE 2.2: Matchup Class Feature
+    // ============================================
+    // Classify teams as P5, G5, or FCS based on season membership and conference
+    
+    // Get team memberships for this season
+    const [homeMembership, awayMembership] = await Promise.all([
+      prisma.teamMembership.findUnique({
+        where: {
+          season_teamId: {
+            season: game.season,
+            teamId: game.homeTeamId,
+          },
+        },
+      }),
+      prisma.teamMembership.findUnique({
+        where: {
+          season_teamId: {
+            season: game.season,
+            teamId: game.awayTeamId,
+          },
+        },
+      }),
+    ]);
+
+    // P5 conferences (season-aware, may expand)
+    const P5_CONFERENCES = new Set([
+      'ACC', 'Big Ten', 'B1G', 'Big 12', 'SEC', 'Pac-12', 'Pac-10'
+    ]);
+    
+    // G5 conferences
+    const G5_CONFERENCES = new Set([
+      'American Athletic', 'AAC', 'Mountain West', 'MWC', 'Sun Belt',
+      'Mid-American', 'MAC', 'Conference USA', 'C-USA'
+    ]);
+
+    // Helper to classify a team's tier
+    const classifyTeamTier = (teamId: string, membership: typeof homeMembership, conference: string | null): 'P5' | 'G5' | 'FCS' => {
+      // Check membership level first
+      if (membership?.level === 'fcs') {
+        return 'FCS';
+      }
+      
+      // Independents: Notre Dame = P5, others = G5
+      if (teamId === 'notre-dame') {
+        return 'P5';
+      }
+      
+      // Check conference
+      if (conference && P5_CONFERENCES.has(conference)) {
+        return 'P5';
+      }
+      
+      if (conference && G5_CONFERENCES.has(conference)) {
+        return 'G5';
+      }
+      
+      // Default: if FBS membership but unknown conference, treat as G5
+      if (membership?.level === 'fbs') {
+        return 'G5';
+      }
+      
+      // Fallback: FCS
+      return 'FCS';
+    };
+
+    const homeTier = classifyTeamTier(game.homeTeamId, homeMembership, homeTeamInfo?.conference ?? null);
+    const awayTier = classifyTeamTier(game.awayTeamId, awayMembership, awayTeamInfo?.conference ?? null);
+
+    // Create matchup class
+    type MatchupClass = 'P5_P5' | 'P5_G5' | 'P5_FCS' | 'G5_G5' | 'G5_FCS';
+    
+    const getMatchupClass = (home: 'P5' | 'G5' | 'FCS', away: 'P5' | 'G5' | 'FCS'): MatchupClass => {
+      // Sort tiers so P5 > G5 > FCS for consistent ordering
+      const tierOrder = { P5: 3, G5: 2, FCS: 1 };
+      const [higher, lower] = tierOrder[home] >= tierOrder[away] 
+        ? [home, away] 
+        : [away, home];
+      
+      if (higher === 'P5' && lower === 'P5') return 'P5_P5';
+      if (higher === 'P5' && lower === 'G5') return 'P5_G5';
+      if (higher === 'P5' && lower === 'FCS') return 'P5_FCS';
+      if (higher === 'G5' && lower === 'G5') return 'G5_G5';
+      if (higher === 'G5' && lower === 'FCS') return 'G5_FCS';
+      
+      // Fallback (shouldn't happen)
+      return 'P5_P5';
+    };
+
+    const matchupClass = getMatchupClass(homeTier, awayTier);
+
+    console.log(`[Game ${gameId}] 🎯 Matchup Class (Phase 2.2):`, {
+      homeTeam: game.homeTeam.name,
+      homeTier,
+      homeConference: homeTeamInfo?.conference ?? 'null',
+      homeMembershipLevel: homeMembership?.level ?? 'null',
+      awayTeam: game.awayTeam.name,
+      awayTier,
+      awayConference: awayTeamInfo?.conference ?? 'null',
+      awayMembershipLevel: awayMembership?.level ?? 'null',
+      matchupClass,
+      season: game.season,
+      note: 'Matchup class for calibration (Phase 2.2)'
+    });
+
+    // ============================================
     // CRITICAL FIX: Use pre-calculated values from matchupOutput
     // DO NOT recalculate spread/total on the fly - this causes bugs!
     // ============================================
@@ -479,18 +728,89 @@ export async function GET(
     let computedSpread = matchupOutput?.impliedSpread || 0;
     let computedTotal = matchupOutput?.impliedTotal || null; // ✅ NO HARDCODED FALLBACK - null if unavailable
     
+    // ============================================
+    // PHASE 2.3: Team-Specific HFA (Home Field Advantage)
+    // ============================================
+    const LOW_SAMPLE_THRESHOLD = 4; // Minimum games for reliable HFA
+    
+    // Load team-specific HFA from team_season_rating
+    // Type assertion needed until TypeScript picks up regenerated Prisma types
+    const homeRatingWithHFA = homeRating as typeof homeRating & {
+      hfaTeam?: number | null;
+      hfaRaw?: number | null;
+      hfaNHome?: number | null;
+      hfaNAway?: number | null;
+      hfaShrinkW?: number | null;
+    };
+    
+    const homeHFA = homeRatingWithHFA?.hfaTeam !== null && homeRatingWithHFA?.hfaTeam !== undefined
+      ? Number(homeRatingWithHFA.hfaTeam)
+      : null;
+    const hfaRaw = homeRatingWithHFA?.hfaRaw !== null && homeRatingWithHFA?.hfaRaw !== undefined
+      ? Number(homeRatingWithHFA.hfaRaw)
+      : null;
+    const hfaNHome = homeRatingWithHFA?.hfaNHome ?? 0;
+    const hfaNAway = homeRatingWithHFA?.hfaNAway ?? 0;
+    const hfaShrinkW = homeRatingWithHFA?.hfaShrinkW !== null && homeRatingWithHFA?.hfaShrinkW !== undefined
+      ? Number(homeRatingWithHFA.hfaShrinkW)
+      : null;
+
+    // Compute league mean HFA for diagnostics (median of all teams' HFA in this season)
+    // Use raw SQL query to avoid TypeScript type issues with new fields
+    const allSeasonHFAsResult = await prisma.$queryRaw<Array<{ hfa_team: number | null }>>`
+      SELECT hfa_team FROM team_season_ratings
+      WHERE season = ${game.season} AND model_version = 'v1' AND hfa_team IS NOT NULL
+    `;
+    const hfaValues = allSeasonHFAsResult
+      .map(r => r.hfa_team !== null ? Number(r.hfa_team) : null)
+      .filter((v): v is number => v !== null);
+    
+    let leagueMeanHFA = 2.0; // Default
+    if (hfaValues.length > 0) {
+      const sorted = [...hfaValues].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      leagueMeanHFA = sorted.length % 2 === 0
+        ? (sorted[mid - 1] + sorted[mid]) / 2
+        : sorted[mid];
+    }
+
+    // Determine HFA to use
+    const hfaUsed = game.neutralSite 
+      ? 0 
+      : (homeHFA !== null ? homeHFA : 2.0); // Fallback to 2.0 if not computed yet
+    
+    const hfaCapped = homeHFA !== null && (homeHFA < 0.5 || homeHFA > 5.0);
+    const hfaLowSample = (hfaNHome + hfaNAway) < LOW_SAMPLE_THRESHOLD;
+    const hfaOutlier = hfaRaw !== null && Math.abs(hfaRaw) > 8;
+
+    console.log(`[Game ${gameId}] 🎯 Team-Specific HFA (Phase 2.3):`, {
+      homeTeam: game.homeTeam.name,
+      neutralSite: game.neutralSite,
+      hfaUsed: hfaUsed.toFixed(2),
+      hfaRaw: hfaRaw?.toFixed(2) ?? 'null',
+      nHome: hfaNHome,
+      nAway: hfaNAway,
+      shrinkW: hfaShrinkW?.toFixed(2) ?? 'null',
+      leagueMean: leagueMeanHFA.toFixed(2),
+      capped: hfaCapped,
+      lowSample: hfaLowSample,
+      outlier: hfaOutlier,
+      note: 'Team-specific HFA with shrinkage (Phase 2.3)'
+    });
+
     // OPTIONAL: Can still compute spread if ratings exist AND matchupOutput is missing
     // But NEVER override matchupOutput if it exists!
+    // PHASE 2.3: Use team-specific HFA instead of constant 2.0
     if (!matchupOutput && homeRating && awayRating) {
       const homePower = Number(homeRating.powerRating || homeRating.rating || 0);
       const awayPower = Number(awayRating.powerRating || awayRating.rating || 0);
-      const HFA = game.neutralSite ? 0 : 2.0;
+      const HFA = hfaUsed; // Use team-specific HFA
       computedSpread = homePower - awayPower + HFA;
       
       console.log(`[Game ${gameId}] ⚠️ NO MATCHUP OUTPUT - computing spread on the fly:`, {
         homePower,
         awayPower,
-        HFA,
+        HFA: HFA.toFixed(2),
         computedSpread
       });
     }
@@ -1892,6 +2212,50 @@ export async function GET(
       edges: {
         atsEdgePts: atsEdge, // ✅ Capped overlay (not raw disagreement)
         ouEdgePts: totalEdgePts // ✅ Capped overlay (not raw disagreement)
+      },
+      // PHASE 2.1: Features for calibration (talent gap, matchup class, HFA, recency)
+      features: {
+        talent: {
+          home_raw: homeTalentRaw,
+          away_raw: awayTalentRaw,
+          home_used: homeTalentUsed,
+          away_used: awayTalentUsed,
+          diff: talentGapDiff, // Raw difference (home_used - away_used)
+          diff_z: talentDiffZ, // Normalized difference (0-mean, unit variance)
+          season_mean: talentDiffMean,
+          season_std: talentDiffStd,
+          imputation: {
+            home: homeImputation,
+            away: awayImputation
+          },
+          talent_z_disabled: talentZDisabled,
+          note: 'Talent gap from 247 Composite (Phase 2.1 Complete)'
+        },
+        // PHASE 2.2: Matchup Class
+        matchup_class: {
+          class: matchupClass, // 'P5_P5' | 'P5_G5' | 'P5_FCS' | 'G5_G5' | 'G5_FCS'
+          home_tier: homeTier, // 'P5' | 'G5' | 'FCS'
+          away_tier: awayTier, // 'P5' | 'G5' | 'FCS'
+          home_conference: homeTeamInfo?.conference ?? null,
+          away_conference: awayTeamInfo?.conference ?? null,
+          season: game.season,
+          note: 'Matchup class for calibration (Phase 2.2)'
+        },
+        // PHASE 2.3: Team-Specific HFA
+        hfa: {
+          used: hfaUsed, // HFA used in model (0 for neutral, team-specific for home, 2.0 fallback)
+          raw: hfaRaw, // Raw HFA before shrinkage
+          shrink_w: hfaShrinkW, // Shrinkage weight (0-1)
+          n_home: hfaNHome, // Number of home games used
+          n_away: hfaNAway, // Number of away games used
+          league_mean: leagueMeanHFA, // League median HFA for this season
+          capped: hfaCapped, // True if HFA was capped to [0.5, 5.0]
+          low_sample: hfaLowSample, // True if n_total < 4
+          outlier: hfaOutlier, // True if |hfa_raw| > 8
+          neutral_site: game.neutralSite,
+          note: 'Team-specific HFA with shrinkage (Phase 2.3)'
+        }
+        // TODO Phase 2.4: recency_weight
       }
     };
     
@@ -1965,6 +2329,41 @@ export async function GET(
         isPoints: isModelTotalValid,
         reason: !isModelTotalValid ? unitsNote : undefined,
         modelValue: finalImpliedTotal
+      },
+      // PHASE 2.2: Matchup class source
+      matchup_class_source: {
+        home: {
+          teamId: game.homeTeamId,
+          season: game.season,
+          level: homeMembership?.level ?? null,
+          conference: homeTeamInfo?.conference ?? null,
+          tier: homeTier
+        },
+        away: {
+          teamId: game.awayTeamId,
+          season: game.season,
+          level: awayMembership?.level ?? null,
+          conference: awayTeamInfo?.conference ?? null,
+          tier: awayTier
+        },
+        matchup_class: matchupClass
+      },
+      // PHASE 2.3: HFA source
+      hfa_source: {
+        teamId: game.homeTeamId,
+        season: game.season,
+        used: hfaUsed,
+        raw: hfaRaw,
+        shrink_w: hfaShrinkW,
+        n_home: hfaNHome,
+        n_away: hfaNAway,
+        league_mean: leagueMeanHFA,
+        neutral_site: game.neutralSite,
+        flags: {
+          capped: hfaCapped,
+          low_sample: hfaLowSample,
+          outlier: hfaOutlier
+        }
       },
       // OU pipeline diagnostics (for debugging OU validation issues)
       // NOTE: overlay, betTo, flip are computed later and available in picks.total
