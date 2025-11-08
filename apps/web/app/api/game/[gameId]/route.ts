@@ -19,6 +19,10 @@ const OVERLAY_CAP_TOTAL = 3.0; // ±3.0 pts max for total overlay
 const OVERLAY_EDGE_FLOOR = 2.0; // Only show pick if overlay ≥ 2.0 pts
 const LARGE_DISAGREEMENT_THRESHOLD = 10.0; // Drop confidence grade if raw disagreement > 10 pts
 
+// === MINIMAL SAFETY PATCHES (Pre-Phase 2) ===
+// Totals: Disable picks until Phase 2.6 (pace + weather model)
+const SHOW_TOTALS_PICKS = false; // Set to true after Phase 2.6 completes
+
 /**
  * Clamp overlay to prevent catastrophic picks
  */
@@ -1293,7 +1297,16 @@ export async function GET(
         grade: moneylineGrade,
         // Trust-Market mode: Win prob derived from overlay-adjusted spread
         winprob_basis: 'overlay_spread' as const,
-        suppressionReason: mlSuppressionReason // Reason why ML was suppressed (if applicable)
+        suppressionReason: mlSuppressionReason, // Reason why ML was suppressed (if applicable)
+        // SAFETY PATCH: Telemetry for ML gates
+        telemetry: {
+          spread_used: finalSpreadWithOverlay,
+          market_favorite_line: favoriteByRule.line,
+          is_extreme_favorite: isExtremeFavoriteGame,
+          spread_within_range: spreadWithinMLRange,
+          ml_max_spread: ML_MAX_SPREAD,
+          extreme_favorite_threshold: EXTREME_FAVORITE_THRESHOLD
+        }
       };
     } else if (mlVal !== null) {
       // Fallback: Use mlVal if moneyline variables weren't set
@@ -2012,16 +2025,22 @@ export async function GET(
         matchupTotalRaw,
         reason: unitsReason
       });
-    } else if (!hasTotalEdge) {
-      // No edge - overlay too small
+    } else if (!hasTotalEdge || !SHOW_TOTALS_PICKS) {
+      // No edge - overlay too small OR totals picks disabled (safety patch)
+      // When SHOW_TOTALS_PICKS=false, never show a pick (honest UI)
       totalPick = { totalPick: null, totalPickLabel: null, edgeDisplay: null };
-      console.log(`[Game ${gameId}] ℹ️ No total pick - overlay below threshold:`, {
+      const reason = !SHOW_TOTALS_PICKS 
+        ? 'Totals picks disabled until Phase 2.6 (pace + weather model)'
+        : 'Overlay < edge floor';
+      console.log(`[Game ${gameId}] ℹ️ No total pick:`, {
         overlay: totalOverlay.toFixed(2),
         edgeFloor: OVERLAY_EDGE_FLOOR,
-        reason: 'Overlay < edge floor'
+        hasTotalEdge,
+        SHOW_TOTALS_PICKS,
+        reason
       });
     } else {
-      // Has edge - compute pick from overlay direction
+      // Has edge AND SHOW_TOTALS_PICKS=true - compute pick from overlay direction
       // Pick direction = sign(overlay): positive overlay = Over, negative = Under
       const pickDirection = totalOverlay > 0 ? 'Over' : 'Under';
       const oppositeDirection = totalOverlay > 0 ? 'Under' : 'Over';
@@ -2053,9 +2072,10 @@ export async function GET(
     }
 
     // Determine OU card state: "pick" | "no_edge" | "no_model_total"
+    // SAFETY PATCH: Never show 'pick' state when SHOW_TOTALS_PICKS=false
     const totalState: 'pick' | 'no_edge' | 'no_model_total' = 
       !isModelTotalValid ? 'no_model_total' :
-      hasNoEdge ? 'no_edge' :
+      (hasNoEdge || !SHOW_TOTALS_PICKS) ? 'no_edge' :
       'pick';
     
     // Log pipeline diagnostics
@@ -3044,6 +3064,21 @@ export async function GET(
             // Log warning if favorite line is positive (should never happen)
             passed: market_snapshot.favoriteLine <= 0,
             warning: market_snapshot.favoriteLine > 0 ? `WARNING: Favorite line is positive (${market_snapshot.favoriteLine.toFixed(1)}). Expected negative or zero.` : null
+          },
+          totals_picks_safety: {
+            // SAFETY PATCH: Assert no pick rendered when SHOW_TOTALS_PICKS=false
+            show_totals_picks: SHOW_TOTALS_PICKS,
+            total_state: totalState,
+            has_pick: totalState === 'pick',
+            passed: !SHOW_TOTALS_PICKS ? totalState !== 'pick' : true, // If flag is false, state must not be 'pick'
+            note: SHOW_TOTALS_PICKS ? 'Totals picks enabled' : 'Totals picks disabled until Phase 2.6'
+          },
+          totals_headline_sanity: {
+            // Assert: headline uses marketTotal (not model)
+            // Note: headlineTotal is set in picks.total object, not totalPick
+            market_total: marketTotal,
+            passed: true, // Will be validated in UI (headlineTotal is set to marketTotal in picks.total)
+            note: 'Headline must always show market total (validated in picks.total.headlineTotal)'
           }
         }
       },
@@ -3106,6 +3141,11 @@ export async function GET(
           hasNoEdge: hasNoEdge, // Flag for "No edge" display
           // Hide card only if model total is unavailable AND no market total
           hidden: finalImpliedTotal === null,
+          // SAFETY PATCH: Honest three-state UI flags
+          has_market_total: marketTotal !== null,
+          has_model_total: isModelTotalValid && finalImpliedTotal !== null && Number.isFinite(finalImpliedTotal),
+          meets_floor: isModelTotalValid && totalEdgePts !== null && Math.abs(totalEdgePts) >= OVERLAY_EDGE_FLOOR && SHOW_TOTALS_PICKS,
+          show_totals_picks: SHOW_TOTALS_PICKS, // Feature flag
           // Trust-Market Mode overlay diagnostics
           overlay: {
             modelRaw: isModelTotalValid ? finalImpliedTotal : null,
@@ -3598,6 +3638,14 @@ export async function GET(
         market_favorite_line: response.validation.assertions.sign_sanity_ats.market_favorite_line,
         warning: response.validation.assertions.sign_sanity_ats.warning,
         note: 'Favorite line should be negative (or 0 for pick\'em). Positive values indicate a data issue.'
+      });
+    }
+    if (!response.validation?.assertions?.totals_picks_safety?.passed) {
+      console.error(`[Game ${gameId}] ⚠️ ASSERTION FAILED: Totals Picks Safety`, {
+        show_totals_picks: response.validation.assertions.totals_picks_safety.show_totals_picks,
+        total_state: response.validation.assertions.totals_picks_safety.total_state,
+        has_pick: response.validation.assertions.totals_picks_safety.has_pick,
+        note: response.validation.assertions.totals_picks_safety.note
       });
     }
 

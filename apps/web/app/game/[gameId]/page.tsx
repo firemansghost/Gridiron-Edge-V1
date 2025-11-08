@@ -704,11 +704,57 @@ export default function GameDetailPage() {
                 </div>
               )}
 
-              {/* Total Card - Independent Validation */}
-              {game.validation?.ou_inputs_ok ? (
-                game.validation?.ou_model_valid ? (
-                  game.picks?.total?.totalState === 'pick' && game.picks?.total?.grade ? (
-                    /* Pick State - Model valid, has edge >= floor */
+              {/* Total Card - Honest Three-State UI (Safety Patch) */}
+              {game.picks?.total?.has_market_total ? (
+                !game.picks?.total?.has_model_total ? (
+                  /* State 1: Unavailable - !has_model_total */
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">TOTAL (Over/Under)</h3>
+                    <div className="text-lg font-semibold text-gray-900 mb-2">
+                      Total {game.picks?.total?.headlineTotal?.toFixed(1) || snapshot?.marketTotal?.toFixed(1) || 'N/A'}
+                    </div>
+                    <div className="text-sm text-gray-600 mb-2">
+                      Model total unavailable — {game.validation?.ou_reason || 'Model total unavailable'}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Headline shows market number: {snapshot?.marketTotal?.toFixed(1) ?? 'N/A'}
+                    </div>
+                    {/* Diagnostics (if available) */}
+                    {game.validation?.totals_nan_stage && (
+                      <div className="text-xs text-gray-400 mt-2 italic">
+                        Failure stage: {game.validation.totals_nan_stage}
+                      </div>
+                    )}
+                    {game.picks?.total?.modelTotal !== null && game.picks?.total?.modelTotal !== undefined && (
+                      <div className="text-xs text-gray-400 mt-1 italic">
+                        Model raw total: {game.picks.total.modelTotal.toFixed(1)} (not in points)
+                      </div>
+                    )}
+                  </div>
+                ) : !game.picks?.total?.show_totals_picks || !game.picks?.total?.meets_floor ? (
+                  /* State 2: No edge - has_model_total && (!meets_floor || !SHOW_TOTALS_PICKS) */
+                  <div className="bg-white border-2 border-gray-300 rounded-lg p-4 shadow-sm">
+                    <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">TOTAL (Over/Under)</h3>
+                    <div className="text-lg font-semibold text-gray-900 mb-2">
+                      Total {game.picks?.total?.headlineTotal?.toFixed(1) || snapshot?.marketTotal?.toFixed(1) || 'N/A'}
+                    </div>
+                    <div className="text-sm text-gray-600 mb-2">
+                      No edge at current number — market {snapshot?.marketTotal?.toFixed(1) ?? 'N/A'}
+                    </div>
+                    {/* Overlay info */}
+                    {game.picks?.total?.overlay && (() => {
+                      const overlayAbs = Math.abs(game.picks.total.overlay.overlay_used_pts || game.picks.total.overlay.overlayValue);
+                      const edgeFloor = game.picks.total.overlay.edge_floor_pts || 2.0;
+                      const meetsFloor = overlayAbs >= edgeFloor;
+                      return (
+                        <div className="text-xs text-gray-600 mt-2 border-t border-gray-200 pt-2">
+                          <span className="font-semibold">Overlay:</span> {game.picks.total.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.total.overlay.overlayValue.toFixed(1)} pts ({meetsFloor ? '≥' : '<'} {edgeFloor.toFixed(1)} threshold)
+                        </div>
+                      );
+                    })()}
+                  </div>
+                ) : (
+                  /* State 3: Pick - has_model_total && meets_floor && SHOW_TOTALS_PICKS=true (disabled for now) */
                   <div className="bg-white border-2 border-green-300 rounded-lg p-4 shadow-sm">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">TOTAL (Over/Under)</h3>
@@ -804,68 +850,9 @@ export default function GameDetailPage() {
                     </details>
                   )}
                 </div>
-                ) : (
-                  /* No Edge State - ou_inputs_ok but overlay < floor */
-                  <div className="bg-white border-2 border-gray-300 rounded-lg p-4 shadow-sm">
-                    <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">TOTAL (Over/Under)</h3>
-                    <div className="text-lg font-semibold text-gray-900 mb-2">
-                      Total {game.picks?.total?.headlineTotal?.toFixed(1) || snapshot?.marketTotal?.toFixed(1) || 'N/A'}
-                    </div>
-                    <div className="text-sm text-gray-600 mb-2">
-                      No edge at current number — market {snapshot?.marketTotal?.toFixed(1) ?? 'N/A'}
-                    </div>
-                    {/* ============================================ */}
-                    {/* ALWAYS SHOW: Edge, Bet-to, Range even in no-edge state */}
-                    {/* ============================================ */}
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-sm text-gray-600">
-                        Edge: <span className="font-semibold text-green-600">{ouEdgeMagnitude.toFixed(1)} pts</span>
-                      </span>
-                      {game.picks.total.betTo !== null && game.picks.total.betTo !== undefined && (
-                        <>
-                          {' • '}
-                          <span className="text-sm text-gray-600">
-                            Bet to: <span className="font-semibold">{game.picks.total.betTo.toFixed(1)}</span>
-                          </span>
-                        </>
-                      )}
-                    </div>
-                    {/* RANGE: Flip Point - Always show when ou_model_valid === true */}
-                    {game.validation?.ou_model_valid && game.picks.total?.flip !== null && game.picks.total?.flip !== undefined && game.picks.total.betTo !== null && (
-                      <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
-                        <span className="font-semibold">Range:</span> Value now to {game.picks.total.betTo.toFixed(1)}; flips to {game.picks.total.overlay?.overlayValue && game.picks.total.overlay.overlayValue > 0 ? 'Under' : 'Over'} at {game.picks.total.flip.toFixed(1)}
-                      </div>
-                    )}
-                    {game.picks?.total?.overlay && (() => {
-                      const overlayAbs = Math.abs(game.picks.total.overlay.overlayValue);
-                      const edgeFloor = game.picks.total.overlay.edge_floor_pts || 2.0;
-                      const meetsFloor = overlayAbs >= edgeFloor;
-                      return (
-                        <div className="text-xs text-gray-600 mt-2 border-t border-gray-200 pt-2">
-                          <span className="font-semibold">Model overlay:</span> {game.picks.total.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.total.overlay.overlayValue.toFixed(1)} pts ({meetsFloor ? '≥' : '<'} {edgeFloor.toFixed(1)} threshold)
-                        </div>
-                      );
-                    })()}
-                  </div>
-                  )
-                ) : (
-                  /* Invalid Model State - ou_inputs_ok but !ou_model_valid */
-                  /* Model total is invalid (NaN/not in points), but we have market total */
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                    <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">TOTAL (Over/Under)</h3>
-                    <div className="text-lg font-semibold text-gray-900 mb-2">
-                      Total {game.picks?.total?.headlineTotal?.toFixed(1) || snapshot?.marketTotal?.toFixed(1) || 'N/A'}
-                    </div>
-                    <div className="text-sm text-gray-600 mb-2">
-                      Total unavailable — {game.validation?.ou_reason || 'Model total unavailable'}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      Headline shows market number: {snapshot?.marketTotal?.toFixed(1) ?? 'N/A'}
-                    </div>
-                  </div>
                 )
               ) : (
-                /* Invalid Inputs State - !ou_inputs_ok (market not available - shouldn't happen for live games) */
+                /* Invalid Inputs State - !has_market_total (market not available - shouldn't happen for live games) */
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                   <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">TOTAL (Over/Under)</h3>
                   <div className="text-lg font-semibold text-gray-900 mb-2">
