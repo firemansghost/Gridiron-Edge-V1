@@ -2223,10 +2223,14 @@ export async function GET(
         ? Math.round(-100 * modelDogProbFromSpread / (1 - modelDogProbFromSpread))
         : Math.round(100 * (1 - modelDogProbFromSpread) / modelDogProbFromSpread);
       
-      // Determine if picked team is underdog (from finalSpreadWithOverlayFC perspective)
+      // Determine if picked team is underdog (market vs model perspective)
+      // isUnderdog = true if picked team is NOT the market favorite (regardless of model favorite)
       const pickedTeamName = moneyline.pickLabel ? moneyline.pickLabel.replace(' ML', '') : null;
-      const isUnderdogPick = pickedTeamName !== null
-        ? (pickedTeamName === (finalSpreadWithOverlayFC < 0 ? dogTeamName : favoriteByRule.teamName))
+      const pickedTeamId = pickedTeamName !== null
+        ? (pickedTeamName === game.homeTeam.name ? game.homeTeamId : game.awayTeamId)
+        : null;
+      const isUnderdogPick = pickedTeamId !== null
+        ? (pickedTeamId !== favoriteByRule.teamId) // True if picked team is NOT market favorite
         : null;
       
       // Use picked team probability if exists, otherwise use model favorite
@@ -2239,23 +2243,37 @@ export async function GET(
       const calcBasisMarketProb = moneyline.impliedProb !== null ? moneyline.impliedProb : null;
       
       const mlCalcBasisComputed = {
-        finalSpreadWithOverlay: finalSpreadWithOverlayFC, // signed, favorite-centric (negative = favorite)
+        finalSpreadWithOverlay: finalSpreadWithOverlayFC, // signed, favorite-centric (negative = favorite, positive = dog)
         modelFavTeamId: modelFavTeamIdFromSpread,
         modelDogTeamId: modelDogTeamIdFromSpread,
         modelFavProb: modelFavProbFromSpread,
         modelDogProb: modelDogProbFromSpread,
         fairMLFav: fairMLFav,
         fairMLDog: fairMLDog,
-        isUnderdogPick: isUnderdogPick, // boolean for the picked team
+        isUnderdogPick: isUnderdogPick, // boolean: true if picked team is NOT market favorite (market vs model)
         // Legacy fields for backward compatibility
         winProb: calcBasisWinProb,
         fairML: calcBasisFairML,
         marketProb: calcBasisMarketProb
       };
       
-      // Update moneyline object with calc_basis
+      // CRITICAL FIX: Update moneyline object with calc_basis and source all fields from it
       moneyline.calc_basis = mlCalcBasisComputed;
       moneyline.isUnderdog = isUnderdogPick;
+      
+      // Source modelFavoriteTeam from calc_basis (single source of truth)
+      const modelFavTeamName = modelFavTeamIdFromSpread === game.homeTeamId ? game.homeTeam.name : game.awayTeam.name;
+      moneyline.modelFavoriteTeam = modelFavTeamName;
+      
+      // Source modelWinProb and modelFairML from calc_basis based on pick side
+      // If pick is underdog, use dog prob/odds; if favorite, use fav prob/odds
+      if (isUnderdogPick) {
+        moneyline.modelWinProb = modelDogProbFromSpread;
+        moneyline.modelFairML = fairMLDog;
+      } else {
+        moneyline.modelWinProb = modelFavProbFromSpread;
+        moneyline.modelFairML = fairMLFav;
+      }
     }
     
     // Check if we should degrade confidence due to large disagreement
@@ -2832,15 +2850,16 @@ export async function GET(
         hfa_used: hfaUsed,
         raw_model_spread_from_used: (() => {
           // Compute raw spread (home-minus-away)
-          const rawSpread = (isFinite(homeRatingWeighted) && !isNaN(homeRatingWeighted) && 
-                            isFinite(awayRatingWeighted) && !isNaN(awayRatingWeighted))
+          const rawSpreadHMA = (isFinite(homeRatingWeighted) && !isNaN(homeRatingWeighted) && 
+                                isFinite(awayRatingWeighted) && !isNaN(awayRatingWeighted))
             ? homeRatingWeighted - awayRatingWeighted + hfaUsed
             : homeRatingBase - awayRatingBase + hfaUsed;
-          // Convert to favorite-centric
-          return favoriteByRule.teamId === game.homeTeamId ? rawSpread : -rawSpread;
-        })(), // home_used − away_used + hfa_used (favorite-centric)
+          // Convert to favorite-centric (negative = market favorite favored, positive = market dog favored)
+          const rawSpreadFC = favoriteByRule.teamId === game.homeTeamId ? rawSpreadHMA : -rawSpreadHMA;
+          return rawSpreadFC;
+        })(), // home_used − away_used + hfa_used (favorite-centric: negative = favorite, positive = dog)
         overlay_used: spreadOverlay, // The actual capped overlay applied (±3)
-        final_spread_with_overlay: finalSpreadWithOverlayFC // CRITICAL: favorite-centric (negative = favorite)
+        final_spread_with_overlay: finalSpreadWithOverlayFC // CRITICAL: favorite-centric (negative = favorite, positive = dog)
       }
     };
     
@@ -3882,7 +3901,13 @@ export async function GET(
         },
         show_totals_picks: SHOW_TOTALS_PICKS,
         ml_max_spread: ML_MAX_SPREAD,
-        extreme_favorite_threshold: EXTREME_FAVORITE_THRESHOLD
+        extreme_favorite_threshold: EXTREME_FAVORITE_THRESHOLD,
+        // CRITICAL: Sign convention documentation
+        signConvention: {
+          spread: 'favorite_centric',
+          favoriteCentricNotes: 'negative = market favorite favored; positive = market dog favored',
+          hfaPoints: 2
+        }
       },
       
       // Legacy market data (for backward compatibility, but UI should use market_snapshot)
@@ -4097,15 +4122,26 @@ export async function GET(
           },
           recency_spread_lineage_consistency: {
             // Assert: raw_model_spread_from_used must equal the components shown (within ±0.1)
+            // CRITICAL FIX: Both values must be in favorite-centric format
             rating_home_used: model_view.spread_lineage.rating_home_used,
             rating_away_used: model_view.spread_lineage.rating_away_used,
             hfa_used: model_view.spread_lineage.hfa_used,
             raw_model_spread_from_used: model_view.spread_lineage.raw_model_spread_from_used,
-            expected_spread: model_view.spread_lineage.rating_home_used - model_view.spread_lineage.rating_away_used + model_view.spread_lineage.hfa_used,
+            // Compute expected spread in favorite-centric format (negative = market favorite favored, positive = market dog favored)
+            expected_spread_fc: (() => {
+              const rawHMA = model_view.spread_lineage.rating_home_used - model_view.spread_lineage.rating_away_used + model_view.spread_lineage.hfa_used;
+              return favoriteByRule.teamId === game.homeTeamId ? rawHMA : -rawHMA;
+            })(),
             spread_matches: Math.abs(model_view.spread_lineage.raw_model_spread_from_used - 
-              (model_view.spread_lineage.rating_home_used - model_view.spread_lineage.rating_away_used + model_view.spread_lineage.hfa_used)) < 0.1,
+              (() => {
+                const rawHMA = model_view.spread_lineage.rating_home_used - model_view.spread_lineage.rating_away_used + model_view.spread_lineage.hfa_used;
+                return favoriteByRule.teamId === game.homeTeamId ? rawHMA : -rawHMA;
+              })()) < 0.1,
             passed: Math.abs(model_view.spread_lineage.raw_model_spread_from_used - 
-              (model_view.spread_lineage.rating_home_used - model_view.spread_lineage.rating_away_used + model_view.spread_lineage.hfa_used)) < 0.1
+              (() => {
+                const rawHMA = model_view.spread_lineage.rating_home_used - model_view.spread_lineage.rating_away_used + model_view.spread_lineage.hfa_used;
+                return favoriteByRule.teamId === game.homeTeamId ? rawHMA : -rawHMA;
+              })()) < 0.1
           },
           recency_edge_consistency: {
             // Assert: model_view.edges.atsEdgePts === spread_lineage.overlay_used (same capped value)

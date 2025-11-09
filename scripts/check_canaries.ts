@@ -474,6 +474,51 @@ function assertMoneyline(game: any) {
     log(basis.modelDogProb < 0.5, `Phase 2.4: calc_basis.modelDogProb < 0.5 (${basis.modelDogProb?.toFixed(3)})`);
     log(basis.fairMLDog > 100, `Phase 2.4: calc_basis.fairMLDog > 100 (${basis.fairMLDog})`);
   }
+  
+  // 6) Lineage basis: finalSpreadWithOverlayFC sign matches raw_model_spread_from_used
+  if (finalSpreadFC !== null && game.model_view?.spread_lineage?.raw_model_spread_from_used !== undefined) {
+    const rawFC = num(game.model_view.spread_lineage.raw_model_spread_from_used);
+    if (rawFC !== null) {
+      const signsMatch = Math.sign(finalSpreadFC) === Math.sign(rawFC);
+      log(signsMatch, 
+          `Lineage: finalSpreadWithOverlayFC sign matches raw_model_spread_from_used (final=${finalSpreadFC.toFixed(2)}, raw=${rawFC.toFixed(2)})`);
+    }
+  }
+  
+  // 7) ML coherence: modelFavoriteTeam matches calc_basis.modelFavTeamId
+  if (basis && ml?.modelFavoriteTeam) {
+    const favTeamName = basis.modelFavTeamId === game.homeTeamId ? game.homeTeam.name : game.awayTeam.name;
+    log(ml.modelFavoriteTeam === favTeamName,
+        `ML: modelFavoriteTeam matches calc_basis.modelFavTeamId (${ml.modelFavoriteTeam} === ${favTeamName})`);
+  }
+  
+  // 8) ML isUnderdog coherence: isUnderdog reflects market vs model (true if picked team is NOT market favorite)
+  if (ml?.isUnderdog !== null && ml?.isUnderdog !== undefined && snap && ml?.pickLabel) {
+    const pickedTeamName = ml.pickLabel.replace(' ML', '');
+    const pickedTeamId = pickedTeamName === game.homeTeam.name ? game.homeTeamId : game.awayTeamId;
+    const isMarketFav = pickedTeamId === snap.favoriteTeamId;
+    // isUnderdog should be true if picked team is NOT the market favorite (regardless of model favorite)
+    log(ml.isUnderdog === !isMarketFav,
+        `ML: isUnderdog reflects market vs model (isUnderdog=${ml.isUnderdog}, pickedTeam=${pickedTeamName}, isMarketFav=${isMarketFav})`);
+  }
+  
+  // 9) Prob/price sanity: If modelFavProb > 0.5 then fairMLFav < 0
+  if (basis) {
+    if (basis.modelFavProb > 0.5) {
+      log(basis.fairMLFav < 0, 
+          `ML: modelFavProb > 0.5 (${basis.modelFavProb?.toFixed(3)}) implies fairMLFav < 0 (${basis.fairMLFav})`);
+    } else {
+      log(basis.fairMLFav > 0, 
+          `ML: modelFavProb < 0.5 (${basis.modelFavProb?.toFixed(3)}) implies fairMLFav > 0 (${basis.fairMLFav})`);
+    }
+    if (basis.modelDogProb < 0.5) {
+      log(basis.fairMLDog > 100, 
+          `ML: modelDogProb < 0.5 (${basis.modelDogProb?.toFixed(3)}) implies fairMLDog > 100 (${basis.fairMLDog})`);
+    } else {
+      log(basis.fairMLDog < 0, 
+          `ML: modelDogProb > 0.5 (${basis.modelDogProb?.toFixed(3)}) implies fairMLDog < 0 (${basis.fairMLDog})`);
+    }
+  }
 
   // hard gates
   const extremeFav = favLine !== null ? abs(favLine) >= 21 : false;
