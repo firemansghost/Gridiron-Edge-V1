@@ -421,11 +421,27 @@ export default function GameDetailPage() {
                     )}
                     {/* PHASE 2.3: Home Edge chip */}
                     {game.model_view?.features?.hfa && !game.model_view.features.hfa.neutral_site && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 gap-1">
                         <InfoTooltip 
                           content={`Team-specific HFA used this week. Raw ${game.model_view.features.hfa.raw?.toFixed(1) ?? 'N/A'} (n:${game.model_view.features.hfa.n_home ?? 0}H/${game.model_view.features.hfa.n_away ?? 0}A), shrink w=${game.model_view.features.hfa.shrink_w?.toFixed(2) ?? 'N/A'}, league mean ${game.model_view.features.hfa.league_mean?.toFixed(1) ?? 'N/A'}.`}
                         />
                         Home Edge: {game.model_view.features.hfa.used?.toFixed(1) ?? '2.0'} pts
+                      </span>
+                    )}
+                    {/* PHASE 2.4: Recency chip (next to Home Edge) */}
+                    {game.model_view?.ratings && (
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium gap-1 ${
+                        game.model_view.ratings.rating_used === 'weighted' 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {game.model_view.ratings.rating_used === 'weighted' && (
+                          <span className="bg-green-500 rounded-full w-1.5 h-1.5 mr-0.5" />
+                        )}
+                        <InfoTooltip 
+                          content={`Base: ${game.model_view.ratings.rating_base?.toFixed(2) ?? 'N/A'}\nWeighted: ${game.model_view.ratings.rating_weighted?.toFixed(2) ?? 'n/a'}\nΔ (recencyEffect): ${game.model_view.ratings.recencyEffectPts?.toFixed(2) ?? '0.00'} pts\nGames last 3: ${game.model_view.features?.recency?.games_last3 ?? 'N/A'}\nEffective weight sum: ${game.model_view.features?.recency?.effective_weight_sum?.toFixed(2) ?? 'N/A'}`}
+                        />
+                        {game.model_view.ratings.rating_used === 'weighted' ? 'Recency applied' : 'Recency not used'}
                       </span>
                     )}
                     {/* Neutral site indicator */}
@@ -537,6 +553,7 @@ export default function GameDetailPage() {
 
           {/* Betting Ticket - Single unified block above fold */}
           <div className="mb-4 md:mb-6">
+            {/* PHASE 2.4: Trust-Market Mode Badge and Timestamp Row */}
             <div className="flex items-center justify-between mb-3 sm:mb-4">
               <div className="flex items-center gap-3">
                 <h2 className="text-lg sm:text-xl font-bold text-gray-900">Betting Ticket</h2>
@@ -544,9 +561,9 @@ export default function GameDetailPage() {
                 {game.modelConfig?.mode === 'trust_market' && (
                   <div className="bg-blue-50 border border-blue-300 rounded-md px-3 py-1 flex items-center gap-2">
                     <span className="text-xs font-semibold text-blue-800">
-                      Mode: Trust-Market
+                      Trust-Market
                     </span>
-                    <InfoTooltip content={game.modelConfig?.description || "Trust-Market mode: Uses market as baseline with small model overlays (capped at ±3.0 pts)"} />
+                    <InfoTooltip content={`Market baseline with capped overlays (ATS λ=${game.modelConfig?.overlay?.lambda_spread || 0.25}, OU λ=${game.modelConfig?.overlay?.lambda_total || 0.35}, caps ±${game.modelConfig?.overlay?.spread_cap || 3.0}, edge floor ${game.modelConfig?.overlay?.edge_floor || 2.0}).`} />
                   </div>
                 )}
               </div>
@@ -559,6 +576,43 @@ export default function GameDetailPage() {
                 {renderRankChips(game.rankings?.home, game.game?.week, game.game?.season, 'CFBD', undefined)}
               </div>
             </div>
+            {/* PHASE 2.4: Timestamp and Snapshot Row */}
+            {snapshot && (
+              <div className="text-xs text-gray-500 mb-3 flex items-center gap-2 flex-wrap">
+                <span>
+                  Odds: {game.market_snapshot?.bookSource || game.market?.source || 'Unknown'}
+                </span>
+                {game.market_snapshot?.updatedAt && (
+                  <>
+                    <span>•</span>
+                    <span>
+                      Updated {new Date(game.market_snapshot.updatedAt).toLocaleString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true
+                      })}
+                    </span>
+                  </>
+                )}
+                {game.diagnostics?.snapshotId && (
+                  <>
+                    <span>•</span>
+                    <span>Snapshot {game.diagnostics.snapshotId.substring(0, 20)}...</span>
+                  </>
+                )}
+              </div>
+            )}
+            {/* PHASE 2.4: Debug pill (for eyeballing coherence) */}
+            {game.model_view?.ratings && game.model_view?.spread_lineage && (
+              <div className="text-xs text-gray-400 mb-3 font-mono bg-gray-50 border border-gray-200 rounded px-2 py-1 inline-block">
+                Used: {game.model_view.ratings.rating_used || 'base'} • 
+                Recency Δ: {game.model_view.ratings.recencyEffectPts?.toFixed(2) || '0.00'} • 
+                Final spread: {game.model_view.spread_lineage.final_spread_with_overlay >= 0 ? '+' : ''}{game.model_view.spread_lineage.final_spread_with_overlay?.toFixed(1) || 'N/A'} • 
+                Overlay: {game.model_view.spread_lineage.overlay_used >= 0 ? '+' : ''}{game.model_view.spread_lineage.overlay_used?.toFixed(1) || '0.0'}
+              </div>
+            )}
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* Spread Card - Independent Validation */}
@@ -590,10 +644,9 @@ export default function GameDetailPage() {
                       {game.picks.spread.bettablePick?.suppressHeadline || game.picks.spread.bettablePick?.extremeFavoriteBlocked ? (
                         /* EXTREME FAVORITE: Suppress dog headline, show market line instead */
                         snapshot ? `No edge at current number — market ${snapshot.favoriteTeamName} ${snapshot.favoriteLine.toFixed(1)}` : 'No edge at current number.'
-                      ) : snapshot && atsValueSide ? (
-                        atsValueSide === 'dog'
-                          ? `${snapshot.dogTeamName} +${snapshot.dogLine.toFixed(1)}`
-                          : `${snapshot.favoriteTeamName} ${snapshot.favoriteLine.toFixed(1)}`
+                      ) : game.picks.spread.bettablePick?.label ? (
+                        /* CRITICAL FIX: Use bettablePick.label as single source of truth */
+                        game.picks.spread.bettablePick.label
                       ) : (
                         'No edge at current number.'
                       )}
@@ -615,9 +668,51 @@ export default function GameDetailPage() {
                       )}
                     </div>
                     {/* RANGE: Flip Point - Show when we have flip data from API */}
-                    {game.picks.spread.flip !== null && game.picks.spread.flip !== undefined && game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && snapshot && (
+                    {/* PHASE 2.4: Fix range text to use overlay sign to determine value side */}
+                    {game.picks.spread.flip !== null && game.picks.spread.flip !== undefined && game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && snapshot && game.model_view?.spread_lineage?.overlay_used !== null && (
                       <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
-                        <span className="font-semibold">Range:</span> Value on {snapshot.favoriteTeamName} to {game.picks.spread.betTo.toFixed(1)}; flips to {snapshot.dogTeamName} at {game.picks.spread.flip > 0 ? `+${game.picks.spread.flip.toFixed(1)}` : game.picks.spread.flip.toFixed(1)}
+                        <span className="font-semibold">Range:</span> Value on {
+                          game.model_view.spread_lineage.overlay_used < 0 
+                            ? snapshot.favoriteTeamName 
+                            : snapshot.dogTeamName
+                        } to {game.picks.spread.betTo.toFixed(1)}; flips to {
+                          game.model_view.spread_lineage.overlay_used < 0 
+                            ? snapshot.dogTeamName 
+                            : snapshot.favoriteTeamName
+                        } at {game.picks.spread.flip > 0 ? `+${game.picks.spread.flip.toFixed(1)}` : game.picks.spread.flip.toFixed(1)}
+                      </div>
+                    )}
+                    {/* PHASE 2.4: Lineage Line */}
+                    {game.model_view?.spread_lineage && (
+                      <div className="text-xs text-gray-500 mt-2 mb-2 border-t border-gray-200 pt-2">
+                        <span className="font-semibold">Used:</span> {game.model_view.spread_lineage.rating_source || 'base'} • 
+                        <span className="font-semibold"> HFA:</span> {game.model_view.spread_lineage.hfa_used?.toFixed(1) || '0.0'} • 
+                        <span className="font-semibold"> Model raw:</span> {game.model_view.spread_lineage.raw_model_spread_from_used?.toFixed(1) || 'N/A'} • 
+                        <span className="font-semibold"> Overlay:</span> {game.model_view.spread_lineage.overlay_used >= 0 ? '+' : ''}{game.model_view.spread_lineage.overlay_used?.toFixed(1) || '0.0'} → 
+                        <span className="font-semibold"> Final:</span> {game.model_view.spread_lineage.final_spread_with_overlay >= 0 ? '+' : ''}{game.model_view.spread_lineage.final_spread_with_overlay?.toFixed(1) || 'N/A'}
+                        <InfoTooltip content={`Model raw = rating_home_used (${game.model_view.spread_lineage.rating_home_used?.toFixed(1) || 'N/A'}) − rating_away_used (${game.model_view.spread_lineage.rating_away_used?.toFixed(1) || 'N/A'}) + HFA (${game.model_view.spread_lineage.hfa_used?.toFixed(1) || '0.0'}).`} />
+                      </div>
+                    )}
+                    {/* PHASE 2.4: Edge Consistency Check */}
+                    {game.model_view?.edges?.atsEdgePts !== null && game.model_view?.spread_lineage?.overlay_used !== null && 
+                     Math.abs(game.model_view.edges.atsEdgePts - game.model_view.spread_lineage.overlay_used) > 0.01 && (
+                      <div className="text-xs text-yellow-700 bg-yellow-50 border border-yellow-300 rounded px-2 py-1 mb-2">
+                        ⚠️ Overlay mismatch (check logs): edge={game.model_view.edges.atsEdgePts.toFixed(2)} vs overlay_used={game.model_view.spread_lineage.overlay_used.toFixed(2)}
+                      </div>
+                    )}
+                    {/* PHASE 2.4: Recency Chip */}
+                    {game.model_view?.ratings && (
+                      <div className="flex items-center gap-2 mb-2">
+                        {game.model_view.ratings.rating_weighted !== null ? (
+                          <div className="bg-green-50 border border-green-300 rounded px-2 py-1 flex items-center gap-1">
+                            <span className="text-xs font-semibold text-green-800">Recency applied</span>
+                            <InfoTooltip content={`rating_base ${game.model_view.ratings.rating_base?.toFixed(1) || 'N/A'} → rating_weighted ${game.model_view.ratings.rating_weighted?.toFixed(1) || 'N/A'} (Δ ${game.model_view.ratings.recencyEffectPts >= 0 ? '+' : ''}${game.model_view.ratings.recencyEffectPts?.toFixed(1) || '0.0'})`} />
+                          </div>
+                        ) : (
+                          <div className="bg-gray-50 border border-gray-300 rounded px-2 py-1 flex items-center gap-1">
+                            <span className="text-xs font-semibold text-gray-600">Recency not used (fallback to base)</span>
+                          </div>
+                        )}
                       </div>
                     )}
                   {game.picks.spread.rationale && (
@@ -689,9 +784,51 @@ export default function GameDetailPage() {
                       )}
                     </div>
                     {/* RANGE: Flip Point */}
-                    {game.picks.spread.flip !== null && game.picks.spread.flip !== undefined && game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && snapshot && (
+                    {/* PHASE 2.4: Fix range text to use overlay sign to determine value side */}
+                    {game.picks.spread.flip !== null && game.picks.spread.flip !== undefined && game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && snapshot && game.model_view?.spread_lineage?.overlay_used !== null && (
                       <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
-                        <span className="font-semibold">Range:</span> Value on {snapshot.favoriteTeamName} to {game.picks.spread.betTo.toFixed(1)}; flips to {snapshot.dogTeamName} at {game.picks.spread.flip > 0 ? `+${game.picks.spread.flip.toFixed(1)}` : game.picks.spread.flip.toFixed(1)}
+                        <span className="font-semibold">Range:</span> Value on {
+                          game.model_view.spread_lineage.overlay_used < 0 
+                            ? snapshot.favoriteTeamName 
+                            : snapshot.dogTeamName
+                        } to {game.picks.spread.betTo.toFixed(1)}; flips to {
+                          game.model_view.spread_lineage.overlay_used < 0 
+                            ? snapshot.dogTeamName 
+                            : snapshot.favoriteTeamName
+                        } at {game.picks.spread.flip > 0 ? `+${game.picks.spread.flip.toFixed(1)}` : game.picks.spread.flip.toFixed(1)}
+                      </div>
+                    )}
+                    {/* PHASE 2.4: Lineage Line (No-edge state) */}
+                    {game.model_view?.spread_lineage && (
+                      <div className="text-xs text-gray-500 mt-2 mb-2 border-t border-gray-200 pt-2">
+                        <span className="font-semibold">Used:</span> {game.model_view.spread_lineage.rating_source || 'base'} • 
+                        <span className="font-semibold"> HFA:</span> {game.model_view.spread_lineage.hfa_used?.toFixed(1) || '0.0'} • 
+                        <span className="font-semibold"> Model raw:</span> {game.model_view.spread_lineage.raw_model_spread_from_used?.toFixed(1) || 'N/A'} • 
+                        <span className="font-semibold"> Overlay:</span> {game.model_view.spread_lineage.overlay_used >= 0 ? '+' : ''}{game.model_view.spread_lineage.overlay_used?.toFixed(1) || '0.0'} → 
+                        <span className="font-semibold"> Final:</span> {game.model_view.spread_lineage.final_spread_with_overlay >= 0 ? '+' : ''}{game.model_view.spread_lineage.final_spread_with_overlay?.toFixed(1) || 'N/A'}
+                        <InfoTooltip content={`Model raw = rating_home_used (${game.model_view.spread_lineage.rating_home_used?.toFixed(1) || 'N/A'}) − rating_away_used (${game.model_view.spread_lineage.rating_away_used?.toFixed(1) || 'N/A'}) + HFA (${game.model_view.spread_lineage.hfa_used?.toFixed(1) || '0.0'}).`} />
+                      </div>
+                    )}
+                    {/* PHASE 2.4: Edge Consistency Check (No-edge state) */}
+                    {game.model_view?.edges?.atsEdgePts !== null && game.model_view?.spread_lineage?.overlay_used !== null && 
+                     Math.abs(game.model_view.edges.atsEdgePts - game.model_view.spread_lineage.overlay_used) > 0.01 && (
+                      <div className="text-xs text-yellow-700 bg-yellow-50 border border-yellow-300 rounded px-2 py-1 mb-2">
+                        ⚠️ Overlay mismatch (check logs): edge={game.model_view.edges.atsEdgePts.toFixed(2)} vs overlay_used={game.model_view.spread_lineage.overlay_used.toFixed(2)}
+                      </div>
+                    )}
+                    {/* PHASE 2.4: Recency Chip (No-edge state) */}
+                    {game.model_view?.ratings && (
+                      <div className="flex items-center gap-2 mb-2">
+                        {game.model_view.ratings.rating_weighted !== null ? (
+                          <div className="bg-green-50 border border-green-300 rounded px-2 py-1 flex items-center gap-1">
+                            <span className="text-xs font-semibold text-green-800">Recency applied</span>
+                            <InfoTooltip content={`rating_base ${game.model_view.ratings.rating_base?.toFixed(1) || 'N/A'} → rating_weighted ${game.model_view.ratings.rating_weighted?.toFixed(1) || 'N/A'} (Δ ${game.model_view.ratings.recencyEffectPts >= 0 ? '+' : ''}${game.model_view.ratings.recencyEffectPts?.toFixed(1) || '0.0'})`} />
+                          </div>
+                        ) : (
+                          <div className="bg-gray-50 border border-gray-300 rounded px-2 py-1 flex items-center gap-1">
+                            <span className="text-xs font-semibold text-gray-600">Recency not used (fallback to base)</span>
+                          </div>
+                        )}
                       </div>
                     )}
                     {game.picks?.spread?.overlay && (() => {
@@ -756,17 +893,45 @@ export default function GameDetailPage() {
                     <div className="text-sm text-gray-600 mb-2">
                       No edge at current number — market {snapshot?.marketTotal?.toFixed(1) ?? 'N/A'}
                     </div>
-                    {/* Overlay info */}
+                    {/* PHASE 2.4: Edge/Bet-to/Range lines (same style as ATS) */}
+                    {game.validation?.ou_model_valid && game.model_view?.edges?.ouEdgePts !== null && (
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-sm text-gray-600">
+                          Edge: <span className="font-semibold text-blue-600">{Math.abs(game.model_view.edges.ouEdgePts).toFixed(1)} pts</span>
+                        </span>
+                        {game.picks?.total?.betTo !== null && game.picks?.total?.betTo !== undefined && (
+                          <>
+                            {' • '}
+                            <span className="text-sm text-gray-600">
+                              Bet to: <span className="font-semibold">{game.picks.total.betTo.toFixed(1)}</span>
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    )}
+                    {/* PHASE 2.4: Range line */}
+                    {game.validation?.ou_model_valid && game.picks?.total?.flip !== null && game.picks?.total?.flip !== undefined && game.picks?.total?.betTo !== null && (
+                      <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
+                        <span className="font-semibold">Range:</span> Value now to {game.picks.total.betTo.toFixed(1)}; flips to {ouValueSide === 'Over' ? 'Under' : 'Over'} at {game.picks.total.flip.toFixed(1)}
+                      </div>
+                    )}
+                    {/* PHASE 2.4: Model overlay info */}
                     {game.picks?.total?.overlay && (() => {
                       const overlayAbs = Math.abs(game.picks.total.overlay.overlay_used_pts || game.picks.total.overlay.overlayValue);
                       const edgeFloor = game.picks.total.overlay.edge_floor_pts || 2.0;
                       const meetsFloor = overlayAbs >= edgeFloor;
                       return (
                         <div className="text-xs text-gray-600 mt-2 border-t border-gray-200 pt-2">
-                          <span className="font-semibold">Overlay:</span> {game.picks.total.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.total.overlay.overlayValue.toFixed(1)} pts ({meetsFloor ? '≥' : '<'} {edgeFloor.toFixed(1)} threshold)
+                          <span className="font-semibold">Model overlay:</span> {(game.picks.total.overlay.overlay_used_pts || game.picks.total.overlay.overlayValue) >= 0 ? '+' : ''}{(game.picks.total.overlay.overlay_used_pts || game.picks.total.overlay.overlayValue).toFixed(1)} pts (cap ±3.0) {meetsFloor ? '(≥' : '(<'} {edgeFloor.toFixed(1)} threshold)
                         </div>
                       );
                     })()}
+                    {/* PHASE 2.4: Overlay calc disabled note */}
+                    {!game.picks?.total?.show_totals_picks && (
+                      <div className="text-xs text-gray-500 mt-2 italic">
+                        Overlay calc disabled; picks off until Phase 2.6
+                      </div>
+                    )}
                   </div>
                 ) : (
                   /* State 3: Pick - has_model_total && meets_floor && SHOW_TOTALS_PICKS=true (disabled for now) */
@@ -955,6 +1120,13 @@ export default function GameDetailPage() {
                       {game.picks?.moneyline?.suppressionReason ? (
                         <>
                           <div className="font-semibold text-gray-700 mb-1">No moneyline bet — {game.picks.moneyline.suppressionReason}</div>
+                          {/* PHASE 2.4: Calc basis tooltip (always present, even if suppressed) */}
+                          {game.picks.moneyline.calc_basis && (
+                            <div className="text-gray-500 mt-1 flex items-center gap-1">
+                              <span>Win prob from final spread:</span>
+                              <InfoTooltip content={`finalSpreadWithOverlay: ${game.picks.moneyline.calc_basis.finalSpreadWithOverlay?.toFixed(1) || 'N/A'} → winProb: ${((game.picks.moneyline.calc_basis.winProb || 0) * 100).toFixed(1)}%, fairML: ${game.picks.moneyline.calc_basis.fairML || 'N/A'}, marketProb: ${game.picks.moneyline.calc_basis.marketProb ? ((game.picks.moneyline.calc_basis.marketProb * 100).toFixed(1) + '%') : 'N/A'}`} />
+                            </div>
+                          )}
                           <div className="text-gray-500 mt-1">
                             Win prob derived from overlay-adjusted spread (Trust-Market).
                           </div>
@@ -962,6 +1134,13 @@ export default function GameDetailPage() {
                       ) : (
                         <>
                           No moneyline bet recommended. Model does not see sufficient value at these odds, or the odds are too long (extreme longshot).
+                          {/* PHASE 2.4: Calc basis tooltip */}
+                          {game.picks.moneyline?.calc_basis && (
+                            <div className="text-gray-500 mt-1 flex items-center gap-1">
+                              <span>Win prob from final spread:</span>
+                              <InfoTooltip content={`finalSpreadWithOverlay: ${game.picks.moneyline.calc_basis.finalSpreadWithOverlay?.toFixed(1) || 'N/A'} → winProb: ${((game.picks.moneyline.calc_basis.winProb || 0) * 100).toFixed(1)}%, fairML: ${game.picks.moneyline.calc_basis.fairML || 'N/A'}, marketProb: ${game.picks.moneyline.calc_basis.marketProb ? ((game.picks.moneyline.calc_basis.marketProb * 100).toFixed(1) + '%') : 'N/A'}`} />
+                            </div>
+                          )}
                           <div className="text-gray-500 mt-1">
                             Win prob derived from overlay-adjusted spread (Trust-Market).
                           </div>

@@ -119,12 +119,25 @@ function computeLeagueMeanHFA(hfaValues: number[]): number {
     return LEAGUE_MEAN_HFA;
   }
   
+  // Filter out extreme outliers (|hfa| > 20) before computing median
+  // These are likely data quality issues (missing scores, wrong teams, etc.)
+  const filtered = hfaValues.filter(v => Math.abs(v) <= 20);
+  
+  if (filtered.length === 0) {
+    // If all values are outliers, use default
+    return LEAGUE_MEAN_HFA;
+  }
+  
   // Use median (more robust to outliers)
-  const sorted = [...hfaValues].sort((a, b) => a - b);
+  const sorted = [...filtered].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0
+  const median = sorted.length % 2 === 0
     ? (sorted[mid - 1] + sorted[mid]) / 2
     : sorted[mid];
+  
+  // Cap the league mean to reasonable bounds [1.0, 4.0]
+  // This prevents extreme league means from affecting shrinkage
+  return Math.max(1.0, Math.min(4.0, median));
 }
 
 async function computeAndPersistHFA(season: number) {

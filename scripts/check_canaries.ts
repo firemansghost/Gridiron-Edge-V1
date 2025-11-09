@@ -15,7 +15,7 @@ const CANARIES: { label: string; id: GameId; classHint: string }[] = [
   { label: 'Navy @ Notre Dame (P5-G5, extreme favorite)', id: '2025-wk11-navy-notre-dame', classHint: 'P5-G5_extreme' },
   { label: 'LSU @ Alabama (P5-P5, competitive)', id: '2025-wk11-lsu-alabama', classHint: 'P5-P5_comp' },
   { label: 'SMU @ Boston College (P5-G5, normal)', id: '2025-wk11-smu-boston-college', classHint: 'P5-G5' },
-  { label: 'Spare normal game', id: '2025-wk11-spare-normal', classHint: 'normal' },
+  { label: 'Spare normal game', id: '2025-wk11-florida-state-clemson', classHint: 'normal' },
 ];
 
 // ---- Helpers ----
@@ -50,8 +50,8 @@ function assertAts(game: any) {
   log(favLine !== null && favLine < 0, `ATS: market favorite line negative (${favLine})`);
 
   // edge uses capped overlay, not raw disagreement
-  const edge = num(mv.edges?.atsEdgePts ?? ats?.edgePts);
-  const overlayUsed = num(ats.overlay?.overlay_used_pts);
+  const edge = num(mv.edges?.atsEdgePts);
+  const overlayUsed = num(mv.spread_lineage?.overlay_used ?? ats.overlay?.overlay_used_pts);
   log(overlayUsed !== null && edge !== null && Math.abs(edge - overlayUsed) < 0.01, 
       `ATS: edge matches overlay_used (${edge} vs ${overlayUsed})`);
 
@@ -61,8 +61,34 @@ function assertAts(game: any) {
   log(betTo !== null, `ATS: bet-to present (${betTo})`);
   log(flip !== null, `ATS: flip present (${flip})`);
 
-  // overlay threshold messaging coherent
+  // 3) ATS range coherence: pick side must agree with overlay sign
+  // 5) ATS single-source truth: overlay sign determines pick side
+  const o = overlayUsed;
   const floor = num(ats.overlay?.edge_floor_pts) ?? 2.0;
+  const hasPick = o !== null && abs(o) >= floor;
+  if (picks.spread?.bettablePick && o !== null && snap) {
+    const pickTeamId = picks.spread.bettablePick.teamId;
+    const pickIsDog = pickTeamId === snap.dogTeamId;
+    const overlayFavorsDog = o > 0;
+    log((overlayFavorsDog && pickIsDog) || (!overlayFavorsDog && !pickIsDog), 
+        `ATS: pick side matches overlay sign (overlay=${o.toFixed(2)}, pickIsDog=${pickIsDog}, pickTeam=${picks.spread.bettablePick.teamName})`);
+    
+    // Assert: overlay < 0 => pick team === favorite, overlay > 0 => pick team === dog
+    const pickIsFav = pickTeamId === snap.favoriteTeamId;
+    if (o < 0) {
+      log(pickIsFav, 
+          `ATS: overlay < 0, pick must be favorite (pick=${picks.spread.bettablePick.teamName}, fav=${snap.favoriteTeamName})`);
+    } else if (o > 0) {
+      log(pickIsDog, 
+          `ATS: overlay > 0, pick must be dog (pick=${picks.spread.bettablePick.teamName}, dog=${snap.dogTeamName})`);
+    }
+    
+    // Single-source truth assertion
+    log((o < 0 && pickIsFav) || (o > 0 && !pickIsFav),
+        `ATS: single-source truth - overlay sign determines pick side (o=${o.toFixed(2)}, pickIsFav=${pickIsFav})`);
+  }
+
+  // overlay threshold messaging coherent
   const meets = overlayUsed !== null ? abs(overlayUsed) >= floor : false;
   const hasPickFlag = !!ats.grade; // grade exists when pick rendered
   // In Trust-Market, pick may still be withheld for other reasons; just assert coherence
@@ -237,28 +263,222 @@ function assertHFA(game: any) {
   }
 }
 
+function assertRecencySurface(game: any) {
+  const features = game.model_view?.features ?? {};
+  const recency = features.recency ?? {};
+  const ratings = game.model_view?.ratings ?? {};
+  const spreadLineage = game.model_view?.spread_lineage ?? {};
+  const edges = game.model_view?.edges ?? {};
+  
+  // 1) Recency chip surface - rating_used must be valid
+  log(ratings.rating_used === 'weighted' || ratings.rating_used === 'base', 
+      `Recency: rating_used valid (${ratings.rating_used})`);
+  log(typeof ratings.recencyEffectPts === 'number', 
+      `Recency: recencyEffectPts present (${ratings.recencyEffectPts})`);
+  log(typeof recency.games_last3 === 'number', 
+      `Recency: games_last3 present (${recency.games_last3})`);
+
+  // Check that recency feature exists
+  log(!!recency, 'Recency: features.recency exists');
+
+  if (!recency) return;
+
+  // Check weights (new structure: weights.last3, weights.season)
+  const weights = recency.weights ?? {};
+  const l3Weight = num(weights.last3);
+  const seasonWeight = num(weights.season);
+  log(l3Weight === 1.5, `Recency: weights.last3 === 1.5 (${l3Weight})`);
+  log(seasonWeight === 1.0, `Recency: weights.season === 1.0 (${seasonWeight})`);
+
+  // Check game counts (new structure: single numbers, not home/away split)
+  const gamesLast3 = num(recency.games_last3);
+  const gamesTotal = num(recency.games_total);
+  const effectiveWeightSum = num(recency.effective_weight_sum);
+
+  log(gamesLast3 !== null, `Recency: games_last3 present (${gamesLast3})`);
+  log(gamesTotal !== null, `Recency: games_total present (${gamesTotal})`);
+  log(effectiveWeightSum !== null, `Recency: effective_weight_sum present (${effectiveWeightSum})`);
+
+  // Assert games_last3 <= games_total
+  if (gamesLast3 !== null && gamesTotal !== null) {
+    log(gamesLast3 <= gamesTotal, 
+        `Recency: games_last3 (${gamesLast3}) <= games_total (${gamesTotal})`);
+  }
+
+  // Check effective weight sum
+  if (gamesLast3 !== null && gamesTotal !== null && effectiveWeightSum !== null) {
+    const expected = 1.5 * gamesLast3 + 1.0 * Math.max(0, gamesTotal - gamesLast3);
+    const error = Math.abs(effectiveWeightSum - expected);
+    log(error < 0.01, `Recency: effective_weight_sum correct (expected ${expected.toFixed(2)}, got ${effectiveWeightSum.toFixed(2)})`);
+  }
+
+  // Check weighted stats exist (new structure: stats_weighted object)
+  const statsWeighted = recency.stats_weighted ?? {};
+  const statsCount = Object.values(statsWeighted).filter(v => v !== null && v !== undefined && isFinite(v as number)).length;
+  log(statsCount > 0, `Recency: stats_weighted present (${statsCount} stats)`);
+
+  // Check ratings (new structure: rating_base, rating_weighted, rating_used, recencyEffectPts)
+  log(!!ratings, 'Recency: model_view.ratings exists');
+  if (ratings) {
+    const ratingBase = num(ratings.rating_base);
+    const ratingWeighted = ratings.rating_weighted !== null ? num(ratings.rating_weighted) : null;
+    const ratingUsed = ratings.rating_used;
+    const recencyEffectPts = num(ratings.recencyEffectPts);
+
+    log(ratingBase !== null, `Recency: rating_base present (${ratingBase})`);
+    log(ratingWeighted !== null || ratings.rating_weighted === null, `Recency: rating_weighted present or null (${ratingWeighted})`);
+    log(ratingUsed === 'weighted' || ratingUsed === 'base', `Recency: rating_used valid (${ratingUsed})`);
+    log(recencyEffectPts !== null, `Recency: recencyEffectPts present (${recencyEffectPts})`);
+
+    // Assert: If rating_used === "weighted", then rating_weighted must be finite and recencyEffectPts = rating_weighted - rating_base
+    if (ratingUsed === 'weighted') {
+      log(ratingWeighted !== null && isFinite(ratingWeighted!), `Recency: rating_weighted is finite when used (${ratingWeighted})`);
+      if (ratingBase !== null && ratingWeighted !== null) {
+        const expectedEffect = ratingWeighted - ratingBase;
+        const error = Math.abs(recencyEffectPts! - expectedEffect);
+        log(error < 0.01, `Recency: recencyEffectPts matches (expected ${expectedEffect.toFixed(2)}, got ${recencyEffectPts!.toFixed(2)})`);
+      }
+    } else {
+      log(recencyEffectPts === 0, `Recency: recencyEffectPts is 0 when base used (${recencyEffectPts})`);
+    }
+  }
+
+  // Check spread lineage (new structure: rating_source, rating_home_used, rating_away_used, raw_model_spread_from_used)
+  log(!!spreadLineage, 'Recency: model_view.spread_lineage exists');
+  if (spreadLineage) {
+    const ratingSource = spreadLineage.rating_source;
+    const ratingHomeUsed = num(spreadLineage.rating_home_used);
+    const ratingAwayUsed = num(spreadLineage.rating_away_used);
+    const hfaUsed = num(spreadLineage.hfa_used);
+    const rawModelSpread = num(spreadLineage.raw_model_spread_from_used);
+    const overlayUsed = num(spreadLineage.overlay_used);
+    const finalSpread = num(spreadLineage.final_spread_with_overlay);
+
+    log(ratingSource === 'weighted' || ratingSource === 'base', 
+        `Recency: spread_lineage.rating_source valid (${ratingSource})`);
+    log(ratingHomeUsed !== null, `Recency: rating_home_used present (${ratingHomeUsed})`);
+    log(ratingAwayUsed !== null, `Recency: rating_away_used present (${ratingAwayUsed})`);
+    log(hfaUsed !== null, `Recency: hfa_used present (${hfaUsed})`);
+    log(rawModelSpread !== null, `Recency: raw_model_spread_from_used present (${rawModelSpread})`);
+    log(overlayUsed !== null, `Recency: overlay_used present (${overlayUsed})`);
+    log(finalSpread !== null, `Recency: final_spread_with_overlay present (${finalSpread})`);
+
+    // Assert: raw_model_spread_from_used must equal the components shown (within ±0.1)
+    if (ratingHomeUsed !== null && ratingAwayUsed !== null && hfaUsed !== null && rawModelSpread !== null) {
+      const expected = ratingHomeUsed - ratingAwayUsed + hfaUsed;
+      const error = Math.abs(rawModelSpread - expected);
+      log(error < 0.1, `Recency: raw_model_spread_from_used matches components (expected ${expected.toFixed(2)}, got ${rawModelSpread.toFixed(2)})`);
+    }
+
+    // Assert: model_view.edges.atsEdgePts === spread_lineage.overlay_used (same capped value)
+    const atsEdgePts = num(edges.atsEdgePts);
+    if (atsEdgePts !== null && overlayUsed !== null) {
+      const error = Math.abs(atsEdgePts - overlayUsed);
+      log(error < 0.01, `Recency: atsEdgePts matches overlay_used (${atsEdgePts} vs ${overlayUsed})`);
+    }
+
+    // Assert overlay rules unchanged (cap ±3.0, floor 2.0)
+    if (overlayUsed !== null) {
+      log(Math.abs(overlayUsed) <= 3.0, `Recency: overlay_used within cap ±3.0 (${overlayUsed.toFixed(2)})`);
+    }
+    
+    // Assert final spread is coherent
+    if (finalSpread !== null) {
+      log(isFinite(finalSpread), `Recency: final_spread_with_overlay is finite (${finalSpread.toFixed(2)})`);
+    }
+  }
+
+  // Check for NaN in weighted stats
+  const checkForNaN = (obj: any, prefix: string) => {
+    for (const [key, value] of Object.entries(obj)) {
+      if (value !== null && value !== undefined) {
+        const numVal = typeof value === 'number' ? value : Number(value);
+        if (isNaN(numVal) || !isFinite(numVal)) {
+          log(false, `Recency: ${prefix}.${key} is NaN/inf (${value})`);
+        }
+      }
+    }
+  };
+
+  if (statsWeighted) checkForNaN(statsWeighted, 'stats_weighted');
+}
+
 function assertMoneyline(game: any) {
   const picks = game.picks ?? {};
   const ml = picks.moneyline ?? {};
   const snap = game.market_snapshot ?? {};
   const favLine = num(snap.favoriteLine);
   
-  // Get finalSpreadWithOverlay from model_view or picks
-  const finalSpread = num(game.model_view?.finalSpreadWithOverlay ?? 
+  // Get finalSpreadWithOverlay from spread_lineage (PHASE 2.4)
+  const finalSpread = num(game.model_view?.spread_lineage?.final_spread_with_overlay ?? 
+                         game.model_view?.finalSpreadWithOverlay ?? 
                          game.picks?.spread?.overlay?.final ?? 
                          game.finalSpreadWithOverlay);
+
+  // 2) ML guard: must be suppressed when |finalSpreadWithOverlay| > 7
+  const absFinal = finalSpread !== null ? abs(finalSpread) : null;
+  if (absFinal !== null && absFinal > 7) {
+    log(!ml?.grade && !ml?.pickLabel, `ML: suppressed for |finalSpreadWithOverlay| > 7 (=${finalSpread})`);
+    const suppressionReason = ml?.suppressionReason ?? null;
+    log(!!suppressionReason && suppressionReason.includes('Spread too wide'), 
+        `ML: suppression reason correct (${suppressionReason ?? 'missing'})`);
+    return;
+  }
+  
+  // Get finalSpreadWithOverlay from spread_lineage (PHASE 2.4)
+  const finalSpreadFC = num(game.model_view?.spread_lineage?.final_spread_with_overlay);
+  
+  // 1) Favorite coherence: modelFavTeamId must match finalSpreadWithOverlay sign
+  const basis = ml?.calc_basis;
+  if (basis && finalSpreadFC !== null && snap) {
+    const s = finalSpreadFC;
+    const favId = s < 0 ? snap.favoriteTeamId : snap.dogTeamId;
+    log(basis.modelFavTeamId === favId, 
+        `ML: modelFavTeamId matches finalSpreadWithOverlay sign (favId=${favId}, basis.modelFavTeamId=${basis.modelFavTeamId}, s=${s.toFixed(2)})`);
+  }
+  
+  // 2) Probability/odds coherence
+  if (basis) {
+    log(basis.modelFavProb > 0.5 && basis.fairMLFav < 0, 
+        `ML: modelFavProb > 0.5 (${basis.modelFavProb?.toFixed(3)}) and fairMLFav < 0 (${basis.fairMLFav})`);
+    log(basis.modelDogProb < 0.5 && basis.fairMLDog > 100, 
+        `ML: modelDogProb < 0.5 (${basis.modelDogProb?.toFixed(3)}) and fairMLDog > 100 (${basis.fairMLDog})`);
+  }
+  
+  // 3) Picked side coherence
+  if (ml?.pickLabel && basis?.isUnderdogPick !== null && basis?.isUnderdogPick !== undefined) {
+    const isDogPick = basis.isUnderdogPick;
+    if (isDogPick) {
+      log(basis.modelDogProb < 0.5 && basis.fairMLDog > 100, 
+          `ML: underdog pick has modelDogProb < 0.5 (${basis.modelDogProb?.toFixed(3)}) and fairMLDog > 100 (${basis.fairMLDog})`);
+    } else {
+      log(basis.modelFavProb > 0.5 && basis.fairMLFav < 0, 
+          `ML: favorite pick has modelFavProb > 0.5 (${basis.modelFavProb?.toFixed(3)}) and fairMLFav < 0 (${basis.fairMLFav})`);
+    }
+  }
+  
+  // 4) ML guard - use finalSpreadFC from spread_lineage
+  if (finalSpreadFC !== null) {
+    log(Math.abs(finalSpreadFC) > 7 ? !!ml?.suppressionReason : true,
+        `ML: guard triggers when |finalSpreadWithOverlay| > 7 (s=${finalSpreadFC.toFixed(2)}, suppressed=${!!ml?.suppressionReason})`);
+  }
+  
+  // 5) Phase 2.4 fields present
+  log(game.model_view?.spread_lineage?.final_spread_with_overlay !== undefined,
+      `Phase 2.4: spread_lineage.final_spread_with_overlay present`);
+  log(['weighted', 'base'].includes(game.model_view?.ratings?.rating_used ?? ''),
+      `Phase 2.4: ratings.rating_used is 'weighted' or 'base'`);
+  if (basis) {
+    log(basis.modelFavProb > 0.5, `Phase 2.4: calc_basis.modelFavProb > 0.5 (${basis.modelFavProb?.toFixed(3)})`);
+    log(basis.fairMLFav < 0, `Phase 2.4: calc_basis.fairMLFav < 0 (${basis.fairMLFav})`);
+    log(basis.modelDogProb < 0.5, `Phase 2.4: calc_basis.modelDogProb < 0.5 (${basis.modelDogProb?.toFixed(3)})`);
+    log(basis.fairMLDog > 100, `Phase 2.4: calc_basis.fairMLDog > 100 (${basis.fairMLDog})`);
+  }
 
   // hard gates
   const extremeFav = favLine !== null ? abs(favLine) >= 21 : false;
   if (extremeFav) {
-    log(!ml?.grade, `ML: suppressed for extreme favorite (|${favLine}| ≥ 21)`);
-    const suppressionReason = ml?.suppressionReason ?? null;
-    log(!!suppressionReason, `ML: suppression reason present (${suppressionReason ?? 'missing'})`);
-    return;
-  }
-
-  if (finalSpread !== null && abs(finalSpread) > 7) {
-    log(!ml?.grade, `ML: suppressed for |finalSpreadWithOverlay| > 7 (=${finalSpread})`);
+    log(!ml?.grade && !ml?.pickLabel, `ML: suppressed for extreme favorite (|${favLine}| ≥ 21)`);
     const suppressionReason = ml?.suppressionReason ?? null;
     log(!!suppressionReason, `ML: suppression reason present (${suppressionReason ?? 'missing'})`);
     return;
@@ -308,6 +528,7 @@ async function fetchGame(id: GameId, baseUrl: string) {
       assertTalent(data);
       assertMatchupClass(data);
       assertHFA(data);
+      assertRecencySurface(data);
       assertMoneyline(data);
     } catch (e: any) {
       log(false, `Fetch/parse failed for ${g.label} (${g.id}): ${e?.message || e}`);
