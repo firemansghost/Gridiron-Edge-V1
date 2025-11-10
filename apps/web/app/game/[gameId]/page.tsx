@@ -495,13 +495,15 @@ export default function GameDetailPage() {
                 <div className="text-xl font-bold text-gray-900">
                   {snapshot?.favoriteLine !== undefined && snapshot?.favoriteLine !== null
                     ? snapshot.favoriteLine.toFixed(1)
-                    : '—'}
+                    : 'N/A'}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
-                  {game.market_snapshot?.favoriteTeamName ? `${game.market_snapshot.favoriteTeamName} favored` : 'Favorite unavailable'}
+                  {snapshot?.favoriteLine !== undefined && snapshot?.favoriteLine !== null
+                    ? (game.market_snapshot?.favoriteTeamName ? `${game.market_snapshot.favoriteTeamName} favored` : 'Favorite unavailable')
+                    : 'Market line unavailable or inconsistent'}
                 </div>
                 {/* Dev diagnostic (only in dev mode) */}
-                {process.env.NODE_ENV !== 'production' && game.market_snapshot && (
+                {process.env.NODE_ENV !== 'production' && game.market_snapshot && game.market_snapshot.favoriteLine !== null && game.market_snapshot.dogLine !== null && (
                   <div className="text-xs text-gray-400 mt-1 font-mono">
                     snapshot: {game.market_snapshot.favoriteTeamName} {game.market_snapshot.favoriteLine.toFixed(1)} | {game.market_snapshot.dogTeamName} +{game.market_snapshot.dogLine.toFixed(1)} | snapshotId: {game.diagnostics?.snapshotId?.substring(0, 19)}
                   </div>
@@ -512,12 +514,12 @@ export default function GameDetailPage() {
                 <div className="text-xl font-bold text-gray-900">
                   {snapshot?.marketTotal !== undefined && snapshot?.marketTotal !== null
                     ? snapshot.marketTotal.toFixed(1)
-                    : '—'}
+                    : 'N/A'}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
                   {snapshot?.marketTotal !== undefined && snapshot?.marketTotal !== null
                     ? `Market total ${snapshot.marketTotal.toFixed(1)}`
-                    : 'Total unavailable'}
+                    : 'Market line unavailable or inconsistent'}
                 </div>
               </div>
               <div className="bg-white p-3 rounded border border-blue-100">
@@ -602,6 +604,15 @@ export default function GameDetailPage() {
                     <span>Snapshot {game.diagnostics.snapshotId.substring(0, 20)}...</span>
                   </>
                 )}
+                {/* Pre-kick window pill */}
+                {game.game?.usingPreKickLines && (
+                  <>
+                    <span>•</span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
+                      Pre-kick window applied
+                    </span>
+                  </>
+                )}
               </div>
             )}
             {/* PHASE 2.4: Debug pill (for eyeballing coherence) */}
@@ -643,7 +654,9 @@ export default function GameDetailPage() {
                     <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Spread pick ${game.picks.spread.bettablePick.label || 'No edge'}`}>
                       {game.picks.spread.bettablePick?.suppressHeadline || game.picks.spread.bettablePick?.extremeFavoriteBlocked ? (
                         /* EXTREME FAVORITE: Suppress dog headline, show market line instead */
-                        snapshot ? `No edge at current number — market ${snapshot.favoriteTeamName} ${snapshot.favoriteLine.toFixed(1)}` : 'No edge at current number.'
+                        snapshot && snapshot.favoriteLine !== null && snapshot.favoriteLine !== undefined
+                          ? `No edge at current number — market ${snapshot.favoriteTeamName} ${snapshot.favoriteLine.toFixed(1)}`
+                          : 'No edge at current number.'
                       ) : game.picks.spread.bettablePick?.label ? (
                         /* CRITICAL FIX: Use bettablePick.label as single source of truth */
                         game.picks.spread.bettablePick.label
@@ -653,33 +666,42 @@ export default function GameDetailPage() {
                     </div>
                     {/* ============================================ */}
                     {/* ALWAYS SHOW: Edge, Bet-to, Range when ats_inputs_ok */}
+                    {/* Suppress bet-to/flip when favoriteLine is null (consensus failed) */}
                     {/* ============================================ */}
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-sm text-gray-600">
-                        Edge: <span className="font-semibold text-blue-600">{atsEdgeMagnitude.toFixed(1)} pts</span>
-                      </span>
-                      {game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && (
-                        <>
-                          {' • '}
+                    {snapshot?.favoriteLine !== null && snapshot?.favoriteLine !== undefined ? (
+                      <>
+                        <div className="flex items-center gap-2 mb-2">
                           <span className="text-sm text-gray-600">
-                            Bet to: <span className="font-semibold">{game.picks.spread.betTo.toFixed(1)}</span>
+                            Edge: <span className="font-semibold text-blue-600">{atsEdgeMagnitude.toFixed(1)} pts</span>
                           </span>
-                        </>
-                      )}
-                    </div>
-                    {/* RANGE: Flip Point - Show when we have flip data from API */}
-                    {/* PHASE 2.4: Fix range text to use overlay sign to determine value side */}
-                    {game.picks.spread.flip !== null && game.picks.spread.flip !== undefined && game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && snapshot && game.model_view?.spread_lineage?.overlay_used !== null && (
-                      <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
-                        <span className="font-semibold">Range:</span> Value on {
-                          game.model_view.spread_lineage.overlay_used < 0 
-                            ? snapshot.favoriteTeamName 
-                            : snapshot.dogTeamName
-                        } to {game.picks.spread.betTo.toFixed(1)}; flips to {
-                          game.model_view.spread_lineage.overlay_used < 0 
-                            ? snapshot.dogTeamName 
-                            : snapshot.favoriteTeamName
-                        } at {game.picks.spread.flip > 0 ? `+${game.picks.spread.flip.toFixed(1)}` : game.picks.spread.flip.toFixed(1)}
+                          {game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && (
+                            <>
+                              {' • '}
+                              <span className="text-sm text-gray-600">
+                                Bet to: <span className="font-semibold">{game.picks.spread.betTo.toFixed(1)}</span>
+                              </span>
+                            </>
+                          )}
+                        </div>
+                        {/* RANGE: Flip Point - Show when we have flip data from API */}
+                        {/* PHASE 2.4: Fix range text to use overlay sign to determine value side */}
+                        {game.picks.spread.flip !== null && game.picks.spread.flip !== undefined && game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && snapshot && game.model_view?.spread_lineage?.overlay_used !== null && (
+                          <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
+                            <span className="font-semibold">Range:</span> Value on {
+                              game.model_view.spread_lineage.overlay_used < 0 
+                                ? snapshot.favoriteTeamName 
+                                : snapshot.dogTeamName
+                            } to {game.picks.spread.betTo.toFixed(1)}; flips to {
+                              game.model_view.spread_lineage.overlay_used < 0 
+                                ? snapshot.dogTeamName 
+                                : snapshot.favoriteTeamName
+                            } at {game.picks.spread.flip > 0 ? `+${game.picks.spread.flip.toFixed(1)}` : game.picks.spread.flip.toFixed(1)}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-sm text-gray-500 mb-2">
+                        Market line unavailable or inconsistent — bet-to/flip suppressed
                       </div>
                     )}
                     {/* PHASE 2.4: Lineage Line */}

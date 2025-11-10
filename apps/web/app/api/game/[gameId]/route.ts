@@ -1649,12 +1649,14 @@ export async function GET(
       }
     }
     
-    const marketTotalRaw = totalLine ? getLineValue(totalLine) : null;
-    // CRITICAL: Totals must always be positive (never negative)
-    // Use absolute value to ensure positive display
-    const marketTotal = marketTotalRaw !== null && marketTotalRaw !== undefined 
-      ? Math.abs(marketTotalRaw) // Always positive
-      : null;
+    // ============================================
+    // USE CONSENSUS FOR TOTAL (mirror spread logic)
+    // ============================================
+    // Prefer consensus over individual lines (filters out price leaks)
+    const useConsensusTotal = totalConsensus.value !== null;
+    const marketTotal = useConsensusTotal 
+      ? Math.abs(totalConsensus.value!) // Always positive, from consensus
+      : (totalLine ? Math.abs(getLineValue(totalLine) ?? 0) : null);
     
     // Add marketTotal to diagnostics now that it's declared
     totalDiag.marketTotal = marketTotal;
@@ -2263,21 +2265,44 @@ export async function GET(
       diagnosticsMessages.push('Moneyline dog price unavailable from selected snapshot.');
     }
 
+    // ============================================
+    // BUILD MARKET SNAPSHOT WITH CONSENSUS VALUES
+    // ============================================
+    // Use consensus values when available (filters price leaks)
+    // If consensus is null, set both favoriteLine and dogLine to null
+    const consensusFavoriteLine = spreadConsensus.value !== null ? spreadConsensus.value : null;
+    const consensusDogLine = consensusFavoriteLine !== null ? -consensusFavoriteLine : null;
+    
     const market_snapshot = {
       favoriteTeamId: favoriteByRule.teamId,
       favoriteTeamName: favoriteByRule.teamName,
       dogTeamId: dogTeamId,
       dogTeamName: dogTeamName,
-      favoriteLine: favoriteByRule.line, // < 0 (favorite-centric)
-      dogLine: dogLine, // > 0 (underdog getting points)
-      marketTotal: marketTotal !== null ? marketTotal : null,
+      favoriteLine: consensusFavoriteLine ?? favoriteByRule.line, // Use consensus if available, else fallback
+      dogLine: consensusDogLine ?? dogLine, // Use consensus if available, else fallback
+      marketTotal: marketTotal !== null ? marketTotal : null, // Already uses consensus
       moneylineFavorite: moneylineFavoritePrice,
       moneylineDog: moneylineDogPrice,
       moneylineFavoriteTeamId,
       moneylineDogTeamId,
       bookSource,
       updatedAt: updatedAtDate.toISOString(),
-      snapshotId
+      snapshotId,
+      // Consensus metadata
+      consensusMethod: 'median',
+      window: consensusWindow,
+      sourceBooks: spreadConsensus.books.length > 0 
+        ? spreadConsensus.books 
+        : (totalConsensus.books.length > 0 ? totalConsensus.books : moneylineConsensus.books),
+      counts: {
+        spread: spreadConsensus.count,
+        total: totalConsensus.count,
+        moneyline: moneylineConsensus.count
+      },
+      leakFilter: {
+        spread: { excluded: spreadConsensus.excluded },
+        total: { excluded: totalConsensus.excluded }
+      }
     };
 
     // ============================================
@@ -4012,8 +4037,10 @@ export async function GET(
     // ============================================
     // GUARDRAILS & ASSERTIONS (before returning)
     // ============================================
-    // Assert 1: favoriteLine < 0 and dogLine > 0
-    const assertion1 = market_snapshot.favoriteLine < 0 && market_snapshot.dogLine > 0;
+    // Assert 1: favoriteLine < 0 and dogLine > 0 (or both null if consensus failed)
+    const assertion1 = (market_snapshot.favoriteLine === null && market_snapshot.dogLine === null) ||
+                       (market_snapshot.favoriteLine !== null && market_snapshot.dogLine !== null &&
+                        market_snapshot.favoriteLine < 0 && market_snapshot.dogLine > 0);
     if (!assertion1) {
       const errorMsg = `Assertion 1 failed: favoriteLine=${market_snapshot.favoriteLine}, dogLine=${market_snapshot.dogLine}`;
       console.error(`[Game ${gameId}] ⚠️ ${errorMsg}`);
@@ -4023,10 +4050,11 @@ export async function GET(
     }
     
     // Assert 2: ATS edge matches SSOT definition (modelFavoriteLine − market favorite line)
-    const expectedAtsEdge = model_view.edges.atsEdgePts !== null
+    // Skip if market_snapshot.favoriteLine is null (consensus failed)
+    const expectedAtsEdge = (model_view.edges.atsEdgePts !== null && market_snapshot.favoriteLine !== null)
       ? model_view.modelFavoriteLine - market_snapshot.favoriteLine
       : null;
-    const assertion2 = model_view.edges.atsEdgePts === null
+    const assertion2 = (model_view.edges.atsEdgePts === null || market_snapshot.favoriteLine === null)
       ? true
       : Math.abs(model_view.edges.atsEdgePts - (model_view.modelFavoriteLine - market_snapshot.favoriteLine)) < 1e-6;
 
