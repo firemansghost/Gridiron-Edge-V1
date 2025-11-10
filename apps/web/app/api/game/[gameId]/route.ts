@@ -106,6 +106,7 @@ export async function GET(
     const isCompletedGame = game.status === 'final';
     let marketLinesToUse = game.marketLines;
     let usingPreKickLines = false;
+    let consensusWindow: { start: string; end: string } | null = null;
     
     if (isCompletedGame) {
       const kickoffTime = new Date(game.date);
@@ -120,6 +121,10 @@ export async function GET(
       if (preKickLines.length > 0) {
         marketLinesToUse = preKickLines;
         usingPreKickLines = true;
+        consensusWindow = {
+          start: preKickWindowStart.toISOString(),
+          end: preKickWindowEnd.toISOString()
+        };
         console.log(`[Game ${gameId}] 🔒 COMPLETED GAME - Using pre-kick lines:`, {
           totalLines: game.marketLines.length,
           preKickLines: preKickLines.length,
@@ -131,6 +136,61 @@ export async function GET(
         console.warn(`[Game ${gameId}] ⚠️ COMPLETED GAME - No pre-kick lines found in window, using all available lines`);
       }
     }
+    
+    // ============================================
+    // PRICE-LEAK FILTER & CONSENSUS HELPER
+    // ============================================
+    // Filter out obvious price leaks and compute median consensus
+    const looksLikePriceLeak = (value: number, fieldType: 'spread' | 'total'): boolean => {
+      // American odds typically: abs >= 100 and multiples of 5 (e.g., -115, +155, -240)
+      // Spreads/totals: typically have .0 or .5 steps
+      return Math.abs(value) >= 50 && value % 5 === 0 && !Number.isInteger(value + 0.5);
+    };
+    
+    const computeMedianConsensus = (
+      lines: typeof marketLinesToUse,
+      lineType: 'spread' | 'total' | 'moneyline',
+      fieldType?: 'spread' | 'total'
+    ): { value: number | null; count: number; books: string[]; excluded: number } => {
+      const validValues: { value: number; book: string }[] = [];
+      let excludedCount = 0;
+      
+      for (const line of lines) {
+        if (line.lineType !== lineType) continue;
+        const value = getLineValue(line);
+        if (value === null || value === undefined) continue;
+        
+        // Filter price leaks for spread/total
+        if (fieldType && looksLikePriceLeak(value, fieldType)) {
+          excludedCount++;
+          continue;
+        }
+        
+        const book = line.bookName || line.source || 'unknown';
+        validValues.push({ value, book });
+      }
+      
+      if (validValues.length === 0) {
+        return { value: null, count: 0, books: [], excluded: excludedCount };
+      }
+      
+      // Get unique books
+      const uniqueBooks = Array.from(new Set(validValues.map(v => v.book)));
+      
+      // Compute median
+      const sorted = validValues.map(v => v.value).sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      const median = sorted.length % 2 === 0
+        ? (sorted[mid - 1] + sorted[mid]) / 2
+        : sorted[mid];
+      
+      return {
+        value: median,
+        count: validValues.length,
+        books: uniqueBooks,
+        excluded: excludedCount
+      };
+    };
     
     // Type assertion to access teamId field (defined once for reuse)
     type MarketLineWithTeamId = typeof marketLinesToUse[0] & { teamId?: string | null };
@@ -379,7 +439,35 @@ export async function GET(
     const spreadLine = selectedSpreadLine;
     const totalLine = selectedTotalLine;
     const mlLine = selectedMoneylineLine;
-
+    
+    // ============================================
+    // COMPUTE CONSENSUS WITH PRICE-LEAK FILTERING
+    // ============================================
+    // Use median consensus within the selected window (pre-kick for completed games)
+    const spreadConsensus = computeMedianConsensus(marketLinesToUse, 'spread', 'spread');
+    const totalConsensus = computeMedianConsensus(marketLinesToUse, 'total', 'total');
+    const moneylineConsensus = computeMedianConsensus(marketLinesToUse, 'moneyline'); // No price-leak filter for ML
+    
+    // Log consensus results
+    console.log(`[Game ${gameId}] 📊 CONSENSUS RESULTS:`, {
+      spread: {
+        value: spreadConsensus.value?.toFixed(1) ?? 'null',
+        count: spreadConsensus.count,
+        books: spreadConsensus.books,
+        excluded: spreadConsensus.excluded
+      },
+      total: {
+        value: totalConsensus.value?.toFixed(1) ?? 'null',
+        count: totalConsensus.count,
+        books: totalConsensus.books,
+        excluded: totalConsensus.excluded
+      },
+      moneyline: {
+        count: moneylineConsensus.count,
+        books: moneylineConsensus.books
+      }
+    });
+    
     // Type assertion to access teamId field (needed for both spreads and moneylines)
     const marketLinesWithTeamId = marketLinesToUse as MarketLineWithTeamId[];
 
@@ -1410,24 +1498,52 @@ export async function GET(
     // Determine home and away prices from the teamId-tagged lines
     let homePrice: number;
     let awayPrice: number;
-    let marketSpread: number | null; // Can be null if data quality issue detected
+    let marketSpread: number | null; // Can be null if consensus failed or price leaks detected
     let favoriteTeamId: string;
     let favoriteTeamName: string;
     
+    // ============================================
+    // USE CONSENSUS VALUES (with null handling)
+    // ============================================
+    // Prefer consensus over individual lines (filters out price leaks)
+    const useConsensusSpread = spreadConsensus.value !== null;
+    
     if (homeSpreadLine && awaySpreadLine) {
       // IDEAL CASE: We have both lines with teamId
-      homePrice = getLineValue(homeSpreadLine)!;
-      awayPrice = getLineValue(awaySpreadLine)!;
-      
-      // The favorite is the team with the negative line
-      if (homePrice < awayPrice) {
-        favoriteTeamId = game.homeTeamId;
-        favoriteTeamName = game.homeTeam.name;
-        marketSpread = homePrice; // Negative (favorite's line)
+      // Use consensus values if available (filters out price leaks)
+      if (useConsensusSpread && spreadConsensus.value !== null) {
+        // Consensus available - determine which team should get the consensus value
+        const rawHomePrice = getLineValue(homeSpreadLine)!;
+        const rawAwayPrice = getLineValue(awaySpreadLine)!;
+        
+        // Determine favorite from raw prices, then assign consensus value
+        if (rawHomePrice < rawAwayPrice) {
+          favoriteTeamId = game.homeTeamId;
+          favoriteTeamName = game.homeTeam.name;
+          homePrice = spreadConsensus.value;  // Consensus spread (negative for favorite)
+          awayPrice = -spreadConsensus.value; // Opposite sign for dog
+        } else {
+          favoriteTeamId = game.awayTeamId;
+          favoriteTeamName = game.awayTeam.name;
+          awayPrice = spreadConsensus.value;  // Consensus spread (negative for favorite)
+          homePrice = -spreadConsensus.value; // Opposite sign for dog
+        }
+        marketSpread = spreadConsensus.value; // Always negative (favorite's line)
       } else {
-        favoriteTeamId = game.awayTeamId;
-        favoriteTeamName = game.awayTeam.name;
-        marketSpread = awayPrice; // Negative (favorite's line)
+        // No consensus - use raw line values
+        homePrice = getLineValue(homeSpreadLine)!;
+        awayPrice = getLineValue(awaySpreadLine)!;
+        
+        // The favorite is the team with the negative line
+        if (homePrice < awayPrice) {
+          favoriteTeamId = game.homeTeamId;
+          favoriteTeamName = game.homeTeam.name;
+          marketSpread = homePrice; // Negative (favorite's line)
+        } else {
+          favoriteTeamId = game.awayTeamId;
+          favoriteTeamName = game.awayTeam.name;
+          marketSpread = awayPrice; // Negative (favorite's line)
+        }
       }
       
       console.log(`[Game ${gameId}] ✅ DEFINITIVE FAVORITE (from teamId):`, {
