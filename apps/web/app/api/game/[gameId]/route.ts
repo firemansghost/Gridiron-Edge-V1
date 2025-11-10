@@ -98,8 +98,42 @@ export async function GET(
 
     const matchupOutput = game.matchupOutputs[0];
     
+    // ============================================
+    // COMPLETED GAMES: Use Pre-Kick Lines Only
+    // ============================================
+    // For completed games, filter market lines to only those from before/around kickoff
+    // This preserves the betting ticket state for backtesting
+    const isCompletedGame = game.status === 'final';
+    let marketLinesToUse = game.marketLines;
+    let usingPreKickLines = false;
+    
+    if (isCompletedGame) {
+      const kickoffTime = new Date(game.date);
+      const preKickWindowStart = new Date(kickoffTime.getTime() - 60 * 60 * 1000); // 60 min before
+      const preKickWindowEnd = new Date(kickoffTime.getTime() + 5 * 60 * 1000); // 5 min after
+      
+      const preKickLines = game.marketLines.filter(line => {
+        const lineTime = new Date(line.timestamp);
+        return lineTime >= preKickWindowStart && lineTime <= preKickWindowEnd;
+      });
+      
+      if (preKickLines.length > 0) {
+        marketLinesToUse = preKickLines;
+        usingPreKickLines = true;
+        console.log(`[Game ${gameId}] 🔒 COMPLETED GAME - Using pre-kick lines:`, {
+          totalLines: game.marketLines.length,
+          preKickLines: preKickLines.length,
+          kickoffTime: kickoffTime.toISOString(),
+          windowStart: preKickWindowStart.toISOString(),
+          windowEnd: preKickWindowEnd.toISOString()
+        });
+      } else {
+        console.warn(`[Game ${gameId}] ⚠️ COMPLETED GAME - No pre-kick lines found in window, using all available lines`);
+      }
+    }
+    
     // Type assertion to access teamId field (defined once for reuse)
-    type MarketLineWithTeamId = typeof game.marketLines[0] & { teamId?: string | null };
+    type MarketLineWithTeamId = typeof marketLinesToUse[0] & { teamId?: string | null };
     
     // ============================================
     // BUILD SINGLE SOURCE OF TRUTH SNAPSHOT (MARKET)
@@ -114,7 +148,7 @@ export async function GET(
     };
 
     // DIAGNOSTIC: Log all spread lines with teamId to see what's in the database
-    const allSpreadLines = game.marketLines.filter(l => l.lineType === 'spread');
+    const allSpreadLines = marketLinesToUse.filter(l => l.lineType === 'spread');
     const spreadLinesWithTeamId = allSpreadLines.filter(l => {
       const lineWithTeamId = l as MarketLineWithTeamId;
       return !!(lineWithTeamId.teamId && lineWithTeamId.teamId !== 'NULL');
@@ -138,7 +172,7 @@ export async function GET(
 
     const groupedByBook = new Map<string, OddsGroup>();
 
-    for (const line of game.marketLines) {
+    for (const line of marketLinesToUse) {
       const sourceKey = (line.source || 'unknown').toLowerCase();
       const bookKey = (line.bookName || 'unknown').toLowerCase();
       const groupKey = `${sourceKey}::${bookKey}`;
@@ -164,7 +198,7 @@ export async function GET(
       }
     }
 
-    const pickPreferredLine = (lines: typeof game.marketLines, lineType?: 'spread' | 'total' | 'moneyline') => {
+    const pickPreferredLine = (lines: typeof marketLinesToUse, lineType?: 'spread' | 'total' | 'moneyline') => {
       if (!lines || lines.length === 0) return null;
       
       // Type assertion to access teamId field
@@ -221,9 +255,9 @@ export async function GET(
       return selected;
     };
 
-    let selectedSpreadLine: typeof game.marketLines[number] | null = null;
-    let selectedTotalLine: typeof game.marketLines[number] | null = null;
-    let selectedMoneylineLine: typeof game.marketLines[number] | null = null;
+    let selectedSpreadLine: typeof marketLinesToUse[number] | null = null;
+    let selectedTotalLine: typeof marketLinesToUse[number] | null = null;
+    let selectedMoneylineLine: typeof marketLinesToUse[number] | null = null;
     let selectedGroupSource: string | null = null;
     let selectedGroupBook: string | null = null;
     let selectedGroupTimestamp = 0;
@@ -232,9 +266,9 @@ export async function GET(
     const selectBestGroup = (groups: OddsGroup[]) => {
       let bestCoverageScore = -1;
       let bestLatestTimestamp = 0;
-      let bestSpreadLine: typeof game.marketLines[number] | null = null;
-      let bestTotalLine: typeof game.marketLines[number] | null = null;
-      let bestMoneylineLine: typeof game.marketLines[number] | null = null;
+      let bestSpreadLine: typeof marketLinesToUse[number] | null = null;
+      let bestTotalLine: typeof marketLinesToUse[number] | null = null;
+      let bestMoneylineLine: typeof marketLinesToUse[number] | null = null;
       let bestSource: string | null = null;
       let bestBook: string | null = null;
       let bestTimestamp = 0;
@@ -311,7 +345,7 @@ export async function GET(
     let moneylineSourceMismatch = false;
 
     // Fallbacks if any market is missing from the primary group
-    const fallbackSpreadLine = pickMarketLine(game.marketLines, 'spread');
+    const fallbackSpreadLine = pickMarketLine(marketLinesToUse, 'spread');
     if (!selectedSpreadLine && fallbackSpreadLine) {
       selectedSpreadLine = fallbackSpreadLine;
       selectedGroupSource = fallbackSpreadLine.source || null;
@@ -325,7 +359,7 @@ export async function GET(
     }
 
     if (!selectedTotalLine) {
-      const fallbackTotalLine = pickMarketLine(game.marketLines, 'total');
+      const fallbackTotalLine = pickMarketLine(marketLinesToUse, 'total');
       if (fallbackTotalLine) {
         selectedTotalLine = fallbackTotalLine;
         diagnosticsMessages.push(`Odds source mismatch: total line sourced from ${fallbackTotalLine.bookName || 'Unknown book'}.`);
@@ -334,7 +368,7 @@ export async function GET(
     }
 
     if (!selectedMoneylineLine) {
-      const fallbackMoneylineLine = pickMoneyline(game.marketLines);
+      const fallbackMoneylineLine = pickMoneyline(marketLinesToUse);
       if (fallbackMoneylineLine) {
         selectedMoneylineLine = fallbackMoneylineLine;
         diagnosticsMessages.push(`Odds source mismatch: moneyline sourced from ${fallbackMoneylineLine.bookName || 'Unknown book'}.`);
@@ -347,7 +381,7 @@ export async function GET(
     const mlLine = selectedMoneylineLine;
 
     // Type assertion to access teamId field (needed for both spreads and moneylines)
-    const marketLinesWithTeamId = game.marketLines as MarketLineWithTeamId[];
+    const marketLinesWithTeamId = marketLinesToUse as MarketLineWithTeamId[];
 
     // Get both moneyline lines - NEW APPROACH: Don't rely on teamId
     // Moneylines come in pairs (one negative for favorite, one positive for dog)
@@ -356,7 +390,7 @@ export async function GET(
     
     // Strategy: Search ALL moneylines near the spread timestamp (don't filter by book first)
     // This is more lenient and works even if books report moneylines at slightly different times
-    const allMoneylinesNearSpread = game.marketLines.filter(
+    const allMoneylinesNearSpread = marketLinesToUse.filter(
       (l) => l.lineType === 'moneyline' && 
              Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 10000 // Within 10 seconds
     );
@@ -365,7 +399,7 @@ export async function GET(
       spreadTimestamp: new Date(spreadTimestamp).toISOString(),
       spreadBook: spreadLine.bookName,
       foundMoneylines: allMoneylinesNearSpread.length,
-      totalMoneylines: game.marketLines.filter(l => l.lineType === 'moneyline').length
+      totalMoneylines: marketLinesToUse.filter(l => l.lineType === 'moneyline').length
     });
     
     // Extract ALL positive and negative moneyline values
@@ -1707,7 +1741,7 @@ export async function GET(
     let moneylineDogTeamId: string | null = null;
     
     // DIAGNOSTIC: Log what we found and what's available in database
-    const allMoneylinesInDb = game.marketLines.filter(l => l.lineType === 'moneyline');
+    const allMoneylinesInDb = marketLinesToUse.filter(l => l.lineType === 'moneyline');
     const moneylinesWithTeamId = allMoneylinesInDb.filter(l => {
       const ml = l as MarketLineWithTeamId;
       return !!(ml.teamId && ml.teamId !== 'NULL');
@@ -3926,7 +3960,9 @@ export async function GET(
         conferenceGame: game.conferenceGame,
         status: game.status,
         homeScore: game.homeScore,
-        awayScore: game.awayScore
+        awayScore: game.awayScore,
+        isCompleted: isCompletedGame,
+        usingPreKickLines: usingPreKickLines
       },
       
       // SINGLE SOURCE OF TRUTH: market_snapshot (all UI components use this)
