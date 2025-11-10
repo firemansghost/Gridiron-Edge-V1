@@ -20,6 +20,8 @@
     "test:ratings": "jest apps/jobs/__tests__/seed-ratings.test.js",
     "test:ratings:v1": "jest apps/jobs/__tests__/compute_ratings_v1.test.ts",
     "test:all": "jest apps/jobs/__tests__/",
+    "test:web": "jest apps/web/__tests__/",
+    "test:consensus": "jest apps/web/__tests__/consensus-normalization.test.ts",
     "ingest": "node apps/jobs/ingest.js",
     "verify:ingest": "node apps/jobs/verify-ingest.js",
     "backtest": "node apps/jobs/backtest.js",
