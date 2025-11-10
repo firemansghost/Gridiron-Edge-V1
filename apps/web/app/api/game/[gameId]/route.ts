@@ -144,25 +144,22 @@ export async function GET(
       lines: typeof marketLinesToUse,
       lineType: 'spread' | 'total' | 'moneyline',
       fieldType?: 'spread' | 'total'
-    ): { value: number | null; count: number; books: string[]; excluded: number } => {
+    ): { value: number | null; count: number; books: string[]; excluded: number; usedFrom?: string } => {
       const validValues: { value: number; book: string }[] = [];
       let excludedCount = 0;
       
       for (const line of lines) {
         if (line.lineType !== lineType) continue;
         
-        // CRITICAL: Use getPointValue for spread/total (filters price leaks), getLineValue for moneyline
+        // CRITICAL: Use getPointValue for spread/total (reads lineValue ONLY), getLineValue for moneyline
         const value = fieldType 
-          ? getPointValue(line, fieldType) // Filters price leaks automatically
-          : getLineValue(line); // Moneyline - prices are expected
+          ? getPointValue(line, fieldType) // ONLY reads lineValue field (points), never closingLine (prices)
+          : getLineValue(line); // Moneyline - reads closingLine (prices are expected)
           
         if (value === null || value === undefined) {
-          // Track as excluded if we expected a point but got a price leak
+          // Track as excluded if we expected a point but lineValue was missing or filtered
           if (fieldType) {
-            const rawValue = getLineValue(line);
-            if (rawValue !== null && looksLikePriceLeak(rawValue)) {
-              excludedCount++;
-            }
+            excludedCount++;
           }
           continue;
         }
@@ -172,7 +169,13 @@ export async function GET(
       }
       
       if (validValues.length === 0) {
-        return { value: null, count: 0, books: [], excluded: excludedCount };
+        return { 
+          value: null, 
+          count: 0, 
+          books: [], 
+          excluded: excludedCount,
+          usedFrom: fieldType ? 'lineValue' : 'closingLine/lineValue'
+        };
       }
       
       // Get unique books
@@ -189,7 +192,8 @@ export async function GET(
         value: median,
         count: validValues.length,
         books: uniqueBooks,
-        excluded: excludedCount
+        excluded: excludedCount,
+        usedFrom: fieldType ? 'lineValue' : 'closingLine/lineValue'
       };
     };
     
@@ -1655,9 +1659,29 @@ export async function GET(
     // ============================================
     // Prefer consensus over individual lines (filters out price leaks)
     const useConsensusTotal = totalConsensus.value !== null;
-    const marketTotal = useConsensusTotal 
-      ? Math.abs(totalConsensus.value!) // Always positive, from consensus
-      : (totalLine ? Math.abs(getPointValue(totalLine, 'total') ?? 0) : null);
+    let marketTotal: number | null = null;
+    
+    if (useConsensusTotal && totalConsensus.value !== null) {
+      // CRITICAL: Totals must always be positive (unsigned)
+      // If consensus is negative, it's a price leak - set to null
+      const rawTotal = totalConsensus.value;
+      if (rawTotal < 0) {
+        console.error(`[Game ${gameId}] ⚠️ NEGATIVE TOTAL from consensus: ${rawTotal} (likely price leak)`);
+        marketTotal = null; // Reject negative totals
+      } else {
+        marketTotal = Math.abs(rawTotal); // Ensure positive
+      }
+    } else if (totalLine) {
+      const totalValue = getPointValue(totalLine, 'total');
+      if (totalValue !== null) {
+        if (totalValue < 0) {
+          console.error(`[Game ${gameId}] ⚠️ NEGATIVE TOTAL from totalLine: ${totalValue} (likely price leak)`);
+          marketTotal = null; // Reject negative totals
+        } else {
+          marketTotal = Math.abs(totalValue);
+        }
+      }
+    }
     
     // Add marketTotal to diagnostics now that it's declared
     totalDiag.marketTotal = marketTotal;
@@ -3194,7 +3218,9 @@ export async function GET(
           count: spreadConsensus.count,
           sourceBooks: spreadConsensus.books,
           excluded: spreadConsensus.excluded,
-          excludedReason: spreadConsensus.excluded > 0 ? 'price_leaks_detected' : null
+          excludedReason: spreadConsensus.excluded > 0 ? 'missing_lineValue_or_filtered' : null,
+          usedFrom: spreadConsensus.usedFrom || 'lineValue', // Always lineValue for spread
+          note: 'Spread consensus reads ONLY from lineValue field (points), never closingLine (prices)'
         },
         total: {
           consensusValue: totalConsensus.value,
@@ -3202,11 +3228,15 @@ export async function GET(
           count: totalConsensus.count,
           sourceBooks: totalConsensus.books,
           excluded: totalConsensus.excluded,
-          excludedReason: totalConsensus.excluded > 0 ? 'price_leaks_detected' : null
+          excludedReason: totalConsensus.excluded > 0 ? 'missing_lineValue_or_filtered' : null,
+          usedFrom: totalConsensus.usedFrom || 'lineValue', // Always lineValue for total
+          note: 'Total consensus reads ONLY from lineValue field (points), never closingLine (prices). Totals must be positive.'
         },
         moneyline: {
           count: moneylineConsensus.count,
-          sourceBooks: moneylineConsensus.books
+          sourceBooks: moneylineConsensus.books,
+          usedFrom: 'closingLine/lineValue', // ML uses prices
+          note: 'Moneyline uses closingLine (prices are expected for ML)'
         }
       },
       messages: diagnosticsMessages

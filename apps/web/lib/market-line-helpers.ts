@@ -161,7 +161,10 @@ export function looksLikePriceLeak(value: number): boolean {
 
 /**
  * Extract a POINT value (spread or total) from a market line
- * Returns null if the value looks like a price (American odds) instead of a point
+ * CRITICAL: Only reads lineValue field (points), never closingLine (prices)
+ * 
+ * For spread/total: lineValue contains points (e.g., 29.5, -6.5)
+ * For moneyline: closingLine contains prices (e.g., -110, +155)
  * 
  * @param line - Market line object
  * @param fieldType - Type of field ('spread' or 'total')
@@ -173,18 +176,26 @@ export function getPointValue(
 ): number | null {
   if (!line) return null;
   
-  // Prefer closingLine if available
+  // CRITICAL: For spread/total, ONLY read lineValue (points), never closingLine (prices)
+  // closingLine contains American odds (-110, -115) which are PRICES, not POINTS
   let value: number | null = null;
-  if (line.closingLine !== null && line.closingLine !== undefined) {
-    value = line.closingLine;
-  } else if (line.lineValue !== null && line.lineValue !== undefined) {
+  
+  // Only use lineValue for spread/total
+  if (line.lineValue !== null && line.lineValue !== undefined) {
     value = line.lineValue;
   }
   
+  // Never use closingLine for spread/total - that's for moneyline prices only
+  
   if (value === null) return null;
   
-  // Filter out price leaks (only for spread/total, not moneyline)
+  // Sanity check: filter out values that look like prices (safety net)
   if (fieldType && looksLikePriceLeak(value)) {
+    console.warn(`[market-line-helpers] Price leak detected in ${fieldType} field:`, {
+      value,
+      fieldType,
+      line: { lineValue: line.lineValue, closingLine: line.closingLine }
+    });
     return null;
   }
   
