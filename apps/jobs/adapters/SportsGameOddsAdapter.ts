@@ -360,6 +360,22 @@ export class SportsGameOddsAdapter implements DataSourceAdapter {
           // Parse spread
           for (const outcome of outcomes) {
             if (outcome.point !== undefined) {
+              // CRITICAL: Validate that point is not actually a price value
+              const absPoint = Math.abs(outcome.point);
+              const absPrice = outcome.price !== undefined && outcome.price !== null ? Math.abs(outcome.price) : null;
+              
+              // Detect price→point swap: if abs(point) > 70 and price is in 101-500 range, reject
+              if (absPoint > 70 && absPrice !== null && absPrice >= 101 && absPrice <= 500) {
+                console.error(`   [SGO] ❌ REJECTED: Spread point appears to be a price value. point=${outcome.point}, price=${outcome.price}, book=${bookName}`);
+                continue; // Skip this line
+              }
+              
+              // Additional sanity check: reject spreads > 50
+              if (absPoint > 50) {
+                console.error(`   [SGO] ❌ REJECTED: Spread point exceeds 50 (likely invalid). point=${outcome.point}, book=${bookName}`);
+                continue; // Skip this line
+              }
+              
               lines.push({
                 season,
                 week,
@@ -376,12 +392,20 @@ export class SportsGameOddsAdapter implements DataSourceAdapter {
           // Parse total
           for (const outcome of outcomes) {
             if (outcome.point !== undefined) {
+              // CRITICAL: Totals must be positive and within reasonable range (20-120 for CFB)
+              const totalValue = Math.abs(outcome.point); // Always use absolute value for totals
+              
+              if (totalValue < 20 || totalValue > 120) {
+                console.error(`   [SGO] ❌ REJECTED: Total outside valid range (20-120). point=${outcome.point}, book=${bookName}`);
+                continue; // Skip this line
+              }
+              
               lines.push({
                 season,
                 week,
                 lineType: 'total',
-                lineValue: outcome.point,
-                closingLine: outcome.point,
+                lineValue: totalValue, // Always positive
+                closingLine: totalValue, // Always positive
                 bookName,
                 source: 'sgo',
                 timestamp: new Date(),

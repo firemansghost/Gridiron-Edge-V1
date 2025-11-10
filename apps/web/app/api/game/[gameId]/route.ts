@@ -1500,7 +1500,11 @@ export async function GET(
     }
     
     const marketTotalRaw = totalLine ? getLineValue(totalLine) : null;
-    const marketTotal = marketTotalRaw !== null && marketTotalRaw !== undefined ? marketTotalRaw : null;
+    // CRITICAL: Totals must always be positive (never negative)
+    // Use absolute value to ensure positive display
+    const marketTotal = marketTotalRaw !== null && marketTotalRaw !== undefined 
+      ? Math.abs(marketTotalRaw) // Always positive
+      : null;
     
     // Add marketTotal to diagnostics now that it's declared
     totalDiag.marketTotal = marketTotal;
@@ -2474,7 +2478,8 @@ export async function GET(
     // EXTREME FAVORITE GUARD
     // ============================================
     // Don't headline 20+ point dogs even if overlay points that way
-    const isExtremeFavorite = Math.abs(marketSpread) >= 21;
+    // CRITICAL: Use spread points only (not price) - marketSpread is already validated to be < 50
+    const isExtremeFavorite = marketSpread !== null && Math.abs(marketSpread) >= 21;
     
     // Determine if overlay direction points to the dog
     // If marketSpread < 0 (home favored), spreadOverlay > 0 means model likes away (dog)
@@ -3129,15 +3134,22 @@ export async function GET(
       });
     }
     
-    // 4. Validate Market Spread absolute value is not excessive (> 50)
+    // 4. CRITICAL: Validate Market Spread absolute value is not excessive (> 50)
+    // This catches price values that leaked into spread fields
     if (marketSpread !== null && Math.abs(marketSpread) > 50) {
-      console.warn(`[Game ${gameId}] ⚠️ Market Spread absolute value exceeds 50: ${marketSpread.toFixed(1)}`, {
+      console.error(`[Game ${gameId}] ❌ REJECTED: Market Spread absolute value exceeds 50 (likely price leak): ${marketSpread.toFixed(1)}`, {
         modelSpread: finalImpliedSpread,
         marketSpread,
         gameId,
         homeTeam: game.homeTeam.name,
-        awayTeam: game.awayTeam.name
+        awayTeam: game.awayTeam.name,
+        spreadLineValue: spreadLine?.lineValue,
+        spreadLineSource: spreadLine?.source,
+        spreadLineBook: spreadLine?.bookName,
+        warning: 'This spread value is likely a price (American odds) that was incorrectly mapped to a spread point. Rejecting this game data.'
       });
+      // CRITICAL: This is a data quality issue - throw error to prevent downstream corruption
+      throw new Error(`Data quality issue: Market spread (${marketSpread.toFixed(1)}) exceeds 50, likely a price leak. Game ${gameId} cannot be processed.`);
     }
     
     // 5. Validate ATS Edge magnitude is not excessive (> 20)

@@ -1086,16 +1086,11 @@ export default function GameDetailPage() {
                   )}
                 </div>
               ) : game.picks?.moneyline && game.picks.moneyline.isModelFairLineOnly ? (
+                // Trust-Market mode: Hide pick card if no book ML, optionally show muted model fair line
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                   <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">MONEYLINE</h3>
-                  <div className="text-xl font-bold text-gray-900 mb-1">
-                    {game.picks.moneyline.modelFavoriteTeam} — Model fair ML
-                  </div>
-                  <div className="text-lg font-semibold text-gray-700 mb-2">
-                    {game.picks.moneyline.modelFairML! > 0 ? '+' : ''}{game.picks.moneyline.modelFairML}
-                  </div>
-                  <div className="text-xs text-gray-500 italic">
-                    (No book ML available yet)
+                  <div className="text-sm text-gray-500 italic">
+                    Model fair ML: {game.picks.moneyline.modelFairML! > 0 ? '+' : ''}{game.picks.moneyline.modelFairML} (no book price available)
                   </div>
                 </div>
               ) : (

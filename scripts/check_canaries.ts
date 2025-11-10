@@ -45,9 +45,22 @@ function assertAts(game: any) {
   // independent validation exists
   log(v.ats_inputs_ok === true, 'ATS: inputs_ok true');
 
-  // market favorite sign sanity
+  // CRITICAL: Market spread must be within valid range (not a price leak)
   const favLine = num(snap.favoriteLine);
   log(favLine !== null && favLine < 0, `ATS: market favorite line negative (${favLine})`);
+  // Price leak detection: spread should never exceed 50 (prices are 101-500)
+  log(favLine !== null && abs(favLine) <= 50, 
+      `ATS: market spread within valid range (${favLine}, abs=${abs(favLine)}) - not a price leak`);
+  
+  // CRITICAL: Bet-to and flip must be within valid range (not prices)
+  const betTo = num(ats.betTo);
+  const flip = num(ats.flip);
+  if (betTo !== null) {
+    log(abs(betTo) <= 50, `ATS: bet-to within valid range (${betTo}, abs=${abs(betTo)}) - not a price`);
+  }
+  if (flip !== null) {
+    log(abs(flip) <= 50, `ATS: flip within valid range (${flip}, abs=${abs(flip)}) - not a price`);
+  }
 
   // edge uses capped overlay, not raw disagreement
   const edge = num(mv.edges?.atsEdgePts);
@@ -95,9 +108,42 @@ function assertAts(game: any) {
   log(true, `ATS: overlay ${round1(overlayUsed ?? NaN)} vs floor ${floor} (meets=${meets})`);
 }
 
+function assertDataQuality(game: any) {
+  const snap = game.market_snapshot ?? {};
+  
+  // CRITICAL: Totals must be positive and within valid range (20-120 for CFB)
+  const marketTotal = num(snap.marketTotal);
+  if (marketTotal !== null) {
+    log(marketTotal > 0, `Data Quality: market total is positive (${marketTotal}) - never negative`);
+    log(marketTotal >= 20 && marketTotal <= 120, 
+        `Data Quality: market total within valid range (20-120): ${marketTotal}`);
+  }
+  
+  // CRITICAL: Spread must be within valid range (not a price leak)
+  const favLine = num(snap.favoriteLine);
+  if (favLine !== null) {
+    log(abs(favLine) <= 50, 
+        `Data Quality: market spread within valid range (${favLine}, abs=${abs(favLine)}) - not a price leak`);
+  }
+  
+  // CRITICAL: Extreme favorite check must use spread points, not price
+  const isExtremeFav = favLine !== null && abs(favLine) >= 21;
+  if (isExtremeFav) {
+    log(abs(favLine) < 50, 
+        `Data Quality: extreme favorite check uses spread points (${favLine}), not price`);
+  }
+}
+
 function assertTotals(game: any) {
   const picks = game.picks ?? {};
   const tot = picks.total ?? {};
+  const snap = game.market_snapshot ?? {};
+  
+  // CRITICAL: Totals must be positive
+  const marketTotal = num(snap.marketTotal);
+  if (marketTotal !== null) {
+    log(marketTotal > 0, `Totals: market total is positive (${marketTotal}) - never negative`);
+  }
   const v = game.validation ?? {};
   const headline = num(tot.headlineTotal);
   const market = num(tot.marketTotal);
@@ -568,6 +614,7 @@ async function fetchGame(id: GameId, baseUrl: string) {
     try {
       const data = await fetchGame(g.id, baseUrl);
       console.log(`\n— ${g.label} [${g.id}] —`);
+      assertDataQuality(data); // CRITICAL: Price/point validation first
       assertAts(data);
       assertTotals(data);
       assertTalent(data);

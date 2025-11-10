@@ -1230,6 +1230,22 @@ export class OddsApiAdapter implements DataSourceAdapter {
           if (market.key === 'spreads' && market.outcomes) {
             console.log(`   [PARSER] Found ${market.outcomes.length} spread outcomes from ${bookName}`);
             for (const outcome of market.outcomes) {
+              // CRITICAL: Validate that point is not actually a price value
+              const absPoint = Math.abs(outcome.point);
+              const absPrice = outcome.price !== undefined && outcome.price !== null ? Math.abs(outcome.price) : null;
+              
+              // Detect price→point swap: if abs(point) > 70 and price is in 101-500 range, reject
+              if (absPoint > 70 && absPrice !== null && absPrice >= 101 && absPrice <= 500) {
+                console.error(`   [PARSER] ❌ REJECTED: Spread point appears to be a price value. point=${outcome.point}, price=${outcome.price}, book=${bookName}, team=${outcome.name}`);
+                continue; // Skip this line
+              }
+              
+              // Additional sanity check: reject spreads > 50
+              if (absPoint > 50) {
+                console.error(`   [PARSER] ❌ REJECTED: Spread point exceeds 50 (likely invalid). point=${outcome.point}, book=${bookName}, team=${outcome.name}`);
+                continue; // Skip this line
+              }
+              
               // Resolve team name to teamId
               const teamId = this.resolveTeamId(outcome.name);
               if (!teamId) {
@@ -1254,12 +1270,20 @@ export class OddsApiAdapter implements DataSourceAdapter {
           if (market.key === 'totals' && market.outcomes) {
             console.log(`   [PARSER] Found ${market.outcomes.length} total outcomes from ${bookName}`);
             for (const outcome of market.outcomes) {
+              // CRITICAL: Totals must be positive and within reasonable range (20-120 for CFB)
+              const totalValue = Math.abs(outcome.point); // Always use absolute value for totals
+              
+              if (totalValue < 20 || totalValue > 120) {
+                console.error(`   [PARSER] ❌ REJECTED: Total outside valid range (20-120). point=${outcome.point}, book=${bookName}`);
+                continue; // Skip this line
+              }
+              
               lines.push({
                 gameId,
                 season,
                 week,
                 lineType: 'total',
-                lineValue: outcome.point,
+                lineValue: totalValue, // Always positive
                 price: outcome.price,
                 bookName,
                 source: 'oddsapi',
@@ -1383,6 +1407,24 @@ export class OddsApiAdapter implements DataSourceAdapter {
           // Spread
           for (const outcome of market.outcomes) {
             if (outcome.point !== undefined && outcome.point !== null) {
+              // CRITICAL: Validate that point is not actually a price value
+              // Price values are typically 101-500 (American odds), spreads are typically -35 to +35
+              const absPoint = Math.abs(outcome.point);
+              const absPrice = outcome.price !== undefined && outcome.price !== null ? Math.abs(outcome.price) : null;
+              
+              // Detect price→point swap: if abs(point) > 70 and price is in 101-500 range, reject
+              if (absPoint > 70 && absPrice !== null && absPrice >= 101 && absPrice <= 500) {
+                console.error(`   [ODDSAPI] ❌ REJECTED: Spread point appears to be a price value. point=${outcome.point}, price=${outcome.price}, book=${bookName}, team=${outcome.name}`);
+                console.error(`   [ODDSAPI] This indicates a data quality issue - price field was mapped to point field. Skipping this line.`);
+                continue; // Skip this line
+              }
+              
+              // Additional sanity check: reject spreads > 50 (extremely rare in CFB)
+              if (absPoint > 50) {
+                console.error(`   [ODDSAPI] ❌ REJECTED: Spread point exceeds 50 (likely invalid). point=${outcome.point}, book=${bookName}, team=${outcome.name}`);
+                continue; // Skip this line
+              }
+              
               // Resolve team name to teamId
               const teamId = this.resolveTeamId(outcome.name);
               if (!teamId) {
@@ -1406,13 +1448,21 @@ export class OddsApiAdapter implements DataSourceAdapter {
           // Total
           for (const outcome of market.outcomes) {
             if (outcome.point !== undefined && outcome.point !== null) {
+              // CRITICAL: Totals must be positive and within reasonable range (20-120 for CFB)
+              const totalValue = Math.abs(outcome.point); // Always use absolute value for totals
+              
+              if (totalValue < 20 || totalValue > 120) {
+                console.error(`   [ODDSAPI] ❌ REJECTED: Total outside valid range (20-120). point=${outcome.point}, book=${bookName}`);
+                continue; // Skip this line
+              }
+              
               lines.push({
                 gameId,
                 season: actualSeason,
                 week: actualWeek,
                 lineType: 'total',
-                lineValue: outcome.point,
-                closingLine: outcome.point,
+                lineValue: totalValue, // Always positive
+                closingLine: totalValue, // Always positive
                 bookName,
                 source: 'oddsapi',
                 timestamp,
