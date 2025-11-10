@@ -3272,7 +3272,9 @@ export async function GET(
 
     const mappingPassed = mappingNotes.length === 0;
     if (!mappingPassed) {
-      diagnosticsMessages.push('Rendering mismatch detected — a component tried to recompute favorite locally. Using server snapshot instead.');
+      // Note: This detects data inconsistencies in server-side mapping, not client recomputation
+      // The client always uses market_snapshot as SSOT - this is just validation
+      diagnosticsMessages.push('Data mapping inconsistencies detected in server snapshot. All UI components use market_snapshot as single source of truth.');
     }
 
     const diagnostics = {

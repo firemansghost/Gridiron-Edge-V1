@@ -191,6 +191,11 @@ export default function GameDetailPage() {
     );
   }
 
+  // ============================================
+  // SINGLE SOURCE OF TRUTH: market_snapshot
+  // ============================================
+  // All favorite/lines/spreads/totals come from market_snapshot ONLY
+  // Never recompute favorite locally - always hydrate from server payload
   const snapshot = game.market_snapshot;
   const diagnostics = game.diagnostics ?? {};
   const allDiagnosticsMessages: string[] = Array.isArray(diagnostics.messages) ? diagnostics.messages : [];
@@ -635,7 +640,7 @@ export default function GameDetailPage() {
                       <div className="flex items-center gap-2">
                         {game.picks.spread.favoritesDisagree && (
                           <div className="px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
-                            <InfoTooltip content={`Model rates ${game.model?.favorite?.teamName || 'one team'} ${game.model?.favorite?.spread.toFixed(1) || ''} on neutral. Market price is ${game.market?.favorite?.teamName || 'another team'} ${game.market?.favorite?.spread.toFixed(1) || ''}. Value exists on ${game.picks?.spread?.bettablePick?.teamName || 'the underdog'} at ${game.picks?.spread?.bettablePick?.line?.toFixed(1) || ''} or better.`} />
+                            <InfoTooltip content={`Model rates ${modelView?.modelFavoriteName || 'one team'} ${modelView?.modelFavoriteLine?.toFixed(1) || ''} on neutral. Market price is ${snapshot?.favoriteTeamName || 'another team'} ${snapshot?.favoriteLine?.toFixed(1) || ''}. Value exists on ${game.picks?.spread?.bettablePick?.teamName || 'the underdog'} at ${game.picks?.spread?.bettablePick?.line?.toFixed(1) || ''} or better.`} />
                             <span>Model vs Market Mismatch</span>
                           </div>
                         )}
@@ -1260,7 +1265,9 @@ export default function GameDetailPage() {
                     <InfoTooltip content={TOOLTIP_CONTENT.MODEL_FAVORITE} />
                   </div>
                   <div className="text-lg font-semibold text-gray-900">
-                    {game.model?.favorite ? `Model favorite: ${game.model.favorite.teamName} ${game.model.favorite.spread.toFixed(1)}` : '—'}
+                    {modelView?.modelFavoriteName && modelView?.modelFavoriteLine !== null 
+                      ? `Model favorite: ${modelView.modelFavoriteName} ${modelView.modelFavoriteLine.toFixed(1)}` 
+                      : '—'}
                   </div>
                 </div>
                 <div className="flex justify-between items-center">
