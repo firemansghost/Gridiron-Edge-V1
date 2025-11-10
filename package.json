@@ -40,6 +40,7 @@
     "verify:jobs": "node scripts/validate-team-aliases.mjs && node scripts/verify-job-assets.mjs",
     "check:canaries": "BASE_URL=https://gridiron-edge-v1.vercel.app npx tsx scripts/check_canaries.ts",
     "check:canaries:local": "BASE_URL=http://localhost:3000 npx tsx scripts/check_canaries.ts",
+    "backfill:consensus": "npx tsx scripts/backfill-consensus.ts",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "postinstall": "npm run prisma:generate"
   },
