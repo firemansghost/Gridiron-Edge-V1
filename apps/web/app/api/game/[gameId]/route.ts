@@ -6,7 +6,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { computeSpreadPick, computeTotalPick, convertToFavoriteCentric, computeATSEdge, computeBettableSpreadPick, computeTotalBetTo } from '@/lib/pick-helpers';
-import { pickMarketLine, getLineValue, pickMoneyline, americanToProb } from '@/lib/market-line-helpers';
+import { pickMarketLine, getLineValue, getPointValue, looksLikePriceLeak, pickMoneyline, americanToProb } from '@/lib/market-line-helpers';
 import { NextResponse } from 'next/server';
 
 // === TRUST-MARKET MODE CONFIGURATION ===
@@ -138,15 +138,8 @@ export async function GET(
     }
     
     // ============================================
-    // PRICE-LEAK FILTER & CONSENSUS HELPER
+    // CONSENSUS HELPER (uses getPointValue to filter price leaks)
     // ============================================
-    // Filter out obvious price leaks and compute median consensus
-    const looksLikePriceLeak = (value: number, fieldType: 'spread' | 'total'): boolean => {
-      // American odds typically: abs >= 100 and multiples of 5 (e.g., -115, +155, -240)
-      // Spreads/totals: typically have .0 or .5 steps
-      return Math.abs(value) >= 50 && value % 5 === 0 && !Number.isInteger(value + 0.5);
-    };
-    
     const computeMedianConsensus = (
       lines: typeof marketLinesToUse,
       lineType: 'spread' | 'total' | 'moneyline',
@@ -157,12 +150,20 @@ export async function GET(
       
       for (const line of lines) {
         if (line.lineType !== lineType) continue;
-        const value = getLineValue(line);
-        if (value === null || value === undefined) continue;
         
-        // Filter price leaks for spread/total
-        if (fieldType && looksLikePriceLeak(value, fieldType)) {
-          excludedCount++;
+        // CRITICAL: Use getPointValue for spread/total (filters price leaks), getLineValue for moneyline
+        const value = fieldType 
+          ? getPointValue(line, fieldType) // Filters price leaks automatically
+          : getLineValue(line); // Moneyline - prices are expected
+          
+        if (value === null || value === undefined) {
+          // Track as excluded if we expected a point but got a price leak
+          if (fieldType) {
+            const rawValue = getLineValue(line);
+            if (rawValue !== null && looksLikePriceLeak(rawValue)) {
+              excludedCount++;
+            }
+          }
           continue;
         }
         
@@ -1481,15 +1482,15 @@ export async function GET(
     console.log(`[Game ${gameId}] 🔍 SPREAD LINES BY TEAM:`, {
       homeTeam: game.homeTeam.name,
       homeTeamId: game.homeTeamId,
-      homeSpreadLine: homeSpreadLine ? getLineValue(homeSpreadLine) : null,
+      homeSpreadLine: homeSpreadLine ? getPointValue(homeSpreadLine, 'spread') : null,
       homeSpreadLineTeamId: homeSpreadLine?.teamId || 'NULL',
       awayTeam: game.awayTeam.name,
       awayTeamId: game.awayTeamId,
-      awaySpreadLine: awaySpreadLine ? getLineValue(awaySpreadLine) : null,
+      awaySpreadLine: awaySpreadLine ? getPointValue(awaySpreadLine, 'spread') : null,
       awaySpreadLineTeamId: awaySpreadLine?.teamId || 'NULL',
       bookName: spreadLine.bookName,
       allSpreadLines: allSpreadLinesForGame.map(l => ({
-        lineValue: getLineValue(l),
+        lineValue: getPointValue(l, 'spread'),
         teamId: l.teamId || 'NULL',
         timestamp: l.timestamp
       }))
@@ -1513,8 +1514,8 @@ export async function GET(
       // Use consensus values if available (filters out price leaks)
       if (useConsensusSpread && spreadConsensus.value !== null) {
         // Consensus available - determine which team should get the consensus value
-        const rawHomePrice = getLineValue(homeSpreadLine)!;
-        const rawAwayPrice = getLineValue(awaySpreadLine)!;
+        const rawHomePrice = getPointValue(homeSpreadLine, 'spread')!;
+        const rawAwayPrice = getPointValue(awaySpreadLine, 'spread')!;
         
         // Determine favorite from raw prices, then assign consensus value
         if (rawHomePrice < rawAwayPrice) {
@@ -1530,9 +1531,9 @@ export async function GET(
         }
         marketSpread = spreadConsensus.value; // Always negative (favorite's line)
       } else {
-        // No consensus - use raw line values
-        homePrice = getLineValue(homeSpreadLine)!;
-        awayPrice = getLineValue(awaySpreadLine)!;
+        // No consensus - use raw line values (with price-leak filter)
+        homePrice = getPointValue(homeSpreadLine, 'spread')!;
+        awayPrice = getPointValue(awaySpreadLine, 'spread')!;
         
         // The favorite is the team with the negative line
         if (homePrice < awayPrice) {
@@ -1561,9 +1562,9 @@ export async function GET(
       
       if (spreadLineWithTeamId.teamId) {
         // The selected spreadLine has a teamId - use it!
-        const spreadLineValue = getLineValue(spreadLine);
+        const spreadLineValue = getPointValue(spreadLine, 'spread');
         if (spreadLineValue === null || spreadLineValue === undefined) {
-          throw new Error(`Selected snapshot missing spread value for game ${gameId}`);
+          throw new Error(`Selected snapshot missing spread value for game ${gameId} (or value is a price leak)`);
         }
         
         // The spreadLine is the favorite's line (negative), and we know which team it belongs to
@@ -1604,9 +1605,9 @@ export async function GET(
         })));
         
         // Last resort: use power ratings to determine favorite, then assign the negative line to that team
-        const marketSpreadValue = getLineValue(spreadLine);
+        const marketSpreadValue = getPointValue(spreadLine, 'spread');
         if (marketSpreadValue === null || marketSpreadValue === undefined) {
-          throw new Error(`Selected snapshot missing spread value for game ${gameId}`);
+          throw new Error(`Selected snapshot missing spread value for game ${gameId} (or value is a price leak)`);
         }
         
         // Use power ratings to determine which team should be favored
@@ -1656,7 +1657,7 @@ export async function GET(
     const useConsensusTotal = totalConsensus.value !== null;
     const marketTotal = useConsensusTotal 
       ? Math.abs(totalConsensus.value!) // Always positive, from consensus
-      : (totalLine ? Math.abs(getLineValue(totalLine) ?? 0) : null);
+      : (totalLine ? Math.abs(getPointValue(totalLine, 'total') ?? 0) : null);
     
     // Add marketTotal to diagnostics now that it's declared
     totalDiag.marketTotal = marketTotal;
@@ -2272,6 +2273,25 @@ export async function GET(
     // If consensus is null, set both favoriteLine and dogLine to null
     const consensusFavoriteLine = spreadConsensus.value !== null ? spreadConsensus.value : null;
     const consensusDogLine = consensusFavoriteLine !== null ? -consensusFavoriteLine : null;
+    
+    // ============================================
+    // CRITICAL ASSERTIONS: Prevent price leaks in point fields
+    // ============================================
+    if (consensusFavoriteLine !== null) {
+      if (Math.abs(consensusFavoriteLine) > 60) {
+        console.error(`[Game ${gameId}] ⚠️ PRICE LEAK DETECTED in favoriteLine: ${consensusFavoriteLine}`, {
+          spreadConsensus,
+          looksLikeLeak: looksLikePriceLeak(consensusFavoriteLine)
+        });
+        if (process.env.NODE_ENV !== 'production') {
+          throw new Error(`Price leak detected: favoriteLine=${consensusFavoriteLine} (must be a point, not a price)`);
+        }
+      }
+    }
+    
+    if (marketTotal !== null && (marketTotal < 15 || marketTotal > 120)) {
+      console.warn(`[Game ${gameId}] ⚠️ Unusual marketTotal: ${marketTotal} (expected 15-120 for CFB)`);
+    }
     
     const market_snapshot = {
       favoriteTeamId: favoriteByRule.teamId,
@@ -3165,6 +3185,29 @@ export async function GET(
         cap: OVERLAY_CAP_TOTAL,
         edgeFloor: OVERLAY_EDGE_FLOOR,
         note: 'OU card shows when ou_inputs_ok (market available). Overlay computed when ou_model_valid (model is valid). See picks.total for overlay/betTo/flip values.'
+      },
+      // Market consensus diagnostics (transparency into price-leak filtering)
+      marketConsensus: {
+        spread: {
+          consensusValue: spreadConsensus.value,
+          consensusSpreadPts: spreadConsensus.value, // Explicit "pts" field for clarity
+          count: spreadConsensus.count,
+          sourceBooks: spreadConsensus.books,
+          excluded: spreadConsensus.excluded,
+          excludedReason: spreadConsensus.excluded > 0 ? 'price_leaks_detected' : null
+        },
+        total: {
+          consensusValue: totalConsensus.value,
+          consensusTotalPts: totalConsensus.value, // Explicit "pts" field for clarity
+          count: totalConsensus.count,
+          sourceBooks: totalConsensus.books,
+          excluded: totalConsensus.excluded,
+          excludedReason: totalConsensus.excluded > 0 ? 'price_leaks_detected' : null
+        },
+        moneyline: {
+          count: moneylineConsensus.count,
+          sourceBooks: moneylineConsensus.books
+        }
       },
       messages: diagnosticsMessages
     };

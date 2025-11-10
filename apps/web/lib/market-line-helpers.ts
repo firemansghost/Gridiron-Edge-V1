@@ -129,6 +129,69 @@ export function getLineValue(
 }
 
 /**
+ * Check if a value looks like an American price (odds) rather than a point spread/total
+ * 
+ * Price characteristics:
+ * - abs >= 50 (spreads/totals rarely exceed ±50)
+ * - Multiple of 5 (American odds are typically -110, -115, +120, etc.)
+ * - NOT a half-point (.5) or quarter-point (.25, .75)
+ * 
+ * @param value - Numeric value to check
+ * @returns true if value looks like a price, false if it looks like a point
+ */
+export function looksLikePriceLeak(value: number): boolean {
+  const absValue = Math.abs(value);
+  
+  // American odds are typically >= 100, but we'll use 50 as a conservative threshold
+  if (absValue < 50) return false;
+  
+  // American odds are always multiples of 5 (e.g., -110, -115, +120, +155)
+  if (absValue % 5 !== 0) return false;
+  
+  // Spreads/totals use half-point increments (.5) or sometimes quarter-points
+  // If it has .5 or .25/.75, it's likely a point, not a price
+  const decimal = Math.abs(value - Math.floor(value));
+  if (Math.abs(decimal - 0.5) < 0.01) return false; // .5
+  if (Math.abs(decimal - 0.25) < 0.01) return false; // .25
+  if (Math.abs(decimal - 0.75) < 0.01) return false; // .75
+  
+  // If abs >= 50, multiple of 5, and no half/quarter-point: likely a price
+  return true;
+}
+
+/**
+ * Extract a POINT value (spread or total) from a market line
+ * Returns null if the value looks like a price (American odds) instead of a point
+ * 
+ * @param line - Market line object
+ * @param fieldType - Type of field ('spread' or 'total')
+ * @returns Point value, or null if unavailable or looks like a price
+ */
+export function getPointValue(
+  line?: { closingLine?: number | null; lineValue?: number | null } | null,
+  fieldType?: 'spread' | 'total'
+): number | null {
+  if (!line) return null;
+  
+  // Prefer closingLine if available
+  let value: number | null = null;
+  if (line.closingLine !== null && line.closingLine !== undefined) {
+    value = line.closingLine;
+  } else if (line.lineValue !== null && line.lineValue !== undefined) {
+    value = line.lineValue;
+  }
+  
+  if (value === null) return null;
+  
+  // Filter out price leaks (only for spread/total, not moneyline)
+  if (fieldType && looksLikePriceLeak(value)) {
+    return null;
+  }
+  
+  return value;
+}
+
+/**
  * Get line value with fallback information
  * Returns both the value and whether it's a closing line or latest snapshot
  * 
