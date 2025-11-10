@@ -531,12 +531,130 @@ export async function GET(
     // Use median consensus within the selected window (pre-kick for completed games)
     const spreadConsensus = computeMedianConsensus(marketLinesToUse, 'spread', 'spread');
     const totalConsensus = computeMedianConsensus(marketLinesToUse, 'total', 'total');
-    const moneylineConsensus = computeMedianConsensus(marketLinesToUse, 'moneyline'); // No price-leak filter for ML
+    
+    // ============================================
+    // MONEYLINE CONSENSUS (dedupe per book, separate favorite/dog)
+    // ============================================
+    const computeMoneylineConsensus = (
+      lines: typeof marketLinesToUse
+    ): { 
+      favoritePrice: number | null; 
+      dogPrice: number | null;
+      favoriteCount: number;
+      dogCount: number;
+      books: string[];
+      excluded: number;
+      rawCount: number;
+      perBookCount: number;
+      deduped: boolean;
+    } => {
+      const favoritePrices: { value: number; book: string }[] = [];
+      const dogPrices: { value: number; book: string }[] = [];
+      let excludedCount = 0;
+      
+      for (const line of lines) {
+        if (line.lineType !== 'moneyline') continue;
+        
+        const value = getLineValue(line); // Uses closingLine (prices are expected for ML)
+        if (value === null || value === undefined) {
+          excludedCount++;
+          continue;
+        }
+        
+        // Guardrail: Reject if abs(price) < 100 (not American odds format)
+        if (Math.abs(value) < 100) {
+          excludedCount++;
+          continue;
+        }
+        
+        // Guardrail: Reject if not multiple of 5 (American odds are typically -110, -115, +120, etc.)
+        if (Math.abs(value) % 5 !== 0) {
+          excludedCount++;
+          continue;
+        }
+        
+        const book = line.bookName || line.source || 'unknown';
+        
+        // Separate favorite (negative) and dog (positive) prices
+        if (value < 0) {
+          favoritePrices.push({ value, book });
+        } else {
+          dogPrices.push({ value, book });
+        }
+      }
+      
+      const rawCount = favoritePrices.length + dogPrices.length;
+      
+      // Dedupe per book (keep one favorite price and one dog price per book)
+      const favoritePerBook = new Map<string, number>();
+      const dogPerBook = new Map<string, number>();
+      
+      for (const { value, book } of favoritePrices) {
+        // Round to nearest 5 (American odds are multiples of 5)
+        const rounded = Math.round(value / 5) * 5;
+        if (!favoritePerBook.has(book)) {
+          favoritePerBook.set(book, rounded);
+        }
+      }
+      
+      for (const { value, book } of dogPrices) {
+        // Round to nearest 5
+        const rounded = Math.round(value / 5) * 5;
+        if (!dogPerBook.has(book)) {
+          dogPerBook.set(book, rounded);
+        }
+      }
+      
+      const dedupedFavoritePrices = Array.from(favoritePerBook.values());
+      const dedupedDogPrices = Array.from(dogPerBook.values());
+      const perBookCount = Math.max(favoritePerBook.size, dogPerBook.size);
+      
+      // Compute medians
+      const favoriteMedian = dedupedFavoritePrices.length > 0
+        ? (() => {
+            const sorted = dedupedFavoritePrices.sort((a, b) => a - b);
+            const mid = Math.floor(sorted.length / 2);
+            return sorted.length % 2 === 0
+              ? (sorted[mid - 1] + sorted[mid]) / 2
+              : sorted[mid];
+          })()
+        : null;
+      
+      const dogMedian = dedupedDogPrices.length > 0
+        ? (() => {
+            const sorted = dedupedDogPrices.sort((a, b) => a - b);
+            const mid = Math.floor(sorted.length / 2);
+            return sorted.length % 2 === 0
+              ? (sorted[mid - 1] + sorted[mid]) / 2
+              : sorted[mid];
+          })()
+        : null;
+      
+      // Get unique books (union of favorite and dog books)
+      const allBooks = Array.from(new Set([
+        ...Array.from(favoritePerBook.keys()),
+        ...Array.from(dogPerBook.keys())
+      ]));
+      
+      return {
+        favoritePrice: favoriteMedian,
+        dogPrice: dogMedian,
+        favoriteCount: dedupedFavoritePrices.length,
+        dogCount: dedupedDogPrices.length,
+        books: allBooks,
+        excluded: excludedCount,
+        rawCount,
+        perBookCount,
+        deduped: true
+      };
+    };
+    
+    const moneylineConsensus = computeMoneylineConsensus(marketLinesToUse);
     
     // ============================================
     // CONSENSUS RESULTS LOGGING (one-line summary)
     // ============================================
-    console.log(`[Game ${gameId}] 📊 CONSENSUS: spread=${spreadConsensus.value?.toFixed(1) ?? 'null'} (${spreadConsensus.perBookCount || 0} books, deduped=${spreadConsensus.deduped}), total=${totalConsensus.value?.toFixed(1) ?? 'null'} (${totalConsensus.count} books), ML=${moneylineConsensus.count} books, usingPreKickLines=${usingPreKickLines}, rawCount=spread:${spreadConsensus.rawCount || 0}/total:${totalConsensus.rawCount || 0}`);
+    console.log(`[Game ${gameId}] 📊 CONSENSUS: spread=${spreadConsensus.value?.toFixed(1) ?? 'null'} (${spreadConsensus.perBookCount || 0} books, deduped=${spreadConsensus.deduped}), total=${totalConsensus.value?.toFixed(1) ?? 'null'} (${totalConsensus.count} books), ML=fav:${moneylineConsensus.favoritePrice ?? 'null'}/dog:${moneylineConsensus.dogPrice ?? 'null'} (${moneylineConsensus.perBookCount} books, deduped=${moneylineConsensus.deduped}), usingPreKickLines=${usingPreKickLines}, rawCount=spread:${spreadConsensus.rawCount || 0}/total:${totalConsensus.rawCount || 0}/ML:${moneylineConsensus.rawCount}`);
     
     // Detailed breakdown (for debugging)
     if (process.env.NODE_ENV === 'development') {
@@ -556,8 +674,18 @@ export async function GET(
           excluded: totalConsensus.excluded
         },
         moneyline: {
-          count: moneylineConsensus.count,
-          books: moneylineConsensus.books
+          favoritePrice: moneylineConsensus.favoritePrice,
+          dogPrice: moneylineConsensus.dogPrice,
+          favoriteCount: moneylineConsensus.favoriteCount,
+          dogCount: moneylineConsensus.dogCount,
+          count: moneylineConsensus.perBookCount, // Per-book count (after dedupe)
+          sourceBooks: moneylineConsensus.books,
+          excluded: moneylineConsensus.excluded,
+          rawCount: moneylineConsensus.rawCount,
+          perBookCount: moneylineConsensus.perBookCount,
+          deduped: moneylineConsensus.deduped,
+          usedFrom: 'closingLine', // ML uses prices from closingLine
+          note: 'Moneyline consensus: dedupes per book, computes median separately for favorite (negative) and dog (positive) prices. Requires perBookCount >= 2.'
         }
       });
     }
@@ -2023,60 +2151,60 @@ export async function GET(
       }
     });
     
-    if (homeMoneylineLine && awayMoneylineLine) {
-      // NEW APPROACH: We have negative and positive moneylines (stored temporarily as home/away)
-      // Assign based on which is negative (favorite) and which is positive (dog)
+    // ============================================
+    // USE MONEYLINE CONSENSUS (deduped per book)
+    // ============================================
+    // Guardrail: Require at least 2 books for consensus
+    if (moneylineConsensus.perBookCount >= 2) {
+      // Use consensus values (deduped, median of per-book prices)
+      moneylineFavoritePrice = moneylineConsensus.favoritePrice;
+      moneylineDogPrice = moneylineConsensus.dogPrice;
+      
+      // Always assign teamIds based on the favorite from spread
+      moneylineFavoriteTeamId = favoriteTeamId;
+      moneylineDogTeamId = favoriteTeamId === game.homeTeamId ? game.awayTeamId : game.homeTeamId;
+      
+      console.log(`[Game ${gameId}] ✅ MONEYLINE FROM CONSENSUS:`, {
+        favoriteTeamId: moneylineFavoriteTeamId,
+        favoritePrice: moneylineFavoritePrice,
+        dogTeamId: moneylineDogTeamId,
+        dogPrice: moneylineDogPrice,
+        perBookCount: moneylineConsensus.perBookCount,
+        rawCount: moneylineConsensus.rawCount,
+        deduped: moneylineConsensus.deduped,
+        source: 'consensus (deduped per book)'
+      });
+    } else if (homeMoneylineLine && awayMoneylineLine) {
+      // FALLBACK: Use individual lines if consensus insufficient (< 2 books)
+      console.warn(`[Game ${gameId}] ⚠️ MONEYLINE CONSENSUS LOW LIQUIDITY (${moneylineConsensus.perBookCount} books), using individual lines`);
+      
       const line1Price = getLineValue(homeMoneylineLine);
       const line2Price = getLineValue(awayMoneylineLine);
       
-      // The negative line is the favorite, positive is the dog
       if (line1Price !== null && line2Price !== null) {
         if (line1Price < 0 && line2Price > 0) {
-          // line1 is favorite (negative), line2 is dog (positive)
           moneylineFavoritePrice = line1Price;
           moneylineDogPrice = line2Price;
         } else if (line2Price < 0 && line1Price > 0) {
-          // line2 is favorite (negative), line1 is dog (positive)
           moneylineFavoritePrice = line2Price;
           moneylineDogPrice = line1Price;
         }
         
-        // Always assign teamIds based on the favorite from spread
         moneylineFavoriteTeamId = favoriteTeamId;
         moneylineDogTeamId = favoriteTeamId === game.homeTeamId ? game.awayTeamId : game.homeTeamId;
-        
-        console.log(`[Game ${gameId}] ✅ MONEYLINE ASSIGNED (by sign):`, {
-          favoriteTeamId: moneylineFavoriteTeamId,
-          favoritePrice: moneylineFavoritePrice,
-          dogTeamId: moneylineDogTeamId,
-          dogPrice: moneylineDogPrice,
-          source: 'sign-based assignment (negative=favorite, positive=dog)'
-        });
       }
-    } else {
-      // FALLBACK: Couldn't find both moneylines from the new approach
-      // Use mlVal if available (old behavior)
-      console.warn(`[Game ${gameId}] ⚠️ Could not find both moneylines, falling back to mlVal`);
+    } else if (mlVal !== null && mlVal !== undefined) {
+      // FALLBACK: Use mlVal if available (old behavior)
+      console.warn(`[Game ${gameId}] ⚠️ MONEYLINE FALLBACK to mlVal (consensus insufficient)`);
       
-      if (mlVal !== null && mlVal !== undefined) {
-        if (mlVal < 0) {
-          moneylineFavoriteTeamId = favoriteTeamId;
-          moneylineDogTeamId = favoriteTeamId === game.homeTeamId ? game.awayTeamId : game.homeTeamId;
-          moneylineFavoritePrice = mlVal;
-        } else if (mlVal > 0) {
-          moneylineFavoriteTeamId = favoriteTeamId === game.homeTeamId ? game.awayTeamId : game.homeTeamId;
-          moneylineDogTeamId = favoriteTeamId;
-          moneylineDogPrice = mlVal;
-        }
-        
-        console.log(`[Game ${gameId}] ⚠️ FALLBACK MONEYLINE (single value from mlVal):`, {
-          mlVal,
-          favoriteTeamId: moneylineFavoriteTeamId,
-          favoritePrice: moneylineFavoritePrice,
-          dogTeamId: moneylineDogTeamId,
-          dogPrice: moneylineDogPrice,
-          source: 'mlVal fallback'
-        });
+      if (mlVal < 0) {
+        moneylineFavoriteTeamId = favoriteTeamId;
+        moneylineDogTeamId = favoriteTeamId === game.homeTeamId ? game.awayTeamId : game.homeTeamId;
+        moneylineFavoritePrice = mlVal;
+      } else if (mlVal > 0) {
+        moneylineFavoriteTeamId = favoriteTeamId === game.homeTeamId ? game.awayTeamId : game.homeTeamId;
+        moneylineDogTeamId = favoriteTeamId;
+        moneylineDogPrice = mlVal;
       }
     }
 
@@ -2468,7 +2596,7 @@ export async function GET(
       counts: {
         spread: spreadConsensus.count,
         total: totalConsensus.count,
-        moneyline: moneylineConsensus.count
+        moneyline: moneylineConsensus.perBookCount // Use per-book count (after dedupe)
       },
       leakFilter: {
         spread: { excluded: spreadConsensus.excluded },
@@ -3376,10 +3504,18 @@ export async function GET(
           note: 'Total consensus reads ONLY from lineValue field (points), never closingLine (prices). Totals must be positive.'
         },
         moneyline: {
-          count: moneylineConsensus.count,
+          favoritePrice: moneylineConsensus.favoritePrice,
+          dogPrice: moneylineConsensus.dogPrice,
+          favoriteCount: moneylineConsensus.favoriteCount,
+          dogCount: moneylineConsensus.dogCount,
+          count: moneylineConsensus.perBookCount, // Per-book count (after dedupe)
           sourceBooks: moneylineConsensus.books,
-          usedFrom: 'closingLine/lineValue', // ML uses prices
-          note: 'Moneyline uses closingLine (prices are expected for ML)'
+          excluded: moneylineConsensus.excluded,
+          rawCount: moneylineConsensus.rawCount,
+          perBookCount: moneylineConsensus.perBookCount,
+          deduped: moneylineConsensus.deduped,
+          usedFrom: 'closingLine', // ML uses prices from closingLine
+          note: 'Moneyline consensus: dedupes per book, computes median separately for favorite (negative) and dog (positive) prices. Requires perBookCount >= 2.'
         }
       },
       messages: diagnosticsMessages
