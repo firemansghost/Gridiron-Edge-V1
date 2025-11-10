@@ -280,7 +280,8 @@ export default function GameDetailPage() {
           </div>
 
           {/* Validation Warnings (if any flags raised) - only show specific warnings */}
-          {game.validation && (game.validation.modelTotalWarning || game.validation.favoritesDisagree || game.validation.edgeAbsGt20) && (
+          {/* Data Quality Warning Banner - Excludes model total warnings (shown inline on Total card) */}
+          {game.validation && (game.validation.favoritesDisagree || game.validation.edgeAbsGt20) && (
             <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <div className="flex items-start gap-3">
                 <div className="flex-shrink-0">
@@ -294,12 +295,6 @@ export default function GameDetailPage() {
                     <InfoTooltip content="This warning appears when data quality checks detect specific issues. The exact problems are listed below." />
                   </div>
                   <div className="text-sm text-yellow-800 space-y-1">
-                    {game.validation.modelTotalWarning && (
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">⚠️</span>
-                        <span>{game.validation.modelTotalWarning}</span>
-                      </div>
-                    )}
                     {game.validation.favoritesDisagree && (
                       <div className="flex items-center gap-2">
                         <span className="font-medium">⚠️ Price Mismatch:</span>
@@ -936,6 +931,12 @@ export default function GameDetailPage() {
                     <div className="text-xs text-gray-500">
                       Headline shows market number: {snapshot?.marketTotal?.toFixed(1) ?? 'N/A'}
                     </div>
+                    {/* Inline info note for model total warning (downgraded from banner) */}
+                    {game.validation?.modelTotalWarning && (
+                      <div className="text-xs text-gray-500 mt-2 bg-gray-50 border border-gray-200 rounded px-2 py-1">
+                        ℹ️ {game.validation.modelTotalWarning}
+                      </div>
+                    )}
                     {/* Diagnostics (if available) */}
                     {game.validation?.totals_nan_stage && (
                       <div className="text-xs text-gray-400 mt-2 italic">
