@@ -1376,7 +1376,7 @@ export async function GET(
     // Determine home and away prices from the teamId-tagged lines
     let homePrice: number;
     let awayPrice: number;
-    let marketSpread: number;
+    let marketSpread: number | null; // Can be null if data quality issue detected
     let favoriteTeamId: string;
     let favoriteTeamName: string;
     
@@ -1511,11 +1511,12 @@ export async function GET(
     
     // Favorite selection: already determined above using teamId
     const homeIsFavorite = favoriteTeamId === game.homeTeamId;
+    // Handle null marketSpread (data quality issue) - use 0 as fallback
     const favoriteByRule = {
       teamId: favoriteTeamId,
       teamName: favoriteTeamName,
-      price: marketSpread, // Negative (favorite's line)
-      line: marketSpread // Already negative (favorite-centric)
+      price: marketSpread ?? 0, // Negative (favorite's line), or 0 if invalid
+      line: marketSpread ?? 0 // Already negative (favorite-centric), or 0 if invalid
     };
     
     // Tolerance check: abs(homePrice + awayPrice) should be <= 0.5
@@ -2484,7 +2485,7 @@ export async function GET(
     // Determine if overlay direction points to the dog
     // If marketSpread < 0 (home favored), spreadOverlay > 0 means model likes away (dog)
     // If marketSpread > 0 (away favored), spreadOverlay < 0 means model likes home (dog)
-    const overlayFavorsDog = (marketSpread < 0 && spreadOverlay > 0) || (marketSpread > 0 && spreadOverlay < 0);
+    const overlayFavorsDog = marketSpread !== null && ((marketSpread < 0 && spreadOverlay > 0) || (marketSpread > 0 && spreadOverlay < 0));
     
     // Block dog headline if extreme favorite AND overlay points to dog
     const blockDogHeadline = isExtremeFavorite && overlayFavorsDog && hasSpreadEdge;
@@ -2522,7 +2523,7 @@ export async function GET(
         teamName: null,
         line: null,
         label: null,
-        reasoning: `Extreme favorite game (${Math.abs(marketSpread).toFixed(1)} pts). Model overlay ${spreadOverlay >= 0 ? '+' : ''}${spreadOverlay.toFixed(1)} pts favors the underdog, but we don't recommend 20+ point dogs. Range guidance provided.`,
+        reasoning: `Extreme favorite game (${marketSpread !== null ? Math.abs(marketSpread).toFixed(1) : 'N/A'} pts). Model overlay ${spreadOverlay >= 0 ? '+' : ''}${spreadOverlay.toFixed(1)} pts favors the underdog, but we don't recommend 20+ point dogs. Range guidance provided.`,
         betTo: spreadBetTo,
         favoritesDisagree: false,
         suppressHeadline: true, // Flag for UI to show "No edge" headline but keep range
@@ -3136,8 +3137,10 @@ export async function GET(
     
     // 4. CRITICAL: Validate Market Spread absolute value is not excessive (> 50)
     // This catches price values that leaked into spread fields
+    // NOTE: For existing bad data, we handle gracefully instead of throwing
+    let dataQualityWarning: string | null = null;
     if (marketSpread !== null && Math.abs(marketSpread) > 50) {
-      console.error(`[Game ${gameId}] ❌ REJECTED: Market Spread absolute value exceeds 50 (likely price leak): ${marketSpread.toFixed(1)}`, {
+      console.error(`[Game ${gameId}] ⚠️ DATA QUALITY ISSUE: Market Spread absolute value exceeds 50 (likely price leak): ${marketSpread.toFixed(1)}`, {
         modelSpread: finalImpliedSpread,
         marketSpread,
         gameId,
@@ -3146,10 +3149,44 @@ export async function GET(
         spreadLineValue: spreadLine?.lineValue,
         spreadLineSource: spreadLine?.source,
         spreadLineBook: spreadLine?.bookName,
-        warning: 'This spread value is likely a price (American odds) that was incorrectly mapped to a spread point. Rejecting this game data.'
+        warning: 'This spread value is likely a price (American odds) that was incorrectly mapped to a spread point. This game needs re-ingestion with corrected data.'
       });
-      // CRITICAL: This is a data quality issue - throw error to prevent downstream corruption
-      throw new Error(`Data quality issue: Market spread (${marketSpread.toFixed(1)}) exceeds 50, likely a price leak. Game ${gameId} cannot be processed.`);
+      
+      // Try to find a better spread value from other lines or historical data
+      // Look for other spread lines that might be valid
+      const otherSpreadLines = marketLinesWithTeamId.filter(
+        (l) => l.lineType === 'spread' && 
+               l.id !== spreadLine?.id &&
+               l.lineValue !== null &&
+               Math.abs(l.lineValue) <= 50
+      );
+      
+      if (otherSpreadLines.length > 0) {
+        // Use the first valid spread line found
+        const validSpreadLine = otherSpreadLines[0];
+        const validSpreadValue = getLineValue(validSpreadLine);
+        if (validSpreadValue !== null && Math.abs(validSpreadValue) <= 50) {
+          console.log(`[Game ${gameId}] ✅ Using fallback spread from line ${validSpreadLine.id}: ${validSpreadValue}`);
+          marketSpread = validSpreadValue;
+          // Update favoriteByRule if needed
+          if (validSpreadValue < 0) {
+            favoriteTeamId = game.homeTeamId;
+            favoriteTeamName = game.homeTeam.name;
+          } else {
+            favoriteTeamId = game.awayTeamId;
+            favoriteTeamName = game.awayTeam.name;
+          }
+          dataQualityWarning = `Data quality issue detected: Original spread (${spreadLine?.lineValue}) was likely a price value. Using fallback spread (${validSpreadValue}).`;
+        } else {
+          // No valid spread found - mark as invalid but continue
+          dataQualityWarning = `Data quality issue: Market spread (${marketSpread.toFixed(1)}) exceeds 50, likely a price leak. Spread-based features may be unavailable.`;
+          marketSpread = null; // Mark as invalid
+        }
+      } else {
+        // No fallback available - mark as invalid but continue
+        dataQualityWarning = `Data quality issue: Market spread (${marketSpread.toFixed(1)}) exceeds 50, likely a price leak. Spread-based features may be unavailable.`;
+        marketSpread = null; // Mark as invalid
+      }
     }
     
     // 5. Validate ATS Edge magnitude is not excessive (> 20)
@@ -3181,10 +3218,10 @@ export async function GET(
     // 7. Validate Favorite Identity Consistency
     // Model and market should favor the same team (or at least be consistent)
     const modelFavorsHomeRaw = finalImpliedSpread < 0;
-    const marketFavorsHome = marketSpread < 0;
-    const favoriteMismatch = modelFavorsHomeRaw !== marketFavorsHome;
+    const marketFavorsHome = marketSpread !== null && marketSpread < 0;
+    const favoriteMismatch = marketSpread !== null && modelFavorsHomeRaw !== marketFavorsHome;
     
-    if (favoriteMismatch && Math.abs(finalImpliedSpread) > 3 && Math.abs(marketSpread) > 3) {
+    if (favoriteMismatch && Math.abs(finalImpliedSpread) > 3 && marketSpread !== null && Math.abs(marketSpread) > 3) {
       // Only warn if both spreads are significant (not close games)
       console.warn(`[Game ${gameId}] ⚠️ Favorite identity mismatch: Model and Market favor different teams`, {
         modelSpread: finalImpliedSpread,
@@ -4006,11 +4043,11 @@ export async function GET(
                                         Math.abs(closingTotalEdge) < Math.abs(openingTotalEdge);
           
           // Calculate drift amounts for per-card CLV hints
-          const spreadDrift = marketSpread - openingSpread;
+          const spreadDrift = marketSpread !== null ? marketSpread - openingSpread : null;
           const totalDrift = marketTotal !== null && openingTotal !== null ? marketTotal - openingTotal : null;
           
           // Thresholds: spread ≥ 0.5 pts, total ≥ 1.0 pt
-          const spreadDriftSignificant = Math.abs(spreadDrift) >= 0.5 && spreadMovedTowardModel;
+          const spreadDriftSignificant = spreadDrift !== null && Math.abs(spreadDrift) >= 0.5 && spreadMovedTowardModel;
           const totalDriftSignificant = totalDrift !== null && Math.abs(totalDrift) >= 1.0 && totalMovedTowardModel;
           
           if (spreadMovedTowardModel || totalMovedTowardModel) {
@@ -4065,8 +4102,10 @@ export async function GET(
         favoritesDisagree,
         edgeAbsGt20,
         modelTotalWarning: modelTotalWarning, // Specific warning message (null if no issue)
+        dataQualityWarning: dataQualityWarning, // Data quality issue (price leak, etc.)
         warnings: [
           ...(modelTotalWarning ? [modelTotalWarning] : []),
+          ...(dataQualityWarning ? [dataQualityWarning] : []),
           ...(favoritesDisagree ? ['Model and market favor different teams'] : []),
           ...(edgeAbsGt20 ? ['Edge magnitude exceeds 20 points'] : [])
         ],
