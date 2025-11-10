@@ -494,6 +494,38 @@ export default function GameDetailPage() {
             {bookStamp && (
               <div className="text-xs text-blue-700 mb-2 sm:mb-3">{bookStamp}</div>
             )}
+            {/* Consensus Meta Row */}
+            {game.diagnostics?.marketConsensus && (
+              <div className="text-xs text-blue-600 mb-2 sm:mb-3 flex items-center gap-2 flex-wrap">
+                <span>Consensus: {game.market_snapshot?.consensusMethod || 'median'}</span>
+                {game.diagnostics.marketConsensus.spread?.perBookCount !== undefined && (
+                  <>
+                    <span>•</span>
+                    <span>{game.diagnostics.marketConsensus.spread.perBookCount} books (spread)</span>
+                  </>
+                )}
+                {game.diagnostics.marketConsensus.moneyline?.perBookCount !== undefined && game.diagnostics.marketConsensus.moneyline.perBookCount > 0 && (
+                  <>
+                    <span>•</span>
+                    <span>{game.diagnostics.marketConsensus.moneyline.perBookCount} books (ML)</span>
+                  </>
+                )}
+                {game.market_snapshot?.window && (
+                  <>
+                    <span>•</span>
+                    <span>
+                      window {new Date(game.market_snapshot.window.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} → {new Date(game.market_snapshot.window.end).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                    </span>
+                  </>
+                )}
+                {game.diagnostics?.snapshotId && (
+                  <>
+                    <span>•</span>
+                    <span className="font-mono text-xs">snapshot {game.diagnostics.snapshotId.substring(0, 20)}...</span>
+                  </>
+                )}
+              </div>
+            )}
             <div className="grid grid-cols-3 gap-2 sm:gap-4">
               <div className="bg-white p-3 rounded border border-blue-100">
                 <div className="text-xs text-gray-600 mb-1">Spread</div>
@@ -505,7 +537,9 @@ export default function GameDetailPage() {
                 <div className="text-xs text-gray-500 mt-1">
                   {snapshot?.favoriteLine !== undefined && snapshot?.favoriteLine !== null
                     ? (game.market_snapshot?.favoriteTeamName ? `${game.market_snapshot.favoriteTeamName} favored` : 'Favorite unavailable')
-                    : 'Market line unavailable or inconsistent'}
+                    : (game.diagnostics?.marketConsensus?.spread?.perBookCount !== undefined && game.diagnostics.marketConsensus.spread.perBookCount < 2
+                        ? 'N/A • Not enough pre-kick quotes'
+                        : 'Market line unavailable or inconsistent')}
                 </div>
                 {/* Dev diagnostic (only in dev mode) */}
                 {process.env.NODE_ENV !== 'production' && game.market_snapshot && game.market_snapshot.favoriteLine !== null && game.market_snapshot.dogLine !== null && (
@@ -524,7 +558,9 @@ export default function GameDetailPage() {
                 <div className="text-xs text-gray-500 mt-1">
                   {snapshot?.marketTotal !== undefined && snapshot?.marketTotal !== null
                     ? `Market total ${snapshot.marketTotal.toFixed(1)}`
-                    : 'Market line unavailable or inconsistent'}
+                    : (game.diagnostics?.marketConsensus?.total?.count !== undefined && game.diagnostics.marketConsensus.total.count < 2
+                        ? 'N/A • Not enough pre-kick quotes'
+                        : 'Market line unavailable or inconsistent')}
                 </div>
               </div>
               <div className="bg-white p-3 rounded border border-blue-100">
@@ -609,8 +645,8 @@ export default function GameDetailPage() {
                     <span>Snapshot {game.diagnostics.snapshotId.substring(0, 20)}...</span>
                   </>
                 )}
-                {/* Pre-kick window pill */}
-                {game.game?.usingPreKickLines && (
+                {/* Pre-kick window pill - show even if we had to fallback to all lines */}
+                {(game.game?.usingPreKickLines || (game.game?.isCompleted && game.market_snapshot?.window)) && (
                   <>
                     <span>•</span>
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
@@ -706,7 +742,9 @@ export default function GameDetailPage() {
                       </>
                     ) : (
                       <div className="text-sm text-gray-500 mb-2">
-                        Market line unavailable or inconsistent — bet-to/flip suppressed
+                        {game.diagnostics?.marketConsensus?.spread?.perBookCount !== undefined && game.diagnostics.marketConsensus.spread.perBookCount < 2
+                          ? 'N/A • Not enough pre-kick quotes — bet-to/flip suppressed'
+                          : 'Market line unavailable or inconsistent — bet-to/flip suppressed'}
                       </div>
                     )}
                     {/* PHASE 2.4: Lineage Line */}
