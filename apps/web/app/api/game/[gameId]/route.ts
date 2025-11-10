@@ -144,7 +144,16 @@ export async function GET(
       lines: typeof marketLinesToUse,
       lineType: 'spread' | 'total' | 'moneyline',
       fieldType?: 'spread' | 'total'
-    ): { value: number | null; count: number; books: string[]; excluded: number; usedFrom?: string } => {
+    ): { 
+      value: number | null; 
+      count: number; 
+      books: string[]; 
+      excluded: number; 
+      usedFrom?: string;
+      rawCount?: number;
+      perBookCount?: number;
+      deduped?: boolean;
+    } => {
       const validValues: { value: number; book: string }[] = [];
       let excludedCount = 0;
       
@@ -174,11 +183,79 @@ export async function GET(
           count: 0, 
           books: [], 
           excluded: excludedCount,
-          usedFrom: fieldType ? 'lineValue' : 'closingLine/lineValue'
+          usedFrom: fieldType ? 'lineValue' : 'closingLine/lineValue',
+          rawCount: 0,
+          perBookCount: 0,
+          deduped: fieldType === 'spread'
         };
       }
       
-      // Get unique books
+      const rawCount = validValues.length;
+      
+      // CRITICAL: For spreads, normalize to favorite-centric and dedupe per book
+      // Database stores TWO lines per game (home +X, away -X), but we only want ONE per book
+      if (fieldType === 'spread') {
+        // Step 1: Normalize all spreads to favorite-centric (always negative)
+        // lineValue sign convention: home_minus_away
+        // Positive lineValue → home favored → favorite line is -abs(value)
+        // Negative lineValue → away favored → favorite line is -abs(value)
+        const normalizedValues: { value: number; book: string }[] = validValues.map(v => ({
+          value: -Math.abs(v.value), // Always negative (favorite-centric)
+          book: v.book
+        }));
+        
+        // Step 2: Dedupe per book (keep one reading per book)
+        // Round to nearest 0.5 to handle float precision
+        const perBookMap = new Map<string, number>();
+        for (const { value, book } of normalizedValues) {
+          const rounded = Math.round(value * 2) / 2; // Round to nearest 0.5
+          
+          // If book already exists, keep the more common value (or first seen)
+          if (!perBookMap.has(book)) {
+            perBookMap.set(book, rounded);
+          }
+        }
+        
+        // Convert back to array
+        const dedupedValues = Array.from(perBookMap.entries()).map(([book, value]) => ({ book, value }));
+        const perBookCount = dedupedValues.length;
+        
+        if (dedupedValues.length === 0) {
+          return {
+            value: null,
+            count: 0,
+            books: [],
+            excluded: excludedCount,
+            usedFrom: 'lineValue',
+            rawCount,
+            perBookCount: 0,
+            deduped: true
+          };
+        }
+        
+        // Compute median on normalized, deduped values
+        const sorted = dedupedValues.map(v => v.value).sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        const median = sorted.length % 2 === 0
+          ? (sorted[mid - 1] + sorted[mid]) / 2
+          : sorted[mid];
+        
+        // Get unique books
+        const uniqueBooks = Array.from(new Set(dedupedValues.map(v => v.book)));
+        
+        return {
+          value: median,
+          count: perBookCount,
+          books: uniqueBooks,
+          excluded: excludedCount,
+          usedFrom: 'lineValue',
+          rawCount,
+          perBookCount,
+          deduped: true
+        };
+      }
+      
+      // For totals and moneyline, no normalization needed
       const uniqueBooks = Array.from(new Set(validValues.map(v => v.book)));
       
       // Compute median
@@ -193,7 +270,10 @@ export async function GET(
         count: validValues.length,
         books: uniqueBooks,
         excluded: excludedCount,
-        usedFrom: fieldType ? 'lineValue' : 'closingLine/lineValue'
+        usedFrom: fieldType ? 'lineValue' : 'closingLine/lineValue',
+        rawCount,
+        perBookCount: validValues.length,
+        deduped: false
       };
     };
     
@@ -2299,19 +2379,31 @@ export async function GET(
     const consensusDogLine = consensusFavoriteLine !== null ? -consensusFavoriteLine : null;
     
     // ============================================
-    // CRITICAL ASSERTIONS: Prevent price leaks in point fields
+    // CRITICAL ASSERTIONS & GUARDRAILS: Prevent price leaks and invalid spreads
     // ============================================
-    if (consensusFavoriteLine !== null) {
-      if (Math.abs(consensusFavoriteLine) > 60) {
-        console.error(`[Game ${gameId}] ⚠️ PRICE LEAK DETECTED in favoriteLine: ${consensusFavoriteLine}`, {
-          spreadConsensus,
-          looksLikeLeak: looksLikePriceLeak(consensusFavoriteLine)
-        });
-        if (process.env.NODE_ENV !== 'production') {
-          throw new Error(`Price leak detected: favoriteLine=${consensusFavoriteLine} (must be a point, not a price)`);
-        }
-      }
+    // Guardrail 1: Reject spread consensus if magnitude > 60 (likely a price leak)
+    if (consensusFavoriteLine !== null && Math.abs(consensusFavoriteLine) > 60) {
+      console.error(`[Game ${gameId}] ⚠️ SPREAD CONSENSUS OUT OF RANGE: ${consensusFavoriteLine} (abs > 60, likely price leak)`, {
+        spreadConsensus,
+        looksLikeLeak: looksLikePriceLeak(consensusFavoriteLine)
+      });
+      // Set to null - UI will show "N/A"
+      spreadConsensus.value = null;
+      spreadConsensus.count = 0;
+      diagnosticsMessages.push('Spread consensus rejected: magnitude > 60 (likely price leak)');
     }
+    
+    // Guardrail 2: Reject if fewer than 2 books (insufficient liquidity)
+    if (consensusFavoriteLine !== null && spreadConsensus.count < 2) {
+      console.warn(`[Game ${gameId}] ⚠️ SPREAD CONSENSUS LOW LIQUIDITY: only ${spreadConsensus.count} book(s)`);
+      spreadConsensus.value = null;
+      spreadConsensus.count = 0;
+      diagnosticsMessages.push('Spread consensus rejected: fewer than 2 books');
+    }
+    
+    // Recalculate after guardrails
+    const finalConsensusFavoriteLine = spreadConsensus.value;
+    const finalConsensusDogLine = finalConsensusFavoriteLine !== null ? -finalConsensusFavoriteLine : null;
     
     if (marketTotal !== null && (marketTotal < 15 || marketTotal > 120)) {
       console.warn(`[Game ${gameId}] ⚠️ Unusual marketTotal: ${marketTotal} (expected 15-120 for CFB)`);
@@ -2322,8 +2414,8 @@ export async function GET(
       favoriteTeamName: favoriteByRule.teamName,
       dogTeamId: dogTeamId,
       dogTeamName: dogTeamName,
-      favoriteLine: consensusFavoriteLine ?? favoriteByRule.line, // Use consensus if available, else fallback
-      dogLine: consensusDogLine ?? dogLine, // Use consensus if available, else fallback
+      favoriteLine: finalConsensusFavoriteLine ?? favoriteByRule.line, // Use consensus if available (after guardrails), else fallback
+      dogLine: finalConsensusDogLine ?? dogLine, // Use consensus if available (after guardrails), else fallback
       marketTotal: marketTotal !== null ? marketTotal : null, // Already uses consensus
       moneylineFavorite: moneylineFavoritePrice,
       moneylineDog: moneylineDogPrice,
@@ -3220,7 +3312,13 @@ export async function GET(
           excluded: spreadConsensus.excluded,
           excludedReason: spreadConsensus.excluded > 0 ? 'missing_lineValue_or_filtered' : null,
           usedFrom: spreadConsensus.usedFrom || 'lineValue', // Always lineValue for spread
-          note: 'Spread consensus reads ONLY from lineValue field (points), never closingLine (prices)'
+          signConventionIn: 'home_minus_away', // Raw DB format
+          normalizedTo: 'favorite_centric', // Normalized for consensus (always negative)
+          perBookCount: spreadConsensus.perBookCount || spreadConsensus.count,
+          rawCount: spreadConsensus.rawCount || spreadConsensus.count,
+          deduped: spreadConsensus.deduped || false,
+          booksIncluded: spreadConsensus.books,
+          note: 'Spread consensus: reads lineValue (points), normalizes to favorite-centric, dedupes per book before median'
         },
         total: {
           consensusValue: totalConsensus.value,
