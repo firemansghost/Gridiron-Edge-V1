@@ -533,25 +533,34 @@ export async function GET(
     const totalConsensus = computeMedianConsensus(marketLinesToUse, 'total', 'total');
     const moneylineConsensus = computeMedianConsensus(marketLinesToUse, 'moneyline'); // No price-leak filter for ML
     
-    // Log consensus results
-    console.log(`[Game ${gameId}] 📊 CONSENSUS RESULTS:`, {
-      spread: {
-        value: spreadConsensus.value?.toFixed(1) ?? 'null',
-        count: spreadConsensus.count,
-        books: spreadConsensus.books,
-        excluded: spreadConsensus.excluded
-      },
-      total: {
-        value: totalConsensus.value?.toFixed(1) ?? 'null',
-        count: totalConsensus.count,
-        books: totalConsensus.books,
-        excluded: totalConsensus.excluded
-      },
-      moneyline: {
-        count: moneylineConsensus.count,
-        books: moneylineConsensus.books
-      }
-    });
+    // ============================================
+    // CONSENSUS RESULTS LOGGING (one-line summary)
+    // ============================================
+    console.log(`[Game ${gameId}] 📊 CONSENSUS: spread=${spreadConsensus.value?.toFixed(1) ?? 'null'} (${spreadConsensus.perBookCount || 0} books, deduped=${spreadConsensus.deduped}), total=${totalConsensus.value?.toFixed(1) ?? 'null'} (${totalConsensus.count} books), ML=${moneylineConsensus.count} books, usingPreKickLines=${usingPreKickLines}, rawCount=spread:${spreadConsensus.rawCount || 0}/total:${totalConsensus.rawCount || 0}`);
+    
+    // Detailed breakdown (for debugging)
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[Game ${gameId}] 📊 CONSENSUS DETAILS:`, {
+        spread: {
+          value: spreadConsensus.value?.toFixed(1) ?? 'null',
+          perBookCount: spreadConsensus.perBookCount || 0,
+          rawCount: spreadConsensus.rawCount || 0,
+          books: spreadConsensus.books,
+          excluded: spreadConsensus.excluded,
+          deduped: spreadConsensus.deduped
+        },
+        total: {
+          value: totalConsensus.value?.toFixed(1) ?? 'null',
+          count: totalConsensus.count,
+          books: totalConsensus.books,
+          excluded: totalConsensus.excluded
+        },
+        moneyline: {
+          count: moneylineConsensus.count,
+          books: moneylineConsensus.books
+        }
+      });
+    }
     
     // Type assertion to access teamId field (needed for both spreads and moneylines)
     const marketLinesWithTeamId = marketLinesToUse as MarketLineWithTeamId[];
@@ -2381,29 +2390,55 @@ export async function GET(
     // ============================================
     // CRITICAL ASSERTIONS & GUARDRAILS: Prevent price leaks and invalid spreads
     // ============================================
+    let invariantFailed = false;
+    
     // Guardrail 1: Reject spread consensus if magnitude > 60 (likely a price leak)
     if (consensusFavoriteLine !== null && Math.abs(consensusFavoriteLine) > 60) {
       console.error(`[Game ${gameId}] ⚠️ SPREAD CONSENSUS OUT OF RANGE: ${consensusFavoriteLine} (abs > 60, likely price leak)`, {
         spreadConsensus,
-        looksLikeLeak: looksLikePriceLeak(consensusFavoriteLine)
+        looksLikeLeak: looksLikePriceLeak(consensusFavoriteLine),
+        books: spreadConsensus.books
       });
-      // Set to null - UI will show "N/A"
       spreadConsensus.value = null;
       spreadConsensus.count = 0;
+      invariantFailed = true;
       diagnosticsMessages.push('Spread consensus rejected: magnitude > 60 (likely price leak)');
     }
     
     // Guardrail 2: Reject if fewer than 2 books (insufficient liquidity)
     if (consensusFavoriteLine !== null && spreadConsensus.count < 2) {
-      console.warn(`[Game ${gameId}] ⚠️ SPREAD CONSENSUS LOW LIQUIDITY: only ${spreadConsensus.count} book(s)`);
+      console.warn(`[Game ${gameId}] ⚠️ SPREAD CONSENSUS LOW LIQUIDITY: only ${spreadConsensus.count} book(s)`, {
+        books: spreadConsensus.books
+      });
       spreadConsensus.value = null;
       spreadConsensus.count = 0;
-      diagnosticsMessages.push('Spread consensus rejected: fewer than 2 books');
+      invariantFailed = true;
+      diagnosticsMessages.push('Spread consensus rejected: fewer than 2 books (low liquidity)');
+    }
+    
+    // Guardrail 3: Spread must be negative (favorite-centric)
+    if (consensusFavoriteLine !== null && consensusFavoriteLine >= 0) {
+      console.error(`[Game ${gameId}] ⚠️ SPREAD CONSENSUS NOT NEGATIVE: ${consensusFavoriteLine} (should be favorite-centric < 0)`, {
+        spreadConsensus
+      });
+      spreadConsensus.value = null;
+      spreadConsensus.count = 0;
+      invariantFailed = true;
+      diagnosticsMessages.push('Spread consensus rejected: not negative (favorite-centric invariant violated)');
     }
     
     // Recalculate after guardrails
     const finalConsensusFavoriteLine = spreadConsensus.value;
     const finalConsensusDogLine = finalConsensusFavoriteLine !== null ? -finalConsensusFavoriteLine : null;
+    
+    // Invariant assertion: dogLine must equal abs(favoriteLine)
+    if (finalConsensusFavoriteLine !== null && finalConsensusDogLine !== null) {
+      const expectedDogLine = Math.abs(finalConsensusFavoriteLine);
+      if (Math.abs(finalConsensusDogLine - expectedDogLine) > 0.01) {
+        console.error(`[Game ${gameId}] ⚠️ DOG LINE MISMATCH: dogLine=${finalConsensusDogLine}, expected=${expectedDogLine}`);
+        invariantFailed = true;
+      }
+    }
     
     if (marketTotal !== null && (marketTotal < 15 || marketTotal > 120)) {
       console.warn(`[Game ${gameId}] ⚠️ Unusual marketTotal: ${marketTotal} (expected 15-120 for CFB)`);
@@ -3318,6 +3353,14 @@ export async function GET(
           rawCount: spreadConsensus.rawCount || spreadConsensus.count,
           deduped: spreadConsensus.deduped || false,
           booksIncluded: spreadConsensus.books,
+          invariantFailed: invariantFailed,
+          invariants: {
+            favoriteLine_is_negative: finalConsensusFavoriteLine === null || finalConsensusFavoriteLine < 0,
+            magnitude_lte_60: finalConsensusFavoriteLine === null || Math.abs(finalConsensusFavoriteLine) <= 60,
+            perBookCount_gte_2: spreadConsensus.count >= 2,
+            dogLine_equals_abs_favoriteLine: finalConsensusFavoriteLine === null || finalConsensusDogLine === null || 
+                                             Math.abs(finalConsensusDogLine - Math.abs(finalConsensusFavoriteLine)) < 0.01
+          },
           note: 'Spread consensus: reads lineValue (points), normalizes to favorite-centric, dedupes per book before median'
         },
         total: {
