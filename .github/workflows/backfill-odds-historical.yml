@@ -220,7 +220,10 @@ jobs:
               // Extract FBS college exceptions from denylist.ts
               const exceptionsMatch = denylistContent.match(/fbsCollegeExceptions = new Set\\(\\[([^\\]]+)\\]/);
               const fbsExceptions = exceptionsMatch 
-                ? exceptionsMatch[1].split(',').map(s => s.trim().replace(/['\"]/g, '')).filter(s => s && !s.startsWith('//'))
+                ? exceptionsMatch[1]
+                    .split(',')
+                    .map(s => s.trim().replace(/['\"]/g, '').split('//')[0].trim()) // Remove inline comments
+                    .filter(s => s && s.length > 0)
                 : ['boston-college']; // Fallback default
               
               console.log(\`Denylist: \${denylistSlugs.length} slug(s)\`);
