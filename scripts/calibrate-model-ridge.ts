@@ -61,7 +61,7 @@ function calculatePowerRating(stats: any, leagueMetrics: any): number {
   zScores.yppDef = -(Number(stats.yppDef || 0) - leagueMetrics.yppDef.mean) / leagueMetrics.yppDef.stddev;
   zScores.successDef = -(Number(stats.successDef || 0) - leagueMetrics.successDef.mean) / leagueMetrics.successDef.stddev;
   
-  const rawRating = (
+  return (
     WEIGHTS.epaOff * zScores.epaOff +
     WEIGHTS.epaDef * zScores.epaDef +
     WEIGHTS.yppOff * zScores.yppOff +
@@ -69,10 +69,6 @@ function calculatePowerRating(stats: any, leagueMetrics: any): number {
     WEIGHTS.successOff * zScores.successOff +
     WEIGHTS.successDef * zScores.successDef
   );
-  
-  // Apply calibration factor to match V1 ratings (convert z-scores to spread points)
-  const CALIBRATION_FACTOR = 6.5;
-  return rawRating * CALIBRATION_FACTOR;
 }
 
 /**
@@ -115,12 +111,24 @@ function ridgeRegression(
   const maxIterations = 5000;
   const tolerance = 1e-6;
   
+  // Check for NaN/Inf in inputs
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < p; j++) {
+      if (!isFinite(X[i][j])) {
+        throw new Error(`NaN/Inf in X[${i}][${j}] = ${X[i][j]}`);
+      }
+    }
+    if (!isFinite(y[i])) {
+      throw new Error(`NaN/Inf in y[${i}] = ${y[i]}`);
+    }
+  }
+  
   let prevLoss = Infinity;
   
   for (let iter = 0; iter < maxIterations; iter++) {
     const gradients = new Array(p).fill(0);
     
-    // Calculate gradients with L2 penalty
+    // Calculate gradients
     for (let i = 0; i < n; i++) {
       let predicted = 0;
       for (let j = 0; j < p; j++) {
@@ -131,17 +139,20 @@ function ridgeRegression(
       for (let j = 0; j < p; j++) {
         // Gradient of squared error
         gradients[j] += error * X[i][j];
-        
-        // Add L2 penalty gradient (don't penalize intercept)
-        if (j > 0) {
-          gradients[j] += lambda * beta[j];
-        }
       }
+    }
+    
+    // Add L2 penalty gradient (don't penalize intercept) - outside the loop!
+    for (let j = 1; j < p; j++) {
+      gradients[j] += lambda * beta[j] * n; // Multiply by n to match the division below
     }
     
     // Update coefficients
     for (let j = 0; j < p; j++) {
       beta[j] -= learningRate * gradients[j] / n;
+      if (!isFinite(beta[j])) {
+        throw new Error(`NaN/Inf in beta[${j}] at iteration ${iter}. Gradient[${j}]=${gradients[j]}, beta[${j}]=${beta[j]}`);
+      }
     }
     
     // Calculate loss for convergence check
@@ -386,10 +397,32 @@ async function calibrateRidge(season: number, weeks: number[], lambdaParam?: num
       
       if (!homeStats || !awayStats || !marketLine) continue;
       
-      // Calculate power ratings
-      const homeRatingCalc = calculatePowerRating(homeStats, leagueMetrics);
-      const awayRatingCalc = calculatePowerRating(awayStats, leagueMetrics);
-      const ratingDiff = homeRatingCalc - awayRatingCalc;
+      // Use V1 ratings from database (already scaled with calibration_factor)
+      const homeRatingRecord = ratingsMap.get(game.homeTeamId);
+      const awayRatingRecord = ratingsMap.get(game.awayTeamId);
+      
+      if (!homeRatingRecord || !awayRatingRecord) {
+        // Skip games where we don't have ratings for both teams
+        continue;
+      }
+      
+      const homeRating = homeRatingRecord.powerRating !== null && homeRatingRecord.powerRating !== undefined
+        ? Number(homeRatingRecord.powerRating)
+        : (homeRatingRecord.rating !== null && homeRatingRecord.rating !== undefined
+          ? Number(homeRatingRecord.rating)
+          : null);
+      const awayRating = awayRatingRecord.powerRating !== null && awayRatingRecord.powerRating !== undefined
+        ? Number(awayRatingRecord.powerRating)
+        : (awayRatingRecord.rating !== null && awayRatingRecord.rating !== undefined
+          ? Number(awayRatingRecord.rating)
+          : null);
+      
+      if (homeRating === null || awayRating === null || isNaN(homeRating) || isNaN(awayRating)) {
+        // Skip games with invalid ratings
+        continue;
+      }
+      
+      const ratingDiff = homeRating - awayRating;
       
       // Talent gap feature
       const homeTalentRaw = talentMap.get(game.homeTeamId)?.talentComposite ?? null;
@@ -443,8 +476,7 @@ async function calibrateRidge(season: number, weeks: number[], lambdaParam?: num
       const isG5_G5 = matchupClass === 'G5_G5' ? 1 : 0;
       const isG5_FCS = matchupClass === 'G5_FCS' ? 1 : 0;
       
-      // Team-specific HFA
-      const homeRatingRecord = ratingsMap.get(game.homeTeamId);
+      // Team-specific HFA (reuse homeRatingRecord from above)
       const homeRatingWithHFA = homeRatingRecord as typeof homeRatingRecord & {
         hfaTeam?: number | null;
       };
@@ -472,10 +504,11 @@ async function calibrateRidge(season: number, weeks: number[], lambdaParam?: num
   
   // Build feature matrix X and target vector y
   // Features: [1, ratingDiff, ratingDiff², talentDiffZ, isP5_G5, isP5_FCS, isG5_G5, isG5_FCS, hfaTeamHome]
+  // Normalize quadratic term to prevent gradient explosion (divide by 100)
   const X: number[][] = points.map(p => [
     1,                          // X0: intercept
     p.ratingDiff,               // X1: linear term
-    p.ratingDiff * p.ratingDiff, // X2: quadratic term
+    (p.ratingDiff * p.ratingDiff) / 100, // X2: quadratic term (normalized)
     p.talentDiffZ || 0,         // X3: talent gap (z-score)
     p.isP5_G5,                  // X4: P5 vs G5 dummy
     p.isP5_FCS,                 // X5: P5 vs FCS dummy
@@ -540,7 +573,7 @@ async function calibrateRidge(season: number, weeks: number[], lambdaParam?: num
   console.log(`🎯 FORMULA:`);
   console.log(`   spread = ${coefficients[0].toFixed(4)}`);
   console.log(`          + ${coefficients[1].toFixed(4)} × rating_diff`);
-  console.log(`          + ${coefficients[2].toFixed(4)} × rating_diff²`);
+  console.log(`          + ${(coefficients[2] * 100).toFixed(4)} × (rating_diff² / 100)`);
   console.log(`          + ${coefficients[3].toFixed(4)} × talent_diff_z`);
   console.log(`          + ${coefficients[4].toFixed(4)} × P5_G5`);
   console.log(`          + ${coefficients[5].toFixed(4)} × P5_FCS`);
@@ -548,7 +581,7 @@ async function calibrateRidge(season: number, weeks: number[], lambdaParam?: num
   console.log(`          + ${coefficients[7].toFixed(4)} × G5_FCS`);
   console.log(`          + ${coefficients[8].toFixed(4)} × hfa_team_home\n`);
   
-  // Test on example game
+  // Test on example game (use actual scaled ratings from database if available)
   console.log(`📝 Example Prediction: OSU (rating 2.64) @ Purdue (rating -0.53):`);
   const osuRatingDiff = 2.64 - (-0.53);
   const osuTalentDiffZ = 0; // Assume average
@@ -556,7 +589,7 @@ async function calibrateRidge(season: number, weeks: number[], lambdaParam?: num
   const osuHFA = 2.0;
   const osuPredicted = coefficients[0] 
     + coefficients[1] * osuRatingDiff 
-    + coefficients[2] * (osuRatingDiff ** 2)
+    + coefficients[2] * (osuRatingDiff ** 2) / 100  // Normalized quadratic term
     + coefficients[3] * osuTalentDiffZ
     + coefficients[4] * osuIsP5_G5
     + coefficients[5] * 0 // P5_FCS
