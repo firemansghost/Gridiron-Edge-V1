@@ -262,6 +262,7 @@ async function main() {
     const modelConfig = getModelConfig('v1');
     console.log(`⚙️  Using model config: ${modelConfig.name}`);
     console.log(`   HFA: ${modelConfig.hfa} pts, Min Edge: ${modelConfig.min_edge_threshold} pts`);
+    console.log(`   Calibration Factor: ${modelConfig.calibration_factor || 'NOT SET (will default to 1.0)'} ⚠️`);
 
     // Load FBS teams for this season
     const teamResolver = new TeamResolver();
@@ -341,9 +342,11 @@ async function main() {
       
       // Score = Base + TalentComponent + HFA
       // If base is missing, Score = TalentComponent + HFA (fallback)
-      const powerRating = hasBaseFeatures 
+      const calibrationFactor = modelConfig.calibration_factor || 1.0; // Default 1.0 for backward compat
+      const rawScore = hasBaseFeatures 
         ? base + talentComponent 
         : talentComponent; // Early-season: talent-only fallback
+      const powerRating = rawScore * calibrationFactor;
 
       const confidence = calculateConfidence(features);
       const dataSource = getDataSourceString(features);

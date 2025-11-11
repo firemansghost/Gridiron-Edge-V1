@@ -13,6 +13,7 @@ export interface ModelConfig {
   name: string;
   description: string;
   hfa: number;
+  calibration_factor?: number; // Convert z-scores to spread points
   offensive_weights: {
     ypp_off: number;
     pass_ypa_off: number;
