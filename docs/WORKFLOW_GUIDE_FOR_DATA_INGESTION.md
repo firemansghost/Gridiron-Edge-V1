@@ -1,409 +1,415 @@
-# Workflow Guide: Ingesting Market Line Data for Calibration
+# 📊 Gridiron Edge: Data Ingestion Workflow Guide
 
-## 🎯 Goal
-Ingest historical market lines (spreads, totals, moneylines) for weeks 1-12 of season 2025 to improve model calibration.
+## 🎯 **Purpose**
+This guide provides a comprehensive plan for ingesting more market line data to improve calibration quality for Season 2025.
 
-## 📊 Current Data Status (as of check)
-- **Total final games**: 2,115
-- **Games with market lines**: 136 (6.4%) - Only weeks 8, 10, 11
-- **Coverage by week**:
-  - Weeks 1-7: **0 games** with lines (0%)
-  - Week 8: 36/58 games (62%)
-  - Week 9: 0/4 games (0%)
-  - Week 10: 50/52 games (96%)
-  - Week 11: 50/51 games (98%)
-  - Week 12: 0 games (not started yet)
+---
 
-## ✅ Available Workflows
+## 📋 **Current Data Status** (as of November 11, 2025)
 
-### 1. **Historical Odds Backfill** (Recommended for weeks 1-7, 9)
+### **Available Data**
+| Week | Games with Lines | Total Lines | Status |
+|------|------------------|-------------|--------|
+| 1 | 61 | 2,486 | ✅ Complete |
+| 2 | 49 | 2,012 | ✅ Complete |
+| 3 | 47 | 1,992 | ✅ Complete |
+| 4 | 0 | 0 | ❌ Missing |
+| 5 | 0 | 0 | ❌ Missing |
+| 6 | 0 | 0 | ❌ Missing |
+| 7 | 0 | 0 | ❌ Missing |
+| 8 | 36 | 12,027 | ✅ Complete |
+| 9 | 0 | 0 | ⚠️ Lines exist but games not final |
+| 10 | 50 | 3,333 | ✅ Complete |
+| 11 | 50 | 2,166 | ✅ Complete |
+| 12 | 0 | 0 | ⚠️ Games in progress |
+
+**Total**: 293 games with lines, ~13,537 total lines
+
+### **Calibration Results with Current Data**
+```
+R²: 1.4% ❌  (Target: 35-40%)
+RMSE: 15.93 pts ❌  (Target: 8-9 pts)
+β₁ (rating_diff): 0.50 ❌  (Target: 6-7)
+```
+
+**Conclusion**: Need 4-5x more data, especially P5_P5 matchups.
+
+---
+
+## 🔧 **Available Workflows**
+
+### **1. Historical Odds Backfill** ⭐ **PRIMARY TOOL**
 **File**: `.github/workflows/backfill-odds-historical.yml`
 
-**What it does**:
-- Fetches historical odds data from The Odds API
-- Handles past weeks/seasons
-- Uses HISTORICAL mode to fetch closed events
-- Supports dry-run for testing
+**Purpose**: Fetch historical odds for completed weeks from The Odds API.
 
-**Requirements**:
-- `ODDS_API_KEY` secret (paid tier with historical access)
-- ~10-50 API requests per week
+**Inputs**:
+- `season`: Year (2025)
+- `weeks`: Week range (e.g., "4-7" or "4,5,6,7")
+- `markets`: `spreads,totals` (always)
+- `regions`: `us` (always)
+- `credits_limit`: Max API requests (default 1200)
+- `dry_run`: `false` for real ingestion
+- `historical_strict`: `true` to prevent duplicate ingestion
+- `enable_season_fallback`: `true` to handle API quirks
 
-**How to run**:
-1. Go to GitHub **Actions** tab
-2. Select "**Historical Odds Backfill**" workflow
-3. Click "**Run workflow**"
-4. Fill in parameters:
+**Cost**: ~20-30 requests per game = ~600-1,200 requests per week
 
-```yaml
-Season: 2025
-Weeks: 1-7           # Or: 1,2,3,4,5,6,7 or individual: 1
-Markets: spreads,totals,h2h  # h2h = moneylines
-Regions: us
-Credits limit: 1200   # Adjust based on your API quota
-Dry run: false        # Set true to test without DB writes
-Historical strict: true
-Max events: (leave empty for all)
-Enable season fallback: true
-Concurrency: 1        # Increase to 2-3 for faster processing
-```
-
-**Cost estimate (The Odds API)**:
-- **Historical data**: ~10 requests per week per region
-- **Weeks 1-7**: ~70 requests total
-- **Week 9**: ~10 requests
-- **Total**: ~80 requests (~$8-16 depending on tier)
-
-**Recommended runs**:
-
-```yaml
-# Run 1: Weeks 1-7
-Season: 2025
-Weeks: 1-7
-Markets: spreads,totals,h2h
-Regions: us
-Credits limit: 800
-Concurrency: 2
-
-# Run 2: Week 9 only
-Season: 2025
-Weeks: 9
-Markets: spreads,totals,h2h
-Regions: us
-Credits limit: 100
-Concurrency: 1
-```
+**When to Use**: 
+- ✅ After games are final
+- ✅ When you need bulk historical data
+- ✅ On API reset (15th of each month)
 
 ---
 
-### 2. **Nightly Ingest** (For current/recent weeks)
+### **2. Nightly Ingest**
 **File**: `.github/workflows/nightly-ingest.yml`
 
-**What it does**:
-- Fetches live odds for the current week
-- Runs automatically every night at 2 AM CST
-- Can be manually triggered for any week
+**Purpose**: Daily ingestion of schedules, odds, weather, and ratings for the CURRENT week only.
 
-**Requirements**:
-- `ODDS_API_KEY` secret (live tier is sufficient)
-- Works for weeks that haven't closed yet
+**Schedule**: Runs automatically at 2 AM, 10 AM, 2 PM, 6 PM UTC
 
-**How to run**:
-1. Go to GitHub **Actions** tab
-2. Select "**Nightly Ingest + Ratings**" workflow
-3. Click "**Run workflow**"
-4. Enter week number (or leave empty for current week)
+**Inputs**:
+- `dry_run`: `false` for real ingestion
+- `force_full`: `true` to override cache
 
-```yaml
-Week: 12   # Or leave empty to auto-detect current week
-```
+**Cost**: ~50-150 requests per run
 
-**Best for**:
-- Week 12 (current week, not yet final)
-- Future weeks as they come up
-- Re-polling recent weeks to update closing lines
-
-**Note**: This workflow uses the **live** Odds API endpoint, which is cheaper but only works for games that are scheduled/in-progress (not completed).
+**When to Use**:
+- ✅ For live current-week data
+- ❌ NOT for historical weeks (use Historical Backfill instead)
 
 ---
 
-### 3. **Manual Script** (Alternative for local testing)
+### **3. Manual Script (Last Resort)**
 **File**: `apps/jobs/backfill-odds-oddsapi.js`
 
-**What it does**:
-- Command-line script for backfilling odds
-- Can run locally or in CI
-- More control over parameters
+**Purpose**: One-off manual ingestion for specific games/weeks.
 
-**How to run locally**:
-
+**Usage**:
 ```bash
-# Weeks 1-7
-ODDS_API_KEY=your_key_here \
-DATABASE_URL=your_db_url \
-HISTORICAL_STRICT=true \
-HISTORICAL_ALLOWED_SEASON=2025 \
-HISTORICAL_ALLOWED_WEEKS=1-7 \
-npm run backfill:oddsapi -- \
-  --seasons 2025 \
-  --weeks 1-7 \
-  --dryRun
-
-# Remove --dryRun when ready to write to DB
+ODDS_API_KEY=xxx SEASON=2025 WEEK=4 node apps/jobs/backfill-odds-oddsapi.js
 ```
 
-**Not recommended** - Use GitHub workflow instead for better logging and artifact uploads.
+**When to Use**:
+- ✅ Debug specific games
+- ✅ Test ingestion logic
+- ❌ NOT for bulk ingestion (too slow, no error handling)
 
 ---
 
-## 📋 Recommended Execution Plan
+## 🚀 **NOVEMBER 15TH EXECUTION PLAN**
 
-### Step 1: Test with one week (dry run)
+### **API Quota**
+- Current (Nov 11): 16,351 / 20,000 (81.8%)
+- **Reset (Nov 15)**: 0 / 20,000 ✅
+- **Available after reset**: 20,000 fresh requests
+
+---
+
+### **Step 1: Backfill Weeks 4-7** ⭐ **HIGH PRIORITY**
+
+**Goal**: Add ~200-250 more games
+
+**Workflow**: Historical Odds Backfill
+
+**Parameters**:
 ```yaml
-Workflow: Historical Odds Backfill
-Season: 2025
-Weeks: 1
-Markets: spreads,totals,h2h
-Regions: us
-Credits limit: 100
-Dry run: true          # ← Test mode
-Historical strict: true
-Enable season fallback: true
-Concurrency: 1
-```
-
-**Expected output**:
-- No database writes
-- Log shows matched games
-- Artifact uploaded with mapping report
-
-### Step 2: Ingest weeks 1-3 (pilot)
-```yaml
-Workflow: Historical Odds Backfill
-Season: 2025
-Weeks: 1-3
-Markets: spreads,totals,h2h
-Regions: us
-Credits limit: 300
-Dry run: false         # ← Write to DB
-Historical strict: true
-Enable season fallback: true
-Concurrency: 1
-```
-
-**Monitor**:
-- Check workflow logs for errors
-- Verify data: `npm run check:data` (see verification below)
-
-### Step 3: Ingest weeks 4-7
-```yaml
-Workflow: Historical Odds Backfill
 Season: 2025
 Weeks: 4-7
-Markets: spreads,totals,h2h
+Markets: spreads,totals
 Regions: us
-Credits limit: 500
+Credits limit: 1200
 Dry run: false
 Historical strict: true
 Enable season fallback: true
-Concurrency: 2          # ← Faster with parallel processing
+Concurrency: 2
 ```
 
-### Step 4: Ingest week 9
-```yaml
-Workflow: Historical Odds Backfill
-Season: 2025
-Weeks: 9
-Markets: spreads,totals,h2h
-Regions: us
-Credits limit: 100
-Dry run: false
-Historical strict: true
-Enable season fallback: true
-Concurrency: 1
-```
+**Expected Result**:
+- Week 4: ~50-70 games
+- Week 5: ~40-60 games
+- Week 6: ~45-65 games
+- Week 7: ~45-65 games
+- **Total**: ~200-250 games
 
-### Step 5: Re-run data availability check
+**API Cost**: ~4,000-6,000 requests (20-30% of quota)
+
+**Time**: ~15-25 minutes
+
+**Verification**:
 ```bash
 npx tsx scripts/check-data-availability.ts
 ```
 
-**Expected output after all runs**:
+Should show:
 ```
-📊 Season 2025 Data Availability
-
-  Final games: 2115
-  V1 ratings: 693
-  Total spread lines: ~15,000+
-  Games with spread lines: ~1,800+/2115 (~85%)
-
-📅 Data by Week:
-
-  Week  1: 196 games, ~180 with lines (90%+)
-  Week  2: 313 games, ~280 with lines (90%+)
-  Week  3: 296 games, ~270 with lines (90%+)
-  Week  4: 300 games, ~270 with lines (90%+)
-  Week  5: 266 games, ~240 with lines (90%+)
-  Week  6: 292 games, ~260 with lines (90%+)
-  Week  7: 287 games, ~260 with lines (90%+)
-  Week  8: 58 games, 36 with lines (62%)
-  Week  9: 4 games, 3-4 with lines (75-100%)
-  Week 10: 52 games, 50 with lines (96%)
-  Week 11: 51 games, 50 with lines (98%)
-  Week 12: 0 games, 0 with lines (0%)
+Week 4: 300 games, 50-70 with lines (17-23%)
+Week 5: 266 games, 40-60 with lines (15-23%)
+Week 6: 292 games, 45-65 with lines (15-22%)
+Week 7: 287 games, 45-65 with lines (16-23%)
 ```
-
-### Step 6: Re-run calibration
-```bash
-npm run calibrate:ridge 2025 1-11
-```
-
-**Expected improvement**:
-- **Sample size**: ~136 → **~1,800+ games** (13x increase!)
-- **R² improvement**: ~11% → **~30-40%** (more predictive)
-- **RMSE reduction**: ~11.2 → **~8-9 points** (better fit)
-- **Better P5 coverage**: More balanced P5_P5, P5_G5 matchups
 
 ---
 
-## 🔍 Verification After Ingestion
+### **Step 2: Verify Week 9** 🔍
 
-### Quick Check
+Week 9 shows 0 games in check script but has 5,134 lines in database. This is likely because games are not yet marked `status='final'`.
+
+**Check**:
+```sql
+SELECT 
+  status, 
+  COUNT(*) as count
+FROM "Game"
+WHERE season = 2025 AND week = 9
+GROUP BY status;
+```
+
+**If games are now final**:
 ```bash
-# Run data availability check
 npx tsx scripts/check-data-availability.ts
-
-# Check specific week
-npx tsx -e "
-const { prisma } = require('./apps/web/lib/prisma.js');
-(async () => {
-  const count = await prisma.marketLine.count({
-    where: { season: 2025, week: 1, lineType: 'spread' }
-  });
-  console.log('Week 1 spread lines:', count);
-  await prisma.\$disconnect();
-})();
-"
 ```
 
-### Detailed Verification
+Should add ~45 games to the total.
+
+---
+
+### **Step 3: Wait for Week 12 to Complete** ⏳
+
+Week 12 games are currently in progress. After all games are final (by Nov 17-18):
+
+**Verification**:
+```sql
+SELECT 
+  status, 
+  COUNT(*) as count
+FROM "Game"
+WHERE season = 2025 AND week = 12
+GROUP BY status;
+```
+
+When all show `status='final'`:
 ```bash
-# Check line coverage by week
-for week in {1..11}; do
-  echo "Week $week:"
-  npx tsx -e "
-  const { prisma } = require('./apps/web/lib/prisma.js');
-  (async () => {
-    const games = await prisma.game.count({ where: { season: 2025, week: $week, status: 'final' } });
-    const withLines = await prisma.game.count({
-      where: {
-        season: 2025,
-        week: $week,
-        status: 'final',
-        marketLines: { some: { lineType: 'spread' } }
-      }
-    });
-    console.log(\`  Games: \${games}, With lines: \${withLines} (\${((withLines/games)*100).toFixed(0)}%)\`);
-    await prisma.\$disconnect();
-  })();
-  "
-done
+npx tsx scripts/check-data-availability.ts
+```
+
+Should add ~45 games to the total.
+
+---
+
+### **Step 4: Re-run Calibration** 🎯
+
+**Expected New Totals**:
+- Weeks 1-3: 157 games (current)
+- Weeks 4-7: ~200-250 games (new)
+- Weeks 8-11: 186 games (current)
+- Week 12: ~45 games (when final)
+- **TOTAL**: ~600-650 games ✅
+
+**Run**:
+```bash
+npm run calibrate:ridge 2025 1-12
+```
+
+**Expected Results**:
+```
+📊 RIDGE REGRESSION RESULTS (600-650 games)
+
+📋 HYPERPARAMETER:
+   λ (regularization): 0.100-0.200
+
+📋 COEFFICIENTS:
+   α  (intercept):         ~0.3-0.8
+   β₁ (rating_diff):       ~6.0-7.0  ← Key metric!
+   β₂ (rating_diff²):      ~0.4-0.6
+   β₃ (talent_diff_z):     ~1.0-1.5
+   ...
+
+📈 FIT QUALITY:
+   R²:          0.35-0.40 (35-40%)  ← Target!
+   Adjusted R²: 0.34-0.39 (34-39%)
+   RMSE:        8.0-9.0 points       ← Much better!
+   ✅ Good fit
 ```
 
 ---
 
-## 💰 Cost Estimates
+## 📊 **Optional: 2024 Season Data**
 
-### The Odds API Pricing (Historical Data)
-- **Standard plan**: $50/month (~500 requests)
-- **Professional plan**: $150/month (~1,500 requests)
-- **Historical requests**: ~10 per week per region
+### **Do You Need It?**
 
-**For your use case** (weeks 1-7, 9 = 8 weeks):
-- **Total requests**: ~80-100
-- **Cost**: Well within Standard plan ($50/month)
-- **One-time backfill**: Can downgrade after completion
+After weeks 4-7, you'll have **~550-600 games** from 2025. That's typically **sufficient** for production.
 
-### Alternative: SGO (SportsGameOdds)
-If you have SGO API access:
-- Check if they support historical data
-- May be cheaper for bulk backfills
-- Update workflow to use SGO adapter instead
+### **When to Add 2024 Data**
 
----
+✅ **YES, add 2024 if:**
+- You want **train/test split** across years for validation
+- You want **robustness testing** across multiple seasons
+- You have **extra API quota** (need ~8,000-12,000 requests)
+- You want **academic rigor** for publication
 
-## ⚠️ Important Notes
+❌ **NO, skip 2024 if:**
+- Current R² and RMSE are production-ready after weeks 4-7
+- API quota is limited
+- Time is limited
+- Same-season consistency is preferred
 
-### API Rate Limits
-- **The Odds API**: 60 requests/min (free), 500 requests/min (paid)
-- **Concurrency setting**: Controls parallel game fetches
-- **Credits limit**: Hard cap to prevent over-billing
+### **Cost Estimate for 2024 (Full Season)**
 
-### Historical vs. Live Endpoints
-- **Historical** (paid): Closed events, weeks 1-7, 9
-- **Live** (cheaper): In-progress/scheduled events, week 12+
+**Weeks**: 1-14 (regular season)
 
-### Data Quality
-- Not all games have complete market line coverage
-- Some books may not offer lines for G5_G5 matchups
-- FCS games typically have no lines
-- **Expected coverage**: 80-95% of FBS games
+**Expected Games**: ~1,400-1,600 with lines
 
-### Workflow Artifacts
-- **Reports uploaded**: `reports/historical/`
-- **Retention**: 30 days
-- **Contents**: Mapping logs, error logs, statistics
-- **Download**: Actions tab → Workflow run → Artifacts section
+**API Cost**: ~30,000-40,000 requests ⚠️ (exceeds monthly quota)
+
+**Alternative**: Backfill 2024 weeks 8-14 only (late season P5_P5 matchups)
+- Games: ~500-600
+- API Cost: ~10,000-15,000 requests
+- Run in **December** after Nov 15 quota is partially used
 
 ---
 
-## 🎯 Summary: What to Run
+## 🛠️ **Verification Scripts**
 
-**To get data for calibration on weeks 1-11**:
+### **Check Data Availability**
+```bash
+npx tsx scripts/check-data-availability.ts
+```
 
-1. **Week 1-7** (historical, biggest data gain):
-   ```
-   Workflow: Historical Odds Backfill
-   Season: 2025, Weeks: 1-7
-   Dry run: false (after testing with true)
-   ```
+Shows games and lines by week.
 
-2. **Week 9** (historical, small gap):
-   ```
-   Workflow: Historical Odds Backfill
-   Season: 2025, Weeks: 9
-   Dry run: false
-   ```
+### **Verify Specific Week**
+```sql
+-- Check week 4 ingestion
+SELECT 
+  COUNT(DISTINCT ml."gameId") as games_with_lines,
+  COUNT(*) as total_lines,
+  MIN(ml."insertedAt") as earliest_insert,
+  MAX(ml."insertedAt") as latest_insert
+FROM "MarketLine" ml
+JOIN "Game" g ON ml."gameId" = g.id
+WHERE g.season = 2025 
+  AND g.week = 4
+  AND ml."lineType" IN ('spread', 'total')
+  AND ml."book" != 'pinnacle';
+```
 
-3. **Verify**:
-   ```bash
-   npx tsx scripts/check-data-availability.ts
-   ```
-
-4. **Re-calibrate**:
-   ```bash
-   npm run calibrate:ridge 2025 1-11
-   ```
-
-**Expected timeline**:
-- Each workflow run: 5-15 minutes
-- Total: ~30-45 minutes for all data
-- Plus verification and re-calibration: ~1 hour total
-
-**Expected outcome**:
-- **1,800+ calibration points** (vs. 136 currently)
-- **Much better model fit** (R² ~30-40% vs. 11%)
-- **Reliable coefficients** for production use
-- **Validation on held-out week 12** data when it becomes available
-
----
-
-## 🆘 Troubleshooting
-
-### Workflow fails with "No historical data"
-- **Cause**: The Odds API free tier doesn't include historical access
-- **Fix**: Upgrade to paid tier or use live endpoint for recent weeks
-
-### Games not matching
-- **Cause**: Team name mismatches in aliases
-- **Fix**: Check `apps/jobs/config/team_aliases.yml`
-- **Enable**: `enable_season_fallback: true` to allow ±8 day matching
-
-### Low line coverage (<50%)
-- **Cause**: G5_G5 games often don't have lines
-- **Expected**: Normal for lower-tier matchups
-- **Fix**: Filter calibration to P5 games only (future enhancement)
-
-### API quota exceeded
-- **Cause**: Hit credits_limit or monthly cap
-- **Fix**: Increase credits_limit or wait for next billing cycle
-- **Monitor**: Check Odds API dashboard for usage
+### **Check All Weeks Summary**
+```sql
+SELECT 
+  g.week,
+  COUNT(DISTINCT ml."gameId") as games_with_lines,
+  COUNT(*) as total_lines,
+  MIN(ml."insertedAt") as earliest_insert
+FROM "MarketLine" ml
+JOIN "Game" g ON ml."gameId" = g.id
+WHERE g.season = 2025 
+  AND ml."lineType" IN ('spread', 'total')
+  AND ml."book" != 'pinnacle'
+GROUP BY g.week
+ORDER BY g.week;
+```
 
 ---
 
-## 📚 Related Documentation
-- [Nightly Ingest Workflow](./workflows-nightly-ingest.md)
-- [Backfill Missing Games](../apps/jobs/BACKFILL_MISSING_GAMES.md)
-- [Phase 2.5: Ridge Regularization](./phase2-5-ridge-regularization.md)
-- [Data Availability Check Script](../scripts/check-data-availability.ts)
+## 🎯 **Success Metrics**
 
+### **Minimum Viable Dataset**
+- ✅ Games: 400-500
+- ✅ R²: 25-30%
+- ✅ RMSE: 9-10 pts
+- ✅ β₁: 5-6
+
+### **Production-Ready Dataset** ⭐
+- ✅ Games: 600-700
+- ✅ R²: 35-40%
+- ✅ RMSE: 8-9 pts
+- ✅ β₁: 6-7
+
+### **Academic-Quality Dataset**
+- ✅ Games: 1,000+
+- ✅ R²: 40-45%
+- ✅ RMSE: 7-8 pts
+- ✅ β₁: 6.5-7.5
+- ✅ Multiple seasons
+
+---
+
+## 🚨 **Troubleshooting**
+
+### **Workflow Fails: "Denylisted target"**
+**Symptom**: Alias validation fails for teams like "Boston College"
+
+**Fix**: Already fixed in commit `0e3609c`. FBS college exceptions now properly extracted from `denylist.ts`.
+
+### **Workflow Runs but No Data Ingested**
+**Possible Causes**:
+1. **API has no data for that week** (common for weeks 4-7 in early season)
+2. **Games not yet final** (check `status` field)
+3. **Historical strict mode** prevented duplicate ingestion
+
+**Check**:
+```bash
+# View workflow logs in GitHub Actions
+# Look for "Fetching odds for week X..."
+# If no games listed, API has no data for that week yet
+```
+
+### **Calibration Shows R² < 0**
+**Cause**: Not enough data or power ratings not calibrated
+
+**Fix**: Add more weeks (especially mid-late season P5_P5 games)
+
+---
+
+## 📅 **Timeline**
+
+| Date | Task | Time | API Cost |
+|------|------|------|----------|
+| **Nov 15** | Backfill weeks 4-7 | 20-30 min | 4,000-6,000 |
+| **Nov 15** | Verify week 9 status | 2 min | 0 |
+| **Nov 15** | Run calibration | 5 min | 0 |
+| **Nov 17** | Verify week 12 final | 2 min | 0 |
+| **Nov 17** | Re-run calibration | 5 min | 0 |
+| **Dec 1** | (Optional) 2024 backfill | 1-2 hrs | 10,000-15,000 |
+
+---
+
+## ✅ **November 15th Checklist**
+
+### **Pre-Flight**
+- [ ] Confirm API quota reset to 0/20,000
+- [ ] Check week 9 game statuses
+- [ ] Review workflow logs from previous runs
+
+### **Execution**
+- [ ] Run Historical Backfill for weeks 4-7
+- [ ] Verify ingestion with SQL queries
+- [ ] Run `check-data-availability.ts`
+- [ ] Confirm total games ~500-550
+
+### **Calibration**
+- [ ] Run `npm run calibrate:ridge 2025 1-12`
+- [ ] Verify R² > 30%
+- [ ] Verify RMSE < 10 pts
+- [ ] Verify β₁ > 5
+
+### **Decision Point**
+- [ ] If R² ≥ 35% and RMSE ≤ 9: **Production-ready!** ✅
+- [ ] If R² < 30%: Consider 2024 weeks 8-14 in December
+
+---
+
+## 📝 **Notes**
+
+- **Moneylines**: Still not ingesting correctly. Not critical for spread calibration, but track as known issue.
+- **Totals**: Model unavailable for many games. Totals calibration is Phase 2.6 (future work).
+- **API Quirks**: Season fallback enabled to handle The Odds API's inconsistent season labeling.
+- **Denylist**: Now correctly handles FBS teams ending in `-college` (e.g., Boston College).
+
+---
+
+**Last Updated**: November 11, 2025
+**Current Status**: Waiting for API reset on November 15th
+**Next Action**: Backfill weeks 4-7 on November 15th
