@@ -381,7 +381,7 @@ async function calibrateRidge(season: number, weeks: number[], lambdaParam?: num
     const statsMap = new Map(stats.map(s => [s.teamId, s]));
     
     const ratings = await prisma.teamSeasonRating.findMany({
-      where: { season, teamId: { in: gameTeamIds }, modelVersion: 'v1' }
+      where: { season, teamId: { in: gameTeamIds }, modelVersion: 'v2' }
     });
     const ratingsMap = new Map(ratings.map(r => [r.teamId, r]));
     
@@ -397,7 +397,7 @@ async function calibrateRidge(season: number, weeks: number[], lambdaParam?: num
       
       if (!homeStats || !awayStats || !marketLine) continue;
       
-      // Use V1 ratings from database (already scaled with calibration_factor)
+      // Use V2 ratings from database (SoS-adjusted, already scaled with calibration_factor)
       const homeRatingRecord = ratingsMap.get(game.homeTeamId);
       const awayRatingRecord = ratingsMap.get(game.awayTeamId);
       

@@ -51,6 +51,9 @@ v2:
   # Home Field Advantage (in points) - same as v1 for now
   hfa: 2.0
   
+  # Calibration factor to convert z-scores to spread points (same as v1)
+  calibration_factor: 8.0
+  
   # Offensive feature weights (must sum to 1.0)
   offensive_weights:
     ypp_off: 0.30      # Yards per play offense

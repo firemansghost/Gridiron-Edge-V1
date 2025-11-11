@@ -934,14 +934,14 @@ export async function GET(
       };
     };
 
-    // Get power ratings from team_season_ratings (Ratings v1) - needed for base comparison
+    // Get power ratings from team_season_ratings (Ratings v2) - SoS-adjusted with shrinkage
     const [homeRating, awayRating] = await Promise.all([
       prisma.teamSeasonRating.findUnique({
         where: {
           season_teamId_modelVersion: {
             season: game.season,
             teamId: game.homeTeamId,
-            modelVersion: 'v1',
+            modelVersion: 'v2',
           },
         },
       }),
@@ -950,7 +950,7 @@ export async function GET(
           season_teamId_modelVersion: {
             season: game.season,
             teamId: game.awayTeamId,
-            modelVersion: 'v1',
+            modelVersion: 'v2',
           },
         },
       }),
@@ -1463,7 +1463,7 @@ export async function GET(
     // Use raw SQL query to avoid TypeScript type issues with new fields
     const allSeasonHFAsResult = await prisma.$queryRaw<Array<{ hfa_team: number | null }>>`
       SELECT hfa_team FROM team_season_ratings
-      WHERE season = ${game.season} AND model_version = 'v1' AND hfa_team IS NOT NULL
+      WHERE season = ${game.season} AND model_version = 'v2' AND hfa_team IS NOT NULL
     `;
     const hfaValues = allSeasonHFAsResult
       .map(r => r.hfa_team !== null ? Number(r.hfa_team) : null)
@@ -4068,7 +4068,7 @@ export async function GET(
 
       // Last resort: baseline ratings
       const baselineRating = await prisma.teamSeasonRating.findUnique({
-        where: { season_teamId_modelVersion: { season, teamId, modelVersion: 'v1' } }
+        where: { season_teamId_modelVersion: { season, teamId, modelVersion: 'v2' } }
       });
 
       if (baselineRating) {

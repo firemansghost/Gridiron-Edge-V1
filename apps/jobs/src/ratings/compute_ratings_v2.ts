@@ -239,6 +239,7 @@ async function main() {
     const modelConfig = getModelConfig('v2');
     console.log(`⚙️  Using model config: ${modelConfig.name}`);
     console.log(`   HFA: ${modelConfig.hfa} pts, Min Edge: ${modelConfig.min_edge_threshold} pts`);
+    console.log(`   Calibration Factor: ${modelConfig.calibration_factor || 'NOT SET (will default to 1.0)'} ⚠️`);
     
     // Check SoS status
     const sosStatus = modelConfig.sos?.enabled ? 'ENABLED' : 'DISABLED';
@@ -457,9 +458,13 @@ async function main() {
                                 features.successOff !== null || features.successDef !== null);
       
       // Score = Base + TalentComponent (HFA added later in matchup calculation)
-      const powerRating = hasBaseFeatures 
+      const rawScore = hasBaseFeatures 
         ? base + talentComponent 
         : talentComponent; // Early-season: talent-only fallback
+      
+      // Apply calibration factor to scale z-scores to point-spread equivalent
+      const calibrationFactor = modelConfig.calibration_factor || 1.0; // Default 1.0 for backward compat
+      const powerRating = rawScore * calibrationFactor;
 
       const confidence = calculateConfidence(features);
       const dataSource = getDataSourceString(features);
