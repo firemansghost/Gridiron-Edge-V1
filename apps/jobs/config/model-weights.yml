@@ -10,7 +10,7 @@ v1:
   hfa: 2.0
   
   # Calibration factor to convert z-scores to spread points
-  calibration_factor: 6.5
+  calibration_factor: 8.0
   
   # Offensive feature weights (must sum to 1.0)
   offensive_weights:
