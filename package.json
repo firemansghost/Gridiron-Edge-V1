@@ -41,6 +41,7 @@
     "check:canaries": "BASE_URL=https://gridiron-edge-v1.vercel.app npx tsx scripts/check_canaries.ts",
     "check:canaries:local": "BASE_URL=http://localhost:3000 npx tsx scripts/check_canaries.ts",
     "backfill:consensus": "npx tsx scripts/backfill-consensus.ts",
+    "calibrate:ridge": "npx tsx scripts/calibrate-model-ridge.ts",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "postinstall": "npm run prisma:generate"
   },
