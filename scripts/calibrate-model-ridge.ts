@@ -61,7 +61,7 @@ function calculatePowerRating(stats: any, leagueMetrics: any): number {
   zScores.yppDef = -(Number(stats.yppDef || 0) - leagueMetrics.yppDef.mean) / leagueMetrics.yppDef.stddev;
   zScores.successDef = -(Number(stats.successDef || 0) - leagueMetrics.successDef.mean) / leagueMetrics.successDef.stddev;
   
-  return (
+  const rawRating = (
     WEIGHTS.epaOff * zScores.epaOff +
     WEIGHTS.epaDef * zScores.epaDef +
     WEIGHTS.yppOff * zScores.yppOff +
@@ -69,6 +69,10 @@ function calculatePowerRating(stats: any, leagueMetrics: any): number {
     WEIGHTS.successOff * zScores.successOff +
     WEIGHTS.successDef * zScores.successDef
   );
+  
+  // Apply calibration factor to match V1 ratings (convert z-scores to spread points)
+  const CALIBRATION_FACTOR = 6.5;
+  return rawRating * CALIBRATION_FACTOR;
 }
 
 /**
