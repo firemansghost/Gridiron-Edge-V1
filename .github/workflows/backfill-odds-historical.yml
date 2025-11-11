@@ -217,7 +217,14 @@ jobs:
                 .map(s => s.trim().replace(/['\"]/g, ''))
                 .filter(s => s && !s.startsWith('//'));
               
+              // Extract FBS college exceptions from denylist.ts
+              const exceptionsMatch = denylistContent.match(/fbsCollegeExceptions = new Set\\(\\[([^\\]]+)\\]/);
+              const fbsExceptions = exceptionsMatch 
+                ? exceptionsMatch[1].split(',').map(s => s.trim().replace(/['\"]/g, '')).filter(s => s && !s.startsWith('//'))
+                : ['boston-college']; // Fallback default
+              
               console.log(\`Denylist: \${denylistSlugs.length} slug(s)\`);
+              console.log(\`FBS college exceptions: \${fbsExceptions.length} slug(s)\`);
               
               // Load aliases
               const aliasContent = fs.readFileSync(aliasPath, 'utf8');
@@ -230,8 +237,9 @@ jobs:
                 if (denylistSlugs.includes(target)) {
                   violations.push(\`  - \"\${key}\" → \${target} (denylisted)\`);
                 }
-                if (target.endsWith('-college')) {
-                  violations.push(\`  - \"\${key}\" → \${target} (*-college pattern)\`);
+                // Check *-college pattern but exclude FBS exceptions
+                if (target.endsWith('-college') && !fbsExceptions.includes(target)) {
+                  violations.push(\`  - \"\${key}\" → \${target} (*-college pattern, not in FBS exceptions)\`);
                 }
               }
               
