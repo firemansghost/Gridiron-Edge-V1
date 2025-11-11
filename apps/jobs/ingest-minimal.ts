@@ -7,6 +7,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { OddsApiAdapter } from './adapters/OddsApiAdapter.js';
+import { normalizeBookmakerName } from './lib/bookmaker-normalizer.js';
 
 const prisma = new PrismaClient();
 
@@ -229,18 +230,44 @@ async function main() {
     console.log(`   Lines per game: ${(marketLines.length / uniqueGames).toFixed(1)} average`);
     
     // Prepare rows for database
-    const rowsToInsert = marketLines.map((line: any) => ({
+    const rawRows = marketLines.map((line: any) => ({
       season: line.season,
       week: line.week,
       gameId: line.gameId,
       lineType: line.lineType,
       lineValue: line.lineValue,
       closingLine: line.price || line.closingLine || 0,
-      bookName: line.bookName,
+      bookName: normalizeBookmakerName(line.bookName), // Normalize bookmaker name
       source: line.source || 'oddsapi',
       timestamp: new Date(line.timestamp),
       teamId: line.teamId || null // CRITICAL: Include teamId for spreads and moneylines
     }));
+    
+    // Deduplicate rows based on unique constraint: (gameId, lineType, bookName, timestamp, teamId)
+    const dedupMap = new Map<string, typeof rawRows[0]>();
+    let duplicatesRemoved = 0;
+    
+    for (const row of rawRows) {
+      // Create unique key for deduplication
+      const dedupKey = `${row.gameId}|${row.lineType}|${row.bookName}|${row.timestamp.toISOString()}|${row.teamId || 'null'}`;
+      
+      const existing = dedupMap.get(dedupKey);
+      if (!existing) {
+        dedupMap.set(dedupKey, row);
+      } else {
+        duplicatesRemoved++;
+        // Keep the row with the most recent timestamp (or keep existing, doesn't matter if identical)
+        if (row.timestamp > existing.timestamp) {
+          dedupMap.set(dedupKey, row);
+        }
+      }
+    }
+    
+    const rowsToInsert = Array.from(dedupMap.values());
+    
+    if (duplicatesRemoved > 0) {
+      console.log(`[DB] Deduplicated: Removed ${duplicatesRemoved} duplicate rows, ${rowsToInsert.length} unique rows remaining`);
+    }
     
     // Log first 2 rows for inspection
     if (rowsToInsert.length > 0) {
@@ -265,12 +292,12 @@ async function main() {
     
     // REAL DATABASE WRITE
     if (!options.dryRun && rowsToInsert.length > 0) {
-      // WORKAROUND: Delete existing market lines for this week first to avoid Prisma skipDuplicates bug with NULL teamId
-      console.log(`[DB] Deleting existing market lines for ${options.season} Week ${options.weeks[0]}...`);
+      // WORKAROUND: Delete existing market lines for all weeks being processed to avoid Prisma skipDuplicates bug with NULL teamId
+      console.log(`[DB] Deleting existing market lines for ${options.season} Weeks ${options.weeks.join(',')}...`);
       const deleteResult = await prisma.marketLine.deleteMany({
         where: {
           season: options.season,
-          week: options.weeks[0],
+          week: { in: options.weeks },
           source: 'oddsapi'
         }
       });
@@ -299,14 +326,14 @@ async function main() {
         throw error;
       }
       
-      // Same-process verification
+      // Same-process verification (sum across all weeks)
       const verifyResult = await prisma.$queryRawUnsafe<any[]>(`
         SELECT COUNT(*)::int AS count
         FROM market_lines
-        WHERE season = ${options.season} AND week = ${options.weeks[0]}
+        WHERE season = ${options.season} AND week = ANY(ARRAY[${options.weeks.join(',')}])
       `);
       const postCount = verifyResult[0]?.count || 0;
-      console.log(`[DB] Post-write count (${options.season} W${options.weeks[0]}):`, postCount);
+      console.log(`[DB] Post-write count (${options.season} Weeks ${options.weeks.join(',')}):`, postCount);
       
       if (postCount === 0) {
         throw new Error('createMany returned but DB count is 0 — check DATABASE_URL or column mapping.');
