@@ -12,6 +12,7 @@
 import { PrismaClient } from '@prisma/client';
 import { AdapterFactory } from './adapters/AdapterFactory.js';
 import { main as runRatings } from './seed-ratings.js';
+import { normalizeBookmakerName } from './lib/bookmaker-normalizer.js';
 
 const prisma = new PrismaClient();
 
@@ -474,7 +475,7 @@ async function upsertMarketLines(marketLines) {
         closingLine: line.closingLine,
         timestamp: line.timestamp,
         source: line.source || line.bookName,
-        bookName: line.bookName,
+        bookName: normalizeBookmakerName(line.bookName), // Normalize bookmaker name
         teamId: line.teamId || null // CRITICAL: Include teamId for spreads and moneylines
       });
     } else {

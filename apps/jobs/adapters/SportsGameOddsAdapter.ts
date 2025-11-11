@@ -7,6 +7,7 @@
  */
 
 import { DataSourceAdapter, Team, Game, MarketLine, TeamBranding } from './DataSourceAdapter';
+import { normalizeBookmakerName } from '../lib/bookmaker-normalizer';
 
 interface SportsGameOddsConfig {
   baseUrl: string;
@@ -349,7 +350,8 @@ export class SportsGameOddsAdapter implements DataSourceAdapter {
       const bookmakers = market.bookmakers || [];
       
       for (const book of bookmakers) {
-        const bookName = book.title || book.name || book.key || 'unknown';
+        const rawBookName = book.title || book.name || book.key || 'unknown';
+        const bookName = normalizeBookmakerName(rawBookName);
         const outcomes = book.outcomes || [];
         
         // Determine market type

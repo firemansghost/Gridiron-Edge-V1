@@ -15,6 +15,7 @@ import { isTransitionalMatchup } from '../config/transitional_teams';
 import { isRejectedSlug, isDenylisted, matchesNonFBSPattern } from '../config/denylist';
 import { TeamResolver } from './TeamResolver';
 import { GameLookup } from './GameLookup';
+import { normalizeBookmakerName } from '../lib/bookmaker-normalizer';
 
 const prisma = new PrismaClient();
 
@@ -1222,7 +1223,8 @@ export class OddsApiAdapter implements DataSourceAdapter {
     console.log(`   [PARSER] Processing ${bookmakers.length} bookmakers for event ${event?.id || 'unknown'}`);
     
     for (const bookmaker of bookmakers) {
-      const bookName = bookmaker.title || bookmaker.key;
+      const rawBookName = bookmaker.title || bookmaker.key;
+      const bookName = normalizeBookmakerName(rawBookName);
       
       // Historical format: markets is an array with key/outcomes structure
       if (bookmaker.markets && Array.isArray(bookmaker.markets)) {
@@ -1361,7 +1363,8 @@ export class OddsApiAdapter implements DataSourceAdapter {
 
     // Step 3: Process odds and build market lines with real database game ID
     for (const bookmaker of event.bookmakers) {
-      const bookName = bookmaker.title || bookmaker.key;
+      const rawBookName = bookmaker.title || bookmaker.key;
+      const bookName = normalizeBookmakerName(rawBookName);
       const timestamp = new Date(bookmaker.last_update);
 
       for (const market of bookmaker.markets) {
