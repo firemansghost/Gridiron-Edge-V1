@@ -35,10 +35,23 @@ async function main() {
   const gates: GateResult[] = [];
   
   // Gate 1: Feature completeness ≥ 95%
-  const expectedGames = await prisma.cfbdGame.count({
-    where: { season, week: { in: weeks } },
+  // Get FBS team IDs (teams with V2 ratings are FBS)
+  const fbsTeams = await prisma.teamSeasonRating.findMany({
+    where: { season, modelVersion: 'v2' },
+    select: { teamId: true },
   });
+  const fbsTeamIds = new Set(fbsTeams.map(t => t.teamId));
   
+  // Filter to FBS-only games (both teams FBS)
+  const allGames = await prisma.cfbdGame.findMany({
+    where: { season, week: { in: weeks } },
+    select: { gameIdCfbd: true, homeTeamIdInternal: true, awayTeamIdInternal: true },
+  });
+  const fbsGames = allGames.filter(g => 
+    fbsTeamIds.has(g.homeTeamIdInternal) && fbsTeamIds.has(g.awayTeamIdInternal)
+  );
+  
+  const expectedGames = fbsGames.length;
   const expectedGameStats = expectedGames * 2; // 2 teams per game
   const expectedTeams = 130; // FBS teams
   
@@ -46,16 +59,12 @@ async function main() {
     where: { season },
   });
   
-  const teamGameStats = await prisma.cfbdEffTeamGame.count({
+  const fbsGameIds = fbsGames.map(g => g.gameIdCfbd);
+  const teamGameStats = fbsGameIds.length > 0 ? await prisma.cfbdEffTeamGame.count({
     where: {
-      gameIdCfbd: {
-        in: (await prisma.cfbdGame.findMany({
-          where: { season, week: { in: weeks } },
-          select: { gameIdCfbd: true },
-        })).map(g => g.gameIdCfbd),
-      },
+      gameIdCfbd: { in: fbsGameIds },
     },
-  });
+  }) : 0;
   
   const priors = await prisma.cfbdPriorsTeamSeason.count({
     where: { season },
@@ -67,7 +76,7 @@ async function main() {
   
   // For partial runs (single week), adjust expectations
   const isPartialRun = weeks.length < 11;
-  const gameStatsThreshold = isPartialRun ? 70 : 95; // Lower threshold for partial runs
+  const gameStatsThreshold = isPartialRun ? 90 : 95; // FBS-only games should have high coverage // Lower threshold for partial runs
   const seasonStatsThreshold = 95; // Season stats should always be complete (fetched once, not per week)
   
   gates.push({
