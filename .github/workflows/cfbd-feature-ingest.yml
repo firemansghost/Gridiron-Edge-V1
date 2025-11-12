@@ -52,8 +52,8 @@ jobs:
         id: set-weeks
         run: |
           WEEKS="${{ inputs.weeks }}"
-          # Convert comma-separated to JSON array
-          WEEKS_JSON=$(echo "$WEEKS" | tr ',' '\n' | jq -R . | jq -s .)
+          # Convert comma-separated to JSON array (single line, no newlines)
+          WEEKS_JSON=$(echo "$WEEKS" | tr ',' '\n' | jq -R . | jq -s -c .)
           echo "weeks=$WEEKS_JSON" >> $GITHUB_OUTPUT
           echo "Matrix: $WEEKS_JSON"
 
