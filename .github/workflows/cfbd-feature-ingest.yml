@@ -26,13 +26,8 @@ on:
       max_concurrency:
         description: 'Max concurrent week jobs (1-4)'
         required: false
-        default: '2'
-        type: choice
-        options:
-          - '1'
-          - '2'
-          - '3'
-          - '4'
+        default: 2
+        type: number
 
 concurrency:
   group: cfbd-ingest-${{ github.ref }}-${{ inputs.season }}
