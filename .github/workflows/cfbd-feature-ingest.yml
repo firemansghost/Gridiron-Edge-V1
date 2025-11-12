@@ -59,7 +59,9 @@ jobs:
           MAX="${{ inputs.max_concurrency }}"
           # Ensure it's a valid number, default to 2
           MAX_NUM=${MAX:-2}
-          echo "value=$MAX_NUM" >> $GITHUB_OUTPUT
+          # Output as JSON number so fromJson can parse it
+          MAX_JSON=$(echo "$MAX_NUM" | jq -c .)
+          echo "value=$MAX_JSON" >> $GITHUB_OUTPUT
           echo "Max parallel: $MAX_NUM"
 
   ingest:
