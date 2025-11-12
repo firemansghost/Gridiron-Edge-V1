@@ -38,6 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       weeks: ${{ steps.set-weeks.outputs.weeks }}
+      max_parallel: ${{ steps.set-max-parallel.outputs.value }}
     steps:
       - name: Install jq
         run: |
@@ -51,6 +52,15 @@ jobs:
           WEEKS_JSON=$(echo "$WEEKS" | tr ',' '\n' | jq -R . | jq -s -c .)
           echo "weeks=$WEEKS_JSON" >> $GITHUB_OUTPUT
           echo "Matrix: $WEEKS_JSON"
+      
+      - name: Set max parallel
+        id: set-max-parallel
+        run: |
+          MAX="${{ inputs.max_concurrency }}"
+          # Ensure it's a valid number, default to 2
+          MAX_NUM=${MAX:-2}
+          echo "value=$MAX_NUM" >> $GITHUB_OUTPUT
+          echo "Max parallel: $MAX_NUM"
 
   ingest:
     needs: prepare-matrix
@@ -60,7 +70,7 @@ jobs:
     strategy:
       matrix:
         week: ${{ fromJson(needs.prepare-matrix.outputs.weeks) }}
-      max-parallel: ${{ fromJson(format('{0}', inputs.max_concurrency)) || 2 }}
+      max-parallel: ${{ fromJson(needs.prepare-matrix.outputs.max_parallel) }}
       fail-fast: false
     
     steps:
