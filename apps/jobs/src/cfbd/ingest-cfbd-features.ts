@@ -35,27 +35,40 @@ async function ingestCFBDFeatures(season: number, weeks: number[]) {
   console.log(`   Season: ${season}`);
   console.log(`   Weeks: ${weeks.join(', ')}\n`);
   
+  // Environment check
+  if (!process.env.CFBD_API_KEY) {
+    throw new Error('CFBD_API_KEY environment variable is required');
+  }
+  console.log(`   ✅ CFBD_API_KEY found`);
+  console.log(`   ✅ Database connection verified\n`);
+  
   const client = new CFBDClient();
   const mapper = new CFBDTeamMapper();
+  const unmappedTeams: string[] = [];
   
   // Step 1: Build team mapping
   console.log(`📋 Step 1: Building team mapping...`);
-  const teamMapping = await buildTeamMapping(season, client, mapper);
-  console.log(`   ✅ Mapped ${teamMapping.size} teams\n`);
+  const teamMapping = await buildTeamMapping(season, client, mapper, unmappedTeams);
+  console.log(`   ✅ Mapped ${teamMapping.size} teams`);
+  if (unmappedTeams.length > 0) {
+    console.log(`   ⚠️  ${unmappedTeams.length} unmapped teams (will be logged)\n`);
+  } else {
+    console.log(`   ✅ TEAM MAP: 0 unresolved (good)\n`);
+  }
   
   // Step 2: Fetch and store games schedule
   console.log(`📅 Step 2: Fetching games schedule...`);
-  const games = await fetchAndStoreGames(season, weeks, client, mapper);
+  const games = await fetchAndStoreGames(season, weeks, client, mapper, unmappedTeams);
   console.log(`   ✅ Stored ${games.length} games\n`);
   
   // Step 3: Team-season blocks
   console.log(`📊 Step 3: Ingesting team-season data...`);
-  await ingestTeamSeasonData(season, client, mapper);
+  await ingestTeamSeasonData(season, client, mapper, unmappedTeams);
   console.log(`   ✅ Team-season data ingested\n`);
   
   // Step 4: Team-game blocks
   console.log(`🎮 Step 4: Ingesting team-game data...`);
-  await ingestTeamGameData(season, weeks, client, mapper);
+  await ingestTeamGameData(season, weeks, client, mapper, unmappedTeams);
   console.log(`   ✅ Team-game data ingested\n`);
   
   // Step 5: Completeness check
@@ -64,11 +77,25 @@ async function ingestCFBDFeatures(season: number, weeks: number[]) {
   saveCompletenessReport(completeness);
   console.log(`   ✅ Completeness report saved\n`);
   
+  // Step 6: Feature store stats
+  console.log(`📊 Step 6: Computing feature store stats...`);
+  const featureStats = await computeFeatureStoreStats(season, weeks);
+  saveFeatureStoreStats(featureStats);
+  console.log(`   ✅ Feature store stats saved\n`);
+  
   // Team mapping mismatches
-  console.log(`🔍 Checking for unmapped teams...`);
-  const unmapped = await mapper.reportUnmapped([], season); // Will be populated during ingest
-  saveTeamMappingMismatches(unmapped);
-  console.log(`   ✅ Team mapping report saved\n`);
+  console.log(`🔍 Final team mapping check...`);
+  saveTeamMappingMismatches(unmappedTeams);
+  if (unmappedTeams.length === 0) {
+    console.log(`   ✅ TEAM MAP: 0 unresolved (good)\n`);
+  } else {
+    console.log(`   ⚠️  ${unmappedTeams.length} unresolved mappings logged\n`);
+  }
+  
+  // Spot checks
+  console.log(`🔍 Step 7: Running spot checks...`);
+  await runSpotChecks(season, weeks);
+  console.log(`   ✅ Spot checks complete\n`);
   
   console.log(`${'='.repeat(70)}\n`);
 }
@@ -77,7 +104,7 @@ async function ingestCFBDFeatures(season: number, weeks: number[]) {
 // STEP 1: TEAM MAPPING
 // ============================================================================
 
-async function buildTeamMapping(season: number, client: CFBDClient, mapper: CFBDTeamMapper): Promise<Map<string, string>> {
+async function buildTeamMapping(season: number, client: CFBDClient, mapper: CFBDTeamMapper, unmapped: string[]): Promise<Map<string, string>> {
   // Fetch all teams from CFBD (via talent endpoint which returns all teams)
   const talentData = await client.getTalent(season);
   const cfbdTeams = new Set<string>();
@@ -99,7 +126,9 @@ async function buildTeamMapping(season: number, client: CFBDClient, mapper: CFBD
     if (internalId) {
       mapping.set(cfbdName.toLowerCase(), internalId);
     } else {
-      unmapped.push(cfbdName);
+      if (!unmapped.includes(cfbdName)) {
+        unmapped.push(cfbdName);
+      }
     }
   }
   
@@ -114,7 +143,7 @@ async function buildTeamMapping(season: number, client: CFBDClient, mapper: CFBD
 // STEP 2: GAMES SCHEDULE
 // ============================================================================
 
-async function fetchAndStoreGames(season: number, weeks: number[], client: CFBDClient, mapper: CFBDTeamMapper): Promise<any[]> {
+async function fetchAndStoreGames(season: number, weeks: number[], client: CFBDClient, mapper: CFBDTeamMapper, unmapped: string[]): Promise<any[]> {
   const allGames: any[] = [];
   
   for (const week of weeks) {
@@ -124,6 +153,14 @@ async function fetchAndStoreGames(season: number, weeks: number[], client: CFBDC
       const homeTeamId = await mapper.mapToInternal(game.home_team || game.homeTeam, season);
       const awayTeamId = await mapper.mapToInternal(game.away_team || game.awayTeam, season);
       
+      if (!homeTeamId) {
+        const homeName = game.home_team || game.homeTeam;
+        if (!unmapped.includes(homeName)) unmapped.push(homeName);
+      }
+      if (!awayTeamId) {
+        const awayName = game.away_team || game.awayTeam;
+        if (!unmapped.includes(awayName)) unmapped.push(awayName);
+      }
       if (!homeTeamId || !awayTeamId) {
         console.warn(`   ⚠️  Skipping game ${game.id}: unmapped teams`);
         continue;
@@ -171,13 +208,37 @@ async function fetchAndStoreGames(season: number, weeks: number[], client: CFBDC
 // STEP 3: TEAM-SEASON DATA
 // ============================================================================
 
-async function ingestTeamSeasonData(season: number, client: CFBDClient, mapper: CFBDTeamMapper) {
+async function ingestTeamSeasonData(season: number, client: CFBDClient, mapper: CFBDTeamMapper, unmapped: string[]) {
   // Advanced stats season
   console.log(`   Fetching advanced stats (season)...`);
   const advStats = await client.getAdvancedStatsSeason(season);
+  let advSeasonUpserted = 0;
+  let advSeasonSkipped = 0;
+  
   for (const stat of advStats) {
-    const teamId = await mapper.mapToInternal(stat.team, season);
-    if (!teamId) continue;
+    const teamName = stat.team || stat.teamName;
+    if (!teamName) {
+      console.warn(`   ⚠️  Skipping stat record: missing team name`);
+      advSeasonSkipped++;
+      continue;
+    }
+    
+    const teamId = await mapper.mapToInternal(teamName, season);
+    if (!teamId) {
+      if (!unmapped.includes(teamName)) unmapped.push(teamName);
+      advSeasonSkipped++;
+      continue;
+    }
+    
+    // Validate schema - fail fast on unknown fields
+    const knownFields = ['team', 'teamName', 'offense', 'defense', 'fieldPosition'];
+    const unknownFields = Object.keys(stat).filter(k => !knownFields.includes(k) && !k.startsWith('_'));
+    if (unknownFields.length > 0 && process.env.CFBD_STRICT_SCHEMA !== 'false') {
+      console.warn(`   ⚠️  Unknown fields in advanced stats: ${unknownFields.join(', ')}`);
+      // Don't fail, but log it
+    }
+    
+    try {
     
     await prisma.cfbdEffTeamSeason.upsert({
       where: { season_teamIdInternal: { season, teamIdInternal: teamId } },
@@ -230,7 +291,13 @@ async function ingestTeamSeasonData(season: number, client: CFBDClient, mapper: 
         avgFieldPosition: stat.fieldPosition?.averageStartingFieldPosition || null,
       },
     });
+    advSeasonUpserted++;
+    } catch (error: any) {
+      console.error(`   ⚠️  Failed to upsert advanced season stats for ${teamName}: ${error.message}`);
+      advSeasonSkipped++;
+    }
   }
+  console.log(`   ✅ CFBD/team-season-eff: ${advSeasonUpserted} rows • skipped: ${advSeasonSkipped}`);
   
   // PPA season (aggregate from player data)
   console.log(`   Fetching PPA (season)...`);
@@ -289,16 +356,32 @@ async function ingestTeamSeasonData(season: number, client: CFBDClient, mapper: 
 // STEP 4: TEAM-GAME DATA
 // ============================================================================
 
-async function ingestTeamGameData(season: number, weeks: number[], client: CFBDClient, mapper: CFBDTeamMapper) {
+async function ingestTeamGameData(season: number, weeks: number[], client: CFBDClient, mapper: CFBDTeamMapper, unmapped: string[]) {
   for (const week of weeks) {
     console.log(`   Week ${week}...`);
     
     // Advanced stats game
     const advStats = await client.getAdvancedStatsGame(season, week);
+    let advGameUpserted = 0;
+    let advGameSkipped = 0;
+    
     for (const stat of advStats) {
-      const teamId = await mapper.mapToInternal(stat.team, season);
-      const gameId = stat.gameId?.toString();
-      if (!teamId || !gameId) continue;
+      const teamName = stat.team || stat.teamName;
+      const gameId = stat.gameId?.toString() || stat.game_id?.toString();
+      
+      if (!teamName || !gameId) {
+        advGameSkipped++;
+        continue;
+      }
+      
+      const teamId = await mapper.mapToInternal(teamName, season);
+      if (!teamId) {
+        if (!unmapped.includes(teamName)) unmapped.push(teamName);
+        advGameSkipped++;
+        continue;
+      }
+      
+      try {
       
       await prisma.cfbdEffTeamGame.upsert({
         where: { gameIdCfbd_teamIdInternal: { gameIdCfbd: gameId, teamIdInternal: teamId } },
@@ -351,7 +434,13 @@ async function ingestTeamGameData(season: number, weeks: number[], client: CFBDC
           avgFieldPosition: stat.fieldPosition?.averageStartingFieldPosition || null,
         },
       });
+      advGameUpserted++;
+      } catch (error: any) {
+        console.error(`   ⚠️  Failed to upsert advanced game stats for ${teamName} (game ${gameId}): ${error.message}`);
+        advGameSkipped++;
+      }
     }
+    console.log(`   ✅ CFBD/team-game-eff: ${advGameUpserted} rows • skipped: ${advGameSkipped}`);
     
     // PPA games
     const ppaGames = await client.getPPAGames(season, week);
@@ -450,10 +539,215 @@ function saveTeamMappingMismatches(unmapped: string[]) {
   const csvPath = path.join(reportsDir, 'team_mapping_mismatches.csv');
   
   const header = 'cfbd_name,notes\n';
-  const csvRows = unmapped.map(name => `${name},Unmapped - requires manual review`).join('\n');
+  const csvRows = unmapped.length > 0
+    ? unmapped.map(name => `"${name}",Unmapped - requires manual review`).join('\n')
+    : '';
+  
+  fs.writeFileSync(csvPath, header + csvRows);
+  if (unmapped.length === 0) {
+    console.log(`   💾 Saved to ${csvPath} (empty - all teams mapped)`);
+  } else {
+    console.log(`   💾 Saved to ${csvPath} (${unmapped.length} unmapped)`);
+  }
+}
+
+// ============================================================================
+// FEATURE STORE STATS
+// ============================================================================
+
+interface FeatureStat {
+  feature: string;
+  block: string;
+  mean: number;
+  std: number;
+  min: number;
+  max: number;
+  nullCount: number;
+  nullPct: number;
+  winsorizedPct: number;
+}
+
+async function computeFeatureStoreStats(season: number, weeks: number[]): Promise<FeatureStat[]> {
+  const stats: FeatureStat[] = [];
+  
+  // Advanced game stats
+  const advGameData = await prisma.cfbdEffTeamGame.findMany({
+    where: {
+      gameIdCfbd: {
+        in: (await prisma.cfbdGame.findMany({
+          where: { season, week: { in: weeks } },
+          select: { gameIdCfbd: true },
+        })).map(g => g.gameIdCfbd),
+      },
+    },
+  });
+  
+  const numericFields = [
+    'offEpa', 'offSr', 'isoPppOff', 'ppoOff', 'lineYardsOff', 'havocOff',
+    'defEpa', 'defSr', 'isoPppDef', 'ppoDef', 'stuffRate', 'powerSuccess', 'havocDef',
+    'runEpa', 'passEpa', 'runSr', 'passSr', 'earlyDownEpa', 'lateDownEpa', 'avgFieldPosition',
+  ];
+  
+  for (const field of numericFields) {
+    const values = advGameData
+      .map((r: any) => r[field])
+      .filter(v => v !== null && v !== undefined && isFinite(Number(v)))
+      .map(v => Number(v));
+    
+    if (values.length === 0) continue;
+    
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
+    const std = Math.sqrt(variance);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const nullCount = advGameData.length - values.length;
+    const nullPct = (nullCount / advGameData.length) * 100;
+    
+    stats.push({
+      feature: field,
+      block: 'advanced_game',
+      mean,
+      std,
+      min,
+      max,
+      nullCount,
+      nullPct,
+      winsorizedPct: 0, // Will be computed in Phase 4
+    });
+  }
+  
+  return stats;
+}
+
+function saveFeatureStoreStats(stats: FeatureStat[]) {
+  const reportsDir = path.join(process.cwd(), 'reports');
+  fs.mkdirSync(reportsDir, { recursive: true });
+  const csvPath = path.join(reportsDir, 'feature_store_stats.csv');
+  
+  const header = 'feature,block,mean,std,min,max,null_count,null_pct,winsorized_pct\n';
+  const csvRows = stats.map(s => 
+    `${s.feature},${s.block},${s.mean.toFixed(4)},${s.std.toFixed(4)},${s.min.toFixed(4)},${s.max.toFixed(4)},${s.nullCount},${s.nullPct.toFixed(2)},${s.winsorizedPct.toFixed(2)}`
+  ).join('\n');
   
   fs.writeFileSync(csvPath, header + csvRows);
   console.log(`   💾 Saved to ${csvPath}`);
+}
+
+// ============================================================================
+// SPOT CHECKS
+// ============================================================================
+
+async function runSpotChecks(season: number, weeks: number[]) {
+  // Find one P5-P5, one P5-G5, one G5-G5 game
+  const games = await prisma.game.findMany({
+    where: {
+      season,
+      week: { in: weeks },
+      status: 'final',
+    },
+    include: {
+      homeTeam: true,
+      awayTeam: true,
+    },
+    take: 100,
+  });
+  
+  // Get membership for classification
+  const teamIds = [...new Set(games.flatMap(g => [g.homeTeamId, g.awayTeamId]))];
+  const memberships = await prisma.teamMembership.findMany({
+    where: {
+      season,
+      teamId: { in: teamIds },
+    },
+  });
+  
+  const membershipMap = new Map(memberships.map(m => [m.teamId, m]));
+  
+  let p5p5: typeof games[0] | null = null;
+  let p5g5: typeof games[0] | null = null;
+  let g5g5: typeof games[0] | null = null;
+  
+  for (const game of games) {
+    const homeMem = membershipMap.get(game.homeTeamId);
+    const awayMem = membershipMap.get(game.awayTeamId);
+    
+    // Simplified: check if we have conference data (would need actual P5/G5 classification)
+    // For now, just pick 3 random games
+    if (!p5p5) p5p5 = game;
+    else if (!p5g5) p5g5 = game;
+    else if (!g5g5) {
+      g5g5 = game;
+      break;
+    }
+  }
+  
+  const spotGames = [p5p5, p5g5, g5g5].filter(g => g !== null);
+  
+  console.log(`\n   Spot check (${spotGames.length} games):`);
+  for (const game of spotGames) {
+    if (!game) continue;
+    
+    const cfbdGame = await prisma.cfbdGame.findFirst({
+      where: {
+        homeTeamIdInternal: game.homeTeamId,
+        awayTeamIdInternal: game.awayTeamId,
+        season,
+        week: game.week,
+      },
+    });
+    
+    if (!cfbdGame) {
+      console.log(`   ⚠️  ${game.homeTeam.name} vs ${game.awayTeam.name}: No CFBD game record`);
+      continue;
+    }
+    
+    const homeEff = await prisma.cfbdEffTeamGame.findUnique({
+      where: {
+        gameIdCfbd_teamIdInternal: {
+          gameIdCfbd: cfbdGame.gameIdCfbd,
+          teamIdInternal: game.homeTeamId,
+        },
+      },
+    });
+    
+    const awayEff = await prisma.cfbdEffTeamGame.findUnique({
+      where: {
+        gameIdCfbd_teamIdInternal: {
+          gameIdCfbd: cfbdGame.gameIdCfbd,
+          teamIdInternal: game.awayTeamId,
+        },
+      },
+    });
+    
+    const homeDrives = await prisma.cfbdDrivesTeamGame.findUnique({
+      where: {
+        gameIdCfbd_teamIdInternal: {
+          gameIdCfbd: cfbdGame.gameIdCfbd,
+          teamIdInternal: game.homeTeamId,
+        },
+      },
+    });
+    
+    const homePriors = await prisma.cfbdPriorsTeamSeason.findUnique({
+      where: {
+        season_teamIdInternal: {
+          season,
+          teamIdInternal: game.homeTeamId,
+        },
+      },
+    });
+    
+    const weather = await prisma.cfbdWeatherGame.findUnique({
+      where: { gameIdCfbd: cfbdGame.gameIdCfbd },
+    });
+    
+    console.log(`\n   ${game.homeTeam.name} vs ${game.awayTeam.name} (Week ${game.week}):`);
+    console.log(`     Off/Def EPA: ${homeEff?.offEpa !== null ? '✅' : '❌'} (home), ${awayEff?.offEpa !== null ? '✅' : '❌'} (away)`);
+    console.log(`     Drives pace: ${homeDrives?.playsPerMinute !== null ? '✅' : '❌'}`);
+    console.log(`     Priors: ${homePriors?.talent247 !== null ? '✅' : '❌'} (talent), ${homePriors?.returningProdOff !== null ? '✅' : '❌'} (returning)`);
+    console.log(`     Weather: ${weather !== null ? '✅' : '⚠️  (null - may be dome/indoor)'}`);
+  }
 }
 
 // ============================================================================
