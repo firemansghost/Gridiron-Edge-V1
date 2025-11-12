@@ -26,8 +26,8 @@ on:
       max_concurrency:
         description: 'Max concurrent week jobs (1-4)'
         required: false
-        default: 2
-        type: number
+        default: '2'
+        type: string
 
 concurrency:
   group: cfbd-ingest-${{ github.ref }}-${{ inputs.season }}
@@ -60,7 +60,7 @@ jobs:
     strategy:
       matrix:
         week: ${{ fromJson(needs.prepare-matrix.outputs.weeks) }}
-      max-parallel: ${{ inputs.max_concurrency || 2 }}
+      max-parallel: ${{ fromJson(format('{0}', inputs.max_concurrency || '2')) }}
       fail-fast: false
     
     steps:
