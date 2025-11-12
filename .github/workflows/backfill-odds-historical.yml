@@ -326,7 +326,9 @@ jobs:
 
       - name: Generate coverage report
         run: |
-          npx tsx scripts/phase2-consensus-coverage.ts ${{ inputs.season }} ${{ join(split(inputs.weeks, ','), ' ') }}
+          WEEKS="${{ inputs.weeks }}"
+          WEEKS_ARRAY=(${WEEKS//,/ })
+          npx tsx scripts/phase2-consensus-coverage.ts ${{ inputs.season }} ${WEEKS_ARRAY[@]}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 

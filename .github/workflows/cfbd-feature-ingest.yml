@@ -39,13 +39,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  prepare-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      weeks: ${{ steps.set-weeks.outputs.weeks }}
+    steps:
+      - name: Set weeks matrix
+        id: set-weeks
+        run: |
+          WEEKS="${{ inputs.weeks }}"
+          # Convert comma-separated to JSON array
+          WEEKS_JSON=$(echo "$WEEKS" | tr ',' '\n' | jq -R . | jq -s .)
+          echo "weeks=$WEEKS_JSON" >> $GITHUB_OUTPUT
+          echo "Matrix: $WEEKS_JSON"
+
   ingest:
+    needs: prepare-matrix
     runs-on: ubuntu-latest
     timeout-minutes: 60
     
     strategy:
       matrix:
-        week: ${{ fromJson(format('[{0}]', join(split(inputs.weeks, ','), ','))) }}
+        week: ${{ fromJson(needs.prepare-matrix.outputs.weeks) }}
       max-parallel: ${{ inputs.max_concurrency || 2 }}
       fail-fast: false
     
