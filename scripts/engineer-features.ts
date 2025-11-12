@@ -951,6 +951,7 @@ async function checkGates(features: WithHygiene[], weeks: number[], featureVersi
     where: {
       season: features[0]?.season || 2025,
       week: { in: weeks },
+      featureVersion,
     },
   });
   
