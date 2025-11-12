@@ -288,6 +288,14 @@ async function ingestTeamSeasonData(season: number, client: CFBDClient, mapper: 
       // Don't fail, but log it
     }
     
+    // Extract havoc values (API returns object with { total, frontSeven, db })
+    const havocOffValue = typeof stat.offense?.havoc === 'object' && stat.offense?.havoc !== null
+      ? (stat.offense.havoc as any).total
+      : stat.offense?.havoc;
+    const havocDefValue = typeof stat.defense?.havoc === 'object' && stat.defense?.havoc !== null
+      ? (stat.defense.havoc as any).total
+      : stat.defense?.havoc;
+    
     try {
       if (dryRun) {
         console.log(`   [DRY RUN] Would upsert season stats for ${teamName}`);
@@ -303,14 +311,14 @@ async function ingestTeamSeasonData(season: number, client: CFBDClient, mapper: 
         isoPppOff: stat.offense?.explosiveness || null,
         ppoOff: stat.offense?.pointsPerOpportunity || null,
         lineYardsOff: stat.offense?.lineYards || null,
-        havocOff: stat.offense?.havoc || null,
+        havocOff: havocOffValue || null,
         defEpa: stat.defense?.epa || null,
         defSr: stat.defense?.successRate || null,
         isoPppDef: stat.defense?.explosiveness || null,
         ppoDef: stat.defense?.pointsPerOpportunity || null,
         stuffRate: stat.defense?.stuffRate || null,
         powerSuccess: stat.offense?.powerSuccess || null,
-        havocDef: stat.defense?.havoc || null,
+        havocDef: havocDefValue || null,
         runEpa: stat.offense?.rushingPlays?.epa || null,
         passEpa: stat.offense?.passingPlays?.epa || null,
         runSr: stat.offense?.rushingPlays?.successRate || null,
@@ -328,14 +336,14 @@ async function ingestTeamSeasonData(season: number, client: CFBDClient, mapper: 
         isoPppOff: stat.offense?.explosiveness || null,
         ppoOff: stat.offense?.pointsPerOpportunity || null,
         lineYardsOff: stat.offense?.lineYards || null,
-        havocOff: stat.offense?.havoc || null,
+        havocOff: havocOffValue || null,
         defEpa: stat.defense?.epa || null,
         defSr: stat.defense?.successRate || null,
         isoPppDef: stat.defense?.explosiveness || null,
         ppoDef: stat.defense?.pointsPerOpportunity || null,
         stuffRate: stat.defense?.stuffRate || null,
         powerSuccess: stat.offense?.powerSuccess || null,
-        havocDef: stat.defense?.havoc || null,
+        havocDef: havocDefValue || null,
         runEpa: stat.offense?.rushingPlays?.epa || null,
         passEpa: stat.offense?.passingPlays?.epa || null,
         runSr: stat.offense?.rushingPlays?.successRate || null,
