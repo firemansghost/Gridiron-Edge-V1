@@ -32,12 +32,29 @@ export class CFBDTeamMapper {
       const aliasPath = path.join(process.cwd(), 'apps/jobs/config/team_aliases_cfbd.yml');
       if (fs.existsSync(aliasPath)) {
         const content = fs.readFileSync(aliasPath, 'utf8');
-        const aliases = yaml.load(content) as TeamAlias[];
-        for (const alias of aliases) {
-          this.aliasMap.set(alias.cfbd.toLowerCase(), alias.internal);
-          this.reverseMap.set(alias.internal.toLowerCase(), alias.cfbd);
+        const aliases = yaml.load(content) as any;
+        
+        // Handle both array and object formats
+        if (Array.isArray(aliases)) {
+          for (const alias of aliases) {
+            if (alias.cfbd && alias.internal) {
+              this.aliasMap.set(alias.cfbd.toLowerCase(), alias.internal);
+              this.reverseMap.set(alias.internal.toLowerCase(), alias.cfbd);
+            }
+          }
+        } else if (aliases && typeof aliases === 'object') {
+          // Handle object format: { "CFBD Name": "internal-id", ... }
+          for (const [cfbdName, internalId] of Object.entries(aliases)) {
+            if (typeof internalId === 'string') {
+              this.aliasMap.set(cfbdName.toLowerCase(), internalId);
+              this.reverseMap.set(internalId.toLowerCase(), cfbdName);
+            }
+          }
         }
-        console.log(`[CFBD Team Mapper] Loaded ${this.aliasMap.size} aliases from config`);
+        
+        if (this.aliasMap.size > 0) {
+          console.log(`[CFBD Team Mapper] Loaded ${this.aliasMap.size} aliases from config`);
+        }
       }
     } catch (error) {
       console.warn(`[CFBD Team Mapper] Could not load aliases: ${error}`);

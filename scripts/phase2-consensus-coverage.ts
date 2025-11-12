@@ -276,38 +276,6 @@ async function sampleGames(season: number, weeks: number[], sampleSize: number =
       
       const usedFrom = `${windowStart.toISOString()} → ${windowEnd.toISOString()}`;
       
-      // Get ML consensus
-      const mlLines = preKickLines.filter(l => l.lineType === 'moneyline');
-      const mlByBook = new Map<string, number[]>();
-      for (const line of mlLines) {
-        const book = line.bookName || 'unknown';
-        const value = line.lineValue !== null && line.lineValue !== undefined ? Number(line.lineValue) : null;
-        if (value === null || !isFinite(value)) continue;
-        if (!mlByBook.has(book)) {
-          mlByBook.set(book, []);
-        }
-        mlByBook.get(book)!.push(value);
-      }
-      
-      const dedupedML: number[] = [];
-      for (const [book, values] of mlByBook.entries()) {
-        if (values.length === 0) continue;
-        const sorted = [...values].sort((a, b) => a - b);
-        const mid = Math.floor(sorted.length / 2);
-        const median = sorted.length % 2 === 0
-          ? (sorted[mid - 1] + sorted[mid]) / 2
-          : sorted[mid];
-        dedupedML.push(median);
-      }
-      
-      const sortedML = [...dedupedML].sort((a, b) => a - b);
-      const mlMid = Math.floor(sortedML.length / 2);
-      const consensusML = sortedML.length > 0
-        ? (sortedML.length % 2 === 0
-          ? (sortedML[mlMid - 1] + sortedML[mlMid]) / 2
-          : sortedML[mlMid])
-        : null;
-      
       allGames.push({
         gameId: game.id,
         week,

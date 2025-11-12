@@ -11,6 +11,10 @@
 
 import { execSync } from 'child_process';
 import * as path from 'path';
+import * as dotenv from 'dotenv';
+
+// Load environment variables from .env
+dotenv.config();
 
 const SEASON = 2025;
 const WEEKS = '1,2,3,4,5,6,7';

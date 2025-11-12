@@ -28,7 +28,7 @@ interface CompletenessRow {
 // MAIN INGEST FUNCTION
 // ============================================================================
 
-async function ingestCFBDFeatures(season: number, weeks: number[]) {
+async function ingestCFBDFeatures(season: number, weeks: number[], endpoints: string[] = ['teamSeason', 'teamGame', 'priors'], dryRun: boolean = false) {
   console.log(`\n${'='.repeat(70)}`);
   console.log(`🚀 PHASE 3: CFBD FEATURE INGEST`);
   console.log(`${'='.repeat(70)}`);
@@ -59,26 +59,47 @@ async function ingestCFBDFeatures(season: number, weeks: number[]) {
   // Step 2: Fetch and store games schedule
   console.log(`📅 Step 2: Fetching games schedule...`);
   const games = await fetchAndStoreGames(season, weeks, client, mapper, unmappedTeams);
-  console.log(`   ✅ Stored ${games.length} games\n`);
+  console.log(`   ✅ Stored ${games.length} games`);
+  if (unmappedTeams.length > 0) {
+    console.log(`   ⚠️  ${unmappedTeams.length} unmapped team names encountered (likely FCS/other divisions)`);
+  }
+  console.log();
   
   // Step 3: Team-season blocks
-  console.log(`📊 Step 3: Ingesting team-season data...`);
-  await ingestTeamSeasonData(season, client, mapper, unmappedTeams);
-  console.log(`   ✅ Team-season data ingested\n`);
+  if (endpoints.includes('teamSeason')) {
+    console.log(`📊 Step 3: Ingesting team-season data...`);
+    await ingestTeamSeasonData(season, client, mapper, unmappedTeams, dryRun);
+    console.log(`   ✅ Team-season data ingested\n`);
+  } else {
+    console.log(`📊 Step 3: Skipped (not in endpoints)\n`);
+  }
   
   // Step 4: Team-game blocks
-  console.log(`🎮 Step 4: Ingesting team-game data...`);
-  await ingestTeamGameData(season, weeks, client, mapper, unmappedTeams);
-  console.log(`   ✅ Team-game data ingested\n`);
+  if (endpoints.includes('teamGame')) {
+    console.log(`🎮 Step 4: Ingesting team-game data...`);
+    await ingestTeamGameData(season, weeks, client, mapper, unmappedTeams, dryRun);
+    console.log(`   ✅ Team-game data ingested\n`);
+  } else {
+    console.log(`🎮 Step 4: Skipped (not in endpoints)\n`);
+  }
   
-  // Step 5: Completeness check
-  console.log(`✅ Step 5: Computing feature completeness...`);
+  // Priors (part of team-season but separate endpoint)
+  if (endpoints.includes('priors')) {
+    console.log(`📚 Step 5: Ingesting priors (talent + returning production)...`);
+    await ingestPriors(season, client, mapper, unmappedTeams, dryRun);
+    console.log(`   ✅ Priors ingested\n`);
+  } else {
+    console.log(`📚 Step 5: Skipped (not in endpoints)\n`);
+  }
+  
+  // Step 6: Completeness check
+  console.log(`✅ Step 6: Computing feature completeness...`);
   const completeness = await computeCompleteness(season, weeks);
   saveCompletenessReport(completeness);
   console.log(`   ✅ Completeness report saved\n`);
   
-  // Step 6: Feature store stats
-  console.log(`📊 Step 6: Computing feature store stats...`);
+  // Step 7: Feature store stats
+  console.log(`📊 Step 7: Computing feature store stats...`);
   const featureStats = await computeFeatureStoreStats(season, weeks);
   saveFeatureStoreStats(featureStats);
   console.log(`   ✅ Feature store stats saved\n`);
@@ -93,7 +114,7 @@ async function ingestCFBDFeatures(season: number, weeks: number[]) {
   }
   
   // Spot checks
-  console.log(`🔍 Step 7: Running spot checks...`);
+  console.log(`🔍 Step 8: Running spot checks...`);
   await runSpotChecks(season, weeks);
   console.log(`   ✅ Spot checks complete\n`);
   
@@ -119,7 +140,6 @@ async function buildTeamMapping(season: number, client: CFBDClient, mapper: CFBD
   
   // Map each team
   const mapping = new Map<string, string>();
-  const unmapped: string[] = [];
   
   for (const cfbdName of cfbdTeams) {
     const internalId = await mapper.mapToInternal(cfbdName, season);
@@ -145,9 +165,31 @@ async function buildTeamMapping(season: number, client: CFBDClient, mapper: CFBD
 
 async function fetchAndStoreGames(season: number, weeks: number[], client: CFBDClient, mapper: CFBDTeamMapper, unmapped: string[]): Promise<any[]> {
   const allGames: any[] = [];
+  let skippedCount = 0;
+  
+  // Check if games already exist - if so, skip fetching and just load from DB
+  const existingGames = await prisma.cfbdGame.findMany({
+    where: { season, week: { in: weeks } },
+    select: { gameIdCfbd: true },
+  });
+  
+  if (existingGames.length > 0) {
+    console.log(`   Found ${existingGames.length} existing games in database, skipping fetch...`);
+    // Load existing games for return
+    for (const week of weeks) {
+      const weekGames = await prisma.cfbdGame.findMany({
+        where: { season, week },
+      });
+      allGames.push(...weekGames.map(g => ({ id: g.gameIdCfbd })));
+    }
+    return allGames;
+  }
   
   for (const week of weeks) {
+    console.log(`   Week ${week}...`);
     const games = await client.getGames(season, week, undefined, 'regular');
+    let weekStored = 0;
+    let weekSkipped = 0;
     
     for (const game of games) {
       const homeTeamId = await mapper.mapToInternal(game.home_team || game.homeTeam, season);
@@ -162,7 +204,9 @@ async function fetchAndStoreGames(season: number, weeks: number[], client: CFBDC
         if (!unmapped.includes(awayName)) unmapped.push(awayName);
       }
       if (!homeTeamId || !awayTeamId) {
-        console.warn(`   ⚠️  Skipping game ${game.id}: unmapped teams`);
+        // Silently skip unmapped teams (FCS, etc.) - log summary at end
+        weekSkipped++;
+        skippedCount++;
         continue;
       }
       
@@ -181,7 +225,6 @@ async function fetchAndStoreGames(season: number, weeks: number[], client: CFBDC
           homeConference: game.home_conference || null,
           awayConference: game.away_conference || null,
           asOf: new Date(),
-          updatedAt: new Date(),
         },
         create: {
           gameIdCfbd: game.id.toString(),
@@ -198,7 +241,14 @@ async function fetchAndStoreGames(season: number, weeks: number[], client: CFBDC
       });
       
       allGames.push(game);
+      weekStored++;
     }
+    
+    console.log(`      Stored: ${weekStored}, Skipped: ${weekSkipped}`);
+  }
+  
+  if (skippedCount > 0) {
+    console.log(`   ⚠️  Total skipped: ${skippedCount} games (unmapped teams)`);
   }
   
   return allGames;
@@ -208,7 +258,7 @@ async function fetchAndStoreGames(season: number, weeks: number[], client: CFBDC
 // STEP 3: TEAM-SEASON DATA
 // ============================================================================
 
-async function ingestTeamSeasonData(season: number, client: CFBDClient, mapper: CFBDTeamMapper, unmapped: string[]) {
+async function ingestTeamSeasonData(season: number, client: CFBDClient, mapper: CFBDTeamMapper, unmapped: string[], dryRun: boolean = false) {
   // Advanced stats season
   console.log(`   Fetching advanced stats (season)...`);
   const advStats = await client.getAdvancedStatsSeason(season);
@@ -239,6 +289,11 @@ async function ingestTeamSeasonData(season: number, client: CFBDClient, mapper: 
     }
     
     try {
+      if (dryRun) {
+        console.log(`   [DRY RUN] Would upsert season stats for ${teamName}`);
+        advSeasonUpserted++;
+        continue;
+      }
     
     await prisma.cfbdEffTeamSeason.upsert({
       where: { season_teamIdInternal: { season, teamIdInternal: teamId } },
@@ -264,7 +319,6 @@ async function ingestTeamSeasonData(season: number, client: CFBDClient, mapper: 
         lateDownEpa: stat.offense?.secondDown?.epa || null, // Approximate
         avgFieldPosition: stat.fieldPosition?.averageStartingFieldPosition || null,
         asOf: new Date(),
-        updatedAt: new Date(),
       },
       create: {
         season,
@@ -304,20 +358,39 @@ async function ingestTeamSeasonData(season: number, client: CFBDClient, mapper: 
   const ppaData = await client.getPPASeason(season);
   // Aggregate by team (simplified - would need proper aggregation)
   // For now, skip - will use game-level PPA
-  
+}
+
+// ============================================================================
+// STEP 5: PRIORS (TALENT + RETURNING PRODUCTION)
+// ============================================================================
+
+async function ingestPriors(season: number, client: CFBDClient, mapper: CFBDTeamMapper, unmapped: string[], dryRun: boolean = false) {
   // Talent
   console.log(`   Fetching talent...`);
   const talentData = await client.getTalent(season);
+  let talentUpserted = 0;
+  let talentSkipped = 0;
+  
   for (const talent of talentData) {
     const teamId = await mapper.mapToInternal(talent.team, season);
-    if (!teamId) continue;
+    if (!teamId) {
+      if (!unmapped.includes(talent.team)) unmapped.push(talent.team);
+      talentSkipped++;
+      continue;
+    }
+    
+    try {
+      if (dryRun) {
+        console.log(`   [DRY RUN] Would upsert talent for ${talent.team}`);
+        talentUpserted++;
+        continue;
+      }
     
     await prisma.cfbdPriorsTeamSeason.upsert({
       where: { season_teamIdInternal: { season, teamIdInternal: teamId } },
       update: {
         talent247: talent.talent || null,
         asOf: new Date(),
-        updatedAt: new Date(),
       },
       create: {
         season,
@@ -325,14 +398,34 @@ async function ingestTeamSeasonData(season: number, client: CFBDClient, mapper: 
         talent247: talent.talent || null,
       },
     });
+    talentUpserted++;
+    } catch (error: any) {
+      console.error(`   ⚠️  Failed to upsert talent for ${talent.team}: ${error.message}`);
+      talentSkipped++;
+    }
   }
+  console.log(`   ✅ CFBD/talent: ${talentUpserted} rows • skipped: ${talentSkipped}`);
   
   // Returning production
   console.log(`   Fetching returning production...`);
   const returningData = await client.getReturningProduction(season);
+  let returningUpserted = 0;
+  let returningSkipped = 0;
+  
   for (const ret of returningData) {
     const teamId = await mapper.mapToInternal(ret.team, season);
-    if (!teamId) continue;
+    if (!teamId) {
+      if (!unmapped.includes(ret.team)) unmapped.push(ret.team);
+      returningSkipped++;
+      continue;
+    }
+    
+    try {
+      if (dryRun) {
+        console.log(`   [DRY RUN] Would upsert returning production for ${ret.team}`);
+        returningUpserted++;
+        continue;
+      }
     
     await prisma.cfbdPriorsTeamSeason.upsert({
       where: { season_teamIdInternal: { season, teamIdInternal: teamId } },
@@ -340,7 +433,6 @@ async function ingestTeamSeasonData(season: number, client: CFBDClient, mapper: 
         returningProdOff: ret.returningOffense || null,
         returningProdDef: ret.returningDefense || null,
         asOf: new Date(),
-        updatedAt: new Date(),
       },
       create: {
         season,
@@ -349,14 +441,20 @@ async function ingestTeamSeasonData(season: number, client: CFBDClient, mapper: 
         returningProdDef: ret.returningDefense || null,
       },
     });
+    returningUpserted++;
+    } catch (error: any) {
+      console.error(`   ⚠️  Failed to upsert returning production for ${ret.team}: ${error.message}`);
+      returningSkipped++;
+    }
   }
+  console.log(`   ✅ CFBD/returning-production: ${returningUpserted} rows • skipped: ${returningSkipped}`);
 }
 
 // ============================================================================
 // STEP 4: TEAM-GAME DATA
 // ============================================================================
 
-async function ingestTeamGameData(season: number, weeks: number[], client: CFBDClient, mapper: CFBDTeamMapper, unmapped: string[]) {
+async function ingestTeamGameData(season: number, weeks: number[], client: CFBDClient, mapper: CFBDTeamMapper, unmapped: string[], dryRun: boolean = false) {
   for (const week of weeks) {
     console.log(`   Week ${week}...`);
     
@@ -382,6 +480,11 @@ async function ingestTeamGameData(season: number, weeks: number[], client: CFBDC
       }
       
       try {
+        if (dryRun) {
+          console.log(`   [DRY RUN] Would upsert game stats for ${teamName} (game ${gameId})`);
+          advGameUpserted++;
+          continue;
+        }
       
       await prisma.cfbdEffTeamGame.upsert({
         where: { gameIdCfbd_teamIdInternal: { gameIdCfbd: gameId, teamIdInternal: teamId } },
@@ -407,7 +510,6 @@ async function ingestTeamGameData(season: number, weeks: number[], client: CFBDC
           lateDownEpa: stat.offense?.secondDown?.epa || null,
           avgFieldPosition: stat.fieldPosition?.averageStartingFieldPosition || null,
           asOf: new Date(),
-          updatedAt: new Date(),
         },
         create: {
           gameIdCfbd: gameId,
@@ -755,14 +857,43 @@ async function runSpotChecks(season: number, weeks: number[]) {
 // ============================================================================
 
 async function main() {
+  // Parse CLI args (support both positional and --flags)
   const args = process.argv.slice(2);
-  const season = args[0] ? parseInt(args[0], 10) : 2025;
-  const weeks = args.length > 1 
-    ? args.slice(1).map(w => parseInt(w, 10))
-    : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  let season = 2025;
+  let weeks: number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  let endpoints: string[] = ['teamSeason', 'teamGame', 'priors'];
+  let dryRun = false;
+  
+  // Parse flags
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--season' && args[i + 1]) {
+      season = parseInt(args[i + 1], 10);
+      i++;
+    } else if (args[i] === '--weeks' && args[i + 1]) {
+      weeks = args[i + 1].split(',').map(w => parseInt(w.trim(), 10)).filter(w => !isNaN(w));
+      i++;
+    } else if (args[i] === '--endpoints' && args[i + 1]) {
+      endpoints = args[i + 1].split(',').map(e => e.trim());
+      i++;
+    } else if (args[i] === '--dry-run') {
+      dryRun = true;
+    }
+  }
+  
+  // Fallback to positional args if no flags
+  if (args.length > 0 && !args[0].startsWith('--')) {
+    season = parseInt(args[0], 10) || season;
+    if (args.length > 1) {
+      weeks = args.slice(1).map(w => parseInt(w, 10)).filter(w => !isNaN(w));
+    }
+  }
+  
+  if (dryRun) {
+    console.log('🔍 DRY RUN MODE - No database writes will be performed\n');
+  }
   
   try {
-    await ingestCFBDFeatures(season, weeks);
+    await ingestCFBDFeatures(season, weeks, endpoints, dryRun);
   } catch (error) {
     console.error('❌ Ingest failed:', error);
     process.exit(1);

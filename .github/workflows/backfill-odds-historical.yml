@@ -310,10 +310,25 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: historical-reports-${{ inputs.season }}-w${{ inputs.weeks }}
+          name: odds-backfill-reports-${{ inputs.season }}
           path: |
+            reports/consensus_coverage_by_week.csv
             reports/historical/
           retention-days: 30
+
+      - name: Check gates
+        run: |
+          npx tsx scripts/check-odds-gates.ts \
+            --season ${{ inputs.season }} \
+            --weeks "${{ inputs.weeks }}"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Generate coverage report
+        run: |
+          npx tsx scripts/phase2-consensus-coverage.ts ${{ inputs.season }} ${{ join(split(inputs.weeks, ','), ' ') }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
       - name: Job summary
         if: always()

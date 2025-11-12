@@ -1,0 +1,162 @@
+name: CFBD Feature Ingest
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (e.g., 2025)'
+        required: true
+        default: '2025'
+        type: string
+      weeks:
+        description: 'Week range (comma-separated, e.g., 1,2,3,4,5,6,7,8,9,10,11)'
+        required: true
+        default: '1,2,3,4,5,6,7,8,9,10,11'
+        type: string
+      endpoints:
+        description: 'Endpoints to ingest (comma-separated: teamSeason,teamGame,priors)'
+        required: false
+        default: 'teamSeason,teamGame,priors'
+        type: string
+      dry_run:
+        description: 'Dry run mode (no DB writes)'
+        required: false
+        default: false
+        type: boolean
+      max_concurrency:
+        description: 'Max concurrent week jobs (1-4)'
+        required: false
+        default: '2'
+        type: choice
+        options:
+          - '1'
+          - '2'
+          - '3'
+          - '4'
+
+concurrency:
+  group: cfbd-ingest-${{ github.ref }}-${{ inputs.season }}
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    strategy:
+      matrix:
+        week: ${{ fromJson(format('[{0}]', join(split(inputs.weeks, ','), ','))) }}
+      max-parallel: ${{ inputs.max_concurrency || 2 }}
+      fail-fast: false
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Build jobs
+        run: npm run build:jobs
+
+      - name: Setup environment
+        run: |
+          echo "CFBD_API_KEY=${{ secrets.CFBD_API_KEY }}" >> $GITHUB_ENV
+          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
+          echo "SEASON=${{ inputs.season }}" >> $GITHUB_ENV
+          echo "WEEK=${{ matrix.week }}" >> $GITHUB_ENV
+          echo "ENDPOINTS=${{ inputs.endpoints }}" >> $GITHUB_ENV
+          echo "DRY_RUN=${{ inputs.dry_run }}" >> $GITHUB_ENV
+          echo "RATE_MAX_RPS=${{ secrets.RATE_MAX_RPS || '10' }}" >> $GITHUB_ENV
+          echo "RATE_CONCURRENCY=${{ secrets.RATE_CONCURRENCY || '3' }}" >> $GITHUB_ENV
+
+      - name: Run CFBD ingest (Week ${{ matrix.week }})
+        run: |
+          npx tsx apps/jobs/src/cfbd/ingest-cfbd-features.ts \
+            --season ${{ inputs.season }} \
+            --weeks ${{ matrix.week }} \
+            --endpoints "${{ inputs.endpoints }}" \
+            ${{ inputs.dry_run && '--dry-run' || '' }}
+        continue-on-error: true
+
+      - name: Upload artifacts (Week ${{ matrix.week }})
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfbd-reports-week-${{ matrix.week }}
+          path: |
+            reports/team_mapping_mismatches.csv
+            reports/feature_completeness.csv
+            reports/feature_store_stats.csv
+          retention-days: 7
+          if-no-files-found: warn
+
+  check-gates:
+    runs-on: ubuntu-latest
+    needs: ingest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cfbd-reports-week-*
+          merge-multiple: true
+          path: reports/
+
+      - name: Check gates
+        run: |
+          npx tsx scripts/check-cfbd-gates.ts \
+            --season ${{ inputs.season }} \
+            --weeks "${{ inputs.weeks }}"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Generate job summary
+        run: |
+          npx tsx scripts/generate-cfbd-summary.ts \
+            --season ${{ inputs.season }} \
+            --weeks "${{ inputs.weeks }}"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Upload final reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfbd-final-reports
+          path: |
+            reports/team_mapping_mismatches.csv
+            reports/feature_completeness.csv
+            reports/feature_store_stats.csv
+            reports/cfbd_job_summary.md
+          retention-days: 30
+
