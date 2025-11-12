@@ -64,8 +64,48 @@ jobs:
           echo "value=$MAX_JSON" >> $GITHUB_OUTPUT
           echo "Max parallel: $MAX_NUM"
 
-  ingest:
+  season-stats:
+    runs-on: ubuntu-latest
     needs: prepare-matrix
+    timeout-minutes: 10
+    # Only run if teamSeason is in endpoints
+    if: contains(inputs.endpoints, 'teamSeason')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Build jobs
+        run: npm run build:jobs
+
+      - name: Setup environment
+        run: |
+          echo "CFBD_API_KEY=${{ secrets.CFBD_API_KEY }}" >> $GITHUB_ENV
+          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
+          echo "RATE_MAX_RPS=${{ secrets.RATE_MAX_RPS || '10' }}" >> $GITHUB_ENV
+          echo "RATE_CONCURRENCY=${{ secrets.RATE_CONCURRENCY || '3' }}" >> $GITHUB_ENV
+
+      - name: Run season stats backfill
+        run: |
+          npx tsx scripts/backfill-cfbd-season-stats.ts
+        continue-on-error: true
+
+  ingest:
+    needs: [prepare-matrix, season-stats]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     
@@ -130,7 +170,7 @@ jobs:
 
   check-gates:
     runs-on: ubuntu-latest
-    needs: ingest
+    needs: [ingest, season-stats]
     if: always() # Run even if ingest jobs failed
     timeout-minutes: 10
     
