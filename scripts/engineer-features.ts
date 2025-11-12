@@ -131,12 +131,33 @@ async function main() {
   // Step 1: Load games and CFBD data
   console.log('📊 Step 1: Loading games and CFBD data...');
   const features = await loadTeamGameFeatures(season, weeks);
-  console.log(`   ✅ Loaded ${features.length} team-game features\n`);
+  console.log(`   ✅ Loaded ${features.length} team-game features`);
+  
+  // Frame check sample (10 rows)
+  const frameSample = features.filter(f => f.isHome).slice(0, 10);
+  console.log(`   Frame check sample (10 home team rows):`);
+  for (const f of frameSample) {
+    const game = await prisma.game.findUnique({
+      where: { id: f.gameId },
+      include: { homeTeam: true, awayTeam: true },
+    });
+    console.log(`     ${game?.awayTeam.name || 'unknown'} @ ${game?.homeTeam.name || 'unknown'} (Week ${f.week})`);
+  }
+  console.log();
   
   // Step 2: Compute opponent-adjusted nets
   console.log('🔧 Step 2: Computing opponent-adjusted nets...');
   const withAdjNets = computeOpponentAdjustedNets(features);
-  console.log(`   ✅ Computed adjusted nets for ${withAdjNets.length} team-games\n`);
+  console.log(`   ✅ Computed adjusted nets for ${withAdjNets.length} team-games`);
+  
+  // Log distribution stats
+  const offAdjEpaValues = withAdjNets.map(f => f.offAdjEpa).filter(v => v !== null && v !== undefined && isFinite(v)) as number[];
+  if (offAdjEpaValues.length > 0) {
+    const mean = offAdjEpaValues.reduce((a, b) => a + b, 0) / offAdjEpaValues.length;
+    const variance = offAdjEpaValues.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / offAdjEpaValues.length;
+    const std = Math.sqrt(variance);
+    console.log(`   Distribution: off_adj_epa mean=${mean.toFixed(4)}, std=${std.toFixed(4)} (target: mean≈0, std>0)\n`);
+  }
   
   // Step 3: Compute recency EWMAs
   console.log('📈 Step 3: Computing recency EWMAs...');
@@ -165,7 +186,9 @@ async function main() {
   
   // Step 8: Check gates
   console.log('🚦 Step 8: Checking gates...');
-  const gatesPassed = await checkGates(cleaned, weeks);
+  // Add featureVersion to features for gate checking
+  const cleanedWithVersion = cleaned.map(f => ({ ...f, featureVersion } as any));
+  const gatesPassed = await checkGates(cleanedWithVersion, weeks, featureVersion);
   
   if (!gatesPassed) {
     console.log('\n======================================================================');
@@ -823,7 +846,7 @@ async function persistFeatures(features: WithHygiene[], featureVersion: string, 
 // STEP 8: CHECK GATES
 // ============================================================================
 
-async function checkGates(features: WithHygiene[], weeks: number[]): Promise<boolean> {
+async function checkGates(features: WithHygiene[], weeks: number[], featureVersion: string): Promise<boolean> {
   const isSetA = weeks.every(w => w >= 8 && w <= 11);
   const nullThreshold = isSetA ? 0.05 : 0.15; // 5% for Set A, 15% for Set B
   
