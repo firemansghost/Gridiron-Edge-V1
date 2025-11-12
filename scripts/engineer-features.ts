@@ -94,13 +94,14 @@ interface EngineeredFeatures {
   byeWeek: boolean;
 }
 
-const FEATURE_VERSION = process.env.FEATURE_VERSION || 'v1.0';
 const WINSORIZE_PCT = 0.01; // 1st and 99th percentile
 
 async function main() {
   const args = process.argv.slice(2);
   let season = 2025;
   let weeks: number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  let featureVersion = process.env.FEATURE_VERSION || 'fe_v1';
+  let sourceWindow = 'pre_kick';
   
   // Parse args
   for (let i = 0; i < args.length; i++) {
@@ -110,6 +111,12 @@ async function main() {
     } else if (args[i] === '--weeks' && args[i + 1]) {
       weeks = args[i + 1].split(',').map(w => parseInt(w.trim(), 10)).filter(w => !isNaN(w));
       i++;
+    } else if (args[i] === '--featureVersion' && args[i + 1]) {
+      featureVersion = args[i + 1];
+      i++;
+    } else if (args[i] === '--sourceWindow' && args[i + 1]) {
+      sourceWindow = args[i + 1];
+      i++;
     }
   }
   
@@ -118,7 +125,8 @@ async function main() {
   console.log('======================================================================\n');
   console.log(`   Season: ${season}`);
   console.log(`   Weeks: ${weeks.join(', ')}`);
-  console.log(`   Feature Version: ${FEATURE_VERSION}\n`);
+  console.log(`   Feature Version: ${featureVersion}`);
+  console.log(`   Source Window: ${sourceWindow}\n`);
   
   // Step 1: Load games and CFBD data
   console.log('📊 Step 1: Loading games and CFBD data...');
@@ -147,7 +155,7 @@ async function main() {
   
   // Step 6: Persist to database
   console.log('💾 Step 6: Persisting to database...');
-  await persistFeatures(cleaned, FEATURE_VERSION);
+  await persistFeatures(cleaned, featureVersion, sourceWindow);
   console.log(`   ✅ Persisted ${cleaned.length} feature rows\n`);
   
   // Step 7: Generate artifacts
@@ -155,8 +163,20 @@ async function main() {
   await generateArtifacts(cleaned, season, weeks);
   console.log(`   ✅ Artifacts generated\n`);
   
-  console.log('======================================================================');
-  console.log('✅ FEATURE ENGINEERING COMPLETE');
+  // Step 8: Check gates
+  console.log('🚦 Step 8: Checking gates...');
+  const gatesPassed = await checkGates(cleaned, weeks);
+  
+  if (!gatesPassed) {
+    console.log('\n======================================================================');
+    console.log('❌ GATES FAILED - Fix issues before proceeding');
+    console.log('======================================================================\n');
+    await prisma.$disconnect();
+    process.exit(1);
+  }
+  
+  console.log('\n======================================================================');
+  console.log('✅ FEATURE ENGINEERING COMPLETE - ALL GATES PASSED');
   console.log('======================================================================\n');
   
   await prisma.$disconnect();
@@ -697,7 +717,7 @@ function applyHygiene(features: WithAdjustedNets[]): WithHygiene[] {
 // STEP 6: PERSIST TO DATABASE
 // ============================================================================
 
-async function persistFeatures(features: WithHygiene[], featureVersion: string) {
+async function persistFeatures(features: WithHygiene[], featureVersion: string, sourceWindow: string) {
   const batchSize = 100;
   
   for (let i = 0; i < features.length; i += batchSize) {
@@ -710,7 +730,7 @@ async function persistFeatures(features: WithHygiene[], featureVersion: string) 
             gameId_teamId_featureVersion: {
               gameId: f.gameId,
               teamId: f.teamId,
-              featureVersion: featureVersion,
+              featureVersion,
             },
           },
           update: {
@@ -791,12 +811,157 @@ async function persistFeatures(features: WithHygiene[], featureVersion: string) 
             p5Flag: f.p5Flag,
             g5Flag: f.g5Flag,
             fcsFlag: f.fcsFlag,
-            sourceSnapshot: `pre_kick`,
+            sourceSnapshot: sourceWindow,
           },
         })
       )
     );
   }
+}
+
+// ============================================================================
+// STEP 8: CHECK GATES
+// ============================================================================
+
+async function checkGates(features: WithHygiene[], weeks: number[]): Promise<boolean> {
+  const isSetA = weeks.every(w => w >= 8 && w <= 11);
+  const nullThreshold = isSetA ? 0.05 : 0.15; // 5% for Set A, 15% for Set B
+  
+  const primaryFeatures = [
+    'offAdjEpa', 'offAdjSr', 'offAdjExplosiveness', 'offAdjPpa', 'offAdjHavoc',
+    'defAdjEpa', 'defAdjSr', 'defAdjExplosiveness', 'defAdjPpa', 'defAdjHavoc',
+    'edgeEpa', 'edgeSr', 'edgeExplosiveness', 'edgePpa', 'edgeHavoc',
+    'ewma3OffAdjEpa', 'ewma3DefAdjEpa', 'ewma5OffAdjEpa', 'ewma5DefAdjEpa',
+  ];
+  
+  let allPassed = true;
+  
+  // Gate 1: Nulls < threshold
+  console.log(`   Checking nulls (threshold: ${(nullThreshold * 100).toFixed(0)}%)...`);
+  for (const name of primaryFeatures) {
+    const total = features.length;
+    const nulls = features.filter(f => {
+      const val = (f as any)[name];
+      return val === null || val === undefined || !isFinite(val);
+    }).length;
+    const nullPct = total > 0 ? nulls / total : 0;
+    
+    if (nullPct >= nullThreshold) {
+      console.log(`   ❌ FAIL: ${name} has ${(nullPct * 100).toFixed(1)}% nulls (threshold: ${(nullThreshold * 100).toFixed(0)}%)`);
+      allPassed = false;
+    }
+  }
+  if (allPassed) {
+    console.log(`   ✅ PASS: All primary features have < ${(nullThreshold * 100).toFixed(0)}% nulls`);
+  }
+  
+  // Gate 2: Zero-variance check
+  console.log(`   Checking zero-variance features...`);
+  const zeroVarianceFeatures: string[] = [];
+  for (const name of primaryFeatures) {
+    const values = features
+      .map(f => (f as any)[name])
+      .filter(v => v !== null && v !== undefined && isFinite(v)) as number[];
+    
+    if (values.length > 0) {
+      const mean = values.reduce((a, b) => a + b, 0) / values.length;
+      const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length;
+      const std = Math.sqrt(variance);
+      
+      if (std < 0.0001) { // Near-zero variance
+        zeroVarianceFeatures.push(name);
+      }
+    }
+  }
+  
+  if (zeroVarianceFeatures.length > 0) {
+    console.log(`   ❌ FAIL: Zero-variance features found: ${zeroVarianceFeatures.join(', ')}`);
+    allPassed = false;
+  } else {
+    console.log(`   ✅ PASS: No zero-variance features`);
+  }
+  
+  // Gate 3: Frame check sign agreement
+  console.log(`   Checking frame alignment (sign agreement)...`);
+  const frameCheckRows = features.filter(f => f.isHome).slice(0, 10);
+  let signAgreements = 0;
+  let totalChecks = 0;
+  
+  for (const f of frameCheckRows) {
+    const game = await prisma.game.findUnique({
+      where: { id: f.gameId },
+      include: {
+        marketLines: {
+          where: {
+            lineType: 'spread',
+            source: 'oddsapi',
+          },
+          orderBy: { timestamp: 'desc' },
+          take: 1,
+        },
+      },
+    });
+    
+    const marketSpread = game?.marketLines[0]?.lineValue
+      ? Number(game.marketLines[0].lineValue)
+      : null;
+    
+    if (marketSpread !== null && f.edgeEpa !== null) {
+      totalChecks++;
+      // Positive edge should correlate with negative spread (favorite)
+      const agrees = (f.edgeEpa > 0 && marketSpread < 0) || (f.edgeEpa < 0 && marketSpread > 0);
+      if (agrees) signAgreements++;
+    }
+  }
+  
+  const signAgreementPct = totalChecks > 0 ? (signAgreements / totalChecks) * 100 : 0;
+  if (signAgreementPct < 70) {
+    console.log(`   ❌ FAIL: Sign agreement ${signAgreementPct.toFixed(1)}% (threshold: ≥70%)`);
+    allPassed = false;
+  } else {
+    console.log(`   ✅ PASS: Sign agreement ${signAgreementPct.toFixed(1)}% (threshold: ≥70%)`);
+  }
+  
+  // Gate 4: DB rows persisted
+  console.log(`   Checking DB persistence...`);
+  const persistedCount = await prisma.teamGameAdj.count({
+    where: {
+      season: features[0]?.season || 2025,
+      week: { in: weeks },
+    },
+  });
+  
+  const expectedCount = features.length;
+  const countDiff = Math.abs(persistedCount - expectedCount);
+  const countDiffPct = expectedCount > 0 ? (countDiff / expectedCount) * 100 : 0;
+  
+  if (countDiffPct > 5) {
+    console.log(`   ❌ FAIL: Persisted ${persistedCount} rows, expected ${expectedCount} (diff: ${countDiffPct.toFixed(1)}%)`);
+    allPassed = false;
+  } else {
+    console.log(`   ✅ PASS: Persisted ${persistedCount} rows (expected ${expectedCount}, diff: ${countDiffPct.toFixed(1)}%)`);
+  }
+  
+  // Gate 5: No NaN/Inf
+  console.log(`   Checking for NaN/Inf...`);
+  let nanInfCount = 0;
+  for (const f of features) {
+    for (const name of primaryFeatures) {
+      const val = (f as any)[name];
+      if (val !== null && val !== undefined && (!isFinite(val) || isNaN(val))) {
+        nanInfCount++;
+      }
+    }
+  }
+  
+  if (nanInfCount > 0) {
+    console.log(`   ❌ FAIL: Found ${nanInfCount} NaN/Inf values in persisted features`);
+    allPassed = false;
+  } else {
+    console.log(`   ✅ PASS: No NaN/Inf values found`);
+  }
+  
+  return allPassed;
 }
 
 // ============================================================================
