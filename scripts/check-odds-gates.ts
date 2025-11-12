@@ -68,14 +68,19 @@ async function main() {
       const uniqueBooks = new Set(lines.map(l => l.bookName)).size;
       bookCounts.push(uniqueBooks);
       
-      // Check for zero spread (deduped per book, then median)
+      // Check for zero spread (deduped per book, then median, normalized to favorite-centric)
       const byBook = new Map<string, number[]>();
       for (const line of lines) {
         const book = line.bookName || 'unknown';
         const value = line.lineValue !== null ? Number(line.lineValue) : null;
         if (value === null || !isFinite(value)) continue;
+        
+        // Normalize to favorite-centric (always negative)
+        // lineValue is in home_minus_away frame, normalize to favorite-centric
+        const fcValue = -Math.abs(value);
+        
         if (!byBook.has(book)) byBook.set(book, []);
-        byBook.get(book)!.push(value);
+        byBook.get(book)!.push(fcValue);
       }
       
       const deduped: number[] = [];
@@ -92,11 +97,14 @@ async function main() {
       if (deduped.length > 0) {
         const sorted = [...deduped].sort((a, b) => a - b);
         const consensusMid = Math.floor(sorted.length / 2);
-        const consensus = sorted.length % 2 === 0
+        const consensusFC = sorted.length % 2 === 0
           ? (sorted[consensusMid - 1] + sorted[consensusMid]) / 2
           : sorted[consensusMid];
         
-        if (Math.abs(consensus) < 0.1) {
+        // In favorite-centric frame, consensus should always be negative
+        // Check for exactly 0.0 (which shouldn't happen after normalization)
+        // or very close to 0 (which might indicate a data issue)
+        if (Math.abs(consensusFC) < 0.1) {
           zeroSpreadCount++;
         }
       }
