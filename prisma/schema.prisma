@@ -9,29 +9,29 @@ datasource db {
 }
 
 model Team {
-  id             String           @id
-  name           String
-  conference     String
-  division       String?
-  logoUrl        String?          @map("logo_url")
-  primaryColor   String?          @map("primary_color")
-  secondaryColor String?          @map("secondary_color")
-  mascot         String?
-  city           String?
-  state          String?
-  createdAt      DateTime         @default(now()) @map("created_at")
-  updatedAt      DateTime         @updatedAt @map("updated_at")
-  awayGames      Game[]           @relation("AwayTeam")
-  homeGames      Game[]           @relation("HomeTeam")
-  powerRatings      PowerRating[]
-  recruiting        Recruiting[]
-  teamSeasonTalent  TeamSeasonTalent[]
-  teamClassCommits  TeamClassCommits[]
-  teamGameStats     TeamGameStat[]
-  memberships       TeamMembership[]
-  injuries          Injury[]
-  rankings          TeamRanking[]
-  marketLines       MarketLine[]
+  id               String             @id
+  name             String
+  conference       String
+  division         String?
+  logoUrl          String?            @map("logo_url")
+  primaryColor     String?            @map("primary_color")
+  secondaryColor   String?            @map("secondary_color")
+  mascot           String?
+  city             String?
+  state            String?
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+  awayGames        Game[]             @relation("AwayTeam")
+  homeGames        Game[]             @relation("HomeTeam")
+  powerRatings     PowerRating[]
+  recruiting       Recruiting[]
+  teamSeasonTalent TeamSeasonTalent[]
+  teamClassCommits TeamClassCommits[]
+  teamGameStats    TeamGameStat[]
+  memberships      TeamMembership[]
+  injuries         Injury[]
+  rankings         TeamRanking[]
+  marketLines      MarketLine[]
 
   @@index([conference, division])
   @@index([name])
@@ -138,18 +138,18 @@ model Recruiting {
 }
 
 model TeamSeasonTalent {
-  season          Int      @map("season")
-  teamId          String   @map("team_id")
-  talentComposite Float    @map("talent_composite")
-  blueChipsPct    Float?   @map("blue_chips_pct")
-  fiveStar        Int      @default(0) @map("five_star")
-  fourStar        Int      @default(0) @map("four_star")
-  threeStar       Int      @default(0) @map("three_star")
-  unrated         Int      @default(0)
+  season          Int       @map("season")
+  teamId          String    @map("team_id")
+  talentComposite Float     @map("talent_composite")
+  blueChipsPct    Float?    @map("blue_chips_pct")
+  fiveStar        Int       @default(0) @map("five_star")
+  fourStar        Int       @default(0) @map("four_star")
+  threeStar       Int       @default(0) @map("three_star")
+  unrated         Int       @default(0)
   sourceUpdatedAt DateTime? @map("source_updated_at")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
-  team            Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  team            Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
   @@id([season, teamId])
   @@index([season], map: "idx_team_season_talent_season")
@@ -159,18 +159,18 @@ model TeamSeasonTalent {
 }
 
 model TeamClassCommits {
-  season           Int      @map("season")
-  teamId           String   @map("team_id")
-  commitsTotal     Int      @default(0) @map("commits_total")
-  fiveStarCommits  Int      @default(0) @map("five_star_commits")
-  fourStarCommits  Int      @default(0) @map("four_star_commits")
-  threeStarCommits Int      @default(0) @map("three_star_commits")
-  avgCommitRating  Float?   @map("avg_commit_rating")
-  classRank        Int?     @map("class_rank")
+  season           Int       @map("season")
+  teamId           String    @map("team_id")
+  commitsTotal     Int       @default(0) @map("commits_total")
+  fiveStarCommits  Int       @default(0) @map("five_star_commits")
+  fourStarCommits  Int       @default(0) @map("four_star_commits")
+  threeStarCommits Int       @default(0) @map("three_star_commits")
+  avgCommitRating  Float?    @map("avg_commit_rating")
+  classRank        Int?      @map("class_rank")
   sourceUpdatedAt  DateTime? @map("source_updated_at")
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
-  team             Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  team             Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
   @@id([season, teamId])
   @@index([season], map: "idx_team_class_commits_season")
@@ -368,18 +368,18 @@ model StrategyRun {
 }
 
 model TeamRanking {
-  id          String   @id @default(cuid())
-  season      Int
-  week        Int
-  pollType    PollType @map("poll_type")
-  teamId      String   @map("team_id")
-  rank        Int      // 1-25 for ranked teams
-  points      Int?     // Poll points (votes) if available
-  firstPlaceVotes Int? @map("first_place_votes")
-  source      String   @default("cfbd")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  id              String   @id @default(cuid())
+  season          Int
+  week            Int
+  pollType        PollType @map("poll_type")
+  teamId          String   @map("team_id")
+  rank            Int // 1-25 for ranked teams
+  points          Int? // Poll points (votes) if available
+  firstPlaceVotes Int?     @map("first_place_votes")
+  source          String   @default("cfbd")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  team            Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
   @@unique([season, week, pollType, teamId])
   @@index([season, week])
@@ -449,20 +449,20 @@ model TeamMembership {
 }
 
 model Weather {
-  id               String   @id @default(cuid())
-  gameId           String   @unique @map("game_id")
-  season           Int
-  week             Int
-  temperature      Float    @map("temperature") // Fahrenheit
-  windSpeed        Float    @map("wind_speed")  // mph
-  precipitationProb Float   @map("precipitation_prob") // 0-100%
-  humidity         Float?   // 0-100%
-  conditions       String?  // "Clear", "Rain", "Snow", etc.
-  source           String   @default("visualcrossing") // "visualcrossing", etc.
-  forecastTime     DateTime @map("forecast_time") // When the forecast was fetched
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
-  game             Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  id                String   @id @default(cuid())
+  gameId            String   @unique @map("game_id")
+  season            Int
+  week              Int
+  temperature       Float    @map("temperature") // Fahrenheit
+  windSpeed         Float    @map("wind_speed") // mph
+  precipitationProb Float    @map("precipitation_prob") // 0-100%
+  humidity          Float? // 0-100%
+  conditions        String? // "Clear", "Rain", "Snow", etc.
+  source            String   @default("visualcrossing") // "visualcrossing", etc.
+  forecastTime      DateTime @map("forecast_time") // When the forecast was fetched
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  game              Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
 
   @@index([season, week])
   @@index([gameId])
@@ -471,23 +471,23 @@ model Weather {
 }
 
 model Injury {
-  id              String      @id @default(cuid())
-  gameId          String      @map("game_id")
-  teamId          String      @map("team_id")
-  season          Int
-  week            Int
-  playerName       String?     @map("player_name") // Optional: player name if available
-  position         String      @map("position") // QB, OL, DL, WR, RB, DB, etc.
-  severity         InjurySeverity @map("severity") // 'out', 'questionable', 'probable'
-  bodyPart         String?     @map("body_part") // Optional: "knee", "shoulder", etc.
-  injuryType       String?     @map("injury_type") // Optional: "ACL", "concussion", etc.
-  status           String?     // Optional: additional status text
-  source           String      @default("manual") // "manual", "cfbd", "espn", etc.
-  reportedAt       DateTime?   @map("reported_at") // When injury was reported
-  createdAt        DateTime    @default(now()) @map("created_at")
-  updatedAt        DateTime    @updatedAt @map("updated_at")
-  game             Game        @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  team             Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  id         String         @id @default(cuid())
+  gameId     String         @map("game_id")
+  teamId     String         @map("team_id")
+  season     Int
+  week       Int
+  playerName String?        @map("player_name") // Optional: player name if available
+  position   String         @map("position") // QB, OL, DL, WR, RB, DB, etc.
+  severity   InjurySeverity @map("severity") // 'out', 'questionable', 'probable'
+  bodyPart   String?        @map("body_part") // Optional: "knee", "shoulder", etc.
+  injuryType String?        @map("injury_type") // Optional: "ACL", "concussion", etc.
+  status     String? // Optional: additional status text
+  source     String         @default("manual") // "manual", "cfbd", "espn", etc.
+  reportedAt DateTime?      @map("reported_at") // When injury was reported
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @updatedAt @map("updated_at")
+  game       Game           @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  team       Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
   @@index([gameId])
   @@index([teamId, season])
@@ -498,8 +498,204 @@ model Injury {
 }
 
 enum InjurySeverity {
-  OUT           // Player will not play
-  QUESTIONABLE  // Player may or may not play
-  PROBABLE      // Player is likely to play
-  DOUBTFUL      // Player unlikely to play
+  OUT // Player will not play
+  QUESTIONABLE // Player may or may not play
+  PROBABLE // Player is likely to play
+  DOUBTFUL // Player unlikely to play
+}
+
+// ============================================================================
+// CFBD FEATURE TABLES (Phase 3)
+// ============================================================================
+
+model CfbdTeamMap {
+  teamIdInternal  String   @id @map("team_id_internal")
+  teamNameCfbd    String   @map("team_name_cfbd")
+  seasonFirstSeen Int?     @map("season_first_seen")
+  seasonLastSeen  Int?     @map("season_last_seen")
+  notes           String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([teamNameCfbd])
+  @@map("cfbd_team_map")
+}
+
+model CfbdGame {
+  gameIdCfbd         String   @id @map("game_id_cfbd")
+  season             Int
+  week               Int
+  date               DateTime
+  homeTeamIdInternal String   @map("home_team_id_internal")
+  awayTeamIdInternal String   @map("away_team_id_internal")
+  neutralSite        Boolean  @default(false) @map("neutral_site")
+  venue              String?
+  homeConference     String?  @map("home_conference")
+  awayConference     String?  @map("away_conference")
+  source             String   @default("cfbd")
+  ingestedAt         DateTime @default(now()) @map("ingested_at")
+  asOf               DateTime @default(now()) @map("as_of")
+  versionTag         String?  @map("version_tag")
+
+  @@index([season, week])
+  @@index([homeTeamIdInternal])
+  @@index([awayTeamIdInternal])
+  @@map("cfbd_games")
+}
+
+model CfbdEffTeamGame {
+  gameIdCfbd       String   @map("game_id_cfbd")
+  teamIdInternal   String   @map("team_id_internal")
+  // Offense
+  offEpa           Decimal? @map("off_epa")
+  offSr            Decimal? @map("off_sr")
+  isoPppOff        Decimal? @map("iso_ppp_off")
+  ppoOff           Decimal? @map("ppo_off")
+  lineYardsOff     Decimal? @map("line_yards_off")
+  havocOff         Decimal? @map("havoc_off")
+  // Defense
+  defEpa           Decimal? @map("def_epa")
+  defSr            Decimal? @map("def_sr")
+  isoPppDef        Decimal? @map("iso_ppp_def")
+  ppoDef           Decimal? @map("ppo_def")
+  stuffRate        Decimal? @map("stuff_rate")
+  powerSuccess     Decimal? @map("power_success")
+  havocDef         Decimal? @map("havoc_def")
+  // Splits
+  runEpa           Decimal? @map("run_epa")
+  passEpa          Decimal? @map("pass_epa")
+  runSr            Decimal? @map("run_sr")
+  passSr           Decimal? @map("pass_sr")
+  // Phase (early/late downs)
+  earlyDownEpa     Decimal? @map("early_down_epa")
+  lateDownEpa      Decimal? @map("late_down_epa")
+  // Field position
+  avgFieldPosition Decimal? @map("avg_field_position")
+  // Metadata
+  source           String   @default("cfbd")
+  ingestedAt       DateTime @default(now()) @map("ingested_at")
+  asOf             DateTime @default(now()) @map("as_of")
+  versionTag       String?  @map("version_tag")
+
+  @@id([gameIdCfbd, teamIdInternal])
+  @@index([gameIdCfbd])
+  @@index([teamIdInternal])
+  @@map("cfbd_eff_team_game")
+}
+
+model CfbdEffTeamSeason {
+  season           Int
+  teamIdInternal   String   @map("team_id_internal")
+  // Same fields as game-level
+  offEpa           Decimal? @map("off_epa")
+  offSr            Decimal? @map("off_sr")
+  isoPppOff        Decimal? @map("iso_ppp_off")
+  ppoOff           Decimal? @map("ppo_off")
+  lineYardsOff     Decimal? @map("line_yards_off")
+  havocOff         Decimal? @map("havoc_off")
+  defEpa           Decimal? @map("def_epa")
+  defSr            Decimal? @map("def_sr")
+  isoPppDef        Decimal? @map("iso_ppp_def")
+  ppoDef           Decimal? @map("ppo_def")
+  stuffRate        Decimal? @map("stuff_rate")
+  powerSuccess     Decimal? @map("power_success")
+  havocDef         Decimal? @map("havoc_def")
+  runEpa           Decimal? @map("run_epa")
+  passEpa          Decimal? @map("pass_epa")
+  runSr            Decimal? @map("run_sr")
+  passSr           Decimal? @map("pass_sr")
+  earlyDownEpa     Decimal? @map("early_down_epa")
+  lateDownEpa      Decimal? @map("late_down_epa")
+  avgFieldPosition Decimal? @map("avg_field_position")
+  source           String   @default("cfbd")
+  ingestedAt       DateTime @default(now()) @map("ingested_at")
+  asOf             DateTime @default(now()) @map("as_of")
+  versionTag       String?  @map("version_tag")
+
+  @@id([season, teamIdInternal])
+  @@index([teamIdInternal])
+  @@map("cfbd_eff_team_season")
+}
+
+model CfbdPpaTeamGame {
+  gameIdCfbd     String   @map("game_id_cfbd")
+  teamIdInternal String   @map("team_id_internal")
+  ppaOffense     Decimal? @map("ppa_offense")
+  ppaDefense     Decimal? @map("ppa_defense")
+  ppaOverall     Decimal? @map("ppa_overall")
+  source         String   @default("cfbd")
+  ingestedAt     DateTime @default(now()) @map("ingested_at")
+  asOf           DateTime @default(now()) @map("as_of")
+  versionTag     String?  @map("version_tag")
+
+  @@id([gameIdCfbd, teamIdInternal])
+  @@index([gameIdCfbd])
+  @@index([teamIdInternal])
+  @@map("cfbd_ppa_team_game")
+}
+
+model CfbdPpaTeamSeason {
+  season         Int
+  teamIdInternal String   @map("team_id_internal")
+  ppaOffense     Decimal? @map("ppa_offense")
+  ppaDefense     Decimal? @map("ppa_defense")
+  ppaOverall     Decimal? @map("ppa_overall")
+  source         String   @default("cfbd")
+  ingestedAt     DateTime @default(now()) @map("ingested_at")
+  asOf           DateTime @default(now()) @map("as_of")
+  versionTag     String?  @map("version_tag")
+
+  @@id([season, teamIdInternal])
+  @@index([teamIdInternal])
+  @@map("cfbd_ppa_team_season")
+}
+
+model CfbdDrivesTeamGame {
+  gameIdCfbd          String   @map("game_id_cfbd")
+  teamIdInternal      String   @map("team_id_internal")
+  playsPerMinute      Decimal? @map("plays_per_minute")
+  secondsPerSnap      Decimal? @map("seconds_per_snap")
+  scoringOppsPerDrive Decimal? @map("scoring_opps_per_drive")
+  pointsPerScoringOpp Decimal? @map("points_per_scoring_opp")
+  avgStartPos         Decimal? @map("avg_start_pos")
+  redzoneTrips        Int?     @map("redzone_trips")
+  source              String   @default("cfbd")
+  ingestedAt          DateTime @default(now()) @map("ingested_at")
+  asOf                DateTime @default(now()) @map("as_of")
+  versionTag          String?  @map("version_tag")
+
+  @@id([gameIdCfbd, teamIdInternal])
+  @@index([gameIdCfbd])
+  @@index([teamIdInternal])
+  @@map("cfbd_drives_team_game")
+}
+
+model CfbdPriorsTeamSeason {
+  season           Int
+  teamIdInternal   String   @map("team_id_internal")
+  talent247        Decimal? @map("talent_247")
+  returningProdOff Decimal? @map("returning_prod_off")
+  returningProdDef Decimal? @map("returning_prod_def")
+  source           String   @default("cfbd")
+  ingestedAt       DateTime @default(now()) @map("ingested_at")
+  asOf             DateTime @default(now()) @map("as_of")
+  versionTag       String?  @map("version_tag")
+
+  @@id([season, teamIdInternal])
+  @@index([teamIdInternal])
+  @@map("cfbd_priors_team_season")
+}
+
+model CfbdWeatherGame {
+  gameIdCfbd  String   @id @map("game_id_cfbd")
+  temperature Decimal?
+  windSpeed   Decimal? @map("wind_speed")
+  precipProb  Decimal? @map("precip_prob")
+  source      String   @default("cfbd")
+  ingestedAt  DateTime @default(now()) @map("ingested_at")
+  asOf        DateTime @default(now()) @map("as_of")
+  versionTag  String?  @map("version_tag")
+
+  @@index([gameIdCfbd])
+  @@map("cfbd_weather_game")
 }

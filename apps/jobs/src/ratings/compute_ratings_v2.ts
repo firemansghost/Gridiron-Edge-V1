@@ -16,6 +16,8 @@ import { PrismaClient } from '@prisma/client';
 import { FeatureLoader, TeamFeatures } from './feature-loader';
 import { TeamResolver } from '../../adapters/TeamResolver';
 import { getModelConfig } from '../config/model-weights';
+import * as fs from 'fs';
+import * as path from 'path';
 // Re-use functions from v1
 import { 
   calculateZScores, 
@@ -32,6 +34,104 @@ const prisma = new PrismaClient();
 
 // Re-export types for compatibility
 export type { TeamFeatures, ZScoreStats };
+
+// ============================================================================
+// PHASE 1: INSTRUMENTATION & GATES
+// ============================================================================
+
+interface StageStats {
+  stage: string;
+  count: number;
+  mean: number;
+  std: number;
+  min: number;
+  max: number;
+  zeros: number;
+  zeroPct: number;
+  timestamp: string;
+}
+
+const stageStats: StageStats[] = [];
+
+function computeStats(ratings: number[], stageName: string): StageStats {
+  const validRatings = ratings.filter(r => isFinite(r) && !isNaN(r));
+  const count = validRatings.length;
+  const mean = count > 0 ? validRatings.reduce((a, b) => a + b, 0) / count : 0;
+  const variance = count > 0 
+    ? validRatings.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / count 
+    : 0;
+  const std = Math.sqrt(variance);
+  const min = count > 0 ? Math.min(...validRatings) : 0;
+  const max = count > 0 ? Math.max(...validRatings) : 0;
+  const zeros = validRatings.filter(r => r === 0).length;
+  const zeroPct = count > 0 ? (zeros / count) * 100 : 0;
+  
+  return {
+    stage: stageName,
+    count,
+    mean,
+    std,
+    min,
+    max,
+    zeros,
+    zeroPct,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+function logStageStats(ratings: number[], stageName: string) {
+  const stats = computeStats(ratings, stageName);
+  stageStats.push(stats);
+  console.log(`\n📊 ${stageName} Stats:`);
+  console.log(`   Count: ${stats.count}, Mean: ${stats.mean.toFixed(4)}, Std: ${stats.std.toFixed(4)}`);
+  console.log(`   Range: [${stats.min.toFixed(4)}, ${stats.max.toFixed(4)}]`);
+  console.log(`   Zeros: ${stats.zeros} (${stats.zeroPct.toFixed(2)}%)`);
+  return stats;
+}
+
+function saveStageStats(season: number, modelVersion: string) {
+  const reportsDir = path.join(process.cwd(), 'reports');
+  fs.mkdirSync(reportsDir, { recursive: true });
+  const csvPath = path.join(reportsDir, 'v2_stage_stats.csv');
+  
+  const header = 'stage,count,mean,std,min,max,zeros,zero_pct,timestamp,season,model_version\n';
+  const rows = stageStats.map(s => 
+    `${s.stage},${s.count},${s.mean.toFixed(4)},${s.std.toFixed(4)},${s.min.toFixed(4)},${s.max.toFixed(4)},${s.zeros},${s.zeroPct.toFixed(2)},${s.timestamp},${season},${modelVersion}`
+  ).join('\n');
+  
+  fs.writeFileSync(csvPath, header + rows);
+  console.log(`\n💾 Saved stage stats to ${csvPath}`);
+}
+
+function checkSanityGates(finalRatings: number[], modelVersion: string): { passed: boolean; failures: string[] } {
+  const stats = computeStats(finalRatings, 'final');
+  const failures: string[] = [];
+  
+  // Gate A: stddev ≥ 2.0
+  if (stats.std < 2.0) {
+    failures.push(`Gate A FAIL: stddev ${stats.std.toFixed(4)} < 2.0`);
+  }
+  
+  // Gate B: ≤2% zeros
+  if (stats.zeroPct > 2.0) {
+    failures.push(`Gate B FAIL: ${stats.zeroPct.toFixed(2)}% zeros > 2.0%`);
+  }
+  
+  // Dump top 10 offenders if gates fail
+  if (failures.length > 0) {
+    const sorted = [...finalRatings].sort((a, b) => Math.abs(a) - Math.abs(b));
+    const topOffenders = sorted.slice(0, 10);
+    console.log(`\n⚠️  Top 10 offenders (by absolute value):`);
+    topOffenders.forEach((val, idx) => {
+      console.log(`   ${idx + 1}. ${val.toFixed(4)}`);
+    });
+  }
+  
+  return {
+    passed: failures.length === 0,
+    failures,
+  };
+}
 
 /**
  * Strength of Schedule Adjustment
@@ -55,7 +155,8 @@ async function applyStrengthOfSchedule(
   features: TeamFeatures,
   season: number,
   allTeamRatings: Map<string, { offenseRating: number; defenseRating: number }>,
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  sosWeight: number = 0.05 // SoS weight percentage (default 5%)
 ): Promise<TeamFeatures> {
   try {
     // Query all games for this team in the season
@@ -123,9 +224,9 @@ async function applyStrengthOfSchedule(
     // Adjust features proportionally
     // For offense: if schedule was harder (positive SoS), raw stats underestimate true ability - boost them
     // For defense: if schedule was harder (positive SoS), raw stats make defense look worse - boost them
-    // Use 5% adjustment per point of SoS (conservative)
-    const offensiveAdjustmentFactor = 1.0 + (offensiveSoS * 0.05); // 5% adjustment per point of SoS
-    const defensiveAdjustmentFactor = 1.0 + (defensiveSoS * 0.05); // Same for defense
+    // Use configurable SoS weight (default 5% per point of SoS)
+    const offensiveAdjustmentFactor = 1.0 + (offensiveSoS * sosWeight);
+    const defensiveAdjustmentFactor = 1.0 + (defensiveSoS * sosWeight);
 
     // Apply adjustments to offensive features
     const adjustedFeatures: TeamFeatures = {
@@ -198,25 +299,44 @@ function calculateShrinkageFactor(
   features: TeamFeatures,
   modelConfig: ReturnType<typeof getModelConfig>
 ): number {
-  // TODO: Implement dynamic shrinkage based on:
-  // - Confidence level (lower confidence = more shrinkage)
-  // - Number of games (fewer games = more shrinkage)
-  // - Data source quality (baseline-only = more shrinkage)
-  
   // Use shrinkage config if available (v2), otherwise no shrinkage
   const shrinkageConfig = modelConfig.shrinkage;
   if (!shrinkageConfig) {
     return 0.0; // No shrinkage if not configured
   }
   
-  // Calculate dynamic shrinkage based on data quality
-  const baseShrinkage = shrinkageConfig.base_factor || 0.0;
-  const confidenceMultiplier = (1.0 - (features.confidence || 0.5)) * (shrinkageConfig.confidence_weight || 0.5);
-  const gamesMultiplier = features.gamesCount 
-    ? Math.max(0, 1 - (features.gamesCount / 8)) * (shrinkageConfig.games_weight || 0.3)
-    : 1.0; // Fewer games = more shrinkage
+  // Stage 0 Rehab: Target 28-34% mid-season, hard bounds 18-42%
+  // Breakdown:
+  // - base_factor: 0.12
+  // - confidence_multiplier: scaled 0-0.15 (cap at 0.15)
+  // - games_multiplier: by games played
+  //   - <3 games: 0.18
+  //   - 3-4 games: 0.12
+  //   - 5-7 games: 0.06
+  //   - ≥8 games: 0.00
   
-  return Math.min(1.0, baseShrinkage + confidenceMultiplier + gamesMultiplier);
+  const baseShrinkage = shrinkageConfig.base_factor || 0.12;
+  
+  // Confidence multiplier: (1 - confidence) * scale, capped at 0.15
+  const confidenceScale = shrinkageConfig.confidence_weight || 0.5;
+  const confidenceMultiplier = Math.min(0.15, (1.0 - (features.confidence || 0.5)) * confidenceScale);
+  
+  // Games multiplier: step function based on games played
+  let gamesMultiplier = 0.0;
+  const gamesCount = features.gamesCount || 0;
+  if (gamesCount < 3) {
+    gamesMultiplier = 0.18;
+  } else if (gamesCount >= 3 && gamesCount <= 4) {
+    gamesMultiplier = 0.12;
+  } else if (gamesCount >= 5 && gamesCount <= 7) {
+    gamesMultiplier = 0.06;
+  } else {
+    gamesMultiplier = 0.00; // ≥8 games
+  }
+  
+  // Total shrinkage with hard bounds: 18% ≤ total ≤ 42%
+  const totalShrinkage = baseShrinkage + confidenceMultiplier + gamesMultiplier;
+  return Math.max(0.18, Math.min(0.42, totalShrinkage));
 }
 
 async function main() {
@@ -224,6 +344,10 @@ async function main() {
     const yargs = require('yargs/yargs');
     const argv = yargs(process.argv.slice(2))
       .option('season', { type: 'number', demandOption: true })
+      .option('sos-weight', { type: 'number', description: 'SoS weight percentage (override config)' })
+      .option('shrinkage-base', { type: 'number', description: 'Base shrinkage factor (override config)' })
+      .option('calibration-factor', { type: 'number', description: 'Calibration factor (override config)' })
+      .option('model-version', { type: 'string', default: 'v2', description: 'Model version to write (default: v2)' })
       .parse();
     
     const season = Number(argv.season);
@@ -237,6 +361,24 @@ async function main() {
 
     // Load model configuration
     const modelConfig = getModelConfig('v2');
+    
+    // Apply command-line overrides
+    if (argv['sos-weight'] !== undefined) {
+      if (!modelConfig.sos) modelConfig.sos = { enabled: true, iterations: 3, convergence_threshold: 0.01 };
+      (modelConfig.sos as any).weight = Number(argv['sos-weight']);
+      console.log(`   ⚙️  Override: SoS weight = ${argv['sos-weight']}`);
+    }
+    if (argv['shrinkage-base'] !== undefined) {
+      if (!modelConfig.shrinkage) modelConfig.shrinkage = { base_factor: 0.1, confidence_weight: 0.5, games_weight: 0.3 };
+      modelConfig.shrinkage.base_factor = Number(argv['shrinkage-base']);
+      console.log(`   ⚙️  Override: Shrinkage base = ${argv['shrinkage-base']}`);
+    }
+    if (argv['calibration-factor'] !== undefined) {
+      modelConfig.calibration_factor = Number(argv['calibration-factor']);
+      console.log(`   ⚙️  Override: Calibration factor = ${argv['calibration-factor']}`);
+    }
+    
+    const modelVersion = argv['model-version'] || 'v2';
     console.log(`⚙️  Using model config: ${modelConfig.name}`);
     console.log(`   HFA: ${modelConfig.hfa} pts, Min Edge: ${modelConfig.min_edge_threshold} pts`);
     console.log(`   Calibration Factor: ${modelConfig.calibration_factor || 'NOT SET (will default to 1.0)'} ⚠️`);
@@ -249,6 +391,19 @@ async function main() {
     const teamResolver = new TeamResolver();
     const fbsTeamIds = await teamResolver.loadFBSTeamsForSeason(season);
     console.log(`📋 Loaded ${fbsTeamIds.size} FBS teams for season ${season}`);
+    
+    // PHASE 1: FBS Coverage Gate
+    const expectedFBS = 130; // Typical FBS count (tune if needed)
+    const fbsCoveragePct = (fbsTeamIds.size / expectedFBS) * 100;
+    console.log(`\n🔍 FBS Coverage Gate: ${fbsTeamIds.size} / ${expectedFBS} expected = ${fbsCoveragePct.toFixed(1)}%`);
+    
+    if (fbsCoveragePct < 95) {
+      const errorMsg = `❌ FBS Coverage Gate FAIL: ${fbsCoveragePct.toFixed(1)}% < 95%`;
+      console.error(errorMsg);
+      console.error(`   Expected ≥95% FBS teams. Check team_membership table for season ${season}.`);
+      throw new Error(errorMsg);
+    }
+    console.log(`   ✅ FBS Coverage Gate PASS (≥95%)`);
 
     // Load features for all FBS teams
     const loader = new FeatureLoader(prisma);
@@ -322,7 +477,7 @@ async function main() {
 
         // Apply SoS adjustments to all features
         const adjustedFeaturesPromises = currentFeatures.map(f => 
-          applyStrengthOfSchedule(f, season, ratingsMap, prisma)
+          applyStrengthOfSchedule(f, season, ratingsMap, prisma, (modelConfig.sos as any)?.weight || 0.05)
         );
         currentFeatures = await Promise.all(adjustedFeaturesPromises);
 
@@ -345,6 +500,11 @@ async function main() {
       }
 
       // Compute ratings with current features and z-stats
+      // PHASE 1: Instrumentation - Stage A: Raw Baseline
+      if (iteration === 0) {
+        console.log(`\n📊 Stage A: Computing raw baseline ratings...`);
+      }
+      
       currentRatings = currentFeatures.map(features => {
         const offenseRating = computeOffensiveIndex(features, {
           yppOff: zStats.yppOff,
@@ -385,6 +545,15 @@ async function main() {
           powerRating,
         };
       });
+      
+      // PHASE 1: Instrumentation - Log Stage A (raw baseline) or Stage B (SoS-adjusted)
+      if (iteration === 0) {
+        const rawRatings = currentRatings.map(r => r.powerRating);
+        logStageStats(rawRatings, 'A_raw_baseline');
+      } else if (sosEnabled) {
+        const sosRatings = currentRatings.map(r => r.powerRating);
+        logStageStats(sosRatings, `B_sos_iteration_${iteration}`);
+      }
 
       // Check convergence (if not first iteration and SoS enabled)
       if (iteration > 0 && sosEnabled) {
@@ -414,6 +583,11 @@ async function main() {
 
     // Compute final ratings with shrinkage
     console.log(`\n🔧 Applying shrinkage regularization...`);
+    
+    // PHASE 1: Instrumentation - Stage C: Pre-shrinkage
+    const preShrinkageRatings = currentRatings.map(r => r.powerRating);
+    logStageStats(preShrinkageRatings, 'C_pre_shrinkage');
+    
     const finalRatings = currentFeatures.map((features) => {
       const currentRating = currentRatings.find(r => r.teamId === features.teamId);
       if (!currentRating) {
@@ -465,24 +639,34 @@ async function main() {
       // Apply calibration factor to scale z-scores to point-spread equivalent
       const calibrationFactor = modelConfig.calibration_factor || 1.0; // Default 1.0 for backward compat
       const powerRating = rawScore * calibrationFactor;
-
+      
       const confidence = calculateConfidence(features);
       const dataSource = getDataSourceString(features);
-
+      
+      // PHASE 1: Track pre-calibration for instrumentation
       return {
         season,
         teamId: features.teamId,
         offenseRating: shrunkOffenseRating,
         defenseRating: shrunkDefenseRating,
         powerRating,
+        preCalibrationRating: rawScore, // Track before calibration factor
         confidence,
         dataSource,
-        shrinkageFactor, // Store for analysis
+        shrinkageFactor,
       };
     });
+    
+    // PHASE 1: Instrumentation - Stage D: Post-shrinkage (before calibration)
+    const postShrinkageRatings = finalRatings.map(r => (r as any).preCalibrationRating || 0);
+    logStageStats(postShrinkageRatings, 'D_post_shrinkage');
+    
+    // PHASE 1: Instrumentation - Stage E: Post-calibration
+    const postCalibrationRatings = finalRatings.map(r => r.powerRating);
+    logStageStats(postCalibrationRatings, 'E_post_calibration');
 
-    // Upsert ratings to database with modelVersion='v2'
-    console.log(`\n💾 Persisting ratings to database (modelVersion='v2')...`);
+    // Upsert ratings to database
+    console.log(`\n💾 Persisting ratings to database (modelVersion='${modelVersion}')...`);
     let upserted = 0;
     let errors = 0;
 
@@ -493,7 +677,7 @@ async function main() {
             season_teamId_modelVersion: {
               season: rating.season,
               teamId: rating.teamId,
-              modelVersion: 'v2',
+              modelVersion: modelVersion,
             },
           },
           update: {
@@ -508,7 +692,7 @@ async function main() {
           create: {
             season: rating.season,
             teamId: rating.teamId,
-            modelVersion: 'v2',
+            modelVersion: modelVersion,
             games: 0, // Will be filled by other jobs if needed
             offenseRating: rating.offenseRating,
             defenseRating: rating.defenseRating,
@@ -524,6 +708,48 @@ async function main() {
         errors++;
       }
     }
+    
+    // PHASE 1: Gate C - Read-after-write version integrity check
+    console.log(`\n🔍 Gate C: Read-after-write version integrity check...`);
+    const readbackRatings = await prisma.teamSeasonRating.findMany({
+      where: {
+        season,
+        modelVersion,
+      },
+      select: { powerRating: true },
+    });
+    
+    const readbackValues = readbackRatings
+      .map(r => r.powerRating !== null ? Number(r.powerRating) : 0)
+      .filter(r => isFinite(r) && !isNaN(r));
+    
+    const readbackStats = computeStats(readbackValues, 'F_readback');
+    logStageStats(readbackValues, 'F_readback');
+    
+    const writtenStats = computeStats(postCalibrationRatings, 'E_post_calibration');
+    const varianceMatch = Math.abs(readbackStats.std - writtenStats.std) < 0.1;
+    
+    if (!varianceMatch) {
+      const errorMsg = `❌ Gate C FAIL: Variance mismatch. Written std=${writtenStats.std.toFixed(4)}, Readback std=${readbackStats.std.toFixed(4)}`;
+      console.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+    console.log(`   ✅ Gate C PASS: Variance matches (std=${readbackStats.std.toFixed(4)})`);
+    
+    // PHASE 1: Sanity Gates A & B
+    console.log(`\n🔍 Sanity Gates A & B: Checking final ratings...`);
+    const gateResult = checkSanityGates(readbackValues, modelVersion);
+    
+    if (!gateResult.passed) {
+      console.error(`\n❌ SANITY GATES FAILED:`);
+      gateResult.failures.forEach(f => console.error(`   ${f}`));
+      throw new Error(`Sanity gates failed: ${gateResult.failures.join('; ')}`);
+    }
+    console.log(`   ✅ Gate A PASS: stddev ${readbackStats.std.toFixed(4)} ≥ 2.0`);
+    console.log(`   ✅ Gate B PASS: ${readbackStats.zeroPct.toFixed(2)}% zeros ≤ 2.0%`);
+    
+    // Save stage stats
+    saveStageStats(season, modelVersion);
 
     // Summary
     console.log(`\n✅ Ratings v2 computation complete!`);
