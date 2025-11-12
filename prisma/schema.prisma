@@ -32,6 +32,7 @@ model Team {
   injuries         Injury[]
   rankings         TeamRanking[]
   marketLines      MarketLine[]
+  teamGameAdj      TeamGameAdj[]
 
   @@index([conference, division])
   @@index([name])
@@ -62,6 +63,7 @@ model Game {
   teamGameStats  TeamGameStat[]
   weather        Weather?
   injuries       Injury[]
+  teamGameAdj    TeamGameAdj[]
 
   @@index([season, week])
   @@index([homeTeamId, season])
@@ -698,4 +700,92 @@ model CfbdWeatherGame {
 
   @@index([gameIdCfbd])
   @@map("cfbd_weather_game")
+}
+
+model TeamGameAdj {
+  // Primary keys
+  gameId         String @map("game_id")
+  teamId         String @map("team_id")
+  season         Int
+  week           Int
+  featureVersion String @map("feature_version")
+
+  // Opponent-adjusted nets (Offense vs Opponent Defense)
+  offAdjEpa           Decimal? @map("off_adj_epa")
+  offAdjSr            Decimal? @map("off_adj_sr")
+  offAdjExplosiveness Decimal? @map("off_adj_explosiveness")
+  offAdjPpa           Decimal? @map("off_adj_ppa")
+  offAdjHavoc         Decimal? @map("off_adj_havoc")
+
+  // Opponent-adjusted nets (Defense vs Opponent Offense)
+  defAdjEpa           Decimal? @map("def_adj_epa")
+  defAdjSr            Decimal? @map("def_adj_sr")
+  defAdjExplosiveness Decimal? @map("def_adj_explosiveness")
+  defAdjPpa           Decimal? @map("def_adj_ppa")
+  defAdjHavoc         Decimal? @map("def_adj_havoc")
+
+  // Matchup edges (off_adj - def_adj)
+  edgeEpa           Decimal? @map("edge_epa")
+  edgeSr            Decimal? @map("edge_sr")
+  edgeExplosiveness Decimal? @map("edge_explosiveness")
+  edgePpa           Decimal? @map("edge_ppa")
+  edgeHavoc         Decimal? @map("edge_havoc")
+
+  // Recency EWMAs (3-game)
+  ewma3Epa           Decimal? @map("ewma3_epa")
+  ewma3Sr            Decimal? @map("ewma3_sr")
+  ewma3Explosiveness Decimal? @map("ewma3_explosiveness")
+  ewma3Ppa           Decimal? @map("ewma3_ppa")
+  ewma3OffAdjEpa     Decimal? @map("ewma3_off_adj_epa")
+  ewma3DefAdjEpa     Decimal? @map("ewma3_def_adj_epa")
+
+  // Recency EWMAs (5-game)
+  ewma5Epa           Decimal? @map("ewma5_epa")
+  ewma5Sr            Decimal? @map("ewma5_sr")
+  ewma5Explosiveness Decimal? @map("ewma5_explosiveness")
+  ewma5Ppa           Decimal? @map("ewma5_ppa")
+  ewma5OffAdjEpa     Decimal? @map("ewma5_off_adj_epa")
+  ewma5DefAdjEpa     Decimal? @map("ewma5_def_adj_epa")
+
+  // Low sample flag
+  lowSample3g Boolean @default(false) @map("low_sample_3g")
+  lowSample5g Boolean @default(false) @map("low_sample_5g")
+
+  // Pace & finishing (placeholders - NULL until drives ingested)
+  secPerPlay          Decimal? @map("sec_per_play")
+  playsPerGame        Decimal? @map("plays_per_game")
+  ptsPerScoringOpp    Decimal? @map("pts_per_scoring_opp")
+  scoringOppsPerDrive Decimal? @map("scoring_opps_per_drive")
+  avgStartPos         Decimal? @map("avg_start_pos")
+
+  // Priors as direct features
+  talent247        Decimal? @map("talent_247")
+  returningProdOff Decimal? @map("returning_prod_off")
+  returningProdDef Decimal? @map("returning_prod_def")
+
+  // Context flags
+  neutralSite    Boolean @default(false) @map("neutral_site")
+  conferenceGame Boolean @default(false) @map("conference_game")
+  restDelta      Int?    @map("rest_delta")
+  byeWeek        Boolean @default(false) @map("bye_week")
+  isHome         Boolean @default(false) @map("is_home")
+  isFbs          Boolean @default(true) @map("is_fbs")
+  p5Flag         Boolean @default(false) @map("p5_flag")
+  g5Flag         Boolean @default(false) @map("g5_flag")
+  fcsFlag        Boolean @default(false) @map("fcs_flag")
+
+  // Metadata
+  sourceSnapshot String?  @map("source_snapshot")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@id([gameId, teamId, featureVersion])
+  @@index([gameId])
+  @@index([teamId, season, week])
+  @@index([season, week])
+  @@index([featureVersion])
+  @@map("team_game_adj")
 }
