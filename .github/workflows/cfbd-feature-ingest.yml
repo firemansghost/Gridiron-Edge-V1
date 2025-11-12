@@ -107,7 +107,7 @@ jobs:
   ingest:
     needs: prepare-matrix
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90  # Increased for larger weeks (week 11 has 243 games)
     
     strategy:
       matrix:
@@ -155,6 +155,7 @@ jobs:
             --endpoints "${{ inputs.endpoints }}" \
             ${{ inputs.dry_run && '--dry-run' || '' }}
         continue-on-error: false
+        timeout-minutes: 85  # Slightly less than job timeout to allow cleanup
 
       - name: Upload artifacts (Week ${{ matrix.week }})
         if: always()
