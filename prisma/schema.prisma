@@ -33,6 +33,8 @@ model Team {
   rankings         TeamRanking[]
   marketLines      MarketLine[]
   teamGameAdj      TeamGameAdj[]
+  homeTrainingRows GameTrainingRow[]  @relation("HomeTrainingRows")
+  awayTrainingRows GameTrainingRow[]  @relation("AwayTrainingRows")
 
   @@index([conference, division])
   @@index([name])
@@ -40,30 +42,31 @@ model Team {
 }
 
 model Game {
-  id             String          @id
-  homeTeamId     String          @map("home_team_id")
-  awayTeamId     String          @map("away_team_id")
+  id             String            @id
+  homeTeamId     String            @map("home_team_id")
+  awayTeamId     String            @map("away_team_id")
   season         Int
   week           Int
   date           DateTime
   status         GameStatus
-  homeScore      Int?            @map("home_score")
-  awayScore      Int?            @map("away_score")
+  homeScore      Int?              @map("home_score")
+  awayScore      Int?              @map("away_score")
   venue          String
   city           String
-  neutralSite    Boolean         @default(false) @map("neutral_site")
-  conferenceGame Boolean         @default(false) @map("conference_game")
-  createdAt      DateTime        @default(now()) @map("created_at")
-  updatedAt      DateTime        @updatedAt @map("updated_at")
+  neutralSite    Boolean           @default(false) @map("neutral_site")
+  conferenceGame Boolean           @default(false) @map("conference_game")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
   bets           Bet[]
-  awayTeam       Team            @relation("AwayTeam", fields: [awayTeamId], references: [id])
-  homeTeam       Team            @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam       Team              @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  homeTeam       Team              @relation("HomeTeam", fields: [homeTeamId], references: [id])
   marketLines    MarketLine[]
   matchupOutputs MatchupOutput[]
   teamGameStats  TeamGameStat[]
   weather        Weather?
   injuries       Injury[]
   teamGameAdj    TeamGameAdj[]
+  trainingRows   GameTrainingRow[]
 
   @@index([season, week])
   @@index([homeTeamId, season])
@@ -555,6 +558,8 @@ model CfbdEffTeamGame {
   ppoOff           Decimal? @map("ppo_off")
   lineYardsOff     Decimal? @map("line_yards_off")
   havocOff         Decimal? @map("havoc_off")
+  havocFront7Off   Decimal? @map("havoc_front7_off")
+  havocDbOff       Decimal? @map("havoc_db_off")
   // Defense
   defEpa           Decimal? @map("def_epa")
   defSr            Decimal? @map("def_sr")
@@ -563,6 +568,8 @@ model CfbdEffTeamGame {
   stuffRate        Decimal? @map("stuff_rate")
   powerSuccess     Decimal? @map("power_success")
   havocDef         Decimal? @map("havoc_def")
+  havocFront7Def   Decimal? @map("havoc_front7_def")
+  havocDbDef       Decimal? @map("havoc_db_def")
   // Splits
   runEpa           Decimal? @map("run_epa")
   passEpa          Decimal? @map("pass_epa")
@@ -595,6 +602,8 @@ model CfbdEffTeamSeason {
   ppoOff           Decimal? @map("ppo_off")
   lineYardsOff     Decimal? @map("line_yards_off")
   havocOff         Decimal? @map("havoc_off")
+  havocFront7Off   Decimal? @map("havoc_front7_off")
+  havocDbOff       Decimal? @map("havoc_db_off")
   defEpa           Decimal? @map("def_epa")
   defSr            Decimal? @map("def_sr")
   isoPppDef        Decimal? @map("iso_ppp_def")
@@ -602,6 +611,8 @@ model CfbdEffTeamSeason {
   stuffRate        Decimal? @map("stuff_rate")
   powerSuccess     Decimal? @map("power_success")
   havocDef         Decimal? @map("havoc_def")
+  havocFront7Def   Decimal? @map("havoc_front7_def")
+  havocDbDef       Decimal? @map("havoc_db_def")
   runEpa           Decimal? @map("run_epa")
   passEpa          Decimal? @map("pass_epa")
   runSr            Decimal? @map("run_sr")
@@ -788,4 +799,63 @@ model TeamGameAdj {
   @@index([season, week])
   @@index([featureVersion])
   @@map("team_game_adj")
+}
+
+model GameTrainingRow {
+  // Primary keys
+  gameId         String @map("game_id")
+  featureVersion String @map("feature_version")
+
+  // Meta
+  season     Int
+  week       Int
+  homeTeamId String   @map("home_team_id")
+  awayTeamId String   @map("away_team_id")
+  setLabel   String?  @map("set_label") // 'A', 'B', 'C'
+  rowWeight  Decimal? @default(1.0) @map("row_weight")
+
+  // Target (home-minus-away consensus pre-kick)
+  targetSpreadHma Decimal?  @map("target_spread_hma")
+  booksSpread     Int?      @map("books_spread")
+  windowStart     DateTime? @map("window_start")
+  windowEnd       DateTime? @map("window_end")
+  usedPreKick     Boolean   @default(true) @map("used_pre_kick")
+
+  // Core diffs (home - away)
+  ratingDiffV2    Decimal? @map("rating_diff_v2")
+  hfaPoints       Decimal? @map("hfa_points")
+  offAdjSrDiff    Decimal? @map("off_adj_sr_diff")
+  offAdjExplDiff  Decimal? @map("off_adj_expl_diff")
+  offAdjPpaDiff   Decimal? @map("off_adj_ppa_diff")
+  havocFront7Diff Decimal? @map("havoc_front7_diff")
+  havocDbDiff     Decimal? @map("havoc_db_diff")
+
+  // EWMA diffs
+  ewma3OffAdjPpaDiff Decimal? @map("ewma3_off_adj_ppa_diff")
+  ewma5OffAdjPpaDiff Decimal? @map("ewma5_off_adj_ppa_diff")
+  ewma3OffAdjSrDiff  Decimal? @map("ewma3_off_adj_sr_diff")
+  ewma5OffAdjSrDiff  Decimal? @map("ewma5_off_adj_sr_diff")
+
+  // Context
+  neutralSite   Boolean @default(false) @map("neutral_site")
+  restDeltaDiff Int?    @map("rest_delta_diff")
+  byeHome       Boolean @default(false) @map("bye_home")
+  byeAway       Boolean @default(false) @map("bye_away")
+  sameConf      Boolean @default(false) @map("same_conf")
+  tierGap       Int?    @map("tier_gap")
+  p5VsG5        Boolean @default(false) @map("p5_vs_g5")
+
+  // Metadata
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  game     Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  homeTeam Team @relation("HomeTrainingRows", fields: [homeTeamId], references: [id], onDelete: Cascade)
+  awayTeam Team @relation("AwayTrainingRows", fields: [awayTeamId], references: [id], onDelete: Cascade)
+
+  @@id([gameId, featureVersion])
+  @@index([season, week, featureVersion])
+  @@index([setLabel])
+  @@index([featureVersion])
+  @@map("game_training_rows")
 }
