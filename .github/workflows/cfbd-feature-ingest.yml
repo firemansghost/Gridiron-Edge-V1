@@ -155,7 +155,6 @@ jobs:
             --endpoints "${{ inputs.endpoints }}" \
             ${{ inputs.dry_run && '--dry-run' || '' }}
         continue-on-error: false
-        timeout-minutes: 85  # Slightly less than job timeout to allow cleanup
 
       - name: Upload artifacts (Week ${{ matrix.week }})
         if: always()
