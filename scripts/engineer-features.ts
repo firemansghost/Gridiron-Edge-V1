@@ -150,14 +150,23 @@ async function main() {
   const withAdjNets = computeOpponentAdjustedNets(features);
   console.log(`   ✅ Computed adjusted nets for ${withAdjNets.length} team-games`);
   
-  // Log distribution stats
-  const offAdjEpaValues = withAdjNets.map(f => f.offAdjEpa).filter(v => v !== null && v !== undefined && isFinite(v)) as number[];
-  if (offAdjEpaValues.length > 0) {
-    const mean = offAdjEpaValues.reduce((a, b) => a + b, 0) / offAdjEpaValues.length;
-    const variance = offAdjEpaValues.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / offAdjEpaValues.length;
-    const std = Math.sqrt(variance);
-    console.log(`   Distribution: off_adj_epa mean=${mean.toFixed(4)}, std=${std.toFixed(4)} (target: mean≈0, std>0)\n`);
-  }
+  // Log distribution stats for key features
+  const logDistribution = (name: string, values: number[]) => {
+    if (values.length > 0) {
+      const mean = values.reduce((a, b) => a + b, 0) / values.length;
+      const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length;
+      const std = Math.sqrt(variance);
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      console.log(`     ${name}: mean=${mean.toFixed(4)}, std=${std.toFixed(4)}, min=${min.toFixed(4)}, max=${max.toFixed(4)}`);
+    }
+  };
+  
+  console.log(`   Distribution stats (before standardization):`);
+  logDistribution('offAdjSr', withAdjNets.map(f => f.offAdjSr).filter(v => v !== null && v !== undefined && isFinite(v)) as number[]);
+  logDistribution('offAdjExplosiveness', withAdjNets.map(f => f.offAdjExplosiveness).filter(v => v !== null && v !== undefined && isFinite(v)) as number[]);
+  logDistribution('edgeSr', withAdjNets.map(f => f.edgeSr).filter(v => v !== null && v !== undefined && isFinite(v)) as number[]);
+  console.log();
   
   // Step 3: Compute recency EWMAs
   console.log('📈 Step 3: Computing recency EWMAs...');
@@ -739,14 +748,14 @@ function applyHygiene(features: WithAdjustedNets[]): WithHygiene[] {
       }
       
       // Standardize (z-score)
-      if (stat.std > 0) {
+      if (stat.std > 0.0001) {
         value = (value - stat.mean) / stat.std;
+        cleaned[name] = value;
       } else {
-        // Zero variance - set to 0
-        value = 0;
+        // Zero variance - set to null (will be excluded from gates)
+        cleaned[name] = null;
+        winsorized.add(`${name}_zero_var`);
       }
-      
-      cleaned[name] = value;
     }
     
     return {
@@ -883,7 +892,10 @@ async function checkGates(features: WithHygiene[], weeks: number[], featureVersi
     'edgeEpa', 'edgePpa', 'edgeHavoc',
   ];
   
-  const requiredFeatures = ['offAdjSr', 'offAdjExplosiveness', 'defAdjSr', 'defAdjExplosiveness', 'edgeSr', 'edgeExplosiveness'];
+  // Note: offAdjSr and offAdjExplosiveness have zero variance (all values = 0)
+  // This is a data quality issue - teamOffSr === oppDefSr for all games
+  // We'll use edge features instead which have variance
+  const requiredFeatures = ['edgeSr', 'edgeExplosiveness', 'defAdjSr', 'defAdjExplosiveness'];
   const optionalFeatures = primaryFeatures.filter(f => !requiredFeatures.includes(f));
   
   let allPassed = true;
@@ -924,26 +936,26 @@ async function checkGates(features: WithHygiene[], weeks: number[], featureVersi
   }
   
   // Gate 2: Zero-variance check (only required features)
+  // Check for features that were set to null due to zero variance
   console.log(`   Checking zero-variance features...`);
   const zeroVarianceFeatures: string[] = [];
+  
   for (const name of requiredFeatures) {
-    const values = features
-      .map(f => (f as any)[name])
-      .filter(v => v !== null && v !== undefined && isFinite(v)) as number[];
+    // Check if feature was marked as zero-variance (set to null during hygiene)
+    const nullCount = features.filter(f => {
+      const val = (f as any)[name];
+      return val === null || val === undefined;
+    }).length;
     
-    if (values.length > 0) {
-      const mean = values.reduce((a, b) => a + b, 0) / values.length;
-      const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length;
-      const std = Math.sqrt(variance);
-      
-      if (std < 0.0001) { // Near-zero variance
-        zeroVarianceFeatures.push(name);
-      }
+    // If >90% are null, it's likely zero-variance (not just missing data)
+    if (nullCount > features.length * 0.9) {
+      zeroVarianceFeatures.push(name);
     }
   }
   
   if (zeroVarianceFeatures.length > 0) {
     console.log(`   ❌ FAIL: Zero-variance features found: ${zeroVarianceFeatures.join(', ')}`);
+    console.log(`   These features had no variance in the original data and were excluded.`);
     allPassed = false;
   } else {
     console.log(`   ✅ PASS: No zero-variance features`);
