@@ -114,7 +114,7 @@ jobs:
             --weeks ${{ matrix.week }} \
             --endpoints "${{ inputs.endpoints }}" \
             ${{ inputs.dry_run && '--dry-run' || '' }}
-        continue-on-error: true
+        continue-on-error: false
 
       - name: Upload artifacts (Week ${{ matrix.week }})
         if: always()
