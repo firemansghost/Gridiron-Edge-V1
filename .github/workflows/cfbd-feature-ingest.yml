@@ -60,7 +60,7 @@ jobs:
     strategy:
       matrix:
         week: ${{ fromJson(needs.prepare-matrix.outputs.weeks) }}
-      max-parallel: ${{ inputs.max_concurrency && fromJson(inputs.max_concurrency) || 2 }}
+      max-parallel: ${{ fromJson(inputs.max_concurrency) || 2 }}
       fail-fast: false
     
     steps:
