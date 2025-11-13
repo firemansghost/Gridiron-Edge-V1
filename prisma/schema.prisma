@@ -865,3 +865,55 @@ model GameTrainingRow {
   @@index([featureVersion])
   @@map("game_training_rows")
 }
+
+model ModelCalibration {
+  id             String @id @default(cuid())
+  modelVersion   String @map("model_version") // 'cal_v1', 'cal_v2', etc.
+  fitLabel       String @map("fit_label") // 'core', 'extended'
+  season         Int
+  featureVersion String @map("feature_version") // 'fe_v1', etc.
+
+  // Hyperparameters
+  bestAlpha         Decimal? @map("best_alpha") // Elastic Net alpha (λ)
+  bestL1Ratio       Decimal? @map("best_l1_ratio") // Elastic Net l1_ratio
+  gridSearchResults Json?    @map("grid_search_results") // Full grid results
+
+  // Coefficients (standardized + original scale)
+  coefficients Json // { feature: { standardized: number, original: number } }
+  intercept    Decimal // Intercept (original scale)
+  scalerParams Json    @map("scaler_params") // { feature: { mean: number, std: number } }
+
+  // Metrics (train + walk-forward)
+  trainRmse           Decimal? @map("train_rmse")
+  trainR2             Decimal? @map("train_r2")
+  trainPearson        Decimal? @map("train_pearson")
+  trainSpearman       Decimal? @map("train_spearman")
+  walkForwardRmse     Decimal? @map("walk_forward_rmse")
+  walkForwardR2       Decimal? @map("walk_forward_r2")
+  walkForwardPearson  Decimal? @map("walk_forward_pearson")
+  walkForwardSpearman Decimal? @map("walk_forward_spearman")
+
+  // Gates
+  slope         Decimal? // OLS slope (ŷ vs market) on hold-out
+  signAgreement Decimal? @map("sign_agreement") // % sign agreement
+  gatesPassed   Boolean  @default(false) @map("gates_passed")
+  gateDetails   Json?    @map("gate_details") // Detailed gate results
+
+  // Residual diagnostics
+  residualSummary Json? @map("residual_summary") // Global + bucket means
+  topOutliers     Json? @map("top_outliers") // Top 20 outliers
+
+  // Training data snapshot
+  trainingRowIds String[] @map("training_row_ids") // IDs or game_ids used
+  setLabels      String[] @map("set_labels") // ['A', 'B']
+
+  // Metadata
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([modelVersion, fitLabel])
+  @@index([modelVersion])
+  @@index([gatesPassed])
+  @@index([season])
+  @@map("model_calibration")
+}

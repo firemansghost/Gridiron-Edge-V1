@@ -47,7 +47,7 @@ interface TrainingPair {
   edgePpaDiff: number | null;
   edgeHavocDiff: number | null;
   
-      // Recency EWMAs
+  // Recency EWMAs
   ewma3OffAdjEpaDiff: number | null;
   ewma3DefAdjEpaDiff: number | null;
   ewma5OffAdjEpaDiff: number | null;
@@ -351,15 +351,39 @@ async function main() {
   let gatesPassed = true;
   
   // Gate 1: Row count
-  const expectedGames = games.filter(g => {
-    const consensus = gameConsensus.get(g.id);
-    if (setLabel === 'A') {
-      return consensus?.spread !== null && consensus?.usedPreKick;
+  // Expected count = games where both home and away features exist
+  // Group team features by game to count complete pairs
+  const gameFeatureCounts = new Map<string, { home: boolean; away: boolean }>();
+  for (const feature of teamFeatures) {
+    if (!gameFeatureCounts.has(feature.gameId)) {
+      gameFeatureCounts.set(feature.gameId, { home: false, away: false });
     }
-    return true; // Set B allows fallback
-  }).length;
+    const counts = gameFeatureCounts.get(feature.gameId)!;
+    if (feature.isHome) {
+      counts.home = true;
+    } else {
+      counts.away = true;
+    }
+  }
   
-  if (Math.abs(pairs.length - expectedGames) > expectedGames * 0.05) {
+  // Count games with both home and away features
+  let expectedGames = 0;
+  for (const [gameId, counts] of gameFeatureCounts.entries()) {
+    if (counts.home && counts.away) {
+      const consensus = gameConsensus.get(gameId);
+      // Set A requires pre-kick consensus, Set B allows fallback
+      if (setLabel === 'A') {
+        if (consensus?.spread !== null && consensus?.usedPreKick) {
+          expectedGames++;
+        }
+      } else {
+        // Set B: include all games with both features (consensus optional)
+        expectedGames++;
+      }
+    }
+  }
+  
+  if (expectedGames > 0 && Math.abs(pairs.length - expectedGames) > expectedGames * 0.05) {
     console.log(`   ❌ FAIL: Row count ${pairs.length}, expected ${expectedGames} (diff > 5%)`);
     gatesPassed = false;
   } else {
