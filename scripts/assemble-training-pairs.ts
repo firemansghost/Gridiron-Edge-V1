@@ -34,6 +34,8 @@ interface TrainingPair {
   offAdjExplosivenessDiff: number | null;
   offAdjPpaDiff: number | null;
   offAdjHavocDiff: number | null;
+  havocFront7Diff: number | null;
+  havocDbDiff: number | null;
   defAdjEpaDiff: number | null;
   defAdjSrDiff: number | null;
   defAdjExplosivenessDiff: number | null;
@@ -45,11 +47,13 @@ interface TrainingPair {
   edgePpaDiff: number | null;
   edgeHavocDiff: number | null;
   
-  // Recency EWMAs
+      // Recency EWMAs
   ewma3OffAdjEpaDiff: number | null;
   ewma3DefAdjEpaDiff: number | null;
   ewma5OffAdjEpaDiff: number | null;
   ewma5DefAdjEpaDiff: number | null;
+  ewma3OffAdjSrDiff: number | null;
+  ewma5OffAdjSrDiff: number | null;
   
   // Priors
   talent247Diff: number | null;
@@ -303,6 +307,8 @@ async function main() {
       offAdjExplosivenessDiff: diff(home.offAdjExplosiveness, away.offAdjExplosiveness),
       offAdjPpaDiff: diff(home.offAdjPpa, away.offAdjPpa),
       offAdjHavocDiff: diff(home.offAdjHavoc, away.offAdjHavoc),
+      havocFront7Diff: diff(home.offAdjHavocFront7, away.offAdjHavocFront7),
+      havocDbDiff: diff(home.offAdjHavocDb, away.offAdjHavocDb),
       defAdjEpaDiff: diff(home.defAdjEpa, away.defAdjEpa),
       defAdjSrDiff: diff(home.defAdjSr, away.defAdjSr),
       defAdjExplosivenessDiff: diff(home.defAdjExplosiveness, away.defAdjExplosiveness),
@@ -456,10 +462,100 @@ async function main() {
   
   // Step 5: Persist to DB
   console.log('💾 Step 5: Persisting to database...');
-  // Note: We need to create the game_training_rows table first
-  // For now, we'll just generate the CSV artifacts
-  console.log(`   ⚠️  Note: game_training_rows table not yet created - skipping DB persistence`);
-  console.log(`   ✅ Will persist ${pairs.length} rows once table exists\n`);
+  
+  // Determine row weight based on set label
+  const rowWeight = setLabel === 'A' ? 1.0 : setLabel === 'B' ? 0.6 : 0.25;
+  
+  let persistedCount = 0;
+  const batchSize = 100;
+  
+  for (let i = 0; i < pairs.length; i += batchSize) {
+    const batch = pairs.slice(i, i + batchSize);
+    
+    await Promise.all(
+      batch.map(async (pair) => {
+        const game = games.find(g => g.id === pair.gameId);
+        if (!game) return;
+        
+        try {
+          await prisma.gameTrainingRow.upsert({
+            where: {
+              gameId_featureVersion: {
+                gameId: pair.gameId,
+                featureVersion: pair.featureVersion,
+              },
+            },
+            update: {
+              season: pair.season,
+              week: pair.week,
+              homeTeamId: game.homeTeamId,
+              awayTeamId: game.awayTeamId,
+              setLabel: pair.setLabel,
+              rowWeight,
+              targetSpreadHma: pair.targetSpreadHma,
+              booksSpread: pair.booksSpread,
+              windowStart: pair.windowStart,
+              windowEnd: pair.windowEnd,
+              usedPreKick: pair.usedPreKick,
+              offAdjSrDiff: pair.offAdjSrDiff,
+              offAdjExplDiff: pair.offAdjExplosivenessDiff,
+              offAdjPpaDiff: pair.offAdjPpaDiff,
+              havocFront7Diff: pair.havocFront7Diff,
+              havocDbDiff: pair.havocDbDiff,
+              ewma3OffAdjPpaDiff: pair.ewma3OffAdjEpaDiff, // Note: using EPA diff for now (PPA EWMA not yet in TeamGameAdj)
+              ewma5OffAdjPpaDiff: pair.ewma5OffAdjEpaDiff,
+              ewma3OffAdjSrDiff: pair.ewma3OffAdjSrDiff,
+              ewma5OffAdjSrDiff: pair.ewma5OffAdjSrDiff,
+              neutralSite: pair.neutralSite,
+              restDeltaDiff: pair.restDeltaDiff,
+              byeHome: pair.byeFlagHome,
+              byeAway: pair.byeFlagAway,
+              sameConf: pair.sameConf,
+              tierGap: pair.tierGap,
+              p5VsG5: pair.p5VsG5,
+              updatedAt: new Date(),
+            },
+            create: {
+              gameId: pair.gameId,
+              featureVersion: pair.featureVersion,
+              season: pair.season,
+              week: pair.week,
+              homeTeamId: game.homeTeamId,
+              awayTeamId: game.awayTeamId,
+              setLabel: pair.setLabel,
+              rowWeight,
+              targetSpreadHma: pair.targetSpreadHma,
+              booksSpread: pair.booksSpread,
+              windowStart: pair.windowStart,
+              windowEnd: pair.windowEnd,
+              usedPreKick: pair.usedPreKick,
+              offAdjSrDiff: pair.offAdjSrDiff,
+              offAdjExplDiff: pair.offAdjExplosivenessDiff,
+              offAdjPpaDiff: pair.offAdjPpaDiff,
+              havocFront7Diff: pair.havocFront7Diff,
+              havocDbDiff: pair.havocDbDiff,
+              ewma3OffAdjPpaDiff: pair.ewma3OffAdjEpaDiff,
+              ewma5OffAdjPpaDiff: pair.ewma5OffAdjEpaDiff,
+              ewma3OffAdjSrDiff: pair.ewma3OffAdjSrDiff,
+              ewma5OffAdjSrDiff: pair.ewma5OffAdjSrDiff,
+              neutralSite: pair.neutralSite,
+              restDeltaDiff: pair.restDeltaDiff,
+              byeHome: pair.byeFlagHome,
+              byeAway: pair.byeFlagAway,
+              sameConf: pair.sameConf,
+              tierGap: pair.tierGap,
+              p5VsG5: pair.p5VsG5,
+            },
+          });
+          persistedCount++;
+        } catch (error: any) {
+          console.error(`   ⚠️  Failed to persist pair for game ${pair.gameId}: ${error.message}`);
+        }
+      })
+    );
+  }
+  
+  console.log(`   ✅ Persisted ${persistedCount} training rows to game_training_rows\n`);
   
   // Step 6: Generate artifacts
   console.log('📄 Step 6: Generating artifacts...');
