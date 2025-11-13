@@ -727,6 +727,8 @@ model TeamGameAdj {
   offAdjExplosiveness Decimal? @map("off_adj_explosiveness")
   offAdjPpa           Decimal? @map("off_adj_ppa")
   offAdjHavoc         Decimal? @map("off_adj_havoc")
+  offAdjHavocFront7   Decimal? @map("off_adj_havoc_front7")
+  offAdjHavocDb       Decimal? @map("off_adj_havoc_db")
 
   // Opponent-adjusted nets (Defense vs Opponent Offense)
   defAdjEpa           Decimal? @map("def_adj_epa")
@@ -734,6 +736,8 @@ model TeamGameAdj {
   defAdjExplosiveness Decimal? @map("def_adj_explosiveness")
   defAdjPpa           Decimal? @map("def_adj_ppa")
   defAdjHavoc         Decimal? @map("def_adj_havoc")
+  defAdjHavocFront7   Decimal? @map("def_adj_havoc_front7")
+  defAdjHavocDb       Decimal? @map("def_adj_havoc_db")
 
   // Matchup edges (off_adj - def_adj)
   edgeEpa           Decimal? @map("edge_epa")
@@ -741,6 +745,8 @@ model TeamGameAdj {
   edgeExplosiveness Decimal? @map("edge_explosiveness")
   edgePpa           Decimal? @map("edge_ppa")
   edgeHavoc         Decimal? @map("edge_havoc")
+  edgeHavocFront7   Decimal? @map("edge_havoc_front7")
+  edgeHavocDb       Decimal? @map("edge_havoc_db")
 
   // Recency EWMAs (3-game)
   ewma3Epa           Decimal? @map("ewma3_epa")
