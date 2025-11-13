@@ -12,6 +12,15 @@ ADD COLUMN IF NOT EXISTS "havoc_db_off" DECIMAL(10,4),
 ADD COLUMN IF NOT EXISTS "havoc_front7_def" DECIMAL(10,4),
 ADD COLUMN IF NOT EXISTS "havoc_db_def" DECIMAL(10,4);
 
+-- Add havoc front7 and db fields to team_game_adj
+ALTER TABLE "team_game_adj"
+ADD COLUMN IF NOT EXISTS "off_adj_havoc_front7" DECIMAL(10,4),
+ADD COLUMN IF NOT EXISTS "off_adj_havoc_db" DECIMAL(10,4),
+ADD COLUMN IF NOT EXISTS "def_adj_havoc_front7" DECIMAL(10,4),
+ADD COLUMN IF NOT EXISTS "def_adj_havoc_db" DECIMAL(10,4),
+ADD COLUMN IF NOT EXISTS "edge_havoc_front7" DECIMAL(10,4),
+ADD COLUMN IF NOT EXISTS "edge_havoc_db" DECIMAL(10,4);
+
 -- Create game_training_rows table
 CREATE TABLE IF NOT EXISTS "game_training_rows" (
     "game_id" TEXT NOT NULL,
