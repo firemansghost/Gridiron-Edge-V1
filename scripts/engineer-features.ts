@@ -29,11 +29,15 @@ interface TeamGameFeatures {
   teamOffExplosiveness?: number | null;
   teamOffPpa?: number | null;
   teamOffHavoc?: number | null;
+  teamOffHavocFront7?: number | null;
+  teamOffHavocDb?: number | null;
   teamDefEpa?: number | null;
   teamDefSr?: number | null;
   teamDefExplosiveness?: number | null;
   teamDefPpa?: number | null;
   teamDefHavoc?: number | null;
+  teamDefHavocFront7?: number | null;
+  teamDefHavocDb?: number | null;
   
   // Opponent stats (for adjustment)
   oppDefEpa?: number | null;
@@ -41,11 +45,15 @@ interface TeamGameFeatures {
   oppDefExplosiveness?: number | null;
   oppDefPpa?: number | null;
   oppDefHavoc?: number | null;
+  oppDefHavocFront7?: number | null;
+  oppDefHavocDb?: number | null;
   oppOffEpa?: number | null;
   oppOffSr?: number | null;
   oppOffExplosiveness?: number | null;
   oppOffPpa?: number | null;
   oppOffHavoc?: number | null;
+  oppOffHavocFront7?: number | null;
+  oppOffHavocDb?: number | null;
   
   // Priors
   talent247?: number | null;
@@ -68,11 +76,15 @@ interface EngineeredFeatures {
   offAdjExplosiveness?: number | null;
   offAdjPpa?: number | null;
   offAdjHavoc?: number | null;
+  offAdjHavocFront7?: number | null;
+  offAdjHavocDb?: number | null;
   defAdjEpa?: number | null;
   defAdjSr?: number | null;
   defAdjExplosiveness?: number | null;
   defAdjPpa?: number | null;
   defAdjHavoc?: number | null;
+  defAdjHavocFront7?: number | null;
+  defAdjHavocDb?: number | null;
   
   // Edges
   edgeEpa?: number | null;
@@ -80,6 +92,8 @@ interface EngineeredFeatures {
   edgeExplosiveness?: number | null;
   edgePpa?: number | null;
   edgeHavoc?: number | null;
+  edgeHavocFront7?: number | null;
+  edgeHavocDb?: number | null;
   
   // EWMAs
   ewma3OffAdjEpa?: number | null;
@@ -298,6 +312,15 @@ async function loadTeamGameFeatures(season: number, weeks: number[]): Promise<Te
     seasonEffMap.set(eff.teamIdInternal, eff);
   }
   
+  // Get season-level PPA for fallback
+  const seasonPpa = await prisma.cfbdPpaTeamSeason.findMany({
+    where: { season },
+  });
+  const seasonPpaMap = new Map<string, typeof seasonPpa[0]>();
+  for (const ppa of seasonPpa) {
+    seasonPpaMap.set(ppa.teamIdInternal, ppa);
+  }
+  
   // Get all prior game-level stats for rolling averages
   // We need to join through CfbdGame to get week information
   const maxWeek = Math.max(...weeks);
@@ -341,6 +364,10 @@ async function loadTeamGameFeatures(season: number, weeks: number[]): Promise<Te
     const defExpl = teamGames.map(e => e.isoPppDef).filter(v => v !== null).map(v => Number(v));
     const offPpa = teamGames.map(e => e.ppoOff).filter(v => v !== null).map(v => Number(v));
     const defPpa = teamGames.map(e => e.ppoDef).filter(v => v !== null).map(v => Number(v));
+    const offHavocFront7 = teamGames.map(e => e.havocFront7Off).filter(v => v !== null).map(v => Number(v));
+    const defHavocFront7 = teamGames.map(e => e.havocFront7Def).filter(v => v !== null).map(v => Number(v));
+    const offHavocDb = teamGames.map(e => e.havocDbOff).filter(v => v !== null).map(v => Number(v));
+    const defHavocDb = teamGames.map(e => e.havocDbDef).filter(v => v !== null).map(v => Number(v));
     
     return {
       offSr: offSr.length > 0 ? offSr.reduce((a, b) => a + b, 0) / offSr.length : null,
@@ -349,6 +376,10 @@ async function loadTeamGameFeatures(season: number, weeks: number[]): Promise<Te
       defExplosiveness: defExpl.length > 0 ? defExpl.reduce((a, b) => a + b, 0) / defExpl.length : null,
       offPpa: offPpa.length > 0 ? offPpa.reduce((a, b) => a + b, 0) / offPpa.length : null,
       defPpa: defPpa.length > 0 ? defPpa.reduce((a, b) => a + b, 0) / defPpa.length : null,
+      offHavocFront7: offHavocFront7.length > 0 ? offHavocFront7.reduce((a, b) => a + b, 0) / offHavocFront7.length : null,
+      defHavocFront7: defHavocFront7.length > 0 ? defHavocFront7.reduce((a, b) => a + b, 0) / defHavocFront7.length : null,
+      offHavocDb: offHavocDb.length > 0 ? offHavocDb.reduce((a, b) => a + b, 0) / offHavocDb.length : null,
+      defHavocDb: defHavocDb.length > 0 ? defHavocDb.reduce((a, b) => a + b, 0) / defHavocDb.length : null,
     };
   };
   
@@ -392,6 +423,26 @@ async function loadTeamGameFeatures(season: number, weeks: number[]): Promise<Te
       },
     });
     
+    // Get PPA per-game for home team
+    const homePpa = await prisma.cfbdPpaTeamGame.findUnique({
+      where: {
+        gameIdCfbd_teamIdInternal: {
+          gameIdCfbd: cfbdGame.gameIdCfbd,
+          teamIdInternal: cfbdGame.homeTeamIdInternal,
+        },
+      },
+    });
+    
+    // Get PPA per-game for away team
+    const awayPpa = await prisma.cfbdPpaTeamGame.findUnique({
+      where: {
+        gameIdCfbd_teamIdInternal: {
+          gameIdCfbd: cfbdGame.gameIdCfbd,
+          teamIdInternal: cfbdGame.awayTeamIdInternal,
+        },
+      },
+    });
+    
     if (!homeEff || !awayEff) {
       // Skip if missing efficiency stats
       continue;
@@ -408,6 +459,8 @@ async function loadTeamGameFeatures(season: number, weeks: number[]): Promise<Te
     // Get season-level stats as fallback
     const homeSeasonEff = seasonEffMap.get(cfbdGame.homeTeamIdInternal);
     const awaySeasonEff = seasonEffMap.get(cfbdGame.awayTeamIdInternal);
+    const homeSeasonPpa = seasonPpaMap.get(cfbdGame.homeTeamIdInternal);
+    const awaySeasonPpa = seasonPpaMap.get(cfbdGame.awayTeamIdInternal);
     
     // Helper to convert Decimal to number
     const toNum = (d: any) => d !== null && d !== undefined ? Number(d) : null;
@@ -417,6 +470,19 @@ async function loadTeamGameFeatures(season: number, weeks: number[]): Promise<Te
       const game = toNum(gameVal);
       if (game !== null) return game;
       return toNum(seasonVal);
+    };
+    
+    // Helper to get PPA with fallback (game PPA -> season PPA)
+    const getPpaWithFallback = (gamePpa: typeof homePpa, seasonPpa: typeof homeSeasonPpa, type: 'offense' | 'defense') => {
+      if (gamePpa) {
+        if (type === 'offense' && gamePpa.ppaOffense !== null) return toNum(gamePpa.ppaOffense);
+        if (type === 'defense' && gamePpa.ppaDefense !== null) return toNum(gamePpa.ppaDefense);
+      }
+      if (seasonPpa) {
+        if (type === 'offense' && seasonPpa.ppaOffense !== null) return toNum(seasonPpa.ppaOffense);
+        if (type === 'defense' && seasonPpa.ppaDefense !== null) return toNum(seasonPpa.ppaDefense);
+      }
+      return null;
     };
     
     // Helper to determine tier flags
@@ -464,26 +530,34 @@ async function loadTeamGameFeatures(season: number, weeks: number[]): Promise<Te
       teamOffEpa: getWithFallback(homeEff.offEpa, homeSeasonEff?.offEpa),
       teamOffSr: toNum(homeEff.offSr),
       teamOffExplosiveness: toNum(homeEff.isoPppOff),
-      teamOffPpa: getWithFallback(homeEff.ppoOff, homeSeasonEff?.ppoOff),
+      teamOffPpa: getPpaWithFallback(homePpa, homeSeasonPpa, 'offense') ?? getWithFallback(homeEff.ppoOff, homeSeasonEff?.ppoOff),
       teamOffHavoc: getWithFallback(homeEff.havocOff, homeSeasonEff?.havocOff),
+      teamOffHavocFront7: getWithFallback(homeEff.havocFront7Off, homeSeasonEff?.havocFront7Off),
+      teamOffHavocDb: getWithFallback(homeEff.havocDbOff, homeSeasonEff?.havocDbOff),
       teamDefEpa: getWithFallback(homeEff.defEpa, homeSeasonEff?.defEpa),
       teamDefSr: toNum(homeEff.defSr),
       teamDefExplosiveness: toNum(homeEff.isoPppDef),
-      teamDefPpa: getWithFallback(homeEff.ppoDef, homeSeasonEff?.ppoDef),
+      teamDefPpa: getPpaWithFallback(homePpa, homeSeasonPpa, 'defense') ?? getWithFallback(homeEff.ppoDef, homeSeasonEff?.ppoDef),
       teamDefHavoc: getWithFallback(homeEff.havocDef, homeSeasonEff?.havocDef),
+      teamDefHavocFront7: getWithFallback(homeEff.havocFront7Def, homeSeasonEff?.havocFront7Def),
+      teamDefHavocDb: getWithFallback(homeEff.havocDbDef, homeSeasonEff?.havocDbDef),
       
       // Opponent stats (CRITICAL: use season-to-date rolling, NOT current game!)
       // In current game: team_off_sr === opp_def_sr (by definition), so we need opponent's prior games
       oppDefEpa: getWithFallback(null, awaySeasonEff?.defEpa), // Use season, not current game
       oppDefSr: awayRolling?.defSr ?? toNum(awaySeasonEff?.defSr), // Prefer rolling, fallback to season
       oppDefExplosiveness: awayRolling?.defExplosiveness ?? toNum(awaySeasonEff?.isoPppDef),
-      oppDefPpa: awayRolling?.defPpa ?? getWithFallback(null, awaySeasonEff?.ppoDef),
+      oppDefPpa: awayRolling?.defPpa ?? getPpaWithFallback(awayPpa, awaySeasonPpa, 'defense') ?? getWithFallback(null, awaySeasonEff?.ppoDef),
       oppDefHavoc: getWithFallback(null, awaySeasonEff?.havocDef),
+      oppDefHavocFront7: awayRolling?.defHavocFront7 ?? getWithFallback(null, awaySeasonEff?.havocFront7Def),
+      oppDefHavocDb: awayRolling?.defHavocDb ?? getWithFallback(null, awaySeasonEff?.havocDbDef),
       oppOffEpa: getWithFallback(null, awaySeasonEff?.offEpa),
       oppOffSr: awayRolling?.offSr ?? toNum(awaySeasonEff?.offSr),
       oppOffExplosiveness: awayRolling?.offExplosiveness ?? toNum(awaySeasonEff?.isoPppOff),
-      oppOffPpa: awayRolling?.offPpa ?? getWithFallback(null, awaySeasonEff?.ppoOff),
+      oppOffPpa: awayRolling?.offPpa ?? getPpaWithFallback(awayPpa, awaySeasonPpa, 'offense') ?? getWithFallback(null, awaySeasonEff?.ppoOff),
       oppOffHavoc: getWithFallback(null, awaySeasonEff?.havocOff),
+      oppOffHavocFront7: awayRolling?.offHavocFront7 ?? getWithFallback(null, awaySeasonEff?.havocFront7Off),
+      oppOffHavocDb: awayRolling?.offHavocDb ?? getWithFallback(null, awaySeasonEff?.havocDbOff),
       
       // Priors
       talent247: homePrior ? toNum(homePrior.talent247) : null,
@@ -510,25 +584,33 @@ async function loadTeamGameFeatures(season: number, weeks: number[]): Promise<Te
       teamOffEpa: getWithFallback(awayEff.offEpa, awaySeasonEff?.offEpa),
       teamOffSr: toNum(awayEff.offSr),
       teamOffExplosiveness: toNum(awayEff.isoPppOff),
-      teamOffPpa: getWithFallback(awayEff.ppoOff, awaySeasonEff?.ppoOff),
+      teamOffPpa: getPpaWithFallback(awayPpa, awaySeasonPpa, 'offense') ?? getWithFallback(awayEff.ppoOff, awaySeasonEff?.ppoOff),
       teamOffHavoc: getWithFallback(awayEff.havocOff, awaySeasonEff?.havocOff),
+      teamOffHavocFront7: getWithFallback(awayEff.havocFront7Off, awaySeasonEff?.havocFront7Off),
+      teamOffHavocDb: getWithFallback(awayEff.havocDbOff, awaySeasonEff?.havocDbOff),
       teamDefEpa: getWithFallback(awayEff.defEpa, awaySeasonEff?.defEpa),
       teamDefSr: toNum(awayEff.defSr),
       teamDefExplosiveness: toNum(awayEff.isoPppDef),
-      teamDefPpa: getWithFallback(awayEff.ppoDef, awaySeasonEff?.ppoDef),
+      teamDefPpa: getPpaWithFallback(awayPpa, awaySeasonPpa, 'defense') ?? getWithFallback(awayEff.ppoDef, awaySeasonEff?.ppoDef),
       teamDefHavoc: getWithFallback(awayEff.havocDef, awaySeasonEff?.havocDef),
+      teamDefHavocFront7: getWithFallback(awayEff.havocFront7Def, awaySeasonEff?.havocFront7Def),
+      teamDefHavocDb: getWithFallback(awayEff.havocDbDef, awaySeasonEff?.havocDbDef),
       
       // Opponent stats (CRITICAL: use season-to-date rolling, NOT current game!)
       oppDefEpa: getWithFallback(null, homeSeasonEff?.defEpa), // Use season, not current game
       oppDefSr: homeRolling?.defSr ?? toNum(homeSeasonEff?.defSr), // Prefer rolling, fallback to season
       oppDefExplosiveness: homeRolling?.defExplosiveness ?? toNum(homeSeasonEff?.isoPppDef),
-      oppDefPpa: homeRolling?.defPpa ?? getWithFallback(null, homeSeasonEff?.ppoDef),
+      oppDefPpa: homeRolling?.defPpa ?? getPpaWithFallback(homePpa, homeSeasonPpa, 'defense') ?? getWithFallback(null, homeSeasonEff?.ppoDef),
       oppDefHavoc: getWithFallback(null, homeSeasonEff?.havocDef),
+      oppDefHavocFront7: homeRolling?.defHavocFront7 ?? getWithFallback(null, homeSeasonEff?.havocFront7Def),
+      oppDefHavocDb: homeRolling?.defHavocDb ?? getWithFallback(null, homeSeasonEff?.havocDbDef),
       oppOffEpa: getWithFallback(null, homeSeasonEff?.offEpa),
       oppOffSr: homeRolling?.offSr ?? toNum(homeSeasonEff?.offSr),
       oppOffExplosiveness: homeRolling?.offExplosiveness ?? toNum(homeSeasonEff?.isoPppOff),
-      oppOffPpa: homeRolling?.offPpa ?? getWithFallback(null, homeSeasonEff?.ppoOff),
+      oppOffPpa: homeRolling?.offPpa ?? getPpaWithFallback(homePpa, homeSeasonPpa, 'offense') ?? getWithFallback(null, homeSeasonEff?.ppoOff),
       oppOffHavoc: getWithFallback(null, homeSeasonEff?.havocOff),
+      oppOffHavocFront7: homeRolling?.offHavocFront7 ?? getWithFallback(null, homeSeasonEff?.havocFront7Off),
+      oppOffHavocDb: homeRolling?.offHavocDb ?? getWithFallback(null, homeSeasonEff?.havocDbOff),
       
       // Priors
       talent247: awayPrior ? toNum(awayPrior.talent247) : null,
@@ -569,6 +651,12 @@ function computeOpponentAdjustedNets(features: TeamGameFeatures[]): WithAdjusted
     const offAdjHavoc = f.teamOffHavoc !== null && f.oppDefHavoc !== null
       ? f.teamOffHavoc - f.oppDefHavoc
       : null;
+    const offAdjHavocFront7 = f.teamOffHavocFront7 !== null && f.oppDefHavocFront7 !== null
+      ? f.teamOffHavocFront7 - f.oppDefHavocFront7
+      : null;
+    const offAdjHavocDb = f.teamOffHavocDb !== null && f.oppDefHavocDb !== null
+      ? f.teamOffHavocDb - f.oppDefHavocDb
+      : null;
     
     // Defense vs Opponent Offense: (-team_def) + (-opp_off) = -(team_def + opp_off)
     // Higher is better (negative defense is good, negative opponent offense is good)
@@ -587,6 +675,12 @@ function computeOpponentAdjustedNets(features: TeamGameFeatures[]): WithAdjusted
     const defAdjHavoc = f.teamDefHavoc !== null && f.oppOffHavoc !== null
       ? -(f.teamDefHavoc + f.oppOffHavoc)
       : null;
+    const defAdjHavocFront7 = f.teamDefHavocFront7 !== null && f.oppOffHavocFront7 !== null
+      ? -(f.teamDefHavocFront7 + f.oppOffHavocFront7)
+      : null;
+    const defAdjHavocDb = f.teamDefHavocDb !== null && f.oppOffHavocDb !== null
+      ? -(f.teamDefHavocDb + f.oppOffHavocDb)
+      : null;
     
     // Matchup edges: off_adj - def_adj (positive = net advantage)
     const edgeEpa = offAdjEpa !== null && defAdjEpa !== null ? offAdjEpa - defAdjEpa : null;
@@ -596,6 +690,12 @@ function computeOpponentAdjustedNets(features: TeamGameFeatures[]): WithAdjusted
       : null;
     const edgePpa = offAdjPpa !== null && defAdjPpa !== null ? offAdjPpa - defAdjPpa : null;
     const edgeHavoc = offAdjHavoc !== null && defAdjHavoc !== null ? offAdjHavoc - defAdjHavoc : null;
+    const edgeHavocFront7 = offAdjHavocFront7 !== null && defAdjHavocFront7 !== null
+      ? offAdjHavocFront7 - defAdjHavocFront7
+      : null;
+    const edgeHavocDb = offAdjHavocDb !== null && defAdjHavocDb !== null
+      ? offAdjHavocDb - defAdjHavocDb
+      : null;
     
     return {
       ...f,
@@ -604,16 +704,22 @@ function computeOpponentAdjustedNets(features: TeamGameFeatures[]): WithAdjusted
       offAdjExplosiveness,
       offAdjPpa,
       offAdjHavoc,
+      offAdjHavocFront7,
+      offAdjHavocDb,
       defAdjEpa,
       defAdjSr,
       defAdjExplosiveness,
       defAdjPpa,
       defAdjHavoc,
+      defAdjHavocFront7,
+      defAdjHavocDb,
       edgeEpa,
       edgeSr,
       edgeExplosiveness,
       edgePpa,
       edgeHavoc,
+      edgeHavocFront7,
+      edgeHavocDb,
       lowSample3g: false, // Will be set in EWMA computation
       lowSample5g: false,
       byeWeek: false, // Will be set in context flags
@@ -799,9 +905,9 @@ interface WithHygiene extends WithAdjustedNets {
 function applyHygiene(features: WithAdjustedNets[]): WithHygiene[] {
   // Collect all numeric feature values
   const featureNames = [
-    'offAdjEpa', 'offAdjSr', 'offAdjExplosiveness', 'offAdjPpa', 'offAdjHavoc',
-    'defAdjEpa', 'defAdjSr', 'defAdjExplosiveness', 'defAdjPpa', 'defAdjHavoc',
-    'edgeEpa', 'edgeSr', 'edgeExplosiveness', 'edgePpa', 'edgeHavoc',
+    'offAdjEpa', 'offAdjSr', 'offAdjExplosiveness', 'offAdjPpa', 'offAdjHavoc', 'offAdjHavocFront7', 'offAdjHavocDb',
+    'defAdjEpa', 'defAdjSr', 'defAdjExplosiveness', 'defAdjPpa', 'defAdjHavoc', 'defAdjHavocFront7', 'defAdjHavocDb',
+    'edgeEpa', 'edgeSr', 'edgeExplosiveness', 'edgePpa', 'edgeHavoc', 'edgeHavocFront7', 'edgeHavocDb',
     'ewma3OffAdjEpa', 'ewma3DefAdjEpa', 'ewma5OffAdjEpa', 'ewma5DefAdjEpa',
   ];
   
