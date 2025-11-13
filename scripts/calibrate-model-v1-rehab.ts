@@ -930,7 +930,18 @@ function checkGates(
     }
   }
   
-  // Check all gates
+  // Variance ratio check (sanity gate)
+  const validPredsForVar = validIndices.map(i => predictions[i]);
+  const validYForVar = validIndices.map(i => y[i]);
+  const meanPredVar = validPredsForVar.reduce((a, b) => a + b, 0) / validPredsForVar.length;
+  const meanYVar = validYForVar.reduce((a, b) => a + b, 0) / validYForVar.length;
+  const varPredVar = validPredsForVar.reduce((sum, p) => sum + Math.pow(p - meanPredVar, 2), 0) / validPredsForVar.length;
+  const varYVar = validYForVar.reduce((sum, t) => sum + Math.pow(t - meanYVar, 2), 0) / validYForVar.length;
+  const stdPredVar = Math.sqrt(varPredVar);
+  const stdYVar = Math.sqrt(varYVar);
+  const varianceRatio = stdPredVar / stdYVar;
+  
+  // Check all gates (including variance ratio sanity gate)
   const rmseThreshold = fitType === 'core' ? 8.8 : 9.0;
   results.allPassed =
     results.slope >= 0.90 && results.slope <= 1.10 &&
@@ -940,10 +951,14 @@ function checkGates(
     results.spearman >= 0.30 &&
     results.coefficientSanity.ratingDiff > 0 &&
     results.coefficientSanity.hfaPoints > 0 &&
+    varianceRatio >= 0.6 && varianceRatio <= 1.2 && // Sanity gate: no silly compression
     Math.abs(results.residualSlices['0-7']) <= 2.0 &&
     Math.abs(results.residualSlices['7-14']) <= 2.0 &&
     Math.abs(results.residualSlices['14-28']) <= 2.0 &&
     Math.abs(results.residualSlices['>28']) <= 2.0;
+  
+  // Log variance ratio
+  console.log(`   Variance ratio (std(ŷ)/std(y)): ${varianceRatio.toFixed(4)} (target: 0.6-1.2)`);
   
   return results;
 }
@@ -1051,24 +1066,15 @@ async function calibrateCore(
     throw new Error(`Insufficient training data: ${validRows.length} rows (need ≥100)`);
   }
   
-  // Frame sanity: Target is stored as favorite-centric (negative = home favorite)
-  // rating_diff is home - away (positive when home is better)
-  // Target is negative when home is favorite (home is better)
-  // So: rating_diff > 0 (home better) → target < 0 (home favored)
-  // This means β should be negative, but spec says β > 0
-  // Solution: Flip rating_diff to (away - home) so positive = away better → negative target
-  // OR: Keep target as-is (negative = home better) and flip rating_diff
-  const y = validRows.map(r => r.targetSpreadHma!); // Target: negative when home is better
+  // Frame alignment: Both target and features are now in HMA frame
+  // Target: HMA = home - away (positive = home better, negative = away better)
+  // rating_diff: HMA = rating_home - rating_away (positive = home better)
+  // hfa_points: additive HFA for home team (positive, 0 if neutral)
+  // So: rating_diff > 0 (home better) → target > 0 (home better) → β should be positive
+  const y = validRows.map(r => r.targetSpreadHma!); // Target: HMA frame (positive = home better)
   
-  // Flip rating_diff to match: if home is better (rating_diff > 0), we want negative target
-  // So we need: rating_diff_positive → target_negative, meaning β should be negative
-  // But spec says β > 0, so flip rating_diff: use (away - home) instead
-  // Actually, let's just negate rating_diff in the feature matrix
-  for (const row of validRows) {
-    if (row.ratingDiffV2 !== null) {
-      row.ratingDiffV2 = -row.ratingDiffV2; // Flip to (away - home)
-    }
-  }
+  // No need to flip rating_diff - it's already in HMA frame
+  // ratingDiffV2 should be (home - away) from the database
   
   // Expanded grid (ridge-heavy corner for better slope)
   const alphas = [0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1, 2, 5];
@@ -1277,13 +1283,10 @@ async function calibrateExtended(
     throw new Error(`Insufficient training data: ${validRows.length} rows (need ≥100)`);
   }
   
-  // Frame alignment (same as Core)
-  const y = validRows.map(r => r.targetSpreadHma!);
-  for (const row of validRows) {
-    if (row.ratingDiffV2 !== null) {
-      row.ratingDiffV2 = -row.ratingDiffV2; // Flip to (away - home)
-    }
-  }
+  // Frame alignment: Both target and features are in HMA frame
+  const y = validRows.map(r => r.targetSpreadHma!); // Target: HMA frame (positive = home better)
+  
+  // No need to flip rating_diff - it's already in HMA frame
   
   // Ridge-heavy grid (per spec)
   const alphas = [0.001, 0.005, 0.01, 0.05, 0.1, 0.25];

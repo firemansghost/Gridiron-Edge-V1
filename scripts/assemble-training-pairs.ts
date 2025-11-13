@@ -213,10 +213,13 @@ async function main() {
       ? (normalizedSpreads[medianIndex - 1] + normalizedSpreads[medianIndex]) / 2
       : normalizedSpreads[medianIndex];
     
-    // Determine if home or away is favorite
-    // If consensus is negative, home is favorite (target = consensus)
-    // If consensus is positive, away is favorite (target = -consensus)
-    const targetSpreadHma = consensusSpread <= 0 ? consensusSpread : -consensusSpread;
+    // Transform to HMA frame (home-minus-away)
+    // Market spread: negative = home favorite, positive = away favorite
+    // HMA frame: positive = home better, negative = away better
+    // So: HMA = -market_spread
+    // Example: market -7 (home favorite) → HMA +7 (home is 7 points better)
+    // Example: market +7 (away favorite) → HMA -7 (away is 7 points better)
+    const targetSpreadHma = -consensusSpread;
     
     const windowStart = new Date(Math.min(...preKickLines.map(l => l.timestamp.getTime())));
     const windowEnd = new Date(Math.max(...preKickLines.map(l => l.timestamp.getTime())));
