@@ -5,7 +5,7 @@
 - **Fit Type**: core
 - **Season**: 2025
 - **Feature Version**: fe_v1
-- **Training Date**: 2025-11-13T21:37:14.371Z
+- **Training Date**: 2025-11-13T22:55:56.989Z
 - **Random Seed**: 42
 
 ## Data
@@ -27,13 +27,13 @@
 - **Alpha (λ)**: 0.0005
 - **L1 Ratio**: 0
 - **Hinge14**: Excluded
-- **Post-hoc Calibration Head**: ŷ* = -8.8170 + 0.2150 * ŷ
+- **Post-hoc Calibration Head**: ŷ* = 8.8170 + 0.2150 * ŷ
 
 ## Performance Metrics (Walk-Forward)
 - **RMSE**: 9.3124 (target: ≤8.8)
 - **R²**: 0.0077
 - **Pearson**: 0.1421 (target: ≥0.30)
-- **Spearman**: 0.1323 (target: ≥0.30)
+- **Spearman**: 0.1271 (target: ≥0.30)
 - **Slope**: 1.0000 (target: 0.90-1.10)
 - **Sign Agreement**: 100.0% (target: ≥70%)
 
@@ -48,10 +48,10 @@
 
 ## Coefficient Sanity
 - β(rating_diff): 1.6130 (target: >0) ✅
-- β(hfa_points): 3.1345 (target: >0) ✅
+- β(hfa_points): -3.1345 (target: >0) ❌
 
 ## Residual Diagnostics
-- **0-7 bucket**: 1.53 (target: |mean| ≤ 2.0) ✅
-- **7-14 bucket**: 3.34 (target: |mean| ≤ 2.0) ❌
-- **14-28 bucket**: -19.49 (target: |mean| ≤ 2.0) ❌
-- **>28 bucket**: -32.24 (target: |mean| ≤ 2.0) ❌
+- **0-7 bucket**: -1.53 (target: |mean| ≤ 2.0) ✅
+- **7-14 bucket**: -3.34 (target: |mean| ≤ 2.0) ❌
+- **14-28 bucket**: 19.49 (target: |mean| ≤ 2.0) ❌
+- **>28 bucket**: 32.24 (target: |mean| ≤ 2.0) ❌

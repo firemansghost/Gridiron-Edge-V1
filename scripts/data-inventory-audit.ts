@@ -15,6 +15,20 @@ dotenv.config();
 
 const prisma = new PrismaClient();
 
+// Map table names to Prisma model names
+const tableMap: Record<string, string> = {
+  'game': 'game',
+  'team': 'team',
+  'gameTrainingRow': 'gameTrainingRow',
+  'teamGameAdj': 'teamGameAdj',
+  'teamSeasonRating': 'teamSeasonRating',
+  'cfbdTeamGameEff': 'cfbdTeamGameEff',
+  'cfbdTeamSeasonEff': 'cfbdTeamSeasonEff',
+  'cfbdTeamTalent': 'cfbdTeamTalent',
+  'cfbdReturningProduction': 'cfbdReturningProduction',
+  'oddsLine': 'oddsLine',
+};
+
 interface ColumnStats {
   name: string;
   nullCount: number;
@@ -36,38 +50,69 @@ async function getTableInventory(tableName: string, season?: number): Promise<Ta
   console.log(`\n📊 Inventorying ${tableName}...`);
   
   try {
+    const modelName = tableMap[tableName];
+    if (!modelName) {
+      console.log(`   ⚠️  No Prisma model found for ${tableName}`);
+      return null;
+    }
+    
     let whereClause: any = {};
-    if (season) {
+    // Only add season filter if the model has a season field
+    const hasSeasonField = ['game', 'gameTrainingRow', 'teamGameAdj', 'teamSeasonRating', 
+                            'cfbdTeamGameEff', 'cfbdTeamSeasonEff', 'cfbdTeamTalent', 
+                            'cfbdReturningProduction'].includes(modelName);
+    if (season && hasSeasonField) {
       whereClause.season = season;
     }
     
     // Get row count
-    const rowCount = await (prisma as any)[tableName].count({ where: whereClause });
+    const rowCount = await (prisma as any)[modelName].count({ where: whereClause });
     
     if (rowCount === 0) {
       console.log(`   ⚠️  No rows found`);
       return null;
     }
     
-    // Get weeks and seasons
-    const weekData = await (prisma as any)[tableName].findMany({
-      where: whereClause,
-      select: { week: true, season: true },
-      distinct: ['week', 'season'],
-    });
+    // Get weeks and seasons (only for tables that have these fields)
+    const hasWeekField = ['game', 'gameTrainingRow', 'teamGameAdj', 'cfbdTeamGameEff'].includes(modelName);
+    let weeks: number[] = [];
+    let seasons: number[] = [];
     
-    const weeks = Array.from(new Set(weekData.map((d: any) => d.week))).sort((a, b) => a - b);
-    const seasons = Array.from(new Set(weekData.map((d: any) => d.season))).sort((a, b) => a - b);
+    if (hasWeekField) {
+      try {
+        const weekData = await (prisma as any)[modelName].findMany({
+          where: whereClause,
+          select: { week: true, season: true },
+        });
+        weeks = Array.from(new Set(weekData.map((d: any) => d.week).filter((w: any) => w !== null && w !== undefined))).sort((a, b) => a - b);
+        seasons = Array.from(new Set(weekData.map((d: any) => d.season).filter((s: any) => s !== null && s !== undefined))).sort((a, b) => a - b);
+      } catch (e) {
+        // Some tables might not have week/season
+      }
+    }
     
-    // Get sample rows
-    const sampleRows = await (prisma as any)[tableName].findMany({
+    // Get sample rows (use first available field for ordering)
+    let orderBy: any = {};
+    try {
+      // Try common ID fields
+      if (modelName === 'game') orderBy = { id: 'asc' };
+      else if (modelName === 'team') orderBy = { id: 'asc' };
+      else if (modelName === 'gameTrainingRow') orderBy = { gameId: 'asc' };
+      else if (modelName === 'teamGameAdj') orderBy = { gameId: 'asc' };
+      else if (modelName === 'teamSeasonRating') orderBy = { season: 'asc' };
+      else orderBy = { createdAt: 'asc' };
+    } catch (e) {
+      // No ordering if it fails
+    }
+    
+    const sampleRows = await (prisma as any)[modelName].findMany({
       where: whereClause,
       take: 5,
-      orderBy: { id: 'asc' },
+      ...(Object.keys(orderBy).length > 0 ? { orderBy } : {}),
     });
     
     // Get column stats (this is approximate - we'll sample)
-    const allRows = await (prisma as any)[tableName].findMany({
+    const allRows = await (prisma as any)[modelName].findMany({
       where: whereClause,
       take: 1000, // Sample for performance
     });
@@ -153,18 +198,7 @@ async function main() {
   console.log(`📋 DATA INVENTORY AUDIT (Season ${season})`);
   console.log('='.repeat(70));
   
-  const tables = [
-    'game',
-    'team',
-    'gameTrainingRow',
-    'teamGameAdj',
-    'teamSeasonRating',
-    'cfbdTeamGameEff',
-    'cfbdTeamSeasonEff',
-    'cfbdTeamTalent',
-    'cfbdReturningProduction',
-    'oddsLine',
-  ];
+  const tables = Object.keys(tableMap);
   
   const inventories: TableInventory[] = [];
   
