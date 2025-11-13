@@ -14,6 +14,9 @@ dotenv.config();
 
 const prisma = new PrismaClient();
 
+// Reproducibility seed
+const RANDOM_SEED = 42;
+
 interface TrainingRow {
   gameId: string;
   season: number;
@@ -284,7 +287,25 @@ async function loadTrainingData(
   
   console.log(`   Loaded ${rows.length} training rows\n`);
   
-  // Compute ratingDiffV2 and hfaPoints if missing
+  // Load extended features from team_game_adj
+  console.log(`   Loading extended features from team_game_adj...`);
+  const gameIds = rows.map(r => r.gameId);
+  const teamFeatures = await prisma.teamGameAdj.findMany({
+    where: {
+      gameId: { in: gameIds },
+      featureVersion,
+    },
+  });
+  
+  // Group by game and team
+  const featuresByGameTeam = new Map<string, typeof teamFeatures[0]>();
+  for (const feat of teamFeatures) {
+    featuresByGameTeam.set(`${feat.gameId}:${feat.teamId}`, feat);
+  }
+  
+  console.log(`   Loaded ${teamFeatures.length} team-game features\n`);
+  
+  // Compute ratingDiffV2 and hfaPoints if missing, and load extended features
   const trainingRows: TrainingRow[] = [];
   
   for (const row of rows) {
@@ -328,6 +349,17 @@ async function loadTrainingData(
       }
     }
     
+    // Load extended features from team_game_adj (home - away diffs)
+    const homeFeat = featuresByGameTeam.get(`${row.gameId}:${row.homeTeamId}`);
+    const awayFeat = featuresByGameTeam.get(`${row.gameId}:${row.awayTeamId}`);
+    
+    const diff = (homeVal: number | null | undefined, awayVal: number | null | undefined) => {
+      const h = homeVal !== null && homeVal !== undefined ? Number(homeVal) : null;
+      const a = awayVal !== null && awayVal !== undefined ? Number(awayVal) : null;
+      if (h === null || a === null) return null;
+      return h - a;
+    };
+    
     trainingRows.push({
       gameId: row.gameId,
       season: row.season,
@@ -342,23 +374,23 @@ async function loadTrainingData(
       p5VsG5: row.p5VsG5,
       byeHome: row.byeHome,
       byeAway: row.byeAway,
-      // Extended features
-      offAdjSrDiff: row.offAdjSrDiff !== null ? Number(row.offAdjSrDiff) : null,
-      defAdjSrDiff: null, // Not in schema yet
-      offAdjExplosivenessDiff: row.offAdjExplDiff !== null ? Number(row.offAdjExplDiff) : null,
-      defAdjExplosivenessDiff: null,
-      offAdjPpaDiff: row.offAdjPpaDiff !== null ? Number(row.offAdjPpaDiff) : null,
-      defAdjPpaDiff: null,
-      offAdjEpaDiff: null,
-      defAdjEpaDiff: null,
-      havocFront7Diff: row.havocFront7Diff !== null ? Number(row.havocFront7Diff) : null,
-      havocDbDiff: row.havocDbDiff !== null ? Number(row.havocDbDiff) : null,
-      edgeSrDiff: null,
-      ewma3OffAdjEpaDiff: null,
-      ewma5OffAdjEpaDiff: null,
-      talent247Diff: null,
-      returningProdOffDiff: null,
-      returningProdDefDiff: null,
+      // Extended features (from team_game_adj or fallback to game_training_rows)
+      offAdjSrDiff: homeFeat && awayFeat ? diff(homeFeat.offAdjSr, awayFeat.offAdjSr) : (row.offAdjSrDiff !== null ? Number(row.offAdjSrDiff) : null),
+      defAdjSrDiff: homeFeat && awayFeat ? diff(homeFeat.defAdjSr, awayFeat.defAdjSr) : null,
+      offAdjExplosivenessDiff: homeFeat && awayFeat ? diff(homeFeat.offAdjExplosiveness, awayFeat.offAdjExplosiveness) : (row.offAdjExplDiff !== null ? Number(row.offAdjExplDiff) : null),
+      defAdjExplosivenessDiff: homeFeat && awayFeat ? diff(homeFeat.defAdjExplosiveness, awayFeat.defAdjExplosiveness) : null,
+      offAdjPpaDiff: homeFeat && awayFeat ? diff(homeFeat.offAdjPpa, awayFeat.offAdjPpa) : (row.offAdjPpaDiff !== null ? Number(row.offAdjPpaDiff) : null),
+      defAdjPpaDiff: homeFeat && awayFeat ? diff(homeFeat.defAdjPpa, awayFeat.defAdjPpa) : null,
+      offAdjEpaDiff: homeFeat && awayFeat ? diff(homeFeat.offAdjEpa, awayFeat.offAdjEpa) : null,
+      defAdjEpaDiff: homeFeat && awayFeat ? diff(homeFeat.defAdjEpa, awayFeat.defAdjEpa) : null,
+      havocFront7Diff: homeFeat && awayFeat ? diff(homeFeat.offAdjHavocFront7, awayFeat.offAdjHavocFront7) : (row.havocFront7Diff !== null ? Number(row.havocFront7Diff) : null),
+      havocDbDiff: homeFeat && awayFeat ? diff(homeFeat.offAdjHavocDb, awayFeat.offAdjHavocDb) : (row.havocDbDiff !== null ? Number(row.havocDbDiff) : null),
+      edgeSrDiff: homeFeat && awayFeat ? diff(homeFeat.edgeSr, awayFeat.edgeSr) : null,
+      ewma3OffAdjEpaDiff: homeFeat && awayFeat ? diff(homeFeat.ewma3OffAdjEpa, awayFeat.ewma3OffAdjEpa) : null,
+      ewma5OffAdjEpaDiff: homeFeat && awayFeat ? diff(homeFeat.ewma5OffAdjEpa, awayFeat.ewma5OffAdjEpa) : null,
+      talent247Diff: homeFeat && awayFeat ? diff(homeFeat.talent247, awayFeat.talent247) : null,
+      returningProdOffDiff: homeFeat && awayFeat ? diff(homeFeat.returningProdOff, awayFeat.returningProdOff) : null,
+      returningProdDefDiff: homeFeat && awayFeat ? diff(homeFeat.returningProdDef, awayFeat.returningProdDef) : null,
     });
   }
   
@@ -813,9 +845,32 @@ async function calibrate(
     throw new Error(`Insufficient training data: ${validRows.length} rows (need ≥100)`);
   }
   
+  // Target is stored as favorite-centric (always negative = home favorite)
+  // But we need home-minus-away frame where:
+  // - Negative = home is better (home minus away < 0 means home is worse? No...)
+  // Actually: home_minus_away means (home_rating - away_rating)
+  // If home is 7 points better: rating_diff = +7, target should be -7 (home favored by 7)
+  // If away is 7 points better: rating_diff = -7, target should be +7 (away favored by 7, so home is -7)
+  // So target = -rating_diff in expectation
+  // Current target is always negative (favorite-centric), but we need to check actual market spreads
+  // For now, flip target sign: if target is -7 (home favorite by 7), in HMA frame it's -7 (home is 7 better)
+  // Actually wait - if home is favorite by 7, that means home is 7 points better, so HMA target should be -7
+  // But rating_diff positive means home is better, so we expect negative target
+  // So the relationship is: rating_diff > 0 → target < 0, meaning β should be negative
+  // But spec says β > 0, so we need to flip either target or rating_diff
+  
+  // Let's flip the target to match: if stored as -7 (home favorite), convert to +7 (home is 7 better in HMA)
+  // No wait, that doesn't make sense either
+  
+  // Actually, I think the issue is the target normalization. Let me check: if market says home -7,
+  // that means home is favored by 7, so home is 7 points better. In HMA: home_rating - away_rating = +7,
+  // and target (market spread) = -7. So β should be negative.
+  
+  // The spec says β > 0, which suggests we should flip the target. Let's try flipping:
+  const y = validRows.map(r => -(r.targetSpreadHma!)); // Flip sign to match HMA frame
+  
   // Build feature matrix
   const { X, featureNames, scalerParams } = buildFeatureMatrix(validRows, fitType);
-  const y = validRows.map(r => r.targetSpreadHma!);
   const weights = validRows.map(r => r.rowWeight);
   const weeks = validRows.map(r => r.week);
   

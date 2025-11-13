@@ -235,3 +235,4 @@ model GameTrainingRow {
 
 **When Set A passes**: Build `scripts/assemble-training-pairs.ts` per this spec.
 
+

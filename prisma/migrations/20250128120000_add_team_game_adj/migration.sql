@@ -87,3 +87,4 @@ CREATE INDEX IF NOT EXISTS "team_game_adj_feature_version_idx" ON "team_game_adj
 ALTER TABLE "team_game_adj" ADD CONSTRAINT "team_game_adj_game_id_fkey" FOREIGN KEY ("game_id") REFERENCES "games"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "team_game_adj" ADD CONSTRAINT "team_game_adj_team_id_fkey" FOREIGN KEY ("team_id") REFERENCES "teams"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
+
