@@ -804,7 +804,8 @@ function checkGates(
   weights: number[],
   coefficients: number[],
   featureNames: string[],
-  fitType: 'core' | 'extended'
+  fitType: 'core' | 'extended',
+  rawPredictions?: number[] // Optional: raw predictions for variance ratio check
 ): GateResults {
   const results: GateResults = {
     slope: 0,
@@ -930,8 +931,9 @@ function checkGates(
     }
   }
   
-  // Variance ratio check (sanity gate)
-  const validPredsForVar = validIndices.map(i => predictions[i]);
+  // Variance ratio check (sanity gate) - use raw predictions if available
+  const predsForVar = rawPredictions ? rawPredictions : predictions;
+  const validPredsForVar = validIndices.map(i => predsForVar[i]);
   const validYForVar = validIndices.map(i => y[i]);
   const meanPredVar = validPredsForVar.reduce((a, b) => a + b, 0) / validPredsForVar.length;
   const meanYVar = validYForVar.reduce((a, b) => a + b, 0) / validYForVar.length;
@@ -1076,9 +1078,10 @@ async function calibrateCore(
   // No need to flip rating_diff - it's already in HMA frame
   // ratingDiffV2 should be (home - away) from the database
   
-  // Expanded grid (ridge-heavy corner for better slope)
-  const alphas = [0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1, 2, 5];
-  const l1Ratios = [0.0, 0.05, 0.1, 0.25, 0.5];
+  // Ridge-heavy grid (lower alpha to reduce over-regularization)
+  // Start with very low alpha to preserve variance
+  const alphas = [0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.25];
+  const l1Ratios = [0.0, 0.05, 0.1, 0.25];
   
   // Test both weighted and unweighted variants
   const variants = [
@@ -1144,23 +1147,50 @@ async function calibrateCore(
         console.log(`     ✅ Model has sufficient variance\n`);
       }
       
-      // Post-hoc linear calibration head (mandatory if slope < 0.90)
-      console.log('🔧 Step 4: Fitting post-hoc linear calibration head...');
-      const calibrationHead = fitLinearCalibrationHead(y, wfResult.predictions, weights);
-      const calibratedPredictions = wfResult.predictions.map(yh => calibrationHead.intercept + calibrationHead.slope * yh);
-      console.log(`   Calibration: ŷ* = ${calibrationHead.intercept.toFixed(4)} + ${calibrationHead.slope.toFixed(4)} * ŷ`);
-      console.log(`   Calibrated RMSE: ${calibrationHead.rmse.toFixed(4)}`);
+      // Step 4: Check raw variance ratio (before calibration head)
+      const rawVarianceRatio = stdPred / stdY;
+      console.log(`   Raw variance ratio (std(ŷ_raw)/std(y)): ${rawVarianceRatio.toFixed(4)} (target: 0.6-1.2)`);
       
-      // Post-calibration variance check
-      const validCalPreds = validPredIndices.map(i => calibratedPredictions[i]);
-      const meanCalPred = validCalPreds.reduce((a, b) => a + b, 0) / validCalPreds.length;
-      const varCalPred = validCalPreds.reduce((sum, p) => sum + Math.pow(p - meanCalPred, 2), 0) / validCalPreds.length;
-      const stdCalPred = Math.sqrt(varCalPred);
-      console.log(`     std(ŷ*): ${stdCalPred.toFixed(4)}\n`);
+      if (rawVarianceRatio < 0.6) {
+        console.log(`   ⚠️  WARNING: Raw variance ratio too low - model is over-regularized or features are collinear!\n`);
+      } else if (rawVarianceRatio > 1.2) {
+        console.log(`   ⚠️  WARNING: Raw variance ratio too high - model may be overfitting!\n`);
+      } else {
+        console.log(`   ✅ Raw variance ratio in acceptable range\n`);
+      }
       
-      // Check gates on calibrated predictions
-      console.log('🚦 Step 5: Checking gates (on calibrated predictions)...');
-      const gateResults = checkGates(y, calibratedPredictions, weights, finalModel.coefficients, featureNames, 'core');
+      // Post-hoc linear calibration head (only if raw variance ratio is OK)
+      let calibrationHead: { intercept: number; slope: number; rmse: number } | undefined;
+      let calibratedPredictions: number[] = wfResult.predictions;
+      
+      if (rawVarianceRatio >= 0.6 && rawVarianceRatio <= 1.2) {
+        console.log('🔧 Step 5: Fitting post-hoc linear calibration head...');
+        calibrationHead = fitLinearCalibrationHead(y, wfResult.predictions, weights);
+        calibratedPredictions = wfResult.predictions.map(yh => calibrationHead!.intercept + calibrationHead!.slope * yh);
+        console.log(`   Calibration: ŷ* = ${calibrationHead.intercept.toFixed(4)} + ${calibrationHead.slope.toFixed(4)} * ŷ`);
+        console.log(`   Calibrated RMSE: ${calibrationHead.rmse.toFixed(4)}`);
+        
+        // Post-calibration variance check
+        const validCalPreds = validPredIndices.map(i => calibratedPredictions[i]);
+        const meanCalPred = validCalPreds.reduce((a, b) => a + b, 0) / validCalPreds.length;
+        const varCalPred = validCalPreds.reduce((sum, p) => sum + Math.pow(p - meanCalPred, 2), 0) / validCalPreds.length;
+        const stdCalPred = Math.sqrt(varCalPred);
+        const calVarianceRatio = stdCalPred / stdY;
+        console.log(`     std(ŷ*): ${stdCalPred.toFixed(4)}, ratio: ${calVarianceRatio.toFixed(4)}`);
+        
+        if (calVarianceRatio < 0.6) {
+          console.log(`     ⚠️  WARNING: Calibration head crushed variance!\n`);
+        } else {
+          console.log(`     ✅ Calibration head preserved variance\n`);
+        }
+      } else {
+        console.log('   ⚠️  Skipping calibration head - raw variance ratio out of range\n');
+      }
+      
+      // Check gates (use calibrated if available, otherwise raw)
+      // Always pass raw predictions for variance ratio check
+      console.log(`🚦 Step 6: Checking gates (on ${calibrationHead ? 'calibrated' : 'raw'} predictions)...`);
+      const gateResults = checkGates(y, calibratedPredictions, weights, finalModel.coefficients, featureNames, 'core', wfResult.predictions);
       
       console.log(`   Slope (ŷ vs market): ${gateResults.slope.toFixed(4)} (target: 0.90-1.10)`);
       console.log(`   RMSE: ${gateResults.rmse.toFixed(4)} (target: ≤8.8)`);
@@ -1288,8 +1318,8 @@ async function calibrateExtended(
   
   // No need to flip rating_diff - it's already in HMA frame
   
-  // Ridge-heavy grid (per spec)
-  const alphas = [0.001, 0.005, 0.01, 0.05, 0.1, 0.25];
+  // Ridge-heavy grid (lower alpha to reduce over-regularization)
+  const alphas = [0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1];
   const l1Ratios = [0.0, 0.05, 0.1, 0.25];
   
   // Test both weighted and unweighted variants
@@ -1356,23 +1386,50 @@ async function calibrateExtended(
         console.log(`     ✅ Model has sufficient variance\n`);
       }
       
-      // Post-hoc linear calibration head
-      console.log('🔧 Step 4: Fitting post-hoc linear calibration head...');
-      const calibrationHead = fitLinearCalibrationHead(y, wfResult.predictions, weights);
-      const calibratedPredictions = wfResult.predictions.map(yh => calibrationHead.intercept + calibrationHead.slope * yh);
-      console.log(`   Calibration: ŷ* = ${calibrationHead.intercept.toFixed(4)} + ${calibrationHead.slope.toFixed(4)} * ŷ`);
-      console.log(`   Calibrated RMSE: ${calibrationHead.rmse.toFixed(4)}`);
+      // Step 4: Check raw variance ratio (before calibration head)
+      const rawVarianceRatio = stdPred / stdY;
+      console.log(`   Raw variance ratio (std(ŷ_raw)/std(y)): ${rawVarianceRatio.toFixed(4)} (target: 0.6-1.2)`);
       
-      // Post-calibration variance check
-      const validCalPreds = validPredIndices.map(i => calibratedPredictions[i]);
-      const meanCalPred = validCalPreds.reduce((a, b) => a + b, 0) / validCalPreds.length;
-      const varCalPred = validCalPreds.reduce((sum, p) => sum + Math.pow(p - meanCalPred, 2), 0) / validCalPreds.length;
-      const stdCalPred = Math.sqrt(varCalPred);
-      console.log(`     std(ŷ*): ${stdCalPred.toFixed(4)}\n`);
+      if (rawVarianceRatio < 0.6) {
+        console.log(`   ⚠️  WARNING: Raw variance ratio too low - model is over-regularized or features are collinear!\n`);
+      } else if (rawVarianceRatio > 1.2) {
+        console.log(`   ⚠️  WARNING: Raw variance ratio too high - model may be overfitting!\n`);
+      } else {
+        console.log(`   ✅ Raw variance ratio in acceptable range\n`);
+      }
       
-      // Check gates on calibrated predictions
-      console.log('🚦 Step 5: Checking gates (on calibrated predictions)...');
-      const gateResults = checkGates(y, calibratedPredictions, weights, finalModel.coefficients, featureNames, 'extended');
+      // Post-hoc linear calibration head (only if raw variance ratio is OK)
+      let calibrationHead: { intercept: number; slope: number; rmse: number } | undefined;
+      let calibratedPredictions: number[] = wfResult.predictions;
+      
+      if (rawVarianceRatio >= 0.6 && rawVarianceRatio <= 1.2) {
+        console.log('🔧 Step 5: Fitting post-hoc linear calibration head...');
+        calibrationHead = fitLinearCalibrationHead(y, wfResult.predictions, weights);
+        calibratedPredictions = wfResult.predictions.map(yh => calibrationHead!.intercept + calibrationHead!.slope * yh);
+        console.log(`   Calibration: ŷ* = ${calibrationHead.intercept.toFixed(4)} + ${calibrationHead.slope.toFixed(4)} * ŷ`);
+        console.log(`   Calibrated RMSE: ${calibrationHead.rmse.toFixed(4)}`);
+        
+        // Post-calibration variance check
+        const validCalPreds = validPredIndices.map(i => calibratedPredictions[i]);
+        const meanCalPred = validCalPreds.reduce((a, b) => a + b, 0) / validCalPreds.length;
+        const varCalPred = validCalPreds.reduce((sum, p) => sum + Math.pow(p - meanCalPred, 2), 0) / validCalPreds.length;
+        const stdCalPred = Math.sqrt(varCalPred);
+        const calVarianceRatio = stdCalPred / stdY;
+        console.log(`     std(ŷ*): ${stdCalPred.toFixed(4)}, ratio: ${calVarianceRatio.toFixed(4)}`);
+        
+        if (calVarianceRatio < 0.6) {
+          console.log(`     ⚠️  WARNING: Calibration head crushed variance!\n`);
+        } else {
+          console.log(`     ✅ Calibration head preserved variance\n`);
+        }
+      } else {
+        console.log('   ⚠️  Skipping calibration head - raw variance ratio out of range\n');
+      }
+      
+      // Check gates (use calibrated if available, otherwise raw)
+      // Always pass raw predictions for variance ratio check
+      console.log(`🚦 Step 6: Checking gates (on ${calibrationHead ? 'calibrated' : 'raw'} predictions)...`);
+      const gateResults = checkGates(y, calibratedPredictions, weights, finalModel.coefficients, featureNames, 'extended', wfResult.predictions);
       
       console.log(`   Slope (ŷ vs market): ${gateResults.slope.toFixed(4)} (target: 0.90-1.10)`);
       console.log(`   RMSE: ${gateResults.rmse.toFixed(4)} (target: ≤9.0)`);

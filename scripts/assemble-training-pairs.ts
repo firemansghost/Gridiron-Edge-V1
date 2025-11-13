@@ -200,21 +200,16 @@ async function main() {
       continue;
     }
     
-    // Normalize to favorite-centric (always negative)
-    const normalizedSpreads = spreads.map(s => {
-      // If positive, flip sign (away favorite)
-      return s > 0 ? -s : s;
-    });
-    
-    // Sort and get median
-    normalizedSpreads.sort((a, b) => a - b);
-    const medianIndex = Math.floor(normalizedSpreads.length / 2);
-    const consensusSpread = normalizedSpreads.length % 2 === 0
-      ? (normalizedSpreads[medianIndex - 1] + normalizedSpreads[medianIndex]) / 2
-      : normalizedSpreads[medianIndex];
+    // Compute median on raw spreads (preserve sign)
+    // lineValue is in home_minus_away frame: negative = home favorite, positive = away favorite
+    spreads.sort((a, b) => a - b);
+    const medianIndex = Math.floor(spreads.length / 2);
+    const consensusSpread = spreads.length % 2 === 0
+      ? (spreads[medianIndex - 1] + spreads[medianIndex]) / 2
+      : spreads[medianIndex];
     
     // Transform to HMA frame (home-minus-away)
-    // Market spread: negative = home favorite, positive = away favorite
+    // Market spread (lineValue): negative = home favorite, positive = away favorite
     // HMA frame: positive = home better, negative = away better
     // So: HMA = -market_spread
     // Example: market -7 (home favorite) → HMA +7 (home is 7 points better)
