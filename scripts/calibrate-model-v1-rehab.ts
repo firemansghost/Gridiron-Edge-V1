@@ -1557,14 +1557,31 @@ async function calibrateExtended(
       );
       console.log(`   ✅ Best: alpha=${bestParams.alpha}, l1_ratio=${bestParams.l1Ratio}, CV_RMSE=${bestParams.rmse.toFixed(4)}\n`);
       
+      // Build final feature matrix with residualization on full training set
+      const { X: XFinal, featureNames: fnFinal, scalerParams: scalerParamsFinal } = buildFeatureMatrix(
+        validRows,
+        'extended',
+        useHinge14,
+        true, // residualize
+        Array.from({ length: validRows.length }, (_, i) => i) // All indices for final fit
+      );
+      
       // Fit final model
-      console.log('📐 Step 2: Fitting final model...');
-      const finalModel = elasticNet(X, y, weights, bestParams.alpha, bestParams.l1Ratio);
+      console.log('📐 Step 2: Fitting final model (with residualization)...');
+      const finalModel = elasticNet(XFinal, y, weights, bestParams.alpha, bestParams.l1Ratio);
       console.log(`   ✅ Train RMSE: ${finalModel.rmse.toFixed(4)}, R²: ${finalModel.r2.toFixed(4)}\n`);
       
-      // Walk-forward validation
-      console.log('🚶 Step 3: Walk-forward validation...');
-      const wfResult = walkForwardValidation(X, y, weights, weeks, bestParams.alpha, bestParams.l1Ratio);
+      // Walk-forward validation with residualization
+      console.log('🚶 Step 3: Walk-forward validation (with residualization)...');
+      const wfResult = walkForwardValidationWithResidualization(
+        validRows,
+        y,
+        weights,
+        weeks,
+        bestParams.alpha,
+        bestParams.l1Ratio,
+        useHinge14
+      );
       console.log(`   ✅ Walk-forward RMSE: ${wfResult.metrics.rmse.toFixed(4)}, R²: ${wfResult.metrics.r2.toFixed(4)}\n`);
       
       // Prediction variance check (pre-calibration)
