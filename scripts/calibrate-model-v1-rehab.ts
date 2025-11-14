@@ -1780,7 +1780,59 @@ async function generateReports(
     JSON.stringify(fitReport, null, 2)
   );
   
-  // 2. Residuals CSV (use calibrated predictions if available)
+  // 2. Metrics CSV (train + walk-forward)
+  const metricsRows = [
+    'metric,train,walk_forward',
+    `RMSE,${result.model.rmse.toFixed(4)},${result.walkForward.metrics.rmse.toFixed(4)}`,
+    `R²,${result.model.r2.toFixed(4)},${result.walkForward.metrics.r2.toFixed(4)}`,
+    `Pearson,${result.model.pearson.toFixed(4)},${result.walkForward.metrics.pearson.toFixed(4)}`,
+    `Spearman,${result.model.spearman.toFixed(4)},${result.walkForward.metrics.spearman.toFixed(4)}`,
+  ];
+  
+  fs.writeFileSync(
+    path.join(reportsDir, `${fitType}_metrics.csv`),
+    metricsRows.join('\n')
+  );
+  
+  // 2b. Variance pre/post CSV (std(y), std(ŷ_raw), std(ŷ*))
+  const rawPredictions = result.walkForward.predictions;
+  const calibratedPredictions = result.calibratedPredictions || rawPredictions;
+  
+  const validIndices = y.map((_, i) => i).filter(i => 
+    isFinite(y[i]) && isFinite(rawPredictions[i]) && rawPredictions[i] !== 0
+  );
+  
+  const yValid = validIndices.map(i => y[i]);
+  const rawPredValid = validIndices.map(i => rawPredictions[i]);
+  const calPredValid = validIndices.map(i => calibratedPredictions[i]);
+  
+  const meanY = yValid.reduce((a, b) => a + b, 0) / yValid.length;
+  const meanRaw = rawPredValid.reduce((a, b) => a + b, 0) / rawPredValid.length;
+  const meanCal = calPredValid.reduce((a, b) => a + b, 0) / calPredValid.length;
+  
+  const varY = yValid.reduce((sum, val) => sum + Math.pow(val - meanY, 2), 0) / yValid.length;
+  const varRaw = rawPredValid.reduce((sum, val) => sum + Math.pow(val - meanRaw, 2), 0) / rawPredValid.length;
+  const varCal = calPredValid.reduce((sum, val) => sum + Math.pow(val - meanCal, 2), 0) / calPredValid.length;
+  
+  const stdY = Math.sqrt(varY);
+  const stdRaw = Math.sqrt(varRaw);
+  const stdCal = Math.sqrt(varCal);
+  
+  const varianceRows = [
+    'metric,value',
+    `std(y),${stdY.toFixed(4)}`,
+    `std(ŷ_raw),${stdRaw.toFixed(4)}`,
+    `std(ŷ*),${stdCal.toFixed(4)}`,
+    `ratio_raw,${(stdRaw / stdY).toFixed(4)}`,
+    `ratio_cal,${(stdCal / stdY).toFixed(4)}`,
+  ];
+  
+  fs.writeFileSync(
+    path.join(reportsDir, `${fitType}_variance_pre_post.csv`),
+    varianceRows.join('\n')
+  );
+  
+  // 2c. Residuals CSV (use calibrated predictions if available)
   const predictions = result.calibratedPredictions || result.walkForward.predictions;
   const residuals: number[] = [];
   for (let i = 0; i < predictions.length; i++) {
@@ -1803,7 +1855,15 @@ async function generateReports(
     residualRows.join('\n')
   );
   
-  // 2b. Top outliers CSV (use calibrated predictions if available)
+  // Also save as core_residual_buckets.csv for Core
+  if (fitType === 'core') {
+    fs.writeFileSync(
+      path.join(reportsDir, `core_residual_buckets.csv`),
+      residualRows.join('\n')
+    );
+  }
+  
+  // 2d. Top outliers CSV (use calibrated predictions if available)
   const outliers: Array<{ gameId: string; week: number; actual: number; predicted: number; residual: number; absResidual: number }> = [];
   for (let i = 0; i < predictions.length; i++) {
     if (predictions[i] !== 0 && isFinite(predictions[i]) && isFinite(y[i])) {
