@@ -579,17 +579,92 @@ function fitLinearCalibrationHead(
 // FEATURE ENGINEERING (with monotone curvature)
 // ============================================================================
 
+/**
+ * Residualize extended features against rating_blend
+ * This ensures β(rating_blend) stays positive by making extended features orthogonal to it
+ */
+function residualizeExtendedFeatures(
+  rows: TrainingRow[],
+  featureNames: string[],
+  featureValues: Record<string, number[]>,
+  trainIndices: number[]
+): Record<string, number[]> {
+  // Find rating_blend feature (could be ratingDiffBlend or ratingDiffV2)
+  const ratingDiffFeatureName = mftrRatings && blendConfig ? 'ratingDiffBlend' : 'ratingDiffV2';
+  if (!featureValues[ratingDiffFeatureName]) {
+    console.log(`   ⚠️  ${ratingDiffFeatureName} not found, skipping residualization\n`);
+    return featureValues;
+  }
+  
+  const ratingBlendValues = featureValues[ratingDiffFeatureName];
+  
+  // Extended feature blocks to residualize
+  const extendedBlocks = [
+    ['offAdjSrDiff', 'defAdjSrDiff', 'edgeSrDiff'],
+    ['offAdjExplosivenessDiff', 'defAdjExplosivenessDiff'],
+    ['offAdjPpaDiff', 'defAdjPpaDiff'],
+    ['offAdjEpaDiff', 'defAdjEpaDiff'],
+    ['havocFront7Diff', 'havocDbDiff'],
+    ['ewma3OffAdjEpaDiff', 'ewma5OffAdjEpaDiff'],
+    ['talent247Diff'],
+    ['returningProdOffDiff', 'returningProdDefDiff'],
+  ];
+  
+  const residualized = { ...featureValues };
+  
+  // Residualize each block
+  for (const block of extendedBlocks) {
+    const blockFeatures = block.filter(f => featureNames.includes(f));
+    if (blockFeatures.length === 0) continue;
+    
+    // Fit OLS: feature ~ rating_blend on training data only
+    for (const featName of blockFeatures) {
+      const featValues = featureValues[featName];
+      
+      // Compute OLS on training fold
+      const trainRatingBlend = trainIndices.map(i => ratingBlendValues[i]);
+      const trainFeat = trainIndices.map(i => featValues[i]);
+      
+      const meanRating = trainRatingBlend.reduce((a, b) => a + b, 0) / trainRatingBlend.length;
+      const meanFeat = trainFeat.reduce((a, b) => a + b, 0) / trainFeat.length;
+      
+      let cov = 0;
+      let varRating = 0;
+      for (let i = 0; i < trainIndices.length; i++) {
+        const rDev = trainRatingBlend[i] - meanRating;
+        const fDev = trainFeat[i] - meanFeat;
+        cov += rDev * fDev;
+        varRating += rDev * rDev;
+      }
+      cov /= trainIndices.length;
+      varRating /= trainIndices.length;
+      
+      const beta = varRating > 1e-10 ? cov / varRating : 0;
+      const alpha = meanFeat - beta * meanRating;
+      
+      // Compute residuals for all data (train + test)
+      const residuals = featValues.map((val, i) => val - (alpha + beta * ratingBlendValues[i]));
+      residualized[featName] = residuals;
+    }
+  }
+  
+  return residualized;
+}
+
 function buildFeatureMatrix(
   rows: TrainingRow[],
   fitType: 'core' | 'extended',
-  includeHinge14: boolean = false
+  includeHinge14: boolean = false,
+  residualize: boolean = false,
+  trainIndices?: number[]
 ): { X: number[][]; featureNames: string[]; scalerParams: Record<string, { mean: number; std: number }> } {
   const featureNames: string[] = [];
   const featureValues: Record<string, number[]> = {};
   
   // Core features (always included)
   featureNames.push('intercept');
-  featureNames.push(mftrRatings && blendConfig ? 'ratingDiffBlend' : 'ratingDiffV2');
+  const ratingDiffFeatureName = mftrRatings && blendConfig ? 'ratingDiffBlend' : 'ratingDiffV2';
+  featureNames.push(ratingDiffFeatureName);
   featureNames.push('hfaPoints');
   featureNames.push('neutralSite');
   featureNames.push('p5VsG5');
@@ -627,12 +702,15 @@ function buildFeatureMatrix(
     featureValues[name] = [];
   }
   
+  // Get the correct feature name for rating diff (blend vs V2)
+  const ratingDiffFeatureName = mftrRatings && blendConfig ? 'ratingDiffBlend' : 'ratingDiffV2';
+  
   for (const row of rows) {
     const ratingDiff = row.ratingDiffV2 ?? 0;
     const absRatingDiff = Math.abs(ratingDiff);
     
     featureValues['intercept'].push(1);
-    featureValues['ratingDiffV2'].push(ratingDiff);
+    featureValues[ratingDiffFeatureName].push(ratingDiff);
     featureValues['hfaPoints'].push(row.hfaPoints ?? 0);
     featureValues['neutralSite'].push(row.neutralSite ? 1 : 0);
     featureValues['p5VsG5'].push(row.p5VsG5 ? 1 : 0);
@@ -664,6 +742,12 @@ function buildFeatureMatrix(
       featureValues['returningProdOffDiff'].push(row.returningProdOffDiff ?? 0);
       featureValues['returningProdDefDiff'].push(row.returningProdDefDiff ?? 0);
     }
+  }
+  
+  // Residualize extended features if requested (for Extended v0)
+  if (fitType === 'extended' && residualize && trainIndices) {
+    console.log('   🔧 Residualizing extended features against rating_blend...\n');
+    featureValues = residualizeExtendedFeatures(rows, featureNames, featureValues, trainIndices);
   }
   
   // Standardize features (except intercept and binary flags)
@@ -1452,13 +1536,25 @@ async function calibrateExtended(
         console.log(`\n📊 Testing with hinge14...\n`);
       }
       
-      const { X, featureNames, scalerParams } = buildFeatureMatrix(validRows, 'extended', useHinge14);
+      // For Extended v0, we need to residualize features within each CV fold
+      // Build initial matrix to get feature names, then residualize in grid search
+      const { featureNames } = buildFeatureMatrix(validRows, 'extended', useHinge14, false);
       
       console.log(`   Features: ${featureNames.length} (${featureNames.filter(f => f !== 'intercept').join(', ')})\n`);
+      console.log('   🔧 Extended v0: Will residualize extended features against rating_blend within CV folds\n');
       
-      // Grid search
-      console.log('🔍 Step 1: Grid search with cross-validation...');
-      const bestParams = gridSearch(X, y, weights, weeks, alphas, l1Ratios);
+      // Grid search with residualization (within each CV fold)
+      console.log('🔍 Step 1: Grid search with cross-validation (with residualization)...');
+      const bestParams = gridSearchWithResidualization(
+        validRows,
+        y,
+        weights,
+        weeks,
+        alphas,
+        l1Ratios,
+        featureNames,
+        useHinge14
+      );
       console.log(`   ✅ Best: alpha=${bestParams.alpha}, l1_ratio=${bestParams.l1Ratio}, CV_RMSE=${bestParams.rmse.toFixed(4)}\n`);
       
       // Fit final model
@@ -1535,7 +1631,7 @@ async function calibrateExtended(
       // Check gates (use calibrated if available, otherwise raw)
       // Always pass raw predictions for variance ratio check
       console.log(`🚦 Step 6: Checking gates (on ${calibrationHead ? 'calibrated' : 'raw'} predictions)...`);
-      const gateResults = checkGates(y, calibratedPredictions, weights, finalModel.coefficients, featureNames, 'extended', wfResult.predictions);
+      const gateResults = checkGates(y, calibratedPredictions, weights, finalModel.coefficients, fnFinal, 'extended', wfResult.predictions);
       
       console.log(`   Slope (ŷ vs market): ${gateResults.slope.toFixed(4)} (target: 0.90-1.10)`);
       console.log(`   RMSE: ${gateResults.rmse.toFixed(4)} (target: ≤9.0)`);
@@ -1548,10 +1644,10 @@ async function calibrateExtended(
       
       // Convert coefficients
       const coefficientsOriginal: Record<string, { standardized: number; original: number }> = {};
-      for (let i = 0; i < featureNames.length; i++) {
-        const name = featureNames[i];
+      for (let i = 0; i < fnFinal.length; i++) {
+        const name = fnFinal[i];
         const stdCoeff = finalModel.coefficients[i];
-        const scaler = scalerParams[name];
+        const scaler = scalerParamsFinal[name];
         
         let origCoeff = stdCoeff;
         if (name !== 'intercept' && scaler.std > 1e-10) {
@@ -1577,9 +1673,9 @@ async function calibrateExtended(
         walkForward: wfResult,
         gates: gateResults,
         bestParams,
-        featureNames,
+        featureNames: fnFinal,
         coefficients: coefficientsOriginal,
-        scalerParams,
+        scalerParams: scalerParamsFinal,
         useHinge14: keepHinge14,
         useWeights: variant.useWeights,
         calibrationHead,
