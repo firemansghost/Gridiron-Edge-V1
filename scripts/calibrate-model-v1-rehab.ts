@@ -21,6 +21,18 @@ const prisma = new PrismaClient();
 // Reproducibility seed
 const RANDOM_SEED = 42;
 
+// MFTR and blend config (loaded once)
+let mftrRatings: Map<string, number> | null = null;
+let blendConfig: {
+  optimalWeight: number;
+  normalization: {
+    v2Mean: number;
+    v2Std: number;
+    mftrMean: number;
+    mftrStd: number;
+  };
+} | null = null;
+
 interface TrainingRow {
   gameId: string;
   season: number;
@@ -267,6 +279,77 @@ function pearsonCorrelation(x: number[], y: number[], weights: number[]): number
 }
 
 // ============================================================================
+// MFTR & BLEND LOADING
+// ============================================================================
+
+async function loadMFTRAndBlend(): Promise<void> {
+  // Load MFTR ratings
+  const mftrPath = path.join(process.cwd(), 'reports', 'mftr_ratings.csv');
+  if (!fs.existsSync(mftrPath)) {
+    console.log('   ⚠️  MFTR ratings not found - using raw V2 ratings\n');
+    return;
+  }
+  
+  const mftrContent = fs.readFileSync(mftrPath, 'utf-8');
+  const mftrLines = mftrContent.trim().split('\n').slice(1);
+  mftrRatings = new Map<string, number>();
+  
+  for (const line of mftrLines) {
+    const [teamId, rating] = line.split(',');
+    mftrRatings.set(teamId, parseFloat(rating));
+  }
+  
+  // Load blend config
+  const configPath = path.join(process.cwd(), 'reports', 'rating_blend_config.json');
+  if (!fs.existsSync(configPath)) {
+    console.log('   ⚠️  Blend config not found - using raw V2 ratings\n');
+    mftrRatings = null;
+    return;
+  }
+  
+  const configContent = fs.readFileSync(configPath, 'utf-8');
+  blendConfig = JSON.parse(configContent);
+  
+  console.log(`   ✅ Loaded MFTR ratings (${mftrRatings.size} teams)`);
+  console.log(`   ✅ Loaded blend config (w=${blendConfig.optimalWeight.toFixed(2)})\n`);
+}
+
+/**
+ * Compute rating_blend = w*V2 + (1-w)*MFTR
+ */
+function computeRatingBlend(
+  homeTeamId: string,
+  awayTeamId: string,
+  homeV2: number,
+  awayV2: number
+): number | null {
+  if (!mftrRatings || !blendConfig) {
+    return null; // Fall back to raw V2
+  }
+  
+  const homeMFTR = mftrRatings.get(homeTeamId);
+  const awayMFTR = mftrRatings.get(awayTeamId);
+  
+  if (homeMFTR === undefined || awayMFTR === undefined) {
+    return null; // Fall back to raw V2
+  }
+  
+  // Normalize V2 and MFTR
+  const homeV2Norm = (homeV2 - blendConfig.normalization.v2Mean) / blendConfig.normalization.v2Std;
+  const awayV2Norm = (awayV2 - blendConfig.normalization.v2Mean) / blendConfig.normalization.v2Std;
+  const homeMFTRNorm = (homeMFTR - blendConfig.normalization.mftrMean) / blendConfig.normalization.mftrStd;
+  const awayMFTRNorm = (awayMFTR - blendConfig.normalization.mftrMean) / blendConfig.normalization.mftrStd;
+  
+  // Blend
+  const w = blendConfig.optimalWeight;
+  const homeBlend = w * homeV2Norm + (1 - w) * homeMFTRNorm;
+  const awayBlend = w * awayV2Norm + (1 - w) * awayMFTRNorm;
+  
+  // Return difference (HMA frame)
+  return homeBlend - awayBlend;
+}
+
+// ============================================================================
 // DATA LOADING (same as before, but with better logging)
 // ============================================================================
 
@@ -372,7 +455,16 @@ async function loadTrainingData(
         if (ratingDiffV2 === null) {
           const homeRatingVal = homeRating.powerRating !== null ? Number(homeRating.powerRating) : 0;
           const awayRatingVal = awayRating.powerRating !== null ? Number(awayRating.powerRating) : 0;
-          ratingDiffV2 = homeRatingVal - awayRatingVal;
+          
+          // Try to use rating_blend if available, otherwise fall back to raw V2
+          const ratingBlend = computeRatingBlend(
+            row.homeTeamId,
+            row.awayTeamId,
+            homeRatingVal,
+            awayRatingVal
+          );
+          
+          ratingDiffV2 = ratingBlend !== null ? ratingBlend : (homeRatingVal - awayRatingVal);
         }
         
         if (hfaPoints === null) {
@@ -489,7 +581,7 @@ function buildFeatureMatrix(
   
   // Core features (always included)
   featureNames.push('intercept');
-  featureNames.push('ratingDiffV2');
+  featureNames.push(mftrRatings && blendConfig ? 'ratingDiffBlend' : 'ratingDiffV2');
   featureNames.push('hfaPoints');
   featureNames.push('neutralSite');
   featureNames.push('p5VsG5');
@@ -897,7 +989,7 @@ function checkGates(
   results.rmse = Math.sqrt(ssRes / sumW);
   
   // Coefficient sanity
-  const ratingIdx = featureNames.indexOf('ratingDiffV2');
+  const ratingIdx = featureNames.findIndex(name => name === 'ratingDiffV2' || name === 'ratingDiffBlend');
   const hfaIdx = featureNames.indexOf('hfaPoints');
   
   if (ratingIdx >= 0) results.coefficientSanity.ratingDiff = coefficients[ratingIdx];
@@ -977,6 +1069,9 @@ async function calibrateCore(
   console.log('\n' + '='.repeat(70));
   console.log(`🔧 MODEL CALIBRATION: Fit #1 CORE (Rehab)`);
   console.log('='.repeat(70) + '\n');
+  
+  // Load MFTR and blend config
+  await loadMFTRAndBlend();
   
   // Load data (try Set A+B with outlier trimming)
   const setLabels = ['A', 'B'];
@@ -1292,6 +1387,9 @@ async function calibrateExtended(
   console.log('\n' + '='.repeat(70));
   console.log(`🔧 MODEL CALIBRATION: Fit #2 EXTENDED`);
   console.log('='.repeat(70) + '\n');
+  
+  // Load MFTR and blend config
+  await loadMFTRAndBlend();
   
   // Load data
   const setLabels = ['A', 'B'];
