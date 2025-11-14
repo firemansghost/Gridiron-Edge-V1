@@ -21,22 +21,31 @@ async function main() {
   console.log('🔍 FINDING OPTIMAL RATING BLEND');
   console.log('='.repeat(70) + '\n');
   
-  // Load MFTR ratings
+  // Load MFTR ratings (prefer ridge version)
+  const mftrRidgePath = path.join(process.cwd(), 'reports', 'mftr_ratings_ridge.csv');
   const mftrPath = path.join(process.cwd(), 'reports', 'mftr_ratings.csv');
-  if (!fs.existsSync(mftrPath)) {
-    throw new Error(`MFTR ratings not found: ${mftrPath}. Run build-mftr.ts first.`);
+  
+  let mftrPathToUse = mftrRidgePath;
+  if (!fs.existsSync(mftrRidgePath)) {
+    if (!fs.existsSync(mftrPath)) {
+      throw new Error(`MFTR ratings not found. Run build-mftr-ridge.ts first.`);
+    }
+    mftrPathToUse = mftrPath;
+    console.log(`   ⚠️  Using non-ridge MFTR (${mftrPath}). Prefer ridge version.\n`);
   }
   
-  const mftrContent = fs.readFileSync(mftrPath, 'utf-8');
+  const mftrContent = fs.readFileSync(mftrPathToUse, 'utf-8');
   const mftrLines = mftrContent.trim().split('\n').slice(1); // Skip header
   const mftrRatings = new Map<string, number>();
   
   for (const line of mftrLines) {
-    const [teamId, rating] = line.split(',');
-    mftrRatings.set(teamId, parseFloat(rating));
+    const parts = line.split(',');
+    const teamId = parts[0];
+    const rating = parseFloat(parts[1]);
+    mftrRatings.set(teamId, rating);
   }
   
-  console.log(`   Loaded ${mftrRatings.size} MFTR ratings\n`);
+  console.log(`   Loaded ${mftrRatings.size} MFTR ratings from ${mftrPathToUse.includes('ridge') ? 'ridge' : 'standard'} version\n`);
   
   // Load V2 ratings
   const v2Ratings = await prisma.teamSeasonRating.findMany({
@@ -248,12 +257,96 @@ async function main() {
     });
   }
   
-  // Find best by combined Set A + Set B score
-  candidatesWithB.sort((a, b) => b.combinedTotal - a.combinedTotal);
-  const best = candidatesWithB[0];
+  // Filter: Discard any w with negative Set-B Pearson
+  const validCandidates = candidatesWithB.filter(c => c.pearsonB >= 0);
+  
+  if (validCandidates.length === 0) {
+    console.log('   ❌ NO VALID BLEND: All weights have negative Set-B Pearson\n');
+    console.log('   ⚠️  STOPPING: Cannot proceed without valid blend\n');
+    process.exit(1);
+  }
+  
+  // Find best by combined objective: J = 0.5*(Pearson_A + Spearman_A) + 0.5*(Pearson_B + Spearman_B)
+  validCandidates.forEach(c => {
+    c.combinedTotal = 0.5 * (c.pearsonA + c.spearmanA) + 0.5 * (c.pearsonB + c.spearmanB);
+  });
+  
+  validCandidates.sort((a, b) => b.combinedTotal - a.combinedTotal);
+  let best = validCandidates[0];
+  
+  // Guard: If best is w=0.00 and Set-B Pearson < 0.25, force w=0.10
+  if (best.w === 0.00 && best.pearsonB < 0.25) {
+    console.log(`   ⚠️  Best weight is w=0.00 but Set-B Pearson (${best.pearsonB.toFixed(4)}) < 0.25`);
+    console.log(`   🔧 Forcing w=0.10 to avoid pure Set-A overfit\n`);
+    
+    const w10Candidate = validCandidates.find(c => Math.abs(c.w - 0.10) < 0.01);
+    if (w10Candidate && w10Candidate.pearsonB >= 0.25) {
+      best = w10Candidate;
+      console.log(`   ✅ Using w=0.10: Set-B Pearson=${best.pearsonB.toFixed(4)}\n`);
+    } else {
+      console.log(`   ⚠️  w=0.10 also fails Set-B gate, keeping w=0.00\n`);
+    }
+  }
+  
+  // Quick OLS sanity check: β(rating_blend) > 0
+  console.log('🔍 Quick OLS sanity check (β(rating_blend) > 0)...\n');
+  const allRows = [...setARows, ...setBRows];
+  const ratingDiffs: number[] = [];
+  const targets: number[] = [];
+  const rowWeights: number[] = [];
+  
+  for (const row of allRows) {
+    if (row.targetSpreadHma === null) continue;
+    if (!row.game?.homeTeamId || !row.game?.awayTeamId) continue;
+    
+    const homeV2 = v2Normalized.get(row.game.homeTeamId) ?? 0;
+    const awayV2 = v2Normalized.get(row.game.awayTeamId) ?? 0;
+    const homeMFTR = mftrNormalized.get(row.game.homeTeamId) ?? 0;
+    const awayMFTR = mftrNormalized.get(row.game.awayTeamId) ?? 0;
+    
+    const homeBlend = best.w * homeV2 + (1 - best.w) * homeMFTR;
+    const awayBlend = best.w * awayV2 + (1 - best.w) * awayMFTR;
+    const ratingDiff = homeBlend - awayBlend;
+    
+    ratingDiffs.push(ratingDiff);
+    targets.push(Number(row.targetSpreadHma));
+    rowWeights.push(row.rowWeight !== null ? Number(row.rowWeight) : 1.0);
+  }
+  
+  // Weighted OLS
+  const sumW = rowWeights.reduce((a, b) => a + b, 0);
+  const meanTarget = targets.reduce((sum, t, i) => sum + rowWeights[i] * t, 0) / sumW;
+  const meanDiff = ratingDiffs.reduce((sum, d, i) => sum + rowWeights[i] * d, 0) / sumW;
+  
+  let cov = 0;
+  let varDiff = 0;
+  for (let i = 0; i < targets.length; i++) {
+    const tDev = targets[i] - meanTarget;
+    const dDev = ratingDiffs[i] - meanDiff;
+    cov += rowWeights[i] * tDev * dDev;
+    varDiff += rowWeights[i] * dDev * dDev;
+  }
+  cov /= sumW;
+  varDiff /= sumW;
+  
+  const beta = varDiff > 1e-10 ? cov / varDiff : 0;
+  
+  console.log(`   β(rating_blend): ${beta.toFixed(4)}`);
+  if (beta > 0) {
+    console.log(`   ✅ β is positive (sanity check passed)\n`);
+  } else {
+    console.log(`   ❌ β is negative (sanity check failed!)\n`);
+    console.log(`   ⚠️  WARNING: Proceeding anyway, but this may cause issues in Core fit\n`);
+  }
   
   console.log(`📊 Blend Search Results:\n`);
-  console.log(`   Best weight: w = ${best.w.toFixed(2)} (optimized for Set A + Set B)\n`);
+  console.log(`   Best weight: w = ${best.w.toFixed(2)}`);
+  console.log(`   Combined objective J: ${best.combinedTotal.toFixed(4)}`);
+  if (best.w === 0.00) {
+    console.log(`   Note: Pure MFTR (w=0.00) - Set-B validation: Pearson=${best.pearsonB.toFixed(4)}\n`);
+  } else {
+    console.log(`   Note: Blend of V2 (${(best.w * 100).toFixed(0)}%) + MFTR (${((1 - best.w) * 100).toFixed(0)}%)\n`);
+  }
   console.log(`   Set A:`);
   console.log(`     Pearson: ${best.pearsonA.toFixed(4)}`);
   console.log(`     Spearman: ${best.spearmanA.toFixed(4)}`);

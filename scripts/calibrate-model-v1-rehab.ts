@@ -283,20 +283,28 @@ function pearsonCorrelation(x: number[], y: number[], weights: number[]): number
 // ============================================================================
 
 async function loadMFTRAndBlend(): Promise<void> {
-  // Load MFTR ratings
+  // Load MFTR ratings (prefer ridge version)
+  const mftrRidgePath = path.join(process.cwd(), 'reports', 'mftr_ratings_ridge.csv');
   const mftrPath = path.join(process.cwd(), 'reports', 'mftr_ratings.csv');
-  if (!fs.existsSync(mftrPath)) {
-    console.log('   ⚠️  MFTR ratings not found - using raw V2 ratings\n');
-    return;
+  
+  let mftrPathToUse = mftrRidgePath;
+  if (!fs.existsSync(mftrRidgePath)) {
+    if (!fs.existsSync(mftrPath)) {
+      console.log('   ⚠️  MFTR ratings not found - using raw V2 ratings\n');
+      return;
+    }
+    mftrPathToUse = mftrPath;
   }
   
-  const mftrContent = fs.readFileSync(mftrPath, 'utf-8');
+  const mftrContent = fs.readFileSync(mftrPathToUse, 'utf-8');
   const mftrLines = mftrContent.trim().split('\n').slice(1);
   mftrRatings = new Map<string, number>();
   
   for (const line of mftrLines) {
-    const [teamId, rating] = line.split(',');
-    mftrRatings.set(teamId, parseFloat(rating));
+    const parts = line.split(',');
+    const teamId = parts[0];
+    const rating = parseFloat(parts[1]);
+    mftrRatings.set(teamId, rating);
   }
   
   // Load blend config
@@ -310,7 +318,7 @@ async function loadMFTRAndBlend(): Promise<void> {
   const configContent = fs.readFileSync(configPath, 'utf-8');
   blendConfig = JSON.parse(configContent);
   
-  console.log(`   ✅ Loaded MFTR ratings (${mftrRatings.size} teams)`);
+  console.log(`   ✅ Loaded MFTR ratings (${mftrRatings.size} teams, ${mftrPathToUse.includes('ridge') ? 'ridge' : 'standard'} version)`);
   console.log(`   ✅ Loaded blend config (w=${blendConfig.optimalWeight.toFixed(2)})\n`);
 }
 
