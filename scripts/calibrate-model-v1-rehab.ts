@@ -1832,6 +1832,55 @@ async function generateReports(
     outlierRows.join('\n')
   );
   
+  // Also save as core_top_outliers.csv for Core
+  if (fitType === 'core') {
+    fs.writeFileSync(
+      path.join(reportsDir, `core_top_outliers.csv`),
+      outlierRows.join('\n')
+    );
+  }
+  
+  // 2d. 10-game sanity sheet (only for Core)
+  if (fitType === 'core' && validRows && validRows.length > 0) {
+    // Sample 10 games (mix of weeks and residuals)
+    const sanityGames: Array<{
+      gameId: string;
+      week: number;
+      marketHma: number;
+      predicted: number;
+      residual: number;
+      ratingBlend: number | null;
+      hfaPoints: number | null;
+    }> = [];
+    
+    for (let i = 0; i < Math.min(10, validRows.length); i++) {
+      const row = validRows[i];
+      if (row && predictions[i] !== 0 && isFinite(predictions[i])) {
+        sanityGames.push({
+          gameId: row.gameId,
+          week: row.week,
+          marketHma: y[i],
+          predicted: predictions[i],
+          residual: y[i] - predictions[i],
+          ratingBlend: row.ratingDiffV2,
+          hfaPoints: row.hfaPoints,
+        });
+      }
+    }
+    
+    const sanityRows = [
+      'game_id,week,market_hma,predicted,residual,rating_blend,hfa_points',
+      ...sanityGames.map(g => 
+        `${g.gameId},${g.week},${g.marketHma.toFixed(4)},${g.predicted.toFixed(4)},${g.residual.toFixed(4)},${g.ratingBlend?.toFixed(4) ?? 'null'},${g.hfaPoints?.toFixed(4) ?? 'null'}`
+      ),
+    ];
+    
+    fs.writeFileSync(
+      path.join(reportsDir, `core_10game_sanity.csv`),
+      sanityRows.join('\n')
+    );
+  }
+  
   // 3. Feature importance CSV
   const importanceRows = ['feature,standardized_coeff,original_coeff,abs_standardized'];
   const importances = Object.entries(result.coefficients)
