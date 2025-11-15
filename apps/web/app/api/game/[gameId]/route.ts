@@ -7,21 +7,25 @@
 import { prisma } from '@/lib/prisma';
 import { computeSpreadPick, computeTotalPick, convertToFavoriteCentric, computeATSEdge, computeBettableSpreadPick, computeTotalBetTo } from '@/lib/pick-helpers';
 import { pickMarketLine, getLineValue, getPointValue, looksLikePriceLeak, pickMoneyline, americanToProb } from '@/lib/market-line-helpers';
+import { getCoreV1SpreadFromTeams, getATSPick, computeATSEdgeHma } from '@/lib/core-v1-spread';
 import { NextResponse } from 'next/server';
 
-// === TRUST-MARKET MODE CONFIGURATION ===
+// === V1 MODE CONFIGURATION ===
+// V1: Use Core V1 OLS spread directly (no trust-market overlay, no totals)
+const USE_CORE_V1 = true; // V1 mode: Core V1 is single source of truth
+const SHOW_TOTALS_PICKS = false; // Totals disabled for V1
+
+// === LEGACY TRUST-MARKET MODE (disabled for V1) ===
 // Phase 1 Hotfix: Use market as baseline, apply small model overlays
-const MODEL_MODE = 'trust_market' as const; // Feature flag
-const LAMBDA_SPREAD = 0.25; // 25% weight to model for spreads
-const LAMBDA_TOTAL = 0.35; // 35% weight for totals
-const OVERLAY_CAP_SPREAD = 3.0; // ±3.0 pts max for spread overlay
-const OVERLAY_CAP_TOTAL = 3.0; // ±3.0 pts max for total overlay
+const MODEL_MODE = USE_CORE_V1 ? 'core_v1' : 'trust_market' as const;
+const LAMBDA_SPREAD = 0.25; // 25% weight to model for spreads (not used in V1)
+const LAMBDA_TOTAL = 0.35; // 35% weight for totals (not used in V1)
+const OVERLAY_CAP_SPREAD = 3.0; // ±3.0 pts max for spread overlay (not used in V1)
+const OVERLAY_CAP_TOTAL = 3.0; // ±3.0 pts max for total overlay (not used in V1)
 const OVERLAY_EDGE_FLOOR = 2.0; // Only show pick if overlay ≥ 2.0 pts
 const LARGE_DISAGREEMENT_THRESHOLD = 10.0; // Drop confidence grade if raw disagreement > 10 pts
 
 // === MINIMAL SAFETY PATCHES (Pre-Phase 2) ===
-// Totals: Disable picks until Phase 2.6 (pace + weather model)
-const SHOW_TOTALS_PICKS = false; // Set to true after Phase 2.6 completes
 // Moneyline guards
 const ML_MAX_SPREAD = 7.0; // Only consider ML if |finalSpreadWithOverlay| <= 7
 const EXTREME_FAVORITE_THRESHOLD = 21; // Never recommend dog ML if |market favorite line| >= 21
@@ -1582,18 +1586,50 @@ export async function GET(
       });
     }
     
-    // PHASE 2.4: Compute model spread using weighted ratings (if available)
-    // This takes precedence over matchupOutput to ensure we use recency-weighted ratings
-    const modelSpreadFromWeighted = (isFinite(homeRatingWeighted) && !isNaN(homeRatingWeighted) && 
-                                     isFinite(awayRatingWeighted) && !isNaN(awayRatingWeighted))
-      ? homeRatingWeighted - awayRatingWeighted + hfaUsed
-      : null;
-
-    // Use weighted spread if available, otherwise use matchupOutput or computedSpread
-    const finalImpliedSpread = modelSpreadFromWeighted ?? 
-                               ((isValidSpread ? matchupOutput.impliedSpread : null) ?? computedSpread);
+    // ============================================
+    // V1: CORE V1 SPREAD (Single Source of Truth)
+    // ============================================
+    let finalImpliedSpread: number | null = null;
+    let coreV1SpreadInfo: Awaited<ReturnType<typeof getCoreV1SpreadFromTeams>> | null = null;
     
-    // Initialize finalSpreadWithOverlay (will be updated later with Trust-Market overlay)
+    if (USE_CORE_V1) {
+      try {
+        // Get Core V1 spread
+        coreV1SpreadInfo = await getCoreV1SpreadFromTeams(
+          game.season,
+          game.homeTeamId,
+          game.awayTeamId,
+          game.neutralSite || false,
+          game.homeTeam.name,
+          game.awayTeam.name
+        );
+        
+        finalImpliedSpread = coreV1SpreadInfo.coreSpreadHma;
+        
+        console.log(`[Game ${gameId}] ✅ Core V1 spread computed:`, {
+          coreSpreadHma: finalImpliedSpread.toFixed(2),
+          favorite: coreV1SpreadInfo.favoriteName,
+          favoriteLine: coreV1SpreadInfo.favoriteLine,
+          ratingDiffBlend: coreV1SpreadInfo.ratingDiffBlend.toFixed(2),
+        });
+      } catch (error) {
+        console.error(`[Game ${gameId}] ❌ Core V1 spread computation failed:`, error);
+        finalImpliedSpread = null;
+      }
+    } else {
+      // Legacy: PHASE 2.4: Compute model spread using weighted ratings (if available)
+      // This takes precedence over matchupOutput to ensure we use recency-weighted ratings
+      const modelSpreadFromWeighted = (isFinite(homeRatingWeighted) && !isNaN(homeRatingWeighted) && 
+                                       isFinite(awayRatingWeighted) && !isNaN(awayRatingWeighted))
+        ? homeRatingWeighted - awayRatingWeighted + hfaUsed
+        : null;
+
+      // Use weighted spread if available, otherwise use matchupOutput or computedSpread
+      finalImpliedSpread = modelSpreadFromWeighted ?? 
+                                 ((isValidSpread ? matchupOutput.impliedSpread : null) ?? computedSpread);
+    }
+    
+    // Initialize finalSpreadWithOverlay (V1: no overlay, use Core V1 directly)
     let finalSpreadWithOverlay = finalImpliedSpread;
     
     // Never use matchupOutput.impliedTotal unless it passes the units handshake
@@ -2012,14 +2048,37 @@ export async function GET(
     let moneyline = null;
 
     // Convert spreads to favorite-centric format
-    // For market spread, use the favoriteByRule we computed (single source of truth)
-    const modelSpreadFC = convertToFavoriteCentric(
-      finalImpliedSpread,
-      game.homeTeamId,
-      game.homeTeam.name,
-      game.awayTeamId,
-      game.awayTeam.name
-    );
+    // V1: Use Core V1 spread info if available
+    // Legacy: Convert from HMA frame
+    let modelSpreadFC: {
+      favoriteTeamId: string;
+      favoriteTeamName: string;
+      favoriteSpread: number;
+      underdogTeamId: string;
+      underdogTeamName: string;
+      underdogSpread: number;
+    };
+    
+    if (USE_CORE_V1 && coreV1SpreadInfo) {
+      // V1: Use Core V1 favorite-centric info directly
+      modelSpreadFC = {
+        favoriteTeamId: coreV1SpreadInfo.favoriteTeamId,
+        favoriteTeamName: coreV1SpreadInfo.favoriteName,
+        favoriteSpread: coreV1SpreadInfo.favoriteSpread, // Already negative
+        underdogTeamId: coreV1SpreadInfo.dogTeamId,
+        underdogTeamName: coreV1SpreadInfo.dogName,
+        underdogSpread: coreV1SpreadInfo.dogSpread, // Already positive
+      };
+    } else {
+      // Legacy: Convert from HMA frame
+      modelSpreadFC = convertToFavoriteCentric(
+        finalImpliedSpread || 0,
+        game.homeTeamId,
+        game.homeTeam.name,
+        game.awayTeamId,
+        game.awayTeam.name
+      );
+    }
 
     // Use favoriteByRule for market spread to ensure correct team mapping
     // This ensures we use the "more negative price" rule consistently
@@ -2662,23 +2721,33 @@ export async function GET(
     });
     
     // ============================================
-    // TRUST-MARKET MODE: Spread Overlay Logic
+    // V1: CORE V1 SPREAD (No Overlay)
     // ============================================
-    // Use market as baseline, apply small model adjustment (±3.0 cap)
-    // This prevents catastrophic picks while still allowing model signals
+    // V1 uses Core V1 OLS spread directly, no trust-market overlay
     
-    const modelSpreadRaw = finalImpliedSpread; // Model's raw prediction (home-minus-away)
-    const rawSpreadDisagreement = Math.abs(modelSpreadRaw - marketSpread);
+    let spreadOverlay = 0;
+    let rawSpreadDisagreement = 0;
     
-    // Calculate overlay: clamp(λ × (model - market), -cap, +cap)
-    const spreadOverlay = clampOverlay(
-      LAMBDA_SPREAD * (modelSpreadRaw - marketSpread),
-      OVERLAY_CAP_SPREAD
-    );
-    
-    // Final spread = market baseline + overlay (home-minus-away)
-    // CRITICAL: This is home-minus-away, we'll convert to favorite-centric for spread_lineage
-    finalSpreadWithOverlay = marketSpread + spreadOverlay;
+    if (USE_CORE_V1 && finalImpliedSpread !== null && marketSpread !== null) {
+      // V1: Use Core V1 spread directly (no overlay)
+      finalSpreadWithOverlay = finalImpliedSpread;
+      rawSpreadDisagreement = Math.abs(finalImpliedSpread - marketSpread);
+      spreadOverlay = 0; // No overlay in V1
+    } else {
+      // Legacy: TRUST-MARKET MODE: Spread Overlay Logic
+      // Use market as baseline, apply small model adjustment (±3.0 cap)
+      const modelSpreadRaw = finalImpliedSpread; // Model's raw prediction (home-minus-away)
+      rawSpreadDisagreement = Math.abs(modelSpreadRaw - marketSpread);
+      
+      // Calculate overlay: clamp(λ × (model - market), -cap, +cap)
+      spreadOverlay = clampOverlay(
+        LAMBDA_SPREAD * (modelSpreadRaw - marketSpread),
+        OVERLAY_CAP_SPREAD
+      );
+      
+      // Final spread = market baseline + overlay (home-minus-away)
+      finalSpreadWithOverlay = marketSpread + spreadOverlay;
+    }
     
     // Convert to favorite-centric for single source of truth
     // If market favorite is home: finalSpreadWithOverlay is already negative (home favored)
@@ -2758,21 +2827,40 @@ export async function GET(
     // Check if we should degrade confidence due to large disagreement
     const shouldDegradeSpreadConfidence = rawSpreadDisagreement > LARGE_DISAGREEMENT_THRESHOLD;
     
-    console.log(`[Game ${gameId}] 🎯 Trust-Market Spread Overlay:`, {
-      modelSpreadRaw: modelSpreadRaw.toFixed(2),
-      marketSpread: marketSpread.toFixed(2),
-      rawDisagreement: rawSpreadDisagreement.toFixed(2),
-      lambda: LAMBDA_SPREAD,
-      overlayRaw: (LAMBDA_SPREAD * (modelSpreadRaw - marketSpread)).toFixed(2),
-      overlayCapped: spreadOverlay.toFixed(2),
-      finalSpread: finalSpreadWithOverlay.toFixed(2),
-      shouldDegradeConfidence: shouldDegradeSpreadConfidence,
-      mode: MODEL_MODE
-    });
+    if (USE_CORE_V1) {
+      console.log(`[Game ${gameId}] 🎯 Core V1 Spread (No Overlay):`, {
+        coreSpreadHma: finalImpliedSpread !== null ? finalImpliedSpread.toFixed(2) : 'null',
+        marketSpreadHma: marketSpread !== null ? marketSpread.toFixed(2) : 'null',
+        rawDisagreement: rawSpreadDisagreement.toFixed(2),
+        atsEdge: atsEdge.toFixed(2),
+        finalSpread: finalSpreadWithOverlay !== null ? finalSpreadWithOverlay.toFixed(2) : 'null',
+        mode: MODEL_MODE
+      });
+    } else {
+      console.log(`[Game ${gameId}] 🎯 Trust-Market Spread Overlay:`, {
+        modelSpreadRaw: finalImpliedSpread !== null ? finalImpliedSpread.toFixed(2) : 'null',
+        marketSpread: marketSpread !== null ? marketSpread.toFixed(2) : 'null',
+        rawDisagreement: rawSpreadDisagreement.toFixed(2),
+        lambda: LAMBDA_SPREAD,
+        overlayRaw: (LAMBDA_SPREAD * ((finalImpliedSpread || 0) - (marketSpread || 0))).toFixed(2),
+        overlayCapped: spreadOverlay.toFixed(2),
+        finalSpread: finalSpreadWithOverlay !== null ? finalSpreadWithOverlay.toFixed(2) : 'null',
+        shouldDegradeConfidence: shouldDegradeSpreadConfidence,
+        mode: MODEL_MODE
+      });
+    }
 
-    // Calculate ATS edge - in Trust-Market mode, the edge IS the overlay (not model - market)
-    // The overlay represents how much value we see at the current market number
-    const atsEdge = spreadOverlay; // Edge is the overlay value
+    // Calculate ATS edge
+    // V1: Direct edge = modelSpreadHma - marketSpreadHma
+    // Legacy: Edge = overlay value
+    let atsEdge: number;
+    if (USE_CORE_V1 && finalImpliedSpread !== null && marketSpread !== null) {
+      // V1: Direct edge in HMA frame
+      atsEdge = computeATSEdgeHma(finalImpliedSpread, marketSpread);
+    } else {
+      // Legacy: In Trust-Market mode, the edge IS the overlay
+      atsEdge = spreadOverlay;
+    }
     const atsEdgeAbs = Math.abs(atsEdge);
     
     // ============================================
