@@ -223,7 +223,14 @@ export async function GET(request: NextRequest) {
         homeScore: game.homeScore,
         closingSpread,
         closingTotal,
-        hasOdds // Indicate if this game has odds data
+        hasOdds, // Indicate if this game has odds data
+        // Initialize model fields to null (will be populated by Core V1 computation)
+        modelSpread: null,
+        modelTotal: null,
+        pickSpread: null,
+        pickTotal: null,
+        maxEdge: null,
+        confidence: null,
       };
 
       slateGames.push(slateGame);
@@ -238,7 +245,10 @@ export async function GET(request: NextRequest) {
         try {
           // Get full game info for team names and neutral site
           const fullGame = finalGamesToInclude.find(g => g.id === game.gameId);
-          if (!fullGame) continue;
+          if (!fullGame) {
+            console.warn(`[Slate API] Game ${game.gameId} not found in finalGamesToInclude, skipping Core V1 computation`);
+            continue;
+          }
 
           // Get Core V1 spread
           const coreSpreadInfo = await getCoreV1SpreadFromTeams(
@@ -298,21 +308,24 @@ export async function GET(request: NextRequest) {
           game.maxEdge = maxEdge !== null ? Math.round(maxEdge * 10) / 10 : null;
           game.confidence = confidence;
         } catch (error) {
-          console.error(`Error computing Core V1 spread for game ${game.gameId}:`, error);
-          // Set to null on error
-          game.modelSpread = null;
-          game.modelTotal = null;
-          game.pickSpread = null;
-          game.pickTotal = null;
-          game.maxEdge = null;
-          game.confidence = null;
+          console.error(`[Slate API] Error computing Core V1 spread for game ${game.gameId}:`, error);
+          // Fields are already initialized to null, so we don't need to set them again
+          // But log the error for debugging
+          if (error instanceof Error) {
+            console.error(`[Slate API] Error details: ${error.message}`, error.stack);
+          }
         }
       }
       
-      console.log(`   Computed Core V1 projections for slate games`);
+      const gamesWithModelData = slateGames.filter(g => g.modelSpread !== null).length;
+      console.log(`   Computed Core V1 projections for ${gamesWithModelData} of ${slateGames.length} games`);
     } catch (error) {
-      console.warn('   Failed to compute Core V1 projections:', error);
+      console.error('   Failed to compute Core V1 projections:', error);
+      if (error instanceof Error) {
+        console.error('   Error details:', error.message, error.stack);
+      }
       // Continue without model data rather than failing
+      // Fields are already initialized to null, so games will show "—" in UI
     }
 
     // Determine cache headers based on game status

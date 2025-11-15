@@ -1606,15 +1606,26 @@ export async function GET(
         
         finalImpliedSpread = coreV1SpreadInfo.coreSpreadHma;
         
-        console.log(`[Game ${gameId}] ✅ Core V1 spread computed:`, {
-          coreSpreadHma: finalImpliedSpread.toFixed(2),
-          favorite: coreV1SpreadInfo.favoriteName,
-          favoriteLine: coreV1SpreadInfo.favoriteLine,
-          ratingDiffBlend: coreV1SpreadInfo.ratingDiffBlend.toFixed(2),
-        });
+        if (finalImpliedSpread !== null && !isNaN(finalImpliedSpread) && isFinite(finalImpliedSpread)) {
+          console.log(`[Game ${gameId}] ✅ Core V1 spread computed:`, {
+            coreSpreadHma: finalImpliedSpread.toFixed(2),
+            favorite: coreV1SpreadInfo.favoriteName,
+            favoriteLine: coreV1SpreadInfo.favoriteLine,
+            ratingDiffBlend: coreV1SpreadInfo.ratingDiffBlend?.toFixed(2) ?? 'N/A',
+          });
+        } else {
+          console.error(`[Game ${gameId}] ❌ Core V1 spread is invalid:`, finalImpliedSpread);
+          finalImpliedSpread = null;
+          coreV1SpreadInfo = null;
+        }
       } catch (error) {
         console.error(`[Game ${gameId}] ❌ Core V1 spread computation failed:`, error);
+        if (error instanceof Error) {
+          console.error(`[Game ${gameId}] Error details: ${error.message}`, error.stack);
+        }
         finalImpliedSpread = null;
+        // Ensure coreV1SpreadInfo is null on error
+        coreV1SpreadInfo = null;
       }
     } else {
       // Legacy: PHASE 2.4: Compute model spread using weighted ratings (if available)
