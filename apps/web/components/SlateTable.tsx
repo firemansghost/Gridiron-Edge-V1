@@ -524,6 +524,21 @@ export default function SlateTable({
       if (!response.ok) throw new Error('Failed to fetch slate');
       
       const data = await response.json();
+      
+      // Dev logging
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[CoreV1 Slate] Received games:', data.length);
+        data.slice(0, 3).forEach((game: SlateGame) => {
+          console.log('[CoreV1 Slate Row]', {
+            matchup: `${game.awayTeamId} @ ${game.homeTeamId}`,
+            modelSpread: game.modelSpread,
+            pickSpread: game.pickSpread,
+            maxEdge: game.maxEdge,
+            confidence: game.confidence,
+          });
+        });
+      }
+      
       setGames(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -1345,18 +1360,30 @@ export default function SlateTable({
                       <>
                         <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
                           <div className="text-sm text-gray-900">
-                            {game.modelSpread !== null && game.modelSpread !== undefined ? game.modelSpread.toFixed(1) : '—'}
+                            {Number.isFinite(game.modelSpread) ? game.modelSpread!.toFixed(1) : '—'}
                           </div>
+                          {process.env.NODE_ENV !== 'production' && (
+                            <div className="text-xs text-gray-400">
+                              {game.modelSpread !== null && game.modelSpread !== undefined 
+                                ? `raw: ${game.modelSpread}, finite: ${Number.isFinite(game.modelSpread)}` 
+                                : 'null/undefined'}
+                            </div>
+                          )}
                         </td>
                         <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
                           <div className="text-sm text-gray-900">
-                            {game.modelTotal !== null && game.modelTotal !== undefined ? game.modelTotal.toFixed(1) : '—'}
+                            {Number.isFinite(game.modelTotal) ? game.modelTotal!.toFixed(1) : '—'}
                           </div>
                         </td>
                         <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
                           <div className="text-sm text-gray-900">
                             {game.pickSpread || '—'}
                           </div>
+                          {process.env.NODE_ENV !== 'production' && (
+                            <div className="text-xs text-gray-400">
+                              pickSpread: {game.pickSpread ?? 'null/undefined'}
+                            </div>
+                          )}
                         </td>
                         <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
                           <div className="text-sm text-gray-900">
@@ -1365,8 +1392,15 @@ export default function SlateTable({
                         </td>
                         <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
                           <div className="text-sm text-gray-900">
-                            {game.maxEdge !== null && game.maxEdge !== undefined ? game.maxEdge.toFixed(1) : '—'}
+                            {Number.isFinite(game.maxEdge) ? game.maxEdge!.toFixed(1) : '—'}
                           </div>
+                          {process.env.NODE_ENV !== 'production' && (
+                            <div className="text-xs text-gray-400">
+                              {game.maxEdge !== null && game.maxEdge !== undefined 
+                                ? `raw: ${game.maxEdge}, finite: ${Number.isFinite(game.maxEdge)}` 
+                                : 'null/undefined'}
+                            </div>
+                          )}
                         </td>
                         <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
                           <div className="text-sm text-gray-900">

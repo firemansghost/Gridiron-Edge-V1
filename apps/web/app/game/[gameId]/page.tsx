@@ -210,6 +210,20 @@ export default function GameDetailPage() {
   const ouEdgeMagnitude = Math.abs(ouEdgeForDisplay);
   const atsEdgeSign = atsEdgeValue ?? 0;
   const ouEdgeSign = ouEdgeValue ?? 0;
+  
+  // Core V1 availability check - use modelFavoriteLine directly
+  const modelFavoriteLine = modelView?.modelFavoriteLine;
+  const hasCoreV1Spread = Number.isFinite(modelFavoriteLine);
+  
+  // Dev logging
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[CoreV1 Game Detail]', {
+      modelFavoriteLine,
+      hasCoreV1Spread,
+      atsEdgePts: modelView?.edges?.atsEdgePts,
+      validation: game.validation,
+    });
+  }
   const atsValueSide = atsEdgeValue !== null
     ? (atsEdgeValue > 0.5 ? 'dog' : atsEdgeValue < -0.5 ? 'favorite' : null)
     : null;
@@ -662,8 +676,8 @@ export default function GameDetailPage() {
             )}
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Spread Card - Independent Validation */}
-              {game.validation?.ats_inputs_ok ? (
+              {/* Spread Card - Core V1 Availability Check */}
+              {hasCoreV1Spread ? (
                 game.picks?.spread?.grade && game.picks?.spread?.bettablePick ? (
                   <div className="bg-white border-2 border-blue-300 rounded-lg p-4 shadow-sm">
                     <div className="flex items-center justify-between mb-3">
@@ -1304,8 +1318,8 @@ export default function GameDetailPage() {
                     <InfoTooltip content={TOOLTIP_CONTENT.MODEL_FAVORITE} />
                   </div>
                   <div className="text-lg font-semibold text-gray-900">
-                    {modelView?.modelFavoriteName && modelView?.modelFavoriteLine !== null 
-                      ? `Model favorite: ${modelView.modelFavoriteName} ${modelView.modelFavoriteLine.toFixed(1)}` 
+                    {hasCoreV1Spread && modelView?.modelFavoriteName
+                      ? `Model favorite: ${modelView.modelFavoriteName} ${modelView.modelFavoriteLine!.toFixed(1)}` 
                       : '—'}
                   </div>
                 </div>

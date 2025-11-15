@@ -2691,9 +2691,12 @@ export async function GET(
     // We just need to know if the MODEL total is valid for computing overlay
     
     // ATS validation: Do we have a valid model spread?
-    const ats_inputs_ok = finalImpliedSpread !== null && 
-                          !isNaN(finalImpliedSpread) && 
-                          isFinite(finalImpliedSpread);
+    // When USE_CORE_V1 is true, check Core V1 spread directly
+    const ats_inputs_ok = USE_CORE_V1 && coreV1SpreadInfo
+      ? Number.isFinite(coreV1SpreadInfo.coreSpreadHma)
+      : (finalImpliedSpread !== null && 
+         !isNaN(finalImpliedSpread) && 
+         isFinite(finalImpliedSpread));
     
     // OU model validation: Is the model total valid (numeric, in points)?
     const ou_model_valid = finalImpliedTotal !== null && 
