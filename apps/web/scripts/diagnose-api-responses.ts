@@ -6,6 +6,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { NextRequest } from 'next/server';
 
 const prisma = new PrismaClient();
 
@@ -25,7 +26,7 @@ async function diagnoseSlateAPI() {
   url.searchParams.set('season', '2025');
   url.searchParams.set('week', '12');
   
-  const request = new Request(url.toString());
+  const request = new NextRequest(url.toString());
   
   try {
     const response = await GET(request);
@@ -148,7 +149,7 @@ async function diagnoseGameDetailAPI() {
   const { GET } = await import('../app/api/game/[gameId]/route');
   
   // Create a request
-  const request = new Request(`http://localhost/api/game/${game.id}`);
+  const request = new NextRequest(`http://localhost/api/game/${game.id}`);
   const params = { gameId: game.id };
   
   try {

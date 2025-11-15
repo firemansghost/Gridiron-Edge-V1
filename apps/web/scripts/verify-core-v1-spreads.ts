@@ -9,6 +9,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { NextRequest } from 'next/server';
 
 const prisma = new PrismaClient();
 
@@ -95,7 +96,7 @@ async function getSlateData(season: number, week: number): Promise<SlateGame[]> 
   url.searchParams.set('season', season.toString());
   url.searchParams.set('week', week.toString());
   
-  const request = new Request(url.toString());
+  const request = new NextRequest(url.toString());
   
   try {
     const response = await GET(request);
@@ -136,7 +137,7 @@ async function getGameDetail(gameId: string): Promise<{
   const { GET } = await import('../app/api/game/[gameId]/route');
   
   // Create a request
-  const request = new Request(`http://localhost/api/game/${gameId}`);
+  const request = new NextRequest(`http://localhost/api/game/${gameId}`);
   const params = { gameId };
   
   try {
