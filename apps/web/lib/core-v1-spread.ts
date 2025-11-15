@@ -50,9 +50,17 @@ function loadBlendConfig(): BlendConfig | null {
     return cachedBlendConfig;
   }
 
-  const configPath = path.join(process.cwd(), 'reports', 'rating_blend_config.json');
+  // Handle both running from project root and from apps/web
+  let configPath = path.join(process.cwd(), 'reports', 'rating_blend_config.json');
+  
   if (!fs.existsSync(configPath)) {
-    return null;
+    // Try from project root (if running from apps/web)
+    const projectRootPath = path.join(process.cwd(), '..', '..', 'reports', 'rating_blend_config.json');
+    if (fs.existsSync(projectRootPath)) {
+      configPath = projectRootPath;
+    } else {
+      return null;
+    }
   }
 
   const content = fs.readFileSync(configPath, 'utf-8');
@@ -68,9 +76,17 @@ function loadMFTRRatings(): Map<string, number> | null {
     return cachedMFTRRatings;
   }
 
-  const mftrPath = path.join(process.cwd(), 'reports', 'mftr_ratings_ridge.csv');
+  // Handle both running from project root and from apps/web
+  let mftrPath = path.join(process.cwd(), 'reports', 'mftr_ratings_ridge.csv');
+  
   if (!fs.existsSync(mftrPath)) {
-    return null;
+    // Try from project root (if running from apps/web)
+    const projectRootPath = path.join(process.cwd(), '..', '..', 'reports', 'mftr_ratings_ridge.csv');
+    if (fs.existsSync(projectRootPath)) {
+      mftrPath = projectRootPath;
+    } else {
+      return null;
+    }
   }
 
   const content = fs.readFileSync(mftrPath, 'utf-8');
@@ -149,10 +165,17 @@ function loadCoreCoefficients(): CoreCoefficients {
   }
 
   // Try to load from reports directory (relative to project root)
-  const reportsPath = path.join(process.cwd(), 'reports', 'core_coefficients_2025_fe_v1.json');
+  // Handle both running from project root and from apps/web
+  let reportsPath = path.join(process.cwd(), 'reports', 'core_coefficients_2025_fe_v1.json');
   
   if (!fs.existsSync(reportsPath)) {
-    throw new Error(`Core V1 coefficients not found at ${reportsPath}. Please run Core calibration first.`);
+    // Try from project root (if running from apps/web)
+    const projectRootPath = path.join(process.cwd(), '..', '..', 'reports', 'core_coefficients_2025_fe_v1.json');
+    if (fs.existsSync(projectRootPath)) {
+      reportsPath = projectRootPath;
+    } else {
+      throw new Error(`Core V1 coefficients not found at ${reportsPath} or ${projectRootPath}. Please run Core calibration first.`);
+    }
   }
 
   const content = fs.readFileSync(reportsPath, 'utf-8');
