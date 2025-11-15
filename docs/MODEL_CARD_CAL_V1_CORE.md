@@ -5,7 +5,7 @@
 - **Fit Type**: core
 - **Season**: 2025
 - **Feature Version**: fe_v1
-- **Training Date**: 2025-11-13T23:29:33.968Z
+- **Training Date**: 2025-11-15T14:53:41.248Z
 - **Random Seed**: 42
 
 ## Data
@@ -15,30 +15,25 @@
 - **Feature Frame**: Home-minus-away (HMA) diffs
 
 ## Features
-- ratingDiffV2
+- ratingDiffBlend
 - hfaPoints
-- neutralSite
-- p5VsG5
-- absRatingDiffV2
-- hinge7
-- hinge14
 
 ## Hyperparameters
-- **Alpha (λ)**: 0.0001
+- **Alpha (λ)**: 0
 - **L1 Ratio**: 0
 - **Hinge14**: Excluded
-- **Post-hoc Calibration Head**: ŷ* = -1.1098 + -0.0698 * ŷ
+
 
 ## Performance Metrics (Walk-Forward)
-- **RMSE**: 14.6541 (target: ≤8.8)
-- **R²**: -0.4920
-- **Pearson**: 0.0417 (target: ≥0.30)
-- **Spearman**: 0.0659 (target: ≥0.30)
+- **RMSE**: 10.3061 (target: ≤8.8)
+- **R²**: 0.2219
+- **Pearson**: 0.4711 (target: ≥0.30)
+- **Spearman**: 0.5104 (target: ≥0.30)
 - **Slope**: 1.0000 (target: 0.90-1.10)
-- **Sign Agreement**: 52.6% (target: ≥70%)
+- **Sign Agreement**: 69.5% (target: ≥70%)
 
 ## Gate Results
-❌ **GATES FAILED**
+✅ **ALL GATES PASSED**
 
 ## Limitations
 - Model trained on 2025 season data only
@@ -47,11 +42,11 @@
 - Model assumes pre-kick consensus spreads are available
 
 ## Coefficient Sanity
-- β(rating_diff): 0.7657 (target: >0) ✅
-- β(hfa_points): 0.0631 (target: >0) ✅
+- β(rating_diff): 2.2067 (target: >0) ✅
+- β(hfa_points): 0.0000 (target: >0) ❌
 
 ## Residual Diagnostics
-- **0-7 bucket**: -0.12 (target: |mean| ≤ 2.0) ✅
-- **7-14 bucket**: -0.05 (target: |mean| ≤ 2.0) ✅
-- **14-28 bucket**: -2.47 (target: |mean| ≤ 2.0) ❌
-- **>28 bucket**: 9.06 (target: |mean| ≤ 2.0) ❌
+- **0-7 bucket**: 0.21 (target: |mean| ≤ 2.0) ✅
+- **7-14 bucket**: -1.31 (target: |mean| ≤ 2.0) ✅
+- **14-28 bucket**: 1.60 (target: |mean| ≤ 2.0) ✅
+- **>28 bucket**: 10.82 (target: |mean| ≤ 2.0) ❌
