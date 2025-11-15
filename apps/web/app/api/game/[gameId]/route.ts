@@ -2034,14 +2034,15 @@ export async function GET(
 
     // CRITICAL FIX: Determine model favorite from finalSpreadWithOverlay (not win prob)
     // finalSpreadWithOverlay < 0 means home is favored
-    const modelMLFavorite = finalSpreadWithOverlay < 0 ? game.homeTeam : game.awayTeam;
-    const modelMLFavoriteProb = finalSpreadWithOverlay < 0 ? modelHomeWinProb : modelAwayWinProb;
-    const modelMLFavoriteFairML = finalSpreadWithOverlay < 0 ? modelFairMLHome : modelFairMLAway;
+    // Handle null case: default to home if spread is null
+    const modelMLFavorite = (finalSpreadWithOverlay ?? 0) < 0 ? game.homeTeam : game.awayTeam;
+    const modelMLFavoriteProb = (finalSpreadWithOverlay ?? 0) < 0 ? modelHomeWinProb : modelAwayWinProb;
+    const modelMLFavoriteFairML = (finalSpreadWithOverlay ?? 0) < 0 ? modelFairMLHome : modelFairMLAway;
     
     // Model underdog for ML
-    const modelMLDog = finalSpreadWithOverlay < 0 ? game.awayTeam : game.homeTeam;
-    const modelMLDogProb = finalSpreadWithOverlay < 0 ? modelAwayWinProb : modelHomeWinProb;
-    const modelMLDogFairML = finalSpreadWithOverlay < 0 ? modelFairMLAway : modelFairMLHome;
+    const modelMLDog = (finalSpreadWithOverlay ?? 0) < 0 ? game.awayTeam : game.homeTeam;
+    const modelMLDogProb = (finalSpreadWithOverlay ?? 0) < 0 ? modelAwayWinProb : modelHomeWinProb;
+    const modelMLDogFairML = (finalSpreadWithOverlay ?? 0) < 0 ? modelFairMLAway : modelFairMLHome;
 
     // Calculate moneyline value and grade (deferred until after moneyline variables are set)
     // This will be computed after moneylineFavoritePrice and moneylineDogPrice are determined
@@ -2284,7 +2285,7 @@ export async function GET(
       const isExtremeFavoriteGame = Math.abs(favoriteByRule.line) >= EXTREME_FAVORITE_THRESHOLD;
       
       // Check if overlay-adjusted spread is within ML range
-      const spreadWithinMLRange = Math.abs(finalSpreadWithOverlay) <= ML_MAX_SPREAD;
+      const spreadWithinMLRange = finalSpreadWithOverlay !== null && Math.abs(finalSpreadWithOverlay) <= ML_MAX_SPREAD;
       
       // Determine which team's probability to compare
       // Compare model's favorite probability vs market's favorite probability
@@ -2303,35 +2304,40 @@ export async function GET(
         
         // 1. Spread range guard: Only consider ML if |finalSpreadWithOverlay| <= 7
         // This must be checked FIRST before any value calculations
-        const absFinal = Math.abs(finalSpreadWithOverlay);
-        if (absFinal > ML_MAX_SPREAD) {
-          mlSuppressionReason = `Spread too wide after overlay (${finalSpreadWithOverlay.toFixed(1)} pts)`;
+        if (finalSpreadWithOverlay === null) {
+          mlSuppressionReason = 'Model spread unavailable';
           moneylinePickTeam = null;
-          moneylinePickPrice = null;
-          valuePercent = null;
-          console.log(`[Game ${gameId}] 🚫 ML suppressed (spread out of range):`, {
-            finalSpreadWithOverlay: finalSpreadWithOverlay.toFixed(2),
-            absFinal: absFinal.toFixed(2),
-            maxSpread: ML_MAX_SPREAD,
-            reason: mlSuppressionReason
-          });
-        }
-        // 2. Extreme favorite guard: Never recommend dog ML if |market favorite line| >= 21
-        else if (isExtremeFavoriteGame) {
-          mlSuppressionReason = `Extreme favorite: ML suppressed (market spread ${Math.abs(favoriteByRule.line).toFixed(1)} pts)`;
-          moneylinePickTeam = null;
-          moneylinePickPrice = null;
-          valuePercent = null;
-          console.log(`[Game ${gameId}] 🚫 ML suppressed (extreme favorite):`, {
-            marketSpread: favoriteByRule.line,
-            reason: mlSuppressionReason
-          });
-        }
-        // Only calculate value if guards pass
-        else {
+        } else {
+          const absFinal = Math.abs(finalSpreadWithOverlay);
+          if (absFinal > ML_MAX_SPREAD) {
+            mlSuppressionReason = `Spread too wide after overlay (${finalSpreadWithOverlay.toFixed(1)} pts)`;
+            moneylinePickTeam = null;
+            moneylinePickPrice = null;
+            valuePercent = null;
+            console.log(`[Game ${gameId}] 🚫 ML suppressed (spread out of range):`, {
+              finalSpreadWithOverlay: finalSpreadWithOverlay.toFixed(2),
+              absFinal: absFinal.toFixed(2),
+              maxSpread: ML_MAX_SPREAD,
+              reason: mlSuppressionReason
+            });
+          }
+          // 2. Extreme favorite guard: Never recommend dog ML if |market favorite line| >= 21
+          else if (isExtremeFavoriteGame) {
+            mlSuppressionReason = `Extreme favorite: ML suppressed (market spread ${Math.abs(favoriteByRule.line).toFixed(1)} pts)`;
+            moneylinePickTeam = null;
+            moneylinePickPrice = null;
+            valuePercent = null;
+            console.log(`[Game ${gameId}] 🚫 ML suppressed (extreme favorite):`, {
+              marketSpread: favoriteByRule.line,
+              reason: mlSuppressionReason
+            });
+          }
+          // Only calculate value if guards pass
+          else {
           // CRITICAL FIX: Determine model favorite/dog from finalSpreadWithOverlay (not market favorite)
           // finalSpreadWithOverlay < 0 means home is favored, > 0 means away is favored
-          const modelFavorsHome = finalSpreadWithOverlay < 0;
+          // We know finalSpreadWithOverlay is not null here due to the check above
+          const modelFavorsHome = finalSpreadWithOverlay! < 0;
           const modelFavTeamId = modelFavorsHome ? game.homeTeamId : game.awayTeamId;
           const modelFavTeamName = modelFavorsHome ? game.homeTeam.name : game.awayTeam.name;
           const modelDogTeamId = modelFavorsHome ? game.awayTeamId : game.homeTeamId;
@@ -2427,8 +2433,8 @@ export async function GET(
             valuePercent = null;
             mlSuppressionReason = 'No positive value on either side';
           }
-        }
-        } // Close the "else" block that calculates value (line 1872)
+          } // Close the "else" block that calculates value (line 2336)
+        } // Close the "else" block from line 2310 (when finalSpreadWithOverlay is not null)
         
         // Grade thresholds: A ≥ 4%, B ≥ 2.5%, C ≥ 1.5%
         // Only grade if we have a pick
@@ -2459,7 +2465,7 @@ export async function GET(
             ? Math.round(-100 * pickedTeamModelProb / (1 - pickedTeamModelProb))
             : Math.round(100 * (1 - pickedTeamModelProb) / pickedTeamModelProb);
         }
-      }
+      } // Close if (marketMLFavProb !== null && moneylinePickTeam !== null)
 
       const moneylinePickLabel = moneylinePickTeam ? `${moneylinePickTeam} ML` : null;
       
@@ -2506,6 +2512,7 @@ export async function GET(
           extreme_favorite_threshold: EXTREME_FAVORITE_THRESHOLD
         }
       };
+      } // Close if (marketMLFavProb !== null) from line 2298
     } else if (mlVal !== null) {
       // Fallback: Use mlVal if moneyline variables weren't set
       const marketMLFavProb = americanToProb(mlVal)!;
@@ -2727,34 +2734,59 @@ export async function GET(
     
     let spreadOverlay = 0;
     let rawSpreadDisagreement = 0;
+    let modelSpreadRaw: number | null = null;
+    
+    // Convert marketSpread (favorite-centric, negative) to HMA format for edge calculation
+    // If favorite is home: marketSpread is already negative (HMA format)
+    // If favorite is away: marketSpread is negative, so HMA format = -marketSpread (positive)
+    const marketSpreadHma = marketSpread !== null
+      ? (favoriteByRule.teamId === game.homeTeamId
+          ? marketSpread  // Home is favorite, already in HMA format (negative)
+          : -marketSpread) // Away is favorite, flip sign to HMA format (positive)
+      : null;
+    
+    // Compute ATS edge in HMA frame
+    let atsEdge = 0;
+    if (USE_CORE_V1 && finalImpliedSpread !== null && marketSpreadHma !== null) {
+      atsEdge = computeATSEdgeHma(finalImpliedSpread, marketSpreadHma);
+    } else if (finalImpliedSpread !== null && marketSpreadHma !== null) {
+      // Legacy mode: compute edge from raw spread
+      atsEdge = computeATSEdgeHma(finalImpliedSpread, marketSpreadHma);
+    }
+    const atsEdgeAbs = Math.abs(atsEdge);
     
     if (USE_CORE_V1 && finalImpliedSpread !== null && marketSpread !== null) {
       // V1: Use Core V1 spread directly (no overlay)
       finalSpreadWithOverlay = finalImpliedSpread;
-      rawSpreadDisagreement = Math.abs(finalImpliedSpread - marketSpread);
+      rawSpreadDisagreement = Math.abs(finalImpliedSpread - marketSpreadHma!);
       spreadOverlay = 0; // No overlay in V1
     } else {
       // Legacy: TRUST-MARKET MODE: Spread Overlay Logic
       // Use market as baseline, apply small model adjustment (±3.0 cap)
-      const modelSpreadRaw = finalImpliedSpread; // Model's raw prediction (home-minus-away)
-      rawSpreadDisagreement = Math.abs(modelSpreadRaw - marketSpread);
-      
-      // Calculate overlay: clamp(λ × (model - market), -cap, +cap)
-      spreadOverlay = clampOverlay(
-        LAMBDA_SPREAD * (modelSpreadRaw - marketSpread),
-        OVERLAY_CAP_SPREAD
-      );
-      
-      // Final spread = market baseline + overlay (home-minus-away)
-      finalSpreadWithOverlay = marketSpread + spreadOverlay;
+      if (finalImpliedSpread !== null && marketSpread !== null && marketSpreadHma !== null) {
+        modelSpreadRaw = finalImpliedSpread; // Model's raw prediction (home-minus-away)
+        rawSpreadDisagreement = Math.abs(modelSpreadRaw - marketSpreadHma);
+        
+        // Calculate overlay: clamp(λ × (model - market), -cap, +cap)
+        // Both modelSpreadRaw and marketSpreadHma are in HMA format
+        spreadOverlay = clampOverlay(
+          LAMBDA_SPREAD * (modelSpreadRaw - marketSpreadHma),
+          OVERLAY_CAP_SPREAD
+        );
+        
+        // Final spread = market baseline + overlay (home-minus-away)
+        finalSpreadWithOverlay = marketSpreadHma + spreadOverlay;
+      }
     }
     
     // Convert to favorite-centric for single source of truth
     // If market favorite is home: finalSpreadWithOverlay is already negative (home favored)
     // If market favorite is away: finalSpreadWithOverlay is positive, need to flip sign
-    const finalSpreadWithOverlayFC = favoriteByRule.teamId === game.homeTeamId
-      ? finalSpreadWithOverlay  // Home is favorite, spread is already negative
-      : -finalSpreadWithOverlay; // Away is favorite, flip sign to make favorite-centric
+    const finalSpreadWithOverlayFC = finalSpreadWithOverlay !== null
+      ? (favoriteByRule.teamId === game.homeTeamId
+          ? finalSpreadWithOverlay  // Home is favorite, spread is already negative
+          : -finalSpreadWithOverlay) // Away is favorite, flip sign to make favorite-centric
+      : 0;
     
     // CRITICAL: Now compute ML calc_basis with finalSpreadWithOverlayFC available
     if (moneyline !== null) {
@@ -2838,30 +2870,17 @@ export async function GET(
       });
     } else {
       console.log(`[Game ${gameId}] 🎯 Trust-Market Spread Overlay:`, {
-        modelSpreadRaw: finalImpliedSpread !== null ? finalImpliedSpread.toFixed(2) : 'null',
+        modelSpreadRaw: modelSpreadRaw !== null ? modelSpreadRaw.toFixed(2) : 'null',
         marketSpread: marketSpread !== null ? marketSpread.toFixed(2) : 'null',
         rawDisagreement: rawSpreadDisagreement.toFixed(2),
         lambda: LAMBDA_SPREAD,
-        overlayRaw: (LAMBDA_SPREAD * ((finalImpliedSpread || 0) - (marketSpread || 0))).toFixed(2),
+        overlayRaw: modelSpreadRaw !== null && marketSpread !== null ? (LAMBDA_SPREAD * (modelSpreadRaw - marketSpread)).toFixed(2) : 'null',
         overlayCapped: spreadOverlay.toFixed(2),
         finalSpread: finalSpreadWithOverlay !== null ? finalSpreadWithOverlay.toFixed(2) : 'null',
         shouldDegradeConfidence: shouldDegradeSpreadConfidence,
         mode: MODEL_MODE
       });
     }
-
-    // Calculate ATS edge
-    // V1: Direct edge = modelSpreadHma - marketSpreadHma
-    // Legacy: Edge = overlay value
-    let atsEdge: number;
-    if (USE_CORE_V1 && finalImpliedSpread !== null && marketSpread !== null) {
-      // V1: Direct edge in HMA frame
-      atsEdge = computeATSEdgeHma(finalImpliedSpread, marketSpread);
-    } else {
-      // Legacy: In Trust-Market mode, the edge IS the overlay
-      atsEdge = spreadOverlay;
-    }
-    const atsEdgeAbs = Math.abs(atsEdge);
     
     // ============================================
     // RANGE LOGIC: Bet-To and Flip Point (Trust-Market)
@@ -2893,13 +2912,15 @@ export async function GET(
       : null;
 
     // Compute spread pick details (favorite-centric) - this is the model's favorite
-    const spreadPick = computeSpreadPick(
-      finalImpliedSpread,
-      game.homeTeam.name,
-      game.awayTeam.name,
-      game.homeTeamId,
-      game.awayTeamId
-    );
+    const spreadPick = finalImpliedSpread !== null
+      ? computeSpreadPick(
+          finalImpliedSpread,
+          game.homeTeam.name,
+          game.awayTeam.name,
+          game.homeTeamId,
+          game.awayTeamId
+        )
+      : null;
 
     // ============================================
     // MODEL TOTAL VALIDATION GATES (PART B)
@@ -2935,10 +2956,10 @@ export async function GET(
     const spreadValidForConsistency = finalImpliedSpread !== null && 
                                       finalImpliedSpread >= -50 && 
                                       finalImpliedSpread <= 50;
-    const impliedHomeScoreForCheck = spreadValidForConsistency && finalImpliedTotal !== null
+    const impliedHomeScoreForCheck = spreadValidForConsistency && finalImpliedTotal !== null && finalImpliedSpread !== null
       ? (finalImpliedTotal + finalImpliedSpread) / 2
       : null;
-    const impliedAwayScoreForCheck = spreadValidForConsistency && finalImpliedTotal !== null
+    const impliedAwayScoreForCheck = spreadValidForConsistency && finalImpliedTotal !== null && finalImpliedSpread !== null
       ? (finalImpliedTotal - finalImpliedSpread) / 2
       : null;
     const consistencyDelta = impliedHomeScoreForCheck !== null && impliedAwayScoreForCheck !== null && finalImpliedTotal !== null
@@ -3832,11 +3853,11 @@ export async function GET(
     
     // 7. Validate Favorite Identity Consistency
     // Model and market should favor the same team (or at least be consistent)
-    const modelFavorsHomeRaw = finalImpliedSpread < 0;
+    const modelFavorsHomeRaw = finalImpliedSpread !== null && finalImpliedSpread < 0;
     const marketFavorsHome = marketSpread !== null && marketSpread < 0;
-    const favoriteMismatch = marketSpread !== null && modelFavorsHomeRaw !== marketFavorsHome;
+    const favoriteMismatch = marketSpread !== null && finalImpliedSpread !== null && modelFavorsHomeRaw !== marketFavorsHome;
     
-    if (favoriteMismatch && Math.abs(finalImpliedSpread) > 3 && marketSpread !== null && Math.abs(marketSpread) > 3) {
+    if (favoriteMismatch && finalImpliedSpread !== null && Math.abs(finalImpliedSpread) > 3 && marketSpread !== null && Math.abs(marketSpread) > 3) {
       // Only warn if both spreads are significant (not close games)
       console.warn(`[Game ${gameId}] ⚠️ Favorite identity mismatch: Model and Market favor different teams`, {
         modelSpread: finalImpliedSpread,
@@ -4651,7 +4672,7 @@ export async function GET(
         const openingSpread = spreadLines[0]?.lineValue ?? null;
         const openingTotal = totalLines[0]?.lineValue ?? null;
         
-        if (openingSpread !== null && openingTotal !== null) {
+        if (openingSpread !== null && openingTotal !== null && finalImpliedSpread !== null) {
           // Calculate opening vs closing edge
           const openingSpreadEdge = finalImpliedSpread - openingSpread;
           const closingSpreadEdge = atsEdge;
@@ -4864,7 +4885,7 @@ export async function GET(
           rationale: bettablePick.reasoning,
           // Trust-Market Mode overlay diagnostics
           overlay: {
-            modelRaw: modelSpreadRaw,
+            modelRaw: modelSpreadRaw ?? finalImpliedSpread,
             market: marketSpread,
             rawDisagreement: rawSpreadDisagreement,
             lambda: LAMBDA_SPREAD,
@@ -5408,7 +5429,7 @@ export async function GET(
           ratings: response.model_view.ratings,
           recency_features: response.model_view.features.recency,
           spread_lineage: response.model_view.spread_lineage,
-          ml_calc_basis: response.picks.moneyline?.calc_basis
+          ml_calc_basis: (response.picks.moneyline as any)?.calc_basis
         }
       };
     }
