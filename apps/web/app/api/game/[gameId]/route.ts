@@ -2745,14 +2745,15 @@ export async function GET(
           : -marketSpread) // Away is favorite, flip sign to HMA format (positive)
       : null;
     
-    // Compute ATS edge in HMA frame
+    // Compute ATS edge
+    // Note: When USE_CORE_V1 is true, we'll compute the edge in favorite-centric format
+    // after modelFavoriteLine is set. For now, compute in HMA for legacy mode.
     let atsEdge = 0;
-    if (USE_CORE_V1 && finalImpliedSpread !== null && marketSpreadHma !== null) {
-      atsEdge = computeATSEdgeHma(finalImpliedSpread, marketSpreadHma);
-    } else if (finalImpliedSpread !== null && marketSpreadHma !== null) {
-      // Legacy mode: compute edge from raw spread
+    if (!USE_CORE_V1 && finalImpliedSpread !== null && marketSpreadHma !== null) {
+      // Legacy mode: compute edge from raw spread in HMA frame
       atsEdge = computeATSEdgeHma(finalImpliedSpread, marketSpreadHma);
     }
+    // When USE_CORE_V1 is true, atsEdge will be set later in favorite-centric format
     const atsEdgeAbs = Math.abs(atsEdge);
     
     if (USE_CORE_V1 && finalImpliedSpread !== null && marketSpread !== null) {
@@ -3249,29 +3250,64 @@ export async function GET(
     // finalSpreadWithOverlayFC < 0 means market favorite is favored, > 0 means market dog is favored
     // This is favorite-centric: negative = favorite, positive = underdog
     
-    // Determine model favorite from finalSpreadWithOverlayFC (favorite-centric)
-    const modelFavorsMarketFavorite = finalSpreadWithOverlayFC < 0;
-    const modelFavorsMarketDog = finalSpreadWithOverlayFC > 0;
-    const isPickEmFromSpread = Math.abs(finalSpreadWithOverlayFC) < 0.1;
+    // Determine model favorite from finalSpreadWithOverlayFC (favorite-centric) or Core V1
+    let modelFavorsMarketFavorite: boolean;
+    let modelFavorsMarketDog: boolean;
+    let isPickEmFromSpread: boolean;
     
-    // Model favorite team (from finalSpreadWithOverlayFC)
-    const modelFavoriteTeamId = isPickEmFromSpread 
-      ? null 
-      : (modelFavorsMarketFavorite ? favoriteByRule.teamId : dogTeamId);
-    const modelFavoriteName = modelFavoriteTeamId
-      ? (modelFavoriteTeamId === game.homeTeamId ? game.homeTeam.name : game.awayTeam.name)
-      : null;
-    const modelFavoriteLine = isPickEmFromSpread
-      ? 0.0
-      : finalSpreadWithOverlayFC; // Already favorite-centric (negative = favorite)
+    if (USE_CORE_V1 && coreV1SpreadInfo) {
+      // V1: Use Core V1 favorite spread (already favorite-centric, negative = favorite)
+      const coreFavoriteSpread = coreV1SpreadInfo.favoriteSpread;
+      modelFavorsMarketFavorite = coreV1SpreadInfo.favoriteTeamId === favoriteByRule.teamId;
+      modelFavorsMarketDog = !modelFavorsMarketFavorite;
+      isPickEmFromSpread = Math.abs(coreFavoriteSpread) < 0.1;
+    } else {
+      // Legacy: Compute from finalSpreadWithOverlayFC
+      modelFavorsMarketFavorite = finalSpreadWithOverlayFC < 0;
+      modelFavorsMarketDog = finalSpreadWithOverlayFC > 0;
+      isPickEmFromSpread = Math.abs(finalSpreadWithOverlayFC) < 0.1;
+    }
+    
+    // Model favorite team (from finalSpreadWithOverlayFC or Core V1)
+    let modelFavoriteTeamId: string | null;
+    let modelFavoriteName: string | null;
+    let modelFavoriteLine: number;
+    
+    if (USE_CORE_V1 && coreV1SpreadInfo) {
+      // V1: Use Core V1 favorite info directly
+      modelFavoriteTeamId = coreV1SpreadInfo.favoriteTeamId;
+      modelFavoriteName = coreV1SpreadInfo.favoriteName;
+      modelFavoriteLine = coreV1SpreadInfo.favoriteSpread; // Already negative (favorite-centric)
+    } else {
+      // Legacy: Compute from finalSpreadWithOverlayFC
+      modelFavoriteTeamId = isPickEmFromSpread 
+        ? null
+        : (modelFavorsMarketFavorite ? favoriteByRule.teamId : dogTeamId);
+      modelFavoriteName = modelFavoriteTeamId
+        ? (modelFavoriteTeamId === game.homeTeamId ? game.homeTeam.name : game.awayTeam.name)
+        : null;
+      modelFavoriteLine = isPickEmFromSpread
+        ? 0.0
+        : finalSpreadWithOverlayFC; // Already favorite-centric (negative = favorite)
+    }
     
     // Model underdog team
-    const modelDogTeamId = isPickEmFromSpread
-      ? null
-      : (modelFavorsMarketFavorite ? dogTeamId : favoriteByRule.teamId);
-    const modelDogName = modelDogTeamId
-      ? (modelDogTeamId === game.homeTeamId ? game.homeTeam.name : game.awayTeam.name)
-      : null;
+    let modelDogTeamId: string | null;
+    let modelDogName: string | null;
+    
+    if (USE_CORE_V1 && coreV1SpreadInfo) {
+      // V1: Use Core V1 dog info directly
+      modelDogTeamId = coreV1SpreadInfo.dogTeamId;
+      modelDogName = coreV1SpreadInfo.dogName;
+    } else {
+      // Legacy: Compute from finalSpreadWithOverlayFC
+      modelDogTeamId = isPickEmFromSpread
+        ? null
+        : (modelFavorsMarketFavorite ? dogTeamId : favoriteByRule.teamId);
+      modelDogName = modelDogTeamId
+        ? (modelDogTeamId === game.homeTeamId ? game.homeTeam.name : game.awayTeam.name)
+        : null;
+    }
     
     // Model total (null if units invalid)
     const modelTotal = isModelTotalValid ? finalImpliedTotal : null;
@@ -3315,7 +3351,10 @@ export async function GET(
     // In Trust-Market mode, the edge IS the capped overlay, not the raw model-market difference
     // This placeholder will be updated after overlay calculation
     // For now, keep the raw calculation for logging/diagnostics only
-    const atsEdgePtsRaw = modelLineInMarketFavCoords - market_snapshot.favoriteLine;
+    // When USE_CORE_V1 is true, compute edge directly from favorite-centric lines
+    const atsEdgePtsRaw = USE_CORE_V1 && coreV1SpreadInfo
+      ? modelFavoriteLine - market_snapshot.favoriteLine
+      : modelLineInMarketFavCoords - market_snapshot.favoriteLine;
     
     // Log ATS decision trace before rendering (using raw edge for context)
     console.log(`[Game ${gameId}] 📊 ATS DECISION TRACE (PRE-OVERLAY):`, {
@@ -3342,6 +3381,11 @@ export async function GET(
     // In Trust-Market mode, edges are the capped overlays (already calculated above)
     // atsEdge = spreadOverlay (calculated line ~1358)
     // totalEdgePts = totalOverlay (calculated line ~1675)
+    // When USE_CORE_V1 is true, compute edge in favorite-centric format
+    if (USE_CORE_V1 && coreV1SpreadInfo && modelFavoriteLine !== null && market_snapshot.favoriteLine !== null) {
+      atsEdge = modelFavoriteLine - market_snapshot.favoriteLine;
+    }
+    
     const model_view = {
       modelFavoriteTeamId: modelFavoriteTeamId,
       modelFavoriteName: modelFavoriteName,
@@ -3350,7 +3394,7 @@ export async function GET(
       winProbFavorite,
       winProbDog,
       edges: {
-        atsEdgePts: atsEdge, // ✅ Capped overlay (not raw disagreement)
+        atsEdgePts: atsEdge, // ✅ Capped overlay (not raw disagreement) or Core V1 edge in favorite-centric format
         ouEdgePts: totalEdgePts // ✅ Capped overlay (not raw disagreement)
       },
       // PHASE 2.1: Features for calibration (talent gap, matchup class, HFA, recency)

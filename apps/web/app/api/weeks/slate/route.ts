@@ -9,6 +9,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { selectClosingLine } from '@/lib/closing-line-helpers';
+import { getCoreV1SpreadFromTeams, getATSPick, computeATSEdgeHma } from '@/lib/core-v1-spread';
 
 interface SlateGame {
   gameId: string;
@@ -230,97 +231,58 @@ export async function GET(request: NextRequest) {
 
     console.log(`   Processed ${slateGames.length} games with closing lines`);
 
-    // Fetch model projections (always include if ratings are available)
+    // Fetch model projections using Core V1
     try {
-      // Load all team ratings for this season in one query (v1 model)
-      const teamRatings = await prisma.teamSeasonRating.findMany({
-        where: { season, modelVersion: 'v1' },
-      });
-      const ratingsMap = new Map(
-        teamRatings.map(r => [r.teamId, r])
-      );
-
-      // Load all team stats for this season in one query
-      const teamStats = await prisma.teamSeasonStat.findMany({
-        where: { season },
-      });
-      const statsMap = new Map(
-        teamStats.map(s => [s.teamId, s])
-      );
-
-      // Compute projections for each game
-      const HFA = 2.0;
+      // Compute Core V1 projections for each game
       for (const game of slateGames) {
-        const homeRating = ratingsMap.get(game.homeTeamId);
-        const awayRating = ratingsMap.get(game.awayTeamId);
-        const homeStats = statsMap.get(game.homeTeamId);
-        const awayStats = statsMap.get(game.awayTeamId);
-
-        if (homeRating && awayRating) {
-          const homePower = Number(homeRating.powerRating || homeRating.rating || 0);
-          const awayPower = Number(awayRating.powerRating || awayRating.rating || 0);
-          
-          // Get game to check neutral site
+        try {
+          // Get full game info for team names and neutral site
           const fullGame = finalGamesToInclude.find(g => g.id === game.gameId);
-          const isNeutral = fullGame?.neutralSite || false;
-          
-          // Model Spread
-          const modelSpread = homePower - awayPower + (isNeutral ? 0 : HFA);
+          if (!fullGame) continue;
 
-          // Model Total
-          const homeEpaOff = homeStats?.epaOff ? Number(homeStats.epaOff) : null;
-          const awayEpaOff = awayStats?.epaOff ? Number(awayStats.epaOff) : null;
-          const homeYppOff = homeStats?.yppOff ? Number(homeStats.yppOff) : null;
-          const awayYppOff = awayStats?.yppOff ? Number(awayStats.yppOff) : null;
-          
-          const homePaceOff = homeStats?.paceOff ? Number(homeStats.paceOff) : 70;
-          const awayPaceOff = awayStats?.paceOff ? Number(awayStats.paceOff) : 70;
+          // Get Core V1 spread
+          const coreSpreadInfo = await getCoreV1SpreadFromTeams(
+            season,
+            game.homeTeamId,
+            game.awayTeamId,
+            fullGame.neutralSite || false,
+            fullGame.homeTeam.name,
+            fullGame.awayTeam.name
+          );
 
-          const homePpp = homeEpaOff !== null 
-            ? Math.max(0, Math.min(1.0, 7 * homeEpaOff))
-            : homeYppOff !== null 
-              ? 0.8 * homeYppOff
-              : 0.4;
-          
-          const awayPpp = awayEpaOff !== null
-            ? Math.max(0, Math.min(1.0, 7 * awayEpaOff))
-            : awayYppOff !== null
-              ? 0.8 * awayYppOff
-              : 0.4;
+          const modelSpreadHma = coreSpreadInfo.coreSpreadHma;
+          const modelSpread = Math.round(modelSpreadHma * 10) / 10;
 
-          const modelTotal = (homePpp * homePaceOff) + (awayPpp * awayPaceOff);
+          // Get market spread in HMA frame
+          const marketSpreadHma = game.closingSpread?.value ?? null;
 
-          // Compute picks and edges
-          const marketSpread = game.closingSpread?.value ?? null;
-          const marketTotal = game.closingTotal?.value ?? null;
-
+          // Compute ATS edge and pick
           let spreadPick: string | null = null;
-          let totalPick: string | null = null;
           let spreadEdgePts: number | null = null;
-          let totalEdgePts: number | null = null;
+          let maxEdge: number | null = null;
 
-          if (marketSpread !== null) {
-            spreadEdgePts = Math.abs(modelSpread - marketSpread);
-            const favoredSide = modelSpread < 0 ? 'home' : 'away';
-            const favoredTeam = favoredSide === 'home' 
-              ? fullGame?.homeTeam.name || 'Home'
-              : fullGame?.awayTeam.name || 'Away';
-            const sign = modelSpread >= 0 ? '+' : '';
-            spreadPick = `${favoredTeam} ${sign}${Math.abs(Math.round(modelSpread * 2) / 2).toFixed(1)}`;
+          if (marketSpreadHma !== null) {
+            const atsPick = getATSPick(
+              modelSpreadHma,
+              marketSpreadHma,
+              fullGame.homeTeam.name,
+              fullGame.awayTeam.name,
+              game.homeTeamId,
+              game.awayTeamId,
+              2.0 // edgeFloor
+            );
+            
+            spreadPick = atsPick.pickLabel;
+            spreadEdgePts = atsPick.edgePts;
+            maxEdge = spreadEdgePts;
           }
 
-          if (marketTotal !== null) {
-            totalEdgePts = Math.abs(modelTotal - marketTotal);
-            const pick = modelTotal > marketTotal ? 'Over' : 'Under';
-            const roundedTotal = Math.round(marketTotal * 2) / 2;
-            totalPick = `${pick} ${roundedTotal.toFixed(1)}`;
-          }
+          // Totals: Disabled for V1
+          const modelTotal: number | null = null;
+          const totalPick: string | null = null;
+          const totalEdgePts: number | null = null;
 
-          const maxEdge = spreadEdgePts !== null && totalEdgePts !== null
-            ? Math.max(spreadEdgePts, totalEdgePts)
-            : spreadEdgePts ?? totalEdgePts ?? null;
-
-          // Confidence tier
+          // Confidence tier (A ≥ 4.0, B ≥ 3.0, C ≥ 2.0) - based on ATS edge only
           let confidence: string | null = null;
           if (maxEdge !== null) {
             if (maxEdge >= 4.0) confidence = 'A';
@@ -329,18 +291,27 @@ export async function GET(request: NextRequest) {
           }
 
           // Assign to game
-          game.modelSpread = Math.round(modelSpread * 10) / 10;
-          game.modelTotal = Math.round(modelTotal * 10) / 10;
+          game.modelSpread = modelSpread;
+          game.modelTotal = null; // Disabled for V1
           game.pickSpread = spreadPick;
-          game.pickTotal = totalPick;
+          game.pickTotal = null; // Disabled for V1
           game.maxEdge = maxEdge !== null ? Math.round(maxEdge * 10) / 10 : null;
           game.confidence = confidence;
+        } catch (error) {
+          console.error(`Error computing Core V1 spread for game ${game.gameId}:`, error);
+          // Set to null on error
+          game.modelSpread = null;
+          game.modelTotal = null;
+          game.pickSpread = null;
+          game.pickTotal = null;
+          game.maxEdge = null;
+          game.confidence = null;
         }
       }
       
-      console.log(`   Computed model projections for slate games`);
+      console.log(`   Computed Core V1 projections for slate games`);
     } catch (error) {
-      console.warn('   Failed to compute model projections:', error);
+      console.warn('   Failed to compute Core V1 projections:', error);
       // Continue without model data rather than failing
     }
 

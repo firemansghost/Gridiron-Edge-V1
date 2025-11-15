@@ -84,91 +84,47 @@ async function getGameInfo(gameId: string): Promise<{
 }
 
 /**
- * Call Slate API
+ * Call actual Slate API handler
  */
 async function getSlateData(season: number, week: number): Promise<SlateGame[]> {
-  // Since we're running in Node, we need to import the route handler directly
-  // For now, let's use the database and compute directly using the same logic
-  const games = await prisma.game.findMany({
-    where: { season, week },
-    include: {
-      homeTeam: true,
-      awayTeam: true,
-      marketLines: true,
-    },
-    orderBy: { date: 'asc' },
-  });
-
-  // Import the Core V1 helper
-  const { getCoreV1SpreadFromTeams, getATSPick } = await import('../lib/core-v1-spread');
-
-  const projections: SlateGame[] = [];
-
-  for (const game of games) {
-    try {
-      const coreSpreadInfo = await getCoreV1SpreadFromTeams(
-        season,
-        game.homeTeamId,
-        game.awayTeamId,
-        game.neutralSite || false,
-        game.homeTeam.name,
-        game.awayTeam.name
-      );
-
-      const modelSpreadHma = coreSpreadInfo.coreSpreadHma;
-      // Note: Slate API rounds to 1 decimal, but we compare raw HMA values
-      const modelSpreadRounded = Math.round(modelSpreadHma * 10) / 10;
-
-      const spreadLine = game.marketLines.find(l => l.lineType === 'spread');
-      const marketSpreadHma = spreadLine?.lineValue ?? null;
-
-      let spreadPick: string | null = null;
-      let spreadEdgePts: number | null = null;
-
-      if (marketSpreadHma !== null) {
-        const atsPick = getATSPick(
-          modelSpreadHma,
-          marketSpreadHma,
-          game.homeTeam.name,
-          game.awayTeam.name,
-          game.homeTeamId,
-          game.awayTeamId,
-          2.0
-        );
-        spreadPick = atsPick.pickLabel;
-        spreadEdgePts = atsPick.edgePts;
-      }
-
-      projections.push({
-        gameId: game.id,
-        modelSpread: modelSpreadHma, // Use raw HMA for comparison
-        modelTotal: null,
-        marketSpread: marketSpreadHma,
-        spreadPick,
-        spreadEdgePts,
-        totalPick: null,
-        totalEdgePts: null,
-      });
-    } catch (error) {
-      projections.push({
-        gameId: game.id,
-        modelSpread: null,
-        modelTotal: null,
-        marketSpread: null,
-        spreadPick: null,
-        spreadEdgePts: null,
-        totalPick: null,
-        totalEdgePts: null,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
+  // Import the actual Slate API handler that the UI uses
+  const { GET } = await import('../app/api/weeks/slate/route');
+  
+  // Create a request with the same query the UI uses
+  const url = new URL('http://localhost/api/weeks/slate');
+  url.searchParams.set('season', season.toString());
+  url.searchParams.set('week', week.toString());
+  
+  const request = new Request(url.toString());
+  
+  try {
+    const response = await GET(request);
+    const data = await response.json();
+    
+    if (Array.isArray(data)) {
+      // Map the API response to our SlateGame interface
+      return data.map((game: any) => ({
+        gameId: game.gameId,
+        modelSpread: game.modelSpread ?? null,
+        modelTotal: game.modelTotal ?? null,
+        marketSpread: game.closingSpread?.value ?? null,
+        spreadPick: game.pickSpread ?? null,
+        spreadEdgePts: game.maxEdge ?? null, // maxEdge is the ATS edge for V1
+        totalPick: game.pickTotal ?? null,
+        totalEdgePts: null, // Totals disabled
+      }));
+    } else {
+      console.error('Slate API returned non-array response:', data);
+      return [];
     }
+  } catch (error) {
+    console.error('Error calling Slate API:', error);
+    return [];
   }
-
-  return projections;
 }
 
 /**
- * Get game detail data directly (same logic as API route)
+ * Call actual Game Detail API handler
  */
 async function getGameDetail(gameId: string): Promise<{
   modelSpread: number | null;
@@ -176,51 +132,41 @@ async function getGameDetail(gameId: string): Promise<{
   atsEdge: number;
   totalEdge: number | null;
 } | null> {
-  const game = await prisma.game.findUnique({
-    where: { id: gameId },
-    include: {
-      homeTeam: true,
-      awayTeam: true,
-      marketLines: true,
-    },
-  });
-
-  if (!game) {
-    return null;
-  }
-
-  // Import Core V1 helper
-  const { getCoreV1SpreadFromTeams, computeATSEdgeHma } = await import('../lib/core-v1-spread');
-
+  // Import the actual Game Detail API handler
+  const { GET } = await import('../app/api/game/[gameId]/route');
+  
+  // Create a request
+  const request = new Request(`http://localhost/api/game/${gameId}`);
+  const params = { gameId };
+  
   try {
-    const coreSpreadInfo = await getCoreV1SpreadFromTeams(
-      game.season,
-      game.homeTeamId,
-      game.awayTeamId,
-      game.neutralSite || false,
-      game.homeTeam.name,
-      game.awayTeam.name
-    );
-
-    const modelSpreadHma = coreSpreadInfo.coreSpreadHma;
-
-    // Get market spread
-    const spreadLine = game.marketLines.find(l => l.lineType === 'spread');
-    const marketSpreadHma = spreadLine?.lineValue ?? null;
-
-    // Compute ATS edge
-    const atsEdge = marketSpreadHma !== null 
-      ? computeATSEdgeHma(modelSpreadHma, marketSpreadHma)
-      : 0;
-
+    const response = await GET(request, { params });
+    const data = await response.json();
+    
+    if (!data.success) {
+      console.error(`Game Detail API returned error for ${gameId}:`, data.error);
+      return null;
+    }
+    
+    // Extract model spread from the response
+    // response.model.spread is finalImpliedSpread in HMA format
+    const modelSpread = data.model?.spread ?? null;
+    
+    // Extract ATS edge
+    // response.edge.atsEdge is the ATS edge in HMA format
+    const atsEdge = data.edge?.atsEdge ?? 0;
+    
+    // Extract model total (should be null for V1)
+    const modelTotal = data.model?.total ?? null;
+    
     return {
-      modelSpread: modelSpreadHma,
-      modelTotal: null, // Totals disabled for V1
-      atsEdge,
-      totalEdge: null,
+      modelSpread,
+      modelTotal,
+      atsEdge: typeof atsEdge === 'number' ? atsEdge : 0,
+      totalEdge: data.edge?.totalEdge ?? null,
     };
   } catch (error) {
-    console.error(`Error computing Core V1 for game ${gameId}:`, error);
+    console.error(`Error calling Game Detail API for ${gameId}:`, error);
     return null;
   }
 }
@@ -284,9 +230,11 @@ async function verifyGame(slateGame: SlateGame): Promise<VerificationResult> {
     };
   }
 
-  // Compare spreads (both should be raw HMA values)
-  const slateSpread = slateGame.modelSpread; // Raw HMA from slate computation
-  const gameSpread = gameDetail.modelSpread; // Raw HMA from game detail computation
+  // Compare spreads
+  // Note: Slate API rounds to 1 decimal, Game API may have different rounding
+  // We'll compare with tolerance
+  const slateSpread = slateGame.modelSpread;
+  const gameSpread = gameDetail.modelSpread;
 
   if (slateSpread !== null && gameSpread !== null) {
     spreadDiff = Math.abs(slateSpread - gameSpread);
