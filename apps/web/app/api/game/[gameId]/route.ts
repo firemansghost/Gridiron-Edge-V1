@@ -1644,15 +1644,11 @@ export async function GET(
     // Initialize finalSpreadWithOverlay (V1: no overlay, use Core V1 directly)
     let finalSpreadWithOverlay = finalImpliedSpread;
     
-    // Compute totals: Use Core V1 totals model when USE_CORE_V1 is true
+    // Initialize finalImpliedTotal (will be computed later after marketTotal and marketSpreadHma are available)
     let finalImpliedTotal: number | null = null;
-    if (USE_CORE_V1 && coreV1SpreadInfo && marketTotal !== null && marketSpreadHma !== null) {
-      // Compute Core V1 total using spread-driven overlay
-      const ouPick = getOUPick(marketTotal, marketSpreadHma, coreV1SpreadInfo.coreSpreadHma);
-      finalImpliedTotal = ouPick.modelTotal;
-    } else {
-      // Legacy: Never use matchupOutput.impliedTotal unless it passes the units handshake
-      // If invalid, leave as null - DO NOT substitute a number
+    // Legacy: Never use matchupOutput.impliedTotal unless it passes the units handshake
+    // If invalid, leave as null - DO NOT substitute a number
+    if (!USE_CORE_V1) {
       finalImpliedTotal = isValidTotal && matchupTotalRaw !== null ? matchupTotalRaw : null;
     }
     
@@ -2771,6 +2767,14 @@ export async function GET(
           : -marketSpread) // Away is favorite, flip sign to HMA format (positive)
       : null;
     
+    // Compute totals: Use Core V1 totals model when USE_CORE_V1 is true
+    // (Now that marketTotal and marketSpreadHma are available)
+    if (USE_CORE_V1 && coreV1SpreadInfo && marketTotal !== null && marketSpreadHma !== null) {
+      // Compute Core V1 total using spread-driven overlay
+      const ouPick = getOUPick(marketTotal, marketSpreadHma, coreV1SpreadInfo.coreSpreadHma);
+      finalImpliedTotal = ouPick.modelTotal;
+    }
+    
     // Compute ATS edge
     // Note: When USE_CORE_V1 is true, we'll compute the edge in favorite-centric format
     // after modelFavoriteLine is set. For now, compute in HMA for legacy mode.
@@ -3061,7 +3065,7 @@ export async function GET(
     
     // Plausibility check (log only, don't suppress)
     let plausibilityNote: string | null = null;
-    if (isModelTotalValid && (finalImpliedTotal < 25 || finalImpliedTotal > 95)) {
+    if (isModelTotalValid && finalImpliedTotal !== null && (finalImpliedTotal < 25 || finalImpliedTotal > 95)) {
       plausibilityNote = `Model total ${finalImpliedTotal.toFixed(1)} is outside typical CFB range [25-95].`;
       console.warn(`[Game ${gameId}] ${plausibilityNote}`);
     }
@@ -3412,7 +3416,7 @@ export async function GET(
       atsEdge = modelFavoriteLine - market_snapshot.favoriteLine;
     }
     
-    // Compute OU pick info for model_view (raw and official - for now they're the same)
+    // Initialize ouPickInfo (will be populated later after totalPick is available)
     let ouPickInfo: {
       modelTotal: number | null;
       marketTotal: number | null;
@@ -3431,6 +3435,7 @@ export async function GET(
       rawOuEdgePts: null,
     };
 
+    // For Core V1, we can compute ouPickInfo now (doesn't depend on totalPick)
     if (USE_CORE_V1 && coreV1SpreadInfo && marketTotal !== null && marketSpreadHma !== null) {
       const ouPick = getOUPick(marketTotal, marketSpreadHma, coreV1SpreadInfo.coreSpreadHma);
       ouPickInfo = {
@@ -3442,18 +3447,8 @@ export async function GET(
         rawModelTotal: ouPick.modelTotal, // For now, raw = official (no Trust-Market on totals yet)
         rawOuEdgePts: ouPick.ouEdgePts,
       };
-    } else if (finalImpliedTotal !== null && marketTotal !== null) {
-      // Legacy mode
-      ouPickInfo = {
-        modelTotal: finalImpliedTotal,
-        marketTotal: marketTotal,
-        ouEdgePts: totalEdgePts,
-        pickLabel: totalPick?.label ?? null,
-        confidence: totalPick?.grade ?? null,
-        rawModelTotal: finalImpliedTotal,
-        rawOuEdgePts: totalEdgePts,
-      };
     }
+    // Legacy mode ouPickInfo will be computed later after totalPick is available
 
     const model_view = {
       modelFavoriteTeamId: modelFavoriteTeamId,
@@ -3823,12 +3818,28 @@ export async function GET(
       });
     }
     
-    if (isModelTotalValid && marketTotal !== null) {
+    if (isModelTotalValid && marketTotal !== null && finalImpliedTotal !== null) {
       const totalDelta = Math.abs(finalImpliedTotal - marketTotal);
       if (totalDelta > 20) {
         diagnosticsMessages.push(`Model total is far from market (Δ ${totalDelta.toFixed(1)} pts). Treat with caution.`);
       }
     }
+    
+    // Compute ouPickInfo for legacy mode (now that totalPick is available)
+    if (!USE_CORE_V1 && finalImpliedTotal !== null && marketTotal !== null) {
+      ouPickInfo = {
+        modelTotal: finalImpliedTotal,
+        marketTotal: marketTotal,
+        ouEdgePts: totalEdgePts,
+        pickLabel: totalPick?.label ?? null,
+        confidence: totalPick?.grade ?? null,
+        rawModelTotal: finalImpliedTotal,
+        rawOuEdgePts: totalEdgePts,
+      };
+    }
+    
+    // Update model_view with the computed ouPickInfo
+    model_view.totals = ouPickInfo;
 
     // Determine OU card state: "pick" | "no_edge" | "no_model_total"
     // SAFETY PATCH: Never show 'pick' state when SHOW_TOTALS_PICKS=false
@@ -4792,7 +4803,7 @@ export async function GET(
           const closingSpreadEdge = atsEdge;
           const spreadMovedTowardModel = Math.abs(closingSpreadEdge) < Math.abs(openingSpreadEdge);
           
-          const openingTotalEdge = isModelTotalValid ? (finalImpliedTotal - openingTotal) : null;
+          const openingTotalEdge = isModelTotalValid && finalImpliedTotal !== null ? (finalImpliedTotal - openingTotal) : null;
           const closingTotalEdge = totalEdgePts;
           const totalMovedTowardModel = openingTotalEdge !== null && closingTotalEdge !== null && 
                                         Math.abs(closingTotalEdge) < Math.abs(openingTotalEdge);
