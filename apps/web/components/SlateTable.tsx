@@ -4,6 +4,12 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { InfoTooltip } from './InfoTooltip';
 
+/**
+ * Terminology:
+ * - ATS = Against the Spread (side bets, using point spread)
+ * - OU = Over/Under (totals, using game total points)
+ */
+
 interface SlateGame {
   gameId: string;
   date: string;
@@ -1501,6 +1507,13 @@ export default function SlateTable({
           </div>
         </div>
       </div>
+      
+      {/* Totals disabled note */}
+      {allGamesHaveNullTotals && (
+        <p className="mt-4 text-xs text-slate-500 text-center">
+          Totals model is disabled for the 2025 season — spread model only for now.
+        </p>
+      )}
     </div>
   );
 }

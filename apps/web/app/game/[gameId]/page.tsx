@@ -2,6 +2,10 @@
  * M3 Game Detail Page
  * 
  * Shows detailed game information including factor breakdown from components_json.
+ * 
+ * Terminology:
+ * - ATS = Against the Spread (side bets, using point spread)
+ * - OU = Over/Under (totals, using game total points)
  */
 
 'use client';
@@ -701,17 +705,17 @@ export default function GameDetailPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Spread pick ${game.picks.spread.bettablePick.label || 'No edge'}`}>
+                    <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Spread pick ${game.picks.spread.bettablePick.label || 'PASS'}`}>
                       {game.picks.spread.bettablePick?.suppressHeadline || game.picks.spread.bettablePick?.extremeFavoriteBlocked ? (
                         /* EXTREME FAVORITE: Suppress dog headline, show market line instead */
                         snapshot && snapshot.favoriteLine !== null && snapshot.favoriteLine !== undefined
-                          ? `No edge at current number — market ${snapshot.favoriteTeamName} ${snapshot.favoriteLine.toFixed(1)}`
-                          : 'No edge at current number.'
+                          ? `PASS — Trust-Market mode (no official bet)`
+                          : 'PASS — Trust-Market mode (no official bet)'
                       ) : game.picks.spread.bettablePick?.label ? (
                         /* CRITICAL FIX: Use bettablePick.label as single source of truth */
                         game.picks.spread.bettablePick.label
                       ) : (
-                        'No edge at current number.'
+                        'PASS — Trust-Market mode (no official bet)'
                       )}
                     </div>
                     {/* ============================================ */}
@@ -720,21 +724,19 @@ export default function GameDetailPage() {
                     {/* ============================================ */}
                     {snapshot?.favoriteLine !== null && snapshot?.favoriteLine !== undefined ? (
                       <>
-                        {/* Case A: No official edge (Trust-Market capped) */}
+                        {/* Case A: No official edge (Trust-Market PASS) */}
                         {(!game.picks.spread.bettablePick?.label || game.picks.spread.bettablePick?.suppressHeadline) ? (
                           <>
                             <div className="text-sm text-gray-600 mb-2">
-                              Raw disagreement: <span className="font-semibold">{atsEdgeMagnitude.toFixed(1)} pts</span> (official edge <span className="font-semibold">0.0 pts</span> after Trust-Market overlay)
+                              Raw model disagreement: <span className="font-semibold">{atsEdgeMagnitude.toFixed(1)} pts</span> (official edge capped to <span className="font-semibold">0.0 pts</span>)
                             </div>
-                            {game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined ? (
-                              <div className="text-sm text-gray-600 mb-2">
-                                Bet to: <span className="font-semibold">—</span> • <span className="text-gray-500 italic">No official bet — Trust-Market mode</span>
-                              </div>
-                            ) : null}
-                            {/* Range text for no-edge case */}
-                            {game.model_view?.modelFavoriteLine !== null && game.model_view?.modelFavoriteName && (
+                            <div className="text-sm text-gray-600 mb-2">
+                              Bet to: <span className="font-semibold">—</span> • <span className="text-gray-500 italic">No official spread bet for this game</span>
+                            </div>
+                            {/* Range text for PASS case */}
+                            {game.model_view?.modelFavoriteLine !== null && game.model_view?.modelFavoriteName && snapshot && (
                               <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
-                                <span className="font-semibold">Range:</span> Model fair line ≈ {game.model_view.modelFavoriteName} {game.model_view.modelFavoriteLine.toFixed(1)}; disagreement with market {snapshot.favoriteLine.toFixed(1)} is {atsEdgeMagnitude.toFixed(1)} pts. No official edge in Trust-Market mode.
+                                <span className="font-semibold">Raw model fair line</span> ≈ {game.model_view.modelFavoriteName} {game.model_view.modelFavoriteLine.toFixed(1)}. Current market line is {snapshot.favoriteLine.toFixed(1)} ({atsEdgeMagnitude.toFixed(1)} pts {game.model_view.modelFavoriteLine < snapshot.favoriteLine ? 'cheaper' : 'more expensive'}). Trust-Market rules cap this disagreement, so we treat the game as a pass instead of a play.
                               </div>
                             )}
                           </>
@@ -858,24 +860,22 @@ export default function GameDetailPage() {
                   <div className="bg-white border-2 border-gray-300 rounded-lg p-4 shadow-sm">
                     <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">AGAINST THE SPREAD</h3>
                     <div className="text-lg font-semibold text-gray-900 mb-2">
-                      No edge at current number — market {snapshot ? `${snapshot.favoriteTeamName} ${snapshot.favoriteLine.toFixed(1)}` : 'N/A'}
+                      PASS — Trust-Market mode (no official bet)
                     </div>
                     {/* ============================================ */}
                     {/* Show raw disagreement when no official edge */}
                     {/* ============================================ */}
                     <div className="text-sm text-gray-600 mb-2">
-                      Raw disagreement: <span className="font-semibold">{atsEdgeMagnitude.toFixed(1)} pts</span> (official edge <span className="font-semibold">0.0 pts</span> after Trust-Market overlay)
+                      Raw model disagreement: <span className="font-semibold">{atsEdgeMagnitude.toFixed(1)} pts</span> (official edge capped to <span className="font-semibold">0.0 pts</span>)
                     </div>
-                    {game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined ? (
-                      <div className="text-sm text-gray-600 mb-2">
-                        Bet to: <span className="font-semibold">—</span> • <span className="text-gray-500 italic">No official bet — Trust-Market mode</span>
-                      </div>
-                    ) : null}
+                    <div className="text-sm text-gray-600 mb-2">
+                      Bet to: <span className="font-semibold">—</span> • <span className="text-gray-500 italic">No official spread bet for this game</span>
+                    </div>
                     {/* RANGE: Flip Point */}
-                    {/* Range text for no-edge case - use model fair line */}
+                    {/* Range text for PASS case - use model fair line */}
                     {(!game.picks.spread.bettablePick?.label || game.picks.spread.bettablePick?.suppressHeadline) && game.model_view?.modelFavoriteLine !== null && game.model_view?.modelFavoriteName && snapshot ? (
                       <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
-                        <span className="font-semibold">Range:</span> Model fair line ≈ {game.model_view.modelFavoriteName} {game.model_view.modelFavoriteLine.toFixed(1)}; disagreement with market {snapshot.favoriteLine.toFixed(1)} is {atsEdgeMagnitude.toFixed(1)} pts. No official edge in Trust-Market mode.
+                        <span className="font-semibold">Raw model fair line</span> ≈ {game.model_view.modelFavoriteName} {game.model_view.modelFavoriteLine.toFixed(1)}. Current market line is {snapshot.favoriteLine.toFixed(1)} ({atsEdgeMagnitude.toFixed(1)} pts {game.model_view.modelFavoriteLine < snapshot.favoriteLine ? 'cheaper' : 'more expensive'}). Trust-Market rules cap this disagreement, so we treat the game as a pass instead of a play.
                       </div>
                     ) : game.picks.spread.flip !== null && game.picks.spread.flip !== undefined && game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && game.picks.spread.bettablePick?.teamName && snapshot ? (
                       /* Range text for official edge case - use actual pick direction */
@@ -1842,6 +1842,9 @@ export default function GameDetailPage() {
                   <InfoTooltip content={TOOLTIP_CONTENT.POWER_RATING} />
                 </div>
                 <div className="text-2xl font-bold text-gray-900">{game.ratings.home.rating.toFixed(2)}</div>
+                <div className="text-xs text-gray-400 mt-1 italic">
+                  Legacy Power Rating (not yet aligned with Core V1 spread). Higher is better, but values do not map directly to point spreads.
+                </div>
               </div>
               <div>
                 <div className="text-sm text-gray-500 flex items-center gap-1">
@@ -1863,6 +1866,9 @@ export default function GameDetailPage() {
                   <InfoTooltip content={TOOLTIP_CONTENT.POWER_RATING} />
                 </div>
                 <div className="text-2xl font-bold text-gray-900">{game.ratings.away.rating.toFixed(2)}</div>
+                <div className="text-xs text-gray-400 mt-1 italic">
+                  Legacy Power Rating (not yet aligned with Core V1 spread). Higher is better, but values do not map directly to point spreads.
+                </div>
               </div>
               <div>
                 <div className="text-sm text-gray-500 flex items-center gap-1">
