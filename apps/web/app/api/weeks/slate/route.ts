@@ -239,93 +239,104 @@ export async function GET(request: NextRequest) {
     console.log(`   Processed ${slateGames.length} games with closing lines`);
 
     // Fetch model projections using Core V1
-    try {
-      // Compute Core V1 projections for each game
-      for (const game of slateGames) {
-        try {
-          // Get full game info for team names and neutral site
-          const fullGame = finalGamesToInclude.find(g => g.id === game.gameId);
-          if (!fullGame) {
-            console.warn(`[Slate API] Game ${game.gameId} not found in finalGamesToInclude, skipping Core V1 computation`);
-            continue;
-          }
+    // ALWAYS compute Core V1 - no query parameter gates
+    console.log(`   Computing Core V1 projections for ${slateGames.length} games...`);
+    
+    let gamesWithModelData = 0;
+    let gamesWithErrors = 0;
+    
+    // Compute Core V1 projections for each game
+    for (const game of slateGames) {
+      try {
+        // Get full game info for team names and neutral site
+        const fullGame = finalGamesToInclude.find(g => g.id === game.gameId);
+        if (!fullGame) {
+          console.warn(`[Slate API] Game ${game.gameId} not found in finalGamesToInclude, skipping Core V1 computation`);
+          continue;
+        }
 
-          // Get Core V1 spread
-          const coreSpreadInfo = await getCoreV1SpreadFromTeams(
-            season,
+        // Get Core V1 spread
+        const coreSpreadInfo = await getCoreV1SpreadFromTeams(
+          season,
+          game.homeTeamId,
+          game.awayTeamId,
+          fullGame.neutralSite || false,
+          fullGame.homeTeam.name,
+          fullGame.awayTeam.name
+        );
+
+        const modelSpreadHma = coreSpreadInfo.coreSpreadHma;
+        
+        // Validate Core V1 result
+        if (!Number.isFinite(modelSpreadHma)) {
+          console.error(`[Slate API] Core V1 returned non-finite spread for game ${game.gameId}: ${modelSpreadHma}`);
+          continue;
+        }
+        
+        const modelSpread = Math.round(modelSpreadHma * 10) / 10;
+
+        // Get market spread in HMA frame
+        const marketSpreadHma = game.closingSpread?.value ?? null;
+
+        // Compute ATS edge and pick
+        let spreadPick: string | null = null;
+        let spreadEdgePts: number | null = null;
+        let maxEdge: number | null = null;
+
+        if (marketSpreadHma !== null && Number.isFinite(marketSpreadHma)) {
+          const atsPick = getATSPick(
+            modelSpreadHma,
+            marketSpreadHma,
+            fullGame.homeTeam.name,
+            fullGame.awayTeam.name,
             game.homeTeamId,
             game.awayTeamId,
-            fullGame.neutralSite || false,
-            fullGame.homeTeam.name,
-            fullGame.awayTeam.name
+            2.0 // edgeFloor
           );
-
-          const modelSpreadHma = coreSpreadInfo.coreSpreadHma;
-          const modelSpread = Math.round(modelSpreadHma * 10) / 10;
-
-          // Get market spread in HMA frame
-          const marketSpreadHma = game.closingSpread?.value ?? null;
-
-          // Compute ATS edge and pick
-          let spreadPick: string | null = null;
-          let spreadEdgePts: number | null = null;
-          let maxEdge: number | null = null;
-
-          if (marketSpreadHma !== null) {
-            const atsPick = getATSPick(
-              modelSpreadHma,
-              marketSpreadHma,
-              fullGame.homeTeam.name,
-              fullGame.awayTeam.name,
-              game.homeTeamId,
-              game.awayTeamId,
-              2.0 // edgeFloor
-            );
-            
-            spreadPick = atsPick.pickLabel;
-            spreadEdgePts = atsPick.edgePts;
-            maxEdge = spreadEdgePts;
-          }
-
-          // Totals: Disabled for V1
-          const modelTotal: number | null = null;
-          const totalPick: string | null = null;
-          const totalEdgePts: number | null = null;
-
-          // Confidence tier (A ≥ 4.0, B ≥ 3.0, C ≥ 2.0) - based on ATS edge only
-          let confidence: string | null = null;
-          if (maxEdge !== null) {
-            if (maxEdge >= 4.0) confidence = 'A';
-            else if (maxEdge >= 3.0) confidence = 'B';
-            else if (maxEdge >= 2.0) confidence = 'C';
-          }
-
-          // Assign to game
-          game.modelSpread = modelSpread;
-          game.modelTotal = null; // Disabled for V1
-          game.pickSpread = spreadPick;
-          game.pickTotal = null; // Disabled for V1
-          game.maxEdge = maxEdge !== null ? Math.round(maxEdge * 10) / 10 : null;
-          game.confidence = confidence;
-        } catch (error) {
-          console.error(`[Slate API] Error computing Core V1 spread for game ${game.gameId}:`, error);
-          // Fields are already initialized to null, so we don't need to set them again
-          // But log the error for debugging
-          if (error instanceof Error) {
-            console.error(`[Slate API] Error details: ${error.message}`, error.stack);
-          }
+          
+          spreadPick = atsPick.pickLabel;
+          spreadEdgePts = atsPick.edgePts;
+          maxEdge = spreadEdgePts;
         }
+
+        // Totals: Disabled for V1
+        const modelTotal: number | null = null;
+        const totalPick: string | null = null;
+        const totalEdgePts: number | null = null;
+
+        // Confidence tier (A ≥ 4.0, B ≥ 3.0, C ≥ 2.0) - based on ATS edge only
+        let confidence: string | null = null;
+        if (maxEdge !== null && Number.isFinite(maxEdge)) {
+          if (maxEdge >= 4.0) confidence = 'A';
+          else if (maxEdge >= 3.0) confidence = 'B';
+          else if (maxEdge >= 2.0) confidence = 'C';
+        }
+
+        // Assign to game - CRITICAL: Always assign, even if some fields are null
+        game.modelSpread = modelSpread;
+        game.modelTotal = null; // Disabled for V1
+        game.pickSpread = spreadPick;
+        game.pickTotal = null; // Disabled for V1
+        game.maxEdge = maxEdge !== null && Number.isFinite(maxEdge) ? Math.round(maxEdge * 10) / 10 : null;
+        game.confidence = confidence;
+        
+        if (game.modelSpread !== null) {
+          gamesWithModelData++;
+        }
+      } catch (error) {
+        gamesWithErrors++;
+        console.error(`[Slate API] Error computing Core V1 spread for game ${game.gameId}:`, error);
+        if (error instanceof Error) {
+          console.error(`[Slate API] Error details: ${error.message}`, error.stack);
+        }
+        // Fields are already initialized to null, so we don't need to set them again
+        // But log the error for debugging
       }
-      
-      const gamesWithModelData = slateGames.filter(g => g.modelSpread !== null).length;
-      console.log(`   Computed Core V1 projections for ${gamesWithModelData} of ${slateGames.length} games`);
-    } catch (error) {
-      console.error('   Failed to compute Core V1 projections:', error);
-      if (error instanceof Error) {
-        console.error('   Error details:', error.message, error.stack);
-      }
-      // Continue without model data rather than failing
-      // Fields are already initialized to null, so games will show "—" in UI
+    }
+    
+    console.log(`   ✅ Computed Core V1 projections for ${gamesWithModelData} of ${slateGames.length} games`);
+    if (gamesWithErrors > 0) {
+      console.warn(`   ⚠️  ${gamesWithErrors} games had errors during Core V1 computation`);
     }
 
     // Determine cache headers based on game status
