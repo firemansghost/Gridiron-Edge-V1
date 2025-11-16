@@ -2713,9 +2713,13 @@ export async function GET(
     
     // OU reason: Only set when model is invalid (card still shows, just with muted reason)
     // Use specific failure information from diagnostics when available
+    // For Core V1, totals are intentionally disabled - use friendly message
     let ou_reason: string | null = null;
     if (!ou_model_valid) {
-      if (finalImpliedTotal === null) {
+      if (USE_CORE_V1 && finalImpliedTotal === null) {
+        // Core V1 totals are intentionally disabled
+        ou_reason = 'Totals model disabled for this season — no OU edge available';
+      } else if (finalImpliedTotal === null) {
         ou_reason = 'Model total unavailable';
       } else if (finalImpliedTotal < 15 || finalImpliedTotal > 120) {
         // Units mismatch: model returned a rate/ratio instead of points

@@ -767,11 +767,12 @@ export default function GameDetailPage() {
                         <InfoTooltip content={`Model raw = rating_home_used (${game.model_view.spread_lineage.rating_home_used?.toFixed(1) || 'N/A'}) − rating_away_used (${game.model_view.spread_lineage.rating_away_used?.toFixed(1) || 'N/A'}) + HFA (${game.model_view.spread_lineage.hfa_used?.toFixed(1) || '0.0'}).`} />
                       </div>
                     )}
-                    {/* PHASE 2.4: Edge Consistency Check */}
-                    {game.model_view?.edges?.atsEdgePts !== null && game.model_view?.spread_lineage?.overlay_used !== null && 
+                    {/* PHASE 2.4: Edge Consistency Check - Dev only */}
+                    {process.env.NODE_ENV !== 'production' && 
+                     game.model_view?.edges?.atsEdgePts !== null && game.model_view?.spread_lineage?.overlay_used !== null && 
                      Math.abs(game.model_view.edges.atsEdgePts - game.model_view.spread_lineage.overlay_used) > 0.01 && (
                       <div className="text-xs text-yellow-700 bg-yellow-50 border border-yellow-300 rounded px-2 py-1 mb-2">
-                        ⚠️ Overlay mismatch (check logs): edge={game.model_view.edges.atsEdgePts.toFixed(2)} vs overlay_used={game.model_view.spread_lineage.overlay_used.toFixed(2)}
+                        ⚠️ Overlay mismatch (dev only): edge={game.model_view.edges.atsEdgePts.toFixed(2)} vs overlay_used={game.model_view.spread_lineage.overlay_used.toFixed(2)}
                       </div>
                     )}
                     {/* PHASE 2.4: Recency Chip */}
@@ -883,11 +884,12 @@ export default function GameDetailPage() {
                         <InfoTooltip content={`Model raw = rating_home_used (${game.model_view.spread_lineage.rating_home_used?.toFixed(1) || 'N/A'}) − rating_away_used (${game.model_view.spread_lineage.rating_away_used?.toFixed(1) || 'N/A'}) + HFA (${game.model_view.spread_lineage.hfa_used?.toFixed(1) || '0.0'}).`} />
                       </div>
                     )}
-                    {/* PHASE 2.4: Edge Consistency Check (No-edge state) */}
-                    {game.model_view?.edges?.atsEdgePts !== null && game.model_view?.spread_lineage?.overlay_used !== null && 
+                    {/* PHASE 2.4: Edge Consistency Check (No-edge state) - Dev only */}
+                    {process.env.NODE_ENV !== 'production' && 
+                     game.model_view?.edges?.atsEdgePts !== null && game.model_view?.spread_lineage?.overlay_used !== null && 
                      Math.abs(game.model_view.edges.atsEdgePts - game.model_view.spread_lineage.overlay_used) > 0.01 && (
                       <div className="text-xs text-yellow-700 bg-yellow-50 border border-yellow-300 rounded px-2 py-1 mb-2">
-                        ⚠️ Overlay mismatch (check logs): edge={game.model_view.edges.atsEdgePts.toFixed(2)} vs overlay_used={game.model_view.spread_lineage.overlay_used.toFixed(2)}
+                        ⚠️ Overlay mismatch (dev only): edge={game.model_view.edges.atsEdgePts.toFixed(2)} vs overlay_used={game.model_view.spread_lineage.overlay_used.toFixed(2)}
                       </div>
                     )}
                     {/* PHASE 2.4: Recency Chip (No-edge state) */}
@@ -940,19 +942,18 @@ export default function GameDetailPage() {
                       Total {game.picks?.total?.headlineTotal?.toFixed(1) || snapshot?.marketTotal?.toFixed(1) || 'N/A'}
                     </div>
                     <div className="text-sm text-gray-600 mb-2">
-                      Model total unavailable — {game.validation?.ou_reason || 'Model total unavailable'}
+                      {game.validation?.ou_reason || 'Model total unavailable'}
                     </div>
                     <div className="text-xs text-gray-500">
                       Headline shows market number: {snapshot?.marketTotal?.toFixed(1) ?? 'N/A'}
                     </div>
-                    {/* Inline info note for model total warning (downgraded from banner) */}
-                    {game.validation?.modelTotalWarning && (
+                    {/* Only show technical details in dev mode */}
+                    {process.env.NODE_ENV !== 'production' && game.validation?.modelTotalWarning && (
                       <div className="text-xs text-gray-500 mt-2 bg-gray-50 border border-gray-200 rounded px-2 py-1">
                         ℹ️ {game.validation.modelTotalWarning}
                       </div>
                     )}
-                    {/* Diagnostics (if available) */}
-                    {game.validation?.totals_nan_stage && (
+                    {process.env.NODE_ENV !== 'production' && game.validation?.totals_nan_stage && (
                       <div className="text-xs text-gray-400 mt-2 italic">
                         Failure stage: {game.validation.totals_nan_stage}
                       </div>
@@ -1119,9 +1120,6 @@ export default function GameDetailPage() {
                     Total unavailable
                   </div>
                   <div className="text-sm text-gray-600 mb-2">
-                    Market total not available
-                  </div>
-                  <div className="text-xs text-gray-500">
                     {game.validation?.ou_reason || 'Model total unavailable this week.'}
                   </div>
                 </div>
@@ -1349,19 +1347,19 @@ export default function GameDetailPage() {
                     ATS Edge
                     <InfoTooltip content={TOOLTIP_CONTENT.ATS_EDGE_FORMULA} />
                   </div>
-                  <div className={`text-sm font-medium flex items-center gap-1 ${atsEdgeSign >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                    {atsEdgeSign >= 0 ? (
-                      <>
-                        <span aria-hidden="true">↑</span>
-                        <span className="sr-only">Positive edge</span>
-                      </>
-                    ) : (
+                  <div className="text-sm font-medium text-blue-600 flex items-center gap-1">
+                    {atsEdgeValue !== null && atsEdgeValue < 0 ? (
                       <>
                         <span aria-hidden="true">↓</span>
-                        <span className="sr-only">Negative edge</span>
+                        <span className="sr-only">Value on favorite</span>
                       </>
-                    )}
-                    {atsEdgeSign >= 0 ? '+' : ''}{atsEdgeForDisplay.toFixed(1)} pts
+                    ) : atsEdgeValue !== null && atsEdgeValue > 0 ? (
+                      <>
+                        <span aria-hidden="true">↑</span>
+                        <span className="sr-only">Value on underdog</span>
+                      </>
+                    ) : null}
+                    {atsEdgeMagnitude.toFixed(1)} pts
                   </div>
                 </div>
               </div>
@@ -1657,19 +1655,19 @@ export default function GameDetailPage() {
                 ATS Edge
                 <InfoTooltip content="Difference between market spread and model spread expressed as points of value. Positive = more value at current number." />
               </div>
-              <div className={`text-2xl font-bold flex items-center justify-center gap-1 ${atsEdgeSign >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                {atsEdgeSign >= 0 ? (
-                  <>
-                    <span aria-hidden="true">↑</span>
-                    <span className="sr-only">Positive edge</span>
-                  </>
-                ) : (
+              <div className="text-2xl font-bold text-blue-600 flex items-center justify-center gap-1">
+                {atsEdgeValue !== null && atsEdgeValue < 0 ? (
                   <>
                     <span aria-hidden="true">↓</span>
-                    <span className="sr-only">Negative edge</span>
+                    <span className="sr-only">Value on favorite</span>
                   </>
-                )}
-                {atsEdgeSign >= 0 ? '+' : ''}{atsEdgeForDisplay.toFixed(1)} pts
+                ) : atsEdgeValue !== null && atsEdgeValue > 0 ? (
+                  <>
+                    <span aria-hidden="true">↑</span>
+                    <span className="sr-only">Value on underdog</span>
+                  </>
+                ) : null}
+                {atsEdgeMagnitude.toFixed(1)} pts
               </div>
               {game.model_view?.modelFavoriteName && game.market_snapshot?.favoriteTeamName && (
                 <div className="text-xs text-gray-500 mt-2">
