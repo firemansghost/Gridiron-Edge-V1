@@ -13,9 +13,11 @@
  *   - Negative = away should be favored
  */
 
-import fs from 'fs';
-import path from 'path';
 import { prisma } from './prisma';
+// Static imports - bundled by Next.js/Vercel
+import coreCoefficients2025 from './data/core_coefficients_2025_fe_v1.json';
+import blendConfig from './data/rating_blend_config.json';
+import mftrRatings from './data/mftr_ratings_ridge.json';
 
 interface BlendConfig {
   optimalWeight: number;
@@ -27,8 +29,9 @@ interface BlendConfig {
   };
 }
 
-let cachedBlendConfig: BlendConfig | null = null;
-let cachedMFTRRatings: Map<string, number> | null = null;
+// Static data - no caching needed, already loaded at build time
+const BLEND_CONFIG: BlendConfig = blendConfig as BlendConfig;
+const MFTR_RATINGS_MAP: Map<string, number> = new Map(Object.entries(mftrRatings as Record<string, number>));
 
 interface CoreCoefficients {
   beta0: number;
@@ -40,72 +43,21 @@ interface CoreCoefficients {
   timestamp: string;
 }
 
-let cachedCoefficients: CoreCoefficients | null = null;
+// Static coefficients - no caching needed, already loaded at build time
+const CORE_V1_COEFFS_2025: CoreCoefficients = coreCoefficients2025 as CoreCoefficients;
 
 /**
- * Load blend configuration
+ * Get blend configuration (static import, no file I/O)
  */
-function loadBlendConfig(): BlendConfig | null {
-  if (cachedBlendConfig) {
-    return cachedBlendConfig;
-  }
-
-  // Handle both running from project root and from apps/web
-  let configPath = path.join(process.cwd(), 'reports', 'rating_blend_config.json');
-  
-  if (!fs.existsSync(configPath)) {
-    // Try from project root (if running from apps/web)
-    const projectRootPath = path.join(process.cwd(), '..', '..', 'reports', 'rating_blend_config.json');
-    if (fs.existsSync(projectRootPath)) {
-      configPath = projectRootPath;
-    } else {
-      return null;
-    }
-  }
-
-  const content = fs.readFileSync(configPath, 'utf-8');
-  cachedBlendConfig = JSON.parse(content) as BlendConfig;
-  return cachedBlendConfig;
+function getBlendConfig(): BlendConfig | null {
+  return BLEND_CONFIG;
 }
 
 /**
- * Load MFTR ratings
+ * Get MFTR ratings (static import, no file I/O)
  */
-function loadMFTRRatings(): Map<string, number> | null {
-  if (cachedMFTRRatings) {
-    return cachedMFTRRatings;
-  }
-
-  // Handle both running from project root and from apps/web
-  let mftrPath = path.join(process.cwd(), 'reports', 'mftr_ratings_ridge.csv');
-  
-  if (!fs.existsSync(mftrPath)) {
-    // Try from project root (if running from apps/web)
-    const projectRootPath = path.join(process.cwd(), '..', '..', 'reports', 'mftr_ratings_ridge.csv');
-    if (fs.existsSync(projectRootPath)) {
-      mftrPath = projectRootPath;
-    } else {
-      return null;
-    }
-  }
-
-  const content = fs.readFileSync(mftrPath, 'utf-8');
-  const lines = content.trim().split('\n').slice(1); // Skip header
-  const ratings = new Map<string, number>();
-
-  for (const line of lines) {
-    const parts = line.split(',');
-    if (parts.length >= 2) {
-      const teamId = parts[0].trim();
-      const rating = parseFloat(parts[1]);
-      if (!isNaN(rating)) {
-        ratings.set(teamId, rating);
-      }
-    }
-  }
-
-  cachedMFTRRatings = ratings;
-  return ratings;
+function getMFTRRatings(): Map<string, number> | null {
+  return MFTR_RATINGS_MAP;
 }
 
 /**
@@ -123,8 +75,8 @@ export function computeRatingDiffBlend(
   homeV2: number,
   awayV2: number
 ): number {
-  const blendConfig = loadBlendConfig();
-  const mftrRatings = loadMFTRRatings();
+  const blendConfig = getBlendConfig();
+  const mftrRatings = getMFTRRatings();
 
   // If no blend config or MFTR, fall back to raw V2 difference
   if (!blendConfig || !mftrRatings) {
@@ -157,37 +109,17 @@ export function computeRatingDiffBlend(
 }
 
 /**
- * Load Core V1 coefficients from persisted file
+ * Get Core V1 coefficients (static import, no file I/O)
  */
-function loadCoreCoefficients(): CoreCoefficients {
-  if (cachedCoefficients) {
-    return cachedCoefficients;
-  }
-
-  // Try to load from reports directory (relative to project root)
-  // Handle both running from project root and from apps/web
-  let reportsPath = path.join(process.cwd(), 'reports', 'core_coefficients_2025_fe_v1.json');
-  
-  if (!fs.existsSync(reportsPath)) {
-    // Try from project root (if running from apps/web)
-    const projectRootPath = path.join(process.cwd(), '..', '..', 'reports', 'core_coefficients_2025_fe_v1.json');
-    if (fs.existsSync(projectRootPath)) {
-      reportsPath = projectRootPath;
-    } else {
-      throw new Error(`Core V1 coefficients not found at ${reportsPath} or ${projectRootPath}. Please run Core calibration first.`);
-    }
-  }
-
-  const content = fs.readFileSync(reportsPath, 'utf-8');
-  const coeffs = JSON.parse(content) as CoreCoefficients;
-
+function getCoreCoefficients(): CoreCoefficients {
   // Validate
-  if (typeof coeffs.beta0 !== 'number' || typeof coeffs.betaRatingDiff !== 'number' || typeof coeffs.betaHfa !== 'number') {
+  if (typeof CORE_V1_COEFFS_2025.beta0 !== 'number' || 
+      typeof CORE_V1_COEFFS_2025.betaRatingDiff !== 'number' || 
+      typeof CORE_V1_COEFFS_2025.betaHfa !== 'number') {
     throw new Error('Invalid Core V1 coefficients format');
   }
-
-  cachedCoefficients = coeffs;
-  return coeffs;
+  
+  return CORE_V1_COEFFS_2025;
 }
 
 /**
@@ -201,7 +133,7 @@ export function computeCoreV1Spread(
   ratingDiffBlend: number,
   hfaPoints: number
 ): number {
-  const coeffs = loadCoreCoefficients();
+  const coeffs = getCoreCoefficients();
   
   // Core V1 OLS: y_hma = β₀ + β_rating * ratingDiffBlend + β_hfa * hfaPoints
   const spreadHma = coeffs.beta0 + coeffs.betaRatingDiff * ratingDiffBlend + coeffs.betaHfa * hfaPoints;

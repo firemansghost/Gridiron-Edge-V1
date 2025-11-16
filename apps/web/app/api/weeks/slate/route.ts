@@ -38,6 +38,14 @@ interface SlateGame {
   pickTotal?: string | null;
   maxEdge?: number | null;
   confidence?: string | null;
+  // Debug info (only when debug=1 query param is present)
+  coreV1Debug?: {
+    attempted: boolean;
+    success: boolean;
+    modelSpreadHma?: number | null;
+    edgeHma?: number | null;
+    errorMessage?: string | null;
+  };
 }
 
 
@@ -51,6 +59,7 @@ export async function GET(request: NextRequest) {
     const limitDates = parseInt(url.searchParams.get('limitDates') || '0', 10);
     const afterDate = url.searchParams.get('afterDate');
     const includeAdvanced = url.searchParams.get('includeAdvanced') === 'true';
+    const debug = url.searchParams.get('debug') === '1' || url.searchParams.get('debug') === 'true';
 
     if (!season || !week) {
       return NextResponse.json(
@@ -247,11 +256,26 @@ export async function GET(request: NextRequest) {
     
     // Compute Core V1 projections for each game
     for (const game of slateGames) {
+      // Initialize debug block if debug mode is enabled
+      if (debug) {
+        game.coreV1Debug = {
+          attempted: true,
+          success: false,
+          modelSpreadHma: null,
+          edgeHma: null,
+          errorMessage: null,
+        };
+      }
+      
       try {
         // Get full game info for team names and neutral site
         const fullGame = finalGamesToInclude.find(g => g.id === game.gameId);
         if (!fullGame) {
-          console.warn(`[Slate API] Game ${game.gameId} not found in finalGamesToInclude, skipping Core V1 computation`);
+          const errorMsg = `Game ${game.gameId} not found in finalGamesToInclude`;
+          console.warn(`[Slate API] ${errorMsg}, skipping Core V1 computation`);
+          if (debug) {
+            game.coreV1Debug!.errorMessage = errorMsg;
+          }
           continue;
         }
 
@@ -269,7 +293,11 @@ export async function GET(request: NextRequest) {
         
         // Validate Core V1 result
         if (!Number.isFinite(modelSpreadHma)) {
-          console.error(`[Slate API] Core V1 returned non-finite spread for game ${game.gameId}: ${modelSpreadHma}`);
+          const errorMsg = `Core V1 returned non-finite spread: ${modelSpreadHma}`;
+          console.error(`[Slate API] ${errorMsg} for game ${game.gameId}`);
+          if (debug) {
+            game.coreV1Debug!.errorMessage = errorMsg;
+          }
           continue;
         }
         
@@ -282,8 +310,12 @@ export async function GET(request: NextRequest) {
         let spreadPick: string | null = null;
         let spreadEdgePts: number | null = null;
         let maxEdge: number | null = null;
+        let edgeHma: number | null = null;
 
         if (marketSpreadHma !== null && Number.isFinite(marketSpreadHma)) {
+          // Compute raw edge in HMA frame (model - market)
+          edgeHma = modelSpreadHma - marketSpreadHma;
+          
           const atsPick = getATSPick(
             modelSpreadHma,
             marketSpreadHma,
@@ -320,14 +352,29 @@ export async function GET(request: NextRequest) {
         game.maxEdge = maxEdge !== null && Number.isFinite(maxEdge) ? Math.round(maxEdge * 10) / 10 : null;
         game.confidence = confidence;
         
+        // Populate debug block on success
+        if (debug) {
+          game.coreV1Debug!.success = true;
+          game.coreV1Debug!.modelSpreadHma = modelSpreadHma;
+          game.coreV1Debug!.edgeHma = edgeHma;
+          game.coreV1Debug!.errorMessage = null;
+        }
+        
         if (game.modelSpread !== null) {
           gamesWithModelData++;
         }
       } catch (error) {
         gamesWithErrors++;
+        const errorMsg = error instanceof Error ? error.message : String(error);
         console.error(`[Slate API] Error computing Core V1 spread for game ${game.gameId}:`, error);
         if (error instanceof Error) {
           console.error(`[Slate API] Error details: ${error.message}`, error.stack);
+        }
+        
+        // Populate debug block on error
+        if (debug) {
+          game.coreV1Debug!.success = false;
+          game.coreV1Debug!.errorMessage = errorMsg;
         }
         // Fields are already initialized to null, so we don't need to set them again
         // But log the error for debugging
