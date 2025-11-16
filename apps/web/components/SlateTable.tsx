@@ -718,6 +718,12 @@ export default function SlateTable({
 
   // Group games by date using ISO date strings as keys
   // Apply all filters and sorting
+  // Check if all games have null totals (totals disabled)
+  const allGamesHaveNullTotals = useMemo(() => {
+    if (games.length === 0) return false;
+    return games.every(game => game.modelTotal === null && game.pickTotal === null);
+  }, [games]);
+
   const groupedGames = useMemo(() => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -1234,24 +1240,28 @@ export default function SlateTable({
                       <InfoTooltip content="Our model's predicted point spread based on team power ratings. Compare this to Market Spread to find edge opportunities." position="bottom" />
                     </div>
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
-                    <div className="flex items-center justify-center gap-1">
-                      Model Total
-                      <InfoTooltip content="Our model's predicted total points for this game. Compare to Market Total to find edge opportunities." position="bottom" />
-                    </div>
-                  </th>
+                  {!allGamesHaveNullTotals && (
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
+                      <div className="flex items-center justify-center gap-1">
+                        Model Total
+                        <InfoTooltip content="Our model's predicted total points for this game. Compare to Market Total to find edge opportunities." position="bottom" />
+                      </div>
+                    </th>
+                  )}
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
                     <div className="flex items-center justify-center gap-1">
                       Pick (ATS)
                       <InfoTooltip content="Model's pick against the spread. Shows which team to bet based on our spread prediction vs. the market." position="bottom" />
                     </div>
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
-                    <div className="flex items-center justify-center gap-1">
-                      Pick (Total)
-                      <InfoTooltip content="Model's pick for the total (over/under). Based on our total prediction vs. the market line." position="bottom" />
-                    </div>
-                  </th>
+                  {!allGamesHaveNullTotals && (
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
+                      <div className="flex items-center justify-center gap-1">
+                        Pick (Total)
+                        <InfoTooltip content="Model's pick for the total (over/under). Based on our total prediction vs. the market line." position="bottom" />
+                      </div>
+                    </th>
+                  )}
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
                     <div className="flex items-center justify-center gap-1">
                       Max Edge
@@ -1370,11 +1380,13 @@ export default function SlateTable({
                             </div>
                           )}
                         </td>
-                        <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
-                          <div className="text-sm text-gray-900">
-                            {Number.isFinite(game.modelTotal) ? game.modelTotal!.toFixed(1) : '—'}
-                          </div>
-                        </td>
+                        {!allGamesHaveNullTotals && (
+                          <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
+                            <div className="text-sm text-gray-900">
+                              {Number.isFinite(game.modelTotal) ? game.modelTotal!.toFixed(1) : '—'}
+                            </div>
+                          </td>
+                        )}
                         <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
                           <div className="text-sm text-gray-900">
                             {game.pickSpread || '—'}
@@ -1385,11 +1397,13 @@ export default function SlateTable({
                             </div>
                           )}
                         </td>
-                        <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
-                          <div className="text-sm text-gray-900">
-                            {game.pickTotal || '—'}
-                          </div>
-                        </td>
+                        {!allGamesHaveNullTotals && (
+                          <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
+                            <div className="text-sm text-gray-900">
+                              {game.pickTotal || '—'}
+                            </div>
+                          </td>
+                        )}
                         <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
                           <div className="text-sm text-gray-900">
                             {Number.isFinite(game.maxEdge) ? game.maxEdge!.toFixed(1) : '—'}

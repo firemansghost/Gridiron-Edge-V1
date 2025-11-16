@@ -720,33 +720,51 @@ export default function GameDetailPage() {
                     {/* ============================================ */}
                     {snapshot?.favoriteLine !== null && snapshot?.favoriteLine !== undefined ? (
                       <>
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-sm text-gray-600">
-                            Edge: <span className="font-semibold text-blue-600">{atsEdgeMagnitude.toFixed(1)} pts</span>
-                          </span>
-                          {game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && (
-                            <>
-                              {' • '}
+                        {/* Case A: No official edge (Trust-Market capped) */}
+                        {(!game.picks.spread.bettablePick?.label || game.picks.spread.bettablePick?.suppressHeadline) ? (
+                          <>
+                            <div className="text-sm text-gray-600 mb-2">
+                              Raw disagreement: <span className="font-semibold">{atsEdgeMagnitude.toFixed(1)} pts</span> (official edge <span className="font-semibold">0.0 pts</span> after Trust-Market overlay)
+                            </div>
+                            {game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined ? (
+                              <div className="text-sm text-gray-600 mb-2">
+                                Bet to: <span className="font-semibold">—</span> • <span className="text-gray-500 italic">No official bet — Trust-Market mode</span>
+                              </div>
+                            ) : null}
+                            {/* Range text for no-edge case */}
+                            {game.model_view?.modelFavoriteLine !== null && game.model_view?.modelFavoriteName && (
+                              <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
+                                <span className="font-semibold">Range:</span> Model fair line ≈ {game.model_view.modelFavoriteName} {game.model_view.modelFavoriteLine.toFixed(1)}; disagreement with market {snapshot.favoriteLine.toFixed(1)} is {atsEdgeMagnitude.toFixed(1)} pts. No official edge in Trust-Market mode.
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          /* Case B: Official edge > 0 */
+                          <>
+                            <div className="flex items-center gap-2 mb-2">
                               <span className="text-sm text-gray-600">
-                                Bet to: <span className="font-semibold">{game.picks.spread.betTo.toFixed(1)}</span>
+                                Edge: <span className="font-semibold text-blue-600">{atsEdgeMagnitude.toFixed(1)} pts</span>
                               </span>
-                            </>
-                          )}
-                        </div>
-                        {/* RANGE: Flip Point - Show when we have flip data from API */}
-                        {/* PHASE 2.4: Fix range text to use overlay sign to determine value side */}
-                        {game.picks.spread.flip !== null && game.picks.spread.flip !== undefined && game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && snapshot && game.model_view?.spread_lineage?.overlay_used !== null && (
-                          <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
-                            <span className="font-semibold">Range:</span> Value on {
-                              game.model_view.spread_lineage.overlay_used < 0 
-                                ? snapshot.favoriteTeamName 
-                                : snapshot.dogTeamName
-                            } to {game.picks.spread.betTo.toFixed(1)}; flips to {
-                              game.model_view.spread_lineage.overlay_used < 0 
-                                ? snapshot.dogTeamName 
-                                : snapshot.favoriteTeamName
-                            } at {game.picks.spread.flip > 0 ? `+${game.picks.spread.flip.toFixed(1)}` : game.picks.spread.flip.toFixed(1)}
-                          </div>
+                              {game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && (
+                                <>
+                                  {' • '}
+                                  <span className="text-sm text-gray-600">
+                                    Bet to: <span className="font-semibold">{game.picks.spread.betTo.toFixed(1)}</span>
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                            {/* RANGE: Use actual pick direction from bettablePick */}
+                            {game.picks.spread.flip !== null && game.picks.spread.flip !== undefined && game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && game.picks.spread.bettablePick?.teamName && (
+                              <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
+                                <span className="font-semibold">Range:</span> Value on {game.picks.spread.bettablePick.teamName} down to {game.picks.spread.betTo.toFixed(1)}; flips to {
+                                  game.picks.spread.bettablePick.teamName === snapshot.favoriteTeamName 
+                                    ? snapshot.dogTeamName 
+                                    : snapshot.favoriteTeamName
+                                } at {game.picks.spread.flip > 0 ? `+${game.picks.spread.flip.toFixed(1)}` : game.picks.spread.flip.toFixed(1)}
+                              </div>
+                            )}
+                          </>
                         )}
                       </>
                     ) : (
@@ -843,36 +861,32 @@ export default function GameDetailPage() {
                       No edge at current number — market {snapshot ? `${snapshot.favoriteTeamName} ${snapshot.favoriteLine.toFixed(1)}` : 'N/A'}
                     </div>
                     {/* ============================================ */}
-                    {/* ALWAYS SHOW: Edge, Bet-to, Range even in no-edge state */}
+                    {/* Show raw disagreement when no official edge */}
                     {/* ============================================ */}
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-sm text-gray-600">
-                        Edge: <span className="font-semibold text-blue-600">{atsEdgeMagnitude.toFixed(1)} pts</span>
-                      </span>
-                      {game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && (
-                        <>
-                          {' • '}
-                          <span className="text-sm text-gray-600">
-                            Bet to: <span className="font-semibold">{game.picks.spread.betTo.toFixed(1)}</span>
-                          </span>
-                        </>
-                      )}
+                    <div className="text-sm text-gray-600 mb-2">
+                      Raw disagreement: <span className="font-semibold">{atsEdgeMagnitude.toFixed(1)} pts</span> (official edge <span className="font-semibold">0.0 pts</span> after Trust-Market overlay)
                     </div>
+                    {game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined ? (
+                      <div className="text-sm text-gray-600 mb-2">
+                        Bet to: <span className="font-semibold">—</span> • <span className="text-gray-500 italic">No official bet — Trust-Market mode</span>
+                      </div>
+                    ) : null}
                     {/* RANGE: Flip Point */}
-                    {/* PHASE 2.4: Fix range text to use overlay sign to determine value side */}
-                    {game.picks.spread.flip !== null && game.picks.spread.flip !== undefined && game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && snapshot && game.model_view?.spread_lineage?.overlay_used !== null && (
+                    {/* Range text for no-edge case - use model fair line */}
+                    {(!game.picks.spread.bettablePick?.label || game.picks.spread.bettablePick?.suppressHeadline) && game.model_view?.modelFavoriteLine !== null && game.model_view?.modelFavoriteName && snapshot ? (
                       <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
-                        <span className="font-semibold">Range:</span> Value on {
-                          game.model_view.spread_lineage.overlay_used < 0 
-                            ? snapshot.favoriteTeamName 
-                            : snapshot.dogTeamName
-                        } to {game.picks.spread.betTo.toFixed(1)}; flips to {
-                          game.model_view.spread_lineage.overlay_used < 0 
+                        <span className="font-semibold">Range:</span> Model fair line ≈ {game.model_view.modelFavoriteName} {game.model_view.modelFavoriteLine.toFixed(1)}; disagreement with market {snapshot.favoriteLine.toFixed(1)} is {atsEdgeMagnitude.toFixed(1)} pts. No official edge in Trust-Market mode.
+                      </div>
+                    ) : game.picks.spread.flip !== null && game.picks.spread.flip !== undefined && game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && game.picks.spread.bettablePick?.teamName && snapshot ? (
+                      /* Range text for official edge case - use actual pick direction */
+                      <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
+                        <span className="font-semibold">Range:</span> Value on {game.picks.spread.bettablePick.teamName} down to {game.picks.spread.betTo.toFixed(1)}; flips to {
+                          game.picks.spread.bettablePick.teamName === snapshot.favoriteTeamName 
                             ? snapshot.dogTeamName 
                             : snapshot.favoriteTeamName
                         } at {game.picks.spread.flip > 0 ? `+${game.picks.spread.flip.toFixed(1)}` : game.picks.spread.flip.toFixed(1)}
                       </div>
-                    )}
+                    ) : null}
                     {/* PHASE 2.4: Lineage Line (No-edge state) */}
                     {game.model_view?.spread_lineage && (
                       <div className="text-xs text-gray-500 mt-2 mb-2 border-t border-gray-200 pt-2">
