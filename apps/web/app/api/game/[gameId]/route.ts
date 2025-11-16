@@ -8,6 +8,7 @@ import { prisma } from '@/lib/prisma';
 import { computeSpreadPick, computeTotalPick, convertToFavoriteCentric, computeATSEdge, computeBettableSpreadPick, computeTotalBetTo } from '@/lib/pick-helpers';
 import { pickMarketLine, getLineValue, getPointValue, looksLikePriceLeak, pickMoneyline, americanToProb } from '@/lib/market-line-helpers';
 import { getCoreV1SpreadFromTeams, getATSPick, computeATSEdgeHma } from '@/lib/core-v1-spread';
+import { getOUPick } from '@/lib/core-v1-total';
 import { NextResponse } from 'next/server';
 
 // === V1 MODE CONFIGURATION ===
@@ -1643,9 +1644,17 @@ export async function GET(
     // Initialize finalSpreadWithOverlay (V1: no overlay, use Core V1 directly)
     let finalSpreadWithOverlay = finalImpliedSpread;
     
-    // Never use matchupOutput.impliedTotal unless it passes the units handshake
-    // If invalid, leave as null - DO NOT substitute a number
-    const finalImpliedTotal = isValidTotal && matchupTotalRaw !== null ? matchupTotalRaw : null;
+    // Compute totals: Use Core V1 totals model when USE_CORE_V1 is true
+    let finalImpliedTotal: number | null = null;
+    if (USE_CORE_V1 && coreV1SpreadInfo && marketTotal !== null && marketSpreadHma !== null) {
+      // Compute Core V1 total using spread-driven overlay
+      const ouPick = getOUPick(marketTotal, marketSpreadHma, coreV1SpreadInfo.coreSpreadHma);
+      finalImpliedTotal = ouPick.modelTotal;
+    } else {
+      // Legacy: Never use matchupOutput.impliedTotal unless it passes the units handshake
+      // If invalid, leave as null - DO NOT substitute a number
+      finalImpliedTotal = isValidTotal && matchupTotalRaw !== null ? matchupTotalRaw : null;
+    }
     
     // Track which source we're using and if units failed
     let totalSource = 'unknown';
@@ -2713,12 +2722,11 @@ export async function GET(
     
     // OU reason: Only set when model is invalid (card still shows, just with muted reason)
     // Use specific failure information from diagnostics when available
-    // For Core V1, totals are intentionally disabled - use friendly message
     let ou_reason: string | null = null;
     if (!ou_model_valid) {
       if (USE_CORE_V1 && finalImpliedTotal === null) {
-        // Core V1 totals are intentionally disabled
-        ou_reason = 'Totals model disabled for this season — no OU edge available';
+        // Core V1 totals computation failed (missing inputs)
+        ou_reason = 'Model total unavailable — missing market total or spread data';
       } else if (finalImpliedTotal === null) {
         ou_reason = 'Model total unavailable';
       } else if (finalImpliedTotal < 15 || finalImpliedTotal > 120) {
@@ -3404,17 +3412,61 @@ export async function GET(
       atsEdge = modelFavoriteLine - market_snapshot.favoriteLine;
     }
     
+    // Compute OU pick info for model_view (raw and official - for now they're the same)
+    let ouPickInfo: {
+      modelTotal: number | null;
+      marketTotal: number | null;
+      ouEdgePts: number | null;
+      pickLabel: string | null;
+      confidence: 'A' | 'B' | 'C' | null;
+      rawModelTotal: number | null;
+      rawOuEdgePts: number | null;
+    } = {
+      modelTotal: null,
+      marketTotal: null,
+      ouEdgePts: null,
+      pickLabel: null,
+      confidence: null,
+      rawModelTotal: null,
+      rawOuEdgePts: null,
+    };
+
+    if (USE_CORE_V1 && coreV1SpreadInfo && marketTotal !== null && marketSpreadHma !== null) {
+      const ouPick = getOUPick(marketTotal, marketSpreadHma, coreV1SpreadInfo.coreSpreadHma);
+      ouPickInfo = {
+        modelTotal: ouPick.modelTotal,
+        marketTotal: marketTotal,
+        ouEdgePts: ouPick.ouEdgePts,
+        pickLabel: ouPick.pickLabel,
+        confidence: ouPick.grade,
+        rawModelTotal: ouPick.modelTotal, // For now, raw = official (no Trust-Market on totals yet)
+        rawOuEdgePts: ouPick.ouEdgePts,
+      };
+    } else if (finalImpliedTotal !== null && marketTotal !== null) {
+      // Legacy mode
+      ouPickInfo = {
+        modelTotal: finalImpliedTotal,
+        marketTotal: marketTotal,
+        ouEdgePts: totalEdgePts,
+        pickLabel: totalPick?.label ?? null,
+        confidence: totalPick?.grade ?? null,
+        rawModelTotal: finalImpliedTotal,
+        rawOuEdgePts: totalEdgePts,
+      };
+    }
+
     const model_view = {
       modelFavoriteTeamId: modelFavoriteTeamId,
       modelFavoriteName: modelFavoriteName,
       modelFavoriteLine: modelFavoriteLine, // Favorite-centric, negative (or 0.0 for pick'em)
-      modelTotal: modelTotal, // Points or null if units invalid
+      modelTotal: modelTotal, // Points or null if units invalid (legacy field, kept for compatibility)
       winProbFavorite,
       winProbDog,
       edges: {
         atsEdgePts: atsEdge, // ✅ Capped overlay (not raw disagreement) or Core V1 edge in favorite-centric format
         ouEdgePts: totalEdgePts // ✅ Capped overlay (not raw disagreement)
       },
+      totals: ouPickInfo, // ✅ Totals V1 fields (raw and official)
       // PHASE 2.1: Features for calibration (talent gap, matchup class, HFA, recency)
       features: {
         talent: {

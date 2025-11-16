@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { selectClosingLine } from '@/lib/closing-line-helpers';
 import { getCoreV1SpreadFromTeams, getATSPick, computeATSEdgeHma } from '@/lib/core-v1-spread';
+import { getOUPick } from '@/lib/core-v1-total';
 
 interface SlateGame {
   gameId: string;
@@ -331,10 +332,12 @@ export async function GET(request: NextRequest) {
           maxEdge = spreadEdgePts;
         }
 
-        // Totals: Disabled for V1
-        const modelTotal: number | null = null;
-        const totalPick: string | null = null;
-        const totalEdgePts: number | null = null;
+        // Totals: Compute using Core V1 totals model
+        const marketTotal = game.closingTotal?.value ?? null;
+        const ouPick = getOUPick(marketTotal, marketSpreadHma, modelSpreadHma);
+        const modelTotal = ouPick.modelTotal !== null ? Math.round(ouPick.modelTotal * 10) / 10 : null;
+        const totalPick = ouPick.pickLabel;
+        const totalEdgePts = ouPick.ouEdgePts !== null ? Math.round(ouPick.ouEdgePts * 10) / 10 : null;
 
         // Confidence tier (A ≥ 4.0, B ≥ 3.0, C ≥ 2.0) - based on ATS edge only
         let confidence: string | null = null;
@@ -346,9 +349,9 @@ export async function GET(request: NextRequest) {
 
         // Assign to game - CRITICAL: Always assign, even if some fields are null
         game.modelSpread = modelSpread;
-        game.modelTotal = null; // Disabled for V1
+        game.modelTotal = modelTotal;
         game.pickSpread = spreadPick;
-        game.pickTotal = null; // Disabled for V1
+        game.pickTotal = totalPick;
         game.maxEdge = maxEdge !== null && Number.isFinite(maxEdge) ? Math.round(maxEdge * 10) / 10 : null;
         game.confidence = confidence;
         

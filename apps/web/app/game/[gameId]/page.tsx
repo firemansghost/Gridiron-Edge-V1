@@ -24,12 +24,16 @@ import { LineSparkline } from '@/components/LineSparkline';
 import { GameDetailSkeleton } from '@/components/GameDetailSkeleton';
 import { TOOLTIP_CONTENT } from '@/lib/tooltip-content';
 import { TeamLogo } from '@/components/TeamLogo';
+import { TrustMarketExplainer } from '@/components/TrustMarketExplainer';
+import { ModelViewModeToggle } from '@/components/ModelViewModeToggle';
+import { useModelViewMode } from '@/contexts/ModelViewModeContext';
 
 export default function GameDetailPage() {
   const params = useParams();
   const [game, setGame] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { mode: modelViewMode } = useModelViewMode();
 
   useEffect(() => {
     if (params.gameId) {
@@ -610,9 +614,10 @@ export default function GameDetailPage() {
           {/* Betting Ticket - Single unified block above fold */}
           <div className="mb-4 md:mb-6">
             {/* PHASE 2.4: Trust-Market Mode Badge and Timestamp Row */}
-            <div className="flex items-center justify-between mb-3 sm:mb-4">
-              <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between mb-3 sm:mb-4 flex-wrap gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <h2 className="text-lg sm:text-xl font-bold text-gray-900">Betting Ticket</h2>
+                <ModelViewModeToggle />
                 {/* Trust-Market Mode Badge */}
                 {game.modelConfig?.mode === 'trust_market' && (
                   <div className="bg-blue-50 border border-blue-300 rounded-md px-3 py-1 flex items-center gap-2">
@@ -1312,6 +1317,9 @@ export default function GameDetailPage() {
               </div>
             </div>
           )}
+
+          {/* Trust-Market Explainer */}
+          <TrustMarketExplainer />
 
           {/* Model vs Market Card */}
         <div className="bg-white p-6 rounded-lg shadow mb-8">

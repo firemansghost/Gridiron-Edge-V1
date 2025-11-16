@@ -1,0 +1,18 @@
+{
+  "beta_spread_diff_to_total": 0.0,
+  "max_overlay_points": 4.0,
+  "min_edge_for_pick": 2.5,
+  "grade_thresholds": {
+    "A": 6.0,
+    "B": 4.0,
+    "C": 2.5
+  },
+  "training_stats": {
+    "sample_size": 0,
+    "r_squared": 0.0,
+    "mean_abs_error": 0.0
+  },
+  "trained_on": "2025-01-01T00:00:00.000Z",
+  "timestamp": "2025-01-01T00:00:00.000Z"
+}
+

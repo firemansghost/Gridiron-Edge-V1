@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { InfoTooltip } from './InfoTooltip';
+import { ModelViewModeToggle } from './ModelViewModeToggle';
 
 /**
  * Terminology:
@@ -815,7 +816,10 @@ export default function SlateTable({
     return (
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+            <ModelViewModeToggle />
+          </div>
         </div>
         <div className="p-8 text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
@@ -829,7 +833,10 @@ export default function SlateTable({
     return (
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+            <ModelViewModeToggle />
+          </div>
         </div>
         <div className="p-8 text-center">
           <div className="text-red-500 text-5xl mb-4">⚠️</div>
@@ -850,7 +857,10 @@ export default function SlateTable({
     return (
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+            <ModelViewModeToggle />
+          </div>
         </div>
         <div className="p-8 text-center">
           <div className="text-gray-400 text-5xl mb-4">📅</div>
@@ -866,7 +876,10 @@ export default function SlateTable({
       <div className="px-6 py-4 border-b border-gray-200">
         <div className="flex justify-between items-center">
           <div>
+            <div className="flex items-center justify-between gap-4">
             <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+            <ModelViewModeToggle />
+          </div>
             <p className="text-sm text-gray-600 mt-1">{games.length} games</p>
           </div>
           <div className="flex items-center space-x-4">
