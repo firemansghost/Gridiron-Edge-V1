@@ -33,7 +33,7 @@ export default function GameDetailPage() {
   const [game, setGame] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { modelViewMode } = useModelViewMode();
+  const { mode: modelViewMode } = useModelViewMode();
 
   useEffect(() => {
     if (params.gameId) {

@@ -82,7 +82,7 @@ export default function SlateTable({
   const [sortBy, setSortBy] = useState<'time' | 'edge' | 'confidence'>('time');
   
   // Get model view mode from context
-  const { modelViewMode } = useModelViewMode();
+  const { mode: modelViewMode } = useModelViewMode();
   
   // Refs for scroll synchronization
   const topScrollRef = useRef<HTMLDivElement>(null);
@@ -1441,14 +1441,14 @@ export default function SlateTable({
                             
                             if (modelViewMode === 'raw') {
                               // Compute raw edge from modelSpread and closingSpread
-                              if (game.modelSpread !== null && Number.isFinite(game.modelSpread) && 
-                                  game.closingSpread?.value !== null && Number.isFinite(game.closingSpread.value)) {
+                              if (game.modelSpread !== null && game.modelSpread !== undefined && Number.isFinite(game.modelSpread) && 
+                                  game.closingSpread !== null && game.closingSpread.value !== null && Number.isFinite(game.closingSpread.value)) {
                                 const rawEdge = Math.abs(game.modelSpread - game.closingSpread.value);
                                 displayEdge = Math.round(rawEdge * 10) / 10;
                               }
                             } else {
                               // Official mode: use Trust-Market values
-                              displayEdge = game.maxEdge;
+                              displayEdge = game.maxEdge ?? null;
                             }
                             
                             return (
@@ -1472,8 +1472,8 @@ export default function SlateTable({
                             
                             if (modelViewMode === 'raw') {
                               // Compute raw edge and confidence
-                              if (game.modelSpread !== null && Number.isFinite(game.modelSpread) && 
-                                  game.closingSpread?.value !== null && Number.isFinite(game.closingSpread.value)) {
+                              if (game.modelSpread !== null && game.modelSpread !== undefined && Number.isFinite(game.modelSpread) && 
+                                  game.closingSpread !== null && game.closingSpread.value !== null && Number.isFinite(game.closingSpread.value)) {
                                 const rawEdge = Math.abs(game.modelSpread - game.closingSpread.value);
                                 const roundedEdge = Math.round(rawEdge * 10) / 10;
                                 
@@ -1483,7 +1483,7 @@ export default function SlateTable({
                               }
                             } else {
                               // Official mode: use Trust-Market confidence
-                              displayConfidence = game.confidence;
+                              displayConfidence = game.confidence ?? null;
                             }
                             
                             return (
