@@ -341,6 +341,110 @@ export default function WeekReviewPage() {
 
       {data && (
         <>
+          {/* Week Summary v1 - Official Trust-Market Picks */}
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold mb-4">Week Summary</h2>
+            <p className="text-sm text-gray-600 mb-6">
+              Week Review looks back at Trust-Market Official picks for this week — how they performed vs the closing line and the final score.
+            </p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+              {/* ATS Card */}
+              <div className="bg-white p-6 rounded-lg shadow">
+                <h3 className="text-lg font-semibold text-gray-700 mb-3">ATS – Official Trust-Market picks</h3>
+                {(() => {
+                  // Filter to only Official Trust-Market picks:
+                  // - Strategy-run bets (not manual entries)
+                  // - ATS/spread market type
+                  // Note: If a specific strategy is selected in the dropdown, this will only count that strategy.
+                  // For now, we count all strategy-run bets. If there's a specific "official" strategy tag,
+                  // we can add an additional filter here (e.g., bet.strategyTag === 'trust-market').
+                  const atsBets = data.bets.filter(bet => 
+                    bet.marketType === 'spread' && bet.source === 'strategy_run'
+                  );
+                  const gradedAts = atsBets.filter(bet => bet.result !== null);
+                  const wins = gradedAts.filter(bet => bet.result === 'win').length;
+                  const losses = gradedAts.filter(bet => bet.result === 'loss').length;
+                  const pushes = gradedAts.filter(bet => bet.result === 'push').length;
+                  const totalPnL = atsBets.reduce((sum, bet) => sum + Number(bet.pnl || 0), 0);
+                  
+                  if (atsBets.length === 0) {
+                    return (
+                      <div className="text-sm text-gray-500">
+                        No Official ATS picks this week.
+                      </div>
+                    );
+                  }
+                  
+                  return (
+                    <>
+                      <div className="text-3xl font-bold text-gray-900 mb-2">
+                        {wins}-{losses}{pushes > 0 ? `-${pushes}` : ''}
+                      </div>
+                      <div className="text-sm text-gray-600 mb-2">
+                        {atsBets.length} {atsBets.length === 1 ? 'play' : 'plays'}
+                      </div>
+                      {totalPnL !== 0 && (
+                        <div className={`text-sm font-medium ${totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {totalPnL >= 0 ? '+' : ''}{totalPnL.toFixed(2)} units
+                        </div>
+                      )}
+                      <div className="text-xs text-gray-500 mt-2">
+                        Counts only Official (Trust-Market) ATS picks for this week.
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+              
+              {/* Moneyline Card */}
+              <div className="bg-white p-6 rounded-lg shadow">
+                <h3 className="text-lg font-semibold text-gray-700 mb-3">Moneyline – Official Trust-Market picks</h3>
+                {(() => {
+                  // Filter to only Official Trust-Market picks:
+                  // - Strategy-run bets (not manual entries)
+                  // - Moneyline market type
+                  // Note: If a specific strategy is selected in the dropdown, this will only count that strategy.
+                  const mlBets = data.bets.filter(bet => 
+                    bet.marketType === 'moneyline' && bet.source === 'strategy_run'
+                  );
+                  const gradedMl = mlBets.filter(bet => bet.result !== null);
+                  const wins = gradedMl.filter(bet => bet.result === 'win').length;
+                  const losses = gradedMl.filter(bet => bet.result === 'loss').length;
+                  const pushes = gradedMl.filter(bet => bet.result === 'push').length;
+                  const totalPnL = mlBets.reduce((sum, bet) => sum + Number(bet.pnl || 0), 0);
+                  
+                  if (mlBets.length === 0) {
+                    return (
+                      <div className="text-sm text-gray-500">
+                        No Official moneyline picks this week.
+                      </div>
+                    );
+                  }
+                  
+                  return (
+                    <>
+                      <div className="text-3xl font-bold text-gray-900 mb-2">
+                        {wins}-{losses}{pushes > 0 ? `-${pushes}` : ''}
+                      </div>
+                      <div className="text-sm text-gray-600 mb-2">
+                        {mlBets.length} {mlBets.length === 1 ? 'play' : 'plays'}
+                      </div>
+                      {totalPnL !== 0 && (
+                        <div className={`text-sm font-medium ${totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {totalPnL >= 0 ? '+' : ''}{totalPnL.toFixed(2)} units
+                        </div>
+                      )}
+                      <div className="text-xs text-gray-500 mt-2">
+                        Counts only Official (Trust-Market) moneyline picks for this week.
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+
           {/* Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
             <div className="bg-white p-6 rounded-lg shadow">
