@@ -177,7 +177,7 @@ async function main() {
   const teamAdjustments: Record<string, number> = {};
   const hfaValues: number[] = [];
 
-  for (const [teamId, stats] of teamStats.entries()) {
+  for (const [teamId, stats] of Array.from(teamStats.entries())) {
     if (stats.homeGames === 0 || stats.awayGames === 0) {
       continue;
     }
@@ -218,8 +218,8 @@ async function main() {
   const stdDevHfa = Math.sqrt(variance);
 
   const sampleSizes = Array.from(teamStats.values())
-    .filter(s => s.homeGames + s.awayGames >= MIN_GAMES_PER_TEAM)
-    .map(s => s.homeGames + s.awayGames);
+    .filter((s: TeamHfaStats) => s.homeGames + s.awayGames >= MIN_GAMES_PER_TEAM)
+    .map((s: TeamHfaStats) => s.homeGames + s.awayGames);
   const minSample = sampleSizes.length > 0 ? Math.min(...sampleSizes) : 0;
   const maxSample = sampleSizes.length > 0 ? Math.max(...sampleSizes) : 0;
   const meanSample = sampleSizes.length > 0
