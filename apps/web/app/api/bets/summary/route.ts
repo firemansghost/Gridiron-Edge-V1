@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-const prisma = new PrismaClient();
 
 export async function GET(request: NextRequest) {
   try {
@@ -142,11 +140,14 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('BETS_API_ERROR summary', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: 'Internal error', detail: String((error as Error)?.message ?? error) },
+      { 
+        success: false,
+        error: 'Internal error', 
+        detail: errorMessage 
+      },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }

@@ -60,29 +60,39 @@ export default function WeekReviewPage() {
   const [error, setError] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
   const [grading, setGrading] = useState(false);
-  const [strategies, setStrategies] = useState<Array<{ strategy: string; count: number }>>([]);
+  const [strategies, setStrategies] = useState<Array<{ id: string; name: string; active: boolean }>>([]);
+  const [strategiesLoading, setStrategiesLoading] = useState(true);
 
-  // Fetch available strategies
+  // Fetch available strategies from rulesets (same source as Strategies page)
   useEffect(() => {
     const fetchStrategies = async () => {
+      setStrategiesLoading(true);
       try {
-        const params = new URLSearchParams({
-          season: season.toString(),
-          week: week.toString(),
-        });
-        const response = await fetch(`/api/bets/summary?${params}`);
+        const response = await fetch('/api/strategies/rulesets');
         if (response.ok) {
           const result = await response.json();
-          if (result.strategyBreakdown) {
-            setStrategies(result.strategyBreakdown);
+          if (result.success && result.rulesets) {
+            // Filter to only active strategies and map to the format we need
+            const activeStrategies = result.rulesets
+              .filter((r: { active: boolean }) => r.active)
+              .map((r: { id: string; name: string }) => ({
+                id: r.id,
+                name: r.name,
+                active: true,
+              }));
+            setStrategies(activeStrategies);
           }
+        } else {
+          console.error('Failed to fetch strategies:', response.statusText);
         }
       } catch (err) {
         console.error('Failed to fetch strategies:', err);
+      } finally {
+        setStrategiesLoading(false);
       }
     };
     fetchStrategies();
-  }, [season, week]);
+  }, []);
 
   const fetchData = async () => {
     setLoading(true);
@@ -92,20 +102,31 @@ export default function WeekReviewPage() {
         season: season.toString(),
         week: week.toString(),
         page: '1',
-        pageSize: '50'
+        limit: '50'
       });
       // Only add strategy if it's not empty (not "All Strategies")
+      // Note: The API expects strategyTag, but we're using strategy ID from rulesets
+      // We may need to map strategy ID to strategyTag, or update the API to accept both
       if (strategy && strategy.trim() !== '' && strategy !== 'all') {
         params.append('strategy', strategy);
       }
       
       const response = await fetch(`/api/bets/summary?${params}`);
-      if (!response.ok) throw new Error('Failed to fetch data');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.detail || errorData.error || `HTTP ${response.status}: ${response.statusText}`;
+        throw new Error(`Week Review API error: ${errorMessage}`);
+      }
       
       const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || result.detail || 'API returned unsuccessful response');
+      }
+      
       setData(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
+      console.error('Week Review fetch error:', err);
     } finally {
       setLoading(false);
     }
@@ -286,14 +307,22 @@ export default function WeekReviewPage() {
                 setStrategy(val === 'all' ? '' : val);
               }}
               className="border rounded px-3 py-2"
+              disabled={strategiesLoading}
             >
               <option value="">All Strategies</option>
-              {strategies.map((s) => (
-                <option key={s.strategy} value={s.strategy}>
-                  {s.strategy} ({s.count})
-                </option>
-              ))}
+              {strategies.length === 0 && !strategiesLoading ? (
+                <option disabled>No strategies configured</option>
+              ) : (
+                strategies.map((s) => (
+                  <option key={s.id} value={s.name}>
+                    {s.name}
+                  </option>
+                ))
+              )}
             </select>
+            {strategiesLoading && (
+              <div className="text-xs text-gray-500 mt-1">Loading strategies...</div>
+            )}
           </div>
           
           <div className="flex items-end gap-2">
@@ -507,9 +536,15 @@ export default function WeekReviewPage() {
             {data.bets.length === 0 ? (
               <div className="px-6 py-12 text-center">
                 <div className="text-gray-400 text-5xl mb-4">📊</div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No bets found</h3>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  {data.summary.gradedBets === 0 ? 'No graded bets yet' : 'No bets found'}
+                </h3>
                 <p className="text-gray-600 mb-4">
-                  No bets found for the current filters. Try adjusting your selection or add some demo bets.
+                  {data.summary.gradedBets === 0 && data.summary.totalBets === 0
+                    ? `No bets found for ${season} Week ${week}${strategy ? ` with strategy "${strategy}"` : ''}. Try adjusting your selection or add some demo bets.`
+                    : data.summary.gradedBets === 0
+                    ? `No graded bets yet for ${season} Week ${week}${strategy ? ` with strategy "${strategy}"` : ''}. Bets may still be pending grading.`
+                    : `No bets found for the current filters. Try adjusting your selection or add some demo bets.`}
                 </p>
                 <div className="space-y-2 mb-6">
                   <p className="text-sm text-gray-500">
