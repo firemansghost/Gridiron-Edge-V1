@@ -14,6 +14,10 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50');
 
     // Build where clause
+    // Note: when "All Strategies" is selected we intentionally
+    // omit strategyTag from the where clause instead of using
+    // `not: null`, because Prisma groupBy doesn't allow `not: null`
+    // and we just want "all tags" anyway.
     const where: any = {};
     if (season) where.season = parseInt(season);
     if (week) where.week = parseInt(week);
@@ -94,20 +98,26 @@ export async function GET(request: NextRequest) {
       : 0;
 
     // Group by strategy if no specific strategy requested
+    // Note: We use the same `where` clause (which already omits strategyTag when "All Strategies")
+    // and don't add `strategyTag: { not: null }` because Prisma groupBy doesn't support that.
+    // If we need to exclude null strategyTags, we can filter the results after groupBy.
     let strategyBreakdown = null;
     if (!strategy || strategy.trim() === '' || strategy === 'all') {
       const strategies = await prisma.bet.groupBy({
         by: ['strategyTag'],
-        where: { ...where, strategyTag: { not: null } },
+        where: where, // Use the same where clause (no strategyTag filter when "All Strategies")
         _count: { _all: true },
         _sum: { pnl: true },
       });
 
-      strategyBreakdown = strategies.map(s => ({
-        strategy: s.strategyTag,
-        count: s._count._all,
-        totalPnL: s._sum.pnl ? Number(s._sum.pnl) : 0,
-      }));
+      // Filter out null strategyTags from results (if any exist)
+      strategyBreakdown = strategies
+        .filter(s => s.strategyTag !== null)
+        .map(s => ({
+          strategy: s.strategyTag,
+          count: s._count._all,
+          totalPnL: s._sum.pnl ? Number(s._sum.pnl) : 0,
+        }));
     }
 
     return NextResponse.json({

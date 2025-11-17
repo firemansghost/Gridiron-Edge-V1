@@ -262,7 +262,9 @@ export default function WeekReviewPage() {
         <div className="container mx-auto px-4 py-8">
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2">Week Review</h1>
-        <p className="text-gray-600 mb-4">Review betting performance for a specific week</p>
+        <p className="text-gray-600 mb-4">
+          Week Review looks back at Official Trust-Market picks for this week — how they performed vs the closing line and the final score. Use the Strategy filter to optionally slice by a specific ruleset or strategy tag.
+        </p>
         <p className="text-sm text-gray-500 mb-4">
           Close prices and CLV calculations use the latest market lines as of kickoff time. 
           <a href="/docs/selections-profitability" className="text-blue-600 hover:underline ml-1">
@@ -373,9 +375,6 @@ export default function WeekReviewPage() {
           {/* Week Summary v1 - Official Trust-Market Picks */}
           <div className="mb-8">
             <h2 className="text-2xl font-bold mb-4">Week Summary</h2>
-            <p className="text-sm text-gray-600 mb-6">
-              Week Review looks back at Trust-Market Official picks for this week — how they performed vs the closing line and the final score.
-            </p>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
               {/* ATS Card */}
