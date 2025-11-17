@@ -18,6 +18,7 @@ import { prisma } from './prisma';
 import coreCoefficients2025 from './data/core_coefficients_2025_fe_v1.json';
 import blendConfig from './data/rating_blend_config.json';
 import mftrRatings from './data/mftr_ratings_ridge.json';
+import hfaConfig from './data/core_v1_hfa_config.json';
 
 interface BlendConfig {
   optimalWeight: number;
@@ -32,6 +33,21 @@ interface BlendConfig {
 // Static data - no caching needed, already loaded at build time
 const BLEND_CONFIG: BlendConfig = blendConfig as BlendConfig;
 const MFTR_RATINGS_MAP: Map<string, number> = new Map(Object.entries(mftrRatings as Record<string, number>));
+
+interface HfaConfig {
+  baseHfaPoints: number;
+  teamAdjustments: Record<string, number>;
+  neutralSiteOverrides: Record<string, number>;
+  clipRange: {
+    min: number;
+    max: number;
+  };
+  version: string;
+  timestamp: string;
+  note?: string;
+}
+
+const HFA_CONFIG: HfaConfig = hfaConfig as HfaConfig;
 
 interface CoreCoefficients {
   beta0: number;
@@ -123,10 +139,55 @@ function getCoreCoefficients(): CoreCoefficients {
 }
 
 /**
+ * Compute effective HFA for a game using HFA v2 config
+ * 
+ * @param homeTeamId - Home team ID
+ * @param neutralSite - Whether game is at neutral site
+ * @returns Effective HFA points (0.0 for neutral, otherwise base + adjustment, clipped)
+ */
+export function computeEffectiveHfa(
+  homeTeamId: string,
+  neutralSite: boolean
+): {
+  effectiveHfa: number;
+  baseHfa: number;
+  teamAdjustment: number;
+  rawHfa: number;
+} {
+  // Neutral site: HFA = 0
+  if (neutralSite) {
+    return {
+      effectiveHfa: 0.0,
+      baseHfa: HFA_CONFIG.baseHfaPoints,
+      teamAdjustment: 0.0,
+      rawHfa: 0.0,
+    };
+  }
+  
+  // True home game: base + team adjustment
+  const baseHfa = HFA_CONFIG.baseHfaPoints;
+  const teamAdjustment = HFA_CONFIG.teamAdjustments[homeTeamId] ?? 0.0;
+  const rawHfa = baseHfa + teamAdjustment;
+  
+  // Clip to range
+  const effectiveHfa = Math.max(
+    HFA_CONFIG.clipRange.min,
+    Math.min(HFA_CONFIG.clipRange.max, rawHfa)
+  );
+  
+  return {
+    effectiveHfa,
+    baseHfa,
+    teamAdjustment,
+    rawHfa,
+  };
+}
+
+/**
  * Compute Core V1 spread prediction in HMA frame
  * 
  * @param ratingDiffBlend - Home rating blend minus away rating blend (denormalized, V2 scale)
- * @param hfaPoints - Home field advantage points (2.0 for home, 0.0 for neutral)
+ * @param hfaPoints - Home field advantage points (from computeEffectiveHfa or legacy 2.0 for home, 0.0 for neutral)
  * @returns Predicted spread in HMA frame (positive = home favored, negative = away favored)
  */
 export function computeCoreV1Spread(
@@ -313,6 +374,12 @@ export async function getCoreV1SpreadFromTeams(
   dogSpread: number;
   favoriteLine: string;
   dogLine: string;
+  hfaInfo: {
+    effectiveHfa: number;
+    baseHfa: number;
+    teamAdjustment: number;
+    rawHfa: number;
+  };
 }> {
   // Load V2 ratings from database
   const [homeRating, awayRating] = await Promise.all([
@@ -346,8 +413,9 @@ export async function getCoreV1SpreadFromTeams(
   // Compute ratingDiffBlend
   const ratingDiffBlend = computeRatingDiffBlend(homeTeamId, awayTeamId, homeV2, awayV2);
 
-  // Get HFA points
-  const hfaPoints = neutralSite ? 0.0 : 2.0;
+  // Get HFA points using HFA v2
+  const hfaInfo = computeEffectiveHfa(homeTeamId, neutralSite);
+  const hfaPoints = hfaInfo.effectiveHfa;
 
   // Get spread info
   const spreadInfo = getCoreV1SpreadInfo(
@@ -362,6 +430,7 @@ export async function getCoreV1SpreadFromTeams(
   return {
     ...spreadInfo,
     ratingDiffBlend,
+    hfaInfo, // Expose HFA breakdown for UI
   };
 }
 

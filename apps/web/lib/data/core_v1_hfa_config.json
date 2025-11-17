@@ -1,0 +1,13 @@
+{
+  "baseHfaPoints": 2.0,
+  "teamAdjustments": {},
+  "neutralSiteOverrides": {},
+  "clipRange": {
+    "min": 0.5,
+    "max": 3.5
+  },
+  "version": "v2",
+  "timestamp": "2025-01-01T00:00:00Z",
+  "note": "HFA v2 config - team adjustments will be populated by training script"
+}
+

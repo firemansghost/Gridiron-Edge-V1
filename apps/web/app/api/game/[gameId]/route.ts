@@ -1484,9 +1484,17 @@ export async function GET(
     }
 
     // Determine HFA to use
-    const hfaUsed = game.neutralSite 
+    // HFA v2: Will be set after Core V1 spread is computed (if USE_CORE_V1)
+    // For now, use legacy team-specific HFA as fallback
+    let hfaUsed: number = game.neutralSite 
       ? 0 
       : (homeHFA !== null ? homeHFA : 2.0); // Fallback to 2.0 if not computed yet
+    let hfaInfo: {
+      effectiveHfa: number;
+      baseHfa: number;
+      teamAdjustment: number;
+      rawHfa: number;
+    } | null = null;
     
     const hfaCapped = homeHFA !== null && (homeHFA < 0.5 || homeHFA > 5.0);
     const hfaLowSample = (hfaNHome + hfaNAway) < LOW_SAMPLE_THRESHOLD;
@@ -1613,6 +1621,9 @@ export async function GET(
             favorite: coreV1SpreadInfo.favoriteName,
             favoriteLine: coreV1SpreadInfo.favoriteLine,
             ratingDiffBlend: coreV1SpreadInfo.ratingDiffBlend?.toFixed(2) ?? 'N/A',
+            hfaEffective: coreV1SpreadInfo.hfaInfo?.effectiveHfa.toFixed(2) ?? 'N/A',
+            hfaBase: coreV1SpreadInfo.hfaInfo?.baseHfa.toFixed(2) ?? 'N/A',
+            hfaAdjustment: coreV1SpreadInfo.hfaInfo?.teamAdjustment.toFixed(2) ?? 'N/A',
           });
         } else {
           console.error(`[Game ${gameId}] ❌ Core V1 spread is invalid:`, finalImpliedSpread);
@@ -1627,6 +1638,19 @@ export async function GET(
         finalImpliedSpread = null;
         // Ensure coreV1SpreadInfo is null on error
         coreV1SpreadInfo = null;
+      }
+      
+      // HFA v2: Update hfaUsed from Core V1 if available
+      if (coreV1SpreadInfo?.hfaInfo) {
+        hfaUsed = coreV1SpreadInfo.hfaInfo.effectiveHfa;
+        hfaInfo = coreV1SpreadInfo.hfaInfo;
+        console.log(`[Game ${gameId}] 🎯 HFA v2 applied:`, {
+          effectiveHfa: hfaInfo.effectiveHfa.toFixed(2),
+          baseHfa: hfaInfo.baseHfa.toFixed(2),
+          teamAdjustment: hfaInfo.teamAdjustment.toFixed(2),
+          rawHfa: hfaInfo.rawHfa.toFixed(2),
+          neutralSite: game.neutralSite,
+        });
       }
     } else {
       // Legacy: PHASE 2.4: Compute model spread using weighted ratings (if available)
@@ -3499,19 +3523,22 @@ export async function GET(
           season: game.season,
           note: 'Matchup class for calibration (Phase 2.2)'
         },
-        // PHASE 2.3: Team-Specific HFA
+        // PHASE 2.3: Team-Specific HFA / HFA v2
         hfa: {
-          used: hfaUsed, // HFA used in model (0 for neutral, team-specific for home, 2.0 fallback)
-          raw: hfaRaw, // Raw HFA before shrinkage
-          shrink_w: hfaShrinkW, // Shrinkage weight (0-1)
-          n_home: hfaNHome, // Number of home games used
-          n_away: hfaNAway, // Number of away games used
-          league_mean: leagueMeanHFA, // League median HFA for this season
-          capped: hfaCapped, // True if HFA was capped to [0.5, 5.0]
-          low_sample: hfaLowSample, // True if n_total < 4
-          outlier: hfaOutlier, // True if |hfa_raw| > 8
+          used: hfaUsed, // HFA used in model (HFA v2: effectiveHfa from config, or legacy team-specific)
+          baseHfa: hfaInfo?.baseHfa ?? (game.neutralSite ? 0 : 2.0), // HFA v2 base value
+          teamAdjustment: hfaInfo?.teamAdjustment ?? 0.0, // HFA v2 team adjustment
+          rawHfa: hfaInfo?.rawHfa ?? hfaUsed, // HFA v2 raw (before clipping)
+          raw: hfaRaw, // Legacy: Raw HFA before shrinkage (Phase 2.3)
+          shrink_w: hfaShrinkW, // Legacy: Shrinkage weight (0-1)
+          n_home: hfaNHome, // Legacy: Number of home games used
+          n_away: hfaNAway, // Legacy: Number of away games used
+          league_mean: leagueMeanHFA, // Legacy: League median HFA for this season
+          capped: hfaCapped, // Legacy: True if HFA was capped to [0.5, 5.0]
+          low_sample: hfaLowSample, // Legacy: True if n_total < 4
+          outlier: hfaOutlier, // Legacy: True if |hfa_raw| > 8
           neutral_site: game.neutralSite,
-          note: 'Team-specific HFA with shrinkage (Phase 2.3)'
+          note: hfaInfo ? 'HFA v2 (config-based)' : 'Team-specific HFA with shrinkage (Phase 2.3)'
         },
         // PHASE 2.4: Recency-Weighted Stats
         recency: {

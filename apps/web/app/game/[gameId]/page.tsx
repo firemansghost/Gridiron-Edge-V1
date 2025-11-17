@@ -470,14 +470,27 @@ export default function GameDetailPage() {
                         Record: {game.teams.home.record.wins}–{game.teams.home.record.losses}
                       </span>
                     )}
-                    {/* PHASE 2.3: Home Edge chip */}
-                    {game.model_view?.features?.hfa && !game.model_view.features.hfa.neutral_site && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 gap-1">
-                        <InfoTooltip 
-                          content={`Team-specific HFA used this week. Raw ${game.model_view.features.hfa.raw?.toFixed(1) ?? 'N/A'} (n:${game.model_view.features.hfa.n_home ?? 0}H/${game.model_view.features.hfa.n_away ?? 0}A), shrink w=${game.model_view.features.hfa.shrink_w?.toFixed(2) ?? 'N/A'}, league mean ${game.model_view.features.hfa.league_mean?.toFixed(1) ?? 'N/A'}.`}
-                        />
-                        Home Edge: {game.model_view.features.hfa.used?.toFixed(1) ?? '2.0'} pts
-                      </span>
+                    {/* PHASE 2.3: Home Edge chip / HFA v2 */}
+                    {game.model_view?.features?.hfa && (
+                      <>
+                        {game.model_view.features.hfa.neutral_site ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 gap-1">
+                            <InfoTooltip
+                              content={`Neutral site game — no home field advantage applied.`}
+                            />
+                            Home Edge: 0.0 pts (Neutral site)
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 gap-1">
+                            <InfoTooltip 
+                              content={game.model_view.features.hfa.baseHfa !== undefined
+                                ? `HFA v2: Base ${game.model_view.features.hfa.baseHfa.toFixed(1)} pts${game.model_view.features.hfa.teamAdjustment !== undefined && game.model_view.features.hfa.teamAdjustment !== 0 ? ` + team adjustment ${game.model_view.features.hfa.teamAdjustment > 0 ? '+' : ''}${game.model_view.features.hfa.teamAdjustment.toFixed(1)} = ${game.model_view.features.hfa.used?.toFixed(1) ?? '2.0'} pts` : ` = ${game.model_view.features.hfa.used?.toFixed(1) ?? '2.0'} pts`}`
+                                : `Team-specific HFA used this week. Raw ${game.model_view.features.hfa.raw?.toFixed(1) ?? 'N/A'} (n:${game.model_view.features.hfa.n_home ?? 0}H/${game.model_view.features.hfa.n_away ?? 0}A), shrink w=${game.model_view.features.hfa.shrink_w?.toFixed(2) ?? 'N/A'}, league mean ${game.model_view.features.hfa.league_mean?.toFixed(1) ?? 'N/A'}.`}
+                            />
+                            Home Edge: {game.model_view.features.hfa.used?.toFixed(1) ?? '2.0'} pts
+                          </span>
+                        )}
+                      </>
                     )}
                     {/* PHASE 2.4: Recency chip (next to Home Edge) */}
                     {game.model_view?.ratings && (
@@ -493,12 +506,6 @@ export default function GameDetailPage() {
                           content={`Base: ${game.model_view.ratings.rating_base?.toFixed(2) ?? 'N/A'}\nWeighted: ${game.model_view.ratings.rating_weighted?.toFixed(2) ?? 'n/a'}\nΔ (recencyEffect): ${game.model_view.ratings.recencyEffectPts?.toFixed(2) ?? '0.00'} pts\nGames last 3: ${game.model_view.features?.recency?.games_last3 ?? 'N/A'}\nEffective weight sum: ${game.model_view.features?.recency?.effective_weight_sum?.toFixed(2) ?? 'N/A'}`}
                         />
                         {game.model_view.ratings.rating_used === 'weighted' ? 'Recency applied' : 'Recency not used'}
-                      </span>
-                    )}
-                    {/* Neutral site indicator */}
-                    {game.model_view?.features?.hfa?.neutral_site && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
-                        Neutral site — HFA = 0
                       </span>
                     )}
                     {/* Last 5 chip */}
@@ -2119,8 +2126,38 @@ export default function GameDetailPage() {
             Home Field Advantage (HFA)
             <InfoTooltip content={TOOLTIP_CONTENT.HFA} />
           </div>
+          {game.model_view?.features?.hfa ? (
+            <>
+              <div className="text-lg text-gray-900">
+                Typical HFA: {game.model_view.features.hfa.baseHfa !== undefined 
+                  ? game.model_view.features.hfa.baseHfa.toFixed(1) 
+                  : '2.0'} pts
+              </div>
+              {!game.model_view.features.hfa.neutral_site && (
+                <div className="text-sm text-gray-600 mt-1">
+                  For this game: {game.model_view.features.hfa.used?.toFixed(1) ?? '2.0'} pts
+                  {game.model_view.features.hfa.teamAdjustment !== undefined && game.model_view.features.hfa.teamAdjustment !== 0 && (
+                    <span className="text-gray-500 italic">
+                      {' '}(base {game.model_view.features.hfa.baseHfa?.toFixed(1) ?? '2.0'} 
+                      {game.model_view.features.hfa.teamAdjustment > 0 ? ' +' : ' '}
+                      {game.model_view.features.hfa.teamAdjustment.toFixed(1)} adjustment)
+                    </span>
+                  )}
+                </div>
+              )}
+              {game.model_view.features.hfa.neutral_site && (
+                <div className="text-sm text-gray-600 mt-1">
+                  For this game: 0.0 pts (neutral site)
+                </div>
+              )}
+              <div className="text-xs text-gray-500 mt-1">Separate from talent component</div>
+            </>
+          ) : (
+            <>
               <div className="text-lg text-gray-900">{game.modelConfig?.hfa || 2.0} points</div>
               <div className="text-xs text-gray-500 mt-1">Separate from talent component</div>
+            </>
+          )}
             </div>
             <div>
               <div className="text-sm text-gray-500">Confidence Thresholds</div>
