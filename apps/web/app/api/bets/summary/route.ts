@@ -82,6 +82,36 @@ export async function GET(request: NextRequest) {
       },
     });
 
+    // Get metadata for empty state messaging
+    // Query all strategy_run bets (before official filter) to detect demo/test presence
+    const baseWhere: any = {};
+    if (season) baseWhere.season = parseInt(season);
+    if (week) baseWhere.week = parseInt(week);
+    baseWhere.source = 'strategy_run';
+    
+    const allStrategyRunBets = await prisma.bet.findMany({
+      where: baseWhere,
+      select: {
+        strategyTag: true,
+      },
+    });
+
+    // Group by tag to identify demo/test tags
+    const tagsByCount = new Map<string, number>();
+    for (const bet of allStrategyRunBets) {
+      tagsByCount.set(bet.strategyTag, (tagsByCount.get(bet.strategyTag) || 0) + 1);
+    }
+
+    // Identify demo/test tags that are present
+    const demoTagsPresent = Array.from(tagsByCount.keys())
+      .filter(tag => isExcludedStrategyTag(tag));
+
+    const meta = {
+      totalStrategyRunBets: allStrategyRunBets.length,
+      totalOfficialBets: allBets.length,
+      demoTagsPresent: demoTagsPresent,
+    };
+
     // Calculate metrics
     const gradedBets = allBets.filter(bet => bet.result !== null);
     const hitRate = gradedBets.length > 0 
@@ -159,6 +189,7 @@ export async function GET(request: NextRequest) {
         avgCLV: Math.round(avgCLV * 100) / 100,
       },
       strategyBreakdown,
+      meta,
       bets: bets.map(bet => ({
         ...bet,
         modelPrice: Number(bet.modelPrice),

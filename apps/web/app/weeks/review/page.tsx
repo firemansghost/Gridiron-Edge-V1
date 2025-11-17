@@ -48,6 +48,11 @@ interface WeekReviewData {
     totalItems: number;
     totalPages: number;
   };
+  meta?: {
+    totalStrategyRunBets: number;
+    totalOfficialBets: number;
+    demoTagsPresent: string[];
+  };
 }
 
 export default function WeekReviewPage() {
@@ -391,6 +396,31 @@ export default function WeekReviewPage() {
           {/* Week Summary v1 - Official Trust-Market Picks */}
           <div className="mb-8">
             <h2 className="text-2xl font-bold mb-4">Week Summary</h2>
+            
+            {/* Info banner for demo/test bets hidden */}
+            {data.meta && data.meta.totalOfficialBets === 0 && data.meta.totalStrategyRunBets > 0 && data.meta.demoTagsPresent.length > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-amber-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-amber-800">
+                      Demo/test bets hidden
+                    </h3>
+                    <div className="mt-2 text-sm text-amber-700">
+                      <p>
+                        This week has {data.meta.totalStrategyRunBets} strategy-run bet{data.meta.totalStrategyRunBets !== 1 ? 's' : ''}, 
+                        but they all use demo/test strategy tags ({data.meta.demoTagsPresent.join(', ')}). 
+                        Week Review for REAL data only shows Official Trust-Market strategies, so those demo bets are hidden.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
               {/* ATS Card */}
