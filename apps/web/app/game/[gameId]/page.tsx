@@ -615,20 +615,22 @@ export default function GameDetailPage() {
                     <div className="text-sm text-gray-700 mt-1">
                       {snapshot.dogTeamName}: <span className="font-semibold text-gray-900">{formatMoneyline(snapshot.moneylineDog)}</span>
                     </div>
-                  </>
-                ) : game.market.moneyline ? (
-                  <>
-                    <div className="text-xl font-bold text-gray-900">
-                      {game.market.moneyline.pickLabel}
-                    </div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      {game.market.moneyline.price > 0 ? '+' : ''}{game.market.moneyline.price}
-                      {game.market.moneyline.impliedProb && ` (${(game.market.moneyline.impliedProb * 100).toFixed(1)}%)`}
-                    </div>
+                    {game.market_snapshot?.bookSource && (
+                      <div className="text-xs text-gray-500 mt-1">
+                        {game.market_snapshot.bookSource}
+                      </div>
+                    )}
                   </>
                 ) : (
-                  <div className="text-lg text-gray-400">Not available</div>
+                  <div className="text-lg font-bold text-gray-900">N/A</div>
                 )}
+                <div className="text-xs text-gray-500 mt-1">
+                  {snapshot && (snapshot.moneylineFavorite !== null || snapshot.moneylineDog !== null) ? (
+                    `Moneyline ${snapshot.moneylineFavorite !== null && snapshot.moneylineDog !== null ? 'prices' : 'price'} available`
+                  ) : (game.diagnostics?.marketConsensus?.moneyline?.perBookCount !== undefined && game.diagnostics.marketConsensus.moneyline.perBookCount < 2
+                    ? 'N/A • Not enough pre-kick quotes'
+                    : 'Moneyline not available — not enough pre-kick quotes (low liquidity)')}
+                </div>
               </div>
             </div>
             {bookStamp && (
@@ -1289,18 +1291,37 @@ export default function GameDetailPage() {
                       <div className="text-sm text-gray-700 mb-2">
                         {snapshot.dogTeamName}: <span className="font-semibold">{formatMoneyline(snapshot.moneylineDog)}</span>
                       </div>
-                      {game.picks?.moneyline?.modelFairML !== null && game.picks?.moneyline?.modelFairML !== undefined && (
+                      {game.picks?.moneyline?.modelFairML !== null && 
+                       game.picks?.moneyline?.modelFairML !== undefined && 
+                       game.picks.moneyline.modelFairML !== -100 && (
                         <div className="text-xs text-gray-500 italic border-t border-gray-300 pt-2 mt-2">
-                          Model fair ML: {game.picks.moneyline.modelFairML > 0 ? '+' : ''}{game.picks.moneyline.modelFairML}
+                          Model fair ML (reference only): {game.picks.moneyline.modelFairML > 0 ? '+' : ''}{game.picks.moneyline.modelFairML}
+                        </div>
+                      )}
+                      {game.picks?.moneyline?.suppressionReason && (
+                        <div className="text-xs text-gray-500 mt-2">
+                          No moneyline bet — {game.picks.moneyline.suppressionReason}
                         </div>
                       )}
                     </>
-                  ) : game.picks?.moneyline && game.picks.moneyline.isModelFairLineOnly ? (
-                    <div className="text-sm text-gray-500 italic">
-                      Model fair ML: {game.picks.moneyline.modelFairML! > 0 ? '+' : ''}{game.picks.moneyline.modelFairML} (no book price available)
-                    </div>
                   ) : (
-                    <div className="text-sm text-gray-500 italic">No market moneylines available</div>
+                    <>
+                      <div className="text-sm font-semibold text-gray-700 mb-2">
+                        No moneyline bet — no pre-kick book prices available for this game.
+                      </div>
+                      {game.picks?.moneyline?.modelFairML !== null && 
+                       game.picks?.moneyline?.modelFairML !== undefined && 
+                       game.picks.moneyline.modelFairML !== -100 && (
+                        <div className="text-xs text-gray-500 italic border-t border-gray-300 pt-2 mt-2">
+                          Model fair ML (reference only, not an official edge): {game.picks.moneyline.modelFairML > 0 ? '+' : ''}{game.picks.moneyline.modelFairML}
+                        </div>
+                      )}
+                      {game.diagnostics?.marketConsensus?.moneyline?.perBookCount !== undefined && game.diagnostics.marketConsensus.moneyline.perBookCount < 2 && (
+                        <div className="text-xs text-gray-500 mt-2">
+                          Not enough pre-kick quotes (low liquidity)
+                        </div>
+                      )}
+                    </>
                   )}
                   {game.picks?.moneyline?.suppressionReason && (
                     <div className="text-xs text-gray-500 italic border-t border-gray-300 pt-2 mt-2">
