@@ -11,11 +11,11 @@
 
 import { PrismaClient } from '@prisma/client';
 import { getCoreV1SpreadFromTeams } from '../lib/core-v1-spread';
-import { selectClosingLine } from '../lib/closing-line-helpers';
+import { prisma } from '../lib/prisma';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const prisma = new PrismaClient();
+// Use the shared prisma instance
 
 interface TrainingRow {
   gameId: string;
@@ -124,13 +124,39 @@ async function main() {
 
   for (const game of finalGames) {
     try {
-      // Get closing lines
-      const [closingSpread, closingTotal] = await Promise.all([
-        selectClosingLine(game.id, 'spread'),
-        selectClosingLine(game.id, 'total'),
+      // Get closing lines directly from database
+      const gameDate = new Date(game.date);
+      const [spreadLine, totalLine] = await Promise.all([
+        prisma.marketLine.findFirst({
+          where: {
+            gameId: game.id,
+            lineType: 'spread',
+            timestamp: { lte: gameDate },
+          },
+          orderBy: { timestamp: 'desc' },
+          select: {
+            lineValue: true,
+            teamId: true,
+            bookName: true,
+            timestamp: true,
+          },
+        }),
+        prisma.marketLine.findFirst({
+          where: {
+            gameId: game.id,
+            lineType: 'total',
+            timestamp: { lte: gameDate },
+          },
+          orderBy: { timestamp: 'desc' },
+          select: {
+            lineValue: true,
+            bookName: true,
+            timestamp: true,
+          },
+        }),
       ]);
-
-      if (!closingSpread || !closingTotal) {
+      
+      if (!spreadLine || !totalLine) {
         skipped++;
         continue;
       }
@@ -149,25 +175,6 @@ async function main() {
         modelSpreadHma = coreSpreadInfo.coreSpreadHma;
       } catch (error) {
         console.warn(`   Skipping ${game.id}: Core V1 computation failed: ${error}`);
-        skipped++;
-        continue;
-      }
-
-      // Get the actual MarketLine to check teamId and convert to HMA
-      const spreadLine = await prisma.marketLine.findFirst({
-        where: {
-          gameId: game.id,
-          lineType: 'spread',
-          timestamp: { lte: game.date },
-        },
-        orderBy: { timestamp: 'desc' },
-        select: {
-          lineValue: true,
-          teamId: true,
-        },
-      });
-
-      if (!spreadLine) {
         skipped++;
         continue;
       }
@@ -192,17 +199,18 @@ async function main() {
 
       // Compute actual total
       const actualTotal = (game.homeScore || 0) + (game.awayScore || 0);
+      const closingTotalValue = Number(totalLine.lineValue);
 
       // Compute spreadDiff and residualTotal
       const spreadDiff = modelSpreadHma - closingSpreadHmaFinal;
-      const residualTotal = actualTotal - closingTotal.value;
+      const residualTotal = actualTotal - closingTotalValue;
 
       trainingRows.push({
         gameId: game.id,
         season: game.season,
         week: game.week,
         closingSpread: closingSpreadHmaFinal,
-        closingTotal: closingTotal.value,
+        closingTotal: closingTotalValue,
         modelSpread: modelSpreadHma,
         actualTotal,
         spreadDiff,

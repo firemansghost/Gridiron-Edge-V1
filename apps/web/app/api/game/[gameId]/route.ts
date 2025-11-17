@@ -2250,6 +2250,15 @@ export async function GET(
         deduped: moneylineConsensus.deduped,
         source: 'consensus (deduped per book)'
       });
+    } else if (moneylineConsensus.favoritePrice !== null || moneylineConsensus.dogPrice !== null) {
+      // FALLBACK: Use consensus even if perBookCount < 2 (single book, but still valid)
+      console.warn(`[Game ${gameId}] ⚠️ MONEYLINE CONSENSUS LOW LIQUIDITY (${moneylineConsensus.perBookCount} books), using consensus values anyway`);
+      
+      moneylineFavoritePrice = moneylineConsensus.favoritePrice;
+      moneylineDogPrice = moneylineConsensus.dogPrice;
+      
+      moneylineFavoriteTeamId = favoriteTeamId;
+      moneylineDogTeamId = favoriteTeamId === game.homeTeamId ? game.awayTeamId : game.homeTeamId;
     } else if (homeMoneylineLine && awayMoneylineLine) {
       // FALLBACK: Use individual lines if consensus insufficient (< 2 books)
       console.warn(`[Game ${gameId}] ⚠️ MONEYLINE CONSENSUS LOW LIQUIDITY (${moneylineConsensus.perBookCount} books), using individual lines`);

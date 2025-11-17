@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { InfoTooltip } from './InfoTooltip';
 import { ModelViewModeToggle } from './ModelViewModeToggle';
+import { useModelViewMode } from '@/contexts/ModelViewModeContext';
 
 /**
  * Terminology:
@@ -79,6 +80,9 @@ export default function SlateTable({
   const [confidenceTier, setConfidenceTier] = useState<'all' | 'A' | 'B' | 'C'>('all');
   const [timeRange, setTimeRange] = useState<'all' | 'today' | 'tomorrow' | 'thisWeek'>('all');
   const [sortBy, setSortBy] = useState<'time' | 'edge' | 'confidence'>('time');
+  
+  // Get model view mode from context
+  const { modelViewMode } = useModelViewMode();
   
   // Refs for scroll synchronization
   const topScrollRef = useRef<HTMLDivElement>(null);
@@ -1282,15 +1286,22 @@ export default function SlateTable({
                     </th>
                   )}
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
-                    <div className="flex items-center justify-center gap-1">
-                      Max Edge
-                      <InfoTooltip content="The larger of spread edge or total edge (in points). Higher edge means stronger betting opportunity." position="bottom" />
+                    <div className="flex flex-col items-center justify-center gap-1">
+                      <div className="flex items-center justify-center gap-1">
+                        Max Edge
+                        <InfoTooltip content={modelViewMode === 'raw' ? "Raw model edge (before Trust-Market caps). Higher edge means stronger betting opportunity." : "The larger of spread edge or total edge (in points), after Trust-Market caps. Higher edge means stronger betting opportunity."} position="bottom" />
+                      </div>
+                      {modelViewMode === 'raw' && (
+                        <div className="text-xs text-amber-600 font-normal">
+                          Raw mode — Trust-Market caps not applied
+                        </div>
+                      )}
                     </div>
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
                     <div className="flex items-center justify-center gap-1">
                       Confidence
-                      <InfoTooltip content="Confidence tier (A/B/C) based on edge size. A = 4.0+ pts (highest), B = 3.0-3.9 pts, C = 2.0-2.9 pts (lowest)." position="bottom" />
+                      <InfoTooltip content={modelViewMode === 'raw' ? "Raw confidence tier (A/B/C) based on raw edge size. A = 4.0+ pts (highest), B = 3.0-3.9 pts, C = 2.0-2.9 pts (lowest)." : "Confidence tier (A/B/C) based on edge size after Trust-Market caps. A = 4.0+ pts (highest), B = 3.0-3.9 pts, C = 2.0-2.9 pts (lowest)."} position="bottom" />
                     </div>
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
@@ -1424,9 +1435,28 @@ export default function SlateTable({
                           </td>
                         )}
                         <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
-                          <div className="text-sm text-gray-900">
-                            {Number.isFinite(game.maxEdge) ? game.maxEdge!.toFixed(1) : '—'}
-                          </div>
+                          {(() => {
+                            // Compute raw edge if in raw mode
+                            let displayEdge: number | null = null;
+                            
+                            if (modelViewMode === 'raw') {
+                              // Compute raw edge from modelSpread and closingSpread
+                              if (game.modelSpread !== null && Number.isFinite(game.modelSpread) && 
+                                  game.closingSpread?.value !== null && Number.isFinite(game.closingSpread.value)) {
+                                const rawEdge = Math.abs(game.modelSpread - game.closingSpread.value);
+                                displayEdge = Math.round(rawEdge * 10) / 10;
+                              }
+                            } else {
+                              // Official mode: use Trust-Market values
+                              displayEdge = game.maxEdge;
+                            }
+                            
+                            return (
+                              <div className="text-sm text-gray-900">
+                                {displayEdge !== null && Number.isFinite(displayEdge) ? displayEdge.toFixed(1) : '—'}
+                              </div>
+                            );
+                          })()}
                           {process.env.NODE_ENV !== 'production' && (
                             <div className="text-xs text-gray-400">
                               {game.maxEdge !== null && game.maxEdge !== undefined 
@@ -1436,9 +1466,32 @@ export default function SlateTable({
                           )}
                         </td>
                         <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
-                          <div className="text-sm text-gray-900">
-                            {game.confidence || '—'}
-                          </div>
+                          {(() => {
+                            // Compute raw confidence if in raw mode
+                            let displayConfidence: string | null = null;
+                            
+                            if (modelViewMode === 'raw') {
+                              // Compute raw edge and confidence
+                              if (game.modelSpread !== null && Number.isFinite(game.modelSpread) && 
+                                  game.closingSpread?.value !== null && Number.isFinite(game.closingSpread.value)) {
+                                const rawEdge = Math.abs(game.modelSpread - game.closingSpread.value);
+                                const roundedEdge = Math.round(rawEdge * 10) / 10;
+                                
+                                if (roundedEdge >= 4.0) displayConfidence = 'A';
+                                else if (roundedEdge >= 3.0) displayConfidence = 'B';
+                                else if (roundedEdge >= 2.0) displayConfidence = 'C';
+                              }
+                            } else {
+                              // Official mode: use Trust-Market confidence
+                              displayConfidence = game.confidence;
+                            }
+                            
+                            return (
+                              <div className="text-sm text-gray-900">
+                                {displayConfidence || '—'}
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
                           <Link 

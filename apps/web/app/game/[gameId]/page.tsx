@@ -33,7 +33,7 @@ export default function GameDetailPage() {
   const [game, setGame] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { mode: modelViewMode } = useModelViewMode();
+  const { modelViewMode } = useModelViewMode();
 
   useEffect(() => {
     if (params.gameId) {
@@ -208,8 +208,29 @@ export default function GameDetailPage() {
   const diagnostics = game.diagnostics ?? {};
   const allDiagnosticsMessages: string[] = Array.isArray(diagnostics.messages) ? diagnostics.messages : [];
   const modelView = game.model_view ?? {};
-  const atsEdgePts = modelView.edges?.atsEdgePts ?? null;
-  const ouEdgePts = modelView.edges?.ouEdgePts ?? null;
+  // Official (Trust-Market) values
+  const atsEdgePtsOfficial = modelView.edges?.atsEdgePts ?? null;
+  const ouEdgePtsOfficial = modelView.edges?.ouEdgePts ?? null;
+  
+  // Raw model values (pre-Trust-Market)
+  // For ATS: raw edge = modelFavoriteLine - marketFavoriteLine (favorite-centric)
+  const rawAtsEdgePts = modelView?.modelFavoriteLine !== null && snapshot?.favoriteLine !== null
+    ? modelView.modelFavoriteLine - snapshot.favoriteLine
+    : null;
+  // For totals: use rawOuEdgePts from model_view.totals
+  const rawOuEdgePts = modelView.totals?.rawOuEdgePts ?? null;
+  const rawModelTotal = modelView.totals?.rawModelTotal ?? null;
+  const marketTotal = modelView.totals?.marketTotal ?? snapshot?.marketTotal ?? null;
+  
+  // Compute raw OU edge from raw model total vs market total (for Raw mode display)
+  const rawOuEdge = rawModelTotal !== null && marketTotal !== null
+    ? rawModelTotal - marketTotal
+    : null;
+  
+  // Select values based on toggle mode
+  const atsEdgePts = modelViewMode === 'raw' ? rawAtsEdgePts : atsEdgePtsOfficial;
+  const ouEdgePts = modelViewMode === 'raw' ? rawOuEdgePts : ouEdgePtsOfficial;
+  
   const atsEdgeValue = atsEdgePts;
   const ouEdgeValue = ouEdgePts;
   const atsEdgeForDisplay = atsEdgeValue ?? game.picks?.spread?.edgePts ?? 0;
@@ -218,6 +239,10 @@ export default function GameDetailPage() {
   const ouEdgeMagnitude = Math.abs(ouEdgeForDisplay);
   const atsEdgeSign = atsEdgeValue ?? 0;
   const ouEdgeSign = ouEdgeValue ?? 0;
+  
+  // Check if this is a PASS in official mode but has raw edge
+  const isOfficialPass = !game.picks?.spread?.bettablePick?.label || game.picks?.spread?.bettablePick?.suppressHeadline;
+  const hasRawAtsEdge = rawAtsEdgePts !== null && Math.abs(rawAtsEdgePts) > 0.1;
   
   // Core V1 availability check - use modelFavoriteLine directly
   const modelFavoriteLine = modelView?.modelFavoriteLine;
@@ -711,7 +736,12 @@ export default function GameDetailPage() {
                       </div>
                     </div>
                     <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Spread pick ${game.picks.spread.bettablePick.label || 'PASS'}`}>
-                      {game.picks.spread.bettablePick?.suppressHeadline || game.picks.spread.bettablePick?.extremeFavoriteBlocked ? (
+                      {modelViewMode === 'raw' && isOfficialPass && hasRawAtsEdge ? (
+                        // Raw mode: show raw model spread
+                        modelView?.modelFavoriteName && modelView?.modelFavoriteLine !== null
+                          ? `${modelView.modelFavoriteName} ${modelView.modelFavoriteLine.toFixed(1)}`
+                          : 'Raw model spread'
+                      ) : game.picks.spread.bettablePick?.suppressHeadline || game.picks.spread.bettablePick?.extremeFavoriteBlocked ? (
                         /* EXTREME FAVORITE: Suppress dog headline, show market line instead */
                         snapshot && snapshot.favoriteLine !== null && snapshot.favoriteLine !== undefined
                           ? `PASS — Trust-Market mode (no official bet)`
@@ -723,6 +753,12 @@ export default function GameDetailPage() {
                         'PASS — Trust-Market mode (no official bet)'
                       )}
                     </div>
+                    {/* Warning badge for raw mode on official PASS games */}
+                    {modelViewMode === 'raw' && isOfficialPass && hasRawAtsEdge && (
+                      <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-2 inline-block">
+                        ⚠ Officially PASS (Trust-Market). Showing raw model only.
+                      </div>
+                    )}
                     {/* ============================================ */}
                     {/* ALWAYS SHOW: Edge, Bet-to, Range when ats_inputs_ok */}
                     {/* Suppress bet-to/flip when favoriteLine is null (consensus failed) */}
@@ -732,12 +768,27 @@ export default function GameDetailPage() {
                         {/* Case A: No official edge (Trust-Market PASS) */}
                         {(!game.picks.spread.bettablePick?.label || game.picks.spread.bettablePick?.suppressHeadline) ? (
                           <>
-                            <div className="text-sm text-gray-600 mb-2">
-                              Raw model disagreement: <span className="font-semibold">{atsEdgeMagnitude.toFixed(1)} pts</span> (official edge capped to <span className="font-semibold">0.0 pts</span>)
-                            </div>
-                            <div className="text-sm text-gray-600 mb-2">
-                              Bet to: <span className="font-semibold">—</span> • <span className="text-gray-500 italic">No official spread bet for this game</span>
-                            </div>
+                            {modelViewMode === 'raw' ? (
+                              <>
+                                <div className="text-sm text-gray-600 mb-2">
+                                  Raw model edge: <span className="font-semibold">{atsEdgeMagnitude.toFixed(1)} pts</span>
+                                </div>
+                                {rawAtsEdgePts !== null && modelView?.modelFavoriteLine !== null && snapshot?.favoriteLine !== null && (
+                                  <div className="text-sm text-gray-600 mb-2">
+                                    Bet to: <span className="font-semibold">{modelView.modelFavoriteLine.toFixed(1)}</span> (raw model line)
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <div className="text-sm text-gray-600 mb-2">
+                                  Raw model disagreement: <span className="font-semibold">{rawAtsEdgePts !== null ? Math.abs(rawAtsEdgePts).toFixed(1) : atsEdgeMagnitude.toFixed(1)} pts</span> (official edge capped to <span className="font-semibold">0.0 pts</span>)
+                                </div>
+                                <div className="text-sm text-gray-600 mb-2">
+                                  Bet to: <span className="font-semibold">—</span> • <span className="text-gray-500 italic">No official spread bet for this game</span>
+                                </div>
+                              </>
+                            )}
                             {/* Range text for PASS case */}
                             {game.model_view?.modelFavoriteLine !== null && game.model_view?.modelFavoriteName && snapshot && (
                               <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
@@ -751,8 +802,15 @@ export default function GameDetailPage() {
                             <div className="flex items-center gap-2 mb-2">
                               <span className="text-sm text-gray-600">
                                 Edge: <span className="font-semibold text-blue-600">{atsEdgeMagnitude.toFixed(1)} pts</span>
+                                {modelViewMode === 'raw' && rawAtsEdgePts !== null && Math.abs(rawAtsEdgePts - atsEdgePtsOfficial!) > 0.1 && (
+                                  <span className="text-xs text-gray-500 ml-1">(raw: {Math.abs(rawAtsEdgePts).toFixed(1)} pts)</span>
+                                )}
                               </span>
-                              {game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && (
+                              {modelViewMode === 'raw' && modelView?.modelFavoriteLine !== null ? (
+                                <span className="text-sm text-gray-600">
+                                  Bet to: <span className="font-semibold">{modelView.modelFavoriteLine.toFixed(1)}</span> (raw)
+                                </span>
+                              ) : game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && (
                                 <>
                                   {' • '}
                                   <span className="text-sm text-gray-600">
@@ -990,14 +1048,28 @@ export default function GameDetailPage() {
                     <div className="text-lg font-semibold text-gray-900 mb-2">
                       Total {game.picks?.total?.headlineTotal?.toFixed(1) || snapshot?.marketTotal?.toFixed(1) || 'N/A'}
                     </div>
-                    <div className="text-sm text-gray-600 mb-2">
-                      No edge at current number — market {snapshot?.marketTotal?.toFixed(1) ?? 'N/A'}
-                    </div>
-                    {/* PHASE 2.4: Edge/Bet-to/Range lines (same style as ATS) */}
-                    {game.validation?.ou_model_valid && game.model_view?.edges?.ouEdgePts !== null && (
+                    {modelViewMode === 'raw' && rawOuEdge !== null && rawModelTotal !== null && marketTotal !== null ? (
+                      <>
+                        <div className="text-sm text-gray-600 mb-2">
+                          Raw OU lean: <span className="font-semibold text-gray-900">
+                            {rawOuEdge > 0 ? 'Over' : 'Under'} {marketTotal.toFixed(1)} by {rawOuEdge > 0 ? '+' : ''}{rawOuEdge.toFixed(1)} pts
+                          </span>
+                          {' '}(model total {rawModelTotal.toFixed(1)} vs market {marketTotal.toFixed(1)})
+                        </div>
+                        <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-2 inline-block">
+                          ⚠ Experimental totals — not an official Trust-Market pick.
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-sm text-gray-600 mb-2">
+                        {game.validation?.ou_reason || 'No edge at current number — market ' + (snapshot?.marketTotal?.toFixed(1) ?? 'N/A')}
+                      </div>
+                    )}
+                    {/* PHASE 2.4: Edge/Bet-to/Range lines (same style as ATS) - only show in Official mode */}
+                    {modelViewMode === 'official' && game.validation?.ou_model_valid && ouEdgePts !== null && (
                       <div className="flex items-center gap-2 mb-2">
                         <span className="text-sm text-gray-600">
-                          Edge: <span className="font-semibold text-blue-600">{Math.abs(game.model_view.edges.ouEdgePts).toFixed(1)} pts</span>
+                          Edge: <span className="font-semibold text-blue-600">{ouEdgeMagnitude.toFixed(1)} pts</span>
                         </span>
                         {game.picks?.total?.betTo !== null && game.picks?.total?.betTo !== undefined && (
                           <>
@@ -1051,18 +1123,35 @@ export default function GameDetailPage() {
                       </div>
                     )}
                   </div>
-                  {/* Headline: ALWAYS market total (not model) */}
-                  <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Market total ${game.picks.total.headlineTotal?.toFixed(1)}`}>
-                    Total {game.picks.total.headlineTotal?.toFixed(1)}
-                    <InfoTooltip content="The current market total. Model predictions are used only to assess edge, not displayed in headline." />
+                  {/* Headline: Show pick label in raw mode, market total in official mode */}
+                  <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`${modelViewMode === 'raw' && modelView.totals?.pickLabel ? modelView.totals.pickLabel : `Total ${game.picks.total.headlineTotal?.toFixed(1)}`}`}>
+                    {modelViewMode === 'raw' && modelView.totals?.pickLabel ? (
+                      modelView.totals.pickLabel
+                    ) : (
+                      <>
+                        Total {game.picks.total.headlineTotal?.toFixed(1)}
+                        <InfoTooltip content="The current market total. Model predictions are used only to assess edge, not displayed in headline." />
+                      </>
+                    )}
                   </div>
                   {/* Subhead: Pick/Edge/Bet-to */}
                   <div className="text-sm text-gray-600 mb-2">
                     {ouValueSide && snapshot?.marketTotal !== undefined && snapshot?.marketTotal !== null ? (
                       <>
-                        Pick: <span className="font-semibold text-gray-900">{ouValueSide} {snapshot.marketTotal.toFixed(1)}</span>
-                        {' • '}
-                        Edge: <span className="font-semibold text-green-600">{ouEdgeMagnitude.toFixed(1)} pts</span>
+                        {modelViewMode === 'raw' && rawOuEdge !== null && rawModelTotal !== null && marketTotal !== null ? (
+                          <>
+                            Raw OU lean: <span className="font-semibold text-gray-900">
+                              {rawOuEdge > 0 ? 'Over' : 'Under'} {marketTotal.toFixed(1)} by {rawOuEdge > 0 ? '+' : ''}{rawOuEdge.toFixed(1)} pts
+                            </span>
+                            {' '}(model total {rawModelTotal.toFixed(1)} vs market {marketTotal.toFixed(1)})
+                          </>
+                        ) : modelViewMode === 'raw' ? null : (
+                          <>
+                            Pick: <span className="font-semibold text-gray-900">{ouValueSide} {snapshot.marketTotal.toFixed(1)}</span>
+                            {' • '}
+                            Edge: <span className="font-semibold text-green-600">{ouEdgeMagnitude.toFixed(1)} pts</span>
+                          </>
+                        )}
                         {totalBetTo !== null && totalBetTo !== undefined && (
                           <>
                             {' • '}
@@ -1075,6 +1164,12 @@ export default function GameDetailPage() {
                       <>No edge at current number — market {snapshot?.marketTotal?.toFixed(1) ?? 'N/A'}</>
                     )}
                   </div>
+                  {/* Warning badge for raw OU lean */}
+                  {modelViewMode === 'raw' && rawOuEdge !== null && rawModelTotal !== null && marketTotal !== null && (
+                    <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-2 inline-block">
+                      ⚠ Experimental totals — not an official Trust-Market pick.
+                    </div>
+                  )}
                   {/* RANGE: Flip Point - Always show when ou_model_valid === true */}
                   {game.validation?.ou_model_valid && game.picks.total?.flip !== null && game.picks.total?.flip !== undefined && game.picks.total.betTo !== null && (
                     <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
@@ -1182,64 +1277,59 @@ export default function GameDetailPage() {
                     </div>
                   )}
                 </div>
-              ) : game.picks?.moneyline && game.picks.moneyline.isModelFairLineOnly ? (
-                // Trust-Market mode: Hide pick card if no book ML, optionally show muted model fair line
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">MONEYLINE</h3>
-                  <div className="text-sm text-gray-500 italic">
-                    Model fair ML: {game.picks.moneyline.modelFairML! > 0 ? '+' : ''}{game.picks.moneyline.modelFairML} (no book price available)
-                  </div>
-                </div>
               ) : (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                   <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">MONEYLINE</h3>
-                  <div className="text-sm text-gray-600">
-                    <div className="mb-2">
-                      {snapshot && (snapshot.moneylineFavorite !== null || snapshot.moneylineDog !== null) ? (
-                        <>
-                          <div className="text-sm text-gray-700 mb-1">
-                            {snapshot.favoriteTeamName}: <span className="font-semibold">{formatMoneyline(snapshot.moneylineFavorite)}</span>
-                          </div>
-                          <div className="text-sm text-gray-700">
-                            {snapshot.dogTeamName}: <span className="font-semibold">{formatMoneyline(snapshot.moneylineDog)}</span>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="text-gray-500 italic">No market moneylines available</div>
+                  {/* Moneyline currently ignores Trust-Market caps and the Official/Raw toggle — we only show market price + model fair ML. ML Trust-Market rules will be added in a later phase. */}
+                  {snapshot && (snapshot.moneylineFavorite !== null || snapshot.moneylineDog !== null) ? (
+                    <>
+                      <div className="text-sm text-gray-700 mb-1">
+                        {snapshot.favoriteTeamName}: <span className="font-semibold">{formatMoneyline(snapshot.moneylineFavorite)}</span>
+                      </div>
+                      <div className="text-sm text-gray-700 mb-2">
+                        {snapshot.dogTeamName}: <span className="font-semibold">{formatMoneyline(snapshot.moneylineDog)}</span>
+                      </div>
+                      {game.picks?.moneyline?.modelFairML !== null && game.picks?.moneyline?.modelFairML !== undefined && (
+                        <div className="text-xs text-gray-500 italic border-t border-gray-300 pt-2 mt-2">
+                          Model fair ML: {game.picks.moneyline.modelFairML > 0 ? '+' : ''}{game.picks.moneyline.modelFairML}
+                        </div>
                       )}
+                    </>
+                  ) : game.picks?.moneyline && game.picks.moneyline.isModelFairLineOnly ? (
+                    <div className="text-sm text-gray-500 italic">
+                      Model fair ML: {game.picks.moneyline.modelFairML! > 0 ? '+' : ''}{game.picks.moneyline.modelFairML} (no book price available)
                     </div>
+                  ) : (
+                    <div className="text-sm text-gray-500 italic">No market moneylines available</div>
+                  )}
+                  {game.picks?.moneyline?.suppressionReason && (
                     <div className="text-xs text-gray-500 italic border-t border-gray-300 pt-2 mt-2">
-                      {game.picks?.moneyline?.suppressionReason ? (
-                        <>
-                          <div className="font-semibold text-gray-700 mb-1">No moneyline bet — {game.picks.moneyline.suppressionReason}</div>
-                          {/* PHASE 2.4: Calc basis tooltip (always present, even if suppressed) */}
-                          {game.picks.moneyline.calc_basis && (
-                            <div className="text-gray-500 mt-1 flex items-center gap-1">
-                              <span>Win prob from final spread:</span>
-                              <InfoTooltip content={`finalSpreadWithOverlay: ${game.picks.moneyline.calc_basis.finalSpreadWithOverlay?.toFixed(1) || 'N/A'} → winProb: ${((game.picks.moneyline.calc_basis.winProb || 0) * 100).toFixed(1)}%, fairML: ${game.picks.moneyline.calc_basis.fairML || 'N/A'}, marketProb: ${game.picks.moneyline.calc_basis.marketProb ? ((game.picks.moneyline.calc_basis.marketProb * 100).toFixed(1) + '%') : 'N/A'}`} />
-                            </div>
-                          )}
-                          <div className="text-gray-500 mt-1">
-                            Win prob derived from overlay-adjusted spread (Trust-Market).
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          No moneyline bet recommended. Model does not see sufficient value at these odds, or the odds are too long (extreme longshot).
-                          {/* PHASE 2.4: Calc basis tooltip */}
-                          {game.picks.moneyline?.calc_basis && (
-                            <div className="text-gray-500 mt-1 flex items-center gap-1">
-                              <span>Win prob from final spread:</span>
-                              <InfoTooltip content={`finalSpreadWithOverlay: ${game.picks.moneyline.calc_basis.finalSpreadWithOverlay?.toFixed(1) || 'N/A'} → winProb: ${((game.picks.moneyline.calc_basis.winProb || 0) * 100).toFixed(1)}%, fairML: ${game.picks.moneyline.calc_basis.fairML || 'N/A'}, marketProb: ${game.picks.moneyline.calc_basis.marketProb ? ((game.picks.moneyline.calc_basis.marketProb * 100).toFixed(1) + '%') : 'N/A'}`} />
-                            </div>
-                          )}
-                          <div className="text-gray-500 mt-1">
-                            Win prob derived from overlay-adjusted spread (Trust-Market).
-                          </div>
-                        </>
+                      <div className="font-semibold text-gray-700 mb-1">No moneyline bet — {game.picks.moneyline.suppressionReason}</div>
+                      {/* PHASE 2.4: Calc basis tooltip (always present, even if suppressed) */}
+                      {game.picks.moneyline.calc_basis && (
+                        <div className="text-gray-500 mt-1 flex items-center gap-1">
+                          <span>Win prob from final spread:</span>
+                          <InfoTooltip content={`finalSpreadWithOverlay: ${game.picks.moneyline.calc_basis.finalSpreadWithOverlay?.toFixed(1) || 'N/A'} → winProb: ${((game.picks.moneyline.calc_basis.winProb || 0) * 100).toFixed(1)}%, fairML: ${game.picks.moneyline.calc_basis.fairML || 'N/A'}, marketProb: ${game.picks.moneyline.calc_basis.marketProb ? ((game.picks.moneyline.calc_basis.marketProb * 100).toFixed(1) + '%') : 'N/A'}`} />
+                        </div>
                       )}
+                      <div className="text-gray-500 mt-1">
+                        Win prob derived from overlay-adjusted spread (Trust-Market).
+                      </div>
                     </div>
-                  </div>
+                  )}
+                  {!game.picks?.moneyline?.suppressionReason && game.picks?.moneyline?.calc_basis && (
+                    <div className="text-xs text-gray-500 italic border-t border-gray-300 pt-2 mt-2">
+                      <div className="text-gray-500 mb-1">No moneyline bet recommended. Model does not see sufficient value at these odds, or the odds are too long (extreme longshot).</div>
+                      {/* PHASE 2.4: Calc basis tooltip */}
+                      <div className="text-gray-500 mt-1 flex items-center gap-1">
+                        <span>Win prob from final spread:</span>
+                        <InfoTooltip content={`finalSpreadWithOverlay: ${game.picks.moneyline.calc_basis.finalSpreadWithOverlay?.toFixed(1) || 'N/A'} → winProb: ${((game.picks.moneyline.calc_basis.winProb || 0) * 100).toFixed(1)}%, fairML: ${game.picks.moneyline.calc_basis.fairML || 'N/A'}, marketProb: ${game.picks.moneyline.calc_basis.marketProb ? ((game.picks.moneyline.calc_basis.marketProb * 100).toFixed(1) + '%') : 'N/A'}`} />
+                      </div>
+                      <div className="text-gray-500 mt-1">
+                        Win prob derived from overlay-adjusted spread (Trust-Market).
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1424,18 +1514,31 @@ export default function GameDetailPage() {
                 </div>
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-gray-500 flex items-center gap-1">
-                    Total Edge
+                    OU Edge
                     <InfoTooltip content={TOOLTIP_CONTENT.TOTAL_EDGE_FORMULA} />
                   </div>
-                  <div className={`text-sm font-medium flex items-center gap-1 ${ouEdgeSign >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {ouValueSide ? (
+                  <div className="flex flex-col items-end gap-1">
+                    {modelViewMode === 'raw' && rawOuEdge !== null && rawModelTotal !== null && marketTotal !== null ? (
                       <>
+                        <div className={`text-sm font-medium flex items-center gap-1 ${rawOuEdge >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          <span aria-hidden="true">{rawOuEdge >= 0 ? '↑ Over' : '↓ Under'}</span>
+                          <span className="sr-only">{rawOuEdge >= 0 ? 'Over edge' : 'Under edge'}</span>
+                          {Math.abs(rawOuEdge).toFixed(1)} pts (leans {rawOuEdge > 0 ? 'Over' : 'Under'})
+                        </div>
+                        <div className="text-xs text-gray-500 italic">
+                          Raw model only — OU bets are disabled in Official mode.
+                        </div>
+                      </>
+                    ) : ouValueSide ? (
+                      <div className={`text-sm font-medium flex items-center gap-1 ${ouEdgeSign >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                         <span aria-hidden="true">{ouEdgeSign >= 0 ? '↑ Over' : '↓ Under'}</span>
                         <span className="sr-only">{ouEdgeSign >= 0 ? 'Over edge' : 'Under edge'}</span>
                         {ouValueSide} {snapshot?.marketTotal !== undefined && snapshot?.marketTotal !== null ? snapshot.marketTotal.toFixed(1) : 'N/A'} (edge {ouEdgeSign >= 0 ? '+' : ''}{ouEdgeForDisplay.toFixed(1)} pts)
-                      </>
+                      </div>
                     ) : (
-                      <>No edge at current number</>
+                      <div className="text-sm text-gray-600">
+                        {game.validation?.ou_reason || 'No model total available'}
+                      </div>
                     )}
                   </div>
                 </div>
