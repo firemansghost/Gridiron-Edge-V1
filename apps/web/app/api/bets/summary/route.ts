@@ -15,39 +15,21 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50');
 
     // Build where clause
-    // Note: when "All Strategies" is selected we intentionally
-    // omit strategyTag from the where clause instead of using
-    // `not: null`, because Prisma groupBy doesn't allow `not: null`
-    // and we just want "all tags" anyway.
+    // NOTE: In the 2025 dev phase we include ALL strategy_run bets (including demo/test)
+    // in Week Review for testing. Once official strategies are live, we may re-enable
+    // filtering using isOfficialStrategyTag(...) here.
     const where: any = {};
     if (season) where.season = parseInt(season);
     if (week) where.week = parseInt(week);
     
-    // Always filter to only official Trust-Market strategies (exclude demo/test)
-    // Get official strategy tags from active rulesets
-    const officialTags = await getOfficialStrategyTagsForFilter();
+    // Always filter to strategy-run bets (not manual entries)
+    where.source = 'strategy_run';
     
     // Only filter by strategy if it's provided and not empty (not "All Strategies")
     if (strategy && strategy.trim() !== '' && strategy !== 'all') {
-      // Verify the selected strategy is official (not demo/test)
-      if (!isExcludedStrategyTag(strategy) && officialTags.includes(strategy)) {
-        where.strategyTag = strategy;
-      } else {
-        // If selected strategy is not official, return empty results
-        where.strategyTag = '__nonexistent__'; // This will match nothing
-      }
-    } else {
-      // "All Strategies" - filter to only official tags
-      if (officialTags.length > 0) {
-        where.strategyTag = { in: officialTags };
-      } else {
-        // No official strategies configured - return empty results
-        where.strategyTag = '__nonexistent__';
-      }
+      where.strategyTag = strategy;
     }
-    
-    // Always filter to strategy-run bets (not manual entries)
-    where.source = 'strategy_run';
+    // When "All Strategies" is selected, we intentionally omit strategyTag from the where clause
 
     // Get bets with pagination
     const [bets, total] = await Promise.all([
@@ -82,15 +64,19 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Get metadata for empty state messaging
-    // Query all strategy_run bets (before official filter) to detect demo/test presence
-    const baseWhere: any = {};
-    if (season) baseWhere.season = parseInt(season);
-    if (week) baseWhere.week = parseInt(week);
-    baseWhere.source = 'strategy_run';
+    // Get metadata for demo/test awareness
+    // Query all strategy_run bets matching the same filters to detect demo/test presence
+    const metaWhere: any = {};
+    if (season) metaWhere.season = parseInt(season);
+    if (week) metaWhere.week = parseInt(week);
+    metaWhere.source = 'strategy_run';
+    // Use same strategy filter as main query
+    if (strategy && strategy.trim() !== '' && strategy !== 'all') {
+      metaWhere.strategyTag = strategy;
+    }
     
     const allStrategyRunBets = await prisma.bet.findMany({
-      where: baseWhere,
+      where: metaWhere,
       select: {
         strategyTag: true,
       },
@@ -108,7 +94,6 @@ export async function GET(request: NextRequest) {
 
     const meta = {
       totalStrategyRunBets: allStrategyRunBets.length,
-      totalOfficialBets: allBets.length,
       demoTagsPresent: demoTagsPresent,
     };
 
@@ -151,19 +136,18 @@ export async function GET(request: NextRequest) {
       : 0;
 
     // Group by strategy if no specific strategy requested
-    // Note: The where clause already filters to official strategies only
     let strategyBreakdown = null;
     if (!strategy || strategy.trim() === '' || strategy === 'all') {
       const strategies = await prisma.bet.groupBy({
         by: ['strategyTag'],
-        where: where, // Already filtered to official strategies only
+        where: where, // Includes all strategy-run bets (demo/test included)
         _count: { _all: true },
         _sum: { pnl: true },
       });
 
-      // Filter out null strategyTags and ensure we only include official tags
+      // Filter out null strategyTags
       strategyBreakdown = strategies
-        .filter(s => s.strategyTag !== null && !isExcludedStrategyTag(s.strategyTag))
+        .filter(s => s.strategyTag !== null)
         .map(s => ({
           strategy: s.strategyTag,
           count: s._count._all,

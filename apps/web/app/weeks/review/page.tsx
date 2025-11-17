@@ -50,7 +50,6 @@ interface WeekReviewData {
   };
   meta?: {
     totalStrategyRunBets: number;
-    totalOfficialBets: number;
     demoTagsPresent: string[];
   };
 }
@@ -284,7 +283,7 @@ export default function WeekReviewPage() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2">Week Review</h1>
         <p className="text-gray-600 mb-4">
-          Week Review looks back at Official Trust-Market picks for this week — how they performed vs the closing line and the final score. Use the Strategy filter to optionally slice by a specific ruleset or strategy tag.
+          Week Review looks back at strategy-run picks for this week — how they performed vs the closing line and the final score. Use the Strategy filter to slice by ruleset or strategy tag.
         </p>
         <p className="text-sm text-gray-500 mb-4">
           Close prices and CLV calculations use the latest market lines as of kickoff time. 
@@ -397,8 +396,8 @@ export default function WeekReviewPage() {
           <div className="mb-8">
             <h2 className="text-2xl font-bold mb-4">Week Summary</h2>
             
-            {/* Info banner for demo/test bets hidden */}
-            {data.meta && data.meta.totalOfficialBets === 0 && data.meta.totalStrategyRunBets > 0 && data.meta.demoTagsPresent.length > 0 && (
+            {/* Info banner for demo/test bets present */}
+            {data.meta && data.meta.demoTagsPresent.length > 0 && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
                 <div className="flex items-start">
                   <div className="flex-shrink-0">
@@ -408,13 +407,12 @@ export default function WeekReviewPage() {
                   </div>
                   <div className="ml-3">
                     <h3 className="text-sm font-medium text-amber-800">
-                      Demo/test bets hidden
+                      Demo/test strategies present
                     </h3>
                     <div className="mt-2 text-sm text-amber-700">
                       <p>
-                        This week has {data.meta.totalStrategyRunBets} strategy-run bet{data.meta.totalStrategyRunBets !== 1 ? 's' : ''}, 
-                        but they all use demo/test strategy tags ({data.meta.demoTagsPresent.join(', ')}). 
-                        Week Review for REAL data only shows Official Trust-Market strategies, so those demo bets are hidden.
+                        This week includes bets from demo/test strategies (tags: {data.meta.demoTagsPresent.join(', ')}). 
+                        Stats include these bets — mainly useful for dev/testing.
                       </p>
                     </div>
                   </div>
@@ -425,11 +423,10 @@ export default function WeekReviewPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
               {/* ATS Card */}
               <div className="bg-white p-6 rounded-lg shadow">
-                <h3 className="text-lg font-semibold text-gray-700 mb-3">ATS – Official Trust-Market picks</h3>
+                <h3 className="text-lg font-semibold text-gray-700 mb-3">ATS – Strategy-run picks</h3>
                 {(() => {
                   // Filter to ATS/spread market type
-                  // Note: The API already filters to only official Trust-Market strategies (excludes demo/test)
-                  // and only strategy-run bets, so we just need to filter by market type here.
+                  // Note: The API already filters to strategy-run bets, so we just need to filter by market type here.
                   const atsBets = data.bets.filter(bet => bet.marketType === 'spread');
                   const gradedAts = atsBets.filter(bet => bet.result !== null);
                   const wins = gradedAts.filter(bet => bet.result === 'win').length;
@@ -440,7 +437,7 @@ export default function WeekReviewPage() {
                   if (atsBets.length === 0) {
                     return (
                       <div className="text-sm text-gray-500">
-                        No Official ATS picks this week.
+                        No ATS picks this week.
                       </div>
                     );
                   }
@@ -459,7 +456,7 @@ export default function WeekReviewPage() {
                         </div>
                       )}
                       <div className="text-xs text-gray-500 mt-2">
-                        Counts only Official (Trust-Market) ATS picks for this week.
+                        Counts all strategy-run ATS picks for this week.
                       </div>
                     </>
                   );
@@ -468,11 +465,10 @@ export default function WeekReviewPage() {
               
               {/* Moneyline Card */}
               <div className="bg-white p-6 rounded-lg shadow">
-                <h3 className="text-lg font-semibold text-gray-700 mb-3">Moneyline – Official Trust-Market picks</h3>
+                <h3 className="text-lg font-semibold text-gray-700 mb-3">Moneyline – Strategy-run picks</h3>
                 {(() => {
                   // Filter to moneyline market type
-                  // Note: The API already filters to only official Trust-Market strategies (excludes demo/test)
-                  // and only strategy-run bets, so we just need to filter by market type here.
+                  // Note: The API already filters to strategy-run bets, so we just need to filter by market type here.
                   const mlBets = data.bets.filter(bet => bet.marketType === 'moneyline');
                   const gradedMl = mlBets.filter(bet => bet.result !== null);
                   const wins = gradedMl.filter(bet => bet.result === 'win').length;
@@ -483,7 +479,7 @@ export default function WeekReviewPage() {
                   if (mlBets.length === 0) {
                     return (
                       <div className="text-sm text-gray-500">
-                        No Official moneyline picks this week.
+                        No moneyline picks this week.
                       </div>
                     );
                   }
@@ -502,7 +498,7 @@ export default function WeekReviewPage() {
                         </div>
                       )}
                       <div className="text-xs text-gray-500 mt-2">
-                        Counts only Official (Trust-Market) moneyline picks for this week.
+                        Counts all strategy-run moneyline picks for this week.
                       </div>
                     </>
                   );
@@ -574,34 +570,19 @@ export default function WeekReviewPage() {
               <div className="px-6 py-12 text-center">
                 <div className="text-gray-400 text-5xl mb-4">📊</div>
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  {(() => {
-                    // Case A: No strategy-run bets at all
-                    if (data.meta && data.meta.totalStrategyRunBets === 0) {
-                      return 'No graded bets found';
-                    }
-                    // Case B: Only demo/test bets (already shown banner above)
-                    if (data.meta && data.meta.totalOfficialBets === 0 && data.meta.totalStrategyRunBets > 0) {
-                      return 'No official bets found';
-                    }
-                    // Case C: Official bets exist but filtered out or not graded yet
-                    return data.summary.gradedBets === 0 ? 'No graded bets yet' : 'No bets found';
-                  })()}
+                  {data.summary.gradedBets === 0 ? 'No graded bets yet' : 'No bets found'}
                 </h3>
                 <p className="text-gray-600 mb-4">
                   {(() => {
                     // Case A: No strategy-run bets at all
                     if (data.meta && data.meta.totalStrategyRunBets === 0) {
-                      return `No graded bets found for ${season} Week ${week}${strategy ? ` with strategy "${strategy}"` : ''}. Your strategies haven't generated any picks yet.`;
+                      return `No strategy-run bets found for ${season} Week ${week}${strategy ? ` with strategy "${strategy}"` : ''}. Your strategies haven't generated any picks yet.`;
                     }
-                    // Case B: Only demo/test bets (banner already explains this)
-                    if (data.meta && data.meta.totalOfficialBets === 0 && data.meta.totalStrategyRunBets > 0) {
-                      return `No official Trust-Market bets for ${season} Week ${week}${strategy ? ` with strategy "${strategy}"` : ''}. Only demo/test strategy bets exist for this week.`;
-                    }
-                    // Case C: Official bets exist but may not be graded
+                    // Case B: Strategy-run bets exist but not graded yet
                     if (data.summary.gradedBets === 0 && data.summary.totalBets > 0) {
                       return `No graded bets yet for ${season} Week ${week}${strategy ? ` with strategy "${strategy}"` : ''}. Bets may still be pending grading.`;
                     }
-                    return `No bets found for ${season} Week ${week}${strategy ? ` with strategy "${strategy}"` : ''}. Try adjusting your selection.`;
+                    return `No strategy-run bets found for ${season} Week ${week}${strategy ? ` with strategy "${strategy}"` : ''}. Try adjusting your selection.`;
                   })()}
                 </p>
                 <div className="space-y-2 mb-6">
