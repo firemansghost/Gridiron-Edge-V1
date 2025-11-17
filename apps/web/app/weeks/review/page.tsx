@@ -220,6 +220,22 @@ export default function WeekReviewPage() {
   const formatPercent = (value: number) => 
     `${(value * 100).toFixed(1)}%`;
 
+  // Format strategy tag to a user-friendly display name
+  // Maps strategyTag values to readable names, matching the ruleset names when possible
+  const formatStrategyName = (strategyTag: string): string => {
+    // Check if we have a matching ruleset name in the strategies list
+    const matchingStrategy = strategies.find(s => s.name === strategyTag);
+    if (matchingStrategy) {
+      return matchingStrategy.name;
+    }
+    
+    // Fallback: format the tag to be more readable
+    // Replace underscores with spaces and capitalize words
+    return strategyTag
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, l => l.toUpperCase());
+  };
+
   const getCLVColor = (clv: number | null) => {
     if (clv === null) return 'bg-gray-100 text-gray-600';
     return clv > 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
