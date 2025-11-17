@@ -227,6 +227,10 @@ export default function GameDetailPage() {
     ? rawModelTotal - marketTotal
     : null;
   
+  // Detect Case 1 (true missing data) vs Case 2 (totals available but OU bets disabled)
+  const hasTotalsData = rawModelTotal !== null && marketTotal !== null;
+  const totalsAvailableButDisabled = hasTotalsData && modelViewMode === 'official';
+  
   // Select values based on toggle mode
   const atsEdgePts = modelViewMode === 'raw' ? rawAtsEdgePts : atsEdgePtsOfficial;
   const ouEdgePts = modelViewMode === 'raw' ? rawOuEdgePts : ouEdgePtsOfficial;
@@ -598,12 +602,24 @@ export default function GameDetailPage() {
                     : 'N/A'}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">
-                  {snapshot?.marketTotal !== undefined && snapshot?.marketTotal !== null
-                    ? `Market total ${snapshot.marketTotal.toFixed(1)}`
-                    : (game.diagnostics?.marketConsensus?.total?.count !== undefined && game.diagnostics.marketConsensus.total.count < 2
-                        ? 'N/A • Not enough pre-kick quotes'
-                        : 'Market line unavailable or inconsistent')}
+                  {snapshot?.marketTotal !== undefined && snapshot?.marketTotal !== null ? (
+                    <>
+                      Market total {snapshot.marketTotal.toFixed(1)}
+                      {rawModelTotal !== null && (
+                        <> • Model total {rawModelTotal.toFixed(1)}</>
+                      )}
+                    </>
+                  ) : (
+                    game.diagnostics?.marketConsensus?.total?.count !== undefined && game.diagnostics.marketConsensus.total.count < 2
+                      ? 'N/A • Not enough pre-kick quotes'
+                      : 'Market line unavailable or inconsistent'
+                  )}
                 </div>
+                {modelViewMode === 'official' && totalsAvailableButDisabled && (
+                  <div className="text-xs text-amber-700 mt-1 italic">
+                    No OU edge in Official mode — totals bets are disabled for the 2025 season.
+                  </div>
+                )}
               </div>
               <div className="bg-white p-3 rounded border border-blue-100">
                 <div className="text-xs text-gray-600 mb-1">Moneyline</div>
@@ -740,16 +756,19 @@ export default function GameDetailPage() {
                             <span>Model vs Market Mismatch</span>
                           </div>
                         )}
-                        <div 
-                          className={`px-2 py-1 rounded text-xs font-bold ${
-                            game.picks.spread.grade === 'A' ? 'bg-green-500 text-white' :
-                            game.picks.spread.grade === 'B' ? 'bg-yellow-500 text-white' :
-                            'bg-orange-500 text-white'
-                          }`}
-                          aria-label={`Grade ${game.picks.spread.grade} spread pick`}
-                        >
-                          Grade {game.picks.spread.grade}
-                        </div>
+                        {/* Hide Grade pill in Official mode when game is PASS */}
+                        {!(modelViewMode === 'official' && isOfficialPass) && (
+                          <div 
+                            className={`px-2 py-1 rounded text-xs font-bold ${
+                              game.picks.spread.grade === 'A' ? 'bg-green-500 text-white' :
+                              game.picks.spread.grade === 'B' ? 'bg-yellow-500 text-white' :
+                              'bg-orange-500 text-white'
+                            }`}
+                            aria-label={`Grade ${game.picks.spread.grade} spread pick`}
+                          >
+                            Grade {game.picks.spread.grade}
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Spread pick ${game.picks.spread.bettablePick.label || 'PASS'}`}>
@@ -1079,7 +1098,16 @@ export default function GameDetailPage() {
                       </>
                     ) : (
                       <div className="text-sm text-gray-600 mb-2">
-                        {game.validation?.ou_reason || 'No edge at current number — market ' + (snapshot?.marketTotal?.toFixed(1) ?? 'N/A')}
+                        {modelViewMode === 'official' && totalsAvailableButDisabled ? (
+                          <>
+                            No OU edge in Official mode — totals bets are disabled for the 2025 season.
+                            <div className="text-xs text-gray-500 mt-1 italic">
+                              Switch to the "Raw model" tab to see experimental totals leans.
+                            </div>
+                          </>
+                        ) : (
+                          game.validation?.ou_reason || 'No edge at current number — market ' + (snapshot?.marketTotal?.toFixed(1) ?? 'N/A')
+                        )}
                       </div>
                     )}
                     {/* PHASE 2.4: Edge/Bet-to/Range lines (same style as ATS) - only show in Official mode */}
@@ -1116,7 +1144,18 @@ export default function GameDetailPage() {
                       );
                     })()}
                     {/* PHASE 2.4: Overlay calc disabled note */}
-                    {!game.picks?.total?.show_totals_picks && (
+                    {modelViewMode === 'official' && totalsAvailableButDisabled && (
+                      <div className="text-xs text-gray-500 mt-2 italic border-t border-gray-200 pt-2">
+                        No OU edge at current number — totals bets are disabled in Official (Trust-Market) mode for the 2025 season.
+                        <div className="mt-1">
+                          Switch to Raw model to see the experimental totals lean.
+                        </div>
+                        <div className="mt-1 text-gray-400">
+                          Overlay calc disabled; picks off until Phase 2.6
+                        </div>
+                      </div>
+                    )}
+                    {modelViewMode === 'official' && !totalsAvailableButDisabled && !game.picks?.total?.show_totals_picks && (
                       <div className="text-xs text-gray-500 mt-2 italic">
                         Overlay calc disabled; picks off until Phase 2.6
                       </div>
@@ -1843,6 +1882,13 @@ export default function GameDetailPage() {
                     ) : (
                       <span>No model total — missing inputs</span>
                     )}
+                  </div>
+                </>
+              ) : modelViewMode === 'official' && totalsAvailableButDisabled ? (
+                <>
+                  <div className="text-lg text-gray-400 mb-1">—</div>
+                  <div className="text-xs text-amber-700 mt-2">
+                    No OU edge in Official mode — totals bets disabled for the 2025 season.
                   </div>
                 </>
               ) : ouEdgeValue !== null ? (
