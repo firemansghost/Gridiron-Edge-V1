@@ -57,7 +57,7 @@ async function cleanupDemoBets(dryRun: boolean = true) {
   }
 
   console.log('Breakdown by strategy tag:');
-  for (const [tag, bets] of byTag.entries()) {
+  for (const [tag, bets] of Array.from(byTag.entries())) {
     console.log(`  ${tag}: ${bets.length} bets`);
   }
   console.log('');
