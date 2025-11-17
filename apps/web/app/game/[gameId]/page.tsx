@@ -1602,6 +1602,16 @@ export default function GameDetailPage() {
                           Raw model only — OU bets are disabled in Official mode.
                         </div>
                       </>
+                    ) : modelViewMode === 'official' && totalsAvailableButDisabled ? (
+                      <>
+                        <div className="text-sm text-gray-600">—</div>
+                        <div className="text-xs text-amber-700 mt-1">
+                          No OU edge in Official mode — totals bets disabled for the 2025 season.
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1 italic">
+                          Switch to the "Raw model" tab to see experimental totals leans.
+                        </div>
+                      </>
                     ) : ouValueSide ? (
                       <div className={`text-sm font-medium flex items-center gap-1 ${ouEdgeSign >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                         <span aria-hidden="true">{ouEdgeSign >= 0 ? '↑ Over' : '↓ Under'}</span>
@@ -1610,7 +1620,7 @@ export default function GameDetailPage() {
                       </div>
                     ) : (
                       <div className="text-sm text-gray-600">
-                        {game.validation?.ou_reason || 'No model total available'}
+                        {game.validation?.ou_reason || 'Model total unavailable — missing market total or spread data'}
                       </div>
                     )}
                   </div>
