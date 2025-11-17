@@ -574,14 +574,35 @@ export default function WeekReviewPage() {
               <div className="px-6 py-12 text-center">
                 <div className="text-gray-400 text-5xl mb-4">📊</div>
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  {data.summary.gradedBets === 0 ? 'No graded bets yet' : 'No bets found'}
+                  {(() => {
+                    // Case A: No strategy-run bets at all
+                    if (data.meta && data.meta.totalStrategyRunBets === 0) {
+                      return 'No graded bets found';
+                    }
+                    // Case B: Only demo/test bets (already shown banner above)
+                    if (data.meta && data.meta.totalOfficialBets === 0 && data.meta.totalStrategyRunBets > 0) {
+                      return 'No official bets found';
+                    }
+                    // Case C: Official bets exist but filtered out or not graded yet
+                    return data.summary.gradedBets === 0 ? 'No graded bets yet' : 'No bets found';
+                  })()}
                 </h3>
                 <p className="text-gray-600 mb-4">
-                  {data.summary.gradedBets === 0 && data.summary.totalBets === 0
-                    ? `No bets found for ${season} Week ${week}${strategy ? ` with strategy "${strategy}"` : ''}. Try adjusting your selection or add some demo bets.`
-                    : data.summary.gradedBets === 0
-                    ? `No graded bets yet for ${season} Week ${week}${strategy ? ` with strategy "${strategy}"` : ''}. Bets may still be pending grading.`
-                    : `No bets found for the current filters. Try adjusting your selection or add some demo bets.`}
+                  {(() => {
+                    // Case A: No strategy-run bets at all
+                    if (data.meta && data.meta.totalStrategyRunBets === 0) {
+                      return `No graded bets found for ${season} Week ${week}${strategy ? ` with strategy "${strategy}"` : ''}. Your strategies haven't generated any picks yet.`;
+                    }
+                    // Case B: Only demo/test bets (banner already explains this)
+                    if (data.meta && data.meta.totalOfficialBets === 0 && data.meta.totalStrategyRunBets > 0) {
+                      return `No official Trust-Market bets for ${season} Week ${week}${strategy ? ` with strategy "${strategy}"` : ''}. Only demo/test strategy bets exist for this week.`;
+                    }
+                    // Case C: Official bets exist but may not be graded
+                    if (data.summary.gradedBets === 0 && data.summary.totalBets > 0) {
+                      return `No graded bets yet for ${season} Week ${week}${strategy ? ` with strategy "${strategy}"` : ''}. Bets may still be pending grading.`;
+                    }
+                    return `No bets found for ${season} Week ${week}${strategy ? ` with strategy "${strategy}"` : ''}. Try adjusting your selection.`;
+                  })()}
                 </p>
                 <div className="space-y-2 mb-6">
                   <p className="text-sm text-gray-500">
