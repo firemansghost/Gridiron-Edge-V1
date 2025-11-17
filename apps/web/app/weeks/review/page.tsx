@@ -381,15 +381,10 @@ export default function WeekReviewPage() {
               <div className="bg-white p-6 rounded-lg shadow">
                 <h3 className="text-lg font-semibold text-gray-700 mb-3">ATS – Official Trust-Market picks</h3>
                 {(() => {
-                  // Filter to only Official Trust-Market picks:
-                  // - Strategy-run bets (not manual entries)
-                  // - ATS/spread market type
-                  // Note: If a specific strategy is selected in the dropdown, this will only count that strategy.
-                  // For now, we count all strategy-run bets. If there's a specific "official" strategy tag,
-                  // we can add an additional filter here (e.g., bet.strategyTag === 'trust-market').
-                  const atsBets = data.bets.filter(bet => 
-                    bet.marketType === 'spread' && bet.source === 'strategy_run'
-                  );
+                  // Filter to ATS/spread market type
+                  // Note: The API already filters to only official Trust-Market strategies (excludes demo/test)
+                  // and only strategy-run bets, so we just need to filter by market type here.
+                  const atsBets = data.bets.filter(bet => bet.marketType === 'spread');
                   const gradedAts = atsBets.filter(bet => bet.result !== null);
                   const wins = gradedAts.filter(bet => bet.result === 'win').length;
                   const losses = gradedAts.filter(bet => bet.result === 'loss').length;
@@ -429,13 +424,10 @@ export default function WeekReviewPage() {
               <div className="bg-white p-6 rounded-lg shadow">
                 <h3 className="text-lg font-semibold text-gray-700 mb-3">Moneyline – Official Trust-Market picks</h3>
                 {(() => {
-                  // Filter to only Official Trust-Market picks:
-                  // - Strategy-run bets (not manual entries)
-                  // - Moneyline market type
-                  // Note: If a specific strategy is selected in the dropdown, this will only count that strategy.
-                  const mlBets = data.bets.filter(bet => 
-                    bet.marketType === 'moneyline' && bet.source === 'strategy_run'
-                  );
+                  // Filter to moneyline market type
+                  // Note: The API already filters to only official Trust-Market strategies (excludes demo/test)
+                  // and only strategy-run bets, so we just need to filter by market type here.
+                  const mlBets = data.bets.filter(bet => bet.marketType === 'moneyline');
                   const gradedMl = mlBets.filter(bet => bet.result !== null);
                   const wins = gradedMl.filter(bet => bet.result === 'win').length;
                   const losses = gradedMl.filter(bet => bet.result === 'loss').length;
@@ -664,7 +656,7 @@ export default function WeekReviewPage() {
                           ) : '-'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {bet.strategyTag}
+                          {formatStrategyName(bet.strategyTag)}
                         </td>
                       </tr>
                     ))}

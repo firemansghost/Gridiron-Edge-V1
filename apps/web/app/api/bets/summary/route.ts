@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getOfficialStrategyTagsForFilter, isExcludedStrategyTag } from '@/lib/config/official-strategies';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -21,10 +22,32 @@ export async function GET(request: NextRequest) {
     const where: any = {};
     if (season) where.season = parseInt(season);
     if (week) where.week = parseInt(week);
+    
+    // Always filter to only official Trust-Market strategies (exclude demo/test)
+    // Get official strategy tags from active rulesets
+    const officialTags = await getOfficialStrategyTagsForFilter();
+    
     // Only filter by strategy if it's provided and not empty (not "All Strategies")
     if (strategy && strategy.trim() !== '' && strategy !== 'all') {
-      where.strategyTag = strategy;
+      // Verify the selected strategy is official (not demo/test)
+      if (!isExcludedStrategyTag(strategy) && officialTags.includes(strategy)) {
+        where.strategyTag = strategy;
+      } else {
+        // If selected strategy is not official, return empty results
+        where.strategyTag = '__nonexistent__'; // This will match nothing
+      }
+    } else {
+      // "All Strategies" - filter to only official tags
+      if (officialTags.length > 0) {
+        where.strategyTag = { in: officialTags };
+      } else {
+        // No official strategies configured - return empty results
+        where.strategyTag = '__nonexistent__';
+      }
     }
+    
+    // Always filter to strategy-run bets (not manual entries)
+    where.source = 'strategy_run';
 
     // Get bets with pagination
     const [bets, total] = await Promise.all([
@@ -98,21 +121,19 @@ export async function GET(request: NextRequest) {
       : 0;
 
     // Group by strategy if no specific strategy requested
-    // Note: We use the same `where` clause (which already omits strategyTag when "All Strategies")
-    // and don't add `strategyTag: { not: null }` because Prisma groupBy doesn't support that.
-    // If we need to exclude null strategyTags, we can filter the results after groupBy.
+    // Note: The where clause already filters to official strategies only
     let strategyBreakdown = null;
     if (!strategy || strategy.trim() === '' || strategy === 'all') {
       const strategies = await prisma.bet.groupBy({
         by: ['strategyTag'],
-        where: where, // Use the same where clause (no strategyTag filter when "All Strategies")
+        where: where, // Already filtered to official strategies only
         _count: { _all: true },
         _sum: { pnl: true },
       });
 
-      // Filter out null strategyTags from results (if any exist)
+      // Filter out null strategyTags and ensure we only include official tags
       strategyBreakdown = strategies
-        .filter(s => s.strategyTag !== null)
+        .filter(s => s.strategyTag !== null && !isExcludedStrategyTag(s.strategyTag))
         .map(s => ({
           strategy: s.strategyTag,
           count: s._count._all,
