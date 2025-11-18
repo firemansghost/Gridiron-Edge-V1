@@ -5,7 +5,7 @@
  * Rule: Pick the last line at or before kickoff; if none exist, pick the latest available.
  */
 
-import { prisma } from '@/lib/prisma';
+import { prisma } from './prisma';
 
 export interface ClosingLine {
   value: number;
