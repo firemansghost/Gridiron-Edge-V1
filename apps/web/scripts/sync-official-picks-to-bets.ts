@@ -151,17 +151,19 @@ async function getOfficialPicksForGame(game: any): Promise<OfficialPick[]> {
   try {
     // Get Core V1 model spread
     const coreV1SpreadInfo = await getCoreV1SpreadFromTeams(
+      game.season,
       game.homeTeamId,
       game.awayTeamId,
-      game.season,
-      game.neutralSite || false
+      game.neutralSite || false,
+      game.homeTeam.name,
+      game.awayTeam.name
     );
 
-    if (!coreV1SpreadInfo || coreV1SpreadInfo.spreadHma === null) {
+    if (!coreV1SpreadInfo || coreV1SpreadInfo.coreSpreadHma === null) {
       return picks; // No model spread available
     }
 
-    const modelSpreadHma = coreV1SpreadInfo.spreadHma;
+    const modelSpreadHma = coreV1SpreadInfo.coreSpreadHma;
 
     // Get closing lines
     const [closingSpread, closingTotal] = await Promise.all([
