@@ -23,6 +23,7 @@ async function debugWeekGrading(season: number, week: number) {
       id: true,
       strategyTag: true,
       marketType: true,
+      side: true,
       result: true,
       gameId: true,
       game: {
@@ -48,7 +49,6 @@ async function debugWeekGrading(season: number, week: number) {
   // Count by result status
   const countByResult = (bets: typeof allBets) => {
     const counts = {
-      pending: 0,
       null: 0,
       win: 0,
       loss: 0,
@@ -58,13 +58,11 @@ async function debugWeekGrading(season: number, week: number) {
     for (const bet of bets) {
       if (bet.result === null) {
         counts.null++;
-      } else if (bet.result === 'pending') {
-        counts.pending++;
-      } else if (bet.result === 'win' || bet.result === 'W') {
+      } else if (bet.result === 'win') {
         counts.win++;
-      } else if (bet.result === 'loss' || bet.result === 'L') {
+      } else if (bet.result === 'loss') {
         counts.loss++;
-      } else if (bet.result === 'push' || bet.result === 'Push') {
+      } else if (bet.result === 'push') {
         counts.push++;
       } else {
         counts.other++;
@@ -88,19 +86,19 @@ async function debugWeekGrading(season: number, week: number) {
   // Show breakdown by strategyTag
   for (const [tag, bets] of Array.from(byTag.entries()).sort((a, b) => a[0].localeCompare(b[0]))) {
     const counts = countByResult(bets);
-    const ungraded = counts.null + counts.pending;
+    const ungraded = counts.null;
     const graded = counts.win + counts.loss + counts.push + counts.other;
     
     console.log(`Strategy: ${tag}`);
     console.log(`  Total bets: ${bets.length}`);
     console.log(`  Graded: ${graded} (W: ${counts.win}, L: ${counts.loss}, P: ${counts.push}, Other: ${counts.other})`);
-    console.log(`  Ungraded: ${ungraded} (null: ${counts.null}, pending: ${counts.pending})`);
+    console.log(`  Ungraded: ${ungraded} (null: ${counts.null})`);
     console.log('');
   }
 
   // Show sample of ungraded bets
   const ungradedBets = allBets.filter(bet => 
-    bet.result === null || bet.result === 'pending'
+    bet.result === null
   );
   
   if (ungradedBets.length > 0) {
