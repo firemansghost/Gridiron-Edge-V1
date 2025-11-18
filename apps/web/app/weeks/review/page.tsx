@@ -227,6 +227,10 @@ export default function WeekReviewPage() {
   // Format strategy tag to a user-friendly display name
   // Maps strategyTag values to readable names, matching the ruleset names when possible
   const formatStrategyName = (strategyTag: string): string => {
+    // Handle synthetic "Official $100 Flat" strategy
+    if (strategyTag === 'official_flat_100') {
+      return 'Official $100 Flat';
+    }
     // Check if we have a matching ruleset name in the strategies list
     const matchingStrategy = strategies.find(s => s.name === strategyTag);
     if (matchingStrategy) {
@@ -332,6 +336,7 @@ export default function WeekReviewPage() {
               disabled={strategiesLoading}
             >
               <option value="">All Strategies</option>
+              <option value="official_flat_100">Official $100 Flat</option>
               {strategies.length === 0 && !strategiesLoading ? (
                 <option disabled>No strategies configured</option>
               ) : (
