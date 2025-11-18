@@ -20,13 +20,43 @@ export async function POST(request: NextRequest) {
     }
 
     // Find ungraded bets for the specified season/week
+    // Only grade strategy_run bets (not manual entries)
+    // Accept both null and 'pending' as ungraded states
     const whereClause: any = {
       season: parseInt(season),
-      result: null,
+      source: 'strategy_run', // Only grade strategy-run bets
+      OR: [
+        { result: null },
+        // Note: 'pending' is not a valid BetResult enum value, so we only check for null
+      ],
     };
     
     if (week) {
       whereClause.week = parseInt(week);
+    }
+
+    // Log diagnostic info
+    const totalBets = await prisma.bet.count({
+      where: {
+        season: parseInt(season),
+        week: week ? parseInt(week) : undefined,
+        source: 'strategy_run',
+      },
+    });
+
+    const byTag = await prisma.bet.groupBy({
+      by: ['strategyTag'],
+      where: {
+        season: parseInt(season),
+        week: week ? parseInt(week) : undefined,
+        source: 'strategy_run',
+      },
+      _count: { _all: true },
+    });
+
+    console.log(`[GRADING] ${season} Week ${week || 'all'}: Total strategy_run bets: ${totalBets}`);
+    for (const group of byTag) {
+      console.log(`[GRADING]   ${group.strategyTag || '(no tag)'}: ${group._count._all}`);
     }
 
     const ungradedBets = await prisma.bet.findMany({
@@ -89,36 +119,51 @@ export async function POST(request: NextRequest) {
         const margin = homeScore - awayScore;
         const totalPoints = homeScore + awayScore;
 
-        let result: 'W' | 'L' | 'Push' | null = null;
+        let result: 'win' | 'loss' | 'push' | null = null;
         let pnl: number | null = null;
         let clv: number | null = null;
 
         if (bet.marketType === 'spread') {
-          const spreadLine = Number(closePrice) || 0;
-          let betWins = false;
+          // closePrice is in HMA format (home minus away, can be positive or negative)
+          // margin is homeScore - awayScore (home perspective)
+          const closeLine = Number(closePrice) || 0;
           
-          if (bet.side === 'home') {
-            betWins = margin > spreadLine;
-          } else if (bet.side === 'away') {
-            betWins = -margin > spreadLine;
-          }
+          // Convert margin to the side's perspective
+          // For home: use margin as-is (home perspective)
+          // For away: negate margin (away perspective)
+          const sideMargin = bet.side === 'home' ? margin : -margin;
           
-          if (Math.abs(margin - spreadLine) < 0.5) {
-            result = 'Push';
+          // Compare side margin to close line
+          // For home bet: if margin > closeLine, win (home covered)
+          // For away bet: if -margin > closeLine, win (away covered)
+          // But closeLine might be negative if away is favored, so we need to handle sign
+          // Actually, if closeLine is in HMA format:
+          //   - If home is favored: closeLine < 0 (e.g., -6.5 means home -6.5)
+          //   - If away is favored: closeLine > 0 (e.g., +6.5 means away +6.5)
+          // For home bet: we bet home at closeLine, so if margin > closeLine, win
+          // For away bet: we bet away at -closeLine, so if -margin > -closeLine, i.e., margin < closeLine, win
+          
+          // Simpler approach: compare sideMargin to closeLine
+          // If sideMargin > closeLine, the side covered
+          const diff = sideMargin - closeLine;
+          
+          if (Math.abs(diff) < 0.5) {
+            result = 'push';
             pnl = 0;
           } else {
-            result = betWins ? 'W' : 'L';
-            pnl = betWins ? Number(bet.stake) * 0.909 : -Number(bet.stake); // -110 odds
+            result = diff > 0 ? 'win' : 'loss';
+            pnl = result === 'win' ? Number(bet.stake) * 0.909 : -Number(bet.stake); // -110 odds
           }
           
-          // Calculate CLV
+          // Calculate CLV (Closing Line Value)
           if (closePrice) {
             const modelLine = Number(bet.modelPrice);
-            const closeLine = Number(closePrice);
+            const closeLineNum = Number(closePrice);
+            // CLV from bettor's perspective: positive = got better line
             if (bet.side === 'home') {
-              clv = modelLine - closeLine;
+              clv = modelLine - closeLineNum;
             } else {
-              clv = closeLine - modelLine;
+              clv = closeLineNum - modelLine;
             }
           }
         } else if (bet.marketType === 'total') {
@@ -132,10 +177,10 @@ export async function POST(request: NextRequest) {
           }
           
           if (Math.abs(totalPoints - totalLine) < 0.5) {
-            result = 'Push';
+            result = 'push';
             pnl = 0;
           } else {
-            result = betWins ? 'W' : 'L';
+            result = betWins ? 'win' : 'loss';
             pnl = betWins ? Number(bet.stake) * 0.909 : -Number(bet.stake);
           }
           
@@ -159,10 +204,10 @@ export async function POST(request: NextRequest) {
           }
           
           if (margin === 0) {
-            result = 'Push';
+            result = 'push';
             pnl = 0;
           } else {
-            result = betWins ? 'W' : 'L';
+            result = betWins ? 'win' : 'loss';
             if (betWins) {
               const odds = Number(bet.modelPrice);
               if (odds < 0) {
@@ -198,7 +243,7 @@ export async function POST(request: NextRequest) {
         });
 
         graded++;
-        if (result === 'Push') pushes++;
+        if (result === 'push') pushes++;
 
       } catch (err) {
         console.error(`Failed to grade bet ${bet.id}:`, err);
