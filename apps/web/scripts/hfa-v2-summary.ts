@@ -23,9 +23,11 @@ interface HfaConfig {
 
 function main() {
   // Type assertion: JSON clipRange is number[] but we know it's a 2-element tuple
+  // Cast to any first to handle JSON import typing, then assert as tuple
+  const clipRangeArray = hfaConfig.clipRange as any as number[];
   const config: HfaConfig = {
     ...hfaConfig,
-    clipRange: [hfaConfig.clipRange[0], hfaConfig.clipRange[1]] as [number, number],
+    clipRange: [clipRangeArray[0], clipRangeArray[1]] as [number, number],
   } as HfaConfig;
 
   console.log('📊 HFA v2 Summary Diagnostics');
