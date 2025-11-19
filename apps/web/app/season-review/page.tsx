@@ -63,6 +63,7 @@ export default function SeasonReviewPage() {
   const router = useRouter();
   const [season, setSeason] = useState<number>(2025);
   const [strategyTag, setStrategyTag] = useState<string>('official_flat_100');
+  const [selectedMarket, setSelectedMarket] = useState<string>('ALL');
   const [data, setData] = useState<SeasonSummaryData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +81,7 @@ export default function SeasonReviewPage() {
       const params = new URLSearchParams({
         season: season.toString(),
         strategyTag: strategyTag === 'all' ? 'all' : strategyTag,
+        marketType: selectedMarket,
       });
 
       const response = await fetch(`/api/bets/season-summary?${params}`);
@@ -101,7 +103,7 @@ export default function SeasonReviewPage() {
 
   useEffect(() => {
     fetchData();
-  }, [season, strategyTag]);
+  }, [season, strategyTag, selectedMarket]);
 
   // Initialize season and strategy from available data on first load
   useEffect(() => {
@@ -208,6 +210,20 @@ export default function SeasonReviewPage() {
                       {getStrategyLabel(tag)}
                     </option>
                   ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Market Type</label>
+                <select
+                  value={selectedMarket}
+                  onChange={(e) => setSelectedMarket(e.target.value)}
+                  className="border rounded px-3 py-2"
+                >
+                  <option value="ALL">All Markets</option>
+                  <option value="ATS">Spread (ATS)</option>
+                  <option value="TOTAL">Total (O/U)</option>
+                  <option value="MONEYLINE">Moneyline</option>
                 </select>
               </div>
             </div>
@@ -402,8 +418,8 @@ export default function SeasonReviewPage() {
                 </div>
               )}
 
-              {/* By Market Type Breakdown */}
-              {data.byMarketType.length > 0 && (
+              {/* By Market Type Breakdown - Only show when viewing all markets */}
+              {selectedMarket === 'ALL' && data.byMarketType.length > 0 && (
                 <div className="bg-white rounded-lg shadow mb-8">
                   <div className="p-6 border-b">
                     <h2 className="text-xl font-semibold">Breakdown by Market Type</h2>
