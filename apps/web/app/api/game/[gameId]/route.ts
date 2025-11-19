@@ -3361,7 +3361,15 @@ export async function GET(
       // V1: Use Core V1 favorite info directly
       modelFavoriteTeamId = coreV1SpreadInfo.favoriteTeamId;
       modelFavoriteName = coreV1SpreadInfo.favoriteName;
+      // CRITICAL: favoriteSpread is already in favorite-centric format (negative = favorite)
+      // This is the betting line convention, not the engineering margin
       modelFavoriteLine = coreV1SpreadInfo.favoriteSpread; // Already negative (favorite-centric)
+      
+      // Validation: Ensure favoriteSpread is negative (or 0 for pick'em)
+      if (modelFavoriteLine > 0 && Math.abs(modelFavoriteLine) > 0.1) {
+        console.warn(`[Game ${gameId}] ⚠️ WARNING: modelFavoriteLine is positive (${modelFavoriteLine.toFixed(2)}) but should be negative for favorite. Flipping sign.`);
+        modelFavoriteLine = -Math.abs(modelFavoriteLine);
+      }
     } else {
       // Legacy: Compute from finalSpreadWithOverlayFC
       modelFavoriteTeamId = isPickEmFromSpread 

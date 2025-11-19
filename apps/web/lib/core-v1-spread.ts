@@ -447,11 +447,9 @@ export async function getCoreV1SpreadFromTeams(
   const awayV2 = awayRatingValue;
 
   // Compute ratingDiffBlend
-  // CRITICAL FIX: Flip sign to match model convention
-  // Model expects: (awayRating - homeRating) for HMA frame
-  // We compute: (homeRating - awayRating), so flip it
-  const ratingDiffBlendRaw = computeRatingDiffBlend(homeTeamId, awayTeamId, homeV2, awayV2);
-  const ratingDiffBlend = -ratingDiffBlendRaw; // Flip sign to match model convention
+  // Model expects: (homeRating - awayRating) for HMA frame
+  // Positive ratingDiffBlend means home is stronger (home favored)
+  const ratingDiffBlend = computeRatingDiffBlend(homeTeamId, awayTeamId, homeV2, awayV2);
 
   // Get HFA points using HFA v2
   const hfaInfo = computeEffectiveHfa(homeTeamId, neutralSite);
