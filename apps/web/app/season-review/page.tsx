@@ -14,6 +14,7 @@ import { useRouter } from 'next/navigation';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { getStrategyLabel, getDefaultStrategyTag } from '@/lib/strategy-utils';
 
 interface WeekBreakdown {
   week: number;
@@ -61,7 +62,7 @@ interface SeasonSummaryData {
 export default function SeasonReviewPage() {
   const router = useRouter();
   const [season, setSeason] = useState<number>(2025);
-  const [strategyTag, setStrategyTag] = useState<string>('all');
+  const [strategyTag, setStrategyTag] = useState<string>('official_flat_100');
   const [data, setData] = useState<SeasonSummaryData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -102,7 +103,7 @@ export default function SeasonReviewPage() {
     fetchData();
   }, [season, strategyTag]);
 
-  // Initialize season from available seasons on first load
+  // Initialize season and strategy from available data on first load
   useEffect(() => {
     if (data?.meta.seasonsAvailable && data.meta.seasonsAvailable.length > 0) {
       // Default to latest season (last in array since sorted ascending)
@@ -111,22 +112,25 @@ export default function SeasonReviewPage() {
         setSeason(latestSeason);
       }
     }
-  }, [data?.meta.seasonsAvailable]);
+    
+    // Set default strategy to official_flat_100 if available, otherwise 'all'
+    if (data?.meta.strategyTagsAvailable && data.meta.strategyTagsAvailable.length > 0) {
+      const defaultTag = getDefaultStrategyTag(data.meta.strategyTagsAvailable);
+      if (strategyTag === 'official_flat_100' && !data.meta.strategyTagsAvailable.includes('official_flat_100')) {
+        setStrategyTag(defaultTag);
+      } else if (strategyTag === 'all' && data.meta.strategyTagsAvailable.includes('official_flat_100')) {
+        setStrategyTag('official_flat_100');
+      }
+    }
+  }, [data?.meta.seasonsAvailable, data?.meta.strategyTagsAvailable]);
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
 
   const formatPercent = (value: number) => `${(value * 100).toFixed(1)}%`;
 
-  const formatStrategyName = (tag: string): string => {
-    if (tag === 'official_flat_100') {
-      return 'Official $100 Flat';
-    }
-    if (tag === 'all') {
-      return 'All Strategies';
-    }
-    return tag.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-  };
+  // Use the centralized strategy label helper
+  const formatStrategyName = getStrategyLabel;
 
   const handleWeekClick = (week: number) => {
     // Week Review uses 'strategy' param, not 'strategyTag'
@@ -198,10 +202,10 @@ export default function SeasonReviewPage() {
                   onChange={(e) => setStrategyTag(e.target.value)}
                   className="border rounded px-3 py-2"
                 >
-                  <option value="all">All Strategies</option>
+                  <option value="all">{getStrategyLabel('all')}</option>
                   {data?.meta.strategyTagsAvailable.map((tag) => (
                     <option key={tag} value={tag}>
-                      {formatStrategyName(tag)}
+                      {getStrategyLabel(tag)}
                     </option>
                   ))}
                 </select>
@@ -228,7 +232,11 @@ export default function SeasonReviewPage() {
                 {/* Card 1: Season PnL */}
                 <div className="bg-white rounded-lg shadow p-6">
                   <h3 className="text-sm font-medium text-gray-500 mb-2">Season PnL</h3>
-                  <p className={`text-3xl font-bold ${data.summary.totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  <p className={`text-3xl font-bold ${
+                    data.summary.totalPnl > 0 ? 'text-green-600' : 
+                    data.summary.totalPnl < 0 ? 'text-red-600' : 
+                    'text-gray-500'
+                  }`}>
                     {formatCurrency(data.summary.totalPnl)}
                   </p>
                   <p className="text-sm text-gray-600 mt-2">
@@ -239,7 +247,11 @@ export default function SeasonReviewPage() {
                 {/* Card 2: ROI */}
                 <div className="bg-white rounded-lg shadow p-6">
                   <h3 className="text-sm font-medium text-gray-500 mb-2">ROI</h3>
-                  <p className={`text-3xl font-bold ${data.summary.roi >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  <p className={`text-3xl font-bold ${
+                    data.summary.roi > 0 ? 'text-green-600' : 
+                    data.summary.roi < 0 ? 'text-red-600' : 
+                    'text-gray-500'
+                  }`}>
                     {formatPercent(data.summary.roi)}
                   </p>
                   <p className="text-sm text-gray-600 mt-2">
@@ -362,10 +374,18 @@ export default function SeasonReviewPage() {
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                               {formatCurrency(week.stake)}
                             </td>
-                            <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${week.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${
+                              week.pnl > 0 ? 'text-green-600' : 
+                              week.pnl < 0 ? 'text-red-600' : 
+                              'text-gray-500'
+                            }`}>
                               {formatCurrency(week.pnl)}
                             </td>
-                            <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${week.roi >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${
+                              week.roi > 0 ? 'text-green-600' : 
+                              week.roi < 0 ? 'text-red-600' : 
+                              'text-gray-500'
+                            }`}>
                               {formatPercent(week.roi)}
                             </td>
                           </tr>
@@ -429,10 +449,18 @@ export default function SeasonReviewPage() {
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                               {formatCurrency(market.stake)}
                             </td>
-                            <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${market.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${
+                              market.pnl > 0 ? 'text-green-600' : 
+                              market.pnl < 0 ? 'text-red-600' : 
+                              'text-gray-500'
+                            }`}>
                               {formatCurrency(market.pnl)}
                             </td>
-                            <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${market.roi >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${
+                              market.roi > 0 ? 'text-green-600' : 
+                              market.roi < 0 ? 'text-red-600' : 
+                              'text-gray-500'
+                            }`}>
                               {formatPercent(market.roi)}
                             </td>
                           </tr>

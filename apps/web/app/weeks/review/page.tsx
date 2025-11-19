@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
+import { getStrategyLabel } from '@/lib/strategy-utils';
 
 interface BetSummary {
   totalBets: number;
@@ -58,7 +59,7 @@ export default function WeekReviewPage() {
   const router = useRouter();
   const [season, setSeason] = useState(2025);
   const [week, setWeek] = useState(9);
-  const [strategy, setStrategy] = useState('');
+  const [strategy, setStrategy] = useState('official_flat_100');
   const [data, setData] = useState<WeekReviewData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -224,25 +225,8 @@ export default function WeekReviewPage() {
   const formatPercent = (value: number) => 
     `${(value * 100).toFixed(1)}%`;
 
-  // Format strategy tag to a user-friendly display name
-  // Maps strategyTag values to readable names, matching the ruleset names when possible
-  const formatStrategyName = (strategyTag: string): string => {
-    // Handle synthetic "Official $100 Flat" strategy
-    if (strategyTag === 'official_flat_100') {
-      return 'Official $100 Flat';
-    }
-    // Check if we have a matching ruleset name in the strategies list
-    const matchingStrategy = strategies.find(s => s.name === strategyTag);
-    if (matchingStrategy) {
-      return matchingStrategy.name;
-    }
-    
-    // Fallback: format the tag to be more readable
-    // Replace underscores with spaces and capitalize words
-    return strategyTag
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, l => l.toUpperCase());
-  };
+  // Use the centralized strategy label helper
+  const formatStrategyName = getStrategyLabel;
 
   const getCLVColor = (clv: number | null) => {
     if (clv === null) return 'bg-gray-100 text-gray-600';
@@ -335,8 +319,8 @@ export default function WeekReviewPage() {
               className="border rounded px-3 py-2"
               disabled={strategiesLoading}
             >
-              <option value="">All Strategies</option>
-              <option value="official_flat_100">Official $100 Flat</option>
+              <option value="">{getStrategyLabel('all')}</option>
+              <option value="official_flat_100">{getStrategyLabel('official_flat_100')}</option>
               {strategies.length === 0 && !strategiesLoading ? (
                 <option disabled>No strategies configured</option>
               ) : (
