@@ -386,14 +386,15 @@ export async function getCoreV1SpreadFromTeams(
     rawHfa: number;
   };
 }> {
-  // Load V2 ratings from database
-  const [homeRating, awayRating] = await Promise.all([
+  // Load V1 ratings from database (updated with conference adjustments)
+  // Fallback to V2 if V1 not available
+  const [homeRatingV1, awayRatingV1] = await Promise.all([
     prisma.teamSeasonRating.findUnique({
       where: {
         season_teamId_modelVersion: {
           season,
           teamId: homeTeamId,
-          modelVersion: 'v2',
+          modelVersion: 'v1',
         },
       },
     }),
@@ -402,18 +403,45 @@ export async function getCoreV1SpreadFromTeams(
         season_teamId_modelVersion: {
           season,
           teamId: awayTeamId,
-          modelVersion: 'v2',
+          modelVersion: 'v1',
         },
       },
     }),
   ]);
 
+  // Fallback to V2 if V1 not available
+  const homeRating = homeRatingV1 || await prisma.teamSeasonRating.findUnique({
+    where: {
+      season_teamId_modelVersion: {
+        season,
+        teamId: homeTeamId,
+        modelVersion: 'v2',
+      },
+    },
+  });
+
+  const awayRating = awayRatingV1 || await prisma.teamSeasonRating.findUnique({
+    where: {
+      season_teamId_modelVersion: {
+        season,
+        teamId: awayTeamId,
+        modelVersion: 'v2',
+      },
+    },
+  });
+
   if (!homeRating || !awayRating) {
-    throw new Error(`Missing V2 ratings for ${homeTeamId} or ${awayTeamId}`);
+    throw new Error(`Missing ratings (v1 or v2) for ${homeTeamId} or ${awayTeamId}`);
   }
 
-  const homeV2 = Number(homeRating.powerRating || homeRating.rating || 0);
-  const awayV2 = Number(awayRating.powerRating || awayRating.rating || 0);
+  // Use V1 ratings (with conference adjustments) or fallback to V2
+  const homeRatingValue = Number(homeRating.powerRating || homeRating.rating || 0);
+  const awayRatingValue = Number(awayRating.powerRating || awayRating.rating || 0);
+  
+  // For blending, we still need V2-scale values, but if we're using V1, we can use them directly
+  // The blend function expects V2 scale, but V1 ratings are in a similar scale after calibration
+  const homeV2 = homeRatingValue;
+  const awayV2 = awayRatingValue;
 
   // Compute ratingDiffBlend
   const ratingDiffBlend = computeRatingDiffBlend(homeTeamId, awayTeamId, homeV2, awayV2);
