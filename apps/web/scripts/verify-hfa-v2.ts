@@ -26,7 +26,7 @@ async function main() {
   // Type assertion: JSON clipRange is number[] but we know it's a 2-element tuple
   const config: HfaConfig = {
     ...hfaConfig,
-    clipRange: hfaConfig.clipRange as [number, number],
+    clipRange: [hfaConfig.clipRange[0], hfaConfig.clipRange[1]] as [number, number],
   } as HfaConfig;
 
   console.log('🔍 HFA v2 Verification');

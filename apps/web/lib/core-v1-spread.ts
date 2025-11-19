@@ -50,7 +50,7 @@ interface HfaConfig {
 // Type assertion: JSON clipRange is number[] but we know it's a 2-element tuple
 const HFA_CONFIG: HfaConfig = {
   ...hfaConfig,
-  clipRange: hfaConfig.clipRange as [number, number],
+  clipRange: [hfaConfig.clipRange[0], hfaConfig.clipRange[1]] as [number, number],
 } as HfaConfig;
 
 interface CoreCoefficients {
