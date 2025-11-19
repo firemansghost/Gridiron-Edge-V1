@@ -359,6 +359,7 @@ async function main() {
         powerRating,
         confidence,
         dataSource,
+        games: features.weeksPlayed || 0, // Count of final games played
       };
     });
 
@@ -378,6 +379,7 @@ async function main() {
             },
           },
           update: {
+            games: rating.games, // Update games count from FeatureLoader
             offenseRating: rating.offenseRating,
             defenseRating: rating.defenseRating,
             rating: rating.powerRating, // Keep legacy field
@@ -390,7 +392,7 @@ async function main() {
             season: rating.season,
             teamId: rating.teamId,
             modelVersion: 'v1',
-            games: 0, // Will be filled by other jobs if needed
+            games: rating.games, // Count of final games from FeatureLoader
             offenseRating: rating.offenseRating,
             defenseRating: rating.defenseRating,
             rating: rating.powerRating,
