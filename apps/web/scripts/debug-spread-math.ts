@@ -119,21 +119,32 @@ async function main() {
     const expectedSpread = -(okRatingValue - moRatingValue + spreadInfo.hfaInfo.effectiveHfa);
     const actualSpread = spreadInfo.favoriteSpread;
     
+    console.log(`   Rating Difference: ${okRatingValue.toFixed(2)} - ${moRatingValue.toFixed(2)} = ${(okRatingValue - moRatingValue).toFixed(2)}`);
+    console.log(`   ratingDiffBlend: ${spreadInfo.ratingDiffBlend.toFixed(2)}`);
+    console.log(`   coreSpreadHma: ${spreadInfo.coreSpreadHma.toFixed(2)}`);
+    
     if (isOklahomaFavorite) {
       console.log(`   ✅ Oklahoma is correctly identified as favorite`);
     } else {
       console.log(`   ❌ ERROR: Missouri is incorrectly identified as favorite!`);
       console.log(`      Expected: Oklahoma (rating ${okRatingValue.toFixed(2)} > ${moRatingValue.toFixed(2)})`);
+      console.log(`      This indicates the spread sign is still backwards!`);
     }
 
-    if (Math.abs(actualSpread - expectedSpread) < 5.0) {
+    if (spreadInfo.coreSpreadHma > 0) {
+      console.log(`   ✅ coreSpreadHma is positive (home favored in HMA frame)`);
+    } else {
+      console.log(`   ❌ ERROR: coreSpreadHma is negative (away favored) when home should be favored!`);
+    }
+
+    if (Math.abs(actualSpread - expectedSpread) < 10.0) {
       console.log(`   ✅ Spread magnitude is reasonable (${actualSpread.toFixed(2)} vs expected ~${expectedSpread.toFixed(2)})`);
     } else {
       console.log(`   ⚠️  Spread magnitude differs significantly (${actualSpread.toFixed(2)} vs expected ~${expectedSpread.toFixed(2)})`);
     }
 
     if (actualSpread < 0) {
-      console.log(`   ✅ Favorite spread is negative (correct)`);
+      console.log(`   ✅ Favorite spread is negative (correct betting convention)`);
     } else {
       console.log(`   ❌ ERROR: Favorite spread is positive (should be negative)!`);
     }

@@ -4526,9 +4526,10 @@ export async function GET(
         }
 
         // Talent factors (Phase 3)
+        // Talent counts 100% all season (no decay)
         const talentWeights = { w_talent: 1.0, w_blue: 0.3, w_commits: 0.15 };
         const weeksPlayed = teamFeatures.weeksPlayed || 0;
-        const decay = Math.max(0, 1 - weeksPlayed / 8); // Decay factor
+        const decay = 1.0; // Talent influence is active all season (no decay)
         
         if (teamFeatures.talentComposite !== null) {
           const talentZ = getZScore(teamFeatures.talentComposite, zStats.talentComposite.mean, zStats.talentComposite.stdDev);
@@ -4632,8 +4633,9 @@ export async function GET(
         const talentWeights = { w_talent: 1.0, w_blue: 0.3, w_commits: 0.15 };
         
         // Home talent component
+        // Talent counts 100% all season (no decay)
         const homeWeeksPlayed = homeFeatures.weeksPlayed || 0;
-        const homeDecay = Math.max(0, 1 - homeWeeksPlayed / 8);
+        const homeDecay = 1.0; // Talent influence is active all season (no decay)
         const homeTalentZ = getZScore(homeFeatures.talentComposite, zStats.talentComposite.mean, zStats.talentComposite.stdDev);
         const homeBlueZ = getZScore(homeFeatures.blueChipsPct, zStats.blueChipsPct.mean, zStats.blueChipsPct.stdDev);
         const homeCommitsZ = getZScore(homeFeatures.commitsSignal, zStats.commitsSignal.mean, zStats.commitsSignal.stdDev);
@@ -4643,8 +4645,9 @@ export async function GET(
         const homeTalentComponent = homeDecay * homeTalentPrior;
 
         // Away talent component
+        // Talent counts 100% all season (no decay)
         const awayWeeksPlayed = awayFeatures.weeksPlayed || 0;
-        const awayDecay = Math.max(0, 1 - awayWeeksPlayed / 8);
+        const awayDecay = 1.0; // Talent influence is active all season (no decay)
         const awayTalentZ = getZScore(awayFeatures.talentComposite, zStats.talentComposite.mean, zStats.talentComposite.stdDev);
         const awayBlueZ = getZScore(awayFeatures.blueChipsPct, zStats.blueChipsPct.mean, zStats.blueChipsPct.stdDev);
         const awayCommitsZ = getZScore(awayFeatures.commitsSignal, zStats.commitsSignal.mean, zStats.commitsSignal.stdDev);
