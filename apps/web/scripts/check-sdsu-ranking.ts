@@ -13,14 +13,20 @@ async function main() {
   console.log(`\n🔍 CHECKING SDSU RANKING (Season ${season})\n`);
   console.log('='.repeat(70));
 
-  // Get all V1 ratings sorted by power rating
+  // Get FBS teams for this season
+  const fbsMemberships = await prisma.teamMembership.findMany({
+    where: { season, level: 'fbs' },
+    select: { teamId: true },
+  });
+  const fbsTeamIds = new Set(fbsMemberships.map(m => m.teamId.toLowerCase()));
+
+  // Get all V1 ratings sorted by power rating (FBS only)
   const ratings = await prisma.teamSeasonRating.findMany({
     where: {
       season,
       modelVersion: 'v1',
-    },
-    include: {
-      // Note: TeamSeasonRating doesn't have direct relation, need to join manually
+      teamId: { in: Array.from(fbsTeamIds) },
+      powerRating: { not: null },
     },
     orderBy: {
       powerRating: 'desc',
