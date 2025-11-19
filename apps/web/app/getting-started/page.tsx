@@ -215,9 +215,9 @@ export default function GettingStartedPage() {
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">Methodology</h3>
                 <p className="text-sm text-gray-600">Learn how our ratings model works and how we calculate predictions.</p>
               </Link>
-              <Link href="/ratings/config" className="bg-white p-6 rounded-lg shadow hover:shadow-md transition-shadow">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">Ratings Configuration</h3>
-                <p className="text-sm text-gray-600">Adjust feature weights and see how it affects team rankings.</p>
+              <Link href="/ratings" className="bg-white p-6 rounded-lg shadow hover:shadow-md transition-shadow">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Power Ratings</h3>
+                <p className="text-sm text-gray-600">View team power ratings and see how the model ranks all FBS teams.</p>
               </Link>
               <Link href="/docs/status" className="bg-white p-6 rounded-lg shadow hover:shadow-md transition-shadow">
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">System Status</h3>
