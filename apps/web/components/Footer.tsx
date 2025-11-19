@@ -46,8 +46,8 @@ export function Footer() {
             <h3 className="text-sm font-semibold text-gray-900 mb-3">Resources</h3>
             <ul className="space-y-2 text-sm">
               <li>
-                <Link href="/ratings/config" className="text-gray-600 hover:text-blue-600 transition-colors">
-                  Ratings Configuration
+                <Link href="/ratings" className="text-gray-600 hover:text-blue-600 transition-colors">
+                  Power Ratings
                 </Link>
               </li>
               <li>
