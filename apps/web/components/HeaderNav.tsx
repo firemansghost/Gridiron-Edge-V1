@@ -46,7 +46,11 @@ export function HeaderNav() {
             <Link href="/season-review" className={linkClass('/season-review')} title="Season-wide performance summary">
               Season Review
             </Link>
-            <Link href="/bets" className={linkClass('/bets')}>
+            <Link href="/ratings" className={linkClass('/ratings')} title="View team power ratings">
+              Ratings
+            </Link>
+            {/* Dev-only links - commented out for V1 public release */}
+            {/* <Link href="/bets" className={linkClass('/bets')}>
               Bets
             </Link>
             <Link href="/strategies" className={linkClass('/strategies')}>
@@ -54,10 +58,7 @@ export function HeaderNav() {
             </Link>
             <Link href="/backtests" className={linkClass('/backtests')}>
               Backtests
-            </Link>
-            <Link href="/ratings/config" className={linkClass('/ratings')}>
-              Ratings
-            </Link>
+            </Link> */}
             {process.env.NEXT_PUBLIC_SHOW_DOCS === 'true' && (
               <Link href="/docs" className={linkClass('/docs')}>
                 Docs
@@ -86,7 +87,11 @@ export function HeaderNav() {
             <Link href="/season-review" className={linkClass('/season-review')} title="Season-wide performance summary">
               Season Review
             </Link>
-            <Link href="/bets" className={linkClass('/bets')}>
+            <Link href="/ratings" className={linkClass('/ratings')} title="View team power ratings">
+              Ratings
+            </Link>
+            {/* Dev-only links - commented out for V1 public release */}
+            {/* <Link href="/bets" className={linkClass('/bets')}>
               Bets
             </Link>
             <Link href="/strategies" className={linkClass('/strategies')}>
@@ -94,10 +99,7 @@ export function HeaderNav() {
             </Link>
             <Link href="/backtests" className={linkClass('/backtests')}>
               Backtests
-            </Link>
-            <Link href="/ratings/config" className={linkClass('/ratings')}>
-              Ratings
-            </Link>
+            </Link> */}
             {process.env.NEXT_PUBLIC_SHOW_DOCS === 'true' && (
               <Link href="/docs" className={linkClass('/docs')}>
                 Docs
