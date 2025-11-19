@@ -124,8 +124,11 @@ export function computeRatingDiffBlend(
   const awayBlend = w * awayV2Norm + (1 - w) * awayMFTRNorm;
 
   // Denormalize back to V2 scale
+  // CRITICAL: For a difference, we only multiply by std, NOT add the mean back
+  // diffNorm = (value1 - mean)/std - (value2 - mean)/std = (value1 - value2)/std
+  // Therefore: diff = diffNorm * std (no mean addition)
   const blendDiffNorm = homeBlend - awayBlend;
-  const blendDiffDenorm = blendDiffNorm * blendConfig.normalization.v2Std + blendConfig.normalization.v2Mean;
+  const blendDiffDenorm = blendDiffNorm * blendConfig.normalization.v2Std;
 
   return blendDiffDenorm;
 }

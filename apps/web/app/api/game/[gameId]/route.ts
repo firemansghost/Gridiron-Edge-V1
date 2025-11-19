@@ -939,14 +939,14 @@ export async function GET(
       };
     };
 
-    // Get power ratings from team_season_ratings (Ratings v2) - SoS-adjusted with shrinkage
-    const [homeRating, awayRating] = await Promise.all([
+    // Get power ratings from team_season_ratings (V1 with conference adjustments, fallback to V2)
+    const [homeRatingV1, awayRatingV1] = await Promise.all([
       prisma.teamSeasonRating.findUnique({
         where: {
           season_teamId_modelVersion: {
             season: game.season,
             teamId: game.homeTeamId,
-            modelVersion: 'v2',
+            modelVersion: 'v1',
           },
         },
       }),
@@ -955,11 +955,32 @@ export async function GET(
           season_teamId_modelVersion: {
             season: game.season,
             teamId: game.awayTeamId,
-            modelVersion: 'v2',
+            modelVersion: 'v1',
           },
         },
       }),
     ]);
+
+    // Fallback to V2 if V1 not available
+    const homeRating = homeRatingV1 || await prisma.teamSeasonRating.findUnique({
+      where: {
+        season_teamId_modelVersion: {
+          season: game.season,
+          teamId: game.homeTeamId,
+          modelVersion: 'v2',
+        },
+      },
+    });
+
+    const awayRating = awayRatingV1 || await prisma.teamSeasonRating.findUnique({
+      where: {
+        season_teamId_modelVersion: {
+          season: game.season,
+          teamId: game.awayTeamId,
+          modelVersion: 'v2',
+        },
+      },
+    });
 
     // Get base ratings for comparison
     const homeRatingBase = homeRating ? Number(homeRating.powerRating || homeRating.rating || 0) : 0;
