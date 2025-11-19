@@ -441,29 +441,82 @@ export async function getCoreV1SpreadFromTeams(
   const homeRatingValue = Number(homeRating.powerRating || homeRating.rating || 0);
   const awayRatingValue = Number(awayRating.powerRating || awayRating.rating || 0);
   
-  // For blending, we still need V2-scale values, but if we're using V1, we can use them directly
-  // The blend function expects V2 scale, but V1 ratings are in a similar scale after calibration
-  const homeV2 = homeRatingValue;
-  const awayV2 = awayRatingValue;
-
-  // Compute ratingDiffBlend
-  // Model expects: (homeRating - awayRating) for HMA frame
-  // Positive ratingDiffBlend means home is stronger (home favored)
-  const ratingDiffBlend = computeRatingDiffBlend(homeTeamId, awayTeamId, homeV2, awayV2);
-
   // Get HFA points using HFA v2
   const hfaInfo = computeEffectiveHfa(homeTeamId, neutralSite);
   const hfaPoints = hfaInfo.effectiveHfa;
 
-  // Get spread info
-  const spreadInfo = getCoreV1SpreadInfo(
-    ratingDiffBlend,
-    hfaPoints,
-    homeTeamId,
-    awayTeamId,
-    homeTeamName,
-    awayTeamName
-  );
+  // CRITICAL: Use V1 Power Ratings directly for spread calculation
+  // V1 ratings are schedule-adjusted and represent "points above average"
+  // Simple formula: spread = homeRating - awayRating + hfa (HMA frame: positive = home favored)
+  // This ensures the spread matches the Power Ratings displayed on the UI
+  const hasV1Ratings = homeRatingV1 && awayRatingV1 && 
+                       (homeRatingV1.powerRating !== null || homeRatingV1.rating !== null) &&
+                       (awayRatingV1.powerRating !== null || awayRatingV1.rating !== null);
+
+  let coreSpreadHma: number;
+  let ratingDiffBlend: number;
+
+  if (hasV1Ratings) {
+    // Direct calculation from V1 Power Ratings
+    // HMA frame: positive = home favored, negative = away favored
+    coreSpreadHma = homeRatingValue - awayRatingValue + hfaPoints;
+    // ratingDiffBlend for reference (used in diagnostics)
+    ratingDiffBlend = homeRatingValue - awayRatingValue;
+    
+    console.log(`[Core V1 Spread] Using V1 Power Ratings directly:`, {
+      homeTeam: homeTeamName,
+      homeRating: homeRatingValue.toFixed(2),
+      awayTeam: awayTeamName,
+      awayRating: awayRatingValue.toFixed(2),
+      hfa: hfaPoints.toFixed(2),
+      spreadHma: coreSpreadHma.toFixed(2),
+    });
+  } else {
+    // Fallback: Use raw stat blend (legacy logic)
+    // For blending, we still need V2-scale values
+    const homeV2 = homeRatingValue;
+    const awayV2 = awayRatingValue;
+    
+    // Compute ratingDiffBlend using raw stats blend
+    ratingDiffBlend = computeRatingDiffBlend(homeTeamId, awayTeamId, homeV2, awayV2);
+    
+    // Use the OLS model with blended ratings
+    coreSpreadHma = computeCoreV1Spread(ratingDiffBlend, hfaPoints);
+    
+    console.log(`[Core V1 Spread] Using raw stat blend (V1 ratings not available):`, {
+      homeTeam: homeTeamName,
+      awayTeam: awayTeamName,
+      ratingDiffBlend: ratingDiffBlend.toFixed(2),
+      spreadHma: coreSpreadHma.toFixed(2),
+    });
+  }
+
+  // Convert to favorite-centric format for display
+  const isHomeFavorite = coreSpreadHma > 0;
+  const favoriteTeamId = isHomeFavorite ? homeTeamId : awayTeamId;
+  const dogTeamId = isHomeFavorite ? awayTeamId : homeTeamId;
+  const favoriteName = isHomeFavorite ? homeTeamName : awayTeamName;
+  const dogName = isHomeFavorite ? awayTeamName : homeTeamName;
+  
+  // Convert to favorite-centric frame (favorite always negative, dog always positive)
+  const favoriteSpread = -Math.abs(coreSpreadHma);
+  const dogSpread = Math.abs(coreSpreadHma);
+  
+  // Format lines
+  const favoriteLine = `${favoriteName} ${favoriteSpread.toFixed(1)}`;
+  const dogLine = `${dogName} +${dogSpread.toFixed(1)}`;
+
+  const spreadInfo = {
+    coreSpreadHma,
+    favoriteTeamId,
+    dogTeamId,
+    favoriteName,
+    dogName,
+    favoriteSpread,
+    dogSpread,
+    favoriteLine,
+    dogLine,
+  };
 
   return {
     ...spreadInfo,
