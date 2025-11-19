@@ -43,6 +43,9 @@ export function HeaderNav() {
             <Link href="/weeks/review" className={linkClass('/weeks/review')} title="Review past week performance">
               Week Review
             </Link>
+            <Link href="/season-review" className={linkClass('/season-review')} title="Season-wide performance summary">
+              Season Review
+            </Link>
             <Link href="/bets" className={linkClass('/bets')}>
               Bets
             </Link>
@@ -79,6 +82,9 @@ export function HeaderNav() {
             </Link>
             <Link href="/weeks/review" className={linkClass('/weeks/review')} title="Review past week performance">
               Week Review
+            </Link>
+            <Link href="/season-review" className={linkClass('/season-review')} title="Season-wide performance summary">
+              Season Review
             </Link>
             <Link href="/bets" className={linkClass('/bets')}>
               Bets

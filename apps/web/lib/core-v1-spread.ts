@@ -34,20 +34,24 @@ interface BlendConfig {
 const BLEND_CONFIG: BlendConfig = blendConfig as BlendConfig;
 const MFTR_RATINGS_MAP: Map<string, number> = new Map(Object.entries(mftrRatings as Record<string, number>));
 
-interface HfaConfig {
-  baseHfaPoints: number;
-  teamAdjustments: Record<string, number>;
-  neutralSiteOverrides: Record<string, number>;
-  clipRange: {
-    min: number;
-    max: number;
-  };
-  version: string;
-  timestamp: string;
-  note?: string;
+interface TeamAdjustment {
+  adjustment: number;
+  sampleSize: number;
+  meanResidual: number;
+  stdevResidual: number;
 }
 
-const HFA_CONFIG: HfaConfig = hfaConfig as HfaConfig;
+interface HfaConfig {
+  baseHfaPoints: number;
+  clipRange: [number, number];
+  teamAdjustments: Record<string, TeamAdjustment>;
+}
+
+// Type assertion: JSON clipRange is number[] but we know it's a 2-element tuple
+const HFA_CONFIG: HfaConfig = {
+  ...hfaConfig,
+  clipRange: hfaConfig.clipRange as [number, number],
+} as HfaConfig;
 
 interface CoreCoefficients {
   beta0: number;
@@ -166,14 +170,13 @@ export function computeEffectiveHfa(
   
   // True home game: base + team adjustment
   const baseHfa = HFA_CONFIG.baseHfaPoints;
-  const teamAdjustment = HFA_CONFIG.teamAdjustments[homeTeamId] ?? 0.0;
+  const teamAdjustmentData = HFA_CONFIG.teamAdjustments[homeTeamId];
+  const teamAdjustment = teamAdjustmentData?.adjustment ?? 0.0;
   const rawHfa = baseHfa + teamAdjustment;
   
   // Clip to range
-  const effectiveHfa = Math.max(
-    HFA_CONFIG.clipRange.min,
-    Math.min(HFA_CONFIG.clipRange.max, rawHfa)
-  );
+  const [clipMin, clipMax] = HFA_CONFIG.clipRange;
+  const effectiveHfa = Math.max(clipMin, Math.min(clipMax, rawHfa));
   
   return {
     effectiveHfa,

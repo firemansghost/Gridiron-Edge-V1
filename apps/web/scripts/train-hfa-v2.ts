@@ -4,83 +4,114 @@
  * Computes team-specific HFA adjustments from historical game data.
  * 
  * Methodology:
- * - For each team, compute average home ATS margin residual vs closing spread
- * - Compute average away ATS margin residual
- * - Estimate team-specific HFA ≈ (home residual - away residual) / 2
- * - Clip to reasonable range (0.5 - 3.5 pts)
- * - Output config file with baseHfaPoints, teamAdjustments, and diagnostics
+ * - Use FBS games only
+ * - Use all available seasons/weeks from game_training_rows (dynamically discovered)
+ * - Regular season, non-neutral-site games only
+ * - For each game, compute residual = actualMargin - (modelFairSpreadWithoutHfa + baseHfaPoints)
+ * - Per-team aggregation with shrinkage toward 0
+ * - Clip to ensure baseHfaPoints + adjustment stays in [0.5, 3.5]
  */
 
-import { PrismaClient } from '@prisma/client';
 import { prisma } from '../lib/prisma';
-import { selectClosingLine } from '../lib/closing-line-helpers';
-import { getCoreV1SpreadFromTeams } from '../lib/core-v1-spread';
+import {
+  computeCoreV1Spread,
+  computeRatingDiffBlend,
+} from '../lib/core-v1-spread';
 import * as fs from 'fs';
 import * as path from 'path';
 
-interface TeamHfaStats {
-  teamId: string;
-  teamName: string;
-  homeGames: number;
-  awayGames: number;
-  homeResidualSum: number;
-  awayResidualSum: number;
-  homeResidualMean: number;
-  awayResidualMean: number;
-  estimatedHfa: number;
-  clippedHfa: number;
+interface TeamAdjustment {
+  adjustment: number;
+  sampleSize: number;
+  meanResidual: number;
+  stdevResidual: number;
 }
 
 interface HfaConfig {
   baseHfaPoints: number;
-  teamAdjustments: Record<string, number>;
-  neutralSiteOverrides: Record<string, number>;
-  clipRange: {
-    min: number;
-    max: number;
-  };
-  version: string;
-  timestamp: string;
-  diagnostics: {
-    totalGames: number;
-    teamsWithData: number;
-    meanTeamHfa: number;
-    medianTeamHfa: number;
-    stdDevTeamHfa: number;
-    sampleSize: {
-      min: number;
-      max: number;
-      mean: number;
-    };
-  };
-  note?: string;
+  clipRange: [number, number];
+  teamAdjustments: Record<string, TeamAdjustment>;
 }
 
-const MIN_GAMES_PER_TEAM = 4; // Minimum home + away games for reliable HFA estimate
+const BASE_HFA = 2.0;
 const CLIP_MIN = 0.5;
 const CLIP_MAX = 3.5;
-const BASE_HFA = 2.0;
+const SHRINKAGE_CONSTANT = 20; // Shrinkage toward 0 for small samples
+
+/**
+ * Get FBS team IDs for a season
+ */
+async function getFBSTeams(season: number): Promise<Set<string>> {
+  const memberships = await prisma.teamMembership.findMany({
+    where: {
+      season,
+      level: 'fbs',
+    },
+    select: { teamId: true },
+  });
+  
+  return new Set(memberships.map((m) => m.teamId));
+}
+
+/**
+ * Check if a week is regular season (exclude bowls, conference title games)
+ * Typically weeks 1-14 are regular season, but we'll be conservative
+ */
+function isRegularSeason(week: number): boolean {
+  // Exclude bowls (typically week 15+) and conference championships (week 14-15)
+  // Keep weeks 1-13 as regular season
+  return week >= 1 && week <= 13;
+}
 
 async function main() {
   console.log('🏈 HFA v2 Training Script');
   console.log('==========================\n');
 
-  // Load historical games (last 3 seasons for sample size)
-  const currentSeason = 2025;
-  const seasons = [currentSeason - 2, currentSeason - 1, currentSeason];
-  
-  console.log(`Loading games from seasons: ${seasons.join(', ')}...`);
-  
-  const games = await prisma.game.findMany({
+  // Dynamically discover available seasons and weeks from game_training_rows
+  const seasonWeekData = await prisma.gameTrainingRow.groupBy({
+    by: ['season'],
+    _min: { week: true },
+    _max: { week: true },
+    _count: { gameId: true },
+  });
+
+  if (seasonWeekData.length === 0) {
+    throw new Error('No training rows found in game_training_rows table');
+  }
+
+  const availableSeasons = seasonWeekData
+    .map((s) => s.season)
+    .sort((a, b) => b - a);
+
+  console.log(`Discovered ${availableSeasons.length} season(s) in game_training_rows:`);
+  seasonWeekData.forEach((s) => {
+    console.log(`  Season ${s.season}: weeks ${s._min.week}-${s._max.week} (${s._count.gameId} rows)`);
+  });
+  console.log(`Using all available seasons: ${availableSeasons.join(', ')}\n`);
+
+  // Load FBS teams for all seasons (union)
+  const fbsTeamsBySeason = new Map<number, Set<string>>();
+  for (const season of availableSeasons) {
+    const fbsTeams = await getFBSTeams(season);
+    fbsTeamsBySeason.set(season, fbsTeams);
+    console.log(`  Season ${season}: ${fbsTeams.size} FBS teams`);
+  }
+
+  // Load training rows: non-neutral, regular season
+  // Then join with games table to get scores and team info
+  const trainingRows = await prisma.gameTrainingRow.findMany({
     where: {
-      season: { in: seasons },
-      status: 'final',
-      homeScore: { not: null },
-      awayScore: { not: null },
+      season: { in: availableSeasons },
+      neutralSite: false,
+      week: { lte: 13 }, // Regular season only
     },
     include: {
-      homeTeam: true,
-      awayTeam: true,
+      game: {
+        include: {
+          homeTeam: { select: { id: true, name: true } },
+          awayTeam: { select: { id: true, name: true } },
+        },
+      },
     },
     orderBy: [
       { season: 'desc' },
@@ -88,168 +119,153 @@ async function main() {
     ],
   });
 
-  console.log(`Found ${games.length} completed games\n`);
+  // Filter to games that have scores and are FBS
+  const gamesWithScores = trainingRows
+    .filter((row) => {
+      const game = row.game;
+      if (!game || game.status !== 'final' || game.homeScore === null || game.awayScore === null) {
+        return false;
+      }
+      const seasonFbs = fbsTeamsBySeason.get(row.season);
+      return (
+        seasonFbs?.has(game.homeTeamId) &&
+        seasonFbs?.has(game.awayTeamId) &&
+        isRegularSeason(row.week)
+      );
+    })
+    .map((row) => ({
+      id: row.gameId,
+      season: row.season,
+      week: row.week,
+      homeTeamId: row.homeTeamId,
+      awayTeamId: row.awayTeamId,
+      homeScore: row.game!.homeScore!,
+      awayScore: row.game!.awayScore!,
+      homeTeam: row.game!.homeTeam,
+      awayTeam: row.game!.awayTeam,
+    }));
 
-  // Compute team-specific HFA stats
-  const teamStats = new Map<string, TeamHfaStats>();
+  console.log(`\nFound ${gamesWithScores.length} FBS regular-season non-neutral games with scores\n`);
 
-  let processedGames = 0;
-  let skippedGames = 0;
+  // Collect residuals per team (home games only)
+  const teamResiduals = new Map<string, number[]>();
+  const teamNames = new Map<string, string>();
 
-  for (const game of games) {
+  let processed = 0;
+  let skipped = 0;
+
+  for (const game of gamesWithScores) {
     try {
-      // Get closing spread
-      const closingSpread = await selectClosingLine(game.id, 'spread');
-      if (closingSpread === null) {
-        skippedGames++;
+      // Load V2 ratings directly to compute spread without HFA
+      // This avoids using the current HFA config (which might have adjustments)
+      const [homeRating, awayRating] = await Promise.all([
+        prisma.teamSeasonRating.findUnique({
+          where: {
+            season_teamId_modelVersion: {
+              season: game.season,
+              teamId: game.homeTeamId,
+              modelVersion: 'v2',
+            },
+          },
+        }),
+        prisma.teamSeasonRating.findUnique({
+          where: {
+            season_teamId_modelVersion: {
+              season: game.season,
+              teamId: game.awayTeamId,
+              modelVersion: 'v2',
+            },
+          },
+        }),
+      ]);
+
+      if (!homeRating || !awayRating) {
+        skipped++;
         continue;
       }
 
-      // Get Core V1 model spread (using current HFA = 2.0 for consistency)
-      // Note: This uses the current model, so HFA estimates are relative to base 2.0
-      const coreSpreadInfo = await getCoreV1SpreadFromTeams(
-        game.season,
+      const homeV2 = Number(homeRating.powerRating || homeRating.rating || 0);
+      const awayV2 = Number(awayRating.powerRating || awayRating.rating || 0);
+
+      // Compute ratingDiffBlend
+      const ratingDiffBlend = computeRatingDiffBlend(
         game.homeTeamId,
         game.awayTeamId,
-        game.neutralSite || false,
-        game.homeTeam.name,
-        game.awayTeam.name
+        homeV2,
+        awayV2
       );
 
-      // Actual margin (home - away)
-      const actualMargin = (game.homeScore || 0) - (game.awayScore || 0);
-      
-      // Model prediction in HMA frame
-      const modelSpreadHma = coreSpreadInfo.coreSpreadHma;
-      
-      // Residual = actual - model
-      const residual = actualMargin - modelSpreadHma;
+      // Compute what the spread would be without HFA (HFA = 0)
+      // This is the model's fair line before applying any HFA
+      const spreadWithoutHfa = computeCoreV1Spread(ratingDiffBlend, 0.0);
 
-      // Update home team stats
-      if (!game.neutralSite) {
-        const homeStats = teamStats.get(game.homeTeamId) || {
-          teamId: game.homeTeamId,
-          teamName: game.homeTeam.name,
-          homeGames: 0,
-          awayGames: 0,
-          homeResidualSum: 0,
-          awayResidualSum: 0,
-          homeResidualMean: 0,
-          awayResidualMean: 0,
-          estimatedHfa: 0,
-          clippedHfa: 0,
-        };
-        homeStats.homeGames++;
-        homeStats.homeResidualSum += residual;
-        teamStats.set(game.homeTeamId, homeStats);
+      // Actual margin
+      const actualMargin = game.homeScore - game.awayScore;
+
+      // Residual = actualMargin - (modelFairSpreadWithoutHfa + baseHfaPoints)
+      // This represents how much extra home edge this team had vs the base 2.0 pts
+      const residual = actualMargin - (spreadWithoutHfa + BASE_HFA);
+
+      // Store residual for home team
+      if (!teamResiduals.has(game.homeTeamId)) {
+        teamResiduals.set(game.homeTeamId, []);
+        teamNames.set(game.homeTeamId, game.homeTeam.name);
       }
+      teamResiduals.get(game.homeTeamId)!.push(residual);
 
-      // Update away team stats
-      const awayStats = teamStats.get(game.awayTeamId) || {
-        teamId: game.awayTeamId,
-        teamName: game.awayTeam.name,
-        homeGames: 0,
-        awayGames: 0,
-        homeResidualSum: 0,
-        awayResidualSum: 0,
-        homeResidualMean: 0,
-        awayResidualMean: 0,
-        estimatedHfa: 0,
-        clippedHfa: 0,
-      };
-      awayStats.awayGames++;
-      awayStats.awayResidualSum += residual;
-      teamStats.set(game.awayTeamId, awayStats);
-
-      processedGames++;
-      if (processedGames % 100 === 0) {
-        console.log(`Processed ${processedGames} games...`);
+      processed++;
+      if (processed % 100 === 0) {
+        console.log(`  Processed ${processed} games...`);
       }
     } catch (error) {
-      console.error(`Error processing game ${game.id}:`, error);
-      skippedGames++;
+      console.error(`  Error processing game ${game.id}:`, error);
+      skipped++;
     }
   }
 
-  console.log(`\nProcessed ${processedGames} games, skipped ${skippedGames} games\n`);
+  console.log(`\nProcessed ${processed} games, skipped ${skipped} games\n`);
 
-  // Compute team-specific HFA adjustments
-  const teamAdjustments: Record<string, number> = {};
-  const hfaValues: number[] = [];
+  // Compute per-team adjustments
+  const teamAdjustments: Record<string, TeamAdjustment> = {};
+  const effectiveHfas: number[] = [];
 
-  for (const [teamId, stats] of Array.from(teamStats.entries())) {
-    if (stats.homeGames === 0 || stats.awayGames === 0) {
-      continue;
-    }
+  for (const [teamId, residuals] of Array.from(teamResiduals.entries())) {
+    const sampleSize = residuals.length;
+    
+    // Compute mean and stdev
+    const meanResidual = residuals.reduce((sum: number, r: number) => sum + r, 0) / sampleSize;
+    const variance =
+      residuals.reduce((sum: number, r: number) => sum + Math.pow(r - meanResidual, 2), 0) /
+      sampleSize;
+    const stdevResidual = Math.sqrt(variance);
 
-    stats.homeResidualMean = stats.homeResidualSum / stats.homeGames;
-    stats.awayResidualMean = stats.awayResidualSum / stats.awayGames;
+    // Apply shrinkage: adj = meanResidual * sampleSize / (sampleSize + SHRINKAGE_CONSTANT)
+    const rawAdjustment = (meanResidual * sampleSize) / (sampleSize + SHRINKAGE_CONSTANT);
 
-    // HFA estimate = (home residual - away residual) / 2
-    // This represents how much better the team performs at home vs away
-    stats.estimatedHfa = (stats.homeResidualMean - stats.awayResidualMean) / 2;
+    // Clip adjustment so that baseHfaPoints + adjustment stays in [CLIP_MIN, CLIP_MAX]
+    // maxAdjustment = CLIP_MAX - BASE_HFA
+    // minAdjustment = CLIP_MIN - BASE_HFA
+    const maxAdjustment = CLIP_MAX - BASE_HFA;
+    const minAdjustment = CLIP_MIN - BASE_HFA;
+    const adjustment = Math.max(minAdjustment, Math.min(maxAdjustment, rawAdjustment));
 
-    // Clip to range
-    stats.clippedHfa = Math.max(CLIP_MIN, Math.min(CLIP_MAX, stats.estimatedHfa));
+    teamAdjustments[teamId] = {
+      adjustment,
+      sampleSize,
+      meanResidual,
+      stdevResidual,
+    };
 
-    // Team adjustment = clipped HFA - base HFA
-    // (since base is 2.0, adjustment can be negative or positive)
-    const totalGames = stats.homeGames + stats.awayGames;
-    if (totalGames >= MIN_GAMES_PER_TEAM) {
-      const adjustment = stats.clippedHfa - BASE_HFA;
-      teamAdjustments[teamId] = adjustment;
-      hfaValues.push(stats.clippedHfa);
-    }
+    // Track effective HFA for diagnostics
+    const effectiveHfa = BASE_HFA + adjustment;
+    effectiveHfas.push(effectiveHfa);
   }
-
-  // Compute diagnostics
-  const sortedHfa = [...hfaValues].sort((a, b) => a - b);
-  const meanHfa = hfaValues.length > 0
-    ? hfaValues.reduce((sum, val) => sum + val, 0) / hfaValues.length
-    : BASE_HFA;
-  const medianHfa = sortedHfa.length > 0
-    ? (sortedHfa.length % 2 === 0
-        ? (sortedHfa[sortedHfa.length / 2 - 1] + sortedHfa[sortedHfa.length / 2]) / 2
-        : sortedHfa[Math.floor(sortedHfa.length / 2)])
-    : BASE_HFA;
-  const variance = hfaValues.length > 0
-    ? hfaValues.reduce((sum, val) => sum + Math.pow(val - meanHfa, 2), 0) / hfaValues.length
-    : 0;
-  const stdDevHfa = Math.sqrt(variance);
-
-  const sampleSizes = Array.from(teamStats.values())
-    .filter((s: TeamHfaStats) => s.homeGames + s.awayGames >= MIN_GAMES_PER_TEAM)
-    .map((s: TeamHfaStats) => s.homeGames + s.awayGames);
-  const minSample = sampleSizes.length > 0 ? Math.min(...sampleSizes) : 0;
-  const maxSample = sampleSizes.length > 0 ? Math.max(...sampleSizes) : 0;
-  const meanSample = sampleSizes.length > 0
-    ? sampleSizes.reduce((sum, val) => sum + val, 0) / sampleSizes.length
-    : 0;
 
   // Build config
   const config: HfaConfig = {
     baseHfaPoints: BASE_HFA,
+    clipRange: [CLIP_MIN, CLIP_MAX],
     teamAdjustments,
-    neutralSiteOverrides: {}, // Reserved for future use
-    clipRange: {
-      min: CLIP_MIN,
-      max: CLIP_MAX,
-    },
-    version: 'v2',
-    timestamp: new Date().toISOString(),
-    diagnostics: {
-      totalGames: processedGames,
-      teamsWithData: Object.keys(teamAdjustments).length,
-      meanTeamHfa: meanHfa,
-      medianTeamHfa: medianHfa,
-      stdDevTeamHfa: stdDevHfa,
-      sampleSize: {
-        min: minSample,
-        max: maxSample,
-        mean: meanSample,
-      },
-    },
-    note: `HFA v2 trained on ${processedGames} games from seasons ${seasons.join(', ')}. Minimum ${MIN_GAMES_PER_TEAM} games per team.`,
   };
 
   // Write config file
@@ -257,24 +273,45 @@ async function main() {
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 
   console.log('✅ HFA v2 config written to:', configPath);
-  console.log('\n📊 Diagnostics:');
-  console.log(`  Total games processed: ${processedGames}`);
-  console.log(`  Teams with sufficient data: ${config.diagnostics.teamsWithData}`);
-  console.log(`  Mean team HFA: ${meanHfa.toFixed(2)} pts`);
-  console.log(`  Median team HFA: ${medianHfa.toFixed(2)} pts`);
-  console.log(`  Std dev: ${stdDevHfa.toFixed(2)} pts`);
-  console.log(`  Sample size range: ${minSample}-${maxSample} games (mean: ${meanSample.toFixed(1)})`);
-  console.log('\n🎯 Top 5 teams by HFA adjustment:');
-  
-  const topAdjustments = Object.entries(teamAdjustments)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 5);
-  
-  for (const [teamId, adjustment] of topAdjustments) {
-    const stats = teamStats.get(teamId);
-    if (stats) {
-      console.log(`  ${stats.teamName}: +${adjustment.toFixed(2)} pts (${stats.homeGames}H/${stats.awayGames}A)`);
-    }
+
+  // Print summary
+  const sortedByEffectiveHfa = Object.entries(teamAdjustments)
+    .map(([teamId, adj]) => ({
+      teamId,
+      teamName: teamNames.get(teamId) || teamId,
+      effectiveHfa: BASE_HFA + adj.adjustment,
+      adjustment: adj.adjustment,
+      sampleSize: adj.sampleSize,
+    }))
+    .sort((a, b) => b.effectiveHfa - a.effectiveHfa);
+
+  console.log('\n📊 Summary:');
+  console.log(`  Teams with adjustments: ${Object.keys(teamAdjustments).length}`);
+  console.log(`  Min effective HFA: ${Math.min(...effectiveHfas).toFixed(2)} pts`);
+  console.log(`  Median effective HFA: ${effectiveHfas.sort((a, b) => a - b)[Math.floor(effectiveHfas.length / 2)].toFixed(2)} pts`);
+  console.log(`  Max effective HFA: ${Math.max(...effectiveHfas).toFixed(2)} pts`);
+
+  console.log('\n🏆 Top 10 teams by effective HFA:');
+  sortedByEffectiveHfa.slice(0, 10).forEach((team, i) => {
+    console.log(
+      `  ${i + 1}. ${team.teamName}: ${team.effectiveHfa.toFixed(2)} pts (adj: ${team.adjustment > 0 ? '+' : ''}${team.adjustment.toFixed(2)}, n=${team.sampleSize})`
+    );
+  });
+
+  console.log('\n📉 Bottom 10 teams by effective HFA:');
+  sortedByEffectiveHfa.slice(-10).reverse().forEach((team, i) => {
+    console.log(
+      `  ${i + 1}. ${team.teamName}: ${team.effectiveHfa.toFixed(2)} pts (adj: ${team.adjustment > 0 ? '+' : ''}${team.adjustment.toFixed(2)}, n=${team.sampleSize})`
+    );
+  });
+
+  // Flag low sample size teams
+  const lowSampleTeams = sortedByEffectiveHfa.filter((t) => t.sampleSize < 10);
+  if (lowSampleTeams.length > 0) {
+    console.log(`\n⚠️  Low sample size teams (n < 10): ${lowSampleTeams.length}`);
+    lowSampleTeams.slice(0, 10).forEach((team) => {
+      console.log(`  ${team.teamName}: n=${team.sampleSize}`);
+    });
   }
 
   console.log('\n✅ Training complete!');
@@ -288,4 +325,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-
