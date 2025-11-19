@@ -446,9 +446,11 @@ export async function getCoreV1SpreadFromTeams(
   const hfaPoints = hfaInfo.effectiveHfa;
 
   // CRITICAL: Use V1 Power Ratings directly for spread calculation
-  // V1 ratings are schedule-adjusted and represent "points above average"
-  // Simple formula: spread = homeRating - awayRating + hfa (HMA frame: positive = home favored)
-  // This ensures the spread matches the Power Ratings displayed on the UI
+  // V1 ratings are schedule-adjusted but need scaling to convert to spread points
+  // Raw ratings are on a +/- 50 scale, but spreads should be on a +/- 20 scale
+  // Apply scaling factor to convert rating difference to realistic spread points
+  const RATING_SCALE = 0.35; // Convert raw rating diff to spread points (calibrated to realistic CFB spreads)
+  
   const hasV1Ratings = homeRatingV1 && awayRatingV1 && 
                        (homeRatingV1.powerRating !== null || homeRatingV1.rating !== null) &&
                        (awayRatingV1.powerRating !== null || awayRatingV1.rating !== null);
@@ -457,17 +459,21 @@ export async function getCoreV1SpreadFromTeams(
   let ratingDiffBlend: number;
 
   if (hasV1Ratings) {
-    // Direct calculation from V1 Power Ratings
+    // Direct calculation from V1 Power Ratings with scaling
     // HMA frame: positive = home favored, negative = away favored
-    coreSpreadHma = homeRatingValue - awayRatingValue + hfaPoints;
+    const rawDiff = homeRatingValue - awayRatingValue;
+    const scaledDiff = rawDiff * RATING_SCALE;
+    coreSpreadHma = scaledDiff + hfaPoints; // Add HFA after scaling (HFA is already in points)
     // ratingDiffBlend for reference (used in diagnostics)
-    ratingDiffBlend = homeRatingValue - awayRatingValue;
+    ratingDiffBlend = rawDiff; // Keep raw diff for diagnostics
     
-    console.log(`[Core V1 Spread] Using V1 Power Ratings directly:`, {
+    console.log(`[Core V1 Spread] Using V1 Power Ratings directly (scaled):`, {
       homeTeam: homeTeamName,
       homeRating: homeRatingValue.toFixed(2),
       awayTeam: awayTeamName,
       awayRating: awayRatingValue.toFixed(2),
+      rawDiff: rawDiff.toFixed(2),
+      scaledDiff: scaledDiff.toFixed(2),
       hfa: hfaPoints.toFixed(2),
       spreadHma: coreSpreadHma.toFixed(2),
     });
