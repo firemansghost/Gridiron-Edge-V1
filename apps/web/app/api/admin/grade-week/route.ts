@@ -12,6 +12,7 @@ import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 import { gradeAvailableBets } from '@/lib/grading/grading-service';
+import { syncGamesForWeek } from '@/lib/cfbd/cfbd-service';
 
 const execAsync = promisify(exec);
 
@@ -79,11 +80,9 @@ function resolveJobsScriptPath(scriptFile: string, subdir: string = 'src'): stri
 }
 
 /**
- * Run CFBD game results sync job
+ * Run CFBD game results sync using the service (serverless-friendly)
  * 
- * Note: MODULE_NOT_FOUND errors are treated as non-fatal warnings since
- * scores may already exist in the database. This allows grading to proceed
- * even if the CFBD script cannot be found.
+ * This replaces the child process approach with a direct function call.
  */
 async function runCFBDScoresSync(season: number, week: number): Promise<{ 
   ok: boolean; 
@@ -95,64 +94,34 @@ async function runCFBDScoresSync(season: number, week: number): Promise<{
   try {
     console.log(`🏈 Running CFBD scores sync for ${season} Week ${week}...`);
     
-    const scriptPath = resolveJobsScriptPath('cfbd-game-results.js');
-    const command = `node "${scriptPath}" --season ${season} --weeks ${week}`;
+    const syncResult = await syncGamesForWeek(season, week);
     
-    console.log(`Executing: ${command}`);
-    
-    const { stdout, stderr } = await execAsync(command, {
-      cwd: process.cwd(),
-      env: process.env,
-      maxBuffer: 10 * 1024 * 1024, // 10MB buffer for large outputs
-    });
-    
-    console.log('CFBD sync stdout:', stdout);
-    if (stderr) {
-      console.log('CFBD sync stderr:', stderr);
-    }
-    
-    // Parse the output to get updated games count
-    const updatedGamesMatch = stdout.match(/Games updated: (\d+)/);
-    const updatedGames = updatedGamesMatch ? parseInt(updatedGamesMatch[1], 10) : 0;
-    
-    return { ok: true, updatedGames };
-  } catch (error: any) {
-    console.error('CFBD sync error:', error);
-    
-    const stderr = error?.stderr?.toString?.() ?? '';
-    const stdout = error?.stdout?.toString?.() ?? '';
-    const errorMessage = error?.message || String(error);
-    
-    // Check if this is a MODULE_NOT_FOUND error
-    const isModuleNotFound =
-      error?.code === 'MODULE_NOT_FOUND' ||
-      errorMessage.includes('MODULE_NOT_FOUND') ||
-      errorMessage.includes('Cannot find module') ||
-      stderr.includes('MODULE_NOT_FOUND') ||
-      stderr.includes('Cannot find module');
-    
-    if (isModuleNotFound) {
-      // Log for diagnostics but don't block grading
-      console.warn('[CFBD Sync] MODULE_NOT_FOUND – continuing to grading', { 
-        error: errorMessage,
-        stderr: stderr.substring(0, 500), // Truncate for logging
-      });
-      return { 
-        ok: false, 
-        message: 'CFBD script not found; skipping scores sync. Scores may already exist in database.',
-        error: 'MODULE_NOT_FOUND',
-        details: `Script path resolution failed. Tried multiple locations but script not found.`
+    if (!syncResult.success) {
+      return {
+        ok: false,
+        updatedGames: 0,
+        error: syncResult.error || 'CFBD sync failed',
+        message: 'CFBD sync failed, but grading will proceed.',
       };
     }
     
-    // For other errors, return error details but still allow grading to proceed
-    const errorDetails = stderr || stdout || errorMessage;
+    console.log(`[CFBD Sync] Completed: ${syncResult.gamesUpdated} games updated, ${syncResult.gamesNotFound} not found`);
+    
+    return {
+      ok: true,
+      updatedGames: syncResult.gamesUpdated,
+    };
+  } catch (error: any) {
+    console.error('CFBD sync error:', error);
+    
+    const errorMessage = error?.message || String(error);
+    
+    // Return error but allow grading to proceed (scores may already exist)
     return { 
       ok: false,
       updatedGames: 0, 
-      error: `CFBD job failed: ${errorMessage}`,
-      details: errorDetails.substring(0, 1000), // Truncate for response
-      message: 'CFBD sync failed, but grading will proceed.'
+      error: `CFBD sync failed: ${errorMessage}`,
+      message: 'CFBD sync failed, but grading will proceed.',
     };
   }
 }

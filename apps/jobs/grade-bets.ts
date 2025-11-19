@@ -89,29 +89,31 @@ function gradeSpreadTotal(
 ): { result: BetResult; pnl: number; clv: number } {
   let result: BetResult;
   if (marketType === 'spread') {
-    // Compare from side perspective
+    // Compare from side perspective (matches API route logic)
     const sideMargin = side === 'home' ? margin : -margin;
-    if (sideMargin > closeLine) result = 'win';
-    else if (sideMargin < closeLine) result = 'loss';
-    else result = 'push';
+    const diff = sideMargin - closeLine;
+    
+    // Check for push (within 0.5, accounting for floating point precision)
+    if (Math.abs(diff) < 0.5) {
+      result = 'push';
+    } else {
+      result = diff > 0 ? 'win' : 'loss';
+    }
   } else {
     // total
-    if (side === 'over') {
-      if (totalPts > closeLine) result = 'win';
-      else if (totalPts < closeLine) result = 'loss';
-      else result = 'push';
+    const diff = side === 'over' ? totalPts - closeLine : closeLine - totalPts;
+    if (Math.abs(diff) < 0.5) {
+      result = 'push';
     } else {
-      if (totalPts < closeLine) result = 'win';
-      else if (totalPts > closeLine) result = 'loss';
-      else result = 'push';
+      result = diff > 0 ? 'win' : 'loss';
     }
   }
 
   // PnL: assume -110 if no explicit price (profit if win, else -stake, push 0)
-  const winProfit = stake * (100 / 110);
-  const pnl = result === 'win' ? winProfit : result === 'loss' ? -stake : 0;
+  // Matches API route: win = stake * 0.909, loss = -stake, push = 0
+  const pnl = result === 'win' ? stake * 0.909 : result === 'loss' ? -stake : 0;
 
-  // CLV (bettor perspective)
+  // CLV (bettor perspective) - matches API route logic
   let clv: number;
   if (marketType === 'spread') {
     clv = side === 'home' ? modelLine - closeLine : closeLine - modelLine;
@@ -163,7 +165,9 @@ async function main() {
   console.log(`   force=${args.force} limit=${args.limit} season=${args.season ?? '-'} week=${args.week ?? '-'}`);
 
   // Find candidate bets to grade
+  // Only grade strategy_run bets (not manual entries) to match API route behavior
   const whereClause: any = {
+    source: 'strategy_run', // Only grade strategy-run bets
     ...(args.force ? {} : { result: null }),
     ...(args.season ? { season: args.season } : {}),
     ...(args.week ? { week: args.week } : {}),

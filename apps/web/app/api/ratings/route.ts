@@ -50,10 +50,8 @@ export async function GET(request: NextRequest) {
           in: Array.from(fbsTeamIds),
         },
       },
-      include: {
-        // Note: TeamSeasonRating doesn't have a direct relation to Team in schema
-        // We'll need to join manually
-      },
+      // Note: TeamSeasonRating doesn't have a direct relation to Team in schema
+      // We'll join manually below
     });
 
     // Get team details

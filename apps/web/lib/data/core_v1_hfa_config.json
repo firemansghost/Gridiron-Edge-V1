@@ -1,13 +1,825 @@
 {
-  "baseHfaPoints": 2.0,
-  "teamAdjustments": {},
-  "neutralSiteOverrides": {},
-  "clipRange": {
-    "min": 0.5,
-    "max": 3.5
-  },
-  "version": "v2",
-  "timestamp": "2025-01-01T00:00:00Z",
-  "note": "HFA v2 config - team adjustments will be populated by training script"
+  "baseHfaPoints": 2,
+  "clipRange": [
+    0.5,
+    3.5
+  ],
+  "teamAdjustments": {
+    "james-madison": {
+      "adjustment": 1.5,
+      "sampleSize": 4,
+      "meanResidual": 21.027898453472794,
+      "stdevResidual": 14.419901011727145
+    },
+    "unlv": {
+      "adjustment": -0.6519395869724542,
+      "sampleSize": 3,
+      "meanResidual": -4.998203500122149,
+      "stdevResidual": 7.108096957895037
+    },
+    "miami-oh": {
+      "adjustment": -0.8216584154357441,
+      "sampleSize": 4,
+      "meanResidual": -4.929950492614465,
+      "stdevResidual": 13.68762655118513
+    },
+    "oklahoma-state": {
+      "adjustment": -1.5,
+      "sampleSize": 5,
+      "meanResidual": -29.016868563211812,
+      "stdevResidual": 8.103755765781484
+    },
+    "missouri-state": {
+      "adjustment": 0.3284812850178911,
+      "sampleSize": 4,
+      "meanResidual": 1.9708877101073465,
+      "stdevResidual": 9.762946219590125
+    },
+    "tennessee": {
+      "adjustment": 1.5,
+      "sampleSize": 5,
+      "meanResidual": 13.156288398819987,
+      "stdevResidual": 18.706520752919893
+    },
+    "massachusetts": {
+      "adjustment": -1.5,
+      "sampleSize": 4,
+      "meanResidual": -28.248453022215767,
+      "stdevResidual": 16.85565827289362
+    },
+    "usc": {
+      "adjustment": 1.5,
+      "sampleSize": 5,
+      "meanResidual": 24.14580213228276,
+      "stdevResidual": 15.241285328347107
+    },
+    "washington": {
+      "adjustment": 1.5,
+      "sampleSize": 4,
+      "meanResidual": 12.504063513909399,
+      "stdevResidual": 18.273318247972515
+    },
+    "ul-monroe": {
+      "adjustment": -1.427345578859807,
+      "sampleSize": 4,
+      "meanResidual": -8.564073473158842,
+      "stdevResidual": 12.343418853241992
+    },
+    "western-michigan": {
+      "adjustment": 0.1954123847794301,
+      "sampleSize": 4,
+      "meanResidual": 1.1724743086765805,
+      "stdevResidual": 7.813475113728307
+    },
+    "oregon": {
+      "adjustment": 1.5,
+      "sampleSize": 3,
+      "meanResidual": 43.685893059661815,
+      "stdevResidual": 20.163151410732443
+    },
+    "miami": {
+      "adjustment": 1.5,
+      "sampleSize": 7,
+      "meanResidual": 25.870659583953547,
+      "stdevResidual": 15.795976692664814
+    },
+    "san-diego-state": {
+      "adjustment": 1.5,
+      "sampleSize": 4,
+      "meanResidual": 22.953985236035315,
+      "stdevResidual": 8.124179779424098
+    },
+    "ole-miss": {
+      "adjustment": 1.5,
+      "sampleSize": 7,
+      "meanResidual": 17.91880088344311,
+      "stdevResidual": 21.072013262876418
+    },
+    "baylor": {
+      "adjustment": -0.9412184753642913,
+      "sampleSize": 5,
+      "meanResidual": -4.706092376821457,
+      "stdevResidual": 15.715734130015612
+    },
+    "akron": {
+      "adjustment": 0.14530923234039675,
+      "sampleSize": 5,
+      "meanResidual": 0.7265461617019838,
+      "stdevResidual": 17.855451834653564
+    },
+    "uconn": {
+      "adjustment": 1.5,
+      "sampleSize": 5,
+      "meanResidual": 13.678315124045474,
+      "stdevResidual": 12.19148511763827
+    },
+    "wake-forest": {
+      "adjustment": -0.4386758678059051,
+      "sampleSize": 5,
+      "meanResidual": -2.1933793390295255,
+      "stdevResidual": 9.770863377242426
+    },
+    "arizona-state": {
+      "adjustment": 0.8513076342491468,
+      "sampleSize": 5,
+      "meanResidual": 4.256538171245734,
+      "stdevResidual": 8.292055357423306
+    },
+    "ohio-state": {
+      "adjustment": 1.5,
+      "sampleSize": 5,
+      "meanResidual": 28.536274357887986,
+      "stdevResidual": 15.079471919257834
+    },
+    "fresno-state": {
+      "adjustment": 1.0798534735437144,
+      "sampleSize": 3,
+      "meanResidual": 8.278876630501811,
+      "stdevResidual": 16.247389359358667
+    },
+    "tulsa": {
+      "adjustment": -1.2461289286493236,
+      "sampleSize": 4,
+      "meanResidual": -7.476773571895942,
+      "stdevResidual": 14.765170577906963
+    },
+    "indiana": {
+      "adjustment": 1.5,
+      "sampleSize": 5,
+      "meanResidual": 24.361535753706203,
+      "stdevResidual": 17.740593383244857
+    },
+    "louisville": {
+      "adjustment": 1.5,
+      "sampleSize": 6,
+      "meanResidual": 13.191036848550732,
+      "stdevResidual": 15.143188562991146
+    },
+    "texas-a-m": {
+      "adjustment": 0.5181792040741786,
+      "sampleSize": 5,
+      "meanResidual": 2.590896020370893,
+      "stdevResidual": 6.809716387508508
+    },
+    "washington-state": {
+      "adjustment": 1.5,
+      "sampleSize": 4,
+      "meanResidual": 16.743744320174944,
+      "stdevResidual": 24.604118306742023
+    },
+    "sam-houston": {
+      "adjustment": -1.3890914629197038,
+      "sampleSize": 4,
+      "meanResidual": -8.334548777518222,
+      "stdevResidual": 6.906578093431947
+    },
+    "georgia-southern": {
+      "adjustment": 0.4885450281747639,
+      "sampleSize": 4,
+      "meanResidual": 2.9312701690485836,
+      "stdevResidual": 11.52354016912127
+    },
+    "navy": {
+      "adjustment": 1.1813193852575066,
+      "sampleSize": 5,
+      "meanResidual": 5.906596926287532,
+      "stdevResidual": 4.1883206689336
+    },
+    "central-michigan": {
+      "adjustment": 1.5,
+      "sampleSize": 3,
+      "meanResidual": 18.19947982370704,
+      "stdevResidual": 5.735372491603248
+    },
+    "missouri": {
+      "adjustment": 1.2395743466295144,
+      "sampleSize": 7,
+      "meanResidual": 4.781215336999556,
+      "stdevResidual": 17.810337690402907
+    },
+    "illinois": {
+      "adjustment": 1.5,
+      "sampleSize": 5,
+      "meanResidual": 11.201148162719367,
+      "stdevResidual": 19.29748344550379
+    },
+    "boston-college": {
+      "adjustment": -1.5,
+      "sampleSize": 5,
+      "meanResidual": -25.662806148631812,
+      "stdevResidual": 8.493649551486754
+    },
+    "new-mexico": {
+      "adjustment": 1.5,
+      "sampleSize": 4,
+      "meanResidual": 11.309568454238462,
+      "stdevResidual": 9.621211925159818
+    },
+    "michigan-state": {
+      "adjustment": -1.5,
+      "sampleSize": 4,
+      "meanResidual": -13.274420892184079,
+      "stdevResidual": 19.100504066891872
+    },
+    "cincinnati": {
+      "adjustment": 0.47236553314034385,
+      "sampleSize": 6,
+      "meanResidual": 2.0469173102748233,
+      "stdevResidual": 11.014898430434547
+    },
+    "lsu": {
+      "adjustment": 0.6114469040226309,
+      "sampleSize": 3,
+      "meanResidual": 4.687759597506837,
+      "stdevResidual": 6.205590373337058
+    },
+    "northwestern": {
+      "adjustment": 0.3379995691169874,
+      "sampleSize": 4,
+      "meanResidual": 2.0279974147019244,
+      "stdevResidual": 15.817904609152269
+    },
+    "florida-state": {
+      "adjustment": 1.5,
+      "sampleSize": 6,
+      "meanResidual": 11.765070725812999,
+      "stdevResidual": 22.24941528505744
+    },
+    "charlotte": {
+      "adjustment": -1.5,
+      "sampleSize": 6,
+      "meanResidual": -21.63940523385592,
+      "stdevResidual": 9.362622291105453
+    },
+    "nevada": {
+      "adjustment": 1.5,
+      "sampleSize": 3,
+      "meanResidual": 14.844687246494944,
+      "stdevResidual": 27.52553969919779
+    },
+    "southern-miss": {
+      "adjustment": 0.8611271289945849,
+      "sampleSize": 5,
+      "meanResidual": 4.3056356449729245,
+      "stdevResidual": 21.29314840079327
+    },
+    "jacksonville-state": {
+      "adjustment": 1.1078210745822623,
+      "sampleSize": 3,
+      "meanResidual": 8.493294905130677,
+      "stdevResidual": 0.28087285387181155
+    },
+    "tulane": {
+      "adjustment": 1.3894195034267778,
+      "sampleSize": 5,
+      "meanResidual": 6.947097517133889,
+      "stdevResidual": 5.438491886041592
+    },
+    "alabama": {
+      "adjustment": 1.5,
+      "sampleSize": 6,
+      "meanResidual": 13.71877429234091,
+      "stdevResidual": 22.12368286967017
+    },
+    "georgia-state": {
+      "adjustment": -1.5,
+      "sampleSize": 4,
+      "meanResidual": -19.887581802712024,
+      "stdevResidual": 7.843554119779372
+    },
+    "duke": {
+      "adjustment": -1.5,
+      "sampleSize": 4,
+      "meanResidual": -15.93799818078195,
+      "stdevResidual": 14.365852406284041
+    },
+    "western-kentucky": {
+      "adjustment": 1.5,
+      "sampleSize": 5,
+      "meanResidual": 9.119345105088211,
+      "stdevResidual": 13.576536911622753
+    },
+    "uab": {
+      "adjustment": -1.5,
+      "sampleSize": 4,
+      "meanResidual": -9.118347362345869,
+      "stdevResidual": 17.581455301800233
+    },
+    "ball-state": {
+      "adjustment": 0.7229330165330637,
+      "sampleSize": 4,
+      "meanResidual": 4.337598099198383,
+      "stdevResidual": 10.562107880183195
+    },
+    "georgia": {
+      "adjustment": 1.5,
+      "sampleSize": 5,
+      "meanResidual": 20.028142680506196,
+      "stdevResidual": 12.377739296250013
+    },
+    "east-carolina": {
+      "adjustment": 0.12331982293752163,
+      "sampleSize": 5,
+      "meanResidual": 0.6165991146876081,
+      "stdevResidual": 14.93638837350272
+    },
+    "texas-tech": {
+      "adjustment": 1.5,
+      "sampleSize": 5,
+      "meanResidual": 38.09876538232942,
+      "stdevResidual": 11.052882029115262
+    },
+    "florida-international": {
+      "adjustment": -1.5,
+      "sampleSize": 4,
+      "meanResidual": -9.712353908807762,
+      "stdevResidual": 13.67268518597826
+    },
+    "pittsburgh": {
+      "adjustment": 1.5,
+      "sampleSize": 5,
+      "meanResidual": 9.447220102219811,
+      "stdevResidual": 27.184732683263547
+    },
+    "byu": {
+      "adjustment": 1.5,
+      "sampleSize": 4,
+      "meanResidual": 21.006166923970415,
+      "stdevResidual": 10.74012133991405
+    },
+    "old-dominion": {
+      "adjustment": 1.5,
+      "sampleSize": 4,
+      "meanResidual": 21.162112009779232,
+      "stdevResidual": 17.205136754749006
+    },
+    "west-virginia": {
+      "adjustment": -1.3038689299709965,
+      "sampleSize": 4,
+      "meanResidual": -7.823213579825978,
+      "stdevResidual": 15.390510508018936
+    },
+    "new-mexico-state": {
+      "adjustment": 1.2587693557923496,
+      "sampleSize": 4,
+      "meanResidual": 7.552616134754098,
+      "stdevResidual": 13.301366947950564
+    },
+    "utah-state": {
+      "adjustment": 1.5,
+      "sampleSize": 4,
+      "meanResidual": 14.726914943679109,
+      "stdevResidual": 8.570498578689289
+    },
+    "arkansas-state": {
+      "adjustment": 0.7544621188225662,
+      "sampleSize": 4,
+      "meanResidual": 4.526772712935397,
+      "stdevResidual": 9.19031992397953
+    },
+    "utep": {
+      "adjustment": -1.5,
+      "sampleSize": 4,
+      "meanResidual": -14.632130370110872,
+      "stdevResidual": 7.02086662548042
+    },
+    "rice": {
+      "adjustment": -1.5,
+      "sampleSize": 5,
+      "meanResidual": -8.867199064414233,
+      "stdevResidual": 13.756600407317205
+    },
+    "ucf": {
+      "adjustment": 1.5,
+      "sampleSize": 5,
+      "meanResidual": 12.692066923350527,
+      "stdevResidual": 17.804561297548954
+    },
+    "delaware": {
+      "adjustment": 0.3661388544294764,
+      "sampleSize": 4,
+      "meanResidual": 2.1968331265768586,
+      "stdevResidual": 4.647172923200163
+    },
+    "toledo": {
+      "adjustment": 1.5,
+      "sampleSize": 4,
+      "meanResidual": 29.089120593488452,
+      "stdevResidual": 10.19937392505567
+    },
+    "ohio": {
+      "adjustment": 1.4498310669507424,
+      "sampleSize": 4,
+      "meanResidual": 8.698986401704454,
+      "stdevResidual": 6.589319671712216
+    },
+    "middle-tennessee": {
+      "adjustment": -1.5,
+      "sampleSize": 4,
+      "meanResidual": -12.8384799148615,
+      "stdevResidual": 9.362914606498512
+    },
+    "tcu": {
+      "adjustment": 0.16190760512717858,
+      "sampleSize": 4,
+      "meanResidual": 0.9714456307630714,
+      "stdevResidual": 6.858951815592542
+    },
+    "north-carolina": {
+      "adjustment": -1.5,
+      "sampleSize": 4,
+      "meanResidual": -14.627726718639854,
+      "stdevResidual": 12.505140164792667
+    },
+    "wisconsin": {
+      "adjustment": 1.5,
+      "sampleSize": 5,
+      "meanResidual": 12.710514975403486,
+      "stdevResidual": 24.610081148060782
+    },
+    "colorado-state": {
+      "adjustment": -1.5,
+      "sampleSize": 4,
+      "meanResidual": -12.822623455228882,
+      "stdevResidual": 25.49058858364943
+    },
+    "liberty": {
+      "adjustment": 0.33238982636025094,
+      "sampleSize": 4,
+      "meanResidual": 1.9943389581615056,
+      "stdevResidual": 13.780800014295234
+    },
+    "ucla": {
+      "adjustment": -1.5,
+      "sampleSize": 5,
+      "meanResidual": -12.805694702340636,
+      "stdevResidual": 14.228420547234801
+    },
+    "app-state": {
+      "adjustment": 0.28367714326177623,
+      "sampleSize": 3,
+      "meanResidual": 2.1748580983402843,
+      "stdevResidual": 3.099584458152664
+    },
+    "marshall": {
+      "adjustment": -0.30704336815965266,
+      "sampleSize": 3,
+      "meanResidual": -2.3539991558906705,
+      "stdevResidual": 1.5675961598495975
+    },
+    "south-florida": {
+      "adjustment": 1.5,
+      "sampleSize": 4,
+      "meanResidual": 24.951454490190546,
+      "stdevResidual": 2.7510578726894335
+    },
+    "purdue": {
+      "adjustment": 0.7112967949365415,
+      "sampleSize": 5,
+      "meanResidual": 3.5564839746827075,
+      "stdevResidual": 19.455887394124673
+    },
+    "virginia": {
+      "adjustment": 1.5,
+      "sampleSize": 5,
+      "meanResidual": 19.13723021975288,
+      "stdevResidual": 19.85431697220081
+    },
+    "rutgers": {
+      "adjustment": -0.1799201352672947,
+      "sampleSize": 5,
+      "meanResidual": -0.8996006763364734,
+      "stdevResidual": 25.301926087509294
+    },
+    "arizona": {
+      "adjustment": 1.5,
+      "sampleSize": 4,
+      "meanResidual": 21.041481617215073,
+      "stdevResidual": 16.535949561031444
+    },
+    "coastal-carolina": {
+      "adjustment": -0.7012012110715294,
+      "sampleSize": 3,
+      "meanResidual": -5.375875951548392,
+      "stdevResidual": 22.383403474562787
+    },
+    "florida-atlantic": {
+      "adjustment": 0.2101547419828586,
+      "sampleSize": 2,
+      "meanResidual": 2.3117021618114446,
+      "stdevResidual": 24.83216301540662
+    },
+    "notre-dame": {
+      "adjustment": 1.5,
+      "sampleSize": 5,
+      "meanResidual": 16.01940813030469,
+      "stdevResidual": 9.306747234008965
+    },
+    "iowa": {
+      "adjustment": 0.17457156850861258,
+      "sampleSize": 4,
+      "meanResidual": 1.0474294110516755,
+      "stdevResidual": 18.686976077385413
+    },
+    "vanderbilt": {
+      "adjustment": 1.5,
+      "sampleSize": 4,
+      "meanResidual": 25.03127267330473,
+      "stdevResidual": 18.976713254909345
+    },
+    "memphis": {
+      "adjustment": 1.5,
+      "sampleSize": 4,
+      "meanResidual": 9.100402988351666,
+      "stdevResidual": 17.152260051493172
+    },
+    "louisiana": {
+      "adjustment": -0.6233244455409865,
+      "sampleSize": 4,
+      "meanResidual": -3.7399466732459192,
+      "stdevResidual": 7.446364803125256
+    },
+    "army": {
+      "adjustment": 0.13767395345995187,
+      "sampleSize": 3,
+      "meanResidual": 1.055500309859631,
+      "stdevResidual": 9.81006709907649
+    },
+    "kentucky": {
+      "adjustment": 0.5838950010767511,
+      "sampleSize": 6,
+      "meanResidual": 2.5302116713325877,
+      "stdevResidual": 21.586906441568512
+    },
+    "clemson": {
+      "adjustment": -1.5,
+      "sampleSize": 6,
+      "meanResidual": -7.882016825557574,
+      "stdevResidual": 9.83789098979512
+    },
+    "oregon-state": {
+      "adjustment": -1.5,
+      "sampleSize": 5,
+      "meanResidual": -9.553207110854709,
+      "stdevResidual": 6.9270497043300665
+    },
+    "penn-state": {
+      "adjustment": 1.5,
+      "sampleSize": 4,
+      "meanResidual": 11.369238639442237,
+      "stdevResidual": 14.109501135821702
+    },
+    "mississippi-state": {
+      "adjustment": 0.777940016475576,
+      "sampleSize": 4,
+      "meanResidual": 4.667640098853456,
+      "stdevResidual": 19.107165464802417
+    },
+    "san-jos-state": {
+      "adjustment": -0.2766389417789823,
+      "sampleSize": 3,
+      "meanResidual": -2.1208985536388645,
+      "stdevResidual": 7.778494961327937
+    },
+    "eastern-michigan": {
+      "adjustment": -0.4037764591887529,
+      "sampleSize": 4,
+      "meanResidual": -2.422658755132517,
+      "stdevResidual": 5.948511034690959
+    },
+    "houston": {
+      "adjustment": -0.2075836743197481,
+      "sampleSize": 4,
+      "meanResidual": -1.2455020459184887,
+      "stdevResidual": 15.537940217995452
+    },
+    "smu": {
+      "adjustment": 0.3786080973879001,
+      "sampleSize": 4,
+      "meanResidual": 2.2716485843274006,
+      "stdevResidual": 11.438597655733213
+    },
+    "kennesaw-state": {
+      "adjustment": 1.5,
+      "sampleSize": 4,
+      "meanResidual": 9.402819150607845,
+      "stdevResidual": 8.444738534668389
+    },
+    "maryland": {
+      "adjustment": 0.0716907743185174,
+      "sampleSize": 4,
+      "meanResidual": 0.43014464591110446,
+      "stdevResidual": 23.375736940436074
+    },
+    "troy": {
+      "adjustment": -1.4029976405351154,
+      "sampleSize": 4,
+      "meanResidual": -8.417985843210692,
+      "stdevResidual": 12.452395895601201
+    },
+    "syracuse": {
+      "adjustment": -1.5,
+      "sampleSize": 4,
+      "meanResidual": -18.29787135875992,
+      "stdevResidual": 13.422349392425382
+    },
+    "south-alabama": {
+      "adjustment": -0.18787391503631445,
+      "sampleSize": 4,
+      "meanResidual": -1.1272434902178867,
+      "stdevResidual": 5.5911650597035205
+    },
+    "texas": {
+      "adjustment": 1.5,
+      "sampleSize": 4,
+      "meanResidual": 26.390216457399024,
+      "stdevResidual": 19.63886806382313
+    },
+    "iowa-state": {
+      "adjustment": -0.12358953539711322,
+      "sampleSize": 4,
+      "meanResidual": -0.7415372123826793,
+      "stdevResidual": 14.762327436148757
+    },
+    "boise-state": {
+      "adjustment": 1.5,
+      "sampleSize": 3,
+      "meanResidual": 13.205030359584947,
+      "stdevResidual": 21.554173475896505
+    },
+    "colorado": {
+      "adjustment": -0.8163740590322465,
+      "sampleSize": 5,
+      "meanResidual": -4.081870295161233,
+      "stdevResidual": 19.780833278891244
+    },
+    "temple": {
+      "adjustment": -1.5,
+      "sampleSize": 3,
+      "meanResidual": -23.440454883716757,
+      "stdevResidual": 21.179611611541453
+    },
+    "bowling-green": {
+      "adjustment": -1.5,
+      "sampleSize": 4,
+      "meanResidual": -12.916475679463034,
+      "stdevResidual": 11.855439506755749
+    },
+    "auburn": {
+      "adjustment": 1.5,
+      "sampleSize": 3,
+      "meanResidual": 14.498187315839301,
+      "stdevResidual": 19.024971832126578
+    },
+    "north-texas": {
+      "adjustment": 1.5,
+      "sampleSize": 5,
+      "meanResidual": 16.53979809897607,
+      "stdevResidual": 23.91581260052869
+    },
+    "air-force": {
+      "adjustment": -0.1287873165608838,
+      "sampleSize": 4,
+      "meanResidual": -0.7727238993653027,
+      "stdevResidual": 6.921613210459668
+    },
+    "utsa": {
+      "adjustment": 0.5020603221800568,
+      "sampleSize": 2,
+      "meanResidual": 5.522663543980625,
+      "stdevResidual": 18.190033604655444
+    },
+    "texas-state": {
+      "adjustment": 0.6223875309660432,
+      "sampleSize": 2,
+      "meanResidual": 6.8462628406264745,
+      "stdevResidual": 28.86601290924761
+    },
+    "nc-state": {
+      "adjustment": 0.7566322323554334,
+      "sampleSize": 4,
+      "meanResidual": 4.539793394132601,
+      "stdevResidual": 9.332920035679551
+    },
+    "louisiana-tech": {
+      "adjustment": 1.5,
+      "sampleSize": 4,
+      "meanResidual": 21.010522980435447,
+      "stdevResidual": 18.51143131102133
+    },
+    "michigan": {
+      "adjustment": 1.5,
+      "sampleSize": 5,
+      "meanResidual": 26.315415174072836,
+      "stdevResidual": 24.766672026889296
+    },
+    "nebraska": {
+      "adjustment": 1.5,
+      "sampleSize": 4,
+      "meanResidual": 19.527388520702505,
+      "stdevResidual": 32.07057498612869
+    },
+    "arkansas": {
+      "adjustment": -1.0860659938354698,
+      "sampleSize": 4,
+      "meanResidual": -6.516395963012819,
+      "stdevResidual": 26.591794324566568
+    },
+    "kansas": {
+      "adjustment": 1.5,
+      "sampleSize": 5,
+      "meanResidual": 12.495373013805274,
+      "stdevResidual": 22.777855990656473
+    },
+    "stanford": {
+      "adjustment": 0.4699473077131013,
+      "sampleSize": 4,
+      "meanResidual": 2.8196838462786076,
+      "stdevResidual": 12.820154676890938
+    },
+    "california": {
+      "adjustment": 0.06937745496665111,
+      "sampleSize": 4,
+      "meanResidual": 0.4162647297999067,
+      "stdevResidual": 16.08153722117221
+    },
+    "kansas-state": {
+      "adjustment": -0.9181507578399462,
+      "sampleSize": 4,
+      "meanResidual": -5.508904547039677,
+      "stdevResidual": 13.020834613315591
+    },
+    "minnesota": {
+      "adjustment": 1.008030159704081,
+      "sampleSize": 4,
+      "meanResidual": 6.048180958224486,
+      "stdevResidual": 6.022673458086015
+    },
+    "virginia-tech": {
+      "adjustment": -1.5,
+      "sampleSize": 5,
+      "meanResidual": -8.465801828084416,
+      "stdevResidual": 12.037695518234221
+    },
+    "florida": {
+      "adjustment": -1.364051245211262,
+      "sampleSize": 4,
+      "meanResidual": -8.184307471267573,
+      "stdevResidual": 4.36072391743839
+    },
+    "utah": {
+      "adjustment": -0.21732866976459017,
+      "sampleSize": 2,
+      "meanResidual": -2.3906153674104917,
+      "stdevResidual": 30.798526271892527
+    },
+    "south-carolina": {
+      "adjustment": -0.5890018982717116,
+      "sampleSize": 4,
+      "meanResidual": -3.5340113896302694,
+      "stdevResidual": 19.632988768546355
+    },
+    "georgia-tech": {
+      "adjustment": 1.5,
+      "sampleSize": 3,
+      "meanResidual": 16.272261795306203,
+      "stdevResidual": 7.090779261874269
+    },
+    "buffalo": {
+      "adjustment": -1.5,
+      "sampleSize": 4,
+      "meanResidual": -11.931343976328032,
+      "stdevResidual": 5.137122952928594
+    },
+    "northern-illinois": {
+      "adjustment": 0.11322099142714523,
+      "sampleSize": 3,
+      "meanResidual": 0.8680276009414468,
+      "stdevResidual": 9.564074116282942
+    },
+    "oklahoma": {
+      "adjustment": 1.5,
+      "sampleSize": 4,
+      "meanResidual": 17.758116507942113,
+      "stdevResidual": 19.923826678886545
+    },
+    "wyoming": {
+      "adjustment": -0.329248477848353,
+      "sampleSize": 3,
+      "meanResidual": -2.524238330170706,
+      "stdevResidual": 22.648493078073788
+    },
+    "kent-state": {
+      "adjustment": 0.6465324328603912,
+      "sampleSize": 2,
+      "meanResidual": 7.111856761464303,
+      "stdevResidual": 2.3634446012521906
+    },
+    "hawai-i": {
+      "adjustment": -0.7518224728331713,
+      "sampleSize": 3,
+      "meanResidual": -5.76397229172098,
+      "stdevResidual": 6.548487039580538
+    }
+  }
 }
-

@@ -189,23 +189,22 @@ export default function WeekReviewPage() {
   const handleSyncAndGrade = async () => {
     setGrading(true);
     try {
-      // Call the grade-week endpoint which handles both CFBD sync and grading
-      // This endpoint still uses child processes for CFBD sync but uses the service for grading
-      // In the future, we can refactor CFBD sync to also use a service
-      const response = await fetch('/api/review/grade-week', {
+      // Call the new serverless-friendly sync-week endpoint
+      // This endpoint uses services directly (no child processes)
+      const response = await fetch('/api/admin/sync-week', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ season, week }),
+        body: JSON.stringify({ season, week, gradeAfterSync: true }),
       });
       
       const result = await response.json();
       
       if (result.ok) {
         const { updatedGames, graded, pushes, failed, filledClosePrices } = result;
-        alert(`Sync & Grade complete: ${updatedGames || 0} games updated, ${graded} bets graded, ${pushes} pushes, ${failed} failed, ${filledClosePrices || 0} close prices filled`);
+        alert(`Sync & Grade complete: ${updatedGames || 0} games updated, ${graded || 0} bets graded, ${pushes || 0} pushes, ${failed || 0} failed, ${filledClosePrices || 0} close prices filled`);
         fetchData(); // Refresh the data
       } else {
-        alert(`Error: ${result.error || 'Grading failed'}`);
+        alert(`Error: ${result.error || result.detail || 'Sync & Grade failed'}`);
       }
     } catch (err) {
       alert(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);

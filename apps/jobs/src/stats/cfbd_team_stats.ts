@@ -214,7 +214,10 @@ function parseArgs(): { season: number; weeks: number[] } {
       i++;
     } else if (arg === '--weeks' && i + 1 < args.length) {
       const weekStr = args[i + 1];
-      if (weekStr.includes('-')) {
+      if (weekStr.includes(',')) {
+        // Comma-separated list
+        weeks = weekStr.split(',').map(w => parseInt(w.trim())).filter(w => !isNaN(w));
+      } else if (weekStr.includes('-')) {
         const [start, end] = weekStr.split('-').map(Number);
         weeks = Array.from({ length: end - start + 1 }, (_, i) => start + i);
       } else if (weekStr.includes('..')) {
