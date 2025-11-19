@@ -163,19 +163,21 @@ export default function WeekReviewPage() {
   const handleGrade = async () => {
     setGrading(true);
     try {
-      const response = await fetch('/api/bets/grade', {
+      // Use the new serverless-friendly grading API
+      const response = await fetch('/api/admin/grade', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ season, week }),
       });
+      
       const result = await response.json();
       
       if (result.success) {
         const { graded, pushes, failed, filledClosePrice } = result.summary;
-        alert(`Grading complete: ${graded} graded, ${pushes} pushes, ${failed} failed, ${filledClosePrice} close prices filled`);
+        alert(`Grading complete: ${graded} bets graded, ${pushes} pushes, ${failed} failed, ${filledClosePrice} close prices filled`);
         fetchData(); // Refresh the data
       } else {
-        alert(`Error: ${result.error}`);
+        alert(`Error: ${result.error || result.detail || 'Grading failed'}`);
       }
     } catch (err) {
       alert(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -187,19 +189,23 @@ export default function WeekReviewPage() {
   const handleSyncAndGrade = async () => {
     setGrading(true);
     try {
+      // Call the grade-week endpoint which handles both CFBD sync and grading
+      // This endpoint still uses child processes for CFBD sync but uses the service for grading
+      // In the future, we can refactor CFBD sync to also use a service
       const response = await fetch('/api/review/grade-week', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ season, week }),
       });
+      
       const result = await response.json();
       
       if (result.ok) {
         const { updatedGames, graded, pushes, failed, filledClosePrices } = result;
-        alert(`Sync & Grade complete: ${updatedGames} games updated, ${graded} bets graded, ${pushes} pushes, ${failed} failed, ${filledClosePrices} close prices filled`);
+        alert(`Sync & Grade complete: ${updatedGames || 0} games updated, ${graded} bets graded, ${pushes} pushes, ${failed} failed, ${filledClosePrices || 0} close prices filled`);
         fetchData(); // Refresh the data
       } else {
-        alert(`Error: ${result.error}`);
+        alert(`Error: ${result.error || 'Grading failed'}`);
       }
     } catch (err) {
       alert(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
