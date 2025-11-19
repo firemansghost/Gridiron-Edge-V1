@@ -198,7 +198,7 @@ async function main() {
   console.log('='.repeat(70));
   
   const rating = ratings.find(r => r.modelVersion === 'v1');
-  const actualGames = games.filter(g => g.status === 'final' || g.status === 'completed').length;
+  const actualGames = games.filter(g => g.status === 'final').length;
   
   if (rating) {
     console.log(`\n🔴 ISSUE 1: Games Count Mismatch`);

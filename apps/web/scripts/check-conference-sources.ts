@@ -119,7 +119,7 @@ async function main() {
   // Most common opponent conference
   let maxCount = 0;
   let mostCommonConf: string | null = null;
-  for (const [conf, count] of conferences.entries()) {
+  for (const [conf, count] of Array.from(conferences.entries())) {
     if (count > maxCount) {
       maxCount = count;
       mostCommonConf = conf;

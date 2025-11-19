@@ -142,12 +142,12 @@ async function main() {
   const MIN_GAMES_THRESHOLD = 2;
   const updates: Array<{ teamId: string; newConference: string; oldConference: string | null; gameCount: number }> = [];
 
-  for (const [teamId, confMap] of teamConferences.entries()) {
+  for (const [teamId, confMap] of Array.from(teamConferences.entries())) {
     // Find most common conference
     let maxCount = 0;
     let mostCommonConf: string | null = null;
 
-    for (const [conf, count] of confMap.entries()) {
+    for (const [conf, count] of Array.from(confMap.entries())) {
       if (count > maxCount) {
         maxCount = count;
         mostCommonConf = conf;
