@@ -2077,9 +2077,8 @@ export async function GET(
     // The actual finalSpreadWithOverlay will be computed and used in the ML value calculation section
     // Using standard NFL/CFB conversion: prob = normcdf(spread / (2 * sqrt(variance)))
     // For college football, we use a standard deviation of ~14 points
-    // Simplified: prob = 0.5 + (spread / (2 * 14)) * 0.5, clamped to [0.05, 0.95]
-    // CRITICAL: This will be recalculated with finalSpreadWithOverlay after overlay is computed
-    const stdDev = 14; // Standard deviation for CFB point spreads
+    // CRITICAL: Win probabilities will be calculated from finalSpreadWithOverlay after it's computed
+    // Using standard sigmoid conversion: prob = 1 / (1 + 10^(spread / 14.5))
     // Placeholder: will be updated after overlay calculation
     let modelHomeWinProb = 0.5;
     let modelAwayWinProb = 0.5;
@@ -2825,10 +2824,24 @@ export async function GET(
     
     // Compute totals: Use Core V1 totals model when USE_CORE_V1 is true
     // (Now that marketTotal and marketSpreadHma are available)
-    if (USE_CORE_V1 && coreV1SpreadInfo && marketTotal !== null && marketSpreadHma !== null) {
-      // Compute Core V1 total using spread-driven overlay
-      const ouPick = getOUPick(marketTotal, marketSpreadHma, coreV1SpreadInfo.coreSpreadHma);
-      finalImpliedTotal = ouPick.modelTotal;
+    if (USE_CORE_V1 && coreV1SpreadInfo) {
+      if (marketTotal !== null && marketSpreadHma !== null) {
+        // Compute Core V1 total using spread-driven overlay
+        const ouPick = getOUPick(marketTotal, marketSpreadHma, coreV1SpreadInfo.coreSpreadHma);
+        finalImpliedTotal = ouPick.modelTotal;
+        console.log(`[Game ${gameId}] 📊 Core V1 Total computed:`, {
+          marketTotal: marketTotal.toFixed(1),
+          marketSpreadHma: marketSpreadHma.toFixed(2),
+          modelSpreadHma: coreV1SpreadInfo.coreSpreadHma.toFixed(2),
+          modelTotal: finalImpliedTotal !== null ? finalImpliedTotal.toFixed(1) : 'null'
+        });
+      } else {
+        console.log(`[Game ${gameId}] ⚠️ Core V1 Total computation skipped:`, {
+          marketTotal: marketTotal,
+          marketSpreadHma: marketSpreadHma,
+          hasCoreV1Spread: !!coreV1SpreadInfo
+        });
+      }
     }
     
     // Compute ATS edge
@@ -2882,6 +2895,31 @@ export async function GET(
           ? finalSpreadWithOverlay  // Home is favorite, spread is already negative
           : -finalSpreadWithOverlay) // Away is favorite, flip sign to make favorite-centric
       : 0;
+    
+    // CRITICAL FIX: Calculate win probabilities from V1 spread using sigmoid function
+    // Formula: prob = 1 / (1 + 10^(spread / 14.5))
+    // For home team: if spread is negative (home favored), home prob > 0.5
+    // For away team: if spread is positive (away favored), away prob > 0.5
+    // finalSpreadWithOverlay is in HMA format: negative = home favored, positive = away favored
+    if (finalSpreadWithOverlay !== null && Number.isFinite(finalSpreadWithOverlay)) {
+      // Convert spread to win probability using logistic function
+      // Standard conversion: prob = 1 / (1 + 10^(spread / 14.5))
+      // For home: if spread is negative (home favored), home prob = 1 / (1 + 10^(-spread / 14.5))
+      // For home: if spread is positive (away favored), home prob = 1 / (1 + 10^(spread / 14.5))
+      const spreadForHome = -finalSpreadWithOverlay; // Flip sign: negative spread = home favored = positive for home prob
+      const homeProbRaw = 1 / (1 + Math.pow(10, spreadForHome / 14.5));
+      // Clamp to reasonable bounds [0.01, 0.99]
+      modelHomeWinProb = Math.max(0.01, Math.min(0.99, homeProbRaw));
+      modelAwayWinProb = 1 - modelHomeWinProb;
+      
+      console.log(`[Game ${gameId}] 📊 ML Win Prob from V1 Spread:`, {
+        finalSpreadWithOverlay: finalSpreadWithOverlay.toFixed(2),
+        modelHomeWinProb: modelHomeWinProb.toFixed(3),
+        modelAwayWinProb: modelAwayWinProb.toFixed(3),
+        homeTeam: game.homeTeam.name,
+        awayTeam: game.awayTeam.name
+      });
+    }
     
     // CRITICAL: Now compute ML calc_basis with finalSpreadWithOverlayFC available
     if (moneyline !== null) {
