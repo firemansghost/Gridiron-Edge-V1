@@ -2816,13 +2816,14 @@ export async function GET(
     let rawSpreadDisagreement = 0;
     let modelSpreadRaw: number | null = null;
     
-    // Convert marketSpread (favorite-centric, negative) to HMA format for edge calculation
-    // If favorite is home: marketSpread is already negative (HMA format)
-    // If favorite is away: marketSpread is negative, so HMA format = -marketSpread (positive)
+    // Convert marketSpread (favorite-centric, always negative) to HMA format (Home Minus Away) for edge calculation
+    // marketSpread is always negative (favorite-centric format, e.g., -7.5)
+    // If Home is favorite: HMA = -marketSpread (e.g., -(-7.5) = +7.5 means Home wins by 7.5)
+    // If Away is favorite: HMA = marketSpread (e.g., -7.5 means Away wins by 7.5, so Home loses by 7.5)
     const marketSpreadHma = marketSpread !== null
       ? (favoriteByRule.teamId === game.homeTeamId
-          ? marketSpread  // Home is favorite, already in HMA format (negative)
-          : -marketSpread) // Away is favorite, flip sign to HMA format (positive)
+          ? -marketSpread  // Home is favorite, flip sign: -(-7.5) = +7.5
+          : marketSpread) // Away is favorite, keep negative: -7.5
       : null;
     
     // Compute totals: Use Core V1 totals model when USE_CORE_V1 is true
