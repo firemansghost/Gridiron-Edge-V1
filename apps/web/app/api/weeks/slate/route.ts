@@ -11,6 +11,7 @@ import { prisma } from '@/lib/prisma';
 import { selectClosingLine } from '@/lib/closing-line-helpers';
 import { getCoreV1SpreadFromTeams, getATSPick, computeATSEdgeHma } from '@/lib/core-v1-spread';
 import { getOUPick } from '@/lib/core-v1-total';
+import { americanToProb } from '@/lib/market-line-helpers';
 
 interface SlateGame {
   gameId: string;
@@ -39,8 +40,27 @@ interface SlateGame {
   modelTotal?: number | null;
   pickSpread?: string | null;
   pickTotal?: string | null;
+  pickMoneyline?: string | null;
   maxEdge?: number | null;
   confidence?: string | null;
+  // Individual market picks with grades
+  picks?: {
+    spread?: {
+      label: string | null;
+      edge: number | null;
+      grade: string | null;
+    };
+    total?: {
+      label: string | null;
+      edge: number | null;
+      grade: string | null;
+    };
+    moneyline?: {
+      label: string | null;
+      value: number | null;
+      grade: string | null;
+    };
+  };
   // Debug info (only when debug=1 query param is present)
   coreV1Debug?: {
     attempted: boolean;
@@ -131,6 +151,16 @@ export async function GET(request: NextRequest) {
       })
     ]);
 
+    // Create lookup map for moneyline lines
+    const moneylineMap = new Map<string, any>();
+    moneylineLines.forEach(line => {
+      if (!moneylineMap.has(line.gameId)) {
+        moneylineMap.set(line.gameId, []);
+      }
+      moneylineMap.get(line.gameId)!.push(line);
+    });
+    ]);
+
     // Track which games have odds (for reference, but we'll show all games)
     const gamesWithOdds = new Set([
       ...spreadLines.map(l => l.gameId),
@@ -176,6 +206,7 @@ export async function GET(request: NextRequest) {
     // Create lookup maps for closing lines
     const spreadMap = new Map<string, any>();
     const totalMap = new Map<string, any>();
+    const moneylineMap = new Map<string, any[]>();
     
     spreadLines.forEach(line => {
       if (!spreadMap.has(line.gameId)) {
@@ -187,6 +218,13 @@ export async function GET(request: NextRequest) {
       if (!totalMap.has(line.gameId)) {
         totalMap.set(line.gameId, line);
       }
+    });
+    
+    moneylineLines.forEach(line => {
+      if (!moneylineMap.has(line.gameId)) {
+        moneylineMap.set(line.gameId, []);
+      }
+      moneylineMap.get(line.gameId)!.push(line);
     });
 
     // Process each game
@@ -383,22 +421,132 @@ export async function GET(request: NextRequest) {
         const modelTotal = ouPick.modelTotal !== null ? Math.round(ouPick.modelTotal * 10) / 10 : null;
         const totalPick = ouPick.pickLabel;
         const totalEdgePts = ouPick.ouEdgePts !== null ? Math.round(ouPick.ouEdgePts * 10) / 10 : null;
-
-        // Confidence tier (A ≥ 4.0, B ≥ 3.0, C ≥ 0.1) - based on ATS edge only
-        let confidence: string | null = null;
-        if (maxEdge !== null && Number.isFinite(maxEdge)) {
-          if (maxEdge >= 4.0) confidence = 'A';
-          else if (maxEdge >= 3.0) confidence = 'B';
-          else if (maxEdge >= 0.1) confidence = 'C';
+        
+        // Calculate Totals grade
+        let totalGrade: string | null = null;
+        if (totalEdgePts !== null && Number.isFinite(totalEdgePts) && totalEdgePts >= 0.1) {
+          if (totalEdgePts >= 4.0) totalGrade = 'A';
+          else if (totalEdgePts >= 3.0) totalGrade = 'B';
+          else if (totalEdgePts >= 0.1) totalGrade = 'C';
         }
+
+        // Moneyline: Calculate win probabilities and value
+        let moneylinePick: string | null = null;
+        let moneylineValue: number | null = null;
+        let moneylineGrade: string | null = null;
+        
+        // Get moneyline prices from market
+        const gameMoneylineLines = moneylineMap.get(game.gameId) || [];
+        const homeMLPrice = gameMoneylineLines.find(ml => ml.teamId === game.homeTeamId)?.lineValue ?? null;
+        const awayMLPrice = gameMoneylineLines.find(ml => ml.teamId === game.awayTeamId)?.lineValue ?? null;
+        
+        if (modelSpreadHma !== null && Number.isFinite(modelSpreadHma) && Math.abs(modelSpreadHma) <= 24.0) {
+          // Calculate win probabilities from spread using sigmoid
+          const spreadForHome = -modelSpreadHma; // Flip sign: positive HMA = home favored
+          const homeProbRaw = 1 / (1 + Math.pow(10, spreadForHome / 14.5));
+          const modelHomeWinProb = Math.max(0.01, Math.min(0.99, homeProbRaw));
+          const modelAwayWinProb = 1 - modelHomeWinProb;
+          
+          // Calculate value for both sides
+          const impliedHome = homeMLPrice !== null ? americanToProb(homeMLPrice)! : null;
+          const impliedAway = awayMLPrice !== null ? americanToProb(awayMLPrice)! : null;
+          
+          const homeValue = impliedHome !== null ? (modelHomeWinProb - impliedHome) : null;
+          const awayValue = impliedAway !== null ? (modelAwayWinProb - impliedAway) : null;
+          const homeValuePercent = homeValue !== null ? homeValue * 100 : null;
+          const awayValuePercent = awayValue !== null ? awayValue * 100 : null;
+          
+          // Select the side with highest positive value (minimum 1% threshold)
+          const HARD_MIN_ML_VALUE = 0.01; // 1% minimum value threshold
+          let selectedSide: 'home' | 'away' | null = null;
+          let selectedValuePercent: number | null = null;
+          let selectedTeamName: string | null = null;
+          let selectedPrice: number | null = null;
+          
+          if (homeValuePercent !== null && homeValuePercent > HARD_MIN_ML_VALUE * 100) {
+            if (awayValuePercent === null || homeValuePercent >= awayValuePercent) {
+              selectedSide = 'home';
+              selectedValuePercent = homeValuePercent;
+              selectedTeamName = fullGame.homeTeam.name;
+              selectedPrice = homeMLPrice;
+            }
+          }
+          
+          if (awayValuePercent !== null && awayValuePercent > HARD_MIN_ML_VALUE * 100) {
+            if (selectedSide === null || awayValuePercent > selectedValuePercent!) {
+              selectedSide = 'away';
+              selectedValuePercent = awayValuePercent;
+              selectedTeamName = fullGame.awayTeam.name;
+              selectedPrice = awayMLPrice;
+            }
+          }
+          
+          if (selectedSide !== null && selectedValuePercent !== null) {
+            // Format moneyline pick
+            const priceStr = selectedPrice! < 0 ? selectedPrice!.toString() : `+${selectedPrice!}`;
+            moneylinePick = `${selectedTeamName} ${priceStr}`;
+            moneylineValue = selectedValuePercent;
+            
+            // Calculate Moneyline grade
+            if (selectedValuePercent >= 10.0) moneylineGrade = 'A';
+            else if (selectedValuePercent >= 5.0) moneylineGrade = 'B';
+            else if (selectedValuePercent >= 1.0) moneylineGrade = 'C';
+          }
+        }
+        
+        // Calculate Spread grade
+        let spreadGrade: string | null = null;
+        if (spreadEdgePts !== null && Number.isFinite(spreadEdgePts) && spreadEdgePts >= 0.1) {
+          if (spreadEdgePts >= 4.0) spreadGrade = 'A';
+          else if (spreadEdgePts >= 3.0) spreadGrade = 'B';
+          else if (spreadEdgePts >= 0.1) spreadGrade = 'C';
+        }
+
+        // Game confidence: Highest grade among all active picks
+        let gameConfidence: string | null = null;
+        const grades = [spreadGrade, totalGrade, moneylineGrade].filter(g => g !== null) as string[];
+        if (grades.length > 0) {
+          // A > B > C
+          if (grades.includes('A')) gameConfidence = 'A';
+          else if (grades.includes('B')) gameConfidence = 'B';
+          else if (grades.includes('C')) gameConfidence = 'C';
+        }
+        
+        // Max edge: Highest edge among all markets
+        const allEdges = [
+          spreadEdgePts,
+          totalEdgePts,
+          moneylineValue
+        ].filter(e => e !== null && Number.isFinite(e)) as number[];
+        const gameMaxEdge = allEdges.length > 0 ? Math.max(...allEdges) : null;
 
         // Assign to game - CRITICAL: Always assign, even if some fields are null
         game.modelSpread = modelSpread;
         game.modelTotal = modelTotal;
         game.pickSpread = spreadPick;
         game.pickTotal = totalPick;
-        game.maxEdge = maxEdge !== null && Number.isFinite(maxEdge) ? Math.round(maxEdge * 10) / 10 : null;
-        game.confidence = confidence;
+        game.pickMoneyline = moneylinePick;
+        game.maxEdge = gameMaxEdge !== null && Number.isFinite(gameMaxEdge) ? Math.round(gameMaxEdge * 10) / 10 : null;
+        game.confidence = gameConfidence;
+        
+        // Add picks object with individual market data
+        game.picks = {
+          spread: {
+            label: spreadPick,
+            edge: spreadEdgePts,
+            grade: spreadGrade
+          },
+          total: {
+            label: totalPick,
+            edge: totalEdgePts,
+            grade: totalGrade
+          },
+          moneyline: {
+            label: moneylinePick,
+            value: moneylineValue,
+            grade: moneylineGrade
+          }
+        };
         
         // Populate debug block on success
         if (debug) {

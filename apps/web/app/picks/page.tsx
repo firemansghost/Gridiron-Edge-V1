@@ -1,7 +1,8 @@
 /**
  * Best Bets / My Picks Page
  * 
- * Displays all active spread bets for the current week, grouped by confidence grade (A, B, C).
+ * Displays all active bets grouped by game, with Spread, Total, and Moneyline picks.
+ * Games are grouped by their highest confidence grade.
  */
 
 'use client';
@@ -12,6 +13,18 @@ import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import { TeamLogo } from '@/components/TeamLogo';
 import { ErrorState } from '@/components/ErrorState';
+
+interface GamePick {
+  label: string | null;
+  edge: number | null;
+  grade: string | null;
+}
+
+interface MoneylinePick {
+  label: string | null;
+  value: number | null;
+  grade: string | null;
+}
 
 interface SlateGame {
   gameId: string;
@@ -31,8 +44,15 @@ interface SlateGame {
   } | null;
   modelSpread?: number | null;
   pickSpread?: string | null;
+  pickTotal?: string | null;
+  pickMoneyline?: string | null;
   maxEdge?: number | null;
   confidence?: string | null;
+  picks?: {
+    spread?: GamePick;
+    total?: GamePick;
+    moneyline?: MoneylinePick;
+  };
 }
 
 export default function PicksPage() {
@@ -51,13 +71,12 @@ export default function PicksPage() {
       setLoading(true);
       setError(null);
       
-      // First, get current week from weeks API (it returns season and week)
+      // First, get current week from weeks API
       const weeksResponse = await fetch('/api/weeks');
       if (!weeksResponse.ok) {
         throw new Error(`Failed to fetch current week: ${weeksResponse.statusText}`);
       }
       const weeksData = await weeksResponse.json();
-      // The weeks API returns { success: true, season, week, ... } in the response
       if (!weeksData.success) {
         throw new Error(weeksData.error || 'Failed to get current week');
       }
@@ -75,16 +94,15 @@ export default function PicksPage() {
       
       const data: SlateGame[] = await slateResponse.json();
       
-      // Filter to only games with active spread bets (pickSpread exists and maxEdge >= 0.1)
-      const activeBets = data.filter(game => 
-        game.pickSpread !== null && 
-        game.pickSpread !== undefined &&
-        game.maxEdge !== null && 
-        game.maxEdge !== undefined &&
-        game.maxEdge >= 0.1
-      );
+      // Filter to only games with at least ONE active bet (Spread OR Total OR Moneyline)
+      const gamesWithBets = data.filter(game => {
+        const hasSpread = game.picks?.spread?.label !== null && game.picks?.spread?.label !== undefined;
+        const hasTotal = game.picks?.total?.label !== null && game.picks?.total?.label !== undefined;
+        const hasMoneyline = game.picks?.moneyline?.label !== null && game.picks?.moneyline?.label !== undefined;
+        return hasSpread || hasTotal || hasMoneyline;
+      });
       
-      setGames(activeBets);
+      setGames(gamesWithBets);
     } catch (err) {
       setError('Network error: ' + (err instanceof Error ? err.message : 'Unknown error'));
     } finally {
@@ -92,7 +110,7 @@ export default function PicksPage() {
     }
   };
 
-  // Group games by confidence tier
+  // Group games by highest confidence grade
   const groupedGames = {
     A: games.filter(g => g.confidence === 'A').sort((a, b) => (b.maxEdge ?? 0) - (a.maxEdge ?? 0)),
     B: games.filter(g => g.confidence === 'B').sort((a, b) => (b.maxEdge ?? 0) - (a.maxEdge ?? 0)),
@@ -145,56 +163,86 @@ export default function PicksPage() {
     }
   };
 
+  const getGradeBadge = (grade: string | null | undefined) => {
+    if (!grade) return null;
+    const config = getConfidenceConfig(grade);
+    return (
+      <span className={`px-1.5 py-0.5 rounded text-xs font-semibold ${config.badgeColor}`}>
+        {grade}
+      </span>
+    );
+  };
+
   const renderGameCard = (game: SlateGame) => {
-    // Model spread from API is in HMA format, convert to favorite-centric for display
-    // If modelSpread is positive (e.g., +9.4), that means home is favored by 9.4
-    // In favorite-centric: home favorite = negative, so -9.4
-    const modelSpreadFC = game.modelSpread !== null && game.modelSpread !== undefined ? -game.modelSpread : null;
+    const spreadPick = game.picks?.spread;
+    const totalPick = game.picks?.total;
+    const moneylinePick = game.picks?.moneyline;
     
     return (
       <Link
         key={game.gameId}
         href={`/game/${game.gameId}`}
-        className="block bg-white border border-gray-200 rounded-lg p-4 hover:border-blue-300 hover:shadow-md transition-all"
+        className="block bg-white border border-gray-200 rounded-lg p-3 hover:border-blue-400 hover:shadow-sm transition-all"
       >
-        <div className="flex items-start justify-between">
-          {/* Left: Matchup */}
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-2">
-              <TeamLogo teamName={game.awayTeamName} teamId={game.awayTeamId} size="sm" />
-              <span className="font-semibold text-gray-900">{game.awayTeamName}</span>
-              <span className="text-gray-500">@</span>
-              <TeamLogo teamName={game.homeTeamName} teamId={game.homeTeamId} size="sm" />
-              <span className="font-semibold text-gray-900">{game.homeTeamName}</span>
-            </div>
-            <div className="text-sm text-gray-500">
-              {formatKickoff(game.kickoffLocal)}
-            </div>
-          </div>
+        {/* Header: Matchup */}
+        <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-100">
+          <TeamLogo teamName={game.awayTeamName} teamId={game.awayTeamId} size="sm" />
+          <span className="font-semibold text-sm text-gray-900">{game.awayTeamName}</span>
+          <span className="text-gray-400 text-xs">@</span>
+          <TeamLogo teamName={game.homeTeamName} teamId={game.homeTeamId} size="sm" />
+          <span className="font-semibold text-sm text-gray-900">{game.homeTeamName}</span>
+          <span className="ml-auto text-xs text-gray-500">{formatKickoff(game.kickoffLocal)}</span>
+        </div>
 
-          {/* Right: Pick Details */}
-          <div className="text-right ml-4">
-            <div className="mb-2">
-              <div className="text-sm text-gray-600 mb-1">The Pick</div>
-              <div className="text-lg font-bold text-blue-600">{game.pickSpread}</div>
+        {/* Body: Active Bets (Compact List) */}
+        <div className="space-y-1.5">
+          {/* Spread Bet */}
+          {spreadPick?.label && (
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-gray-600 font-medium">Spread:</span>
+                <span className="text-gray-900 font-semibold">{spreadPick.label}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {spreadPick.edge !== null && (
+                  <span className="text-gray-600">Edge: <span className="font-semibold text-green-600">{spreadPick.edge.toFixed(1)} pts</span></span>
+                )}
+                {getGradeBadge(spreadPick.grade)}
+              </div>
             </div>
-            {modelSpreadFC !== null && (
-              <div className="mb-2">
-                <div className="text-sm text-gray-600 mb-1">Model</div>
-                <div className="text-sm font-semibold text-gray-900">
-                  Model says {modelSpreadFC > 0 ? '+' : ''}{modelSpreadFC.toFixed(1)}
-                </div>
+          )}
+
+          {/* Moneyline Bet */}
+          {moneylinePick?.label && (
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-gray-600 font-medium">Moneyline:</span>
+                <span className="text-gray-900 font-semibold">{moneylinePick.label}</span>
               </div>
-            )}
-            {game.maxEdge !== null && game.maxEdge !== undefined && (
-              <div>
-                <div className="text-sm text-gray-600 mb-1">Edge</div>
-                <div className="text-lg font-bold text-green-600">
-                  {game.maxEdge.toFixed(1)} pts
-                </div>
+              <div className="flex items-center gap-2">
+                {moneylinePick.value !== null && (
+                  <span className="text-gray-600">Value: <span className="font-semibold text-green-600">{moneylinePick.value.toFixed(1)}%</span></span>
+                )}
+                {getGradeBadge(moneylinePick.grade)}
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {/* Total Bet */}
+          {totalPick?.label && (
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-gray-600 font-medium">Total:</span>
+                <span className="text-gray-900 font-semibold">{totalPick.label}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {totalPick.edge !== null && (
+                  <span className="text-gray-600">Edge: <span className="font-semibold text-green-600">{totalPick.edge.toFixed(1)} pts</span></span>
+                )}
+                {getGradeBadge(totalPick.grade)}
+              </div>
+            </div>
+          )}
         </div>
       </Link>
     );
@@ -216,59 +264,57 @@ export default function PicksPage() {
     );
   }
 
-  const totalBets = games.length;
-  const hasAnyBets = totalBets > 0;
+  const totalGames = games.length;
+  const hasAnyBets = totalGames > 0;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <HeaderNav />
       <div className="flex-1">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              Official Spread Picks{week !== null ? ` - Week ${week}` : ''}
+          <div className="mb-6">
+            <h1 className="text-2xl font-bold text-gray-900 mb-1">
+              Official Picks{week !== null ? ` - Week ${week}` : ''}
             </h1>
-            <p className="text-gray-600">
+            <p className="text-sm text-gray-600">
               {hasAnyBets 
-                ? `${totalBets} active ${totalBets === 1 ? 'bet' : 'bets'} found${season !== null && week !== null ? ` for ${season} Week ${week}` : ''}`
+                ? `${totalGames} ${totalGames === 1 ? 'game' : 'games'} with active bets${season !== null && week !== null ? ` for ${season} Week ${week}` : ''}`
                 : `No active bets found${season !== null && week !== null ? ` for ${season} Week ${week}` : ''}. All edges are below the 0.1 pt threshold.`
               }
             </p>
           </div>
 
           {loading ? (
-            <div className="space-y-6">
+            <div className="space-y-3">
               {[1, 2, 3].map(i => (
-                <div key={i} className="bg-white border border-gray-200 rounded-lg p-4 animate-pulse">
-                  <div className="h-20 bg-gray-200 rounded"></div>
+                <div key={i} className="bg-white border border-gray-200 rounded-lg p-3 animate-pulse">
+                  <div className="h-16 bg-gray-200 rounded"></div>
                 </div>
               ))}
             </div>
           ) : !hasAnyBets ? (
-            <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
-              <p className="text-gray-500 text-lg">
-                No active spread bets for this week.
-              </p>
-              <p className="text-gray-400 text-sm mt-2">
+            <div className="bg-white border border-gray-200 rounded-lg p-6 text-center">
+              <p className="text-gray-500">No active bets for this week.</p>
+              <p className="text-gray-400 text-sm mt-1">
                 The model requires at least a 0.1 point edge to recommend a bet.
               </p>
             </div>
           ) : (
-            <div className="space-y-8">
+            <div className="space-y-6">
               {/* Grade A */}
               {groupedGames.A.length > 0 && (
                 <div>
-                  <div className={`flex items-center gap-2 mb-4 px-4 py-2 rounded-lg border ${getConfidenceConfig('A').color}`}>
-                    <span className="text-2xl">{getConfidenceConfig('A').emoji}</span>
-                    <h2 className="text-xl font-bold">
+                  <div className={`flex items-center gap-2 mb-3 px-3 py-1.5 rounded-lg border ${getConfidenceConfig('A').color}`}>
+                    <span className="text-xl">{getConfidenceConfig('A').emoji}</span>
+                    <h2 className="text-lg font-bold">
                       {getConfidenceConfig('A').title} (Grade A)
                     </h2>
-                    <span className={`ml-auto px-2 py-1 rounded text-xs font-semibold ${getConfidenceConfig('A').badgeColor}`}>
-                      {groupedGames.A.length} {groupedGames.A.length === 1 ? 'pick' : 'picks'}
+                    <span className={`ml-auto px-2 py-0.5 rounded text-xs font-semibold ${getConfidenceConfig('A').badgeColor}`}>
+                      {groupedGames.A.length} {groupedGames.A.length === 1 ? 'game' : 'games'}
                     </span>
                   </div>
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     {groupedGames.A.map(renderGameCard)}
                   </div>
                 </div>
@@ -277,16 +323,16 @@ export default function PicksPage() {
               {/* Grade B */}
               {groupedGames.B.length > 0 && (
                 <div>
-                  <div className={`flex items-center gap-2 mb-4 px-4 py-2 rounded-lg border ${getConfidenceConfig('B').color}`}>
-                    <span className="text-2xl">{getConfidenceConfig('B').emoji}</span>
-                    <h2 className="text-xl font-bold">
+                  <div className={`flex items-center gap-2 mb-3 px-3 py-1.5 rounded-lg border ${getConfidenceConfig('B').color}`}>
+                    <span className="text-xl">{getConfidenceConfig('B').emoji}</span>
+                    <h2 className="text-lg font-bold">
                       {getConfidenceConfig('B').title} (Grade B)
                     </h2>
-                    <span className={`ml-auto px-2 py-1 rounded text-xs font-semibold ${getConfidenceConfig('B').badgeColor}`}>
-                      {groupedGames.B.length} {groupedGames.B.length === 1 ? 'pick' : 'picks'}
+                    <span className={`ml-auto px-2 py-0.5 rounded text-xs font-semibold ${getConfidenceConfig('B').badgeColor}`}>
+                      {groupedGames.B.length} {groupedGames.B.length === 1 ? 'game' : 'games'}
                     </span>
                   </div>
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     {groupedGames.B.map(renderGameCard)}
                   </div>
                 </div>
@@ -295,16 +341,16 @@ export default function PicksPage() {
               {/* Grade C */}
               {groupedGames.C.length > 0 && (
                 <div>
-                  <div className={`flex items-center gap-2 mb-4 px-4 py-2 rounded-lg border ${getConfidenceConfig('C').color}`}>
-                    <span className="text-2xl">{getConfidenceConfig('C').emoji}</span>
-                    <h2 className="text-xl font-bold">
+                  <div className={`flex items-center gap-2 mb-3 px-3 py-1.5 rounded-lg border ${getConfidenceConfig('C').color}`}>
+                    <span className="text-xl">{getConfidenceConfig('C').emoji}</span>
+                    <h2 className="text-lg font-bold">
                       {getConfidenceConfig('C').title} (Grade C)
                     </h2>
-                    <span className={`ml-auto px-2 py-1 rounded text-xs font-semibold ${getConfidenceConfig('C').badgeColor}`}>
-                      {groupedGames.C.length} {groupedGames.C.length === 1 ? 'pick' : 'picks'}
+                    <span className={`ml-auto px-2 py-0.5 rounded text-xs font-semibold ${getConfidenceConfig('C').badgeColor}`}>
+                      {groupedGames.C.length} {groupedGames.C.length === 1 ? 'game' : 'games'}
                     </span>
                   </div>
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     {groupedGames.C.map(renderGameCard)}
                   </div>
                 </div>
@@ -317,4 +363,3 @@ export default function PicksPage() {
     </div>
   );
 }
-
