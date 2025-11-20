@@ -3168,14 +3168,15 @@ export async function GET(
     let ats_dog_headline_blocked = false;
     
     if (!hasSpreadEdge) {
-      // No pick - overlay too small to bet
-      // BUT: Still populate betTo and flip for range guidance (transparency)
+      // No pick - edge too small to bet (< 0.1)
+      // BUT: Still populate betTo, flip, and edgePts for range guidance (transparency)
       bettablePick = {
         teamId: null,
         teamName: null,
         line: null,
         label: null,
-        reasoning: `No edge at current number. Model edge is ${Math.abs(atsEdge).toFixed(1)} pts (below ${edgeFloor.toFixed(1)} pt threshold).`,
+        edgePts: atsEdgeAbs, // Show actual edge value even when below threshold
+        reasoning: `No edge at current number. Model edge is ${atsEdgeAbs.toFixed(1)} pts (below ${edgeFloor.toFixed(1)} pt threshold).`,
         betTo: spreadBetTo, // Always populate when ats_inputs_ok (for range guidance)
         flip: spreadFlip,   // Always populate when ats_inputs_ok (for range guidance)
         favoritesDisagree: false,
