@@ -2982,7 +2982,7 @@ export async function GET(
     // Logic (favorite-centric):
     // m = market favorite line (negative, e.g., -10.5)
     // o = overlay_used (signed, e.g., -2.0 means model thinks favorite should lay less)
-    // floor = EDGE_FLOOR_SPREAD (2.0)
+    // floor = OVERLAY_EDGE_FLOOR (0.1)
     // 
     // betTo = m + sign(o) * floor
     //   If o < 0 (favorite pick): betTo = m - floor = -10.5 - 2.0 = -12.5 (move toward dog)
