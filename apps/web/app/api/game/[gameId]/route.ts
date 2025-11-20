@@ -2844,11 +2844,10 @@ export async function GET(
          isFinite(finalImpliedSpread));
     
     // OU model validation: Is the model total valid (numeric, in points)?
-    const ou_model_valid = finalImpliedTotal !== null && 
-                           !isNaN(finalImpliedTotal) && 
-                           isFinite(finalImpliedTotal) &&
-                           finalImpliedTotal >= 15 && 
-                           finalImpliedTotal <= 120;
+    // CRITICAL FIX: This validation runs BEFORE finalImpliedTotal is calculated (which happens later)
+    // So we'll set a placeholder here and update it after the calculation
+    let ou_model_valid = false;
+    let ou_reason: string | null = null;
     
     // OU inputs validation: Do we have a market total to show?
     // ALWAYS true for live games (we always have market lines)
@@ -2856,26 +2855,8 @@ export async function GET(
     
     const ats_reason = !ats_inputs_ok ? 'Model spread unavailable or invalid (NaN/inf)' : null;
     
-    // OU reason: Only set when model is invalid (card still shows, just with muted reason)
-    // Use specific failure information from diagnostics when available
-    let ou_reason: string | null = null;
-    if (!ou_model_valid) {
-      if (USE_CORE_V1 && finalImpliedTotal === null) {
-        // Core V1 totals computation failed (missing inputs)
-        ou_reason = 'Model total unavailable — missing market total or spread data';
-      } else if (finalImpliedTotal === null) {
-        ou_reason = 'Model total unavailable';
-      } else if (finalImpliedTotal < 15 || finalImpliedTotal > 120) {
-        // Units mismatch: model returned a rate/ratio instead of points
-        ou_reason = `Model returned ${finalImpliedTotal.toFixed(1)}, not in points (likely rate/ratio)`;
-      } else if (!isFinite(finalImpliedTotal) || isNaN(finalImpliedTotal)) {
-        // NaN/inf case - use failure stage if available
-        const failureStage = totalDiag.firstFailureStep || 'unknown_stage';
-        ou_reason = `Model total invalid (NaN/inf) at stage: ${failureStage}`;
-      } else {
-        ou_reason = 'Model total invalid';
-      }
-    }
+    // NOTE: ou_model_valid and ou_reason will be updated AFTER finalImpliedTotal is calculated
+    // (See the totals calculation block below where we call getOUPick)
     
     console.log(`[Game ${gameId}] 🔍 Independent Validation:`, {
       ats_inputs_ok,
