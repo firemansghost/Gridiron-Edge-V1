@@ -2849,7 +2849,11 @@ export async function GET(
     if (USE_CORE_V1 && finalImpliedSpread !== null && marketSpread !== null) {
       // V1: Use Core V1 spread directly (no overlay)
       finalSpreadWithOverlay = finalImpliedSpread;
-      rawSpreadDisagreement = Math.abs(finalImpliedSpread - marketSpreadHma!);
+      // Fix: Compare both in favorite-centric format to avoid mixing HMA margin with favorite-centric line
+      // Model spread in favorite-centric: modelSpreadFC.favoriteSpread (already negative, e.g., -9.4)
+      // Market spread in favorite-centric: marketSpreadFC.favoriteSpread (already negative, e.g., -7.5)
+      // Result: |-9.4 - (-7.5)| = |-9.4 + 7.5| = 1.9 (correct, not 16.9)
+      rawSpreadDisagreement = Math.abs(modelSpreadFC.favoriteSpread - marketSpreadFC.favoriteSpread);
       spreadOverlay = 0; // No overlay in V1
     } else {
       // Legacy: TRUST-MARKET MODE: Spread Overlay Logic
@@ -2996,8 +3000,13 @@ export async function GET(
     const marketFavoriteLine = favoriteByRule.line; // Favorite-centric, negative
     // In V1 mode, use atsEdge sign; in legacy mode, use spreadOverlay sign
     const edgeSign = USE_CORE_V1 ? Math.sign(atsEdge) : Math.sign(spreadOverlay);
+    // Bet To: Show model's fair line (the limit price), not market + threshold
+    // In V1 mode, use modelSpreadFC.favoriteSpread (model's fair line, e.g., -9.4)
+    // Otherwise use market + edge adjustment (legacy mode)
     const spreadBetTo = ats_inputs_ok && marketFavoriteLine !== null
-      ? marketFavoriteLine + edgeSign * HARD_MIN_THRESHOLD
+      ? (USE_CORE_V1 && modelSpreadFC.favoriteSpread !== undefined && modelSpreadFC.favoriteSpread !== null
+          ? modelSpreadFC.favoriteSpread  // Use model's fair line (e.g., -9.4)
+          : marketFavoriteLine + edgeSign * HARD_MIN_THRESHOLD)  // Legacy: market + threshold
       : null;
     const spreadFlip = ats_inputs_ok && marketFavoriteLine !== null
       ? marketFavoriteLine - edgeSign * HARD_MIN_THRESHOLD
@@ -4083,7 +4092,7 @@ export async function GET(
     const thresholds = {
       A: 4.0,
       B: 3.0,
-      C: 2.0
+      C: 0.1  // Changed from 2.0 to 0.1 - Grade C now starts at 0.1
     };
 
     const getGrade = (edge: number | null): 'A' | 'B' | 'C' | null => {
@@ -4092,7 +4101,7 @@ export async function GET(
       if (absEdge >= thresholds.A) return 'A';
       if (absEdge >= thresholds.B) return 'B';
       if (absEdge >= thresholds.C) return 'C';
-      return null; // No grade if edge is below minimum threshold
+      return null; // No grade if edge is below minimum threshold (0.1)
     };
 
     let spreadGrade = getGrade(atsEdge);

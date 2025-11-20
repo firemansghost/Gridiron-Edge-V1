@@ -208,11 +208,11 @@ export default function GameDetailPage() {
   const diagnostics = game.diagnostics ?? {};
   const allDiagnosticsMessages: string[] = Array.isArray(diagnostics.messages) ? diagnostics.messages : [];
   const modelView = game.model_view ?? {};
-  // Official (Trust-Market) values
+  // Official values
   const atsEdgePtsOfficial = modelView.edges?.atsEdgePts ?? null;
   const ouEdgePtsOfficial = modelView.edges?.ouEdgePts ?? null;
   
-  // Raw model values (pre-Trust-Market)
+  // Raw model values
   // For ATS: raw edge = modelFavoriteLine - marketFavoriteLine (favorite-centric)
   const rawAtsEdgePts = modelView?.modelFavoriteLine !== null && snapshot?.favoriteLine !== null
     ? modelView.modelFavoriteLine - snapshot.favoriteLine
@@ -682,18 +682,18 @@ export default function GameDetailPage() {
 
           {/* Betting Ticket - Single unified block above fold */}
           <div className="mb-4 md:mb-6">
-            {/* PHASE 2.4: Trust-Market Mode Badge and Timestamp Row */}
+            {/* PHASE 2.4: Model Mode Badge and Timestamp Row */}
             <div className="flex items-center justify-between mb-3 sm:mb-4 flex-wrap gap-3">
               <div className="flex items-center gap-3 flex-wrap">
                 <h2 className="text-lg sm:text-xl font-bold text-gray-900">Betting Ticket</h2>
                 <ModelViewModeToggle />
-                {/* Trust-Market Mode Badge */}
+                {/* Legacy Mode Badge (only show if using trust_market mode) */}
                 {game.modelConfig?.mode === 'trust_market' && (
                   <div className="bg-blue-50 border border-blue-300 rounded-md px-3 py-1 flex items-center gap-2">
                     <span className="text-xs font-semibold text-blue-800">
-                      Trust-Market
+                      Legacy Mode
                     </span>
-                    <InfoTooltip content={`Market baseline with capped overlays (ATS λ=${game.modelConfig?.overlay?.lambda_spread || 0.25}, OU λ=${game.modelConfig?.overlay?.lambda_total || 0.35}, caps ±${game.modelConfig?.overlay?.spread_cap || 3.0}, edge floor ${game.modelConfig?.overlay?.edge_floor || 2.0}).`} />
+                    <InfoTooltip content={`Market baseline with capped overlays (ATS λ=${game.modelConfig?.overlay?.lambda_spread || 0.25}, OU λ=${game.modelConfig?.overlay?.lambda_total || 0.35}, caps ±${game.modelConfig?.overlay?.spread_cap || 3.0}, edge floor ${game.modelConfig?.overlay?.edge_floor || 0.1}).`} />
                   </div>
                 )}
               </div>
@@ -791,19 +791,19 @@ export default function GameDetailPage() {
                       ) : game.picks.spread.bettablePick?.suppressHeadline || game.picks.spread.bettablePick?.extremeFavoriteBlocked ? (
                         /* EXTREME FAVORITE: Suppress dog headline, show market line instead */
                         snapshot && snapshot.favoriteLine !== null && snapshot.favoriteLine !== undefined
-                          ? `PASS — Trust-Market mode (no official bet)`
-                          : 'PASS — Trust-Market mode (no official bet)'
+                          ? `PASS — No official bet`
+                          : 'PASS — No official bet'
                       ) : game.picks.spread.bettablePick?.label ? (
                         /* CRITICAL FIX: Use bettablePick.label as single source of truth */
                         game.picks.spread.bettablePick.label
                       ) : (
-                        'PASS — Trust-Market mode (no official bet)'
+                        'PASS — No official bet'
                       )}
                     </div>
                     {/* Warning badge for raw mode on official PASS games */}
                     {modelViewMode === 'raw' && isOfficialPass && hasRawAtsEdge && (
                       <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-2 inline-block">
-                        ⚠ Officially PASS (Trust-Market). Showing raw model only.
+                        ⚠ Officially PASS. Showing raw model only.
                       </div>
                     )}
                     {/* ============================================ */}
@@ -812,7 +812,7 @@ export default function GameDetailPage() {
                     {/* ============================================ */}
                     {snapshot?.favoriteLine !== null && snapshot?.favoriteLine !== undefined ? (
                       <>
-                        {/* Case A: No official edge (Trust-Market PASS) */}
+                        {/* Case A: No official edge (PASS) */}
                         {(!game.picks.spread.bettablePick?.label || game.picks.spread.bettablePick?.suppressHeadline) ? (
                           <>
                             {modelViewMode === 'raw' ? (
@@ -944,7 +944,7 @@ export default function GameDetailPage() {
                         <div className="mt-2 text-yellow-800 bg-yellow-50 border border-yellow-300 rounded p-2 flex items-start gap-2">
                           <span className="text-lg">⚠️</span>
                           <span className="flex-1">
-                            <span className="font-semibold">Large raw disagreement:</span> Model spread differs from market by {game.picks.spread.overlay.rawDisagreement.toFixed(1)} pts. Overlay capped in Trust-Market mode.
+                            <span className="font-semibold">Large raw disagreement:</span> Model spread differs from market by {game.picks.spread.overlay.rawDisagreement.toFixed(1)} pts.
                           </span>
                         </div>
                       )}
@@ -1104,7 +1104,7 @@ export default function GameDetailPage() {
                           {' '}(model total {rawModelTotal.toFixed(1)} vs market {marketTotal.toFixed(1)})
                         </div>
                         <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-2 inline-block">
-                          ⚠ Experimental totals — not an official Trust-Market pick.
+                          ⚠ Experimental totals — not an official pick.
                         </div>
                       </>
                     ) : (
@@ -1157,7 +1157,7 @@ export default function GameDetailPage() {
                     {/* PHASE 2.4: Overlay calc disabled note */}
                     {modelViewMode === 'official' && totalsAvailableButDisabled && (
                       <div className="text-xs text-gray-500 mt-2 italic border-t border-gray-200 pt-2">
-                        No OU edge at current number — totals bets are disabled in Official (Trust-Market) mode for the 2025 season.
+                        No OU edge at current number — totals bets are disabled in Official mode for the 2025 season.
                         <div className="mt-1">
                           Switch to Raw model to see the experimental totals lean.
                         </div>
@@ -1270,7 +1270,7 @@ export default function GameDetailPage() {
                         <div className="mt-2 text-yellow-800 bg-yellow-50 border border-yellow-300 rounded p-2 flex items-start gap-2">
                           <span className="text-lg">⚠️</span>
                           <span className="flex-1">
-                            <span className="font-semibold">Large raw disagreement:</span> Model total differs from market by {game.picks.total.overlay.rawDisagreement.toFixed(1)} pts. Overlay capped in Trust-Market mode.
+                            <span className="font-semibold">Large raw disagreement:</span> Model total differs from market by {game.picks.total.overlay.rawDisagreement.toFixed(1)} pts.
                           </span>
                         </div>
                       )}
@@ -1347,7 +1347,7 @@ export default function GameDetailPage() {
               ) : (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                   <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">MONEYLINE</h3>
-                  {/* Moneyline currently ignores Trust-Market caps and the Official/Raw toggle — we only show market price + model fair ML. ML Trust-Market rules will be added in a later phase. */}
+                  {/* Moneyline currently ignores caps and the Official/Raw toggle — we only show market price + model fair ML. */}
                   {(() => {
                     // Determine if we have book prices
                     const hasBookPrices = snapshot && (snapshot.moneylineFavorite !== null || snapshot.moneylineDog !== null);
@@ -1485,7 +1485,7 @@ export default function GameDetailPage() {
             </div>
           )}
 
-          {/* Trust-Market Explainer */}
+          {/* Model Explainer */}
           <TrustMarketExplainer />
 
           {/* Model vs Market Card */}

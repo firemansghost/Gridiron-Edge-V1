@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
           if (maxEdge !== null) {
             if (maxEdge >= 4.0) confidenceTier = 'A';
             else if (maxEdge >= 3.0) confidenceTier = 'B';
-            else if (maxEdge >= 2.0) confidenceTier = 'C';
+            else if (maxEdge >= 0.1) confidenceTier = 'C';
           }
 
           return {

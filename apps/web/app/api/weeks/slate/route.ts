@@ -339,12 +339,12 @@ export async function GET(request: NextRequest) {
         const totalPick = ouPick.pickLabel;
         const totalEdgePts = ouPick.ouEdgePts !== null ? Math.round(ouPick.ouEdgePts * 10) / 10 : null;
 
-        // Confidence tier (A ≥ 4.0, B ≥ 3.0, C ≥ 2.0) - based on ATS edge only
+        // Confidence tier (A ≥ 4.0, B ≥ 3.0, C ≥ 0.1) - based on ATS edge only
         let confidence: string | null = null;
         if (maxEdge !== null && Number.isFinite(maxEdge)) {
           if (maxEdge >= 4.0) confidence = 'A';
           else if (maxEdge >= 3.0) confidence = 'B';
-          else if (maxEdge >= 2.0) confidence = 'C';
+          else if (maxEdge >= 0.1) confidence = 'C';
         }
 
         // Assign to game - CRITICAL: Always assign, even if some fields are null
