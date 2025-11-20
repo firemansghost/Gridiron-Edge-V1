@@ -2832,12 +2832,13 @@ export async function GET(
       // If marketSpreadHma is null but we have marketFavoriteLine, derive it
       let marketSpreadHmaForTotals = marketSpreadHma;
       if (marketSpreadHmaForTotals === null && market_snapshot.favoriteLine !== null) {
-        // Convert favorite-centric line to HMA format
-        // If home is favorite: favoriteLine is negative, HMA = favoriteLine (negative)
-        // If away is favorite: favoriteLine is negative, HMA = -favoriteLine (positive)
+        // Convert favorite-centric line to HMA format (Home Minus Away)
+        // favoriteLine is always negative (favorite-centric format, e.g., -7.5)
+        // If home is favorite: HMA = -favoriteLine (e.g., -(-7.5) = +7.5 means Home wins by 7.5)
+        // If away is favorite: HMA = favoriteLine (e.g., -7.5 means Away wins by 7.5, so Home loses by 7.5)
         marketSpreadHmaForTotals = (favoriteByRule.teamId === game.homeTeamId)
-          ? market_snapshot.favoriteLine  // Home is favorite, already in HMA format (negative)
-          : -market_snapshot.favoriteLine; // Away is favorite, flip sign to HMA format (positive)
+          ? -market_snapshot.favoriteLine  // Home is favorite, flip sign: -(-7.5) = +7.5
+          : market_snapshot.favoriteLine; // Away is favorite, keep negative: -7.5
         console.log(`[Game ${gameId}] 🔧 Derived marketSpreadHma for totals:`, {
           favoriteLine: market_snapshot.favoriteLine.toFixed(2),
           favoriteTeamId: favoriteByRule.teamId,
@@ -2959,10 +2960,12 @@ export async function GET(
     // CRITICAL: Now compute ML calc_basis with finalSpreadWithOverlayFC available
     if (moneyline !== null) {
       // CRITICAL FIX: Determine model favorite/dog from finalSpreadWithOverlay (HMA format), not from market favorite
-      // finalSpreadWithOverlay is in HMA format: negative = home favored, positive = away favored
+      // finalSpreadWithOverlay is in HMA format (Home Minus Away):
+      //   - Positive value (e.g., +9.4) = Home is favored (Home wins by that margin)
+      //   - Negative value (e.g., -9.4) = Away is favored (Away wins by that margin)
       // We need to determine which team the MODEL favors, not which team the MARKET favors
-      const modelFavorsHome = finalSpreadWithOverlay !== null && finalSpreadWithOverlay < 0;
-      const modelFavorsAway = finalSpreadWithOverlay !== null && finalSpreadWithOverlay > 0;
+      const modelFavorsHome = finalSpreadWithOverlay !== null && finalSpreadWithOverlay > 0;
+      const modelFavorsAway = finalSpreadWithOverlay !== null && finalSpreadWithOverlay < 0;
       
       // Determine model favorite team ID based on the spread sign
       const modelFavTeamIdFromSpread = modelFavorsHome ? game.homeTeamId : (modelFavorsAway ? game.awayTeamId : favoriteByRule.teamId);
