@@ -3104,10 +3104,19 @@ export async function GET(
         ? (pickedTeamId !== favoriteByRule.teamId) // True if picked team is NOT market favorite
         : null;
       
-      // Use picked team probability if exists, otherwise use model favorite
-      const calcBasisWinProb = moneyline.modelWinProb !== null && moneyline.modelWinProb !== undefined
-        ? moneyline.modelWinProb
-        : modelFavProbFromSpread;
+      // CRITICAL FIX: Use the actual probability for the picked team, not moneyline.modelWinProb which might be stale (0.5)
+      // Determine which team was picked and use the correct probability
+      let calcBasisWinProb: number;
+      if (moneyline.pickLabel) {
+        // Extract team name from pickLabel (e.g., "Oklahoma ML" -> "Oklahoma")
+        const pickedTeamName = moneyline.pickLabel.replace(' ML', '');
+        const pickedTeamIsHome = pickedTeamName === game.homeTeam.name;
+        // Use the correct probability based on which team was picked
+        calcBasisWinProb = pickedTeamIsHome ? modelHomeWinProb : modelAwayWinProb;
+      } else {
+        // No pick, use model favorite probability
+        calcBasisWinProb = modelFavProbFromSpread;
+      }
       const calcBasisFairML = calcBasisWinProb >= 0.5
         ? Math.round(-100 * calcBasisWinProb / (1 - calcBasisWinProb))
         : Math.round(100 * (1 - calcBasisWinProb) / calcBasisWinProb);
