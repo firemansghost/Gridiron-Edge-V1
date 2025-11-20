@@ -243,11 +243,9 @@ export default function GameDetailPage() {
   const atsEdgeSign = atsEdgeValue ?? 0;
   const ouEdgeSign = ouEdgeValue ?? 0;
   
-  // Check if this is a PASS in official mode but has raw edge
-  // A pick is active if bettablePick exists AND has a label (or edgePts >= 0.1)
-  const hasActivePick = game.picks?.spread?.bettablePick?.label && 
-                        !game.picks?.spread?.bettablePick?.suppressHeadline &&
-                        (game.picks?.spread?.bettablePick?.edgePts ?? 0) >= 0.1;
+  // CRITICAL FIX: Trust the API completely - if bettablePick exists with a label, it's active
+  // The API is the single source of truth - no client-side filtering
+  const hasActivePick = !!game.picks?.spread?.bettablePick?.label;
   const isOfficialPass = !hasActivePick;
   const hasRawAtsEdge = rawAtsEdgePts !== null && Math.abs(rawAtsEdgePts) > 0.1;
   
@@ -774,13 +772,8 @@ export default function GameDetailPage() {
                         modelView?.modelFavoriteName && modelView?.modelFavoriteLine !== null
                           ? `${modelView.modelFavoriteName} ${modelView.modelFavoriteLine.toFixed(1)}`
                           : 'Raw model spread'
-                      ) : game.picks.spread.bettablePick?.suppressHeadline || game.picks.spread.bettablePick?.extremeFavoriteBlocked ? (
-                        /* EXTREME FAVORITE: Suppress dog headline, show market line instead */
-                        snapshot && snapshot.favoriteLine !== null && snapshot.favoriteLine !== undefined
-                          ? `PASS — No official bet`
-                          : 'PASS — No official bet'
                       ) : game.picks.spread.bettablePick?.label ? (
-                        /* CRITICAL FIX: Use bettablePick.label as single source of truth */
+                        /* CRITICAL FIX: Trust API - if bettablePick.label exists, show it */
                         game.picks.spread.bettablePick.label
                       ) : (
                         'PASS — No official bet'
@@ -798,8 +791,8 @@ export default function GameDetailPage() {
                     {/* ============================================ */}
                     {snapshot?.favoriteLine !== null && snapshot?.favoriteLine !== undefined ? (
                       <>
-                        {/* Case A: No official edge (PASS) */}
-                        {(!game.picks.spread.bettablePick?.label || game.picks.spread.bettablePick?.suppressHeadline) ? (
+                        {/* Case A: No official edge (PASS) - Trust API: only show PASS if label doesn't exist */}
+                        {!game.picks.spread.bettablePick?.label ? (
                           <>
                             {modelViewMode === 'raw' ? (
                               <>
@@ -920,7 +913,7 @@ export default function GameDetailPage() {
                   <div className="bg-white border-2 border-gray-300 rounded-lg p-4 shadow-sm">
                     <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">AGAINST THE SPREAD</h3>
                     <div className="text-lg font-semibold text-gray-900 mb-2">
-                      PASS — Trust-Market mode (no official bet)
+                      PASS — No official bet
                     </div>
                     {/* ============================================ */}
                     {/* Show raw disagreement when no official edge */}
@@ -933,7 +926,7 @@ export default function GameDetailPage() {
                     </div>
                     {/* RANGE: Flip Point */}
                     {/* Range text for PASS case - use model fair line */}
-                    {(!game.picks.spread.bettablePick?.label || game.picks.spread.bettablePick?.suppressHeadline) && game.model_view?.modelFavoriteLine !== null && game.model_view?.modelFavoriteName && snapshot ? (
+                    {!game.picks.spread.bettablePick?.label && game.model_view?.modelFavoriteLine !== null && game.model_view?.modelFavoriteName && snapshot ? (
                       <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
                         <span className="font-semibold">Raw model fair line</span> ≈ {game.model_view.modelFavoriteName} {game.model_view.modelFavoriteLine.toFixed(1)}. Current market line is {snapshot.favoriteLine.toFixed(1)} ({atsEdgeMagnitude.toFixed(1)} pts {game.model_view.modelFavoriteLine < snapshot.favoriteLine ? 'cheaper' : 'more expensive'}). No official bet for this game.
                       </div>
@@ -1012,8 +1005,8 @@ export default function GameDetailPage() {
                       </div>
                     )}
                   </div>
-                ) : !game.picks?.total?.show_totals_picks || !game.picks?.total?.meets_floor ? (
-                  /* State 2: No edge - has_model_total && (!meets_floor || !SHOW_TOTALS_PICKS) */
+                ) : !game.picks?.total?.totalPickLabel ? (
+                  /* State 2: No pick - Trust API: if totalPickLabel doesn't exist, show PASS */
                   <div className="bg-white border-2 border-gray-300 rounded-lg p-4 shadow-sm">
                     <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">TOTAL (Over/Under)</h3>
                     <div className="text-lg font-semibold text-gray-900 mb-2">
@@ -1074,8 +1067,8 @@ export default function GameDetailPage() {
                       </div>
                     )}
                   </div>
-                ) : (
-                  /* State 3: Pick - has_model_total && meets_floor && SHOW_TOTALS_PICKS=true (disabled for now) */
+                ) : game.picks?.total?.totalPickLabel ? (
+                  /* State 3: Pick - Trust API: if totalPickLabel exists, show it */
                   <div className="bg-white border-2 border-green-300 rounded-lg p-4 shadow-sm">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">TOTAL (Over/Under)</h3>
@@ -1092,10 +1085,11 @@ export default function GameDetailPage() {
                       </div>
                     )}
                   </div>
-                  {/* Headline: Show pick label in raw mode, market total in official mode */}
-                  <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`${modelViewMode === 'raw' && modelView.totals?.pickLabel ? modelView.totals.pickLabel : `Total ${game.picks.total.headlineTotal?.toFixed(1)}`}`}>
-                    {modelViewMode === 'raw' && modelView.totals?.pickLabel ? (
-                      modelView.totals.pickLabel
+                  {/* Headline: Show pick label if available, otherwise market total */}
+                  <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`${game.picks.total.totalPickLabel || `Total ${game.picks.total.headlineTotal?.toFixed(1)}`}`}>
+                    {game.picks.total.totalPickLabel ? (
+                      /* Trust API: if totalPickLabel exists, show it */
+                      game.picks.total.totalPickLabel
                     ) : (
                       <>
                         Total {game.picks.total.headlineTotal?.toFixed(1)}
