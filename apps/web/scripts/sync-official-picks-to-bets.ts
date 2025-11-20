@@ -259,7 +259,7 @@ async function upsertBet(pick: OfficialPick, season: number, week: number): Prom
 /**
  * Sync official picks to bets for a single week
  */
-async function syncWeek(season: number, week: number): Promise<{ created: number; updated: number; skipped: number }> {
+export async function syncWeek(season: number, week: number): Promise<{ created: number; updated: number; skipped: number }> {
   console.log(`\n📅 Processing ${season} Week ${week}...`);
 
   // Fetch all games for this week
