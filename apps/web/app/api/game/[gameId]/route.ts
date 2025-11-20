@@ -3137,10 +3137,10 @@ export async function GET(
     // ============================================
     // TRUST-MARKET MODE: Spread Pick Logic
     // ============================================
-    // Only show pick if overlay creates >= 2.0 pts of edge
-    // This prevents showing picks when model barely disagrees with market
+    // Only show pick if edge >= 0.1 pts (raw model, minimal threshold)
+    // This allows all actionable edges to be displayed
     
-    const edgeFloor = OVERLAY_EDGE_FLOOR; // 2.0 pts minimum
+    const edgeFloor = OVERLAY_EDGE_FLOOR; // 0.1 pts minimum (raw model uncapped)
     const hasSpreadEdge = atsEdgeAbs >= edgeFloor;
     
     // ============================================
@@ -3169,7 +3169,7 @@ export async function GET(
         teamName: null,
         line: null,
         label: null,
-        reasoning: `No edge at current number. Model overlay is ${spreadOverlay >= 0 ? '+' : ''}${spreadOverlay.toFixed(1)} pts (below ${edgeFloor.toFixed(1)} pt threshold in Trust-Market mode).`,
+        reasoning: `No edge at current number. Model edge is ${Math.abs(atsEdge).toFixed(1)} pts (below ${edgeFloor.toFixed(1)} pt threshold).`,
         betTo: spreadBetTo, // Always populate when ats_inputs_ok (for range guidance)
         flip: spreadFlip,   // Always populate when ats_inputs_ok (for range guidance)
         favoritesDisagree: false,
@@ -3225,8 +3225,8 @@ export async function GET(
         edgePts: atsEdgeAbs,
         betTo: spreadBetTo,
         flip: spreadFlip,
-        favoritesDisagree: false, // In Trust-Market, we always use market favorite as reference
-        reasoning: `Trust-Market overlay: ${spreadOverlay >= 0 ? '+' : ''}${spreadOverlay.toFixed(1)} pts (capped at ±${OVERLAY_CAP_SPREAD}). Value on ${pickTeamName} ${pickSide === 'favorite' ? pickLine.toFixed(1) : `+${pickLine.toFixed(1)}`}.`,
+        favoritesDisagree: false, // In V1 mode, we always use market favorite as reference
+        reasoning: `Model edge: ${atsEdgeAbs.toFixed(1)} pts. Value on ${pickTeamName} ${pickSide === 'favorite' ? pickLine.toFixed(1) : `+${pickLine.toFixed(1)}`}.`,
         suppressHeadline: false,
         extremeFavoriteBlocked: false
       };
@@ -5084,13 +5084,13 @@ export async function GET(
             lambda: LAMBDA_SPREAD,
             overlayValue: spreadOverlay,
             cap: OVERLAY_CAP_SPREAD,
-            final: finalSpreadWithOverlay,
+            final: finalSpreadWithOverlayFC, // Use favorite-centric format (negative = favorite, positive = dog)
             confidenceDegraded: shouldDegradeSpreadConfidence,
             mode: MODEL_MODE,
             // ✅ SSOT fields for UI decision logic
             overlay_used_pts: spreadOverlay, // The exact capped overlay value used for decisions
             overlay_basis: 'capped' as const, // Always capped in Trust-Market mode
-            edge_floor_pts: OVERLAY_EDGE_FLOOR // 2.0 pts minimum
+            edge_floor_pts: OVERLAY_EDGE_FLOOR // 0.1 pts minimum (raw model uncapped)
           }
         },
         total: {
@@ -5125,7 +5125,7 @@ export async function GET(
             // ✅ SSOT fields for UI decision logic
             overlay_used_pts: totalOverlay, // The exact capped overlay value used for decisions
             overlay_basis: 'capped' as const, // Always capped in Trust-Market mode
-            edge_floor_pts: OVERLAY_EDGE_FLOOR // 2.0 pts minimum
+            edge_floor_pts: OVERLAY_EDGE_FLOOR // 0.1 pts minimum (raw model uncapped)
           },
           // OU card state: "pick" | "no_edge" | "no_model_total"
           totalState: totalState,
