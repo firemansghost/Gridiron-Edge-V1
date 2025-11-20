@@ -2521,9 +2521,12 @@ export async function GET(
         
         // Calculate model probability and fair price for the PICKED team
         // CRITICAL: Use probabilities from finalSpreadWithOverlay, not market favorite
+        // NOTE: modelHomeWinProb/modelAwayWinProb will be calculated later from finalSpreadWithOverlay
+        // For now, use placeholder - will be updated after spread calculation
         if (marketMLFavProb !== null && moneylinePickTeam !== null) {
           const pickedTeamIsHome = moneylinePickTeam === game.homeTeam.name;
           // Use the correct probability based on which team was picked
+          // This will be recalculated after finalSpreadWithOverlay is available
           pickedTeamModelProb = pickedTeamIsHome ? modelHomeWinProb : modelAwayWinProb;
           
           // Get market probability for the picked team
@@ -2825,21 +2828,40 @@ export async function GET(
     // Compute totals: Use Core V1 totals model when USE_CORE_V1 is true
     // (Now that marketTotal and marketSpreadHma are available)
     if (USE_CORE_V1 && coreV1SpreadInfo) {
-      if (marketTotal !== null && marketSpreadHma !== null) {
+      // CRITICAL FIX: Ensure marketSpreadHma is available for totals calculation
+      // If marketSpreadHma is null but we have marketFavoriteLine, derive it
+      let marketSpreadHmaForTotals = marketSpreadHma;
+      if (marketSpreadHmaForTotals === null && market_snapshot.favoriteLine !== null) {
+        // Convert favorite-centric line to HMA format
+        // If home is favorite: favoriteLine is negative, HMA = favoriteLine (negative)
+        // If away is favorite: favoriteLine is negative, HMA = -favoriteLine (positive)
+        marketSpreadHmaForTotals = (favoriteByRule.teamId === game.homeTeamId)
+          ? market_snapshot.favoriteLine  // Home is favorite, already in HMA format (negative)
+          : -market_snapshot.favoriteLine; // Away is favorite, flip sign to HMA format (positive)
+        console.log(`[Game ${gameId}] 🔧 Derived marketSpreadHma for totals:`, {
+          favoriteLine: market_snapshot.favoriteLine.toFixed(2),
+          favoriteTeamId: favoriteByRule.teamId,
+          homeTeamId: game.homeTeamId,
+          derivedMarketSpreadHma: marketSpreadHmaForTotals.toFixed(2)
+        });
+      }
+      
+      if (marketTotal !== null && marketSpreadHmaForTotals !== null) {
         // Compute Core V1 total using spread-driven overlay
-        const ouPick = getOUPick(marketTotal, marketSpreadHma, coreV1SpreadInfo.coreSpreadHma);
+        const ouPick = getOUPick(marketTotal, marketSpreadHmaForTotals, coreV1SpreadInfo.coreSpreadHma);
         finalImpliedTotal = ouPick.modelTotal;
         console.log(`[Game ${gameId}] 📊 Core V1 Total computed:`, {
           marketTotal: marketTotal.toFixed(1),
-          marketSpreadHma: marketSpreadHma.toFixed(2),
+          marketSpreadHma: marketSpreadHmaForTotals.toFixed(2),
           modelSpreadHma: coreV1SpreadInfo.coreSpreadHma.toFixed(2),
           modelTotal: finalImpliedTotal !== null ? finalImpliedTotal.toFixed(1) : 'null'
         });
       } else {
         console.log(`[Game ${gameId}] ⚠️ Core V1 Total computation skipped:`, {
           marketTotal: marketTotal,
-          marketSpreadHma: marketSpreadHma,
-          hasCoreV1Spread: !!coreV1SpreadInfo
+          marketSpreadHma: marketSpreadHmaForTotals,
+          hasCoreV1Spread: !!coreV1SpreadInfo,
+          favoriteLine: market_snapshot.favoriteLine
         });
       }
     }
@@ -2862,6 +2884,28 @@ export async function GET(
     if (USE_CORE_V1 && finalImpliedSpread !== null && marketSpread !== null) {
       // V1: Use Core V1 spread directly (no overlay)
       finalSpreadWithOverlay = finalImpliedSpread;
+      
+      // CRITICAL FIX: Calculate win probabilities IMMEDIATELY after finalSpreadWithOverlay is set
+      // This ensures modelHomeWinProb and modelAwayWinProb are correct before moneyline object is created
+      if (finalSpreadWithOverlay !== null && Number.isFinite(finalSpreadWithOverlay)) {
+        // Convert spread to win probability using logistic function
+        // Formula: prob = 1 / (1 + 10^(spread / 14.5))
+        // finalSpreadWithOverlay is in HMA format: negative = home favored, positive = away favored
+        // For home: if spread is negative (home favored), home prob = 1 / (1 + 10^(-spread / 14.5))
+        const spreadForHome = -finalSpreadWithOverlay; // Flip sign: negative spread = home favored = positive for home prob
+        const homeProbRaw = 1 / (1 + Math.pow(10, spreadForHome / 14.5));
+        // Clamp to reasonable bounds [0.01, 0.99]
+        modelHomeWinProb = Math.max(0.01, Math.min(0.99, homeProbRaw));
+        modelAwayWinProb = 1 - modelHomeWinProb;
+        
+        console.log(`[Game ${gameId}] 📊 ML Win Prob from V1 Spread (EARLY):`, {
+          finalSpreadWithOverlay: finalSpreadWithOverlay.toFixed(2),
+          modelHomeWinProb: modelHomeWinProb.toFixed(3),
+          modelAwayWinProb: modelAwayWinProb.toFixed(3),
+          homeTeam: game.homeTeam.name,
+          awayTeam: game.awayTeam.name
+        });
+      }
       // Fix: Compare both in favorite-centric format to avoid mixing HMA margin with favorite-centric line
       // Model spread in favorite-centric: modelSpreadFC.favoriteSpread (already negative, e.g., -9.4)
       // Market spread in favorite-centric: marketSpreadFC.favoriteSpread (already negative, e.g., -7.5)
@@ -2896,28 +2940,19 @@ export async function GET(
           : -finalSpreadWithOverlay) // Away is favorite, flip sign to make favorite-centric
       : 0;
     
-    // CRITICAL FIX: Calculate win probabilities from V1 spread using sigmoid function
-    // Formula: prob = 1 / (1 + 10^(spread / 14.5))
-    // For home team: if spread is negative (home favored), home prob > 0.5
-    // For away team: if spread is positive (away favored), away prob > 0.5
-    // finalSpreadWithOverlay is in HMA format: negative = home favored, positive = away favored
-    if (finalSpreadWithOverlay !== null && Number.isFinite(finalSpreadWithOverlay)) {
-      // Convert spread to win probability using logistic function
-      // Standard conversion: prob = 1 / (1 + 10^(spread / 14.5))
-      // For home: if spread is negative (home favored), home prob = 1 / (1 + 10^(-spread / 14.5))
-      // For home: if spread is positive (away favored), home prob = 1 / (1 + 10^(spread / 14.5))
-      const spreadForHome = -finalSpreadWithOverlay; // Flip sign: negative spread = home favored = positive for home prob
+    // NOTE: Win probabilities are calculated earlier (right after finalSpreadWithOverlay is set)
+    // This ensures they're available when needed. If calculation didn't happen earlier, do it here as fallback.
+    if (modelHomeWinProb === 0.5 && finalSpreadWithOverlay !== null && Number.isFinite(finalSpreadWithOverlay)) {
+      // Fallback calculation if early calculation didn't run
+      const spreadForHome = -finalSpreadWithOverlay;
       const homeProbRaw = 1 / (1 + Math.pow(10, spreadForHome / 14.5));
-      // Clamp to reasonable bounds [0.01, 0.99]
       modelHomeWinProb = Math.max(0.01, Math.min(0.99, homeProbRaw));
       modelAwayWinProb = 1 - modelHomeWinProb;
       
-      console.log(`[Game ${gameId}] 📊 ML Win Prob from V1 Spread:`, {
+      console.log(`[Game ${gameId}] 📊 ML Win Prob from Spread (FALLBACK):`, {
         finalSpreadWithOverlay: finalSpreadWithOverlay.toFixed(2),
         modelHomeWinProb: modelHomeWinProb.toFixed(3),
-        modelAwayWinProb: modelAwayWinProb.toFixed(3),
-        homeTeam: game.homeTeam.name,
-        awayTeam: game.awayTeam.name
+        modelAwayWinProb: modelAwayWinProb.toFixed(3)
       });
     }
     
@@ -2978,15 +3013,29 @@ export async function GET(
       const modelFavTeamName = modelFavTeamIdFromSpread === game.homeTeamId ? game.homeTeam.name : game.awayTeam.name;
       moneyline.modelFavoriteTeam = modelFavTeamName;
       
-      // Source modelWinProb and modelFairML from calc_basis based on pick side
+      // CRITICAL FIX: Source modelWinProb and modelFairML from calc_basis based on pick side
+      // FORCE UPDATE: Overwrite the placeholder value (0.5) with the correct probability from spread
       // If pick is underdog, use dog prob/odds; if favorite, use fav prob/odds
       if (isUnderdogPick) {
         moneyline.modelWinProb = modelDogProbFromSpread;
         moneyline.modelFairML = fairMLDog;
+        // Also update pickedTeamModelProb for consistency
+        pickedTeamModelProb = modelDogProbFromSpread;
       } else {
         moneyline.modelWinProb = modelFavProbFromSpread;
         moneyline.modelFairML = fairMLFav;
+        // Also update pickedTeamModelProb for consistency
+        pickedTeamModelProb = modelFavProbFromSpread;
       }
+      
+      console.log(`[Game ${gameId}] ✅ Moneyline modelWinProb UPDATED:`, {
+        pickedTeam: moneyline.pickLabel,
+        oldProb: '0.5 (placeholder)',
+        newProb: moneyline.modelWinProb.toFixed(3),
+        isUnderdog: isUnderdogPick,
+        modelFavProb: modelFavProbFromSpread.toFixed(3),
+        modelDogProb: modelDogProbFromSpread.toFixed(3)
+      });
     }
     
     // Check if we should degrade confidence due to large disagreement
