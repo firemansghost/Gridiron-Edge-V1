@@ -151,15 +151,6 @@ export async function GET(request: NextRequest) {
       })
     ]);
 
-    // Create lookup map for moneyline lines
-    const moneylineMap = new Map<string, any>();
-    moneylineLines.forEach(line => {
-      if (!moneylineMap.has(line.gameId)) {
-        moneylineMap.set(line.gameId, []);
-      }
-      moneylineMap.get(line.gameId)!.push(line);
-    });
-
     // Track which games have odds (for reference, but we'll show all games)
     const gamesWithOdds = new Set([
       ...spreadLines.map(l => l.gameId),
@@ -436,8 +427,8 @@ export async function GET(request: NextRequest) {
         
         // Get moneyline prices from market
         const gameMoneylineLines = moneylineMap.get(game.gameId) || [];
-        const homeMLPrice = gameMoneylineLines.find(ml => ml.teamId === game.homeTeamId)?.lineValue ?? null;
-        const awayMLPrice = gameMoneylineLines.find(ml => ml.teamId === game.awayTeamId)?.lineValue ?? null;
+        const homeMLPrice = gameMoneylineLines.find((ml: any) => ml.teamId === game.homeTeamId)?.lineValue ?? null;
+        const awayMLPrice = gameMoneylineLines.find((ml: any) => ml.teamId === game.awayTeamId)?.lineValue ?? null;
         
         if (modelSpreadHma !== null && Number.isFinite(modelSpreadHma) && Math.abs(modelSpreadHma) <= 24.0) {
           // Calculate win probabilities from spread using sigmoid
