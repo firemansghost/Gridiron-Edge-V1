@@ -2417,97 +2417,111 @@ export async function GET(
           const modelDogTeamId = modelFavorsHome ? game.awayTeamId : (modelFavorsAway ? game.homeTeamId : dogTeamId);
           const modelDogTeamName = modelFavorsHome ? game.awayTeam.name : (modelFavorsAway ? game.homeTeam.name : dogTeamName);
           
-          // Model probabilities from finalSpreadWithOverlay (home-minus-away)
-          // Map to favorite/dog based on modelFavTeamId
-          const modelFavProb = modelFavTeamId === game.homeTeamId ? modelHomeWinProb : modelAwayWinProb;
-          const modelDogProb = 1 - modelFavProb;
+          // ============================================
+          // SCORCHED EARTH: Clean Moneyline Value Calculation
+          // ============================================
+          // 1. Get Market Implied Probabilities for Home and Away
+          // Map moneyline prices to home/away teams
+          const homeMLPrice = moneylineFavoriteTeamId === game.homeTeamId ? moneylineFavoritePrice : moneylineDogPrice;
+          const awayMLPrice = moneylineFavoriteTeamId === game.homeTeamId ? moneylineDogPrice : moneylineFavoritePrice;
           
-          // Market probabilities (based on market favorite, not model favorite)
-          const marketFavTeamId = moneylineFavoriteTeamId;
-          const marketFavTeamName = marketFavTeamId === game.homeTeamId ? game.homeTeam.name : game.awayTeam.name;
-          const marketDogTeamId = moneylineDogTeamId;
-          const marketDogTeamName = marketDogTeamId === game.homeTeamId ? game.homeTeam.name : game.awayTeam.name;
+          // Calculate implied probabilities from American odds
+          const impliedHome = homeMLPrice !== null ? americanToProb(homeMLPrice)! : null;
+          const impliedAway = awayMLPrice !== null ? americanToProb(awayMLPrice)! : null;
           
-          // Get market probabilities for both teams
-          const marketMLDogProb = moneylineDogPrice !== null ? americanToProb(moneylineDogPrice)! : (1 - marketMLFavProb);
+          // 2. Get Model Probabilities (already calculated from spread)
+          const homeModelProb = modelHomeWinProb; // e.g., 0.817 for Oklahoma
+          const awayModelProb = modelAwayWinProb; // e.g., 0.183 for Missouri
           
-          // Calculate value for favorite and dog separately (from model's perspective)
-          // Model favorite value: compare model fav prob vs market prob for that team
-          const modelFavMarketProb = marketFavTeamId === modelFavTeamId ? marketMLFavProb : marketMLDogProb;
-          const favoriteValuePercent = (modelFavProb - modelFavMarketProb) * 100;
+          // 3. Calculate Value for Both Sides
+          const homeValue = impliedHome !== null ? (homeModelProb - impliedHome) : null;
+          const awayValue = impliedAway !== null ? (awayModelProb - impliedAway) : null;
+          const homeValuePercent = homeValue !== null ? homeValue * 100 : null;
+          const awayValuePercent = awayValue !== null ? awayValue * 100 : null;
           
-          // Model dog value: compare model dog prob vs market prob for that team
-          const modelDogMarketProb = marketDogTeamId === modelDogTeamId ? marketMLDogProb : marketMLFavProb;
-          const dogValuePercent = moneylineDogPrice !== null ? (modelDogProb - modelDogMarketProb) * 100 : null;
-          
-          // 3. Winprob vs spread coherence: If underdog and winProb >= 0.40 and market spread >= 14, suppress
-          if (dogValuePercent !== null && dogValuePercent > 0 && modelDogProb >= 0.40 && Math.abs(favoriteByRule.line) >= 14) {
-          mlSuppressionReason = `Win probability vs spread incoherent: Underdog has ${(modelDogProb * 100).toFixed(1)}% win prob but market spread is ${Math.abs(favoriteByRule.line).toFixed(1)} pts`;
-          moneylinePickTeam = null;
-          moneylinePickPrice = null;
-          valuePercent = null;
-          console.log(`[Game ${gameId}] 🚫 ML suppressed (winprob vs spread incoherent):`, {
-            modelDogProb: (modelDogProb * 100).toFixed(1) + '%',
-            marketSpread: favoriteByRule.line,
-            reason: mlSuppressionReason
+          console.log(`[Game ${gameId}] 🎯 Clean ML Value Calculation:`, {
+            homeTeam: game.homeTeam.name,
+            awayTeam: game.awayTeam.name,
+            homeMLPrice: homeMLPrice,
+            awayMLPrice: awayMLPrice,
+            impliedHome: impliedHome?.toFixed(3),
+            impliedAway: impliedAway?.toFixed(3),
+            homeModelProb: homeModelProb.toFixed(3),
+            awayModelProb: awayModelProb.toFixed(3),
+            homeValuePercent: homeValuePercent?.toFixed(2),
+            awayValuePercent: awayValuePercent?.toFixed(2)
           });
-        }
-        // 4. Determine pick: Choose the side with positive value, with sanity checks for longshots
-        else {
-          // CRITICAL: Be very conservative with longshots
-          // - Moderate longshots (+500 to +1000): Require > 10% value
-          // - Extreme longshots (> +1000): Require > 25% value (very high bar)
-          // - Super longshots (> +2000): Don't recommend regardless of value (too risky)
-          const isDogModerateLongshot = moneylineDogPrice !== null && moneylineDogPrice > 500 && moneylineDogPrice <= 1000;
-          const isDogExtremeLongshot = moneylineDogPrice !== null && moneylineDogPrice > 1000 && moneylineDogPrice <= 2000;
-          const isDogSuperLongshot = moneylineDogPrice !== null && moneylineDogPrice > 2000;
-          const isDogModerateValue = dogValuePercent !== null && dogValuePercent > 10;
-          const isDogExtremeValue = dogValuePercent !== null && dogValuePercent > 25;
           
-          if (favoriteValuePercent > 0 && (dogValuePercent === null || favoriteValuePercent >= dogValuePercent)) {
-            // Model favorite has positive value (and more value than dog, or dog not available)
-            moneylinePickTeam = modelFavTeamName;
-            // Get the market price for the model favorite team
-            const modelFavMarketPrice = modelFavTeamId === marketFavTeamId ? marketMLFavPrice : moneylineDogPrice;
-            moneylinePickPrice = modelFavMarketPrice;
-            valuePercent = favoriteValuePercent;
-          } else if (dogValuePercent !== null && dogValuePercent > 0) {
-            // Model dog has positive value - apply longshot restrictions
-            if (isDogSuperLongshot) {
-              // Never recommend super longshots (> +2000) - too risky regardless of value
-              moneylinePickTeam = null;
-              moneylinePickPrice = null;
-              valuePercent = null;
-              mlSuppressionReason = 'Super longshot (> +2000): Too risky regardless of value';
-            } else if (isDogExtremeLongshot && !isDogExtremeValue) {
-              // Extreme longshots (+1000 to +2000) need > 25% value
-              moneylinePickTeam = null;
-              moneylinePickPrice = null;
-              valuePercent = null;
-              mlSuppressionReason = `Extreme longshot (+${moneylineDogPrice}): Requires > 25% value (got ${dogValuePercent.toFixed(1)}%)`;
-            } else if (isDogModerateLongshot && !isDogModerateValue) {
-              // Moderate longshots (+500 to +1000) need > 10% value
-              moneylinePickTeam = null;
-              moneylinePickPrice = null;
-              valuePercent = null;
-              mlSuppressionReason = `Moderate longshot (+${moneylineDogPrice}): Requires > 10% value (got ${dogValuePercent.toFixed(1)}%)`;
-            } else {
-              // Dog has value and passes longshot checks
-              moneylinePickTeam = modelDogTeamName;
-              // Get the market price for the model dog team
-              const modelDogMarketPrice = modelDogTeamId === marketDogTeamId ? moneylineDogPrice : marketMLFavPrice;
-              moneylinePickPrice = modelDogMarketPrice;
-              valuePercent = dogValuePercent;
+          // 4. Pick the Winner (1% threshold)
+          const HARD_MIN_ML_VALUE = 0.01; // 1% minimum value threshold
+          let selectedSide: 'home' | 'away' | null = null;
+          let selectedValuePercent: number | null = null;
+          let selectedTeamName: string | null = null;
+          let selectedTeamId: string | null = null;
+          let selectedPrice: number | null = null;
+          
+          if (homeValuePercent !== null && homeValuePercent > HARD_MIN_ML_VALUE * 100) {
+            // Home has positive value
+            if (awayValuePercent === null || homeValuePercent >= awayValuePercent) {
+              selectedSide = 'home';
+              selectedValuePercent = homeValuePercent;
+              selectedTeamName = game.homeTeam.name;
+              selectedTeamId = game.homeTeamId;
+              selectedPrice = homeMLPrice;
             }
+          }
+          
+          if (awayValuePercent !== null && awayValuePercent > HARD_MIN_ML_VALUE * 100) {
+            // Away has positive value
+            if (selectedSide === null || awayValuePercent > selectedValuePercent!) {
+              selectedSide = 'away';
+              selectedValuePercent = awayValuePercent;
+              selectedTeamName = game.awayTeam.name;
+              selectedTeamId = game.awayTeamId;
+              selectedPrice = awayMLPrice;
+            }
+          }
+          
+          // 5. Set the pick variables
+          if (selectedSide !== null && selectedValuePercent !== null) {
+            moneylinePickTeam = selectedTeamName;
+            moneylinePickPrice = selectedPrice;
+            valuePercent = selectedValuePercent;
+            
+            // Determine if it's an underdog pick (market perspective)
+            const isMarketUnderdog = selectedTeamId !== moneylineFavoriteTeamId;
+            // Store for later use in calc_basis
+            const isUnderdogPickForCalc = isMarketUnderdog;
+            
+            console.log(`[Game ${gameId}] ✅ ML Pick Selected:`, {
+              team: selectedTeamName,
+              side: selectedSide,
+              valuePercent: selectedValuePercent.toFixed(2),
+              price: selectedPrice,
+              isMarketUnderdog
+            });
           } else {
-            // Neither side has positive value
-            // Don't recommend a moneyline bet
+            // No positive value on either side
             moneylinePickTeam = null;
             moneylinePickPrice = null;
             valuePercent = null;
             mlSuppressionReason = 'No positive value on either side';
+            console.log(`[Game ${gameId}] ❌ No ML pick:`, {
+              homeValuePercent: homeValuePercent?.toFixed(2),
+              awayValuePercent: awayValuePercent?.toFixed(2),
+              threshold: HARD_MIN_ML_VALUE * 100
+            });
           }
-          } // Close the "else" block that calculates value (line 2336)
+          
+          // Legacy variables for backward compatibility (not used in new logic)
+          const modelFavProb = modelFavTeamId === game.homeTeamId ? modelHomeWinProb : modelAwayWinProb;
+          const modelDogProb = 1 - modelFavProb;
+          const favoriteValuePercent = selectedSide === 'home' && moneylineFavoriteTeamId === game.homeTeamId ? selectedValuePercent : 
+                                      (selectedSide === 'away' && moneylineFavoriteTeamId === game.awayTeamId ? selectedValuePercent : null);
+          const dogValuePercent = selectedSide === 'home' && moneylineFavoriteTeamId === game.awayTeamId ? selectedValuePercent :
+                                 (selectedSide === 'away' && moneylineFavoriteTeamId === game.homeTeamId ? selectedValuePercent : null);
+          
+          // Old complex logic removed - replaced with clean value calculation above
         } // Close the "else" block from line 2310 (when finalSpreadWithOverlay is not null)
         
         // Grade thresholds: A ≥ 4%, B ≥ 2.5%, C ≥ 1.5%
