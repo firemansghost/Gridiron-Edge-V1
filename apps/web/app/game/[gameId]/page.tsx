@@ -742,15 +742,7 @@ export default function GameDetailPage() {
                 )}
               </div>
             )}
-            {/* PHASE 2.4: Debug pill (for eyeballing coherence) */}
-            {game.model_view?.ratings && game.model_view?.spread_lineage && (
-              <div className="text-xs text-gray-400 mb-3 font-mono bg-gray-50 border border-gray-200 rounded px-2 py-1 inline-block">
-                Used: {game.model_view.ratings.rating_used || 'base'} • 
-                Recency Δ: {game.model_view.ratings.recencyEffectPts?.toFixed(2) || '0.00'} • 
-                Final spread: {game.model_view.spread_lineage.final_spread_with_overlay >= 0 ? '+' : ''}{game.model_view.spread_lineage.final_spread_with_overlay?.toFixed(1) || 'N/A'} • 
-                Overlay: {game.model_view.spread_lineage.overlay_used >= 0 ? '+' : ''}{game.model_view.spread_lineage.overlay_used?.toFixed(1) || '0.0'}
-              </div>
-            )}
+            {/* Debug sections removed for cleaner UI */}
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* Spread Card - Core V1 Availability Check */}
@@ -847,18 +839,18 @@ export default function GameDetailPage() {
                           <>
                             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
                               <div className="flex items-center gap-4 flex-wrap">
-                                <div className="text-lg font-bold text-gray-900">
+                                <div className="text-xl font-extrabold text-gray-900">
                                   Edge: <span className="text-blue-600">{atsEdgeMagnitude.toFixed(1)} pts</span>
                                   {modelViewMode === 'raw' && rawAtsEdgePts !== null && Math.abs(rawAtsEdgePts - atsEdgePtsOfficial!) > 0.1 && (
                                     <span className="text-sm font-normal text-gray-500 ml-1">(raw: {Math.abs(rawAtsEdgePts).toFixed(1)} pts)</span>
                                   )}
                                 </div>
                                 {modelViewMode === 'raw' && modelView?.modelFavoriteLine !== null ? (
-                                  <div className="text-lg font-bold text-gray-900">
+                                  <div className="text-xl font-extrabold text-gray-900">
                                     Bet to: <span className="text-blue-600">{modelView.modelFavoriteLine.toFixed(1)}</span> <span className="text-sm font-normal text-gray-500">(raw)</span>
                                   </div>
                                 ) : game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && (
-                                  <div className="text-lg font-bold text-gray-900">
+                                  <div className="text-xl font-extrabold text-gray-900">
                                     Bet to: <span className="text-blue-600">{game.picks.spread.betTo.toFixed(1)}</span>
                                   </div>
                                 )}
@@ -948,22 +940,12 @@ export default function GameDetailPage() {
                     {/* Range text for PASS case - use model fair line */}
                     {(!game.picks.spread.bettablePick?.label || game.picks.spread.bettablePick?.suppressHeadline) && game.model_view?.modelFavoriteLine !== null && game.model_view?.modelFavoriteName && snapshot ? (
                       <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
-                        <span className="font-semibold">Raw model fair line</span> ≈ {game.model_view.modelFavoriteName} {game.model_view.modelFavoriteLine.toFixed(1)}. Current market line is {snapshot.favoriteLine.toFixed(1)} ({atsEdgeMagnitude.toFixed(1)} pts {game.model_view.modelFavoriteLine < snapshot.favoriteLine ? 'cheaper' : 'more expensive'}). Trust-Market rules cap this disagreement, so we treat the game as a pass instead of a play.
+                        <span className="font-semibold">Raw model fair line</span> ≈ {game.model_view.modelFavoriteName} {game.model_view.modelFavoriteLine.toFixed(1)}. Current market line is {snapshot.favoriteLine.toFixed(1)} ({atsEdgeMagnitude.toFixed(1)} pts {game.model_view.modelFavoriteLine < snapshot.favoriteLine ? 'cheaper' : 'more expensive'}). No official bet for this game.
                       </div>
                     ) : game.picks.spread.flip !== null && game.picks.spread.flip !== undefined && game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && game.picks.spread.bettablePick?.teamName && snapshot ? (
                       {/* Range text removed for cleaner UI */}
                     ) : null}
-                    {/* PHASE 2.4: Lineage Line (No-edge state) */}
-                    {game.model_view?.spread_lineage && (
-                      <div className="text-xs text-gray-500 mt-2 mb-2 border-t border-gray-200 pt-2">
-                        <span className="font-semibold">Used:</span> {game.model_view.spread_lineage.rating_source || 'base'} • 
-                        <span className="font-semibold"> HFA:</span> {game.model_view.spread_lineage.hfa_used?.toFixed(1) || '0.0'} • 
-                        <span className="font-semibold"> Model raw:</span> {game.model_view.spread_lineage.raw_model_spread_from_used?.toFixed(1) || 'N/A'} • 
-                        <span className="font-semibold"> Overlay:</span> {game.model_view.spread_lineage.overlay_used >= 0 ? '+' : ''}{game.model_view.spread_lineage.overlay_used?.toFixed(1) || '0.0'} → 
-                        <span className="font-semibold"> Final:</span> {game.model_view.spread_lineage.final_spread_with_overlay >= 0 ? '+' : ''}{game.model_view.spread_lineage.final_spread_with_overlay?.toFixed(1) || 'N/A'}
-                        <InfoTooltip content={`Model raw = rating_home_used (${game.model_view.spread_lineage.rating_home_used?.toFixed(1) || 'N/A'}) − rating_away_used (${game.model_view.spread_lineage.rating_away_used?.toFixed(1) || 'N/A'}) + HFA (${game.model_view.spread_lineage.hfa_used?.toFixed(1) || '0.0'}).`} />
-                      </div>
-                    )}
+                    {/* Debug sections removed for cleaner UI */}
                     {/* PHASE 2.4: Edge Consistency Check (No-edge state) - Dev only */}
                     {process.env.NODE_ENV !== 'production' && 
                      game.model_view?.edges?.atsEdgePts !== null && game.model_view?.spread_lineage?.overlay_used !== null && 
