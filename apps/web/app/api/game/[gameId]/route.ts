@@ -2831,14 +2831,18 @@ export async function GET(
     
     // Compute ATS edge
     // Note: When USE_CORE_V1 is true, we'll compute the edge in favorite-centric format
-    // after modelFavoriteLine is set. For now, compute in HMA for legacy mode.
+    // using Core V1 spread info and market snapshot (both available by this point)
     let atsEdge = 0;
-    if (!USE_CORE_V1 && finalImpliedSpread !== null && marketSpreadHma !== null) {
+    if (USE_CORE_V1 && coreV1SpreadInfo && market_snapshot.favoriteLine !== null) {
+      // V1: Compute edge directly from Core V1 favorite spread and market favorite line
+      // Both are in favorite-centric format (negative = favorite)
+      atsEdge = coreV1SpreadInfo.favoriteSpread - market_snapshot.favoriteLine;
+    } else if (!USE_CORE_V1 && finalImpliedSpread !== null && marketSpreadHma !== null) {
       // Legacy mode: compute edge from raw spread in HMA frame
       atsEdge = computeATSEdgeHma(finalImpliedSpread, marketSpreadHma);
     }
-    // When USE_CORE_V1 is true, atsEdge will be set later in favorite-centric format
-    const atsEdgeAbs = Math.abs(atsEdge);
+    // atsEdgeAbs will be recalculated after atsEdge is set in V1 mode (if not already set above)
+    let atsEdgeAbs = Math.abs(atsEdge);
     
     if (USE_CORE_V1 && finalImpliedSpread !== null && marketSpread !== null) {
       // V1: Use Core V1 spread directly (no overlay)
@@ -3473,9 +3477,12 @@ export async function GET(
     // In Trust-Market mode, edges are the capped overlays (already calculated above)
     // atsEdge = spreadOverlay (calculated line ~1358)
     // totalEdgePts = totalOverlay (calculated line ~1675)
-    // When USE_CORE_V1 is true, compute edge in favorite-centric format
-    if (USE_CORE_V1 && coreV1SpreadInfo && modelFavoriteLine !== null && market_snapshot.favoriteLine !== null) {
+    // When USE_CORE_V1 is true, edge was already calculated above using coreV1SpreadInfo
+    // This block is for legacy mode only (when USE_CORE_V1 is false)
+    if (!USE_CORE_V1 && modelFavoriteLine !== null && market_snapshot.favoriteLine !== null) {
       atsEdge = modelFavoriteLine - market_snapshot.favoriteLine;
+      // Recalculate atsEdgeAbs after setting atsEdge in legacy mode
+      atsEdgeAbs = Math.abs(atsEdge);
     }
     
     // Initialize ouPickInfo (will be populated later after totalPick is available)
