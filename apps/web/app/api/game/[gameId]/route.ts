@@ -2405,11 +2405,37 @@ export async function GET(
           }
           // Only calculate value if guards pass
           else {
-          // CRITICAL FIX: Determine model favorite/dog from finalSpreadWithOverlay (HMA format), not market favorite
+          // ============================================
+          // CRITICAL: Calculate Win Probabilities FIRST (before value calculation)
+          // ============================================
+          // We MUST calculate probabilities from finalSpreadWithOverlay BEFORE using them in value calc
           // finalSpreadWithOverlay is in HMA format (Home Minus Away):
           //   - Positive value (e.g., +9.4) = Home is favored (Home wins by that margin)
           //   - Negative value (e.g., -9.4) = Away is favored (Away wins by that margin)
           // We know finalSpreadWithOverlay is not null here due to the check above
+          if (finalSpreadWithOverlay !== null && Number.isFinite(finalSpreadWithOverlay)) {
+            // Convert spread to win probability using logistic function
+            // Formula: prob = 1 / (1 + 10^(spread / 14.5))
+            // finalSpreadWithOverlay is in HMA format: positive = home favored, negative = away favored
+            // For home: if spread is positive (home favored), home prob = 1 / (1 + 10^(-spread / 14.5))
+            const spreadForHome = -finalSpreadWithOverlay; // Flip sign: positive spread = home favored = positive for home prob
+            const homeProbRaw = 1 / (1 + Math.pow(10, spreadForHome / 14.5));
+            // Clamp to reasonable bounds [0.01, 0.99]
+            modelHomeWinProb = Math.max(0.01, Math.min(0.99, homeProbRaw));
+            modelAwayWinProb = 1 - modelHomeWinProb;
+            
+            console.log(`[Game ${gameId}] 🔥 ML Win Prob CALCULATED (BEFORE VALUE):`, {
+              finalSpreadWithOverlay: finalSpreadWithOverlay.toFixed(2),
+              modelHomeWinProb: modelHomeWinProb.toFixed(3),
+              modelAwayWinProb: modelAwayWinProb.toFixed(3),
+              homeTeam: game.homeTeam.name,
+              awayTeam: game.awayTeam.name
+            });
+          } else {
+            console.error(`[Game ${gameId}] ⚠️ CRITICAL: finalSpreadWithOverlay is null/invalid when calculating ML probs!`);
+          }
+          
+          // CRITICAL FIX: Determine model favorite/dog from finalSpreadWithOverlay (HMA format), not market favorite
           const modelFavorsHome = finalSpreadWithOverlay! > 0;
           const modelFavorsAway = finalSpreadWithOverlay! < 0;
           const modelFavTeamId = modelFavorsHome ? game.homeTeamId : (modelFavorsAway ? game.awayTeamId : favoriteByRule.teamId);
@@ -2429,8 +2455,8 @@ export async function GET(
           const impliedHome = homeMLPrice !== null ? americanToProb(homeMLPrice)! : null;
           const impliedAway = awayMLPrice !== null ? americanToProb(awayMLPrice)! : null;
           
-          // 2. Get Model Probabilities (already calculated from spread)
-          // CRITICAL: Verify these are NOT still 0.5 (default)
+          // 2. Get Model Probabilities (NOW CALCULATED ABOVE - guaranteed to be correct)
+          // CRITICAL: These are now calculated from finalSpreadWithOverlay BEFORE this point
           const homeModelProb = modelHomeWinProb; // e.g., 0.817 for Oklahoma
           const awayModelProb = modelAwayWinProb; // e.g., 0.183 for Missouri
           
