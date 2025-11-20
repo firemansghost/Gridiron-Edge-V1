@@ -2934,11 +2934,38 @@ export async function GET(
         // Compute Core V1 total using spread-driven overlay
         const ouPick = getOUPick(marketTotal, marketSpreadHmaForTotals, coreV1SpreadInfo.coreSpreadHma);
         finalImpliedTotal = ouPick.modelTotal;
+        
+        // CRITICAL FIX: Update validation flag AFTER calculation
+        // Check if the model total is valid (numeric, in points)
+        ou_model_valid = finalImpliedTotal !== null && 
+                         !isNaN(finalImpliedTotal) && 
+                         isFinite(finalImpliedTotal) &&
+                         finalImpliedTotal >= 15 && 
+                         finalImpliedTotal <= 120;
+        
+        // Clear ou_reason if model is valid
+        if (ou_model_valid) {
+          ou_reason = null;
+        } else {
+          // Set specific failure reason
+          if (finalImpliedTotal === null) {
+            ou_reason = 'Model total unavailable — missing market total or spread data';
+          } else if (finalImpliedTotal < 15 || finalImpliedTotal > 120) {
+            ou_reason = `Model returned ${finalImpliedTotal.toFixed(1)}, not in points (likely rate/ratio)`;
+          } else if (!isFinite(finalImpliedTotal) || isNaN(finalImpliedTotal)) {
+            ou_reason = `Model total invalid (NaN/inf)`;
+          } else {
+            ou_reason = 'Model total invalid';
+          }
+        }
+        
         console.log(`[Game ${gameId}] 📊 Core V1 Total computed:`, {
           marketTotal: marketTotal.toFixed(1),
           marketSpreadHma: marketSpreadHmaForTotals.toFixed(2),
           modelSpreadHma: coreV1SpreadInfo.coreSpreadHma.toFixed(2),
-          modelTotal: finalImpliedTotal !== null ? finalImpliedTotal.toFixed(1) : 'null'
+          modelTotal: finalImpliedTotal !== null ? finalImpliedTotal.toFixed(1) : 'null',
+          ou_model_valid,
+          ou_reason
         });
       } else {
         console.log(`[Game ${gameId}] ⚠️ Core V1 Total computation skipped:`, {
