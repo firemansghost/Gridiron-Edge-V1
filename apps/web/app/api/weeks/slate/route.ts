@@ -324,7 +324,7 @@ export async function GET(request: NextRequest) {
             fullGame.awayTeam.name,
             game.homeTeamId,
             game.awayTeamId,
-            2.0 // edgeFloor
+            0.1 // edgeFloor (raw model, minimal threshold)
           );
           
           spreadPick = atsPick.pickLabel;

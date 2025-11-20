@@ -45,7 +45,7 @@ async function getOfficialATSPick(
     return null;
   }
 
-  // Use Core V1 ATS pick helper (edge floor = 2.0)
+  // Use Core V1 ATS pick helper (edge floor = 0.1, raw model uncapped)
   const atsPick = getATSPick(
     modelSpreadHma,
     marketSpreadHma,
@@ -53,7 +53,7 @@ async function getOfficialATSPick(
     game.awayTeam.name,
     game.homeTeamId,
     game.awayTeamId,
-    2.0 // edgeFloor
+    0.1 // edgeFloor (raw model, minimal threshold to avoid exact ties)
   );
 
   if (!atsPick.pickLabel || !atsPick.recommendedTeamId) {

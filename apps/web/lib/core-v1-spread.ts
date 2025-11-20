@@ -294,7 +294,7 @@ export function computeATSEdgeHma(
  * @param awayTeamName - Away team name
  * @param homeTeamId - Home team ID
  * @param awayTeamId - Away team ID
- * @param edgeFloor - Minimum edge to show a pick (default 2.0)
+ * @param edgeFloor - Minimum edge to show a pick (default 0.1)
  * @returns Pick recommendation or null if edge too small
  */
 export function getATSPick(
@@ -304,7 +304,7 @@ export function getATSPick(
   awayTeamName: string,
   homeTeamId: string,
   awayTeamId: string,
-  edgeFloor: number = 2.0
+  edgeFloor: number = 0.1
 ): {
   pickLabel: string | null;
   edgePts: number;

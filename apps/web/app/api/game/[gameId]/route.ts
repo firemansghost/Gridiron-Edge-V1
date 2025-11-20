@@ -23,7 +23,7 @@ const LAMBDA_SPREAD = 0.25; // 25% weight to model for spreads (not used in V1)
 const LAMBDA_TOTAL = 0.35; // 35% weight for totals (not used in V1)
 const OVERLAY_CAP_SPREAD = 3.0; // ±3.0 pts max for spread overlay (not used in V1)
 const OVERLAY_CAP_TOTAL = 3.0; // ±3.0 pts max for total overlay (not used in V1)
-const OVERLAY_EDGE_FLOOR = 2.0; // Only show pick if overlay ≥ 2.0 pts
+const OVERLAY_EDGE_FLOOR = 0.1; // Only show pick if edge ≥ 0.1 pts (raw model, no threshold)
 const LARGE_DISAGREEMENT_THRESHOLD = 10.0; // Drop confidence grade if raw disagreement > 10 pts
 
 // === MINIMAL SAFETY PATCHES (Pre-Phase 2) ===
