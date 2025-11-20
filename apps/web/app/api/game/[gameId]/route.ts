@@ -2976,8 +2976,49 @@ export async function GET(
       const modelDogTeamIdFromSpread = modelFavorsHome ? game.awayTeamId : (modelFavorsAway ? game.homeTeamId : dogTeamId);
       
       // Map probabilities: if model favorite is home, use modelHomeWinProb; if away, use modelAwayWinProb
-      const modelFavProbFromSpread = modelFavTeamIdFromSpread === game.homeTeamId ? modelHomeWinProb : modelAwayWinProb;
-      const modelDogProbFromSpread = 1 - modelFavProbFromSpread;
+      // CRITICAL: Calculate both probabilities explicitly to avoid any swap issues
+      const homeProb = modelHomeWinProb;
+      const awayProb = modelAwayWinProb;
+      
+      // Determine which probability belongs to the favorite and which to the dog
+      let modelFavProbFromSpread: number;
+      let modelDogProbFromSpread: number;
+      
+      if (modelFavTeamIdFromSpread === game.homeTeamId) {
+        // Model favorite is home team
+        modelFavProbFromSpread = homeProb;
+        modelDogProbFromSpread = awayProb;
+      } else if (modelFavTeamIdFromSpread === game.awayTeamId) {
+        // Model favorite is away team
+        modelFavProbFromSpread = awayProb;
+        modelDogProbFromSpread = homeProb;
+      } else {
+        // Fallback: use higher probability as favorite
+        if (homeProb > awayProb) {
+          modelFavProbFromSpread = homeProb;
+          modelDogProbFromSpread = awayProb;
+        } else {
+          modelFavProbFromSpread = awayProb;
+          modelDogProbFromSpread = homeProb;
+        }
+        console.warn(`[Game ${gameId}] ⚠️ Model favorite team ID doesn't match home or away, using higher probability as favorite`);
+      }
+      
+      // SAFETY CHECK: Verify that modelFavProb is actually the higher probability
+      if (modelFavProbFromSpread < modelDogProbFromSpread) {
+        console.error(`[Game ${gameId}] ⚠️ PROBABILITY SWAP DETECTED - SWAPPING BACK:`, {
+          modelFavTeamId: modelFavTeamIdFromSpread,
+          modelFavProb: modelFavProbFromSpread,
+          modelDogProb: modelDogProbFromSpread,
+          modelHomeWinProb: homeProb,
+          modelAwayWinProb: awayProb,
+          finalSpreadWithOverlay: finalSpreadWithOverlay?.toFixed(2)
+        });
+        // Swap them back
+        const temp = modelFavProbFromSpread;
+        modelFavProbFromSpread = modelDogProbFromSpread;
+        modelDogProbFromSpread = temp;
+      }
       
       console.log(`[Game ${gameId}] 🎯 Moneyline Team Assignment (FIXED):`, {
         finalSpreadWithOverlay: finalSpreadWithOverlay?.toFixed(2),
