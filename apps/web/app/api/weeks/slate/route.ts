@@ -159,7 +159,6 @@ export async function GET(request: NextRequest) {
       }
       moneylineMap.get(line.gameId)!.push(line);
     });
-    ]);
 
     // Track which games have odds (for reference, but we'll show all games)
     const gamesWithOdds = new Set([
