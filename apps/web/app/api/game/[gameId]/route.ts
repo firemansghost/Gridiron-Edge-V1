@@ -56,6 +56,8 @@ export async function GET(
   { params }: { params: { gameId: string } }
 ) {
   const startTime = Date.now();
+  // HARD_MIN_THRESHOLD: Scorched earth approach - hardcode 0.1 to prevent any edge zeroing
+  const HARD_MIN_THRESHOLD = 0.1;
   try {
     const { gameId } = params;
     
@@ -2995,10 +2997,10 @@ export async function GET(
     // In V1 mode, use atsEdge sign; in legacy mode, use spreadOverlay sign
     const edgeSign = USE_CORE_V1 ? Math.sign(atsEdge) : Math.sign(spreadOverlay);
     const spreadBetTo = ats_inputs_ok && marketFavoriteLine !== null
-      ? marketFavoriteLine + edgeSign * OVERLAY_EDGE_FLOOR
+      ? marketFavoriteLine + edgeSign * HARD_MIN_THRESHOLD
       : null;
     const spreadFlip = ats_inputs_ok && marketFavoriteLine !== null
-      ? marketFavoriteLine - edgeSign * OVERLAY_EDGE_FLOOR
+      ? marketFavoriteLine - edgeSign * HARD_MIN_THRESHOLD
       : null;
 
     // Compute spread pick details (favorite-centric) - this is the model's favorite
@@ -3144,9 +3146,10 @@ export async function GET(
     // ============================================
     // Only show pick if edge >= 0.1 pts (raw model, minimal threshold)
     // This allows all actionable edges to be displayed
+    // HARD_MIN_THRESHOLD: Hardcoded to prevent any threshold overrides
     
-    const edgeFloor = OVERLAY_EDGE_FLOOR; // 0.1 pts minimum (raw model uncapped)
-    const hasSpreadEdge = atsEdgeAbs >= edgeFloor;
+    const edgeFloor = HARD_MIN_THRESHOLD; // Hardcoded 0.1 pts minimum (scorched earth)
+    const hasSpreadEdge = atsEdgeAbs >= HARD_MIN_THRESHOLD;
     
     // ============================================
     // EXTREME FAVORITE GUARD
@@ -5080,7 +5083,7 @@ export async function GET(
             betTo: bettablePick.betTo,
             flip: bettablePick.flip
           },
-          edgePts: atsEdge,
+          edgePts: atsEdge, // Use signed edge value (negative = favorite value, positive = dog value)
           betTo: bettablePick.betTo, // "Bet to" number
           flip: bettablePick.flip, // Flip point (where value switches to other side)
           favoritesDisagree: bettablePick.favoritesDisagree, // Flag when model ≠ market favorite
