@@ -183,7 +183,7 @@ export function computeBettableSpreadPick(
   awayTeamId: string,
   awayTeamName: string,
   atsEdge: number,
-  edgeFloor: number = 2.0 // Minimum edge to show a pick
+  edgeFloor: number = 0.1 // Minimum edge to show a pick (raw model uncapped)
 ) {
   const modelFC = convertToFavoriteCentric(modelSpread, homeTeamId, homeTeamName, awayTeamId, awayTeamName);
   const marketFC = convertToFavoriteCentric(marketSpread, homeTeamId, homeTeamName, awayTeamId, awayTeamName);
@@ -250,7 +250,7 @@ export function computeBettableSpreadPick(
 export function computeTotalBetTo(
   modelTotal: number,
   marketTotal: number,
-  edgeFloor: number = 2.0
+  edgeFloor: number = 0.1 // Minimum edge threshold (raw model uncapped)
 ): number | null {
   const edge = modelTotal - marketTotal; // Positive = Over, Negative = Under
   if (Math.abs(edge) < edgeFloor) {

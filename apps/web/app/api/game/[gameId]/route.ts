@@ -2992,12 +2992,13 @@ export async function GET(
     //   If o < 0 (favorite pick): flip = m + floor = -10.5 + 2.0 = -8.5 (where dog becomes bet)
     //   If o > 0 (dog pick): flip = m - floor = -10.5 - 2.0 = -12.5 (where favorite becomes bet)
     const marketFavoriteLine = favoriteByRule.line; // Favorite-centric, negative
-    const overlaySign = Math.sign(spreadOverlay);
+    // In V1 mode, use atsEdge sign; in legacy mode, use spreadOverlay sign
+    const edgeSign = USE_CORE_V1 ? Math.sign(atsEdge) : Math.sign(spreadOverlay);
     const spreadBetTo = ats_inputs_ok && marketFavoriteLine !== null
-      ? marketFavoriteLine + overlaySign * OVERLAY_EDGE_FLOOR
+      ? marketFavoriteLine + edgeSign * OVERLAY_EDGE_FLOOR
       : null;
     const spreadFlip = ats_inputs_ok && marketFavoriteLine !== null
-      ? marketFavoriteLine - overlaySign * OVERLAY_EDGE_FLOOR
+      ? marketFavoriteLine - edgeSign * OVERLAY_EDGE_FLOOR
       : null;
 
     // Compute spread pick details (favorite-centric) - this is the model's favorite
@@ -3154,10 +3155,11 @@ export async function GET(
     // CRITICAL: Use spread points only (not price) - marketSpread is already validated to be < 50
     const isExtremeFavorite = marketSpread !== null && Math.abs(marketSpread) >= 21;
     
-    // Determine if overlay direction points to the dog
-    // If marketSpread < 0 (home favored), spreadOverlay > 0 means model likes away (dog)
-    // If marketSpread > 0 (away favored), spreadOverlay < 0 means model likes home (dog)
-    const overlayFavorsDog = marketSpread !== null && ((marketSpread < 0 && spreadOverlay > 0) || (marketSpread > 0 && spreadOverlay < 0));
+    // Determine if edge direction points to the dog
+    // In V1 mode: atsEdge > 0 means model likes dog (value on dog), < 0 means model likes favorite
+    // In legacy mode: spreadOverlay > 0 means model likes dog, < 0 means model likes favorite
+    const edgeValue = USE_CORE_V1 ? atsEdge : spreadOverlay;
+    const overlayFavorsDog = marketSpread !== null && edgeValue > 0;
     
     // Block dog headline if extreme favorite AND overlay points to dog
     const blockDogHeadline = isExtremeFavorite && overlayFavorsDog && hasSpreadEdge;
@@ -3211,9 +3213,11 @@ export async function GET(
         reason: 'Overlay points to 20+ pt dog - suppressing headline but keeping range'
       });
     } else {
-      // CRITICAL FIX: Use overlay sign as single source of truth for pick side
-      // overlay_used < 0 means favorite side pick, > 0 means dog side pick
-      const pickSide = spreadOverlay < 0 ? 'favorite' : 'dog';
+      // CRITICAL FIX: Use edge sign as single source of truth for pick side (V1 mode uses atsEdge, legacy uses spreadOverlay)
+      // In V1 mode: atsEdge < 0 means favorite side pick (model thinks favorite should lay more), > 0 means dog side pick
+      // In legacy mode: spreadOverlay < 0 means favorite side pick, > 0 means dog side pick
+      const edgeSign = USE_CORE_V1 ? Math.sign(atsEdge) : Math.sign(spreadOverlay);
+      const pickSide = edgeSign < 0 ? 'favorite' : 'dog';
       const pickTeamId = pickSide === 'favorite' ? favoriteByRule.teamId : dogTeamId;
       const pickTeamName = pickSide === 'favorite' ? favoriteByRule.teamName : dogTeamName;
       const pickLine = pickSide === 'favorite' ? favoriteByRule.line : dogLine; // favoriteLine is negative, dogLine is positive
