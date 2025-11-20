@@ -94,9 +94,9 @@ export default function PicksPage() {
 
   // Group games by confidence tier
   const groupedGames = {
-    A: games.filter(g => g.confidence === 'A').sort((a, b) => (b.maxEdge || 0) - (a.maxEdge || 0)),
-    B: games.filter(g => g.confidence === 'B').sort((a, b) => (b.maxEdge || 0) - (a.maxEdge || 0)),
-    C: games.filter(g => g.confidence === 'C').sort((a, b) => (b.maxEdge || 0) - (a.maxEdge || 0)),
+    A: games.filter(g => g.confidence === 'A').sort((a, b) => (b.maxEdge ?? 0) - (a.maxEdge ?? 0)),
+    B: games.filter(g => g.confidence === 'B').sort((a, b) => (b.maxEdge ?? 0) - (a.maxEdge ?? 0)),
+    C: games.filter(g => g.confidence === 'C').sort((a, b) => (b.maxEdge ?? 0) - (a.maxEdge ?? 0)),
   };
 
   const formatKickoff = (dateString: string) => {
@@ -149,7 +149,7 @@ export default function PicksPage() {
     // Model spread from API is in HMA format, convert to favorite-centric for display
     // If modelSpread is positive (e.g., +9.4), that means home is favored by 9.4
     // In favorite-centric: home favorite = negative, so -9.4
-    const modelSpreadFC = game.modelSpread !== null ? -game.modelSpread : null;
+    const modelSpreadFC = game.modelSpread !== null && game.modelSpread !== undefined ? -game.modelSpread : null;
     
     return (
       <Link
@@ -186,7 +186,7 @@ export default function PicksPage() {
                 </div>
               </div>
             )}
-            {game.maxEdge !== null && (
+            {game.maxEdge !== null && game.maxEdge !== undefined && (
               <div>
                 <div className="text-sm text-gray-600 mb-1">Edge</div>
                 <div className="text-lg font-bold text-green-600">
@@ -208,7 +208,7 @@ export default function PicksPage() {
           <ErrorState
             title="Unable to Load Picks"
             message={error}
-            onRetry={fetchSlate}
+            onRetry={fetchCurrentWeekAndSlate}
           />
         </div>
         <Footer />
