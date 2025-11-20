@@ -24,7 +24,6 @@ import { LineSparkline } from '@/components/LineSparkline';
 import { GameDetailSkeleton } from '@/components/GameDetailSkeleton';
 import { TOOLTIP_CONTENT } from '@/lib/tooltip-content';
 import { TeamLogo } from '@/components/TeamLogo';
-import { TrustMarketExplainer } from '@/components/TrustMarketExplainer';
 import { ModelViewModeToggle } from '@/components/ModelViewModeToggle';
 import { useModelViewMode } from '@/contexts/ModelViewModeContext';
 
@@ -846,36 +845,25 @@ export default function GameDetailPage() {
                         ) : (
                           /* Case B: Official edge > 0 */
                           <>
-                            <div className="flex items-center gap-2 mb-2">
-                              <span className="text-sm text-gray-600">
-                                Edge: <span className="font-semibold text-blue-600">{atsEdgeMagnitude.toFixed(1)} pts</span>
-                                {modelViewMode === 'raw' && rawAtsEdgePts !== null && Math.abs(rawAtsEdgePts - atsEdgePtsOfficial!) > 0.1 && (
-                                  <span className="text-xs text-gray-500 ml-1">(raw: {Math.abs(rawAtsEdgePts).toFixed(1)} pts)</span>
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+                              <div className="flex items-center gap-4 flex-wrap">
+                                <div className="text-lg font-bold text-gray-900">
+                                  Edge: <span className="text-blue-600">{atsEdgeMagnitude.toFixed(1)} pts</span>
+                                  {modelViewMode === 'raw' && rawAtsEdgePts !== null && Math.abs(rawAtsEdgePts - atsEdgePtsOfficial!) > 0.1 && (
+                                    <span className="text-sm font-normal text-gray-500 ml-1">(raw: {Math.abs(rawAtsEdgePts).toFixed(1)} pts)</span>
+                                  )}
+                                </div>
+                                {modelViewMode === 'raw' && modelView?.modelFavoriteLine !== null ? (
+                                  <div className="text-lg font-bold text-gray-900">
+                                    Bet to: <span className="text-blue-600">{modelView.modelFavoriteLine.toFixed(1)}</span> <span className="text-sm font-normal text-gray-500">(raw)</span>
+                                  </div>
+                                ) : game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && (
+                                  <div className="text-lg font-bold text-gray-900">
+                                    Bet to: <span className="text-blue-600">{game.picks.spread.betTo.toFixed(1)}</span>
+                                  </div>
                                 )}
-                              </span>
-                              {modelViewMode === 'raw' && modelView?.modelFavoriteLine !== null ? (
-                                <span className="text-sm text-gray-600">
-                                  Bet to: <span className="font-semibold">{modelView.modelFavoriteLine.toFixed(1)}</span> (raw)
-                                </span>
-                              ) : game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && (
-                                <>
-                                  {' • '}
-                                  <span className="text-sm text-gray-600">
-                                    Bet to: <span className="font-semibold">{game.picks.spread.betTo.toFixed(1)}</span>
-                                  </span>
-                                </>
-                              )}
-                            </div>
-                            {/* RANGE: Use actual pick direction from bettablePick */}
-                            {game.picks.spread.flip !== null && game.picks.spread.flip !== undefined && game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && game.picks.spread.bettablePick?.teamName && (
-                              <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
-                                <span className="font-semibold">Range:</span> Value on {game.picks.spread.bettablePick.teamName} down to {game.picks.spread.betTo.toFixed(1)}; flips to {
-                                  game.picks.spread.bettablePick.teamName === snapshot.favoriteTeamName 
-                                    ? snapshot.dogTeamName 
-                                    : snapshot.favoriteTeamName
-                                } at {game.picks.spread.flip > 0 ? `+${game.picks.spread.flip.toFixed(1)}` : game.picks.spread.flip.toFixed(1)}
                               </div>
-                            )}
+                            </div>
                           </>
                         )}
                       </>
@@ -886,25 +874,7 @@ export default function GameDetailPage() {
                           : 'Market line unavailable or inconsistent — bet-to/flip suppressed'}
                       </div>
                     )}
-                    {/* PHASE 2.4: Lineage Line */}
-                    {game.model_view?.spread_lineage && (
-                      <div className="text-xs text-gray-500 mt-2 mb-2 border-t border-gray-200 pt-2">
-                        <span className="font-semibold">Used:</span> {game.model_view.spread_lineage.rating_source || 'base'} • 
-                        <span className="font-semibold"> HFA:</span> {game.model_view.spread_lineage.hfa_used?.toFixed(1) || '0.0'} • 
-                        <span className="font-semibold"> Model raw:</span> {game.model_view.spread_lineage.raw_model_spread_from_used?.toFixed(1) || 'N/A'} • 
-                        <span className="font-semibold"> Overlay:</span> {game.model_view.spread_lineage.overlay_used >= 0 ? '+' : ''}{game.model_view.spread_lineage.overlay_used?.toFixed(1) || '0.0'} → 
-                        <span className="font-semibold"> Final:</span> {game.model_view.spread_lineage.final_spread_with_overlay >= 0 ? '+' : ''}{game.model_view.spread_lineage.final_spread_with_overlay?.toFixed(1) || 'N/A'}
-                        <InfoTooltip content={`Model raw = rating_home_used (${game.model_view.spread_lineage.rating_home_used?.toFixed(1) || 'N/A'}) − rating_away_used (${game.model_view.spread_lineage.rating_away_used?.toFixed(1) || 'N/A'}) + HFA (${game.model_view.spread_lineage.hfa_used?.toFixed(1) || '0.0'}).`} />
-                      </div>
-                    )}
-                    {/* PHASE 2.4: Edge Consistency Check - Dev only */}
-                    {process.env.NODE_ENV !== 'production' && 
-                     game.model_view?.edges?.atsEdgePts !== null && game.model_view?.spread_lineage?.overlay_used !== null && 
-                     Math.abs(game.model_view.edges.atsEdgePts - game.model_view.spread_lineage.overlay_used) > 0.01 && (
-                      <div className="text-xs text-yellow-700 bg-yellow-50 border border-yellow-300 rounded px-2 py-1 mb-2">
-                        ⚠️ Overlay mismatch (dev only): edge={game.model_view.edges.atsEdgePts.toFixed(2)} vs overlay_used={game.model_view.spread_lineage.overlay_used.toFixed(2)}
-                      </div>
-                    )}
+                    {/* Debug sections removed for cleaner UI */}
                     {/* PHASE 2.4: Recency Chip */}
                     {game.model_view?.ratings && (
                       <div className="flex items-center gap-2 mb-2">
@@ -925,29 +895,22 @@ export default function GameDetailPage() {
                       {game.picks.spread.rationale}
                     </div>
                   )}
-                  {/* Trust-Market Overlay Note */}
-                  {game.picks.spread.overlay && (
-                    <div className="text-xs text-gray-600 mt-2 border-t border-gray-200 pt-2">
-                      <div className="mb-1">
-                        <span className="font-semibold">Model overlay:</span> {game.picks.spread.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.spread.overlay.overlayValue.toFixed(1)} pts (cap ±{game.picks.spread.overlay.cap})
-                      </div>
-                      {/* Yellow banner for extreme favorite dog picks */}
-                      {game.picks.spread.bettablePick?.extremeFavoriteBlocked && (
-                        <div className="mt-2 text-yellow-800 bg-yellow-50 border border-yellow-300 rounded p-2 flex items-start gap-2">
-                          <span className="text-lg">🚫</span>
-                          <span className="flex-1">
-                            <span className="font-semibold">Extreme favorite game:</span> Model overlay favors the underdog, but we don't recommend 20+ point dogs. Range guidance provided.
-                          </span>
-                        </div>
-                      )}
-                      {game.picks.spread.overlay.confidenceDegraded && (
-                        <div className="mt-2 text-yellow-800 bg-yellow-50 border border-yellow-300 rounded p-2 flex items-start gap-2">
-                          <span className="text-lg">⚠️</span>
-                          <span className="flex-1">
-                            <span className="font-semibold">Large raw disagreement:</span> Model spread differs from market by {game.picks.spread.overlay.rawDisagreement.toFixed(1)} pts.
-                          </span>
-                        </div>
-                      )}
+                  {/* Extreme favorite warning (keep for user safety) */}
+                  {game.picks.spread.bettablePick?.extremeFavoriteBlocked && (
+                    <div className="mt-2 text-yellow-800 bg-yellow-50 border border-yellow-300 rounded p-2 flex items-start gap-2">
+                      <span className="text-lg">🚫</span>
+                      <span className="flex-1">
+                        <span className="font-semibold">Extreme favorite game:</span> Model favors the underdog, but we don't recommend 20+ point dogs.
+                      </span>
+                    </div>
+                  )}
+                  {/* Large disagreement warning (keep for user awareness) */}
+                  {game.picks.spread.overlay?.confidenceDegraded && (
+                    <div className="mt-2 text-yellow-800 bg-yellow-50 border border-yellow-300 rounded p-2 flex items-start gap-2">
+                      <span className="text-lg">⚠️</span>
+                      <span className="flex-1">
+                        <span className="font-semibold">Large disagreement:</span> Model spread differs from market by {game.picks.spread.overlay.rawDisagreement.toFixed(1)} pts.
+                      </span>
                     </div>
                   )}
                   {game.clvHint?.spreadDrift?.significant && (
@@ -988,14 +951,7 @@ export default function GameDetailPage() {
                         <span className="font-semibold">Raw model fair line</span> ≈ {game.model_view.modelFavoriteName} {game.model_view.modelFavoriteLine.toFixed(1)}. Current market line is {snapshot.favoriteLine.toFixed(1)} ({atsEdgeMagnitude.toFixed(1)} pts {game.model_view.modelFavoriteLine < snapshot.favoriteLine ? 'cheaper' : 'more expensive'}). Trust-Market rules cap this disagreement, so we treat the game as a pass instead of a play.
                       </div>
                     ) : game.picks.spread.flip !== null && game.picks.spread.flip !== undefined && game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && game.picks.spread.bettablePick?.teamName && snapshot ? (
-                      /* Range text for official edge case - use actual pick direction */
-                      <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
-                        <span className="font-semibold">Range:</span> Value on {game.picks.spread.bettablePick.teamName} down to {game.picks.spread.betTo.toFixed(1)}; flips to {
-                          game.picks.spread.bettablePick.teamName === snapshot.favoriteTeamName 
-                            ? snapshot.dogTeamName 
-                            : snapshot.favoriteTeamName
-                        } at {game.picks.spread.flip > 0 ? `+${game.picks.spread.flip.toFixed(1)}` : game.picks.spread.flip.toFixed(1)}
-                      </div>
+                      {/* Range text removed for cleaner UI */}
                     ) : null}
                     {/* PHASE 2.4: Lineage Line (No-edge state) */}
                     {game.model_view?.spread_lineage && (
@@ -1031,16 +987,7 @@ export default function GameDetailPage() {
                         )}
                       </div>
                     )}
-                    {game.picks?.spread?.overlay && (() => {
-                      const overlayAbs = Math.abs(game.picks.spread.overlay.overlayValue);
-                      const edgeFloor = game.picks.spread.overlay.edge_floor_pts || 0.1;
-                      const meetsFloor = overlayAbs >= edgeFloor;
-                      return (
-                        <div className="text-xs text-gray-600 mt-2 border-t border-gray-200 pt-2">
-                          <span className="font-semibold">Model overlay:</span> {game.picks.spread.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.spread.overlay.overlayValue.toFixed(1)} pts ({meetsFloor ? '≥' : '<'} {edgeFloor.toFixed(1)} threshold)
-                        </div>
-                      );
-                    })()}
+                    {/* Model overlay debug section removed for cleaner UI */}
                   </div>
                 )
               ) : (
@@ -1140,20 +1087,11 @@ export default function GameDetailPage() {
                     {/* PHASE 2.4: Range line */}
                     {game.validation?.ou_model_valid && game.picks?.total?.flip !== null && game.picks?.total?.flip !== undefined && game.picks?.total?.betTo !== null && (
                       <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
-                        <span className="font-semibold">Range:</span> Value now to {game.picks.total.betTo.toFixed(1)}; flips to {ouValueSide === 'Over' ? 'Under' : 'Over'} at {game.picks.total.flip.toFixed(1)}
+                        {/* Range text removed for cleaner UI */}
                       </div>
                     )}
                     {/* PHASE 2.4: Model overlay info */}
-                    {game.picks?.total?.overlay && (() => {
-                      const overlayAbs = Math.abs(game.picks.total.overlay.overlay_used_pts || game.picks.total.overlay.overlayValue);
-                      const edgeFloor = game.picks.total.overlay.edge_floor_pts || 0.1;
-                      const meetsFloor = overlayAbs >= edgeFloor;
-                      return (
-                        <div className="text-xs text-gray-600 mt-2 border-t border-gray-200 pt-2">
-                          <span className="font-semibold">Model overlay:</span> {(game.picks.total.overlay.overlay_used_pts || game.picks.total.overlay.overlayValue) >= 0 ? '+' : ''}{(game.picks.total.overlay.overlay_used_pts || game.picks.total.overlay.overlayValue).toFixed(1)} pts (cap ±3.0) {meetsFloor ? '(≥' : '(<'} {edgeFloor.toFixed(1)} threshold)
-                        </div>
-                      );
-                    })()}
+                    {/* Model overlay debug section removed for cleaner UI */}
                     {/* PHASE 2.4: Overlay calc disabled note */}
                     {modelViewMode === 'official' && totalsAvailableButDisabled && (
                       <div className="text-xs text-gray-500 mt-2 italic border-t border-gray-200 pt-2">
@@ -1237,12 +1175,7 @@ export default function GameDetailPage() {
                       ⚠ Experimental totals — not an official Trust-Market pick.
                     </div>
                   )}
-                  {/* RANGE: Flip Point - Always show when ou_model_valid === true */}
-                  {game.validation?.ou_model_valid && game.picks.total?.flip !== null && game.picks.total?.flip !== undefined && game.picks.total.betTo !== null && (
-                    <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
-                      <span className="font-semibold">Range:</span> Value now to {game.picks.total.betTo.toFixed(1)}; flips to {ouValueSide === 'Over' ? 'Under' : 'Over'} at {game.picks.total.flip.toFixed(1)}
-                    </div>
-                  )}
+                  {/* Range text removed for cleaner UI */}
                   {ouValueSide && (
                     <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 mb-2">
                       <InfoTooltip content="Edge = difference between model total and current market total." />
@@ -1260,20 +1193,13 @@ export default function GameDetailPage() {
                       {game.picks.total.rationale}
                     </div>
                   )}
-                  {/* Trust-Market Overlay Note */}
-                  {game.picks.total.overlay && (
-                    <div className="text-xs text-gray-600 mt-2 border-t border-gray-200 pt-2">
-                      <div className="mb-1">
-                        <span className="font-semibold">Model overlay:</span> {game.picks.total.overlay.overlayValue >= 0 ? '+' : ''}{game.picks.total.overlay.overlayValue.toFixed(1)} pts (cap ±{game.picks.total.overlay.cap})
-                      </div>
-                      {game.picks.total.overlay.confidenceDegraded && (
-                        <div className="mt-2 text-yellow-800 bg-yellow-50 border border-yellow-300 rounded p-2 flex items-start gap-2">
-                          <span className="text-lg">⚠️</span>
-                          <span className="flex-1">
-                            <span className="font-semibold">Large raw disagreement:</span> Model total differs from market by {game.picks.total.overlay.rawDisagreement.toFixed(1)} pts.
-                          </span>
-                        </div>
-                      )}
+                  {/* Large disagreement warning (keep for user awareness) */}
+                  {game.picks.total.overlay?.confidenceDegraded && (
+                    <div className="mt-2 text-yellow-800 bg-yellow-50 border border-yellow-300 rounded p-2 flex items-start gap-2">
+                      <span className="text-lg">⚠️</span>
+                      <span className="flex-1">
+                        <span className="font-semibold">Large disagreement:</span> Model total differs from market by {game.picks.total.overlay.rawDisagreement.toFixed(1)} pts.
+                      </span>
                     </div>
                   )}
                   {/* CLV hint */}
@@ -1485,8 +1411,6 @@ export default function GameDetailPage() {
             </div>
           )}
 
-          {/* Model Explainer */}
-          <TrustMarketExplainer />
 
           {/* Model vs Market Card */}
         <div className="bg-white p-6 rounded-lg shadow mb-8">
