@@ -207,28 +207,99 @@ export default function MethodologyPage() {
 
         <section>
           <h2 className="text-2xl font-semibold text-gray-900 mb-4">
-            Modeling (Seed v0)
+            Modeling (Balanced Composite V1)
           </h2>
           <div className="space-y-4">
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Power Ratings
+                Power Ratings: Balanced Composite
               </h3>
               <p className="text-gray-700 mb-4">
-                Our current model generates team power ratings based on historical performance, 
-                recent form, and strength of schedule. Ratings are updated after each game 
-                and used to calculate implied spreads.
+                Our V1 model generates team power ratings using a balanced four-pillar approach. 
+                Each component is normalized to Z-scores and weighted equally (25% each) to create 
+                a composite rating that captures multiple dimensions of team strength:
+              </p>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                <h4 className="font-medium text-blue-800 mb-3">The Four Pillars</h4>
+                <ul className="space-y-2 text-blue-700">
+                  <li>
+                    <strong>25% Talent:</strong> 247Sports Composite talent rating. Measures roster 
+                    potential and recruiting quality. Provides a stable baseline that reflects 
+                    program strength independent of current season performance.
+                  </li>
+                  <li>
+                    <strong>25% Efficiency:</strong> EPA (Expected Points Added) per play and Success Rate. 
+                    Captures down-to-down dominance and play-level effectiveness. EPA measures the 
+                    value created on each play, while Success Rate tracks consistency.
+                  </li>
+                  <li>
+                    <strong>25% Scoring:</strong> Net Points per Game (Points For minus Points Against). 
+                    Reflects margin of victory and overall team strength. Teams that consistently 
+                    outscore opponents demonstrate superior ability to finish drives and prevent scores.
+                  </li>
+                  <li>
+                    <strong>25% Results:</strong> Win Percentage. The ultimate measure of team success. 
+                    Accounts for game management, clutch performance, and the ability to win close games.
+                  </li>
+                </ul>
+                <p className="text-sm text-blue-600 mt-3">
+                  <strong>Normalization:</strong> Each metric is converted to Z-scores (standard deviations 
+                  from the mean) across all FBS teams, ensuring equal weight regardless of scale. The 
+                  composite is then scaled by a factor of 14.0 to convert to "points above average" 
+                  (where +14 represents approximately one standard deviation above average).
+                </p>
+              </div>
+            </div>
+            
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Spread Calculation
+              </h3>
+              <p className="text-gray-700 mb-4">
+                Spreads are derived directly from the power rating difference between teams, plus 
+                a home field advantage adjustment:
+              </p>
+              <div className="bg-gray-100 p-4 rounded-lg mb-4">
+                <p className="text-sm text-gray-700 font-mono mb-2">
+                  Spread (Home Minus Away) = (Home Rating - Away Rating) + HFA
+                </p>
+                <p className="text-xs text-gray-600">
+                  Where HFA (Home Field Advantage) = 2.0 points for home games, 0.0 for neutral sites.
+                </p>
+              </div>
+              <p className="text-gray-700 mb-4">
+                This direct calculation ensures that the spread reflects the model's assessment of 
+                team strength without additional overlays or market adjustments. The rating difference 
+                is already in "points above average" format, so the spread directly translates to 
+                expected margin of victory.
               </p>
             </div>
             
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Implied Lines
+                Betting Logic: Actionable Edge Threshold
               </h3>
               <p className="text-gray-700 mb-4">
-                We calculate implied spreads and totals by comparing our power ratings to 
-                market consensus. This helps identify potential edges where our model 
-                disagrees with market pricing.
+                The model identifies betting opportunities by comparing its predicted spread to the 
+                market consensus. An "edge" is the difference between the model's spread and the 
+                market line:
+              </p>
+              <div className="bg-gray-100 p-4 rounded-lg mb-4">
+                <p className="text-sm text-gray-700 font-mono mb-2">
+                  Edge = |Model Spread - Market Spread|
+                </p>
+              </div>
+              <p className="text-gray-700 mb-4">
+                <strong>0.1 Point Threshold:</strong> The model recommends a bet when the edge is 
+                at least 0.1 points. This minimal threshold ensures that any meaningful disagreement 
+                between the model and market is flagged as actionable. There are no caps, overlays, 
+                or decay factors—the model trusts its ratings completely.
+              </p>
+              <p className="text-gray-700 mb-4">
+                <strong>No Market Capping:</strong> Unlike previous versions, the V1 model does not 
+                apply "Trust-Market" safety layers. The model's spread is used directly, without 
+                capping edges or applying minimum thresholds above 0.1 points. This approach maximizes 
+                the model's predictive power while maintaining a low barrier for actionable picks.
               </p>
             </div>
             
@@ -236,21 +307,36 @@ export default function MethodologyPage() {
               <h3 className="text-lg font-medium text-gray-900 mb-2">
                 Confidence Tiers
               </h3>
+              <p className="text-gray-700 mb-4">
+                Bets are assigned confidence grades based on the magnitude of the edge:
+              </p>
               <ul className="list-disc pl-6 space-y-1 text-gray-700">
-                <li><strong>Tier A:</strong> High confidence (edge ≥ 3 points)</li>
-                <li><strong>Tier B:</strong> Medium confidence (edge 1-3 points)</li>
-                <li><strong>Tier C:</strong> Low confidence (edge &lt; 1 point)</li>
+                <li><strong>Grade A:</strong> High confidence (edge ≥ 4.0 points)</li>
+                <li><strong>Grade B:</strong> Medium confidence (edge 3.0 - 3.9 points)</li>
+                <li><strong>Grade C:</strong> Low confidence (edge 0.1 - 2.9 points)</li>
               </ul>
+              <p className="text-gray-700 mt-4">
+                The game's overall confidence grade is determined by the <strong>highest</strong> 
+                grade among all active bets (Spread, Total, Moneyline) for that matchup.
+              </p>
             </div>
             
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <h4 className="font-medium text-green-800 mb-2">Future Enhancements</h4>
-              <ul className="list-disc pl-6 space-y-1 text-green-700 text-sm">
-                <li>Injury report integration and adjustments</li>
-                <li>Weather impact modeling</li>
-                <li>Home field advantage quantification</li>
-                <li>Conference strength adjustments</li>
-              </ul>
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Moneyline & Totals
+              </h3>
+              <p className="text-gray-700 mb-4">
+                <strong>Moneyline:</strong> Win probabilities are derived from the spread using a 
+                standard sigmoid conversion (logistic function). The model compares its implied 
+                probability to the market's implied probability to identify value. Moneyline bets 
+                are only considered for games where the spread is ≤ 24 points (to avoid extreme 
+                favorites with unbettable odds).
+              </p>
+              <p className="text-gray-700 mb-4">
+                <strong>Totals:</strong> Over/Under picks are calculated using a spread-driven 
+                totals model that considers both offensive and defensive ratings, adjusted for 
+                game pace and scoring efficiency. The same 0.1 point edge threshold applies.
+              </p>
             </div>
           </div>
         </section>
