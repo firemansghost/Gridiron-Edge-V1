@@ -14,7 +14,7 @@ import { NextResponse } from 'next/server';
 // === V1 MODE CONFIGURATION ===
 // V1: Use Core V1 OLS spread directly (no trust-market overlay, no totals)
 const USE_CORE_V1 = true; // V1 mode: Core V1 is single source of truth
-const SHOW_TOTALS_PICKS = false; // Totals disabled for V1
+const SHOW_TOTALS_PICKS = true; // Totals enabled for V1
 
 // === LEGACY TRUST-MARKET MODE (disabled for V1) ===
 // Phase 1 Hotfix: Use market as baseline, apply small model overlays
@@ -3304,8 +3304,9 @@ export async function GET(
       shouldDegradeTotalConfidence = rawTotalDisagreement > LARGE_DISAGREEMENT_THRESHOLD;
       
       // Edge is the absolute overlay value
+      // Use HARD_MIN_THRESHOLD (0.1) for consistency with spread picks
       const totalEdgeAbs = Math.abs(totalOverlay);
-      hasTotalEdge = totalEdgeAbs >= OVERLAY_EDGE_FLOOR;
+      hasTotalEdge = totalEdgeAbs >= HARD_MIN_THRESHOLD;
       
       console.log(`[Game ${gameId}] 🎯 Trust-Market Total Overlay:`, {
         modelTotalPts: modelTotalPts.toFixed(2),
@@ -3343,10 +3344,10 @@ export async function GET(
     // This ensures UI can always show range guidance for transparency
     const totalEdgeAbs = totalEdgePts !== null ? Math.abs(totalEdgePts) : 0;
     const totalBetToCalc = ou_model_valid && marketTotal !== null
-      ? marketTotal + Math.sign(totalOverlay) * OVERLAY_EDGE_FLOOR
+      ? marketTotal + Math.sign(totalOverlay) * HARD_MIN_THRESHOLD
       : null;
     const totalFlip = ou_model_valid && marketTotal !== null
-      ? marketTotal - Math.sign(totalOverlay) * OVERLAY_EDGE_FLOOR
+      ? marketTotal - Math.sign(totalOverlay) * HARD_MIN_THRESHOLD
       : null;
     
     // ============================================
@@ -5134,7 +5135,7 @@ export async function GET(
           // SAFETY PATCH: Honest three-state UI flags
           has_market_total: marketTotal !== null,
           has_model_total: isModelTotalValid && finalImpliedTotal !== null && Number.isFinite(finalImpliedTotal),
-          meets_floor: isModelTotalValid && totalEdgePts !== null && Math.abs(totalEdgePts) >= OVERLAY_EDGE_FLOOR && SHOW_TOTALS_PICKS,
+          meets_floor: isModelTotalValid && totalEdgePts !== null && Math.abs(totalEdgePts) >= HARD_MIN_THRESHOLD && SHOW_TOTALS_PICKS,
           show_totals_picks: SHOW_TOTALS_PICKS, // Feature flag
           // Trust-Market Mode overlay diagnostics
           overlay: {

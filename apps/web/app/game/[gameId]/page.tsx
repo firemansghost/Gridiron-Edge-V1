@@ -625,11 +625,6 @@ export default function GameDetailPage() {
                       : 'Market line unavailable or inconsistent'
                   )}
                 </div>
-                {modelViewMode === 'official' && totalsAvailableButDisabled && (
-                  <div className="text-xs text-amber-700 mt-1 italic">
-                    No OU edge in Official mode — totals bets are disabled for the 2025 season.
-                  </div>
-                )}
               </div>
               <div className="bg-white p-3 rounded border border-blue-100">
                 <div className="text-xs text-gray-600 mb-1">Moneyline</div>
@@ -1038,16 +1033,7 @@ export default function GameDetailPage() {
                       </>
                     ) : (
                       <div className="text-sm text-gray-600 mb-2">
-                        {modelViewMode === 'official' && totalsAvailableButDisabled ? (
-                          <>
-                            No OU edge in Official mode — totals bets are disabled for the 2025 season.
-                            <div className="text-xs text-gray-500 mt-1 italic">
-                              Switch to the "Raw model" tab to see experimental totals leans.
-                            </div>
-                          </>
-                        ) : (
-                          game.validation?.ou_reason || 'No edge at current number — market ' + (snapshot?.marketTotal?.toFixed(1) ?? 'N/A')
-                        )}
+                        {game.validation?.ou_reason || 'No edge at current number — market ' + (snapshot?.marketTotal?.toFixed(1) ?? 'N/A')}
                       </div>
                     )}
                     {/* PHASE 2.4: Edge/Bet-to/Range lines (same style as ATS) - only show in Official mode */}
@@ -1075,20 +1061,16 @@ export default function GameDetailPage() {
                     {/* PHASE 2.4: Model overlay info */}
                     {/* Model overlay debug section removed for cleaner UI */}
                     {/* PHASE 2.4: Overlay calc disabled note */}
-                    {modelViewMode === 'official' && totalsAvailableButDisabled && (
+                    {/* Totals picks are now enabled */}
+                    {false && (
                       <div className="text-xs text-gray-500 mt-2 italic border-t border-gray-200 pt-2">
-                        No OU edge at current number — totals bets are disabled in Official mode for the 2025 season.
+                        {/* Removed disabled message */}
                         <div className="mt-1">
-                          Switch to Raw model to see the experimental totals lean.
+                          {/* Removed */}
                         </div>
                         <div className="mt-1 text-gray-400">
                           Overlay calc disabled; picks off until Phase 2.6
                         </div>
-                      </div>
-                    )}
-                    {modelViewMode === 'official' && !totalsAvailableButDisabled && !game.picks?.total?.show_totals_picks && (
-                      <div className="text-xs text-gray-500 mt-2 italic">
-                        Overlay calc disabled; picks off until Phase 2.6
                       </div>
                     )}
                   </div>
@@ -1512,16 +1494,6 @@ export default function GameDetailPage() {
                           Raw model only — OU bets are disabled in Official mode.
                         </div>
                       </>
-                    ) : modelViewMode === 'official' && totalsAvailableButDisabled ? (
-                      <>
-                        <div className="text-sm text-gray-600">—</div>
-                        <div className="text-xs text-amber-700 mt-1">
-                          No OU edge in Official mode — totals bets disabled for the 2025 season.
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1 italic">
-                          Switch to the "Raw model" tab to see experimental totals leans.
-                        </div>
-                      </>
                     ) : ouValueSide ? (
                       <div className={`text-sm font-medium flex items-center gap-1 ${ouEdgeSign >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                         <span aria-hidden="true">{ouEdgeSign >= 0 ? '↑ Over' : '↓ Under'}</span>
@@ -1809,13 +1781,6 @@ export default function GameDetailPage() {
                     ) : (
                       <span>No model total — missing inputs</span>
                     )}
-                  </div>
-                </>
-              ) : modelViewMode === 'official' && totalsAvailableButDisabled ? (
-                <>
-                  <div className="text-lg text-gray-400 mb-1">—</div>
-                  <div className="text-xs text-amber-700 mt-2">
-                    No OU edge in Official mode — totals bets disabled for the 2025 season.
                   </div>
                 </>
               ) : ouEdgeValue !== null ? (

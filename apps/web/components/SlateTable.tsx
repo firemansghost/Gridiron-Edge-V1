@@ -1574,12 +1574,7 @@ export default function SlateTable({
         </div>
       </div>
       
-      {/* Totals disabled note */}
-      {allGamesHaveNullTotals && (
-        <p className="mt-4 text-xs text-slate-500 text-center">
-          Totals model is disabled for the 2025 season — spread model only for now.
-        </p>
-      )}
+      {/* Totals are now enabled */}
     </div>
   );
 }
