@@ -3769,8 +3769,22 @@ export async function GET(
     };
 
     // For Core V1, we can compute ouPickInfo now (doesn't depend on totalPick)
-    if (USE_CORE_V1 && coreV1SpreadInfo && marketTotal !== null && marketSpreadHma !== null) {
-      const ouPick = getOUPick(marketTotal, marketSpreadHma, coreV1SpreadInfo.coreSpreadHma);
+    // CRITICAL FIX: Use marketSpreadHmaForTotals (derived) instead of marketSpreadHma (might be null)
+    // If marketSpreadHmaForTotals wasn't set earlier, derive it now
+    let marketSpreadHmaForOuPick = marketSpreadHma;
+    if (marketSpreadHmaForOuPick === null && market_snapshot.favoriteLine !== null) {
+      // Convert favorite-centric line to HMA format (Home Minus Away)
+      marketSpreadHmaForOuPick = (favoriteByRule.teamId === game.homeTeamId)
+        ? -market_snapshot.favoriteLine  // Home is favorite, flip sign: -(-7.5) = +7.5
+        : market_snapshot.favoriteLine; // Away is favorite, keep negative: -7.5
+      console.log(`[Game ${gameId}] 🔧 Derived marketSpreadHma for ouPickInfo:`, {
+        favoriteLine: market_snapshot.favoriteLine.toFixed(2),
+        derivedMarketSpreadHma: marketSpreadHmaForOuPick.toFixed(2)
+      });
+    }
+    
+    if (USE_CORE_V1 && coreV1SpreadInfo && marketTotal !== null && marketSpreadHmaForOuPick !== null) {
+      const ouPick = getOUPick(marketTotal, marketSpreadHmaForOuPick, coreV1SpreadInfo.coreSpreadHma);
       ouPickInfo = {
         modelTotal: ouPick.modelTotal,
         marketTotal: marketTotal,
