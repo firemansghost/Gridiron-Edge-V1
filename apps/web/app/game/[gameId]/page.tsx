@@ -1176,6 +1176,7 @@ export default function GameDetailPage() {
                     </details>
                   )}
                 </div>
+                ) : null
               ) : (
                 /* Invalid Inputs State - !has_market_total (market not available - shouldn't happen for live games) */
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
