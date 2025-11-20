@@ -2949,11 +2949,23 @@ export async function GET(
           ou_reason
         });
       } else {
+        // Calculation skipped - set validation flag and reason
+        ou_model_valid = false;
+        if (marketTotal === null) {
+          ou_reason = 'Model total unavailable — missing market total';
+        } else if (marketSpreadHmaForTotals === null) {
+          ou_reason = 'Model total unavailable — missing market spread data';
+        } else {
+          ou_reason = 'Model total unavailable — missing inputs';
+        }
+        
         console.log(`[Game ${gameId}] ⚠️ Core V1 Total computation skipped:`, {
           marketTotal: marketTotal,
           marketSpreadHma: marketSpreadHmaForTotals,
           hasCoreV1Spread: !!coreV1SpreadInfo,
-          favoriteLine: market_snapshot.favoriteLine
+          favoriteLine: market_snapshot.favoriteLine,
+          ou_model_valid,
+          ou_reason
         });
       }
     }
