@@ -247,7 +247,7 @@ async function loadTeamMetrics(season: number): Promise<TeamMetrics[]> {
 
   // Build metrics array
   const metrics: TeamMetrics[] = [];
-  for (const teamId of fbsTeamIds) {
+  for (const teamId of Array.from(fbsTeamIds)) {
     const stat = teamStats.get(teamId);
     if (!stat || stat.games === 0) continue;
 

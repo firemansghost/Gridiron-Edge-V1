@@ -192,9 +192,7 @@ async function main() {
       powerRating: 'desc',
     },
     take: 10,
-    include: {
-      // Note: TeamSeasonRating doesn't have direct relation, need to join manually
-    },
+    // Note: TeamSeasonRating doesn't have direct relation, need to join manually
   });
 
   // Get team names for top ratings
