@@ -3191,7 +3191,7 @@ export async function GET(
         teamName: null,
         line: null,
         label: null,
-        reasoning: `Extreme favorite game (${marketSpread !== null ? Math.abs(marketSpread).toFixed(1) : 'N/A'} pts). Model overlay ${spreadOverlay >= 0 ? '+' : ''}${spreadOverlay.toFixed(1)} pts favors the underdog, but we don't recommend 20+ point dogs. Range guidance provided.`,
+        reasoning: `Extreme favorite game (${marketSpread !== null ? Math.abs(marketSpread).toFixed(1) : 'N/A'} pts). Model edge ${atsEdgeAbs.toFixed(1)} pts favors the underdog, but we don't recommend 20+ point dogs. Range guidance provided.`,
         betTo: spreadBetTo,
         favoritesDisagree: false,
         suppressHeadline: true, // Flag for UI to show "No edge" headline but keep range
