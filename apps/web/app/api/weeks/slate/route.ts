@@ -18,7 +18,9 @@ interface SlateGame {
   kickoffLocal: string;
   status: 'final' | 'scheduled' | 'in_progress';
   awayTeamId: string;
+  awayTeamName: string;
   homeTeamId: string;
+  homeTeamName: string;
   awayScore: number | null;
   homeScore: number | null;
   closingSpread: {
@@ -228,7 +230,9 @@ export async function GET(request: NextRequest) {
         kickoffLocal,
         status,
         awayTeamId: game.awayTeam.id,
+        awayTeamName: game.awayTeam.name,
         homeTeamId: game.homeTeam.id,
+        homeTeamName: game.homeTeam.name,
         awayScore: game.awayScore,
         homeScore: game.homeScore,
         closingSpread,
