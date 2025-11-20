@@ -28,7 +28,7 @@ const LARGE_DISAGREEMENT_THRESHOLD = 10.0; // Drop confidence grade if raw disag
 
 // === MINIMAL SAFETY PATCHES (Pre-Phase 2) ===
 // Moneyline guards
-const ML_MAX_SPREAD = 7.0; // Only consider ML if |finalSpreadWithOverlay| <= 7
+const ML_MAX_SPREAD = 24.0; // Only consider ML if |finalSpreadWithOverlay| <= 24 (allows standard favorites like -10 to -14, blocks extreme -35+ favorites)
 const EXTREME_FAVORITE_THRESHOLD = 21; // Never recommend dog ML if |market favorite line| >= 21
 
 /**
@@ -2374,7 +2374,7 @@ export async function GET(
         // CRITICAL: Check guards in order - spread range FIRST, then extreme favorite, then coherence
         // These guards must run BEFORE calculating value percentages
         
-        // 1. Spread range guard: Only consider ML if |finalSpreadWithOverlay| <= 7
+        // 1. Spread range guard: Only consider ML if |finalSpreadWithOverlay| <= 24
         // This must be checked FIRST before any value calculations
         if (finalSpreadWithOverlay === null) {
           mlSuppressionReason = 'Model spread unavailable';
