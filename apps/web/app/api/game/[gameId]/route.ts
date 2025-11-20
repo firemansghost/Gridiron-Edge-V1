@@ -2430,8 +2430,18 @@ export async function GET(
           const impliedAway = awayMLPrice !== null ? americanToProb(awayMLPrice)! : null;
           
           // 2. Get Model Probabilities (already calculated from spread)
+          // CRITICAL: Verify these are NOT still 0.5 (default)
           const homeModelProb = modelHomeWinProb; // e.g., 0.817 for Oklahoma
           const awayModelProb = modelAwayWinProb; // e.g., 0.183 for Missouri
+          
+          // SAFETY CHECK: If probabilities are still at default (0.5), something is wrong
+          if (Math.abs(homeModelProb - 0.5) < 0.01 || Math.abs(awayModelProb - 0.5) < 0.01) {
+            console.error(`[Game ${gameId}] ⚠️ WARNING: Model probabilities still at default 0.5!`, {
+              modelHomeWinProb,
+              modelAwayWinProb,
+              finalSpreadWithOverlay: finalSpreadWithOverlay?.toFixed(2)
+            });
+          }
           
           // 3. Calculate Value for Both Sides
           const homeValue = impliedHome !== null ? (homeModelProb - impliedHome) : null;
@@ -2439,7 +2449,7 @@ export async function GET(
           const homeValuePercent = homeValue !== null ? homeValue * 100 : null;
           const awayValuePercent = awayValue !== null ? awayValue * 100 : null;
           
-          console.log(`[Game ${gameId}] 🎯 Clean ML Value Calculation:`, {
+          console.log(`[Game ${gameId}] 🎯 Clean ML Value Calculation (DEBUG):`, {
             homeTeam: game.homeTeam.name,
             awayTeam: game.awayTeam.name,
             homeMLPrice: homeMLPrice,
@@ -2448,8 +2458,13 @@ export async function GET(
             impliedAway: impliedAway?.toFixed(3),
             homeModelProb: homeModelProb.toFixed(3),
             awayModelProb: awayModelProb.toFixed(3),
+            homeValue: homeValue?.toFixed(4),
+            awayValue: awayValue?.toFixed(4),
             homeValuePercent: homeValuePercent?.toFixed(2),
-            awayValuePercent: awayValuePercent?.toFixed(2)
+            awayValuePercent: awayValuePercent?.toFixed(2),
+            'homeValue > 1%': homeValuePercent !== null && homeValuePercent > 1,
+            'awayValue > 1%': awayValuePercent !== null && awayValuePercent > 1,
+            'homeValue > awayValue': homeValuePercent !== null && awayValuePercent !== null && homeValuePercent > awayValuePercent
           });
           
           // 4. Pick the Winner (1% threshold)
@@ -2460,27 +2475,51 @@ export async function GET(
           let selectedTeamId: string | null = null;
           let selectedPrice: number | null = null;
           
-          if (homeValuePercent !== null && homeValuePercent > HARD_MIN_ML_VALUE * 100) {
-            // Home has positive value
-            if (awayValuePercent === null || homeValuePercent >= awayValuePercent) {
+          // CRITICAL FIX: Compare both values and pick the one with highest positive value
+          // Only consider sides with value > 1%
+          const homeHasValue = homeValuePercent !== null && homeValuePercent > HARD_MIN_ML_VALUE * 100;
+          const awayHasValue = awayValuePercent !== null && awayValuePercent > HARD_MIN_ML_VALUE * 100;
+          
+          if (homeHasValue && awayHasValue) {
+            // Both have positive value - pick the higher one
+            if (homeValuePercent! > awayValuePercent!) {
               selectedSide = 'home';
               selectedValuePercent = homeValuePercent;
               selectedTeamName = game.homeTeam.name;
               selectedTeamId = game.homeTeamId;
               selectedPrice = homeMLPrice;
-            }
-          }
-          
-          if (awayValuePercent !== null && awayValuePercent > HARD_MIN_ML_VALUE * 100) {
-            // Away has positive value
-            if (selectedSide === null || awayValuePercent > selectedValuePercent!) {
+            } else {
               selectedSide = 'away';
               selectedValuePercent = awayValuePercent;
               selectedTeamName = game.awayTeam.name;
               selectedTeamId = game.awayTeamId;
               selectedPrice = awayMLPrice;
             }
+          } else if (homeHasValue) {
+            // Only home has positive value
+            selectedSide = 'home';
+            selectedValuePercent = homeValuePercent;
+            selectedTeamName = game.homeTeam.name;
+            selectedTeamId = game.homeTeamId;
+            selectedPrice = homeMLPrice;
+          } else if (awayHasValue) {
+            // Only away has positive value
+            selectedSide = 'away';
+            selectedValuePercent = awayValuePercent;
+            selectedTeamName = game.awayTeam.name;
+            selectedTeamId = game.awayTeamId;
+            selectedPrice = awayMLPrice;
           }
+          
+          console.log(`[Game ${gameId}] 🔍 ML Selection Logic (DEBUG):`, {
+            homeHasValue,
+            awayHasValue,
+            homeValuePercent: homeValuePercent?.toFixed(2),
+            awayValuePercent: awayValuePercent?.toFixed(2),
+            selectedSide,
+            selectedTeamName,
+            selectedValuePercent: selectedValuePercent?.toFixed(2)
+          });
           
           // 5. Set the pick variables
           if (selectedSide !== null && selectedValuePercent !== null) {
