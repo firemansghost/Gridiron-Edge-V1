@@ -2958,12 +2958,34 @@ export async function GET(
     
     // CRITICAL: Now compute ML calc_basis with finalSpreadWithOverlayFC available
     if (moneyline !== null) {
-      // Determine model favorite/dog from finalSpreadWithOverlayFC
-      const modelFavTeamIdFromSpread = finalSpreadWithOverlayFC < 0 ? favoriteByRule.teamId : dogTeamId;
-      const modelDogTeamIdFromSpread = finalSpreadWithOverlayFC < 0 ? dogTeamId : favoriteByRule.teamId;
+      // CRITICAL FIX: Determine model favorite/dog from finalSpreadWithOverlay (HMA format), not from market favorite
+      // finalSpreadWithOverlay is in HMA format: negative = home favored, positive = away favored
+      // We need to determine which team the MODEL favors, not which team the MARKET favors
+      const modelFavorsHome = finalSpreadWithOverlay !== null && finalSpreadWithOverlay < 0;
+      const modelFavorsAway = finalSpreadWithOverlay !== null && finalSpreadWithOverlay > 0;
+      
+      // Determine model favorite team ID based on the spread sign
+      const modelFavTeamIdFromSpread = modelFavorsHome ? game.homeTeamId : (modelFavorsAway ? game.awayTeamId : favoriteByRule.teamId);
+      const modelDogTeamIdFromSpread = modelFavorsHome ? game.awayTeamId : (modelFavorsAway ? game.homeTeamId : dogTeamId);
+      
       // Map probabilities: if model favorite is home, use modelHomeWinProb; if away, use modelAwayWinProb
       const modelFavProbFromSpread = modelFavTeamIdFromSpread === game.homeTeamId ? modelHomeWinProb : modelAwayWinProb;
       const modelDogProbFromSpread = 1 - modelFavProbFromSpread;
+      
+      console.log(`[Game ${gameId}] 🎯 Moneyline Team Assignment (FIXED):`, {
+        finalSpreadWithOverlay: finalSpreadWithOverlay?.toFixed(2),
+        modelFavorsHome,
+        modelFavorsAway,
+        modelFavTeamId: modelFavTeamIdFromSpread,
+        modelFavTeamName: modelFavTeamIdFromSpread === game.homeTeamId ? game.homeTeam.name : game.awayTeam.name,
+        modelDogTeamId: modelDogTeamIdFromSpread,
+        modelDogTeamName: modelDogTeamIdFromSpread === game.homeTeamId ? game.homeTeam.name : game.awayTeam.name,
+        modelFavProb: modelFavProbFromSpread.toFixed(3),
+        modelDogProb: modelDogProbFromSpread.toFixed(3),
+        modelHomeWinProb: modelHomeWinProb.toFixed(3),
+        modelAwayWinProb: modelAwayWinProb.toFixed(3)
+      });
+      
       const fairMLFav = modelFavProbFromSpread >= 0.5
         ? Math.round(-100 * modelFavProbFromSpread / (1 - modelFavProbFromSpread))
         : Math.round(100 * (1 - modelFavProbFromSpread) / modelFavProbFromSpread);
