@@ -2405,14 +2405,17 @@ export async function GET(
           }
           // Only calculate value if guards pass
           else {
-          // CRITICAL FIX: Determine model favorite/dog from finalSpreadWithOverlay (not market favorite)
-          // finalSpreadWithOverlay < 0 means home is favored, > 0 means away is favored
+          // CRITICAL FIX: Determine model favorite/dog from finalSpreadWithOverlay (HMA format), not market favorite
+          // finalSpreadWithOverlay is in HMA format (Home Minus Away):
+          //   - Positive value (e.g., +9.4) = Home is favored (Home wins by that margin)
+          //   - Negative value (e.g., -9.4) = Away is favored (Away wins by that margin)
           // We know finalSpreadWithOverlay is not null here due to the check above
-          const modelFavorsHome = finalSpreadWithOverlay! < 0;
-          const modelFavTeamId = modelFavorsHome ? game.homeTeamId : game.awayTeamId;
-          const modelFavTeamName = modelFavorsHome ? game.homeTeam.name : game.awayTeam.name;
-          const modelDogTeamId = modelFavorsHome ? game.awayTeamId : game.homeTeamId;
-          const modelDogTeamName = modelFavorsHome ? game.awayTeam.name : game.homeTeam.name;
+          const modelFavorsHome = finalSpreadWithOverlay! > 0;
+          const modelFavorsAway = finalSpreadWithOverlay! < 0;
+          const modelFavTeamId = modelFavorsHome ? game.homeTeamId : (modelFavorsAway ? game.awayTeamId : favoriteByRule.teamId);
+          const modelFavTeamName = modelFavorsHome ? game.homeTeam.name : (modelFavorsAway ? game.awayTeam.name : favoriteByRule.teamName);
+          const modelDogTeamId = modelFavorsHome ? game.awayTeamId : (modelFavorsAway ? game.homeTeamId : dogTeamId);
+          const modelDogTeamName = modelFavorsHome ? game.awayTeam.name : (modelFavorsAway ? game.homeTeam.name : dogTeamName);
           
           // Model probabilities from finalSpreadWithOverlay (home-minus-away)
           // Map to favorite/dog based on modelFavTeamId
