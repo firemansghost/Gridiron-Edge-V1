@@ -3198,6 +3198,7 @@ export async function GET(
         teamName: null,
         line: null,
         label: null,
+        edgePts: atsEdgeAbs, // Show actual edge value
         reasoning: `Extreme favorite game (${marketSpread !== null ? Math.abs(marketSpread).toFixed(1) : 'N/A'} pts). Model edge ${atsEdgeAbs.toFixed(1)} pts favors the underdog, but we don't recommend 20+ point dogs. Range guidance provided.`,
         betTo: spreadBetTo,
         favoritesDisagree: false,
