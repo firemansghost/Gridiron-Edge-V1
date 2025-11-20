@@ -245,7 +245,11 @@ export default function GameDetailPage() {
   const ouEdgeSign = ouEdgeValue ?? 0;
   
   // Check if this is a PASS in official mode but has raw edge
-  const isOfficialPass = !game.picks?.spread?.bettablePick?.label || game.picks?.spread?.bettablePick?.suppressHeadline;
+  // A pick is active if bettablePick exists AND has a label (or edgePts >= 0.1)
+  const hasActivePick = game.picks?.spread?.bettablePick?.label && 
+                        !game.picks?.spread?.bettablePick?.suppressHeadline &&
+                        (game.picks?.spread?.bettablePick?.edgePts ?? 0) >= 0.1;
+  const isOfficialPass = !hasActivePick;
   const hasRawAtsEdge = rawAtsEdgePts !== null && Math.abs(rawAtsEdgePts) > 0.1;
   
   // Core V1 availability check - use modelFavoriteLine directly
@@ -752,7 +756,7 @@ export default function GameDetailPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* Spread Card - Core V1 Availability Check */}
               {hasCoreV1Spread ? (
-                game.picks?.spread?.grade && game.picks?.spread?.bettablePick ? (
+                game.picks?.spread?.bettablePick ? (
                   <div className="bg-white border-2 border-blue-300 rounded-lg p-4 shadow-sm">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">AGAINST THE SPREAD</h3>
@@ -763,8 +767,8 @@ export default function GameDetailPage() {
                             <span>Model vs Market Mismatch</span>
                           </div>
                         )}
-                        {/* Hide Grade pill in Official mode when game is PASS */}
-                        {!(modelViewMode === 'official' && isOfficialPass) && (
+                        {/* Show Grade pill if grade exists, hide only if truly PASS */}
+                        {game.picks.spread.grade && !(modelViewMode === 'official' && isOfficialPass) && (
                           <div 
                             className={`px-2 py-1 rounded text-xs font-bold ${
                               game.picks.spread.grade === 'A' ? 'bg-green-500 text-white' :
@@ -835,7 +839,7 @@ export default function GameDetailPage() {
                             {/* Range text for PASS case */}
                             {game.model_view?.modelFavoriteLine !== null && game.model_view?.modelFavoriteName && snapshot && (
                               <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
-                                <span className="font-semibold">Raw model fair line</span> ≈ {game.model_view.modelFavoriteName} {game.model_view.modelFavoriteLine.toFixed(1)}. Current market line is {snapshot.favoriteLine.toFixed(1)} ({atsEdgeMagnitude.toFixed(1)} pts {game.model_view.modelFavoriteLine < snapshot.favoriteLine ? 'cheaper' : 'more expensive'}). Trust-Market rules cap this disagreement, so we treat the game as a pass instead of a play.
+                                <span className="font-semibold">Raw model fair line</span> ≈ {game.model_view.modelFavoriteName} {game.model_view.modelFavoriteLine.toFixed(1)}. Current market line is {snapshot.favoriteLine.toFixed(1)} ({atsEdgeMagnitude.toFixed(1)} pts {game.model_view.modelFavoriteLine < snapshot.favoriteLine ? 'cheaper' : 'more expensive'}). {game.picks.spread.bettablePick?.edgePts !== null && game.picks.spread.bettablePick?.edgePts !== undefined && game.picks.spread.bettablePick.edgePts >= 0.1 ? 'Edge is below actionable threshold (< 0.1 pts).' : 'No actionable edge at current number.'}
                               </div>
                             )}
                           </>
@@ -954,7 +958,7 @@ export default function GameDetailPage() {
                   {/* Dev diagnostic - ATS decision trace */}
                   {process.env.NODE_ENV !== 'production' && snapshot && (
                     <div className="text-xs text-gray-400 mt-2 font-mono border-t border-gray-200 pt-2">
-                      <div>atsEdgePts: {atsEdgePts?.toFixed(1) ?? 'null'} | edgeFloor: 2.0</div>
+                      <div>atsEdgePts: {atsEdgePts?.toFixed(1) ?? 'null'} | edgeFloor: 0.1</div>
                       <div>marketFav: {snapshot.favoriteTeamName} {snapshot.favoriteLine.toFixed(1)} | marketDog: {snapshot.dogTeamName} +{snapshot.dogLine.toFixed(1)}</div>
                       <div>modelFav: {game.model_view?.modelFavoriteName ?? 'pick\'em'} {game.model_view?.modelFavoriteLine?.toFixed(1) ?? '0.0'}</div>
                       <div>valueSide: {atsValueSide ?? 'none'} → headline: {atsValueSide === 'dog' ? `${snapshot.dogTeamName} +${snapshot.dogLine.toFixed(1)}` : atsValueSide === 'favorite' ? `${snapshot.favoriteTeamName} ${snapshot.favoriteLine.toFixed(1)}` : 'No edge'}</div>
@@ -1029,7 +1033,7 @@ export default function GameDetailPage() {
                     )}
                     {game.picks?.spread?.overlay && (() => {
                       const overlayAbs = Math.abs(game.picks.spread.overlay.overlayValue);
-                      const edgeFloor = game.picks.spread.overlay.edge_floor_pts || 2.0;
+                      const edgeFloor = game.picks.spread.overlay.edge_floor_pts || 0.1;
                       const meetsFloor = overlayAbs >= edgeFloor;
                       return (
                         <div className="text-xs text-gray-600 mt-2 border-t border-gray-200 pt-2">
@@ -1142,7 +1146,7 @@ export default function GameDetailPage() {
                     {/* PHASE 2.4: Model overlay info */}
                     {game.picks?.total?.overlay && (() => {
                       const overlayAbs = Math.abs(game.picks.total.overlay.overlay_used_pts || game.picks.total.overlay.overlayValue);
-                      const edgeFloor = game.picks.total.overlay.edge_floor_pts || 2.0;
+                      const edgeFloor = game.picks.total.overlay.edge_floor_pts || 0.1;
                       const meetsFloor = overlayAbs >= edgeFloor;
                       return (
                         <div className="text-xs text-gray-600 mt-2 border-t border-gray-200 pt-2">
