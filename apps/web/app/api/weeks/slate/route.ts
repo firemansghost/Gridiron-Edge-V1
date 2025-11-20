@@ -308,8 +308,40 @@ export async function GET(request: NextRequest) {
         
         const modelSpread = Math.round(modelSpreadHma * 10) / 10;
 
-        // Get market spread in HMA frame
-        const marketSpreadHma = game.closingSpread?.value ?? null;
+        // Get market spread and convert to HMA frame
+        // CRITICAL FIX: closingSpread.value is in favorite-centric format (negative for favorite)
+        // We need to convert it to HMA format (positive = home favored, negative = away favored)
+        const marketSpreadRaw = game.closingSpread?.value ?? null;
+        let marketSpreadHma: number | null = null;
+        
+        if (marketSpreadRaw !== null && Number.isFinite(marketSpreadRaw)) {
+          // Find the spread line to check which team it's for
+          const spreadLine = spreadMap.get(game.gameId);
+          if (spreadLine && spreadLine.teamId) {
+            // Spread is team-specific - convert from favorite-centric to HMA format
+            const isHomeTeam = spreadLine.teamId === game.homeTeamId;
+            // lineValue is in favorite-centric format (negative = favorite)
+            // If home team is the favorite: lineValue is negative, HMA should be positive (home favored)
+            // If away team is the favorite: lineValue is negative, HMA should be negative (away favored)
+            // So: if home team, flip sign; if away team, keep negative (or flip if positive)
+            // Actually: if home team and lineValue is negative, HMA = -lineValue (positive)
+            //          if away team and lineValue is negative, HMA = lineValue (negative, but we want to keep it negative)
+            // Wait, let me think: if lineValue is -31.5 and it's for home team, that means home is favored by 31.5
+            // In HMA format: +31.5 (home wins by 31.5)
+            // So: HMA = -lineValue when home team
+            // If lineValue is -31.5 and it's for away team, that means away is favored by 31.5
+            // In HMA format: -31.5 (away wins by 31.5, so home loses by 31.5)
+            // So: HMA = lineValue when away team (already negative)
+            marketSpreadHma = isHomeTeam ? -marketSpreadRaw : marketSpreadRaw;
+          } else {
+            // No teamId - use heuristic: assume negative means favorite-centric
+            // If model says home is favorite (positive HMA) and market is negative, likely home is market favorite
+            // So convert: HMA = -marketSpreadRaw
+            const isModelHomeFavorite = modelSpreadHma > 0;
+            marketSpreadHma = isModelHomeFavorite ? -marketSpreadRaw : marketSpreadRaw;
+            console.warn(`[Slate API] Game ${game.gameId}: No teamId for spread line, using heuristic conversion`);
+          }
+        }
 
         // Compute ATS edge and pick
         let spreadPick: string | null = null;
@@ -334,6 +366,15 @@ export async function GET(request: NextRequest) {
           spreadPick = atsPick.pickLabel;
           spreadEdgePts = atsPick.edgePts;
           maxEdge = spreadEdgePts;
+          
+          console.log(`[Slate API] Game ${game.gameId} Edge Calculation:`, {
+            modelSpreadHma: modelSpreadHma.toFixed(2),
+            marketSpreadRaw: marketSpreadRaw?.toFixed(2),
+            marketSpreadHma: marketSpreadHma.toFixed(2),
+            edgeHma: edgeHma.toFixed(2),
+            spreadEdgePts: spreadEdgePts?.toFixed(2),
+            pickLabel: spreadPick
+          });
         }
 
         // Totals: Compute using Core V1 totals model

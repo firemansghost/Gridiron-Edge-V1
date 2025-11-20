@@ -157,38 +157,7 @@ export default function HomePage() {
             </div>
           )}
           
-          {/* M6 Adjustment Toggles */}
-          <div className="flex items-center gap-4 mt-3">
-            <span className="text-sm font-medium text-gray-700">Adjustments:</span>
-            <button
-              onClick={() => setInjuriesOn(!injuriesOn)}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${
-                injuriesOn 
-                  ? 'bg-blue-600 text-white shadow-md' 
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-              aria-pressed={injuriesOn}
-            >
-              <span className={injuriesOn ? 'text-green-300' : 'text-gray-400'}>
-                {injuriesOn ? '✓' : '○'}
-              </span>
-              Injury Adjustments {injuriesOn ? 'Enabled' : 'Disabled'}
-            </button>
-            <button
-              onClick={() => setWeatherOn(!weatherOn)}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${
-                weatherOn 
-                  ? 'bg-blue-600 text-white shadow-md' 
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-              aria-pressed={weatherOn}
-            >
-              <span className={weatherOn ? 'text-green-300' : 'text-gray-400'}>
-                {weatherOn ? '✓' : '○'}
-              </span>
-              Weather Adjustments {weatherOn ? 'Enabled' : 'Disabled'}
-            </button>
-          </div>
+          {/* M6 Adjustment Toggles - REMOVED: Non-functional, hidden until feature is built */}
         </div>
 
         {/* What is Edge? - Prominent explanation */}
