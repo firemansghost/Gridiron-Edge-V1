@@ -825,7 +825,7 @@ export default function GameDetailPage() {
                             ) : (
                               <>
                                 <div className="text-sm text-gray-600 mb-2">
-                                  Raw model disagreement: <span className="font-semibold">{rawAtsEdgePts !== null ? Math.abs(rawAtsEdgePts).toFixed(1) : atsEdgeMagnitude.toFixed(1)} pts</span> (official edge capped to <span className="font-semibold">0.0 pts</span>)
+                                  Raw model disagreement: <span className="font-semibold">{rawAtsEdgePts !== null ? Math.abs(rawAtsEdgePts).toFixed(1) : atsEdgeMagnitude.toFixed(1)} pts</span> (official edge: <span className="font-semibold">{game.picks.spread.bettablePick?.edgePts !== null && game.picks.spread.bettablePick?.edgePts !== undefined ? game.picks.spread.bettablePick.edgePts.toFixed(1) : '0.0'} pts</span>)
                                 </div>
                                 <div className="text-sm text-gray-600 mb-2">
                                   Bet to: <span className="font-semibold">—</span> • <span className="text-gray-500 italic">No official spread bet for this game</span>
@@ -972,7 +972,7 @@ export default function GameDetailPage() {
                     {/* Show raw disagreement when no official edge */}
                     {/* ============================================ */}
                     <div className="text-sm text-gray-600 mb-2">
-                      Raw model disagreement: <span className="font-semibold">{atsEdgeMagnitude.toFixed(1)} pts</span> (official edge capped to <span className="font-semibold">0.0 pts</span>)
+                      Raw model disagreement: <span className="font-semibold">{atsEdgeMagnitude.toFixed(1)} pts</span> (official edge: <span className="font-semibold">{game.picks.spread.bettablePick?.edgePts !== null && game.picks.spread.bettablePick?.edgePts !== undefined ? game.picks.spread.bettablePick.edgePts.toFixed(1) : '0.0'} pts</span>)
                     </div>
                     <div className="text-sm text-gray-600 mb-2">
                       Bet to: <span className="font-semibold">—</span> • <span className="text-gray-500 italic">No official spread bet for this game</span>
