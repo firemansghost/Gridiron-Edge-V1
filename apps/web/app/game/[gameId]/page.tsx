@@ -1443,20 +1443,8 @@ export default function GameDetailPage() {
                     Market Favorite
                     <InfoTooltip content={TOOLTIP_CONTENT.MARKET_FAVORITE} />
                   </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <div className="flex items-center gap-3">
-                      <div className="text-lg font-semibold text-gray-900">
-                        {game.market_snapshot?.favoriteTeamName ? `${game.market_snapshot.favoriteTeamName} ${game.market_snapshot.favoriteLine.toFixed(1)}` : '—'}
-                      </div>
-                      {game.lineHistory?.history?.spread && game.lineHistory.history.spread.length > 0 && (
-                        <LineSparkline 
-                          data={game.lineHistory.history.spread} 
-                          lineType="spread"
-                          width={150}
-                          height={30}
-                        />
-                      )}
-                    </div>
+                  <div className="text-lg font-semibold text-gray-900">
+                    {game.market_snapshot?.favoriteTeamName ? `${game.market_snapshot.favoriteTeamName} ${game.market_snapshot.favoriteLine.toFixed(1)}` : '—'}
                   </div>
                 </div>
                 <div className="flex justify-between items-center">
@@ -1503,18 +1491,8 @@ export default function GameDetailPage() {
                     Market Total
                     <InfoTooltip content={TOOLTIP_CONTENT.MARKET_TOTAL} />
                   </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <div className="flex items-center gap-3">
-                    <div className="text-lg font-semibold text-gray-900">{snapshot?.marketTotal !== null && snapshot?.marketTotal !== undefined ? snapshot.marketTotal.toFixed(1) : '—'}</div>
-                      {game.lineHistory?.history?.total && game.lineHistory.history.total.length > 0 && (
-                        <LineSparkline 
-                          data={game.lineHistory.history.total} 
-                          lineType="total"
-                          width={150}
-                          height={30}
-                        />
-                      )}
-                    </div>
+                  <div className="text-lg font-semibold text-gray-900">
+                    {snapshot?.marketTotal !== null && snapshot?.marketTotal !== undefined ? snapshot.marketTotal.toFixed(1) : '—'}
                   </div>
                 </div>
                 <div className="flex justify-between items-center">
