@@ -26,6 +26,7 @@ import { TOOLTIP_CONTENT } from '@/lib/tooltip-content';
 import { TeamLogo } from '@/components/TeamLogo';
 import { ModelViewModeToggle } from '@/components/ModelViewModeToggle';
 import { useModelViewMode } from '@/contexts/ModelViewModeContext';
+import { UnitMatchupCard } from '@/components/UnitMatchupCard';
 
 export default function GameDetailPage() {
   const params = useParams();
@@ -1294,6 +1295,18 @@ export default function GameDetailPage() {
                 </div>
               )}
             </div>
+
+            {/* Unit Matchups Card - V2 Model Breakdown */}
+            {game.unitGrades && (
+              <div className="mt-6">
+                <UnitMatchupCard
+                  homeGrades={game.unitGrades.home}
+                  awayGrades={game.unitGrades.away}
+                  homeTeamName={game.game.homeTeam}
+                  awayTeamName={game.game.awayTeam}
+                />
+              </div>
+            )}
 
             {/* Footer with sources and tooltips */}
             <div className="mt-3 pt-3 border-t border-gray-200">

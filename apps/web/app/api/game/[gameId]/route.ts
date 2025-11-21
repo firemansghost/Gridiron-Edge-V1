@@ -5226,6 +5226,56 @@ export async function GET(
         };
       })(),
       
+      // Unit Grades for V2 Matchup Analysis
+      unitGrades: await (async () => {
+        // Fetch unit grades separately for the current season
+        // Note: Using type assertion as Prisma client may need regeneration
+        const prismaClient = prisma as any;
+        const [homeGrades, awayGrades] = await Promise.all([
+          prismaClient.teamUnitGrades.findUnique({
+            where: {
+              teamId_season: {
+                teamId: game.homeTeamId,
+                season: game.season,
+              },
+            },
+          }),
+          prismaClient.teamUnitGrades.findUnique({
+            where: {
+              teamId_season: {
+                teamId: game.awayTeamId,
+                season: game.season,
+              },
+            },
+          }),
+        ]);
+        
+        if (!homeGrades || !awayGrades) {
+          return null;
+        }
+        
+        return {
+          home: {
+            offRunGrade: homeGrades.offRunGrade,
+            defRunGrade: homeGrades.defRunGrade,
+            offPassGrade: homeGrades.offPassGrade,
+            defPassGrade: homeGrades.defPassGrade,
+            offExplosiveness: homeGrades.offExplosiveness,
+            defExplosiveness: homeGrades.defExplosiveness,
+            havocGrade: homeGrades.havocGrade,
+          },
+          away: {
+            offRunGrade: awayGrades.offRunGrade,
+            defRunGrade: awayGrades.defRunGrade,
+            offPassGrade: awayGrades.offPassGrade,
+            defPassGrade: awayGrades.defPassGrade,
+            offExplosiveness: awayGrades.offExplosiveness,
+            defExplosiveness: awayGrades.defExplosiveness,
+            havocGrade: awayGrades.havocGrade,
+          },
+        };
+      })(),
+      
       // Validation flags (for UI display of warnings)
       validation: {
         // Independent validation flags (decouple ATS and OU)
