@@ -89,19 +89,19 @@ export default function DocsPage() {
                 </Link>
 
                 <Link
-                  href="/docs/status"
+                  href="/status"
                   className="block h-full bg-white rounded-lg shadow hover:shadow-md transition-all p-6 border border-gray-200"
                 >
                   <div className="flex items-start">
                     <div className="flex-shrink-0">
                       <svg className="h-8 w-8 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                       </svg>
                     </div>
                     <div className="ml-4">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-2">Status</h3>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">System Status</h3>
                       <p className="text-sm text-gray-600">
-                        Live database status and sanity checks for ingestion
+                        Live health check for current week data ingestion
                       </p>
                     </div>
                   </div>
