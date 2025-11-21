@@ -1741,13 +1741,14 @@ export default function GameDetailPage() {
                       data={game.lineHistory.history.spread} 
                       lineType="spread"
                       width={280}
-                      height={60}
+                      height={150}
                       openingValue={game.lineHistory.statistics.spread.opening.favoriteCentricValue ?? game.lineHistory.statistics.spread.opening.value}
                       closingValue={game.lineHistory.statistics.spread.closing.favoriteCentricValue ?? game.lineHistory.statistics.spread.closing.value}
                       movement={game.lineHistory.statistics.spread.movement}
                       showLabels={true}
                       showCaption={true}
                       favoriteTeamName={game.market_snapshot?.favoriteTeamName}
+                      modelSpread={modelView?.modelFavoriteLine ?? null}
                     />
                   </div>
                 )}
@@ -1758,12 +1759,13 @@ export default function GameDetailPage() {
                       data={game.lineHistory.history.total} 
                       lineType="total"
                       width={280}
-                      height={60}
+                      height={150}
                       openingValue={game.lineHistory.statistics.total.opening.value}
                       closingValue={game.lineHistory.statistics.total.closing.value}
                       movement={game.lineHistory.statistics.total.movement}
                       showLabels={true}
                       showCaption={true}
+                      modelTotal={rawModelTotal}
                     />
                   </div>
                 )}

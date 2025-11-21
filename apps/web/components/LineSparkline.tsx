@@ -1,12 +1,13 @@
 /**
  * Line Sparkline Component
  * 
- * Displays a simple sparkline visualization of line movement over time
+ * Displays a visualization of line movement over time with model reference line
  */
 
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useMemo } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 
 interface LineHistoryPoint {
   timestamp: string;
@@ -27,112 +28,95 @@ interface LineSparklineProps {
   showLabels?: boolean; // Whether to show Open/Close labels on chart
   showCaption?: boolean; // Whether to show caption below chart
   favoriteTeamName?: string; // For spreads: the favorite team name (e.g., "Alabama Crimson Tide")
+  modelSpread?: number | null; // Model prediction for spread
+  modelTotal?: number | null; // Model prediction for total
 }
 
 export function LineSparkline({ 
   data, 
   lineType, 
-  width = 200, 
-  height = 40,
+  width = 280, 
+  height = 150,
   color = '#3b82f6',
   openingValue,
   closingValue,
   movement,
   showLabels = true,
   showCaption = true,
-  favoriteTeamName
+  favoriteTeamName,
+  modelSpread,
+  modelTotal
 }: LineSparklineProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Sort data chronologically by timestamp
+  const sortedData = useMemo(() => {
+    if (!data || data.length === 0) return [];
+    return [...data].sort((a, b) => {
+      const timeA = new Date(a.timestamp).getTime();
+      const timeB = new Date(b.timestamp).getTime();
+      return timeA - timeB;
+    });
+  }, [data]);
 
-  useEffect(() => {
-    if (!canvasRef.current || data.length === 0) return;
+  // Format data for Recharts
+  const chartData = useMemo(() => {
+    return sortedData.map((point, index) => ({
+      time: new Date(point.timestamp).getTime(),
+      value: point.lineValue,
+      bookName: point.bookName,
+      source: point.source,
+      timestamp: point.timestamp,
+      index,
+    }));
+  }, [sortedData]);
 
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+  // Determine model value based on line type
+  const modelValue = lineType === 'spread' ? modelSpread : lineType === 'total' ? modelTotal : null;
 
-    // Clear canvas
-    ctx.clearRect(0, 0, width, height);
-
-    if (data.length < 2) {
-      // Draw single point
-      const value = data[0].lineValue;
-      const normalized = (value - Math.min(...data.map(d => d.lineValue))) / 
-                        (Math.max(...data.map(d => d.lineValue)) - Math.min(...data.map(d => d.lineValue)) || 1);
-      const y = height - (normalized * height);
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(width / 2, y, 3, 0, 2 * Math.PI);
-      ctx.fill();
-      return;
-    }
-
-    // Normalize values to fit in height
-    const values = data.map(d => d.lineValue);
+  // Calculate Y-axis domain for better scaling
+  const yAxisDomain = useMemo(() => {
+    if (chartData.length === 0) return ['auto', 'auto'];
+    const values = chartData.map(d => d.value);
     const min = Math.min(...values);
     const max = Math.max(...values);
-    const range = max - min || 1; // Avoid division by zero
+    const range = max - min;
+    const padding = range * 0.1; // 10% padding
+    return [min - padding, max + padding];
+  }, [chartData]);
 
-    // Calculate points
-    const points = data.map((point, index) => {
-      const x = (index / (data.length - 1)) * width;
-      const normalized = (point.lineValue - min) / range;
-      const y = height - (normalized * height);
-      return { x, y, value: point.lineValue };
+  // Format timestamp for tooltip
+  const formatTime = (timestamp: string) => {
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
     });
+  };
 
-    // Draw line
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(points[0].x, points[0].y);
-    for (let i = 1; i < points.length; i++) {
-      ctx.lineTo(points[i].x, points[i].y);
+  // Custom tooltip
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-2 text-xs">
+          <p className="font-semibold text-gray-900">
+            {formatTime(data.timestamp)}
+          </p>
+          <p className="text-gray-700">
+            Line: <span className="font-medium">{data.value.toFixed(1)}</span>
+          </p>
+          <p className="text-gray-600">
+            Book: <span className="font-medium">{data.bookName || data.source}</span>
+          </p>
+        </div>
+      );
     }
-    ctx.stroke();
+    return null;
+  };
 
-    // Draw points
-    ctx.fillStyle = color;
-    points.forEach((point, index) => {
-      ctx.beginPath();
-      ctx.arc(point.x, point.y, index === 0 || index === points.length - 1 ? 3 : 2, 0, 2 * Math.PI);
-      ctx.fill();
-    });
-
-    // Highlight opening (first) and closing (last)
-    if (points.length > 1) {
-      // Opening point
-      ctx.fillStyle = '#10b981'; // Green
-      ctx.beginPath();
-      ctx.arc(points[0].x, points[0].y, 4, 0, 2 * Math.PI);
-      ctx.fill();
-      
-      // Closing point
-      ctx.fillStyle = '#ef4444'; // Red
-      ctx.beginPath();
-      ctx.arc(points[points.length - 1].x, points[points.length - 1].y, 4, 0, 2 * Math.PI);
-      ctx.fill();
-    }
-
-    // Draw Open/Close labels if enabled and values provided
-    if (showLabels && openingValue !== undefined && closingValue !== undefined && points.length > 1) {
-      ctx.font = '10px sans-serif';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      
-      // Opening label (left side)
-      ctx.fillStyle = '#059669'; // Darker green
-      ctx.fillText(`Open: ${openingValue.toFixed(1)}`, 2, points[0].y - 8);
-      
-      // Closing label (right side)
-      ctx.fillStyle = '#dc2626'; // Darker red
-      ctx.textAlign = 'right';
-      ctx.fillText(`Close: ${closingValue.toFixed(1)}`, width - 2, points[points.length - 1].y - 8);
-    }
-
-  }, [data, width, height, color, openingValue, closingValue, showLabels]);
-
-  if (data.length === 0) {
+  if (chartData.length === 0) {
     return (
       <div className="text-xs text-gray-400 italic" style={{ width, height }}>
         No line history
@@ -140,28 +124,61 @@ export function LineSparkline({
     );
   }
 
-  const altText = lineType === 'spread' && favoriteTeamName
-    ? `Spread moved from ${openingValue?.toFixed(1) || 'N/A'} to ${closingValue?.toFixed(1) || 'N/A'} for ${favoriteTeamName}`
-    : lineType === 'total'
-    ? `Total moved from ${openingValue?.toFixed(1) || 'N/A'} to ${closingValue?.toFixed(1) || 'N/A'}`
-    : `${lineType} line movement chart`;
-
   return (
-    <div className="inline-block">
-      <canvas
-        ref={canvasRef}
-        width={width}
-        height={height}
-        className="block"
-        style={{ imageRendering: 'crisp-edges' }}
-        aria-label={altText}
-        role="img"
-      />
+    <div className="inline-block w-full">
+      <ResponsiveContainer width="100%" height={height}>
+        <LineChart data={chartData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <XAxis 
+            dataKey="time"
+            type="number"
+            scale="time"
+            domain={['dataMin', 'dataMax']}
+            tickFormatter={(value) => {
+              const date = new Date(value);
+              return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            }}
+            stroke="#6b7280"
+            fontSize={10}
+          />
+          <YAxis 
+            domain={yAxisDomain}
+            stroke="#6b7280"
+            fontSize={10}
+            tickFormatter={(value) => value.toFixed(1)}
+          />
+          <Tooltip content={<CustomTooltip />} />
+          {/* Model Reference Line */}
+          {modelValue !== null && modelValue !== undefined && (
+            <ReferenceLine 
+              y={modelValue} 
+              stroke="#ef4444" 
+              strokeDasharray="5 5" 
+              strokeWidth={2}
+              label={{ value: "Model", position: "right", fill: "#ef4444", fontSize: 10 }}
+            />
+          )}
+          <Line 
+            type="monotone" 
+            dataKey="value" 
+            stroke={color} 
+            strokeWidth={2}
+            dot={{ fill: color, r: 3 }}
+            activeDot={{ r: 5 }}
+          />
+        </LineChart>
+      </ResponsiveContainer>
       <div className="text-xs text-gray-500 mt-1 flex justify-between">
         <span className="flex items-center gap-1">
           <span className="w-2 h-2 rounded-full bg-green-500 inline-block"></span>
           Open
         </span>
+        {modelValue !== null && modelValue !== undefined && (
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-red-500 inline-block" style={{ borderStyle: 'dashed' }}></span>
+            Model: {modelValue.toFixed(1)}
+          </span>
+        )}
         <span className="flex items-center gap-1">
           <span className="w-2 h-2 rounded-full bg-red-500 inline-block"></span>
           Close

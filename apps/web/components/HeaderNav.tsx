@@ -52,6 +52,9 @@ export function HeaderNav() {
             <Link href="/ratings" className={linkClass('/ratings')} title="View team power ratings">
               Ratings
             </Link>
+            <Link href="/labs/hybrid" className={linkClass('/labs/hybrid')} title="V2 Hybrid Model Dashboard">
+              Labs (V2)
+            </Link>
             {/* Dev-only links - commented out for V1 public release */}
             {/* <Link href="/bets" className={linkClass('/bets')}>
               Bets
@@ -95,6 +98,9 @@ export function HeaderNav() {
             </Link>
             <Link href="/ratings" className={linkClass('/ratings')} title="View team power ratings">
               Ratings
+            </Link>
+            <Link href="/labs/hybrid" className={linkClass('/labs/hybrid')} title="V2 Hybrid Model Dashboard">
+              Labs (V2)
             </Link>
             {/* Dev-only links - commented out for V1 public release */}
             {/* <Link href="/bets" className={linkClass('/bets')}>
