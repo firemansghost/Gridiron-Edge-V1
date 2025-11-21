@@ -260,19 +260,27 @@ async function auditV2Metrics() {
   console.log('📦 COMPLETE DATA POINTS AUDIT\n');
   
   // Check all CFBD tables
-  const cfbdTables = [
-    { name: 'CfbdEffTeamGame', model: prisma.cfbdEffTeamGame, filter: { gameIdCfbd: { in: cfbdGameIds } } },
-    { name: 'CfbdEffTeamSeason', model: prisma.cfbdEffTeamSeason, filter: { season } },
-    { name: 'CfbdPpaTeamGame', model: prisma.cfbdPpaTeamGame, filter: { gameIdCfbd: { in: cfbdGameIds } } },
-    { name: 'CfbdPpaTeamSeason', model: prisma.cfbdPpaTeamSeason, filter: { season } },
-  ];
-  
   console.log('CFBD Efficiency & PPA Tables:');
-  for (const table of cfbdTables) {
-    const count = await table.model.count({ where: table.filter });
-    const status = count > 0 ? '✅' : '❌';
-    console.log(`   ${status} ${table.name}: ${count} records`);
-  }
+  
+  const effTeamGameCount = await prisma.cfbdEffTeamGame.count({
+    where: { gameIdCfbd: { in: cfbdGameIds } }
+  });
+  console.log(`   ${effTeamGameCount > 0 ? '✅' : '❌'} CfbdEffTeamGame: ${effTeamGameCount} records`);
+  
+  const effTeamSeasonCount = await prisma.cfbdEffTeamSeason.count({
+    where: { season }
+  });
+  console.log(`   ${effTeamSeasonCount > 0 ? '✅' : '❌'} CfbdEffTeamSeason: ${effTeamSeasonCount} records`);
+  
+  const ppaTeamGameCount = await prisma.cfbdPpaTeamGame.count({
+    where: { gameIdCfbd: { in: cfbdGameIds } }
+  });
+  console.log(`   ${ppaTeamGameCount > 0 ? '✅' : '❌'} CfbdPpaTeamGame: ${ppaTeamGameCount} records`);
+  
+  const ppaTeamSeasonCount = await prisma.cfbdPpaTeamSeason.count({
+    where: { season }
+  });
+  console.log(`   ${ppaTeamSeasonCount > 0 ? '✅' : '❌'} CfbdPpaTeamSeason: ${ppaTeamSeasonCount} records`);
   
   // Check Game table
   const gameCount = await prisma.game.count({ where: { season } });

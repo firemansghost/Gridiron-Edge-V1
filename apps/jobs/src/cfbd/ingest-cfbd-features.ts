@@ -288,28 +288,47 @@ async function ingestTeamSeasonData(season: number, client: CFBDClient, mapper: 
       // Don't fail, but log it
     }
     
-    // Extract havoc values (API returns object with { total, frontSeven, db })
+    // Extract havoc values (API returns object with { total, frontSeven, db } or numeric)
+    // Handle both object format and direct numeric values
     const havocOffObj = stat.offense?.havoc;
-    const havocOffTotal = typeof havocOffObj === 'object' && havocOffObj !== null
-      ? (havocOffObj as any).total
-      : havocOffObj;
-    const havocOffFront7 = typeof havocOffObj === 'object' && havocOffObj !== null
-      ? (havocOffObj as any).frontSeven
-      : null;
-    const havocOffDb = typeof havocOffObj === 'object' && havocOffObj !== null
-      ? (havocOffObj as any).db
-      : null;
+    let havocOffTotal: number | null = null;
+    let havocOffFront7: number | null = null;
+    let havocOffDb: number | null = null;
+    
+    if (havocOffObj !== null && havocOffObj !== undefined) {
+      if (typeof havocOffObj === 'object') {
+        havocOffTotal = (havocOffObj as any).total ?? (havocOffObj as any).havoc ?? null;
+        havocOffFront7 = (havocOffObj as any).frontSeven ?? (havocOffObj as any).front7 ?? null;
+        havocOffDb = (havocOffObj as any).db ?? null;
+      } else if (typeof havocOffObj === 'number') {
+        havocOffTotal = havocOffObj;
+      }
+    }
     
     const havocDefObj = stat.defense?.havoc;
-    const havocDefTotal = typeof havocDefObj === 'object' && havocDefObj !== null
-      ? (havocDefObj as any).total
-      : havocDefObj;
-    const havocDefFront7 = typeof havocDefObj === 'object' && havocDefObj !== null
-      ? (havocDefObj as any).frontSeven
-      : null;
-    const havocDefDb = typeof havocDefObj === 'object' && havocDefObj !== null
-      ? (havocDefObj as any).db
-      : null;
+    let havocDefTotal: number | null = null;
+    let havocDefFront7: number | null = null;
+    let havocDefDb: number | null = null;
+    
+    if (havocDefObj !== null && havocDefObj !== undefined) {
+      if (typeof havocDefObj === 'object') {
+        havocDefTotal = (havocDefObj as any).total ?? (havocDefObj as any).havoc ?? null;
+        havocDefFront7 = (havocDefObj as any).frontSeven ?? (havocDefObj as any).front7 ?? null;
+        havocDefDb = (havocDefObj as any).db ?? null;
+      } else if (typeof havocDefObj === 'number') {
+        havocDefTotal = havocDefObj;
+      }
+    }
+    
+    // Extract PPO (try multiple field name variations)
+    const ppoOff = stat.offense?.pointsPerOpportunity 
+      ?? stat.offense?.ppo 
+      ?? stat.offense?.pointsPerOpp 
+      ?? null;
+    const ppoDef = stat.defense?.pointsPerOpportunity 
+      ?? stat.defense?.ppo 
+      ?? stat.defense?.pointsPerOpp 
+      ?? null;
     
     try {
       if (dryRun) {
@@ -324,18 +343,18 @@ async function ingestTeamSeasonData(season: number, client: CFBDClient, mapper: 
         offEpa: stat.offense?.epa || null,
         offSr: stat.offense?.successRate || null,
         isoPppOff: stat.offense?.explosiveness || null,
-        ppoOff: stat.offense?.pointsPerOpportunity || null,
+        ppoOff: ppoOff,
         lineYardsOff: stat.offense?.lineYards || null,
-        havocOff: havocOffTotal || null,
+        havocOff: havocOffTotal,
         havocFront7Off: havocOffFront7,
         havocDbOff: havocOffDb,
         defEpa: stat.defense?.epa || null,
         defSr: stat.defense?.successRate || null,
         isoPppDef: stat.defense?.explosiveness || null,
-        ppoDef: stat.defense?.pointsPerOpportunity || null,
+        ppoDef: ppoDef,
         stuffRate: stat.defense?.stuffRate || null,
         powerSuccess: stat.offense?.powerSuccess || null,
-        havocDef: havocDefTotal || null,
+        havocDef: havocDefTotal,
         havocFront7Def: havocDefFront7,
         havocDbDef: havocDefDb,
         runEpa: stat.offense?.rushingPlays?.epa || null,
@@ -353,18 +372,18 @@ async function ingestTeamSeasonData(season: number, client: CFBDClient, mapper: 
         offEpa: stat.offense?.epa || null,
         offSr: stat.offense?.successRate || null,
         isoPppOff: stat.offense?.explosiveness || null,
-        ppoOff: stat.offense?.pointsPerOpportunity || null,
+        ppoOff: ppoOff,
         lineYardsOff: stat.offense?.lineYards || null,
-        havocOff: havocOffTotal || null,
+        havocOff: havocOffTotal,
         havocFront7Off: havocOffFront7,
         havocDbOff: havocOffDb,
         defEpa: stat.defense?.epa || null,
         defSr: stat.defense?.successRate || null,
         isoPppDef: stat.defense?.explosiveness || null,
-        ppoDef: stat.defense?.pointsPerOpportunity || null,
+        ppoDef: ppoDef,
         stuffRate: stat.defense?.stuffRate || null,
         powerSuccess: stat.offense?.powerSuccess || null,
-        havocDef: havocDefTotal || null,
+        havocDef: havocDefTotal,
         havocFront7Def: havocDefFront7,
         havocDbDef: havocDefDb,
         runEpa: stat.offense?.rushingPlays?.epa || null,
@@ -517,28 +536,51 @@ async function ingestTeamGameData(season: number, weeks: number[], client: CFBDC
           continue;
         }
       
-      // Extract havoc values (API returns object with { total, frontSeven, db })
+      // NOTE: Havoc and PPO are NOT available at game level via /stats/game/advanced
+      // These fields are only available at season level via /stats/season/advanced
+      // For V2, we will need to use season-level havoc/PPO as priors or calculate from play-by-play
+      
+      // Extract havoc values (API returns object with { total, frontSeven, db } or numeric)
+      // Handle both object format and direct numeric values
       const havocOffObj = stat.offense?.havoc;
-      const havocOffTotal = typeof havocOffObj === 'object' && havocOffObj !== null
-        ? (havocOffObj as any).total
-        : havocOffObj;
-      const havocOffFront7 = typeof havocOffObj === 'object' && havocOffObj !== null
-        ? (havocOffObj as any).frontSeven
-        : null;
-      const havocOffDb = typeof havocOffObj === 'object' && havocOffObj !== null
-        ? (havocOffObj as any).db
-        : null;
+      let havocOffTotal: number | null = null;
+      let havocOffFront7: number | null = null;
+      let havocOffDb: number | null = null;
+      
+      if (havocOffObj !== null && havocOffObj !== undefined) {
+        if (typeof havocOffObj === 'object') {
+          havocOffTotal = (havocOffObj as any).total ?? (havocOffObj as any).havoc ?? null;
+          havocOffFront7 = (havocOffObj as any).frontSeven ?? (havocOffObj as any).front7 ?? null;
+          havocOffDb = (havocOffObj as any).db ?? null;
+        } else if (typeof havocOffObj === 'number') {
+          havocOffTotal = havocOffObj;
+        }
+      }
       
       const havocDefObj = stat.defense?.havoc;
-      const havocDefTotal = typeof havocDefObj === 'object' && havocDefObj !== null
-        ? (havocDefObj as any).total
-        : havocDefObj;
-      const havocDefFront7 = typeof havocDefObj === 'object' && havocDefObj !== null
-        ? (havocDefObj as any).frontSeven
-        : null;
-      const havocDefDb = typeof havocDefObj === 'object' && havocDefObj !== null
-        ? (havocDefObj as any).db
-        : null;
+      let havocDefTotal: number | null = null;
+      let havocDefFront7: number | null = null;
+      let havocDefDb: number | null = null;
+      
+      if (havocDefObj !== null && havocDefObj !== undefined) {
+        if (typeof havocDefObj === 'object') {
+          havocDefTotal = (havocDefObj as any).total ?? (havocDefObj as any).havoc ?? null;
+          havocDefFront7 = (havocDefObj as any).frontSeven ?? (havocDefObj as any).front7 ?? null;
+          havocDefDb = (havocDefObj as any).db ?? null;
+        } else if (typeof havocDefObj === 'number') {
+          havocDefTotal = havocDefObj;
+        }
+      }
+      
+      // Extract PPO (try multiple field name variations)
+      const ppoOff = stat.offense?.pointsPerOpportunity 
+        ?? stat.offense?.ppo 
+        ?? stat.offense?.pointsPerOpp 
+        ?? null;
+      const ppoDef = stat.defense?.pointsPerOpportunity 
+        ?? stat.defense?.ppo 
+        ?? stat.defense?.pointsPerOpp 
+        ?? null;
       
       await prisma.cfbdEffTeamGame.upsert({
         where: { gameIdCfbd_teamIdInternal: { gameIdCfbd: gameId, teamIdInternal: teamId } },
@@ -546,7 +588,7 @@ async function ingestTeamGameData(season: number, weeks: number[], client: CFBDC
           offEpa: stat.offense?.epa || null,
           offSr: stat.offense?.successRate || null,
           isoPppOff: stat.offense?.explosiveness || null,
-          ppoOff: stat.offense?.pointsPerOpportunity || null,
+          ppoOff: ppoOff,
           lineYardsOff: stat.offense?.lineYards || null,
           havocOff: havocOffTotal,
           havocFront7Off: havocOffFront7,
@@ -554,7 +596,7 @@ async function ingestTeamGameData(season: number, weeks: number[], client: CFBDC
           defEpa: stat.defense?.epa || null,
           defSr: stat.defense?.successRate || null,
           isoPppDef: stat.defense?.explosiveness || null,
-          ppoDef: stat.defense?.pointsPerOpportunity || null,
+          ppoDef: ppoDef,
           stuffRate: stat.defense?.stuffRate || null,
           powerSuccess: stat.offense?.powerSuccess || null,
           havocDef: havocDefTotal,
@@ -575,7 +617,7 @@ async function ingestTeamGameData(season: number, weeks: number[], client: CFBDC
           offEpa: stat.offense?.epa || null,
           offSr: stat.offense?.successRate || null,
           isoPppOff: stat.offense?.explosiveness || null,
-          ppoOff: stat.offense?.pointsPerOpportunity || null,
+          ppoOff: ppoOff,
           lineYardsOff: stat.offense?.lineYards || null,
           havocOff: havocOffTotal,
           havocFront7Off: havocOffFront7,
@@ -583,7 +625,7 @@ async function ingestTeamGameData(season: number, weeks: number[], client: CFBDC
           defEpa: stat.defense?.epa || null,
           defSr: stat.defense?.successRate || null,
           isoPppDef: stat.defense?.explosiveness || null,
-          ppoDef: stat.defense?.pointsPerOpportunity || null,
+          ppoDef: ppoDef,
           stuffRate: stat.defense?.stuffRate || null,
           powerSuccess: stat.offense?.powerSuccess || null,
           havocDef: havocDefTotal,
@@ -613,17 +655,35 @@ async function ingestTeamGameData(season: number, weeks: number[], client: CFBDC
     let ppaGameSkipped = 0;
     
     // PPA games response structure: array of game objects with team-level PPA
+    // Handle multiple possible response formats
     for (const ppaGame of ppaGames) {
-      const gameId = ppaGame.gameId?.toString() || ppaGame.game_id?.toString();
+      const gameId = ppaGame.gameId?.toString() 
+        || ppaGame.game_id?.toString() 
+        || ppaGame.id?.toString();
       if (!gameId) {
         ppaGameSkipped++;
         continue;
       }
       
-      // PPA response has teams array with offense/defense/overall PPA
-      const teams = ppaGame.teams || [];
+      // PPA response can have teams array or direct team properties
+      // Try teams array first, then fall back to direct properties
+      let teams: any[] = [];
+      if (Array.isArray(ppaGame.teams)) {
+        teams = ppaGame.teams;
+      } else if (ppaGame.homeTeam || ppaGame.awayTeam) {
+        // Handle structure with homeTeam/awayTeam properties
+        if (ppaGame.homeTeam) teams.push(ppaGame.homeTeam);
+        if (ppaGame.awayTeam) teams.push(ppaGame.awayTeam);
+      } else if (ppaGame.team) {
+        // Handle single team object
+        teams = [ppaGame.team];
+      }
+      
       for (const team of teams) {
-        const teamName = team.team || team.teamName;
+        const teamName = team.team 
+          || team.teamName 
+          || team.name
+          || (typeof team === 'string' ? team : null);
         if (!teamName) {
           ppaGameSkipped++;
           continue;
@@ -643,20 +703,37 @@ async function ingestTeamGameData(season: number, weeks: number[], client: CFBDC
             continue;
           }
           
+          // Extract PPA values (try multiple field name variations)
+          const ppaOffense = team.offense?.ppa 
+            ?? team.offense 
+            ?? team.offensivePpa
+            ?? team.offPpa
+            ?? null;
+          const ppaDefense = team.defense?.ppa 
+            ?? team.defense 
+            ?? team.defensivePpa
+            ?? team.defPpa
+            ?? null;
+          const ppaOverall = team.overall?.ppa 
+            ?? team.overall 
+            ?? team.totalPpa
+            ?? team.ppa
+            ?? null;
+          
           await prisma.cfbdPpaTeamGame.upsert({
             where: { gameIdCfbd_teamIdInternal: { gameIdCfbd: gameId, teamIdInternal: teamId } },
             update: {
-              ppaOffense: team.offense?.ppa || team.offense || null,
-              ppaDefense: team.defense?.ppa || team.defense || null,
-              ppaOverall: team.overall?.ppa || team.overall || null,
+              ppaOffense: ppaOffense,
+              ppaDefense: ppaDefense,
+              ppaOverall: ppaOverall,
               asOf: new Date(),
             },
             create: {
               gameIdCfbd: gameId,
               teamIdInternal: teamId,
-              ppaOffense: team.offense?.ppa || team.offense || null,
-              ppaDefense: team.defense?.ppa || team.defense || null,
-              ppaOverall: team.overall?.ppa || team.overall || null,
+              ppaOffense: ppaOffense,
+              ppaDefense: ppaDefense,
+              ppaOverall: ppaOverall,
             },
           });
           ppaGameUpserted++;

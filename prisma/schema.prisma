@@ -35,6 +35,7 @@ model Team {
   teamGameAdj      TeamGameAdj[]
   homeTrainingRows GameTrainingRow[]  @relation("HomeTrainingRows")
   awayTrainingRows GameTrainingRow[]  @relation("AwayTrainingRows")
+  unitGrades       TeamUnitGrades[]
 
   @@index([conference, division])
   @@index([name])
@@ -240,6 +241,39 @@ model TeamSeasonRating {
   @@index([season, rating(sort: Desc)])
   @@index([season, hfaTeam(sort: Desc)], map: "team_season_ratings_hfa_idx")
   @@map("team_season_ratings")
+}
+
+model TeamUnitGrades {
+  id        String   @id @default(cuid())
+  teamId    String   @map("team_id")
+  season    Int
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // The "Trench" Grades (Z-Scores)
+  offRunGrade   Float @map("off_run_grade")   // From Line Yards, Rush PPA
+  defRunGrade   Float @map("def_run_grade")   // From Stuff Rate, Rush PPA Allowed
+
+  // The "Air" Grades
+  offPassGrade  Float @map("off_pass_grade")  // From Pass PPA, Success Rate
+  defPassGrade  Float @map("def_pass_grade")  // From Pass PPA Allowed, Success Rate Allowed
+
+  // The "Chaos/Finishing" Grades
+  offExplosiveness Float @map("off_explosiveness") // From IsoPPP
+  defExplosiveness Float @map("def_explosiveness")
+  havocGrade       Float @map("havoc_grade")       // From Season Havoc
+
+  // Relations
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, season])
+  @@index([season])
+  @@index([teamId])
+  @@index([season, offRunGrade(sort: Desc)])
+  @@index([season, defRunGrade(sort: Desc)])
+  @@index([season, offPassGrade(sort: Desc)])
+  @@index([season, defPassGrade(sort: Desc)])
+  @@map("team_unit_grades")
 }
 
 model MarketLine {
