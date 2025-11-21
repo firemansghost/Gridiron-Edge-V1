@@ -24,8 +24,11 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Prisma version (fast)
-        run: npx -y prisma@latest -v
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prisma version (from package.json)
+        run: npx prisma -v
 
       - name: Show targets (redacted)
         run: |
@@ -62,7 +65,7 @@ jobs:
           ls -la prisma/migrations || true
 
       - name: Prisma migrate status (non-fatal)
-        run: npx -y prisma@latest migrate status --schema=prisma/schema.prisma || true
+        run: npx prisma migrate status --schema=prisma/schema.prisma || true
 
       - name: Clean up and resolve problematic migration
         run: |
@@ -81,12 +84,12 @@ jobs:
           ON CONFLICT DO NOTHING;
           "
           
-          echo "$CLEANUP_SQL" | npx -y prisma@latest db execute --schema=prisma/schema.prisma --stdin 2>&1 || echo "Cleanup attempted"
+          echo "$CLEANUP_SQL" | npx prisma db execute --schema=prisma/schema.prisma --stdin 2>&1 || echo "Cleanup attempted"
           
           echo ""
           echo "Step 2: Using Prisma resolve to mark as rolled back..."
           # Mark as rolled back so Prisma skips it (teams already exist)
-          RESOLVE_OUTPUT=$(npx -y prisma@latest migrate resolve --rolled-back 20251027_t6q_fixup_missing_teams --schema=prisma/schema.prisma 2>&1)
+          RESOLVE_OUTPUT=$(npx prisma migrate resolve --rolled-back 20251027_t6q_fixup_missing_teams --schema=prisma/schema.prisma 2>&1)
           RESOLVE_CODE=$?
           
           if [ "$RESOLVE_CODE" = "0" ]; then
@@ -103,7 +106,7 @@ jobs:
           
           echo ""
           echo "Step 3: Verifying migration status..."
-          STATUS_OUTPUT=$(npx -y prisma@latest migrate status --schema=prisma/schema.prisma 2>&1 || true)
+          STATUS_OUTPUT=$(npx prisma migrate status --schema=prisma/schema.prisma 2>&1 || true)
           echo "$STATUS_OUTPUT"
           
           if echo "$STATUS_OUTPUT" | grep -qi "20251027_t6q_fixup_missing_teams.*failed\|P3009"; then
@@ -117,7 +120,7 @@ jobs:
           set -e
 
       - name: Prisma migrate deploy
-        run: npx -y prisma@latest migrate deploy --schema=prisma/schema.prisma
+        run: npx prisma migrate deploy --schema=prisma/schema.prisma
 
       - name: Prisma generate (optional)
-        run: npx -y prisma@latest generate --schema=prisma/schema.prisma
+        run: npx prisma generate --schema=prisma/schema.prisma
