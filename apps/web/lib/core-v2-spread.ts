@@ -22,6 +22,12 @@ interface UnitGrades {
   defExplosiveness: number;
 }
 
+interface WeatherData {
+  windSpeed: number | null;
+  precipitationProb: number | null;
+  temperature: number | null;
+}
+
 interface HybridSpreadResult {
   v1SpreadHma: number; // V1 composite spread (Home - Away)
   v2SpreadHma: number; // V2 matchup spread (Home - Away)
@@ -44,33 +50,70 @@ const W_PASS = 0.4;
 const W_EXPLO = 0.2;
 
 /**
+ * Apply weather penalties to unit grades
+ * 
+ * @param grades - Unit grades to adjust
+ * @param weather - Weather data
+ * @returns Adjusted unit grades
+ */
+function applyWeatherPenalties(
+  grades: UnitGrades,
+  weather: WeatherData | null
+): UnitGrades {
+  if (!weather) return grades;
+
+  let adjustedGrades = { ...grades };
+
+  // Wind Penalty: High wind (>15 mph) penalizes passing offense
+  // Formula: (windSpeed - 15) * 0.05 Z-score penalty per mph above 15
+  if (weather.windSpeed !== null && weather.windSpeed > 15) {
+    const windPenalty = (weather.windSpeed - 15) * 0.05;
+    adjustedGrades.offPassGrade = Math.max(adjustedGrades.offPassGrade - windPenalty, -3.0); // Cap at -3.0
+  }
+
+  // Precipitation Penalty: Heavy rain (>50%) slightly reduces explosiveness
+  // Formula: 0.2 Z-score penalty for heavy rain
+  if (weather.precipitationProb !== null && weather.precipitationProb > 50) {
+    adjustedGrades.offExplosiveness = Math.max(adjustedGrades.offExplosiveness - 0.2, -3.0);
+  }
+
+  return adjustedGrades;
+}
+
+/**
  * Calculate V2 matchup advantages
  * 
  * @param homeGrades - Home team unit grades
  * @param awayGrades - Away team unit grades
+ * @param weather - Optional weather data for adjustments
  * @returns Net advantages in each category (positive = home advantage)
  */
 function calculateMatchups(
   homeGrades: UnitGrades,
-  awayGrades: UnitGrades
+  awayGrades: UnitGrades,
+  weather: WeatherData | null = null
 ): {
   netRunAdv: number;
   netPassAdv: number;
   netExploAdv: number;
 } {
+  // Apply weather penalties if provided
+  const adjustedHomeGrades = applyWeatherPenalties(homeGrades, weather);
+  const adjustedAwayGrades = applyWeatherPenalties(awayGrades, weather);
+
   // Run Matchup: Home Offense vs Away Defense, Away Offense vs Home Defense
-  const homeRunAdv = homeGrades.offRunGrade - awayGrades.defRunGrade;
-  const awayRunAdv = awayGrades.offRunGrade - homeGrades.defRunGrade;
+  const homeRunAdv = adjustedHomeGrades.offRunGrade - adjustedAwayGrades.defRunGrade;
+  const awayRunAdv = adjustedAwayGrades.offRunGrade - adjustedHomeGrades.defRunGrade;
   const netRunAdv = homeRunAdv - awayRunAdv;
 
   // Pass Matchup
-  const homePassAdv = homeGrades.offPassGrade - awayGrades.defPassGrade;
-  const awayPassAdv = awayGrades.offPassGrade - homeGrades.defPassGrade;
+  const homePassAdv = adjustedHomeGrades.offPassGrade - adjustedAwayGrades.defPassGrade;
+  const awayPassAdv = adjustedAwayGrades.offPassGrade - adjustedHomeGrades.defPassGrade;
   const netPassAdv = homePassAdv - awayPassAdv;
 
   // Explosiveness Matchup
-  const homeExploAdv = homeGrades.offExplosiveness - awayGrades.defExplosiveness;
-  const awayExploAdv = awayGrades.offExplosiveness - homeGrades.defExplosiveness;
+  const homeExploAdv = adjustedHomeGrades.offExplosiveness - adjustedAwayGrades.defExplosiveness;
+  const awayExploAdv = adjustedAwayGrades.offExplosiveness - adjustedHomeGrades.defExplosiveness;
   const netExploAdv = homeExploAdv - awayExploAdv;
 
   return {
@@ -86,14 +129,16 @@ function calculateMatchups(
  * @param homeGrades - Home team unit grades
  * @param awayGrades - Away team unit grades
  * @param neutralSite - Whether game is at neutral site
+ * @param weather - Optional weather data for adjustments
  * @returns V2 spread in HMA frame
  */
 export function calculateV2Spread(
   homeGrades: UnitGrades,
   awayGrades: UnitGrades,
-  neutralSite: boolean = false
+  neutralSite: boolean = false,
+  weather: WeatherData | null = null
 ): number {
-  const matchups = calculateMatchups(homeGrades, awayGrades);
+  const matchups = calculateMatchups(homeGrades, awayGrades, weather);
   
   // Composite Z-score from matchup advantages
   const compositeZ =
@@ -136,6 +181,7 @@ export function calculateV1Spread(
  * @param neutralSite - Whether game is at neutral site
  * @param homeTeamId - Home team ID (for favorite determination)
  * @param awayTeamId - Away team ID (for favorite determination)
+ * @param weather - Optional weather data for adjustments
  * @returns Hybrid spread result with all three components
  */
 export function calculateHybridSpread(
@@ -145,13 +191,14 @@ export function calculateHybridSpread(
   awayGrades: UnitGrades,
   neutralSite: boolean = false,
   homeTeamId: string,
-  awayTeamId: string
+  awayTeamId: string,
+  weather: WeatherData | null = null
 ): HybridSpreadResult {
   // Calculate V1 component
   const v1SpreadHma = calculateV1Spread(homeRating, awayRating, neutralSite);
 
-  // Calculate V2 component
-  const v2SpreadHma = calculateV2Spread(homeGrades, awayGrades, neutralSite);
+  // Calculate V2 component (with weather adjustments if provided)
+  const v2SpreadHma = calculateV2Spread(homeGrades, awayGrades, neutralSite, weather);
 
   // Blend: 70% V1 + 30% V2
   const hybridSpreadHma = v1SpreadHma * V1_WEIGHT + v2SpreadHma * V2_WEIGHT;
@@ -188,27 +235,33 @@ export function calculateHybridSpread(
  * 
  * @param homeGrades - Home team unit grades
  * @param awayGrades - Away team unit grades
+ * @param weather - Optional weather data for adjustments
  * @returns Detailed matchup breakdown
  */
 export function getMatchupBreakdown(
   homeGrades: UnitGrades,
-  awayGrades: UnitGrades
+  awayGrades: UnitGrades,
+  weather: WeatherData | null = null
 ): {
   runAdv: { home: number; away: number; net: number };
   passAdv: { home: number; away: number; net: number };
   exploAdv: { home: number; away: number; net: number };
   compositeZ: number;
 } {
-  const matchups = calculateMatchups(homeGrades, awayGrades);
+  const matchups = calculateMatchups(homeGrades, awayGrades, weather);
   
-  const homeRunAdv = homeGrades.offRunGrade - awayGrades.defRunGrade;
-  const awayRunAdv = awayGrades.offRunGrade - homeGrades.defRunGrade;
+  // Apply weather penalties for display
+  const adjustedHomeGrades = applyWeatherPenalties(homeGrades, weather);
+  const adjustedAwayGrades = applyWeatherPenalties(awayGrades, weather);
   
-  const homePassAdv = homeGrades.offPassGrade - awayGrades.defPassGrade;
-  const awayPassAdv = awayGrades.offPassGrade - homeGrades.defPassGrade;
+  const homeRunAdv = adjustedHomeGrades.offRunGrade - adjustedAwayGrades.defRunGrade;
+  const awayRunAdv = adjustedAwayGrades.offRunGrade - adjustedHomeGrades.defRunGrade;
   
-  const homeExploAdv = homeGrades.offExplosiveness - awayGrades.defExplosiveness;
-  const awayExploAdv = awayGrades.offExplosiveness - homeGrades.defExplosiveness;
+  const homePassAdv = adjustedHomeGrades.offPassGrade - adjustedAwayGrades.defPassGrade;
+  const awayPassAdv = adjustedAwayGrades.offPassGrade - adjustedHomeGrades.defPassGrade;
+  
+  const homeExploAdv = adjustedHomeGrades.offExplosiveness - adjustedAwayGrades.defExplosiveness;
+  const awayExploAdv = adjustedAwayGrades.offExplosiveness - adjustedHomeGrades.defExplosiveness;
 
   const compositeZ =
     matchups.netRunAdv * W_RUN +

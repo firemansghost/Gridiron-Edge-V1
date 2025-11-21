@@ -9,6 +9,7 @@ import { computeSpreadPick, computeTotalPick, convertToFavoriteCentric, computeA
 import { pickMarketLine, getLineValue, getPointValue, looksLikePriceLeak, pickMoneyline, americanToProb } from '@/lib/market-line-helpers';
 import { getCoreV1SpreadFromTeams, getATSPick, computeATSEdgeHma } from '@/lib/core-v1-spread';
 import { getOUPick } from '@/lib/core-v1-total';
+import { calculateHybridSpread } from '@/lib/core-v2-spread';
 import { NextResponse } from 'next/server';
 
 // === V1 MODE CONFIGURATION ===
@@ -61,9 +62,10 @@ export async function GET(
   try {
     const { gameId } = params;
     
-    // Check for debug query parameter
+    // Check for query parameters
     const url = new URL(request.url);
     const debugMode = url.searchParams.get('debug') === '1';
+    const enableWeather = url.searchParams.get('weather') === 'true' || url.searchParams.get('adjustments') === 'true';
 
     // Get game with all related data
     const game = await prisma.game.findUnique({
@@ -5275,6 +5277,81 @@ export async function GET(
             defExplosiveness: awayGrades.defExplosiveness,
             havocGrade: awayGrades.havocGrade,
           },
+        };
+      })(),
+      
+      // Weather-Adjusted Spread (V2 Hybrid with weather penalties)
+      weatherAdjustedSpread: await (async () => {
+        // Only calculate if weather data exists and weather adjustments are enabled
+        if (!enableWeather || !game.weather) {
+          return null;
+        }
+        
+        // Get unit grades (already fetched above, but we need to fetch again here or pass them)
+        const prismaClient = prisma as any;
+        const [homeGrades, awayGrades] = await Promise.all([
+          prismaClient.teamUnitGrades.findUnique({
+            where: {
+              teamId_season: {
+                teamId: game.homeTeamId,
+                season: game.season,
+              },
+            },
+          }),
+          prismaClient.teamUnitGrades.findUnique({
+            where: {
+              teamId_season: {
+                teamId: game.awayTeamId,
+                season: game.season,
+              },
+            },
+          }),
+        ]);
+        
+        // Need V1 ratings for hybrid calculation
+        if (!homeGrades || !awayGrades || !homeRatingBase || !awayRatingBase) {
+          return null;
+        }
+        
+        // Prepare weather data
+        const weatherData = {
+          windSpeed: game.weather.windSpeed,
+          precipitationProb: game.weather.precipitationProb,
+          temperature: game.weather.temperature,
+        };
+        
+        // Calculate hybrid spread with weather adjustments
+        const hybridResult = calculateHybridSpread(
+          homeRatingBase,
+          awayRatingBase,
+          {
+            offRunGrade: homeGrades.offRunGrade,
+            defRunGrade: homeGrades.defRunGrade,
+            offPassGrade: homeGrades.offPassGrade,
+            defPassGrade: homeGrades.defPassGrade,
+            offExplosiveness: homeGrades.offExplosiveness,
+            defExplosiveness: homeGrades.defExplosiveness,
+          },
+          {
+            offRunGrade: awayGrades.offRunGrade,
+            defRunGrade: awayGrades.defRunGrade,
+            offPassGrade: awayGrades.offPassGrade,
+            defPassGrade: awayGrades.defPassGrade,
+            offExplosiveness: awayGrades.offExplosiveness,
+            defExplosiveness: awayGrades.defExplosiveness,
+          },
+          game.neutralSite || false,
+          game.homeTeamId,
+          game.awayTeamId,
+          weatherData
+        );
+        
+        return {
+          spreadHma: hybridResult.hybridSpreadHma,
+          favoriteSpread: hybridResult.hybridFavoriteSpread,
+          favoriteTeamId: hybridResult.favoriteTeamId,
+          v1Spread: hybridResult.v1SpreadHma,
+          v2Spread: hybridResult.v2SpreadHma,
         };
       })(),
       

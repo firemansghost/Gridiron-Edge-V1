@@ -34,17 +34,21 @@ export default function GameDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { mode: modelViewMode } = useModelViewMode();
+  const [weatherAdjusted, setWeatherAdjusted] = useState(false);
 
   useEffect(() => {
     if (params.gameId) {
       fetchGameDetail();
     }
-  }, [params.gameId]);
+  }, [params.gameId, weatherAdjusted]);
 
   const fetchGameDetail = async () => {
     const fetchStart = Date.now();
     try {
-      const response = await fetch(`/api/game/${params.gameId}`);
+      const url = weatherAdjusted 
+        ? `/api/game/${params.gameId}?weather=true`
+        : `/api/game/${params.gameId}`;
+      const response = await fetch(url);
       const fetchTime = Date.now() - fetchStart;
       const payloadTime = parseInt(response.headers.get('X-Payload-Time') || '0', 10);
       const isRevalidated = response.headers.get('X-Revalidated') === 'true';
@@ -680,6 +684,23 @@ export default function GameDetailPage() {
               <div className="flex items-center gap-3 flex-wrap">
                 <h2 className="text-lg sm:text-xl font-bold text-gray-900">Betting Ticket</h2>
                 <ModelViewModeToggle />
+                
+                {/* Weather Adjustment Toggle */}
+                {game.weather && (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={weatherAdjusted}
+                      onChange={(e) => setWeatherAdjusted(e.target.checked)}
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Weather Adjustments
+                    </span>
+                    <InfoTooltip content="Apply weather penalties to passing grades. High wind (>15 mph) reduces passing effectiveness. Heavy rain (>50%) slightly reduces explosiveness." />
+                  </label>
+                )}
+                
                 {/* Legacy Mode Badge (only show if using trust_market mode) */}
                 {game.modelConfig?.mode === 'trust_market' && (
                   <div className="bg-blue-50 border border-blue-300 rounded-md px-3 py-1 flex items-center gap-2">
@@ -768,7 +789,19 @@ export default function GameDetailPage() {
                       </div>
                     </div>
                     <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Spread pick ${game.picks.spread.bettablePick.label || 'PASS'}`}>
-                      {modelViewMode === 'raw' && isOfficialPass && hasRawAtsEdge ? (
+                      {weatherAdjusted && game.weatherAdjustedSpread ? (
+                        // Show weather-adjusted spread when toggle is on
+                        <div>
+                          <div className="text-lg text-gray-600 mb-1">
+                            Base: {game.picks.spread.bettablePick?.label || 'PASS'}
+                          </div>
+                          <div className="text-sm text-blue-600 font-semibold">
+                            Weather Adjusted: {game.weatherAdjustedSpread.favoriteTeamId === game.game.homeTeamId
+                              ? `${game.game.homeTeam} ${game.weatherAdjustedSpread.favoriteSpread.toFixed(1)}`
+                              : `${game.game.awayTeam} ${game.weatherAdjustedSpread.favoriteSpread.toFixed(1)}`}
+                          </div>
+                        </div>
+                      ) : modelViewMode === 'raw' && isOfficialPass && hasRawAtsEdge ? (
                         // Raw mode: show raw model spread
                         modelView?.modelFavoriteName && modelView?.modelFavoriteLine !== null
                           ? `${modelView.modelFavoriteName} ${modelView.modelFavoriteLine.toFixed(1)}`
