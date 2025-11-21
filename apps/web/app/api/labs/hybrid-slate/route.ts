@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { calculateHybridSpread } from '@/lib/core-v2-spread';
+import { calculateHybridSpread, calculateV1Spread } from '@/lib/core-v2-spread';
 import { getCoreV1SpreadFromTeams } from '@/lib/core-v1-spread';
 
 interface HybridGame {
@@ -161,34 +161,21 @@ export async function GET(request: NextRequest) {
         continue;
       }
 
-      // Calculate V1 spread using existing helper
-      let v1SpreadHma: number;
-      let v1FavoriteSpread: number;
-      let v1FavoriteTeamId: string | null = null;
-      let v1FavoriteName: string | null = null;
-
-      try {
-        const v1Result = await getCoreV1SpreadFromTeams(
-          season,
-          game.homeTeamId,
-          game.awayTeamId,
-          game.neutralSite || false,
-          game.homeTeam.name,
-          game.awayTeam.name
-        );
-        v1SpreadHma = v1Result.coreSpreadHma;
-        v1FavoriteSpread = v1Result.favoriteSpread;
-        v1FavoriteTeamId = v1Result.favoriteTeamId;
-        v1FavoriteName = v1Result.favoriteName;
-      } catch (error) {
-        console.error(`Error calculating V1 spread for game ${game.id}:`, error);
-        // Fallback to simple calculation
-        const hfa = game.neutralSite ? 0 : 2.5;
-        v1SpreadHma = homeRating - awayRating + hfa;
-        v1FavoriteSpread = v1SpreadHma > 0 ? -Math.abs(v1SpreadHma) : Math.abs(v1SpreadHma);
-        v1FavoriteTeamId = v1SpreadHma > 0 ? game.homeTeamId : game.awayTeamId;
-        v1FavoriteName = v1SpreadHma > 0 ? game.homeTeam.name : game.awayTeam.name;
-      }
+      // Calculate V1 spread using the same logic as hybrid blend
+      // This ensures consistency between V1 display and hybrid calculation
+      const v1SpreadHma = calculateV1Spread(
+        homeRating,
+        awayRating,
+        game.neutralSite || false
+      );
+      
+      // Determine favorite for V1
+      const isV1HomeFavorite = v1SpreadHma > 0;
+      const v1FavoriteTeamId = isV1HomeFavorite ? game.homeTeamId : game.awayTeamId;
+      const v1FavoriteName = isV1HomeFavorite ? game.homeTeam.name : game.awayTeam.name;
+      
+      // Convert to favorite-centric: if home favored (HMA > 0), favorite spread = -HMA; if away favored (HMA < 0), favorite spread = HMA (already negative)
+      const v1FavoriteSpread = v1SpreadHma > 0 ? -v1SpreadHma : v1SpreadHma;
 
       // Calculate Hybrid spread
       const hybridResult = calculateHybridSpread(

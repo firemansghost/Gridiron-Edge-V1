@@ -157,14 +157,19 @@ export function calculateHybridSpread(
   const hybridSpreadHma = v1SpreadHma * V1_WEIGHT + v2SpreadHma * V2_WEIGHT;
 
   // Convert to favorite-centric format
+  // Favorite-centric: negative = favorite, positive = underdog
+  // If HMA > 0 (home favored), favorite spread = -HMA (negative)
+  // If HMA < 0 (away favored), favorite spread = HMA (already negative)
   const isHomeFavorite = hybridSpreadHma > 0;
   const favoriteTeamId = isHomeFavorite ? homeTeamId : awayTeamId;
   const dogTeamId = isHomeFavorite ? awayTeamId : homeTeamId;
 
   // Favorite-centric spreads (always negative for favorite)
-  const v1FavoriteSpread = v1SpreadHma > 0 ? -Math.abs(v1SpreadHma) : Math.abs(v1SpreadHma);
-  const v2FavoriteSpread = v2SpreadHma > 0 ? -Math.abs(v2SpreadHma) : Math.abs(v2SpreadHma);
-  const hybridFavoriteSpread = hybridSpreadHma > 0 ? -Math.abs(hybridSpreadHma) : Math.abs(hybridSpreadHma);
+  // If home is favorite (HMA > 0): favorite spread = -HMA
+  // If away is favorite (HMA < 0): favorite spread = HMA (already negative)
+  const v1FavoriteSpread = v1SpreadHma > 0 ? -v1SpreadHma : v1SpreadHma;
+  const v2FavoriteSpread = v2SpreadHma > 0 ? -v2SpreadHma : v2SpreadHma;
+  const hybridFavoriteSpread = hybridSpreadHma > 0 ? -hybridSpreadHma : hybridSpreadHma;
 
   return {
     v1SpreadHma,
