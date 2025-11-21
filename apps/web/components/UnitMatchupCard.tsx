@@ -267,8 +267,8 @@ export function UnitMatchupCard({
 
       <div className="mt-4 pt-4 border-t border-gray-200">
         <p className="text-xs text-gray-500">
-          <strong>Note:</strong> Grades are Z-scores normalized across FBS. A+ (>1.5) = Elite, A (>1.0) = Excellent, 
-          B (>0.0) = Above Average, C (>-1.0) = Below Average, D/F (<-1.0) = Poor.
+          <strong>Note:</strong> Grades are Z-scores normalized across FBS. A+ ({'>'}1.5) = Elite, A ({'>'}1.0) = Excellent, 
+          B ({'>'}0.0) = Above Average, C ({'>'}-1.0) = Below Average, D/F ({'<'}-1.0) = Poor.
         </p>
       </div>
     </div>
