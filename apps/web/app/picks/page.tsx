@@ -13,6 +13,7 @@ import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import { TeamLogo } from '@/components/TeamLogo';
 import { ErrorState } from '@/components/ErrorState';
+import { downloadAsCsv } from '@/lib/csv-export';
 
 interface GamePick {
   label: string | null;
@@ -173,6 +174,61 @@ export default function PicksPage() {
     );
   };
 
+  const handleExportCsv = () => {
+    // Flatten all picks from all games
+    const csvRows: Record<string, any>[] = [];
+
+    games.forEach(game => {
+      const gameName = `${game.awayTeamName} @ ${game.homeTeamName}`;
+      const kickoff = formatKickoff(game.kickoffLocal);
+      const modelSpread = game.modelSpread !== null && game.modelSpread !== undefined
+        ? game.modelSpread.toFixed(1)
+        : '—';
+
+      // Spread pick
+      if (game.picks?.spread?.label) {
+        csvRows.push({
+          Game: gameName,
+          Time: kickoff,
+          Type: 'Spread',
+          Pick: game.picks.spread.label,
+          Model: `Model says ${modelSpread}`,
+          Edge: game.picks.spread.edge !== null ? `${game.picks.spread.edge.toFixed(1)} pts` : '—',
+          Grade: game.picks.spread.grade || '—',
+        });
+      }
+
+      // Total pick
+      if (game.picks?.total?.label) {
+        csvRows.push({
+          Game: gameName,
+          Time: kickoff,
+          Type: 'Total',
+          Pick: game.picks.total.label,
+          Model: '—', // Total model value not available in current structure
+          Edge: game.picks.total.edge !== null ? `${game.picks.total.edge.toFixed(1)} pts` : '—',
+          Grade: game.picks.total.grade || '—',
+        });
+      }
+
+      // Moneyline pick
+      if (game.picks?.moneyline?.label) {
+        csvRows.push({
+          Game: gameName,
+          Time: kickoff,
+          Type: 'Moneyline',
+          Pick: game.picks.moneyline.label,
+          Model: '—',
+          Edge: game.picks.moneyline.value !== null ? `${game.picks.moneyline.value.toFixed(1)}%` : '—',
+          Grade: game.picks.moneyline.grade || '—',
+        });
+      }
+    });
+
+    const filename = `gridiron-picks-week-${week || 'unknown'}`;
+    downloadAsCsv(filename, csvRows);
+  };
+
   const renderGameCard = (game: SlateGame) => {
     const spreadPick = game.picks?.spread;
     const totalPick = game.picks?.total;
@@ -274,9 +330,22 @@ export default function PicksPage() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           {/* Header */}
           <div className="mb-6">
-            <h1 className="text-2xl font-bold text-gray-900 mb-1">
-              Official Picks{week !== null ? ` - Week ${week}` : ''}
-            </h1>
+            <div className="flex items-center justify-between mb-1">
+              <h1 className="text-2xl font-bold text-gray-900">
+                Official Picks{week !== null ? ` - Week ${week}` : ''}
+              </h1>
+              {hasAnyBets && (
+                <button
+                  onClick={handleExportCsv}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Export CSV
+                </button>
+              )}
+            </div>
             <p className="text-sm text-gray-600">
               {hasAnyBets 
                 ? `${totalGames} ${totalGames === 1 ? 'game' : 'games'} with active bets${season !== null && week !== null ? ` for ${season} Week ${week}` : ''}`

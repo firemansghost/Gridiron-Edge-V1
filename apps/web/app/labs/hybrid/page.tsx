@@ -13,6 +13,7 @@ import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import { TeamLogo } from '@/components/TeamLogo';
 import { ErrorState } from '@/components/ErrorState';
+import { downloadAsCsv } from '@/lib/csv-export';
 
 interface SpreadInfo {
   hma: number;
@@ -175,6 +176,39 @@ export default function HybridLabsPage() {
     return 'bg-gray-100 text-gray-800';
   };
 
+  const handleExportCsv = () => {
+    // Get visible games (respecting the filter)
+    const visibleGames = games.filter(game => {
+      if (hideNoOdds) {
+        return game.marketSpread !== null && game.marketSpread !== undefined && game.marketSpread.value !== null;
+      }
+      return true;
+    });
+
+    const csvRows = visibleGames.map(game => {
+      const pick = calculateHybridPick(game);
+      
+      return {
+        Away_Team: game.awayTeamName,
+        Home_Team: game.homeTeamName,
+        Kickoff: formatKickoff(game.date),
+        V1_Spread: `${game.v1Spread.favoriteName} ${formatSpread(game.v1Spread.favoriteSpread)}`,
+        V2_Spread: `${game.v2Spread.favoriteName} ${formatSpread(game.v2Spread.favoriteSpread)}`,
+        Hybrid_Spread: `${game.hybridSpread.favoriteName} ${formatSpread(game.hybridSpread.favoriteSpread)}`,
+        Diff_Hybrid_V1: game.diff > 0 ? `+${game.diff.toFixed(1)}` : game.diff.toFixed(1),
+        Market_Line: game.marketSpread && game.marketSpread.value !== null
+          ? formatSpread(game.marketSpread.value)
+          : '—',
+        Hybrid_Pick: pick ? pick.teamName : '—',
+        Pick_Line: pick ? formatSpread(pick.marketSpread) : '—',
+        Edge: pick ? pick.edge.toFixed(1) : '—',
+      };
+    });
+
+    const filename = `hybrid-analysis-week-${week || 'unknown'}`;
+    downloadAsCsv(filename, csvRows);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -214,17 +248,30 @@ export default function HybridLabsPage() {
             Comparing V1 (Composite), V2 (Matchup), and Hybrid (70% V1 + 30% V2) spread predictions
             {season && week && ` - ${season} Week ${week}`}
           </p>
-          <div className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              id="hideNoOdds"
-              checked={hideNoOdds}
-              onChange={(e) => setHideNoOdds(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <label htmlFor="hideNoOdds" className="text-sm font-medium text-gray-700 select-none cursor-pointer">
-              Hide games without market odds
-            </label>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="hideNoOdds"
+                checked={hideNoOdds}
+                onChange={(e) => setHideNoOdds(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <label htmlFor="hideNoOdds" className="text-sm font-medium text-gray-700 select-none cursor-pointer">
+                Hide games without market odds
+              </label>
+            </div>
+            {games.length > 0 && (
+              <button
+                onClick={handleExportCsv}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Export CSV
+              </button>
+            )}
           </div>
         </div>
 
