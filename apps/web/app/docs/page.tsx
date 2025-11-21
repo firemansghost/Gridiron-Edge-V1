@@ -18,9 +18,9 @@ export default function DocsPage() {
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <HeaderNav />
       <div className="flex-1">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
           {/* Header */}
-          <div className="text-center mb-12">
+          <div className="text-center mb-16">
             <h1 className="text-4xl font-bold text-gray-900 mb-4">Documentation</h1>
             <p className="text-lg text-gray-600">
               Resources and guides for using Gridiron Edge
@@ -49,10 +49,10 @@ export default function DocsPage() {
               </div>
 
               {/* Internal Documentation Links */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <Link
                   href="/docs/runbook"
-                  className="block bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 border border-gray-200"
+                  className="block h-full bg-white rounded-lg shadow hover:shadow-md transition-all p-6 border border-gray-200"
                 >
                   <div className="flex items-start">
                     <div className="flex-shrink-0">
@@ -71,7 +71,7 @@ export default function DocsPage() {
 
                 <Link
                   href="/docs/methodology"
-                  className="block bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 border border-gray-200"
+                  className="block h-full bg-white rounded-lg shadow hover:shadow-md transition-all p-6 border border-gray-200"
                 >
                   <div className="flex items-start">
                     <div className="flex-shrink-0">
@@ -90,7 +90,7 @@ export default function DocsPage() {
 
                 <Link
                   href="/docs/status"
-                  className="block bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 border border-gray-200"
+                  className="block h-full bg-white rounded-lg shadow hover:shadow-md transition-all p-6 border border-gray-200"
                 >
                   <div className="flex items-start">
                     <div className="flex-shrink-0">
@@ -109,7 +109,7 @@ export default function DocsPage() {
 
                 <Link
                   href="/docs/changelog"
-                  className="block bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 border border-gray-200"
+                  className="block h-full bg-white rounded-lg shadow hover:shadow-md transition-all p-6 border border-gray-200"
                 >
                   <div className="flex items-start">
                     <div className="flex-shrink-0">
@@ -128,7 +128,7 @@ export default function DocsPage() {
 
                 <Link
                   href="/docs/data-points"
-                  className="block bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 border border-gray-200"
+                  className="block h-full bg-white rounded-lg shadow hover:shadow-md transition-all p-6 border border-gray-200"
                 >
                   <div className="flex items-start">
                     <div className="flex-shrink-0">
@@ -149,7 +149,7 @@ export default function DocsPage() {
 
                 <Link
                   href="/docs/week10-ingestion"
-                  className="block bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 border border-gray-200"
+                  className="block h-full bg-white rounded-lg shadow hover:shadow-md transition-all p-6 border border-gray-200"
                 >
                   <div className="flex items-start">
                     <div className="flex-shrink-0">
@@ -170,7 +170,7 @@ export default function DocsPage() {
                   href="https://github.com/firemansghost/Gridiron-Edge-V1/blob/main/docs/selections-profitability.md"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="block bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 border border-gray-200"
+                  className="block h-full bg-white rounded-lg shadow hover:shadow-md transition-all p-6 border border-gray-200"
                 >
                   <div className="flex items-start">
                     <div className="flex-shrink-0">
@@ -212,13 +212,13 @@ export default function DocsPage() {
               </div>
 
               {/* Quick Links */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
             {/* Project README */}
             <a
               href="https://github.com/firemansghost/Gridiron-Edge-V1/blob/main/README.md"
               target="_blank"
               rel="noopener noreferrer"
-              className="block bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 border border-gray-200"
+              className="block h-full bg-white rounded-lg shadow hover:shadow-md transition-all p-6 border border-gray-200"
             >
               <div className="flex items-start">
                 <div className="flex-shrink-0">
@@ -240,7 +240,7 @@ export default function DocsPage() {
               href="https://github.com/firemansghost/Gridiron-Edge-V1/blob/main/docs/architecture.md"
               target="_blank"
               rel="noopener noreferrer"
-              className="block bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 border border-gray-200"
+              className="block h-full bg-white rounded-lg shadow hover:shadow-md transition-all p-6 border border-gray-200"
             >
               <div className="flex items-start">
                 <div className="flex-shrink-0">
@@ -262,7 +262,7 @@ export default function DocsPage() {
               href="https://github.com/firemansghost/Gridiron-Edge-V1/blob/main/docs/data_model.md"
               target="_blank"
               rel="noopener noreferrer"
-              className="block bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 border border-gray-200"
+              className="block h-full bg-white rounded-lg shadow hover:shadow-md transition-all p-6 border border-gray-200"
             >
               <div className="flex items-start">
                 <div className="flex-shrink-0">
@@ -286,7 +286,7 @@ export default function DocsPage() {
               href="https://github.com/firemansghost/Gridiron-Edge-V1/blob/main/docs/ui.md"
               target="_blank"
               rel="noopener noreferrer"
-              className="block bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 border border-gray-200"
+              className="block h-full bg-white rounded-lg shadow hover:shadow-md transition-all p-6 border border-gray-200"
             >
               <div className="flex items-start">
                 <div className="flex-shrink-0">
@@ -308,7 +308,7 @@ export default function DocsPage() {
               href="https://github.com/firemansghost/Gridiron-Edge-V1/blob/main/docs/calibration.md"
               target="_blank"
               rel="noopener noreferrer"
-              className="block bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 border border-gray-200"
+              className="block h-full bg-white rounded-lg shadow hover:shadow-md transition-all p-6 border border-gray-200"
             >
               <div className="flex items-start">
                 <div className="flex-shrink-0">
@@ -330,7 +330,7 @@ export default function DocsPage() {
               href="https://github.com/firemansghost/Gridiron-Edge-V1/blob/main/docs/backtest.md"
               target="_blank"
               rel="noopener noreferrer"
-              className="block bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6 border border-gray-200"
+              className="block h-full bg-white rounded-lg shadow hover:shadow-md transition-all p-6 border border-gray-200"
             >
               <div className="flex items-start">
                 <div className="flex-shrink-0">
