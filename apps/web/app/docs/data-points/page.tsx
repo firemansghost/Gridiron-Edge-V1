@@ -33,6 +33,7 @@ export default function DataPointsPage() {
               </h3>
               <ul className="list-disc pl-6 space-y-1 text-gray-700">
                 <li><strong>EPA (Expected Points Added):</strong> Offensive and defensive EPA per play. Measures the value created (or prevented) on each play relative to baseline expectations.</li>
+                <li><strong>PPA (Points Per Attempt):</strong> Predicted points added per rushing or passing attempt. Measures efficiency by play type (rush PPA, pass PPA). Used in V2 unit grade calculations.</li>
                 <li><strong>Success Rate:</strong> Percentage of plays with positive EPA. Tracks consistency and play-level effectiveness.</li>
                 <li><strong>IsoPPP (Isolated Points Per Play):</strong> Average EPA on successful plays. Measures explosiveness and big-play ability.</li>
                 <li><strong>Points Per Opportunity (PPO):</strong> Scoring efficiency when in scoring position. Tracks finishing ability.</li>
@@ -70,6 +71,27 @@ export default function DataPointsPage() {
               <ul className="list-disc pl-6 space-y-1 text-gray-700">
                 <li><strong>Average Starting Field Position:</strong> Typical starting field position for drives. Impacts scoring opportunities.</li>
               </ul>
+            </div>
+            
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                V2 Unit Grades (Derived)
+              </h3>
+              <p className="text-gray-700 mb-2">
+                Unit-specific performance grades calculated from the metrics above, normalized to Z-scores:
+              </p>
+              <ul className="list-disc pl-6 space-y-1 text-gray-700">
+                <li><strong>Run Offense Grade:</strong> 50% Line Yards Z-score + 50% Rush PPA Z-score. Measures ground game effectiveness.</li>
+                <li><strong>Run Defense Grade:</strong> 50% Stuff Rate Z-score + 50% (inverted) Rush PPA Allowed Z-score. Measures ability to stop the run.</li>
+                <li><strong>Pass Offense Grade:</strong> 50% Pass PPA Z-score + 50% Pass Success Rate Z-score. Measures aerial attack effectiveness.</li>
+                <li><strong>Pass Defense Grade:</strong> 50% (inverted) Pass PPA Allowed Z-score + 50% (inverted) Pass Success Rate Allowed Z-score. Measures pass defense strength.</li>
+                <li><strong>Offensive Explosiveness:</strong> IsoPPP Z-score. Measures big-play ability.</li>
+                <li><strong>Defensive Explosiveness:</strong> (Inverted) IsoPPP Allowed Z-score. Measures ability to prevent big plays.</li>
+                <li><strong>Havoc Grade:</strong> Havoc Rate Z-score (season-level). Measures defensive disruption and playmaking ability.</li>
+              </ul>
+              <p className="text-gray-600 text-sm mt-2 italic">
+                Note: All grades are normalized to Z-scores (standard deviations from FBS mean), enabling direct comparison across different metric types. These grades power the "Unit Matchup" analysis on game detail pages.
+              </p>
             </div>
           </div>
         </section>
@@ -319,4 +341,5 @@ export default function DataPointsPage() {
     </>
   );
 }
+
 

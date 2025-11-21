@@ -375,6 +375,168 @@ export default function MethodologyPage() {
 
         <section>
           <h2 className="text-2xl font-semibold text-gray-900 mb-4">
+            Unit Matchup Analysis (V2)
+          </h2>
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Overview
+              </h3>
+              <p className="text-gray-700 mb-4">
+                Beyond the main Power Rating (V1), Gridiron Edge analyzes specific unit matchups to identify 
+                tactical advantages. The V2 system breaks down team performance into granular unit grades 
+                (Run Offense, Pass Defense, Explosiveness) and compares them head-to-head to find hidden edges.
+              </p>
+              <p className="text-gray-700 mb-4">
+                These unit grades are displayed on the Game Detail page in the "Unit Matchup" card, showing 
+                how each team's offensive and defensive units stack up against their opponent.
+              </p>
+            </div>
+            
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Unit Grade Calculation
+              </h3>
+              <p className="text-gray-700 mb-4">
+                Each unit grade is calculated by:
+              </p>
+              <ol className="list-decimal pl-6 space-y-2 text-gray-700">
+                <li><strong>Aggregating game-level stats</strong> to season averages (PPA, Line Yards, Success Rate, IsoPPP)</li>
+                <li><strong>Normalizing to Z-scores</strong> across all FBS teams (standard deviations from mean)</li>
+                <li><strong>Blending related metrics</strong> with equal weights (e.g., Run Grade = 50% Line Yards + 50% Rush PPA)</li>
+                <li><strong>Inverting defensive metrics</strong> where lower values are better (e.g., PPA Allowed becomes negative Z-score)</li>
+              </ol>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-4">
+                <h4 className="font-medium text-blue-800 mb-2">Example: Run Offense Grade</h4>
+                <p className="text-blue-700 text-sm mb-2">
+                  A team's Run Offense Grade combines:
+                </p>
+                <ul className="list-disc pl-6 space-y-1 text-blue-700 text-sm">
+                  <li><strong>Line Yards Z-score:</strong> How many standard deviations above/below average the offensive line performs</li>
+                  <li><strong>Rush PPA Z-score:</strong> How many standard deviations above/below average the rushing attack is in terms of predicted points added</li>
+                  <li><strong>Final Grade:</strong> (Line Yards Z × 0.5) + (Rush PPA Z × 0.5)</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Grading Scale
+              </h3>
+              <p className="text-gray-700 mb-4">
+                Unit grades are displayed on the Game Detail page using a letter grade system (A+ to F) 
+                converted from Z-scores:
+              </p>
+              <ul className="list-disc pl-6 space-y-1 text-gray-700">
+                <li><strong>A+ (2.0+ Z):</strong> Elite unit, top 2.5% of FBS</li>
+                <li><strong>A (1.5-1.99 Z):</strong> Excellent unit, top 7%</li>
+                <li><strong>B+ (1.0-1.49 Z):</strong> Very good unit, top 16%</li>
+                <li><strong>B (0.5-0.99 Z):</strong> Above average unit</li>
+                <li><strong>C+ (0.0-0.49 Z):</strong> Average unit</li>
+                <li><strong>C (-0.49-0.0 Z):</strong> Below average unit</li>
+                <li><strong>D+ (-0.99 to -0.5 Z):</strong> Poor unit</li>
+                <li><strong>D (-1.49 to -1.0 Z):</strong> Very poor unit</li>
+                <li><strong>F (&lt; -1.5 Z):</strong> Bottom tier unit</li>
+              </ul>
+            </div>
+            
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Matchup Analysis
+              </h3>
+              <p className="text-gray-700 mb-4">
+                The V2 system calculates net advantages for each matchup:
+              </p>
+              <ul className="list-disc pl-6 space-y-1 text-gray-700">
+                <li><strong>Run Matchup:</strong> (Home Run Offense - Away Run Defense) vs (Away Run Offense - Home Run Defense)</li>
+                <li><strong>Pass Matchup:</strong> (Home Pass Offense - Away Pass Defense) vs (Away Pass Offense - Home Pass Defense)</li>
+                <li><strong>Explosiveness Matchup:</strong> (Home Offensive Explosiveness - Away Defensive Explosiveness) vs (Away Offensive Explosiveness - Home Defensive Explosiveness)</li>
+              </ul>
+              <p className="text-gray-700 mt-4">
+                These net advantages are then weighted (40% Run, 40% Pass, 20% Explosiveness) and converted 
+                to a spread prediction using an optimized scale factor.
+              </p>
+            </div>
+            
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Hybrid Model (Labs)
+              </h3>
+              <p className="text-gray-700 mb-4">
+                The V2 unit matchup analysis is combined with the V1 Power Rating in a "Hybrid" model that 
+                blends both approaches:
+              </p>
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <p className="text-green-700 text-sm mb-2">
+                  <strong>Hybrid Spread = (V1 Spread × 70%) + (V2 Spread × 30%)</strong>
+                </p>
+                <p className="text-green-700 text-sm">
+                  This blend leverages the stability of V1 (results-aware) with the matchup specificity 
+                  of V2 (stats-only). The weights were optimized through backtesting against 2025 season 
+                  results. The Hybrid model is available in the "Labs (V2)" dashboard for comparison with 
+                  pure V1 and V2 predictions.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h2 className="text-2xl font-semibold text-gray-900 mb-4">
+            Situational Adjustments
+          </h2>
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Weather Adjustments (V2)
+              </h3>
+              <p className="text-gray-700 mb-4">
+                The V2 model applies situational penalties to unit grades based on weather conditions. 
+                These adjustments are visible on the Game Detail page when the "Weather Adjustment" toggle 
+                is enabled.
+              </p>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                <h4 className="font-medium text-yellow-800 mb-2">Wind Penalty</h4>
+                <p className="text-yellow-700 text-sm mb-2">
+                  <strong>Threshold:</strong> Wind speed &gt; 15 mph
+                </p>
+                <p className="text-yellow-700 text-sm mb-2">
+                  <strong>Effect:</strong> Passing offense grades are penalized by 0.05 Z-score per mph above 15 mph
+                </p>
+                <p className="text-yellow-700 text-sm">
+                  <strong>Example:</strong> 20 mph wind = (20 - 15) × 0.05 = 0.25 Z-score penalty to Pass Offense Grade
+                </p>
+                <p className="text-yellow-700 text-sm mt-2">
+                  High wind conditions make passing more difficult, reducing the effectiveness of teams that 
+                  rely heavily on the aerial attack. The penalty is capped at -3.0 Z-score to prevent extreme 
+                  adjustments.
+                </p>
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h4 className="font-medium text-blue-800 mb-2">Precipitation Penalty</h4>
+                <p className="text-blue-700 text-sm mb-2">
+                  <strong>Threshold:</strong> Precipitation probability &gt; 50%
+                </p>
+                <p className="text-blue-700 text-sm mb-2">
+                  <strong>Effect:</strong> Offensive explosiveness grades are penalized by 0.2 Z-score
+                </p>
+                <p className="text-blue-700 text-sm">
+                  Heavy rain or snow conditions make ball handling more difficult and reduce the likelihood 
+                  of explosive plays. This penalty affects both teams equally and is applied to the 
+                  Explosiveness component of the V2 matchup calculation.
+                </p>
+              </div>
+              <p className="text-gray-700 mt-4">
+                <strong>Note:</strong> Weather adjustments only affect the V2 component of the Hybrid model. 
+                The V1 Power Rating remains unchanged, as it reflects season-long performance that already 
+                accounts for typical weather conditions.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h2 className="text-2xl font-semibold text-gray-900 mb-4">
             Risk Notes / Limitations
           </h2>
           <div className="space-y-4">
