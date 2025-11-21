@@ -82,7 +82,9 @@ export function UnitMatchupCard({
         <div className="space-y-2">
           <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
             <div className="flex-1">
-              <div className="text-xs text-gray-500 mb-1">{homeTeamName} Run Offense</div>
+              <div className="text-xs text-gray-500 mb-1">
+                <span className="font-semibold text-gray-700">{homeTeamName}</span> Run Offense
+              </div>
               <div className="flex items-center space-x-2">
                 <span className={`text-xs font-medium px-2 py-0.5 rounded ${zScoreToGrade(homeGrades.offRunGrade).color}`}>
                   {zScoreToGrade(homeGrades.offRunGrade).grade}
@@ -94,7 +96,9 @@ export function UnitMatchupCard({
             </div>
             <div className="text-gray-400 mx-2">vs</div>
             <div className="flex-1 text-right">
-              <div className="text-xs text-gray-500 mb-1">{awayTeamName} Run Defense</div>
+              <div className="text-xs text-gray-500 mb-1">
+                <span className="font-semibold text-gray-700">{awayTeamName}</span> Run Defense
+              </div>
               <div className="flex items-center justify-end space-x-2">
                 <span className="text-xs text-gray-600">
                   ({awayGrades.defRunGrade.toFixed(2)})
@@ -107,7 +111,9 @@ export function UnitMatchupCard({
           </div>
           <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
             <div className="flex-1">
-              <div className="text-xs text-gray-500 mb-1">{awayTeamName} Run Offense</div>
+              <div className="text-xs text-gray-500 mb-1">
+                <span className="font-semibold text-gray-700">{awayTeamName}</span> Run Offense
+              </div>
               <div className="flex items-center space-x-2">
                 <span className={`text-xs font-medium px-2 py-0.5 rounded ${zScoreToGrade(awayGrades.offRunGrade).color}`}>
                   {zScoreToGrade(awayGrades.offRunGrade).grade}
@@ -119,7 +125,9 @@ export function UnitMatchupCard({
             </div>
             <div className="text-gray-400 mx-2">vs</div>
             <div className="flex-1 text-right">
-              <div className="text-xs text-gray-500 mb-1">{homeTeamName} Run Defense</div>
+              <div className="text-xs text-gray-500 mb-1">
+                <span className="font-semibold text-gray-700">{homeTeamName}</span> Run Defense
+              </div>
               <div className="flex items-center justify-end space-x-2">
                 <span className="text-xs text-gray-600">
                   ({homeGrades.defRunGrade.toFixed(2)})
@@ -145,7 +153,9 @@ export function UnitMatchupCard({
         <div className="space-y-2">
           <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
             <div className="flex-1">
-              <div className="text-xs text-gray-500 mb-1">{homeTeamName} Pass Offense</div>
+              <div className="text-xs text-gray-500 mb-1">
+                <span className="font-semibold text-gray-700">{homeTeamName}</span> Pass Offense
+              </div>
               <div className="flex items-center space-x-2">
                 <span className={`text-xs font-medium px-2 py-0.5 rounded ${zScoreToGrade(homeGrades.offPassGrade).color}`}>
                   {zScoreToGrade(homeGrades.offPassGrade).grade}
@@ -157,7 +167,9 @@ export function UnitMatchupCard({
             </div>
             <div className="text-gray-400 mx-2">vs</div>
             <div className="flex-1 text-right">
-              <div className="text-xs text-gray-500 mb-1">{awayTeamName} Pass Defense</div>
+              <div className="text-xs text-gray-500 mb-1">
+                <span className="font-semibold text-gray-700">{awayTeamName}</span> Pass Defense
+              </div>
               <div className="flex items-center justify-end space-x-2">
                 <span className="text-xs text-gray-600">
                   ({awayGrades.defPassGrade.toFixed(2)})
@@ -170,7 +182,9 @@ export function UnitMatchupCard({
           </div>
           <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
             <div className="flex-1">
-              <div className="text-xs text-gray-500 mb-1">{awayTeamName} Pass Offense</div>
+              <div className="text-xs text-gray-500 mb-1">
+                <span className="font-semibold text-gray-700">{awayTeamName}</span> Pass Offense
+              </div>
               <div className="flex items-center space-x-2">
                 <span className={`text-xs font-medium px-2 py-0.5 rounded ${zScoreToGrade(awayGrades.offPassGrade).color}`}>
                   {zScoreToGrade(awayGrades.offPassGrade).grade}
@@ -182,7 +196,9 @@ export function UnitMatchupCard({
             </div>
             <div className="text-gray-400 mx-2">vs</div>
             <div className="flex-1 text-right">
-              <div className="text-xs text-gray-500 mb-1">{homeTeamName} Pass Defense</div>
+              <div className="text-xs text-gray-500 mb-1">
+                <span className="font-semibold text-gray-700">{homeTeamName}</span> Pass Defense
+              </div>
               <div className="flex items-center justify-end space-x-2">
                 <span className="text-xs text-gray-600">
                   ({homeGrades.defPassGrade.toFixed(2)})
@@ -208,7 +224,9 @@ export function UnitMatchupCard({
         <div className="space-y-2">
           <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
             <div className="flex-1">
-              <div className="text-xs text-gray-500 mb-1">{homeTeamName} Explosiveness</div>
+              <div className="text-xs text-gray-500 mb-1">
+                <span className="font-semibold text-gray-700">{homeTeamName}</span> Explosiveness
+              </div>
               <div className="flex items-center space-x-2">
                 <span className={`text-xs font-medium px-2 py-0.5 rounded ${zScoreToGrade(homeGrades.offExplosiveness).color}`}>
                   {zScoreToGrade(homeGrades.offExplosiveness).grade}
@@ -220,7 +238,9 @@ export function UnitMatchupCard({
             </div>
             <div className="text-gray-400 mx-2">vs</div>
             <div className="flex-1 text-right">
-              <div className="text-xs text-gray-500 mb-1">{awayTeamName} Explosiveness Defense</div>
+              <div className="text-xs text-gray-500 mb-1">
+                <span className="font-semibold text-gray-700">{awayTeamName}</span> Explosiveness Defense
+              </div>
               <div className="flex items-center justify-end space-x-2">
                 <span className="text-xs text-gray-600">
                   ({awayGrades.defExplosiveness.toFixed(2)})
@@ -233,7 +253,9 @@ export function UnitMatchupCard({
           </div>
           <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
             <div className="flex-1">
-              <div className="text-xs text-gray-500 mb-1">{awayTeamName} Explosiveness</div>
+              <div className="text-xs text-gray-500 mb-1">
+                <span className="font-semibold text-gray-700">{awayTeamName}</span> Explosiveness
+              </div>
               <div className="flex items-center space-x-2">
                 <span className={`text-xs font-medium px-2 py-0.5 rounded ${zScoreToGrade(awayGrades.offExplosiveness).color}`}>
                   {zScoreToGrade(awayGrades.offExplosiveness).grade}
@@ -245,7 +267,9 @@ export function UnitMatchupCard({
             </div>
             <div className="text-gray-400 mx-2">vs</div>
             <div className="flex-1 text-right">
-              <div className="text-xs text-gray-500 mb-1">{homeTeamName} Explosiveness Defense</div>
+              <div className="text-xs text-gray-500 mb-1">
+                <span className="font-semibold text-gray-700">{homeTeamName}</span> Explosiveness Defense
+              </div>
               <div className="flex items-center justify-end space-x-2">
                 <span className="text-xs text-gray-600">
                   ({homeGrades.defExplosiveness.toFixed(2)})
