@@ -5056,6 +5056,8 @@ export async function GET(
       game: {
         id: game.id,
         matchup: `${game.awayTeam.name} @ ${game.homeTeam.name}`,
+        homeTeam: game.homeTeam.name,
+        awayTeam: game.awayTeam.name,
         kickoff: kickoffTime,
         venue: game.venue,
         city: game.city,
