@@ -49,6 +49,7 @@ export default function HybridLabsPage() {
   const [error, setError] = useState<string | null>(null);
   const [season, setSeason] = useState<number | null>(null);
   const [week, setWeek] = useState<number | null>(null);
+  const [hideNoOdds, setHideNoOdds] = useState(false);
 
   useEffect(() => {
     fetchHybridSlate();
@@ -156,10 +157,22 @@ export default function HybridLabsPage() {
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             🔬 Labs: Hybrid Model Dashboard
           </h1>
-          <p className="text-gray-600">
+          <p className="text-gray-600 mb-4">
             Comparing V1 (Composite), V2 (Matchup), and Hybrid (70% V1 + 30% V2) spread predictions
             {season && week && ` - ${season} Week ${week}`}
           </p>
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="hideNoOdds"
+              checked={hideNoOdds}
+              onChange={(e) => setHideNoOdds(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor="hideNoOdds" className="text-sm font-medium text-gray-700 select-none cursor-pointer">
+              Hide games without market odds
+            </label>
+          </div>
         </div>
 
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
@@ -188,14 +201,29 @@ export default function HybridLabsPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {games.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                      No games found for this week.
-                    </td>
-                  </tr>
-                ) : (
-                  games.map((game) => {
+                {(() => {
+                  const visibleGames = games.filter(game => {
+                    if (hideNoOdds) {
+                      return game.marketSpread !== null && game.marketSpread !== undefined && game.marketSpread.value !== null;
+                    }
+                    return true;
+                  });
+
+                  if (visibleGames.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                          {games.length === 0
+                            ? 'No games found for this week.'
+                            : hideNoOdds
+                            ? 'No games with market odds found.'
+                            : 'No games found for this week.'}
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return visibleGames.map((game) => {
                     const rowClass = getDiffColor(game.diff);
                     return (
                       <tr key={game.gameId} className={rowClass}>
@@ -277,8 +305,8 @@ export default function HybridLabsPage() {
                         </td>
                       </tr>
                     );
-                  })
-                )}
+                  });
+                })()}
               </tbody>
             </table>
           </div>
