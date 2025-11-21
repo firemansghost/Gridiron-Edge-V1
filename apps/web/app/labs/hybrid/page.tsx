@@ -122,6 +122,59 @@ export default function HybridLabsPage() {
     return 'bg-gray-100 text-gray-800';
   };
 
+  const calculateHybridPick = (game: HybridGame) => {
+    if (!game.marketSpread || game.marketSpread.value === null) {
+      return null;
+    }
+
+    // Hybrid margin: Home Minus Away (positive = home wins)
+    const hybridMargin = game.hybridSpread.hma;
+
+    // Market spread is favorite-centric (negative for favorite)
+    // Convert to market margin (Home Minus Away)
+    const marketValue = game.marketSpread.value;
+    const marketFavoriteTeamId = game.marketSpread.favoriteTeamId;
+    
+    let marketMargin: number;
+    if (marketFavoriteTeamId === game.homeTeamId) {
+      // Home is favorite: value is negative (e.g., -7 means home -7)
+      // Market expects home to win by |value|, so margin = -value
+      marketMargin = -marketValue;
+    } else if (marketFavoriteTeamId === game.awayTeamId) {
+      // Away is favorite: value is negative (e.g., -7 means away -7)
+      // Market expects away to win by |value|, so home margin = value (negative)
+      marketMargin = marketValue;
+    } else {
+      // Fallback: assume value is already in HMA format
+      marketMargin = marketValue;
+    }
+
+    // Calculate edge: positive = home has value, negative = away has value
+    const edge = hybridMargin - marketMargin;
+
+    // Determine pick side
+    const pickHome = edge > 0;
+    const pickTeamId = pickHome ? game.homeTeamId : game.awayTeamId;
+    const pickTeamName = pickHome ? game.homeTeamName : game.awayTeamName;
+    const absEdge = Math.abs(edge);
+
+    return {
+      teamId: pickTeamId,
+      teamName: pickTeamName,
+      marketSpread: marketValue,
+      marketFavoriteTeamId,
+      edge: absEdge,
+      edgeRaw: edge,
+    };
+  };
+
+  const getEdgeBadgeColor = (edge: number) => {
+    if (edge >= 3.0) return 'bg-green-100 text-green-800';
+    if (edge >= 1.5) return 'bg-yellow-100 text-yellow-800';
+    if (edge >= 0.5) return 'bg-blue-100 text-blue-800';
+    return 'bg-gray-100 text-gray-800';
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -196,6 +249,9 @@ export default function HybridLabsPage() {
                     Diff (Hybrid - V1)
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Hybrid Pick
+                  </th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Market
                   </th>
                 </tr>
@@ -212,7 +268,7 @@ export default function HybridLabsPage() {
                   if (visibleGames.length === 0) {
                     return (
                       <tr>
-                        <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                        <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                           {games.length === 0
                             ? 'No games found for this week.'
                             : hideNoOdds
@@ -293,6 +349,27 @@ export default function HybridLabsPage() {
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getDiffBadge(game.diff)}`}>
                             {game.diff > 0 ? '+' : ''}{game.diff.toFixed(1)}
                           </span>
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-center">
+                          {(() => {
+                            const pick = calculateHybridPick(game);
+                            if (!pick) {
+                              return <span className="text-xs text-gray-400">—</span>;
+                            }
+                            return (
+                              <div className="space-y-1">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {pick.teamName}
+                                </div>
+                                <div className="text-sm text-gray-600">
+                                  {formatSpread(pick.marketSpread)}
+                                </div>
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getEdgeBadgeColor(pick.edge)}`}>
+                                  Edge: {pick.edge.toFixed(1)}
+                                </span>
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-center">
                           {game.marketSpread && game.marketSpread.value !== null ? (
