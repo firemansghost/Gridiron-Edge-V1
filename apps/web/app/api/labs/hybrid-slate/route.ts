@@ -232,7 +232,12 @@ export async function GET(request: NextRequest) {
       hybridGames.push({
         gameId: game.id,
         date: game.date.toISOString(),
-        kickoffLocal: game.kickoffLocal || '',
+        kickoffLocal: game.date.toLocaleString('en-US', {
+          timeZone: 'America/Chicago',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        }),
         status: game.status,
         awayTeamId: game.awayTeamId,
         awayTeamName: game.awayTeam.name,

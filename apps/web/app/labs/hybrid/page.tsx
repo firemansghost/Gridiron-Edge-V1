@@ -205,7 +205,7 @@ export default function HybridLabsPage() {
                               <TeamLogo
                                 teamId={game.awayTeamId}
                                 teamName={game.awayTeamName}
-                                size={24}
+                                size="sm"
                               />
                               <span className="font-medium text-gray-900">
                                 {game.awayTeamName}
@@ -216,7 +216,7 @@ export default function HybridLabsPage() {
                               <TeamLogo
                                 teamId={game.homeTeamId}
                                 teamName={game.homeTeamName}
-                                size={24}
+                                size="sm"
                               />
                               <span className="font-medium text-gray-900">
                                 {game.homeTeamName}
@@ -267,7 +267,7 @@ export default function HybridLabsPage() {
                           </span>
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-center">
-                          {game.marketSpread?.value !== null ? (
+                          {game.marketSpread && game.marketSpread.value !== null ? (
                             <div className="text-sm text-gray-600">
                               {formatSpread(game.marketSpread.value)}
                             </div>
