@@ -65,31 +65,78 @@ export default function WeekReviewPage() {
   const [error, setError] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
   const [grading, setGrading] = useState(false);
-  const [strategies, setStrategies] = useState<Array<{ id: string; name: string; active: boolean }>>([]);
+  const [strategies, setStrategies] = useState<Array<{ id: string; name: string; active: boolean; source: 'ruleset' | 'bet' }>>([]);
   const [strategiesLoading, setStrategiesLoading] = useState(true);
 
-  // Fetch available strategies from rulesets (same source as Strategies page)
+  // Fetch available strategies from both rulesets and actual bets
   useEffect(() => {
     const fetchStrategies = async () => {
       setStrategiesLoading(true);
       try {
-        const response = await fetch('/api/strategies/rulesets');
-        if (response.ok) {
-          const result = await response.json();
-          if (result.success && result.rulesets) {
-            // Filter to only active strategies and map to the format we need
-            const activeStrategies = result.rulesets
-              .filter((r: { active: boolean }) => r.active)
-              .map((r: { id: string; name: string }) => ({
+        // Fetch rulesets
+        const rulesetsResponse = await fetch('/api/strategies/rulesets');
+        const rulesetsData = rulesetsResponse.ok ? await rulesetsResponse.json() : null;
+        
+        // Fetch strategy tags from bets for this season/week
+        const betsParams = new URLSearchParams({
+          season: season.toString(),
+          week: week.toString(),
+          strategy: 'all', // Get all strategies to see breakdown
+        });
+        const betsResponse = await fetch(`/api/bets/summary?${betsParams}`);
+        const betsData = betsResponse.ok ? await betsResponse.json() : null;
+
+        const strategyMap = new Map<string, { id: string; name: string; active: boolean; source: 'ruleset' | 'bet' }>();
+
+        // Add rulesets
+        if (rulesetsData?.success && rulesetsData.rulesets) {
+          rulesetsData.rulesets
+            .filter((r: { active: boolean }) => r.active)
+            .forEach((r: { id: string; name: string }) => {
+              strategyMap.set(r.id, {
                 id: r.id,
                 name: r.name,
                 active: true,
-              }));
-            setStrategies(activeStrategies);
-          }
-        } else {
-          console.error('Failed to fetch strategies:', response.statusText);
+                source: 'ruleset',
+              });
+            });
         }
+
+        // Add strategy tags from bets (these may not have rulesets)
+        if (betsData?.success && betsData.strategyBreakdown) {
+          betsData.strategyBreakdown.forEach((s: { strategy: string }) => {
+            if (s.strategy && !strategyMap.has(s.strategy)) {
+              // Use strategyTag as both id and name, with label formatting
+              strategyMap.set(s.strategy, {
+                id: s.strategy,
+                name: getStrategyLabel(s.strategy),
+                active: true,
+                source: 'bet',
+              });
+            }
+          });
+        }
+
+        // Always include official_flat_100 if it exists in bets
+        if (betsData?.success && betsData.strategyBreakdown?.some((s: { strategy: string }) => s.strategy === 'official_flat_100')) {
+          if (!strategyMap.has('official_flat_100')) {
+            strategyMap.set('official_flat_100', {
+              id: 'official_flat_100',
+              name: getStrategyLabel('official_flat_100'),
+              active: true,
+              source: 'bet',
+            });
+          }
+        }
+
+        // Sort strategies: rulesets first, then bet tags, both alphabetically
+        const sortedStrategies = Array.from(strategyMap.values()).sort((a, b) => {
+          if (a.source !== b.source) {
+            return a.source === 'ruleset' ? -1 : 1;
+          }
+          return a.name.localeCompare(b.name);
+        });
+        setStrategies(sortedStrategies);
       } catch (err) {
         console.error('Failed to fetch strategies:', err);
       } finally {
@@ -97,7 +144,7 @@ export default function WeekReviewPage() {
       }
     };
     fetchStrategies();
-  }, []);
+  }, [season, week]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -110,8 +157,7 @@ export default function WeekReviewPage() {
         limit: '50'
       });
       // Only add strategy if it's not empty (not "All Strategies")
-      // Note: The API expects strategyTag, but we're using strategy ID from rulesets
-      // We may need to map strategy ID to strategyTag, or update the API to accept both
+      // The strategy value is now the strategyTag (id) from either rulesets or bets
       if (strategy && strategy.trim() !== '' && strategy !== 'all') {
         params.append('strategy', strategy);
       }
@@ -325,12 +371,11 @@ export default function WeekReviewPage() {
               disabled={strategiesLoading}
             >
               <option value="">{getStrategyLabel('all')}</option>
-              <option value="official_flat_100">{getStrategyLabel('official_flat_100')}</option>
               {strategies.length === 0 && !strategiesLoading ? (
                 <option disabled>No strategies configured</option>
               ) : (
                 strategies.map((s) => (
-                  <option key={s.id} value={s.name}>
+                  <option key={s.id} value={s.id}>
                     {s.name}
                   </option>
                 ))
