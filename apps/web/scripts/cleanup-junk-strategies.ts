@@ -27,8 +27,44 @@ const JUNK_RULESET_NAMES = [
 async function main() {
   console.log('\n🧹 Cleaning up junk strategies...\n');
 
-  // Delete bets with junk strategy tags
-  console.log('📊 Deleting bets with junk strategy tags...');
+  // Step 1: Audit - Fetch and log all existing rulesets and strategy tags
+  console.log('📋 Step 1: Auditing existing data...\n');
+  
+  const allRulesets = await prisma.ruleset.findMany({
+    select: {
+      id: true,
+      name: true,
+      active: true,
+    },
+    orderBy: {
+      name: 'asc',
+    },
+  });
+  
+  console.log(`   Current Rulesets (${allRulesets.length} total):`);
+  allRulesets.forEach(r => {
+    console.log(`     - "${r.name}" (id: ${r.id}, active: ${r.active})`);
+  });
+  
+  const allBetTags = await prisma.bet.findMany({
+    select: {
+      strategyTag: true,
+    },
+    distinct: ['strategyTag'],
+    orderBy: {
+      strategyTag: 'asc',
+    },
+  });
+  
+  console.log(`\n   Current Bet Strategy Tags (${allBetTags.length} distinct):`);
+  allBetTags.forEach(b => {
+    console.log(`     - "${b.strategyTag}"`);
+  });
+  
+  console.log('\n');
+
+  // Step 2: Delete bets with junk strategy tags
+  console.log('📊 Step 2: Deleting bets with junk strategy tags...');
   let totalBetsDeleted = 0;
   
   for (const tag of JUNK_STRATEGY_TAGS) {
@@ -47,9 +83,9 @@ async function main() {
     }
   }
 
-  // Find and delete rulesets by name
-  console.log('\n📋 Finding rulesets by name...');
-  const junkRulesets = await prisma.ruleset.findMany({
+  // Step 3: Find and delete rulesets by exact name match
+  console.log('\n📋 Step 3: Finding rulesets by exact name match...');
+  const junkRulesetsExact = await prisma.ruleset.findMany({
     where: {
       name: { in: JUNK_RULESET_NAMES },
     },
@@ -60,11 +96,9 @@ async function main() {
   });
 
   let rulesetsDeletedByName = 0;
-  if (junkRulesets.length === 0) {
-    console.log('   ⚪ No rulesets found matching junk names');
-  } else {
-    console.log(`   Found ${junkRulesets.length} ruleset(s) matching names: ${junkRulesets.map(r => r.name).join(', ')}`);
-    const junkRulesetIds = junkRulesets.map(r => r.id);
+  if (junkRulesetsExact.length > 0) {
+    console.log(`   Found ${junkRulesetsExact.length} ruleset(s) matching exact names: ${junkRulesetsExact.map(r => r.name).join(', ')}`);
+    const junkRulesetIds = junkRulesetsExact.map(r => r.id);
     
     // Delete StrategyRun records linked to these rulesets
     console.log('\n🗑️  Deleting StrategyRun records linked to junk rulesets...');
@@ -101,10 +135,116 @@ async function main() {
     });
     rulesetsDeletedByName = rulesetsDeleted.count;
     console.log(`   ✅ Deleted ${rulesetsDeletedByName} ruleset(s)`);
+  } else {
+    console.log('   ⚪ No rulesets found matching exact junk names');
   }
 
-  // Also try deleting rulesets with junk IDs (for backwards compatibility)
-  console.log('\n📋 Checking for rulesets with junk IDs (legacy check)...');
+  // Step 4: Case-insensitive fuzzy search for "Rule test" variants
+  console.log('\n📋 Step 4: Finding rulesets with case-insensitive "Rule test" match...');
+  const allRulesetsForFuzzy = await prisma.ruleset.findMany({
+    select: {
+      id: true,
+      name: true,
+    },
+  });
+
+  const fuzzyJunkRulesets = allRulesetsForFuzzy.filter(r => {
+    const nameLower = r.name.toLowerCase();
+    return nameLower.includes('rule test') || 
+           nameLower.includes('ruletest') ||
+           nameLower.includes('test 1') ||
+           nameLower.includes('test 2') ||
+           nameLower.includes('test1') ||
+           nameLower.includes('test2') ||
+           nameLower.includes('demo data') ||
+           nameLower.includes('demodata');
+  });
+
+  if (fuzzyJunkRulesets.length > 0) {
+    console.log(`   Found ${fuzzyJunkRulesets.length} ruleset(s) with fuzzy match: ${fuzzyJunkRulesets.map(r => r.name).join(', ')}`);
+    const fuzzyRulesetIds = fuzzyJunkRulesets.map(r => r.id);
+    
+    // Delete StrategyRun records
+    const fuzzyStrategyRunsDeleted = await prisma.strategyRun.deleteMany({
+      where: {
+        rulesetId: { in: fuzzyRulesetIds },
+      },
+    });
+    if (fuzzyStrategyRunsDeleted.count > 0) {
+      console.log(`   ✅ Deleted ${fuzzyStrategyRunsDeleted.count} StrategyRun record(s)`);
+    }
+    
+    // Delete bets with matching strategyTag
+    let fuzzyBetsDeleted = 0;
+    for (const rulesetId of fuzzyRulesetIds) {
+      const count = await prisma.bet.count({
+        where: { strategyTag: rulesetId },
+      });
+      if (count > 0) {
+        const result = await prisma.bet.deleteMany({
+          where: { strategyTag: rulesetId },
+        });
+        console.log(`   ✅ Deleted ${result.count} bet(s) with strategyTag="${rulesetId}"`);
+        fuzzyBetsDeleted += result.count;
+      }
+    }
+    totalBetsDeleted += fuzzyBetsDeleted;
+    
+    // Delete the fuzzy-matched rulesets
+    const fuzzyRulesetsDeleted = await prisma.ruleset.deleteMany({
+      where: {
+        id: { in: fuzzyRulesetIds },
+      },
+    });
+    rulesetsDeletedByName += fuzzyRulesetsDeleted.count;
+    console.log(`   ✅ Deleted ${fuzzyRulesetsDeleted.count} fuzzy-matched ruleset(s)`);
+  } else {
+    console.log('   ⚪ No rulesets found with fuzzy "Rule test" match');
+  }
+
+  // Step 5: Delete bets with fuzzy strategyTag matches
+  console.log('\n📋 Step 5: Finding bets with fuzzy strategyTag matches...');
+  const allBetTagsForFuzzy = await prisma.bet.findMany({
+    select: {
+      strategyTag: true,
+    },
+    distinct: ['strategyTag'],
+  });
+
+  const fuzzyJunkTags = allBetTagsForFuzzy
+    .map(b => b.strategyTag)
+    .filter(tag => {
+      const tagLower = tag.toLowerCase();
+      return tagLower.includes('rule_test') ||
+             tagLower.includes('ruletest') ||
+             tagLower.includes('test_1') ||
+             tagLower.includes('test_2') ||
+             tagLower.includes('test1') ||
+             tagLower.includes('test2') ||
+             tagLower.includes('demo_seed') ||
+             tagLower.includes('demoseed');
+    });
+
+  if (fuzzyJunkTags.length > 0) {
+    console.log(`   Found ${fuzzyJunkTags.length} fuzzy strategyTag(s): ${fuzzyJunkTags.join(', ')}`);
+    for (const tag of fuzzyJunkTags) {
+      const count = await prisma.bet.count({
+        where: { strategyTag: tag },
+      });
+      if (count > 0) {
+        const result = await prisma.bet.deleteMany({
+          where: { strategyTag: tag },
+        });
+        console.log(`   ✅ Deleted ${result.count} bet(s) with strategyTag="${tag}"`);
+        totalBetsDeleted += result.count;
+      }
+    }
+  } else {
+    console.log('   ⚪ No bets found with fuzzy strategyTag matches');
+  }
+
+  // Step 6: Also try deleting rulesets with junk IDs (for backwards compatibility)
+  console.log('\n📋 Step 6: Checking for rulesets with junk IDs (legacy check)...');
   let totalRulesetsDeleted = 0;
   
   for (const id of JUNK_STRATEGY_TAGS) {
@@ -137,4 +277,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-
