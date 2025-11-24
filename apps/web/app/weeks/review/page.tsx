@@ -60,6 +60,7 @@ export default function WeekReviewPage() {
   const [season, setSeason] = useState(2025);
   const [week, setWeek] = useState(9);
   const [strategy, setStrategy] = useState('official_flat_100');
+  const [selectedTier, setSelectedTier] = useState<'All' | 'A' | 'B' | 'C'>('All');
   const [data, setData] = useState<WeekReviewData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -314,6 +315,64 @@ export default function WeekReviewPage() {
     }
   };
 
+  // Filter bets by confidence tier based on edge
+  const filteredBets = data?.bets.filter(bet => {
+    if (selectedTier === 'All') return true;
+    
+    const edge = calculateEdge(bet);
+    if (edge === null) return false; // Exclude bets without edge (e.g., moneyline)
+    
+    const absEdge = Math.abs(edge);
+    
+    if (selectedTier === 'A') return absEdge >= 4.0;
+    if (selectedTier === 'B') return absEdge >= 3.0 && absEdge < 4.0;
+    if (selectedTier === 'C') return absEdge < 3.0;
+    
+    return true;
+  }) || [];
+
+  // Calculate summary from filtered bets
+  const calculateSummary = (bets: Bet[]) => {
+    const totalBets = bets.length;
+    const gradedBets = bets.filter(bet => bet.result !== null);
+    const wins = gradedBets.filter(bet => bet.result === 'win').length;
+    const losses = gradedBets.filter(bet => bet.result === 'loss').length;
+    const pushes = gradedBets.filter(bet => bet.result === 'push').length;
+    const hitRate = gradedBets.length > 0 ? wins / gradedBets.length : 0;
+    
+    const totalPnL = bets.reduce((sum, bet) => sum + Number(bet.pnl || 0), 0);
+    const totalStake = bets.reduce((sum, bet) => sum + Number(bet.stake), 0);
+    const roi = totalStake > 0 ? (totalPnL / totalStake) * 100 : 0;
+    
+    // Calculate average edge (only for bets with edge values)
+    const betsWithEdge = bets.filter(bet => calculateEdge(bet) !== null);
+    const avgEdge = betsWithEdge.length > 0
+      ? betsWithEdge.reduce((sum, bet) => sum + Math.abs(calculateEdge(bet)!), 0) / betsWithEdge.length
+      : 0;
+    
+    // Calculate average CLV
+    const betsWithCLV = bets.filter(bet => bet.clv !== null);
+    const avgCLV = betsWithCLV.length > 0
+      ? betsWithCLV.reduce((sum, bet) => sum + Number(bet.clv), 0) / betsWithCLV.length
+      : 0;
+    
+    return {
+      totalBets,
+      gradedBets: gradedBets.length,
+      wins,
+      losses,
+      pushes,
+      hitRate,
+      totalPnL,
+      roi,
+      avgEdge,
+      avgCLV,
+    };
+  };
+
+  // Calculate dynamic summary from filtered bets
+  const dynamicSummary = data ? calculateSummary(filteredBets) : null;
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <HeaderNav />
@@ -384,6 +443,20 @@ export default function WeekReviewPage() {
             {strategiesLoading && (
               <div className="text-xs text-gray-500 mt-1">Loading strategies...</div>
             )}
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium mb-1">Confidence</label>
+            <select 
+              value={selectedTier} 
+              onChange={(e) => setSelectedTier(e.target.value as 'All' | 'A' | 'B' | 'C')}
+              className="border rounded px-3 py-2"
+            >
+              <option value="All">All Tiers</option>
+              <option value="A">Tier A (Edge ≥ 4.0)</option>
+              <option value="B">Tier B (Edge 3.0 - 3.9)</option>
+              <option value="C">Tier C (Edge &lt; 3.0)</option>
+            </select>
           </div>
           
           <div className="flex items-end gap-2">
@@ -464,9 +537,8 @@ export default function WeekReviewPage() {
               <div className="bg-white p-6 rounded-lg shadow">
                 <h3 className="text-lg font-semibold text-gray-700 mb-3">ATS – Strategy-run picks</h3>
                 {(() => {
-                  // Filter to ATS/spread market type
-                  // Note: The API already filters to strategy-run bets, so we just need to filter by market type here.
-                  const atsBets = data.bets.filter(bet => bet.marketType === 'spread');
+                  // Filter to ATS/spread market type from filtered bets
+                  const atsBets = filteredBets.filter(bet => bet.marketType === 'spread');
                   const gradedAts = atsBets.filter(bet => bet.result !== null);
                   const wins = gradedAts.filter(bet => bet.result === 'win').length;
                   const losses = gradedAts.filter(bet => bet.result === 'loss').length;
@@ -476,7 +548,7 @@ export default function WeekReviewPage() {
                   if (atsBets.length === 0) {
                     return (
                       <div className="text-sm text-gray-500">
-                        No ATS picks this week.
+                        No ATS picks {selectedTier !== 'All' ? `in ${selectedTier} tier` : 'this week'}.
                       </div>
                     );
                   }
@@ -495,7 +567,7 @@ export default function WeekReviewPage() {
                         </div>
                       )}
                       <div className="text-xs text-gray-500 mt-2">
-                        Counts all strategy-run ATS picks for this week.
+                        {selectedTier !== 'All' ? `Filtered by ${selectedTier} tier. ` : ''}Counts all strategy-run ATS picks for this week.
                       </div>
                     </>
                   );
@@ -506,9 +578,8 @@ export default function WeekReviewPage() {
               <div className="bg-white p-6 rounded-lg shadow">
                 <h3 className="text-lg font-semibold text-gray-700 mb-3">Moneyline – Strategy-run picks</h3>
                 {(() => {
-                  // Filter to moneyline market type
-                  // Note: The API already filters to strategy-run bets, so we just need to filter by market type here.
-                  const mlBets = data.bets.filter(bet => bet.marketType === 'moneyline');
+                  // Filter to moneyline market type from filtered bets
+                  const mlBets = filteredBets.filter(bet => bet.marketType === 'moneyline');
                   const gradedMl = mlBets.filter(bet => bet.result !== null);
                   const wins = gradedMl.filter(bet => bet.result === 'win').length;
                   const losses = gradedMl.filter(bet => bet.result === 'loss').length;
@@ -518,7 +589,7 @@ export default function WeekReviewPage() {
                   if (mlBets.length === 0) {
                     return (
                       <div className="text-sm text-gray-500">
-                        No moneyline picks this week.
+                        No moneyline picks {selectedTier !== 'All' ? `in ${selectedTier} tier` : 'this week'}.
                       </div>
                     );
                   }
@@ -537,7 +608,7 @@ export default function WeekReviewPage() {
                         </div>
                       )}
                       <div className="text-xs text-gray-500 mt-2">
-                        Counts all strategy-run moneyline picks for this week.
+                        {selectedTier !== 'All' ? `Filtered by ${selectedTier} tier. ` : ''}Counts all strategy-run moneyline picks for this week.
                       </div>
                     </>
                   );
@@ -546,55 +617,79 @@ export default function WeekReviewPage() {
             </div>
           </div>
 
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-            <div className="bg-white p-6 rounded-lg shadow">
-              <h3 className="text-lg font-semibold text-gray-700 mb-2">Total Bets</h3>
-              <p className="text-3xl font-bold text-blue-600">{data.summary.totalBets}</p>
-            </div>
-            
-            <div className="bg-white p-6 rounded-lg shadow">
-              <h3 className="text-lg font-semibold text-gray-700 mb-2">Hit Rate</h3>
-              <p className="text-3xl font-bold text-green-600">
-                {formatPercent(data.summary.hitRate)}
-              </p>
-            </div>
-            
-            <div className="bg-white p-6 rounded-lg shadow">
-              <h3 className="text-lg font-semibold text-gray-700 mb-2">ROI</h3>
-              <p className={`text-3xl font-bold ${data.summary.roi >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {formatPercent(data.summary.roi / 100)}
-              </p>
-            </div>
-            
-            <div className="bg-white p-6 rounded-lg shadow">
-              <h3 className="text-lg font-semibold text-gray-700 mb-2">Total PnL</h3>
-              <p className={`text-3xl font-bold ${data.summary.totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {formatCurrency(data.summary.totalPnL)}
-              </p>
-            </div>
-          </div>
+          {/* Summary Cards - Dynamic based on filtered bets */}
+          {dynamicSummary && (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                <div className="bg-white p-6 rounded-lg shadow">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">Total Bets</h3>
+                  <p className="text-3xl font-bold text-blue-600">{dynamicSummary.totalBets}</p>
+                  {selectedTier !== 'All' && (
+                    <p className="text-xs text-gray-500 mt-1">Filtered by {selectedTier}</p>
+                  )}
+                </div>
+                
+                <div className="bg-white p-6 rounded-lg shadow">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">Hit Rate</h3>
+                  <p className="text-3xl font-bold text-green-600">
+                    {formatPercent(dynamicSummary.hitRate)}
+                  </p>
+                  {selectedTier !== 'All' && (
+                    <p className="text-xs text-gray-500 mt-1">Filtered by {selectedTier}</p>
+                  )}
+                </div>
+                
+                <div className="bg-white p-6 rounded-lg shadow">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">ROI</h3>
+                  <p className={`text-3xl font-bold ${dynamicSummary.roi >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatPercent(dynamicSummary.roi / 100)}
+                  </p>
+                  {selectedTier !== 'All' && (
+                    <p className="text-xs text-gray-500 mt-1">Filtered by {selectedTier}</p>
+                  )}
+                </div>
+                
+                <div className="bg-white p-6 rounded-lg shadow">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">Total PnL</h3>
+                  <p className={`text-3xl font-bold ${dynamicSummary.totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatCurrency(dynamicSummary.totalPnL)}
+                  </p>
+                  {selectedTier !== 'All' && (
+                    <p className="text-xs text-gray-500 mt-1">Filtered by {selectedTier}</p>
+                  )}
+                </div>
+              </div>
 
-          {/* Additional Metrics */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-            <div className="bg-white p-6 rounded-lg shadow">
-              <h3 className="text-lg font-semibold text-gray-700 mb-2">Avg Edge</h3>
-              <p className="text-2xl font-bold text-blue-600">
-                {data.summary.avgEdge.toFixed(2)}
-              </p>
-            </div>
-            
-            <div className="bg-white p-6 rounded-lg shadow">
-              <h3 className="text-lg font-semibold text-gray-700 mb-2">Avg CLV</h3>
-              <p className="text-2xl font-bold text-purple-600">
-                {data.summary.avgCLV.toFixed(3)}
-              </p>
-            </div>
-          </div>
+              {/* Additional Metrics */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                <div className="bg-white p-6 rounded-lg shadow">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">Avg Edge</h3>
+                  <p className="text-2xl font-bold text-blue-600">
+                    {dynamicSummary.avgEdge.toFixed(2)}
+                  </p>
+                  {selectedTier !== 'All' && (
+                    <p className="text-xs text-gray-500 mt-1">Filtered by {selectedTier}</p>
+                  )}
+                </div>
+                
+                <div className="bg-white p-6 rounded-lg shadow">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">Avg CLV</h3>
+                  <p className="text-2xl font-bold text-purple-600">
+                    {dynamicSummary.avgCLV.toFixed(3)}
+                  </p>
+                  {selectedTier !== 'All' && (
+                    <p className="text-xs text-gray-500 mt-1">Filtered by {selectedTier}</p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
 
           {/* Actions */}
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold">Bets ({data.pagination.totalItems})</h2>
+            <h2 className="text-2xl font-bold">
+              Bets ({filteredBets.length}{selectedTier !== 'All' ? ` of ${data.pagination.totalItems} (${selectedTier} tier)` : ` of ${data.pagination.totalItems}`})
+            </h2>
             <button
               onClick={exportCSV}
               className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
@@ -605,14 +700,18 @@ export default function WeekReviewPage() {
 
           {/* Bets Table */}
           <div className="bg-white rounded-lg shadow overflow-hidden">
-            {data.bets.length === 0 ? (
+            {filteredBets.length === 0 ? (
               <div className="px-6 py-12 text-center">
                 <div className="text-gray-400 text-5xl mb-4">📊</div>
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  {data.summary.gradedBets === 0 ? 'No graded bets yet' : 'No bets found'}
+                  {data.summary.gradedBets === 0 ? 'No graded bets yet' : selectedTier !== 'All' ? `No bets found in ${selectedTier} tier` : 'No bets found'}
                 </h3>
                 <p className="text-gray-600 mb-4">
                   {(() => {
+                    // Case: Filtered by tier but no matches
+                    if (selectedTier !== 'All' && data.bets.length > 0) {
+                      return `No bets match the ${selectedTier} tier filter (${selectedTier === 'A' ? 'Edge ≥ 4.0' : selectedTier === 'B' ? 'Edge 3.0 - 3.9' : 'Edge < 3.0'}) for ${season} Week ${week}${strategy ? ` with strategy "${strategy}"` : ''}. Try selecting a different tier or "All Tiers".`;
+                    }
                     // Case A: No strategy-run bets at all
                     if (data.meta && data.meta.totalStrategyRunBets === 0) {
                       return `No strategy-run bets found for ${season} Week ${week}${strategy ? ` with strategy "${strategy}"` : ''}. Your strategies haven't generated any picks yet.`;
@@ -687,7 +786,7 @@ export default function WeekReviewPage() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {data.bets.map((bet) => (
+                    {filteredBets.map((bet) => (
                       <tr 
                         key={bet.id}
                         className="hover:bg-gray-50 cursor-pointer"
