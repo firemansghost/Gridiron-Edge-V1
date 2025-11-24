@@ -17,6 +17,13 @@ const JUNK_STRATEGY_TAGS = [
   'test_strategy',
 ];
 
+const JUNK_RULESET_NAMES = [
+  'Rule Test 3',
+  'Test 1',
+  'Test 2',
+  'Demo Data (Seed)',
+];
+
 async function main() {
   console.log('\n🧹 Cleaning up junk strategies...\n');
 
@@ -40,8 +47,64 @@ async function main() {
     }
   }
 
-  // Delete rulesets with junk IDs
-  console.log('\n📋 Deleting rulesets with junk IDs...');
+  // Find and delete rulesets by name
+  console.log('\n📋 Finding rulesets by name...');
+  const junkRulesets = await prisma.ruleset.findMany({
+    where: {
+      name: { in: JUNK_RULESET_NAMES },
+    },
+    select: {
+      id: true,
+      name: true,
+    },
+  });
+
+  let rulesetsDeletedByName = 0;
+  if (junkRulesets.length === 0) {
+    console.log('   ⚪ No rulesets found matching junk names');
+  } else {
+    console.log(`   Found ${junkRulesets.length} ruleset(s) matching names: ${junkRulesets.map(r => r.name).join(', ')}`);
+    const junkRulesetIds = junkRulesets.map(r => r.id);
+    
+    // Delete StrategyRun records linked to these rulesets
+    console.log('\n🗑️  Deleting StrategyRun records linked to junk rulesets...');
+    const strategyRunsDeleted = await prisma.strategyRun.deleteMany({
+      where: {
+        rulesetId: { in: junkRulesetIds },
+      },
+    });
+    console.log(`   ✅ Deleted ${strategyRunsDeleted.count} StrategyRun record(s)`);
+    
+    // Delete bets that might reference these ruleset IDs as strategyTag
+    console.log('\n🗑️  Deleting bets with strategyTag matching junk ruleset IDs...');
+    let betsDeletedByRulesetId = 0;
+    for (const rulesetId of junkRulesetIds) {
+      const count = await prisma.bet.count({
+        where: { strategyTag: rulesetId },
+      });
+      if (count > 0) {
+        const result = await prisma.bet.deleteMany({
+          where: { strategyTag: rulesetId },
+        });
+        console.log(`   ✅ Deleted ${result.count} bet(s) with strategyTag="${rulesetId}"`);
+        betsDeletedByRulesetId += result.count;
+      }
+    }
+    totalBetsDeleted += betsDeletedByRulesetId;
+    
+    // Delete the rulesets themselves
+    console.log('\n🗑️  Deleting junk rulesets...');
+    const rulesetsDeleted = await prisma.ruleset.deleteMany({
+      where: {
+        id: { in: junkRulesetIds },
+      },
+    });
+    rulesetsDeletedByName = rulesetsDeleted.count;
+    console.log(`   ✅ Deleted ${rulesetsDeletedByName} ruleset(s)`);
+  }
+
+  // Also try deleting rulesets with junk IDs (for backwards compatibility)
+  console.log('\n📋 Checking for rulesets with junk IDs (legacy check)...');
   let totalRulesetsDeleted = 0;
   
   for (const id of JUNK_STRATEGY_TAGS) {
@@ -62,7 +125,7 @@ async function main() {
 
   console.log('\n✅ Cleanup complete!');
   console.log(`   Total bets deleted: ${totalBetsDeleted}`);
-  console.log(`   Total rulesets deleted: ${totalRulesetsDeleted}`);
+  console.log(`   Total rulesets deleted: ${rulesetsDeletedByName + totalRulesetsDeleted}`);
   console.log('');
 }
 
