@@ -263,6 +263,9 @@ model TeamUnitGrades {
   defExplosiveness Float @map("def_explosiveness")
   havocGrade       Float @map("havoc_grade")       // From Season Havoc
 
+  // V3: Barnes Luck-Adjusted Rating
+  barnesRating     Float? @map("barnes_rating")     // Net Yards + YPP based, ignores W/L
+
   // Relations
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
