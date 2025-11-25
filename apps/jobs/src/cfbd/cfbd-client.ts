@@ -232,6 +232,16 @@ export class CFBDClient {
     return this.request<any[]>(`/games`, params);
   }
   
+  // Standard Game Stats (yards, plays, turnovers - not advanced)
+  // Uses /games/teams endpoint which returns game stats with teams array
+  async getTeamGameStats(year: number, week?: number, team?: string, seasonType?: string): Promise<any[]> {
+    const params: Record<string, string | number> = { year };
+    if (week) params.week = week;
+    if (team) params.team = team;
+    if (seasonType) params.seasonType = seasonType;
+    return this.request<any[]>(`/games/teams`, params);
+  }
+  
   // Weather (if available)
   async getWeather(year: number, week?: number): Promise<any[]> {
     const params: Record<string, string | number> = { year };
