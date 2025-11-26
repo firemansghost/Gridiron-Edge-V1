@@ -318,7 +318,7 @@ export default function WeekReviewPage() {
     // Use shared matchesTierFilter function
     return matchesTierFilter(
       { modelPrice: bet.modelPrice, closePrice: bet.closePrice, marketType: bet.marketType },
-      selectedTier.toLowerCase() as 'a' | 'b' | 'c'
+      selectedTier as 'A' | 'B' | 'C'
     );
   }) || [];
 

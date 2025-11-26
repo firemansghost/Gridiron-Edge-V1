@@ -144,7 +144,11 @@ export async function GET(request: NextRequest) {
       ? allGradedBets
       : allGradedBets.filter(bet => 
           matchesTierFilter(
-            { modelPrice: bet.modelPrice, closePrice: bet.closePrice, marketType: bet.marketType },
+            { 
+              modelPrice: Number(bet.modelPrice), 
+              closePrice: bet.closePrice ? Number(bet.closePrice) : null, 
+              marketType: bet.marketType 
+            },
             confidenceTierParam as 'A' | 'B' | 'C'
           )
         );

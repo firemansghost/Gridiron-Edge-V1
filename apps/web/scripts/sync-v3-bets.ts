@@ -152,7 +152,7 @@ async function loadTeamDriveMetrics(season: number): Promise<Map<string, TeamDri
   }
 
   // Calculate defensive quality rates
-  for (const [teamId, metric] of metrics.entries()) {
+  for (const [teamId, metric] of Array.from(metrics.entries())) {
     metric.defensiveQualityRateAllowed = await calculateDefensiveQualityRate(
       teamId,
       season,
