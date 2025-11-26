@@ -64,6 +64,7 @@ export default function SeasonReviewPage() {
   const [season, setSeason] = useState<number>(2025);
   const [strategyTag, setStrategyTag] = useState<string>('official_flat_100');
   const [selectedMarket, setSelectedMarket] = useState<string>('ALL');
+  const [selectedTier, setSelectedTier] = useState<'all' | 'A' | 'B' | 'C'>('all');
   const [data, setData] = useState<SeasonSummaryData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,6 +83,7 @@ export default function SeasonReviewPage() {
         season: season.toString(),
         strategyTag: strategyTag === 'all' ? 'all' : strategyTag,
         marketType: selectedMarket,
+        confidenceTier: selectedTier,
       });
 
       const response = await fetch(`/api/bets/season-summary?${params}`);
@@ -103,7 +105,7 @@ export default function SeasonReviewPage() {
 
   useEffect(() => {
     fetchData();
-  }, [season, strategyTag, selectedMarket]);
+  }, [season, strategyTag, selectedMarket, selectedTier]);
 
   // Initialize season and strategy from available data on first load
   useEffect(() => {
@@ -224,6 +226,20 @@ export default function SeasonReviewPage() {
                   <option value="ATS">Spread (ATS)</option>
                   <option value="TOTAL">Total (O/U)</option>
                   <option value="MONEYLINE">Moneyline</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Confidence</label>
+                <select
+                  value={selectedTier}
+                  onChange={(e) => setSelectedTier(e.target.value as 'all' | 'A' | 'B' | 'C')}
+                  className="border rounded px-3 py-2"
+                >
+                  <option value="all">All Tiers</option>
+                  <option value="A">Tier A (Edge ≥ 4.0)</option>
+                  <option value="B">Tier B (Edge 3.0 - 3.9)</option>
+                  <option value="C">Tier C (Edge &lt; 3.0)</option>
                 </select>
               </div>
             </div>

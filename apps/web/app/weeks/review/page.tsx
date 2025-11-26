@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import { getStrategyLabel } from '@/lib/strategy-utils';
+import { calculateEdge, matchesTierFilter } from '@/lib/bet-tier-helpers';
 
 interface BetSummary {
   totalBets: number;
@@ -290,12 +291,7 @@ export default function WeekReviewPage() {
     return edge > 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
   };
 
-  const calculateEdge = (bet: any) => {
-    if (!bet.closePrice || bet.marketType === 'moneyline') return null;
-    const modelLine = Number(bet.modelPrice);
-    const closeLine = Number(bet.closePrice);
-    return modelLine - closeLine;
-  };
+  // Use shared calculateEdge from bet-tier-helpers
 
   const getResultColor = (result: string | null) => {
     switch (result) {
@@ -315,20 +311,15 @@ export default function WeekReviewPage() {
     }
   };
 
-  // Filter bets by confidence tier based on edge
+  // Filter bets by confidence tier based on edge (using shared utility)
   const filteredBets = data?.bets.filter(bet => {
     if (selectedTier === 'All') return true;
     
-    const edge = calculateEdge(bet);
-    if (edge === null) return false; // Exclude bets without edge (e.g., moneyline)
-    
-    const absEdge = Math.abs(edge);
-    
-    if (selectedTier === 'A') return absEdge >= 4.0;
-    if (selectedTier === 'B') return absEdge >= 3.0 && absEdge < 4.0;
-    if (selectedTier === 'C') return absEdge < 3.0;
-    
-    return true;
+    // Use shared matchesTierFilter function
+    return matchesTierFilter(
+      { modelPrice: bet.modelPrice, closePrice: bet.closePrice, marketType: bet.marketType },
+      selectedTier.toLowerCase() as 'a' | 'b' | 'c'
+    );
   }) || [];
 
   // Calculate summary from filtered bets

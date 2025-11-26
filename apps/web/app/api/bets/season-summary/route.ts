@@ -9,6 +9,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { matchesTierFilter } from '@/lib/bet-tier-helpers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -73,12 +74,14 @@ export async function GET(request: NextRequest) {
     const seasonParam = searchParams.get('season');
     const strategyTagParam = searchParams.get('strategyTag') || 'all';
     const marketTypeParam = searchParams.get('marketType') || 'ALL';
+    const confidenceTierParam = searchParams.get('confidenceTier') || 'all';
     
     // Log API hit for debugging
     console.log('[season-summary] API hit', { 
       season: seasonParam, 
       strategyTag: strategyTagParam, 
-      marketType: marketTypeParam 
+      marketType: marketTypeParam,
+      confidenceTier: confidenceTierParam
     });
     
     // Map uppercase market type to lowercase (database uses lowercase)
@@ -123,7 +126,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get all graded bets matching filters
-    const gradedBets = await prisma.bet.findMany({
+    const allGradedBets = await prisma.bet.findMany({
       where,
       select: {
         week: true,
@@ -135,6 +138,16 @@ export async function GET(request: NextRequest) {
         closePrice: true,
       },
     });
+
+    // Filter by confidence tier if specified (using same logic as Week Review)
+    const gradedBets = confidenceTierParam === 'all'
+      ? allGradedBets
+      : allGradedBets.filter(bet => 
+          matchesTierFilter(
+            { modelPrice: bet.modelPrice, closePrice: bet.closePrice, marketType: bet.marketType },
+            confidenceTierParam as 'A' | 'B' | 'C'
+          )
+        );
 
     // Get pending bets (same filters but result IS NULL)
     const pendingWhere: any = {

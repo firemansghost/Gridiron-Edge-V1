@@ -10,6 +10,7 @@ export const STRATEGY_LABELS: Record<string, string> = {
   'hybrid_v2': 'Hybrid (70/30)',
   'v2_matchup': 'V2 (Matchup)',
   'v3_barnes': 'V3 (Barnes)',
+  'v3_totals': 'V3 (Totals)',
   'all': 'All Strategies',
 };
 
