@@ -11,6 +11,7 @@ import { prisma } from '@/lib/prisma';
 import { selectClosingLine } from '@/lib/closing-line-helpers';
 import { getCoreV1SpreadFromTeams, getATSPick, computeATSEdgeHma } from '@/lib/core-v1-spread';
 import { getOUPick } from '@/lib/core-v1-total';
+import { calculateV3GameTotal } from '@/lib/v3-totals';
 import { americanToProb } from '@/lib/market-line-helpers';
 
 interface SlateGame {
@@ -405,19 +406,51 @@ export async function GET(request: NextRequest) {
           });
         }
 
-        // Totals: Compute using Core V1 totals model
+        // Totals: Try V3 totals first, fall back to Core V1
         const marketTotal = game.closingTotal?.value ?? null;
-        const ouPick = getOUPick(marketTotal, marketSpreadHma, modelSpreadHma);
-        const modelTotal = ouPick.modelTotal !== null ? Math.round(ouPick.modelTotal * 10) / 10 : null;
-        const totalPick = ouPick.pickLabel;
-        const totalEdgePts = ouPick.ouEdgePts !== null ? Math.round(ouPick.ouEdgePts * 10) / 10 : null;
-        
-        // Calculate Totals grade
+        let modelTotal: number | null = null;
+        let totalPick: string | null = null;
+        let totalEdgePts: number | null = null;
         let totalGrade: string | null = null;
-        if (totalEdgePts !== null && Number.isFinite(totalEdgePts) && totalEdgePts >= 0.1) {
-          if (totalEdgePts >= 4.0) totalGrade = 'A';
-          else if (totalEdgePts >= 3.0) totalGrade = 'B';
-          else if (totalEdgePts >= 0.1) totalGrade = 'C';
+
+        // Try V3 totals first
+        try {
+          const v3Projection = await calculateV3GameTotal(game.homeTeamId, game.awayTeamId, season);
+          if (v3Projection && v3Projection.modelTotal > 0 && marketTotal !== null) {
+            modelTotal = Math.round(v3Projection.modelTotal * 10) / 10;
+            totalEdgePts = Math.round((v3Projection.modelTotal - marketTotal) * 10) / 10;
+            
+            // Calculate Totals grade
+            if (totalEdgePts !== null && Number.isFinite(totalEdgePts) && Math.abs(totalEdgePts) >= 0.1) {
+              const absEdge = Math.abs(totalEdgePts);
+              if (absEdge >= 4.0) totalGrade = 'A';
+              else if (absEdge >= 3.0) totalGrade = 'B';
+              else if (absEdge >= 0.1) totalGrade = 'C';
+            }
+            
+            // Generate pick label
+            if (totalEdgePts !== null && Math.abs(totalEdgePts) >= 0.1) {
+              const side = totalEdgePts > 0 ? 'over' : 'under';
+              totalPick = `${side === 'over' ? 'Over' : 'Under'} ${marketTotal.toFixed(1)}`;
+            }
+          }
+        } catch (error) {
+          console.warn(`[Slate API] V3 totals calculation failed for game ${game.gameId}, falling back to Core V1:`, error);
+        }
+
+        // Fall back to Core V1 if V3 unavailable
+        if (modelTotal === null && marketTotal !== null && marketSpreadHma !== null && modelSpreadHma !== null) {
+          const ouPick = getOUPick(marketTotal, marketSpreadHma, modelSpreadHma);
+          modelTotal = ouPick.modelTotal !== null ? Math.round(ouPick.modelTotal * 10) / 10 : null;
+          totalPick = ouPick.pickLabel;
+          totalEdgePts = ouPick.ouEdgePts !== null ? Math.round(ouPick.ouEdgePts * 10) / 10 : null;
+          
+          // Calculate Totals grade
+          if (totalEdgePts !== null && Number.isFinite(totalEdgePts) && totalEdgePts >= 0.1) {
+            if (totalEdgePts >= 4.0) totalGrade = 'A';
+            else if (totalEdgePts >= 3.0) totalGrade = 'B';
+            else if (totalEdgePts >= 0.1) totalGrade = 'C';
+          }
         }
 
         // Moneyline: Calculate win probabilities and value
