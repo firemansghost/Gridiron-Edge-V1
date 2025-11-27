@@ -14,7 +14,7 @@ export interface OfficialTotals {
   tier: 'A' | 'B' | 'C'; // Tier from bet record
   side: 'over' | 'under'; // Bet side
   modelPrice: number;     // Model total at bet time
-  closePrice: number;     // Closing line at bet time
+  closePrice: number | null; // Closing line at bet time (null if not available)
 }
 
 /**

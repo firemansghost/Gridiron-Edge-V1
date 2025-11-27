@@ -3638,15 +3638,8 @@ export async function GET(
 
     // Total edge: In Trust-Market mode, edge IS the overlay (not model - market)
     // If model is invalid, edge is null (no pick, but card still shows)
-    // Use official bet edge if available, otherwise calculate from overlay
+    // Note: totalEdgePts will be set later after ouPickInfo is populated
     let totalEdgePts: number | null = null;
-    if (ouPickInfo && ouPickInfo.ouEdgePts !== null) {
-      // Use official bet edge (source of truth)
-      totalEdgePts = ouPickInfo.ouEdgePts;
-    } else if (ou_model_valid && marketTotal !== null) {
-      // Fallback: calculate from overlay
-      totalEdgePts = totalOverlay;
-    }
     
     // ============================================
     // RANGE LOGIC: Bet-To and Flip Point (Totals)
@@ -3908,6 +3901,15 @@ export async function GET(
       }
     }
     // Legacy mode ouPickInfo will be computed later after totalPick is available
+
+    // Set totalEdgePts from ouPickInfo if available, otherwise use overlay
+    if (ouPickInfo && ouPickInfo.ouEdgePts !== null) {
+      // Use official bet edge (source of truth)
+      totalEdgePts = ouPickInfo.ouEdgePts;
+    } else if (ou_model_valid && marketTotal !== null && totalEdgePts === null) {
+      // Fallback: calculate from overlay (only if not already set)
+      totalEdgePts = totalOverlay;
+    }
 
     const model_view = {
       modelFavoriteTeamId: modelFavoriteTeamId,
