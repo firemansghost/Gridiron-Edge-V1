@@ -33,8 +33,34 @@ export interface V3GameProjection {
   modelTotal: number;
 }
 
+export type V3TotalsDebugInfo = {
+  source: 'v3' | 'fallback';
+  gameId: string;
+  season: number;
+  week: number;
+  homeTeam: string;
+  awayTeam: string;
+  home: {
+    drives: number;
+    qualityDrives: number;
+    qualityRate: number;     // 0–1
+    drivesPerGame: number;
+    projectedPoints: number;
+  };
+  away: {
+    drives: number;
+    qualityDrives: number;
+    qualityRate: number;
+    drivesPerGame: number;
+    projectedPoints: number;
+  };
+  expDrives: number;
+  projectedTotal: number;
+};
+
 /**
  * Extract drive stats from TeamSeasonStat rawJson
+ * Also returns raw stats for debugging
  */
 function extractDriveStats(rawJson: any): DriveStats | null {
   if (!rawJson || typeof rawJson !== 'object') {
@@ -213,6 +239,129 @@ export async function calculateV3GameTotal(
     };
   } catch (error) {
     console.error(`[V3 Totals] Error calculating game total for ${homeTeamId} vs ${awayTeamId}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Explain V3 game total calculation with detailed breakdown
+ * Uses the exact same logic as calculateV3GameTotal for consistency
+ */
+export async function explainV3GameTotal(gameId: string): Promise<V3TotalsDebugInfo | null> {
+  try {
+    // Load game info
+    const game = await prisma.game.findUnique({
+      where: { id: gameId },
+      include: {
+        homeTeam: { select: { name: true } },
+        awayTeam: { select: { name: true } },
+      },
+    });
+
+    if (!game) {
+      return null;
+    }
+
+    // Load team drive metrics (same as calculateV3GameTotal)
+    const teamMetrics = await loadTeamDriveMetrics(game.season);
+    
+    const homeMetrics = teamMetrics.get(game.homeTeamId);
+    const awayMetrics = teamMetrics.get(game.awayTeamId);
+
+    // Determine source
+    const source: 'v3' | 'fallback' = (homeMetrics && awayMetrics) ? 'v3' : 'fallback';
+
+    if (!homeMetrics || !awayMetrics) {
+      // Return fallback info even if metrics are missing
+      return {
+        source: 'fallback',
+        gameId: game.id,
+        season: game.season,
+        week: game.week,
+        homeTeam: game.homeTeam.name,
+        awayTeam: game.awayTeam.name,
+        home: {
+          drives: 0,
+          qualityDrives: 0,
+          qualityRate: 0,
+          drivesPerGame: 0,
+          projectedPoints: 0,
+        },
+        away: {
+          drives: 0,
+          qualityDrives: 0,
+          qualityRate: 0,
+          drivesPerGame: 0,
+          projectedPoints: 0,
+        },
+        expDrives: 0,
+        projectedTotal: 0,
+      };
+    }
+
+    // Get raw drive stats for detailed breakdown
+    const homeStats = await prisma.teamSeasonStat.findUnique({
+      where: {
+        season_teamId: {
+          season: game.season,
+          teamId: game.homeTeamId,
+        },
+      },
+      select: { rawJson: true },
+    });
+
+    const awayStats = await prisma.teamSeasonStat.findUnique({
+      where: {
+        season_teamId: {
+          season: game.season,
+          teamId: game.awayTeamId,
+        },
+      },
+      select: { rawJson: true },
+    });
+
+    const homeDriveStats = extractDriveStats(homeStats?.rawJson);
+    const awayDriveStats = extractDriveStats(awayStats?.rawJson);
+
+    // Calculate projections (same logic as calculateV3GameTotal)
+    const expectedDrives = (homeMetrics.drivesPerGame + awayMetrics.drivesPerGame) / 2.0;
+    
+    const homeQualityRate = (homeMetrics.qualityDriveRate + awayMetrics.defensiveQualityRateAllowed) / 2.0;
+    const awayQualityRate = (awayMetrics.qualityDriveRate + homeMetrics.defensiveQualityRateAllowed) / 2.0;
+    
+    const homeProjectedQualityDrives = expectedDrives * homeQualityRate;
+    const awayProjectedQualityDrives = expectedDrives * awayQualityRate;
+    
+    const homeProjectedPoints = homeProjectedQualityDrives * 5.0;
+    const awayProjectedPoints = awayProjectedQualityDrives * 5.0;
+    const projectedTotal = homeProjectedPoints + awayProjectedPoints;
+
+    return {
+      source: 'v3',
+      gameId: game.id,
+      season: game.season,
+      week: game.week,
+      homeTeam: game.homeTeam.name,
+      awayTeam: game.awayTeam.name,
+      home: {
+        drives: homeDriveStats?.total_drives || 0,
+        qualityDrives: homeDriveStats?.quality_drives || 0,
+        qualityRate: homeMetrics.qualityDriveRate,
+        drivesPerGame: homeMetrics.drivesPerGame,
+        projectedPoints: homeProjectedPoints,
+      },
+      away: {
+        drives: awayDriveStats?.total_drives || 0,
+        qualityDrives: awayDriveStats?.quality_drives || 0,
+        qualityRate: awayMetrics.qualityDriveRate,
+        drivesPerGame: awayMetrics.drivesPerGame,
+        projectedPoints: awayProjectedPoints,
+      },
+      expDrives: expectedDrives,
+      projectedTotal,
+    };
+  } catch (error) {
+    console.error(`[V3 Totals] Error explaining game total for ${gameId}:`, error);
     return null;
   }
 }
