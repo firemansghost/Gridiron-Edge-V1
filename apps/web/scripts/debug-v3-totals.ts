@@ -209,7 +209,7 @@ async function analyzeWeek14Edges() {
   });
   
   let week14TeamsWithMetrics = 0;
-  for (const teamId of week14TeamIds) {
+  for (const teamId of Array.from(week14TeamIds)) {
     if (teamMetrics.has(teamId)) {
       week14TeamsWithMetrics++;
     }
