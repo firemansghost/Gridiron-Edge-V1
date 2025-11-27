@@ -372,8 +372,8 @@ export default function PicksPage() {
                     Tier A
                   </span>
                 )}
-                {/* Warning label for V3 Totals Tier B/C */}
-                {isTotalTierBOrC(totalPick) && (
+                {/* Warning label for V3 Totals Tier B/C only (not Tier A) */}
+                {isTotalTierBOrC(totalPick) && totalPick.grade !== 'A' && (
                   <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-800 border border-red-200">
                     ⚠️ Experimental – High Risk
                   </span>

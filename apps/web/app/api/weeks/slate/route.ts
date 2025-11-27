@@ -12,6 +12,7 @@ import { selectClosingLine } from '@/lib/closing-line-helpers';
 import { getCoreV1SpreadFromTeams, getATSPick, computeATSEdgeHma } from '@/lib/core-v1-spread';
 import { getOUPick } from '@/lib/core-v1-total';
 import { calculateV3GameTotal } from '@/lib/v3-totals';
+import { getOfficialTotalsBet } from '@/lib/official-bets';
 import { americanToProb } from '@/lib/market-line-helpers';
 
 interface SlateGame {
@@ -413,29 +414,40 @@ export async function GET(request: NextRequest) {
         let totalEdgePts: number | null = null;
         let totalGrade: string | null = null;
 
-        // Try V3 totals first
-        try {
-          const v3Projection = await calculateV3GameTotal(game.homeTeamId, game.awayTeamId, season);
-          if (v3Projection && v3Projection.modelTotal > 0 && marketTotal !== null) {
-            modelTotal = Math.round(v3Projection.modelTotal * 10) / 10;
-            totalEdgePts = Math.round((v3Projection.modelTotal - marketTotal) * 10) / 10;
-            
-            // Calculate Totals grade
-            if (totalEdgePts !== null && Number.isFinite(totalEdgePts) && Math.abs(totalEdgePts) >= 0.1) {
-              const absEdge = Math.abs(totalEdgePts);
-              if (absEdge >= 4.0) totalGrade = 'A';
-              else if (absEdge >= 3.0) totalGrade = 'B';
-              else if (absEdge >= 0.1) totalGrade = 'C';
+        // Check for official V3 totals bet first (source of truth)
+        const officialTotals = await getOfficialTotalsBet(game.gameId, season, week);
+        
+        if (officialTotals) {
+          // Use official bet as source of truth
+          modelTotal = Math.round(officialTotals.modelPrice * 10) / 10;
+          totalEdgePts = Math.round(officialTotals.edge * 10) / 10;
+          totalGrade = officialTotals.tier;
+          totalPick = `${officialTotals.side === 'over' ? 'Over' : 'Under'} ${officialTotals.line.toFixed(1)}`;
+        } else {
+          // Fallback: Try V3 totals calculation
+          try {
+            const v3Projection = await calculateV3GameTotal(game.homeTeamId, game.awayTeamId, season);
+            if (v3Projection && v3Projection.modelTotal > 0 && marketTotal !== null) {
+              modelTotal = Math.round(v3Projection.modelTotal * 10) / 10;
+              totalEdgePts = Math.round((v3Projection.modelTotal - marketTotal) * 10) / 10;
+              
+              // Calculate Totals grade
+              if (totalEdgePts !== null && Number.isFinite(totalEdgePts) && Math.abs(totalEdgePts) >= 0.1) {
+                const absEdge = Math.abs(totalEdgePts);
+                if (absEdge >= 4.0) totalGrade = 'A';
+                else if (absEdge >= 3.0) totalGrade = 'B';
+                else if (absEdge >= 0.1) totalGrade = 'C';
+              }
+              
+              // Generate pick label
+              if (totalEdgePts !== null && Math.abs(totalEdgePts) >= 0.1) {
+                const side = totalEdgePts > 0 ? 'over' : 'under';
+                totalPick = `${side === 'over' ? 'Over' : 'Under'} ${marketTotal.toFixed(1)}`;
+              }
             }
-            
-            // Generate pick label
-            if (totalEdgePts !== null && Math.abs(totalEdgePts) >= 0.1) {
-              const side = totalEdgePts > 0 ? 'over' : 'under';
-              totalPick = `${side === 'over' ? 'Over' : 'Under'} ${marketTotal.toFixed(1)}`;
-            }
+          } catch (error) {
+            console.warn(`[Slate API] V3 totals calculation failed for game ${game.gameId}, falling back to Core V1:`, error);
           }
-        } catch (error) {
-          console.warn(`[Slate API] V3 totals calculation failed for game ${game.gameId}, falling back to Core V1:`, error);
         }
 
         // Fall back to Core V1 if V3 unavailable
