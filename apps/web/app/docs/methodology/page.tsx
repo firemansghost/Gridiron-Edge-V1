@@ -311,38 +311,37 @@ export default function MethodologyPage() {
                 <h4 className="text-lg font-medium text-gray-900 mb-2">
                   V2 Component: Unit Matchup Analysis (30% weight)
                 </h4>
-                  <p className="text-gray-700 mb-3">
-                    V2 analyzes specific unit matchups to identify tactical advantages. It breaks down 
-                    team performance into granular unit grades (Run Offense, Pass Defense, Explosiveness) 
-                    and compares them head-to-head to find hidden edges.
-                  </p>
-                  <p className="text-gray-700 mb-3">
-                    Unit grades are calculated by aggregating game-level stats to season averages, 
-                    normalizing to Z-scores, and blending related metrics (40% Run, 40% Pass, 20% Explosiveness).
-                  </p>
-                </div>
+                <p className="text-gray-700 mb-3">
+                  V2 analyzes specific unit matchups to identify tactical advantages. It breaks down 
+                  team performance into granular unit grades (Run Offense, Pass Defense, Explosiveness) 
+                  and compares them head-to-head to find hidden edges.
+                </p>
+                <p className="text-gray-700 mb-3">
+                  Unit grades are calculated by aggregating game-level stats to season averages, 
+                  normalizing to Z-scores, and blending related metrics (40% Run, 40% Pass, 20% Explosiveness).
+                </p>
+              </div>
 
-                <div>
-                  <h4 className="text-lg font-medium text-gray-900 mb-2">
-                    Spread Calculation
-                  </h4>
-                  <p className="text-gray-700 mb-3">
-                    The Hybrid spread is calculated as:
+              <div>
+                <h4 className="text-lg font-medium text-gray-900 mb-2">
+                  Spread Calculation
+                </h4>
+                <p className="text-gray-700 mb-3">
+                  The Hybrid spread is calculated as:
+                </p>
+                <div className="bg-gray-100 p-4 rounded-lg mb-3">
+                  <p className="text-sm text-gray-700 font-mono mb-2">
+                    V1 Spread = (Home Rating - Away Rating) + HFA
                   </p>
-                  <div className="bg-gray-100 p-4 rounded-lg mb-3">
-                    <p className="text-sm text-gray-700 font-mono mb-2">
-                      V1 Spread = (Home Rating - Away Rating) + HFA
-                    </p>
-                    <p className="text-sm text-gray-700 font-mono mb-2">
-                      V2 Spread = Unit Matchup Analysis (scaled by 9.0)
-                    </p>
-                    <p className="text-sm text-gray-700 font-mono">
-                      Hybrid Spread = (V1 × 0.7) + (V2 × 0.3)
-                    </p>
-                    <p className="text-xs text-gray-600 mt-2">
-                      Where HFA (Home Field Advantage) = 2.0 points for home games, 0.0 for neutral sites.
-                    </p>
-                  </div>
+                  <p className="text-sm text-gray-700 font-mono mb-2">
+                    V2 Spread = Unit Matchup Analysis (scaled by 9.0)
+                  </p>
+                  <p className="text-sm text-gray-700 font-mono">
+                    Hybrid Spread = (V1 × 0.7) + (V2 × 0.3)
+                  </p>
+                  <p className="text-xs text-gray-600 mt-2">
+                    Where HFA (Home Field Advantage) = 2.0 points for home games, 0.0 for neutral sites.
+                  </p>
                 </div>
               </div>
             </div>
