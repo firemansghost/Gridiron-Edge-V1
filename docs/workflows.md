@@ -42,6 +42,30 @@ This document provides a comprehensive overview of all GitHub Actions workflows 
 
 ---
 
+### V3 Totals Nightly (`.github/workflows/v3-totals-nightly.yml`)
+
+- **Triggers:**
+  - `schedule`: Every night at 8:00 UTC (2:00 AM CST / 1:00 AM CDT) - `cron: '0 8 * * *'`
+  - `workflow_dispatch`: Manual trigger with optional season and week inputs
+
+- **Purpose:** Keep V3 Drive-Based Totals model data fresh by syncing drive stats and generating V3 totals bets for the current week. Runs after nightly-ingest to ensure stats are up-to-date.
+
+- **Key steps:**
+  - **sync-v3-totals:**
+    - `npx tsx apps/jobs/src/sync-drives.ts --season $SEASON` → Ingest/refresh drive stats from CFBD API
+    - `npx tsx apps/web/scripts/sync-v3-bets.ts $SEASON $POLL_WEEK` → Generate V3 totals bets for current week
+
+- **Data / systems touched:** CFBD API (drive data), Supabase database (TeamSeasonStat.drive_stats, Bet table with v3_totals strategy)
+
+- **Notes:** 
+  - Runs 1 hour after nightly-ingest (8:00 UTC vs 7:00 UTC) to ensure stats are fresh
+  - Uses concurrency control to prevent multiple runs
+  - Calculates current week dynamically from database (same pattern as nightly-ingest)
+  - Only touches V3-related scripts; does not re-run odds/schedules/weather/rankings
+  - Requires CFBD_API_KEY for drive stats sync
+
+---
+
 ### Ratings v1 Computation (`.github/workflows/ratings-v1.yml`)
 
 - **Triggers:**
@@ -407,12 +431,17 @@ The following compiled job scripts are called by workflows:
 
 ### Helper Scripts (scripts/)
 
-- **`get-current-week.mjs`** – Calculate current week from database (used by nightly-ingest)
+- **`get-current-week.mjs`** – Calculate current week from database (used by nightly-ingest and V3 Totals Nightly)
 - **`backfill-cfbd-season-stats.ts`** – Backfill season stats (used by CFBD Feature Ingest)
 - **`check-cfbd-gates.ts`** – Check data quality gates for CFBD ingest
 - **`generate-cfbd-summary.ts`** – Generate summary report for CFBD ingest
 - **`check-odds-gates.ts`** – Check data quality gates for odds backfill
 - **`phase2-consensus-coverage.ts`** – Generate consensus coverage report
+
+### V3 Totals Scripts
+
+- **`apps/jobs/src/sync-drives.ts`** – Ingest CFBD drive data and populate TeamSeasonStat.rawJson.drive_stats (used by V3 Totals Nightly)
+- **`apps/web/scripts/sync-v3-bets.ts`** – Generate v3_totals strategy bets for a given season/week (used by V3 Totals Nightly)
 
 ---
 
@@ -453,6 +482,7 @@ The following compiled job scripts are called by workflows:
 ### Cron Schedule Summary
 
 - **Nightly (7:00 UTC):** Nightly Ingest + Ratings
+- **Nightly (8:00 UTC):** V3 Totals Nightly (drive stats + V3 bets)
 - **Nightly (2:00 UTC):** CFBD Team Season Stats Sync
 - **Nightly (3:00 UTC):** CFBD Advanced Stats Sync, Grade Bets (weekdays)
 - **Weekly (Monday 9:00 UTC):** CFBD Rankings Sync
@@ -488,10 +518,11 @@ Before starting V4 model work, consider:
 
 ## Summary
 
-The repository has **16 active workflows** covering:
+The repository has **17 active workflows** covering:
 
-- **Data Ingestion:** Schedules, odds, weather, injuries, scores, stats, rankings, talent
+- **Data Ingestion:** Schedules, odds, weather, injuries, scores, stats, rankings, talent, drive stats
 - **Ratings Computation:** V1 and V2 power ratings (V4 will need to be added)
+- **Totals Model:** V3 Drive-Based Totals (nightly sync and bet generation)
 - **Bet Management:** Bet grading (frequent during game days)
 - **Database:** Schema validation and migration deployment
 - **Backfills:** Historical odds and scores
@@ -499,4 +530,5 @@ The repository has **16 active workflows** covering:
 The **Nightly Ingest + Ratings** workflow is the primary automated pipeline, running every night at 2:00 AM CST to keep production data current. Most other workflows are either scheduled for specific times (weekly rankings, yearly talent) or manual-only (backfills, feature ingest).
 
 All workflows appear to reference valid scripts and paths. The main follow-up items are consolidating duplicate talent sync workflows and standardizing Node versions.
+
 

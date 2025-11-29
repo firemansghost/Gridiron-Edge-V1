@@ -1,0 +1,110 @@
+name: V3 Totals Nightly
+
+on:
+  # Auto-run every night at 8:00 AM UTC (2:00 AM CST / 1:00 AM CDT)
+  # Runs after nightly-ingest (7:00 UTC) to ensure stats are fresh
+  schedule:
+    - cron: '0 8 * * *'  # Every night at 8:00 UTC (2:00 AM CST / 1:00 AM CDT)
+  # Allow manual trigger for testing (adds the Run workflow button in GitHub UI)
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season to sync (leave empty for 2025)'
+        required: false
+        default: '2025'
+        type: string
+      week:
+        description: 'CFB week to sync (leave empty for current week)'
+        required: false
+        default: ''
+        type: string
+
+concurrency:
+  group: v3-totals-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sync-v3-totals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      TZ: America/Chicago
+      CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run prisma:generate
+
+      - name: Calculate current week
+        id: current-week
+        run: |
+          if [ "${{ github.event.inputs.week }}" != "" ]; then
+            POLL_WEEK="${{ github.event.inputs.week }}"
+          else
+            # Calculate current week from database
+            POLL_WEEK=$(node scripts/get-current-week.mjs)
+          fi
+          echo "📅 Using week: $POLL_WEEK"
+          echo "POLL_WEEK=$POLL_WEEK" >> $GITHUB_ENV
+
+      - name: Determine season
+        id: season
+        run: |
+          if [ "${{ github.event.inputs.season }}" != "" ]; then
+            SEASON="${{ github.event.inputs.season }}"
+          else
+            SEASON="2025"
+          fi
+          echo "📅 Using season: $SEASON"
+          echo "SEASON=$SEASON" >> $GITHUB_ENV
+
+      - name: Sync drive stats for current season
+        if: ${{ env.CFBD_API_KEY != '' }}
+        run: |
+          echo "🏈 Syncing drive stats for season $SEASON..."
+          npx tsx apps/jobs/src/sync-drives.ts --season $SEASON
+          echo "✅ Drive stats sync complete"
+
+      - name: Skip drive stats sync (no CFBD key)
+        if: ${{ env.CFBD_API_KEY == '' }}
+        run: |
+          echo "⚠️  CFBD_API_KEY not set; skipping drive stats sync"
+          echo "This workflow requires a valid CFBD API key to fetch drive data"
+
+      - name: Generate V3 totals bets for current week
+        run: |
+          echo "📊 Generating V3 totals bets for $SEASON Week $POLL_WEEK..."
+          npx tsx apps/web/scripts/sync-v3-bets.ts $SEASON $POLL_WEEK
+          echo "✅ V3 totals bets generation complete"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "============================================"
+          echo "📊 V3 TOTALS NIGHTLY SUMMARY"
+          echo "============================================"
+          echo "Time (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')"
+          echo "Time (CST/CDT): $(TZ=America/Chicago date '+%Y-%m-%d %H:%M:%S %Z')"
+          echo "Season: $SEASON"
+          echo "Week: $POLL_WEEK"
+          echo "Status: ${{ job.status }}"
+          echo ""
+          echo "Steps executed:"
+          echo "  🏈 Drive stats sync (enabled: ${{ env.CFBD_API_KEY != '' }})"
+          echo "  📊 V3 totals bets generation"
+          echo "============================================"
+
