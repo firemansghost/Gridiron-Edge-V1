@@ -440,8 +440,8 @@ The following compiled job scripts are called by workflows:
 
 ### V3 Totals Scripts
 
-- **`apps/jobs/src/sync-drives.ts`** – Ingest CFBD drive data and populate TeamSeasonStat.rawJson.drive_stats (used by V3 Totals Nightly)
-- **`apps/web/scripts/sync-v3-bets.ts`** – Generate v3_totals strategy bets for a given season/week (used by V3 Totals Nightly)
+- **`apps/jobs/src/sync-drives.ts`** – Ingest CFBD drive data and populate TeamSeasonStat.rawJson.drive_stats (used by V3 Totals Nightly). Accepts `--season` argument.
+- **`apps/web/scripts/sync-v3-bets.ts`** – Generate v3_totals strategy bets for a given season/week (used by V3 Totals Nightly). Accepts positional arguments: `season weekStart [weekEnd]`.
 
 ---
 
