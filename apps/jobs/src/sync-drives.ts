@@ -1,14 +1,11 @@
-#!/usr/bin/env node
-
 /**
- * Sync Drive Data from CFBD
+ * Sync Drive Stats from CFBD API
  * 
- * Fetches drive-by-drive data and calculates:
- * - Quality Drives (>= 40 yards)
- * - Drives Per Game (Tempo)
- * - Quality Drive Rate
+ * Fetches drive-level data from CFBD and aggregates into TeamSeasonStat.rawJson.drive_stats.
  * 
- * Stores aggregates in TeamSeasonStat.drive_stats JSON field
+ * Supports V3 Totals (tempo, quality drives) and V4 Phase 1 metrics:
+ * - Finishing Drives: Points per scoring opportunity (drives reaching opponent's 40 or closer)
+ * - Available Yards %: Fraction of possible field gained per drive
  * 
  * Usage:
  *   npx tsx apps/jobs/src/sync-drives.ts --season 2025
@@ -20,306 +17,380 @@ import { CFBDTeamMapper } from './cfbd/team-mapper';
 
 const prisma = new PrismaClient();
 
-interface DriveData {
-  id: number;
-  offense: string;
-  offenseConference?: string;
-  defense: string;
-  defenseConference?: string;
-  gameId: number;
-  season: number;
-  week?: number;
-  yards: number;
-  plays: number;
-  driveResult?: string;
-  isScoringDrive?: boolean;
-  elapsed?: {
-    minutes?: number;
-    seconds?: number;
-  };
+interface CFBDDrive {
+  id?: number;
+  gameId?: number;
+  team?: string;
+  opponent?: string;
+  offense?: string;
+  defense?: string;
   startYardline?: number;
+  startYardLine?: number; // Alternative field name
   endYardline?: number;
-  startPeriod?: number;
-  endPeriod?: number;
-  timeOfPossession?: string;
+  endYardLine?: number; // Alternative field name
+  yards?: number;
+  plays?: number;
+  timeElapsed?: number;
+  timeElapsedSeconds?: number;
+  result?: string;
+  points?: number;
+  driveResult?: string;
+  // CFBD may use different field names, so we'll handle both
+  [key: string]: any;
 }
 
-interface TeamDriveStats {
-  teamId: string;
-  season: number;
-  totalDrives: number;
-  qualityDrives: number; // >= 40 yards
-  qualityDriveRate: number; // qualityDrives / totalDrives
-  drivesPerGame: number;
-  totalGames: number;
-  totalYards: number;
-  totalPlays: number;
-  scoringDrives: number;
-  pointsPerDrive?: number;
+interface DriveStats {
+  // V3 Totals fields (preserved)
+  tempo?: number; // Drives per game
+  qualityDrives?: number; // Drives >= 40 yards
+  qualityDriveRate?: number; // qualityDrives / totalDrives
+  
+  // V4 Phase 1: Finishing Drives
+  finishingDrives?: {
+    off: {
+      scoringOpps: number;
+      pointsOnOpps: number;
+      pointsPerOpp: number;
+    };
+    def: {
+      scoringOpps: number;
+      pointsOnOpps: number;
+      pointsPerOpp: number;
+    };
+  };
+  
+  // V4 Phase 1: Available Yards
+  availableYards?: {
+    off: {
+      drives: number;
+      avgAvailableYards: number;
+      avgYardsGained: number;
+      avgAvailableYardsPct: number; // 0-1
+    };
+    def: {
+      drives: number;
+      avgAvailableYards: number;
+      avgYardsGained: number;
+      avgAvailableYardsPct: number;
+    };
+  };
 }
 
 /**
- * Check if a drive is a "quality drive" (>= 40 yards)
+ * Normalize yardline to 0-100 scale
+ * 
+ * CFBD API provides yardline as distance from own goal line (0-100 scale):
+ * - 0 = own goal line
+ * - 50 = midfield
+ * - 100 = opponent goal line
+ * 
+ * This function ensures the value is in the valid 0-100 range.
+ * If CFBD uses a different format (e.g., field position strings), additional
+ * parsing would be needed here.
  */
-function isQualityDrive(drive: DriveData): boolean {
-  return drive.yards >= 40;
+function normalizeYardline(yardline: number | undefined | null): number | null {
+  if (yardline === null || yardline === undefined) return null;
+  // CFBD typically uses 0-100 scale already, but clamp to be safe
+  return Math.max(0, Math.min(100, yardline));
 }
 
 /**
- * Aggregate drives by team
+ * Determine if a drive reached a scoring opportunity (opponent's 40 or closer)
+ * For offense: drive reached opponent's 40-yard line or closer
+ * This means: normalized yardline >= 60 (60 yards from own goal = opponent's 40)
  */
-function aggregateDrivesByTeam(
-  drives: DriveData[],
-  teamMapping: Map<string, string>
-): Map<string, TeamDriveStats> {
-  const teamStats = new Map<string, TeamDriveStats>();
-
-  for (const drive of drives) {
-    // Map CFBD team name to internal team ID
-    const offenseKey = drive.offense?.toLowerCase();
-    if (!offenseKey) continue;
-
-    const teamId = teamMapping.get(offenseKey);
-    if (!teamId) {
-      // Skip unmapped teams (will be logged)
-      continue;
-    }
-
-    // Initialize team stats if needed
-    if (!teamStats.has(teamId)) {
-      teamStats.set(teamId, {
-        teamId,
-        season: drive.season,
-        totalDrives: 0,
-        qualityDrives: 0,
-        qualityDriveRate: 0,
-        drivesPerGame: 0,
-        totalGames: 0,
-        totalYards: 0,
-        totalPlays: 0,
-        scoringDrives: 0,
-      });
-    }
-
-    const stats = teamStats.get(teamId)!;
-    stats.totalDrives++;
-    stats.totalYards += drive.yards || 0;
-    stats.totalPlays += drive.plays || 0;
-    
-    if (isQualityDrive(drive)) {
-      stats.qualityDrives++;
-    }
-    
-    if (drive.isScoringDrive) {
-      stats.scoringDrives++;
+function isScoringOpportunity(startYardline: number | null, endYardline: number | null, yards: number | null): boolean {
+  // Use end yardline if available, otherwise calculate from start + yards
+  let finalYardline: number | null = null;
+  
+  if (endYardline !== null && endYardline !== undefined) {
+    finalYardline = normalizeYardline(endYardline);
+  } else if (startYardline !== null && yards !== null && yards !== undefined) {
+    const start = normalizeYardline(startYardline);
+    if (start !== null) {
+      finalYardline = Math.min(100, start + yards);
     }
   }
-
-  // Calculate rates and per-game averages
-  // We need to get game counts separately
-  return teamStats;
+  
+  if (finalYardline === null) return false;
+  
+  // Scoring opportunity = reached opponent's 40 or closer (yardline >= 60)
+  return finalYardline >= 60;
 }
 
 /**
- * Get game counts per team for the season
+ * Calculate available yards percentage for a drive
+ * Available Yards % = yards gained / available yards
+ * Available yards = 100 - start yardline (distance to opponent goal line)
  */
-async function getGameCounts(season: number, teamIds: string[]): Promise<Map<string, number>> {
-  const gameCounts = new Map<string, number>();
-
-  for (const teamId of teamIds) {
-    const count = await prisma.game.count({
-      where: {
-        season,
-        OR: [
-          { homeTeamId: teamId },
-          { awayTeamId: teamId },
-        ],
-        status: 'final', // Use status instead of completed
-      },
-    });
-    gameCounts.set(teamId, count);
+function calculateAvailableYards(
+  startYardline: number | null,
+  endYardline: number | null,
+  yards: number | null
+): { availableYards: number; yardsGained: number; pct: number } | null {
+  const start = normalizeYardline(startYardline);
+  if (start === null) return null;
+  
+  // Available yards = distance to opponent goal line
+  const availableYards = Math.max(0, 100 - start);
+  if (availableYards <= 0) return null; // Skip if already at goal line
+  
+  // Yards gained: use explicit yards if available, otherwise calculate from positions
+  let yardsGained: number;
+  if (yards !== null && yards !== undefined) {
+    yardsGained = Math.max(0, yards);
+  } else if (endYardline !== null && endYardline !== undefined) {
+    const end = normalizeYardline(endYardline);
+    if (end === null) return null;
+    yardsGained = Math.max(0, end - start);
+  } else {
+    return null; // Can't calculate without yards or end position
   }
-
-  return gameCounts;
+  
+  // Calculate percentage and clamp to [0, 1]
+  const pct = Math.max(0, Math.min(1, yardsGained / availableYards));
+  
+  return { availableYards, yardsGained, pct };
 }
 
 /**
- * Fetch and process drives for a season
+ * Process drives for a season and aggregate metrics per team
  */
-async function syncDrives(season: number): Promise<void> {
-  console.log(`\n🚀 Syncing Drive Data for ${season}`);
-  console.log('='.repeat(70));
-
+async function processDrivesForSeason(season: number): Promise<void> {
+  console.log(`\n🏈 Processing drives for season ${season}...`);
+  
   const client = new CFBDClient();
   const mapper = new CFBDTeamMapper();
-
-  // Build team mapping from drives as we fetch them
-  console.log('\n📋 Building team mapping and fetching drives...');
-  const unmapped: string[] = [];
-  const teamMapping = new Map<string, string>();
-  const cfbdTeams = new Set<string>();
-
-  // Fetch drives for the season (week by week to avoid rate limits)
-  console.log('\n📥 Fetching drives...');
-  const allDrives: DriveData[] = [];
   
-  // Fetch week by week (weeks 1-15 typically)
-  for (let week = 1; week <= 15; week++) {
-    try {
-      const drives = await client.getDrives(season, week);
-      console.log(`   Week ${week}: ${drives.length} drives`);
+  // Fetch all drives for the season (no week filter to get all weeks)
+  console.log('   Fetching drives from CFBD API...');
+  const drives = await client.getDrives(season);
+  console.log(`   Fetched ${drives.length} drives`);
+  
+  if (drives.length === 0) {
+    console.log('   ⚠️  No drives found for this season');
+    return;
+  }
+  
+  // Group drives by team
+  const teamDriveMap = new Map<string, {
+    offense: CFBDDrive[];
+    defense: CFBDDrive[];
+  }>();
+  
+  for (const drive of drives as CFBDDrive[]) {
+    // CFBD may use 'offense'/'defense' or 'team'/'opponent' fields
+    const offenseTeam = drive.offense || drive.team;
+    const defenseTeam = drive.defense || drive.opponent;
+    
+    if (!offenseTeam || !defenseTeam) {
+      console.warn(`   ⚠️  Skipping drive ${drive.id || 'unknown'}: missing team info`);
+      continue;
+    }
+    
+    // Map CFBD team names to internal IDs
+    const offenseId = await mapper.mapToInternal(offenseTeam, season);
+    const defenseId = await mapper.mapToInternal(defenseTeam, season);
+    
+    if (!offenseId || !defenseId) {
+      // Skip if we can't map teams (likely FCS or other divisions)
+      continue;
+    }
+    
+    // Add to offense drives for offense team
+    if (!teamDriveMap.has(offenseId)) {
+      teamDriveMap.set(offenseId, { offense: [], defense: [] });
+    }
+    teamDriveMap.get(offenseId)!.offense.push(drive);
+    
+    // Add to defense drives for defense team (this drive is opponent's offense)
+    if (!teamDriveMap.has(defenseId)) {
+      teamDriveMap.set(defenseId, { offense: [], defense: [] });
+    }
+    teamDriveMap.get(defenseId)!.defense.push(drive);
+  }
+  
+  console.log(`   Processing ${teamDriveMap.size} teams...`);
+  
+  // Process each team
+  for (const [teamId, { offense: offenseDrives, defense: defenseDrives }] of teamDriveMap.entries()) {
+    // V3 Totals metrics (preserve existing structure)
+    const totalDrives = offenseDrives.length;
+    const qualityDrives = offenseDrives.filter(d => {
+      const yards = d.yards || 0;
+      return yards >= 40;
+    }).length;
+    const qualityDriveRate = totalDrives > 0 ? qualityDrives / totalDrives : 0;
+    
+    // Calculate tempo (drives per game)
+    // We need to count unique games - use gameId if available
+    // CFBD may use gameId or game_id field
+    const uniqueGames = new Set(
+      offenseDrives
+        .map(d => d.gameId || d.game_id || d.game)
+        .filter(Boolean)
+    );
+    const games = uniqueGames.size || 1; // Fallback to 1 if no game IDs
+    const tempo = games > 0 ? totalDrives / games : 0;
+    
+    // V4 Phase 1: Finishing Drives (Offense)
+    let offScoringOpps = 0;
+    let offPointsOnOpps = 0;
+    
+    for (const drive of offenseDrives) {
+      const startYardline = drive.startYardline ?? drive.startYardLine;
+      const endYardline = drive.endYardline ?? drive.endYardLine;
+      const yards = drive.yards;
       
-      for (const drive of drives) {
-        // Collect team names for mapping
-        if (drive.offense) cfbdTeams.add(drive.offense);
-        if (drive.defense) cfbdTeams.add(drive.defense);
-        
-        allDrives.push({
-          id: drive.id,
-          offense: drive.offense,
-          offenseConference: drive.offenseConference,
-          defense: drive.defense,
-          defenseConference: drive.defenseConference,
-          gameId: drive.gameId,
-          season: drive.season || season,
-          week: drive.week || week,
-          yards: drive.yards || 0,
-          plays: drive.plays || 0,
-          driveResult: drive.driveResult,
-          isScoringDrive: drive.isScoringDrive || drive.driveResult === 'TD' || drive.driveResult === 'FG',
-          elapsed: drive.elapsed,
-          startYardline: drive.startYardline,
-          endYardline: drive.endYardline,
-          startPeriod: drive.startPeriod,
-          endPeriod: drive.endPeriod,
-          timeOfPossession: drive.timeOfPossession,
-        });
-      }
-    } catch (error: any) {
-      // Some weeks may not have data yet
-      if (error.message?.includes('404') || error.message?.includes('400')) {
-        console.log(`   Week ${week}: No data available`);
-        continue;
-      }
-      throw error;
-    }
-  }
-
-  console.log(`   ✅ Total drives fetched: ${allDrives.length}`);
-
-  // Build team mapping from collected team names
-  console.log(`\n📋 Mapping ${cfbdTeams.size} teams...`);
-  for (const cfbdName of cfbdTeams) {
-    const internalId = await mapper.mapToInternal(cfbdName, season);
-    if (internalId) {
-      teamMapping.set(cfbdName.toLowerCase(), internalId);
-    } else {
-      if (!unmapped.includes(cfbdName)) {
-        unmapped.push(cfbdName);
+      if (isScoringOpportunity(startYardline, endYardline, yards)) {
+        offScoringOpps++;
+        const points = drive.points || 0;
+        offPointsOnOpps += points;
       }
     }
-  }
-
-  if (unmapped.length > 0) {
-    console.warn(`   ⚠️  ${unmapped.length} unmapped teams: ${unmapped.slice(0, 5).join(', ')}${unmapped.length > 5 ? '...' : ''}`);
-  }
-  
-  console.log(`   ✅ Mapped ${teamMapping.size} teams`);
-
-  // Aggregate by team
-  console.log('\n📊 Aggregating drive stats by team...');
-  const teamStatsMap = aggregateDrivesByTeam(allDrives, teamMapping);
-  
-  // Get game counts
-  const teamIds = Array.from(teamStatsMap.keys());
-  const gameCounts = await getGameCounts(season, teamIds);
-
-  // Calculate final stats
-  for (const [teamId, stats] of teamStatsMap.entries()) {
-    const games = gameCounts.get(teamId) || 1; // Avoid division by zero
-    stats.totalGames = games;
-    stats.drivesPerGame = stats.totalDrives / games;
-    stats.qualityDriveRate = stats.totalDrives > 0 
-      ? stats.qualityDrives / stats.totalDrives 
-      : 0;
-  }
-
-  // Save to TeamSeasonStat
-  console.log('\n💾 Saving drive stats to TeamSeasonStat...');
-  let saved = 0;
-  let skipped = 0;
-
-  for (const [teamId, stats] of teamStatsMap.entries()) {
-    try {
-      const driveStatsJson = {
-        total_drives: stats.totalDrives,
-        quality_drives: stats.qualityDrives,
-        quality_drive_rate: stats.qualityDriveRate,
-        drives_per_game: stats.drivesPerGame,
-        total_games: stats.totalGames,
-        total_yards: stats.totalYards,
-        total_plays: stats.totalPlays,
-        scoring_drives: stats.scoringDrives,
-        points_per_drive: stats.scoringDrives > 0 ? (stats.scoringDrives * 5.0) / stats.totalDrives : 0,
-      };
-
-      // Update TeamSeasonStat with drive_stats in rawJson
-      // We'll merge with existing rawJson if it exists
-      const existing = await prisma.teamSeasonStat.findUnique({
-        where: {
-          season_teamId: {
-            season,
-            teamId,
-          },
+    
+    const offPointsPerOpp = offScoringOpps > 0 ? offPointsOnOpps / offScoringOpps : 0;
+    
+    // V4 Phase 1: Finishing Drives (Defense)
+    let defScoringOpps = 0;
+    let defPointsOnOpps = 0;
+    
+    for (const drive of defenseDrives) {
+      const startYardline = drive.startYardline ?? drive.startYardLine;
+      const endYardline = drive.endYardline ?? drive.endYardLine;
+      const yards = drive.yards;
+      
+      if (isScoringOpportunity(startYardline, endYardline, yards)) {
+        defScoringOpps++;
+        const points = drive.points || 0;
+        defPointsOnOpps += points;
+      }
+    }
+    
+    const defPointsPerOpp = defScoringOpps > 0 ? defPointsOnOpps / defScoringOpps : 0;
+    
+    // V4 Phase 1: Available Yards (Offense)
+    let offDrivesWithAvail = 0;
+    let sumOffAvailableYards = 0;
+    let sumOffYardsGained = 0;
+    let sumOffAvailableYardsPct = 0;
+    
+    for (const drive of offenseDrives) {
+      const startYardline = drive.startYardline ?? drive.startYardLine;
+      const endYardline = drive.endYardline ?? drive.endYardLine;
+      const yards = drive.yards;
+      
+      const avail = calculateAvailableYards(startYardline, endYardline, yards);
+      if (avail) {
+        offDrivesWithAvail++;
+        sumOffAvailableYards += avail.availableYards;
+        sumOffYardsGained += avail.yardsGained;
+        sumOffAvailableYardsPct += avail.pct;
+      }
+    }
+    
+    const offAvgAvailableYards = offDrivesWithAvail > 0 ? sumOffAvailableYards / offDrivesWithAvail : 0;
+    const offAvgYardsGained = offDrivesWithAvail > 0 ? sumOffYardsGained / offDrivesWithAvail : 0;
+    const offAvgAvailableYardsPct = offDrivesWithAvail > 0 ? sumOffAvailableYardsPct / offDrivesWithAvail : 0;
+    
+    // V4 Phase 1: Available Yards (Defense)
+    let defDrivesWithAvail = 0;
+    let sumDefAvailableYards = 0;
+    let sumDefYardsGained = 0;
+    let sumDefAvailableYardsPct = 0;
+    
+    for (const drive of defenseDrives) {
+      const startYardline = drive.startYardline ?? drive.startYardLine;
+      const endYardline = drive.endYardline ?? drive.endYardLine;
+      const yards = drive.yards;
+      
+      const avail = calculateAvailableYards(startYardline, endYardline, yards);
+      if (avail) {
+        defDrivesWithAvail++;
+        sumDefAvailableYards += avail.availableYards;
+        sumDefYardsGained += avail.yardsGained;
+        sumDefAvailableYardsPct += avail.pct;
+      }
+    }
+    
+    const defAvgAvailableYards = defDrivesWithAvail > 0 ? sumDefAvailableYards / defDrivesWithAvail : 0;
+    const defAvgYardsGained = defDrivesWithAvail > 0 ? sumDefYardsGained / defDrivesWithAvail : 0;
+    const defAvgAvailableYardsPct = defDrivesWithAvail > 0 ? sumDefAvailableYardsPct / defDrivesWithAvail : 0;
+    
+    // Build drive_stats object (preserve V3 fields, add V4 fields)
+    const driveStats: DriveStats = {
+      // V3 Totals fields (preserved)
+      tempo,
+      qualityDrives,
+      qualityDriveRate,
+      
+      // V4 Phase 1: Finishing Drives
+      finishingDrives: {
+        off: {
+          scoringOpps: offScoringOpps,
+          pointsOnOpps: offPointsOnOpps,
+          pointsPerOpp: offPointsPerOpp,
         },
-      });
-
-      const updatedRawJson = existing?.rawJson 
-        ? { ...(existing.rawJson as any), drive_stats: driveStatsJson }
-        : { drive_stats: driveStatsJson };
-
-      await prisma.teamSeasonStat.upsert({
-        where: {
-          season_teamId: {
-            season,
-            teamId,
-          },
+        def: {
+          scoringOpps: defScoringOpps,
+          pointsOnOpps: defPointsOnOpps,
+          pointsPerOpp: defPointsPerOpp,
         },
-        update: {
-          rawJson: updatedRawJson,
+      },
+      
+      // V4 Phase 1: Available Yards
+      availableYards: {
+        off: {
+          drives: offDrivesWithAvail,
+          avgAvailableYards: offAvgAvailableYards,
+          avgYardsGained: offAvgYardsGained,
+          avgAvailableYardsPct: offAvgAvailableYardsPct,
         },
-        create: {
+        def: {
+          drives: defDrivesWithAvail,
+          avgAvailableYards: defAvgAvailableYards,
+          avgYardsGained: defAvgYardsGained,
+          avgAvailableYardsPct: defAvgAvailableYardsPct,
+        },
+      },
+    };
+    
+    // Update TeamSeasonStat
+    const existing = await prisma.teamSeasonStat.findUnique({
+      where: {
+        season_teamId: {
           season,
           teamId,
-          rawJson: updatedRawJson,
         },
-      });
-
-      saved++;
-    } catch (error: any) {
-      console.error(`   ⚠️  Failed to save stats for ${teamId}: ${error.message}`);
-      skipped++;
-    }
-  }
-
-  console.log(`   ✅ Saved: ${saved}, Skipped: ${skipped}`);
-
-  // Log top teams by quality drive rate
-  console.log('\n📈 Top 10 Teams by Quality Drive Rate:');
-  const sorted = Array.from(teamStatsMap.values())
-    .filter(s => s.totalDrives >= 50) // Minimum sample size
-    .sort((a, b) => b.qualityDriveRate - a.qualityDriveRate)
-    .slice(0, 10);
-
-  for (const stats of sorted) {
-    const team = await prisma.team.findUnique({
-      where: { id: stats.teamId },
-      select: { name: true },
+      },
     });
-    console.log(`   ${team?.name || stats.teamId}: ${(stats.qualityDriveRate * 100).toFixed(1)}% (${stats.qualityDrives}/${stats.totalDrives} drives, ${stats.drivesPerGame.toFixed(1)} drives/game)`);
+    
+    // Merge with existing rawJson to preserve other fields
+    const existingRawJson = (existing?.rawJson as any) || {};
+    const updatedRawJson = {
+      ...existingRawJson,
+      drive_stats: driveStats,
+    };
+    
+    await prisma.teamSeasonStat.upsert({
+      where: {
+        season_teamId: {
+          season,
+          teamId,
+        },
+      },
+      create: {
+        season,
+        teamId,
+        rawJson: updatedRawJson,
+      },
+      update: {
+        rawJson: updatedRawJson,
+      },
+    });
   }
-
-  console.log('\n✅ Drive sync complete!\n');
+  
+  console.log(`   ✅ Processed ${teamDriveMap.size} teams`);
 }
 
 /**
@@ -327,31 +398,32 @@ async function syncDrives(season: number): Promise<void> {
  */
 async function main() {
   const args = process.argv.slice(2);
-  let season = 2025;
-
-  // Parse --season flag
+  let season: number | null = null;
+  
+  // Parse --season argument
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--season' && args[i + 1]) {
-      season = parseInt(args[i + 1]);
+    if (args[i] === '--season' && i + 1 < args.length) {
+      season = parseInt(args[i + 1], 10);
       break;
     }
   }
-
-  if (isNaN(season)) {
-    console.error('Error: Invalid season. Usage: npx tsx apps/jobs/src/sync-drives.ts --season 2025');
+  
+  if (!season || isNaN(season)) {
+    console.error('Usage: npx tsx apps/jobs/src/sync-drives.ts --season <YEAR>');
+    console.error('Example: npx tsx apps/jobs/src/sync-drives.ts --season 2025');
     process.exit(1);
   }
-
-  await syncDrives(season);
+  
+  try {
+    await processDrivesForSeason(season);
+    console.log('\n✅ Drive stats sync complete');
+  } catch (error) {
+    console.error('\n❌ Error syncing drive stats:', error);
+    process.exit(1);
+  } finally {
+    await prisma.$disconnect();
+  }
 }
 
-main()
-  .catch((error) => {
-    console.error('❌ Fatal error:', error);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
-
+main();
 
