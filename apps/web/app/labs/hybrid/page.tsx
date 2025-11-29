@@ -37,7 +37,14 @@ interface HybridGame {
   v1Spread: SpreadInfo;
   v2Spread: SpreadInfo;
   hybridSpread: SpreadInfo;
+  v4Spread: {
+    hma: number | null;
+    favoriteSpread: number | null;
+    favoriteTeamId: string | null;
+    favoriteName: string | null;
+  } | null;
   diff: number; // Hybrid - V1 (in favorite-centric terms)
+  diffV4Hybrid: number | null; // V4 - Hybrid (in favorite-centric terms)
   marketSpread: {
     value: number | null;
     favoriteTeamId: string | null;
@@ -123,6 +130,22 @@ export default function HybridLabsPage() {
     return 'bg-gray-100 text-gray-800';
   };
 
+  const getV4DiffColor = (diff: number | null) => {
+    if (diff === null) return '';
+    const absDiff = Math.abs(diff);
+    if (absDiff >= 4.0) return 'bg-purple-50 border-purple-200';
+    if (absDiff >= 2.0) return 'bg-blue-50 border-blue-200';
+    return '';
+  };
+
+  const getV4DiffBadge = (diff: number | null) => {
+    if (diff === null) return 'bg-gray-100 text-gray-800';
+    const absDiff = Math.abs(diff);
+    if (absDiff >= 4.0) return 'bg-purple-100 text-purple-800';
+    if (absDiff >= 2.0) return 'bg-blue-100 text-blue-800';
+    return 'bg-gray-100 text-gray-800';
+  };
+
   const calculateHybridPick = (game: HybridGame) => {
     if (!game.marketSpread || game.marketSpread.value === null) {
       return null;
@@ -195,6 +218,12 @@ export default function HybridLabsPage() {
         V1_Spread: `${game.v1Spread.favoriteName} ${formatSpread(game.v1Spread.favoriteSpread)}`,
         V2_Spread: `${game.v2Spread.favoriteName} ${formatSpread(game.v2Spread.favoriteSpread)}`,
         Hybrid_Spread: `${game.hybridSpread.favoriteName} ${formatSpread(game.hybridSpread.favoriteSpread)}`,
+        V4_Spread: game.v4Spread && game.v4Spread.favoriteName
+          ? `${game.v4Spread.favoriteName} ${formatSpread(game.v4Spread.favoriteSpread!)}`
+          : '—',
+        Diff_V4_Hybrid: game.diffV4Hybrid !== null
+          ? (game.diffV4Hybrid > 0 ? `+${game.diffV4Hybrid.toFixed(1)}` : game.diffV4Hybrid.toFixed(1))
+          : '—',
         Diff_Hybrid_V1: game.diff > 0 ? `+${game.diff.toFixed(1)}` : game.diff.toFixed(1),
         Market_Line: game.marketSpread && game.marketSpread.value !== null
           ? formatSpread(game.marketSpread.value)
@@ -242,10 +271,10 @@ export default function HybridLabsPage() {
       <div className="container mx-auto px-4 py-8">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            🔬 Labs: Hybrid Model Dashboard
+            🔬 Labs: Spread Model Dashboard
           </h1>
           <p className="text-gray-600 mb-4">
-            Comparing V1 (Composite), V2 (Matchup), and Hybrid (70% V1 + 30% V2) spread predictions
+            Comparing V1 (Composite), V2 (Matchup), Hybrid (70% V1 + 30% V2), and V4 (Labs) spread predictions
             {season && week && ` - ${season} Week ${week}`}
           </p>
           <div className="flex items-center justify-between">
@@ -293,7 +322,10 @@ export default function HybridLabsPage() {
                     Hybrid (70/30)
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Diff (Hybrid - V1)
+                    V4 (Labs)
+                  </th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Diff (V4 – Hybrid)
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Hybrid Pick
@@ -315,7 +347,7 @@ export default function HybridLabsPage() {
                   if (visibleGames.length === 0) {
                     return (
                       <tr>
-                        <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                        <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
                           {games.length === 0
                             ? 'No games found for this week.'
                             : hideNoOdds
@@ -328,8 +360,13 @@ export default function HybridLabsPage() {
 
                   return visibleGames.map((game) => {
                     const rowClass = getDiffColor(game.diff);
+                    const v4RowClass = getV4DiffColor(game.diffV4Hybrid);
+                    // Combine row classes if both have highlights
+                    const combinedRowClass = rowClass && v4RowClass 
+                      ? `${rowClass} ${v4RowClass}`
+                      : rowClass || v4RowClass;
                     return (
-                      <tr key={game.gameId} className={rowClass}>
+                      <tr key={game.gameId} className={combinedRowClass}>
                         <td className="px-4 py-4 whitespace-nowrap">
                           <div className="flex items-center space-x-2">
                             <div className="flex items-center space-x-1">
@@ -393,9 +430,27 @@ export default function HybridLabsPage() {
                           </div>
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-center">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getDiffBadge(game.diff)}`}>
-                            {game.diff > 0 ? '+' : ''}{game.diff.toFixed(1)}
-                          </span>
+                          {game.v4Spread && game.v4Spread.favoriteName ? (
+                            <>
+                              <div className="text-sm font-medium text-purple-900">
+                                {game.v4Spread.favoriteName}
+                              </div>
+                              <div className="text-sm text-purple-600">
+                                {formatSpread(game.v4Spread.favoriteSpread!)}
+                              </div>
+                            </>
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-center">
+                          {game.diffV4Hybrid !== null ? (
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getV4DiffBadge(game.diffV4Hybrid)}`}>
+                              {game.diffV4Hybrid > 0 ? '+' : ''}{game.diffV4Hybrid.toFixed(1)}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-center">
                           {(() => {
@@ -442,7 +497,9 @@ export default function HybridLabsPage() {
             <li><strong>V1 (Composite):</strong> Power ratings from Talent, Efficiency, Scoring, and Record (25% each)</li>
             <li><strong>V2 (Matchup):</strong> Unit grades (Run 40%, Pass 40%, Explosiveness 20%) scaled by 9.0</li>
             <li><strong>Hybrid:</strong> 70% V1 + 30% V2 blend (optimized from backtesting)</li>
-            <li><strong>Diff:</strong> Difference between Hybrid and V1 predictions. Highlighted rows show significant disagreements (&gt;3 pts).</li>
+            <li><strong>V4 (Labs):</strong> SP+/FEI-style efficiency + drives model (experimental). Uses Success Rate (50%), Explosiveness (25%), Finishing Drives (15%), and Available Yards % (10%).</li>
+            <li><strong>Diff (V4 – Hybrid):</strong> Positive = V4 more bullish on the favorite than Hybrid; Negative = V4 leans more to the dog. Highlighted rows show significant disagreements (≥2 pts soft highlight, ≥4 pts strong highlight).</li>
+            <li><strong>Row Highlighting:</strong> Rows are highlighted when Hybrid differs significantly from V1 (&gt;3 pts) or when V4 differs significantly from Hybrid (≥2 pts).</li>
           </ul>
         </div>
 

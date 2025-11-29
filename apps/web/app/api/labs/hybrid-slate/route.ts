@@ -42,8 +42,16 @@ interface HybridGame {
     favoriteTeamId: string | null;
     favoriteName: string | null;
   };
+  v4Spread: {
+    hma: number | null;
+    favoriteSpread: number | null;
+    favoriteTeamId: string | null;
+    favoriteName: string | null;
+  } | null;
   // Difference between Hybrid and V1
   diff: number; // Hybrid - V1 (in favorite-centric terms)
+  // Difference between V4 and Hybrid
+  diffV4Hybrid: number | null; // V4 - Hybrid (in favorite-centric terms)
   // Market line for comparison
   marketSpread: {
     value: number | null;
@@ -100,6 +108,7 @@ export async function GET(request: NextRequest) {
       teamIds.add(game.awayTeamId);
     });
 
+    // Fetch V1 ratings
     const v1Ratings = await prisma.teamSeasonRating.findMany({
       where: {
         season,
@@ -120,6 +129,30 @@ export async function GET(request: NextRequest) {
         : (rating.rating !== null ? Number(rating.rating) : null);
       if (value !== null) {
         ratingsMap.set(rating.teamId, value);
+      }
+    }
+
+    // Fetch V4 ratings
+    const v4Ratings = await prisma.teamSeasonRating.findMany({
+      where: {
+        season,
+        teamId: { in: Array.from(teamIds) },
+        modelVersion: 'v4',
+      },
+      select: {
+        teamId: true,
+        rating: true,
+        powerRating: true,
+      },
+    });
+
+    const v4RatingsMap = new Map<string, number>();
+    for (const rating of v4Ratings) {
+      const value = rating.rating !== null
+        ? Number(rating.rating)
+        : (rating.powerRating !== null ? Number(rating.powerRating) : null);
+      if (value !== null) {
+        v4RatingsMap.set(rating.teamId, value);
       }
     }
 
@@ -213,6 +246,42 @@ export async function GET(request: NextRequest) {
       // Calculate difference (Hybrid - V1) in favorite-centric terms
       const diff = hybridResult.hybridFavoriteSpread - v1FavoriteSpread;
 
+      // Calculate V4 spread
+      const HFA = 2.0;
+      const homeV4Rating = v4RatingsMap.get(game.homeTeamId);
+      const awayV4Rating = v4RatingsMap.get(game.awayTeamId);
+      
+      let v4Spread: {
+        hma: number | null;
+        favoriteSpread: number | null;
+        favoriteTeamId: string | null;
+        favoriteName: string | null;
+      } | null = null;
+      let diffV4Hybrid: number | null = null;
+
+      if (homeV4Rating !== undefined && awayV4Rating !== undefined) {
+        const effectiveHfa = game.neutralSite ? 0 : HFA;
+        const v4SpreadHma = (homeV4Rating + effectiveHfa) - awayV4Rating;
+        
+        // Determine favorite for V4
+        const isV4HomeFavorite = v4SpreadHma > 0;
+        const v4FavoriteTeamId = isV4HomeFavorite ? game.homeTeamId : game.awayTeamId;
+        const v4FavoriteName = isV4HomeFavorite ? game.homeTeam.name : game.awayTeam.name;
+        
+        // Convert to favorite-centric
+        const v4FavoriteSpread = v4SpreadHma > 0 ? -v4SpreadHma : v4SpreadHma;
+        
+        v4Spread = {
+          hma: v4SpreadHma,
+          favoriteSpread: v4FavoriteSpread,
+          favoriteTeamId: v4FavoriteTeamId,
+          favoriteName: v4FavoriteName,
+        };
+        
+        // Calculate difference (V4 - Hybrid) in favorite-centric terms
+        diffV4Hybrid = v4FavoriteSpread - hybridResult.hybridFavoriteSpread;
+      }
+
       // Get market spread
       const marketData = marketMap.get(game.id);
 
@@ -251,7 +320,9 @@ export async function GET(request: NextRequest) {
           favoriteTeamId: hybridResult.favoriteTeamId,
           favoriteName: hybridFavoriteName,
         },
+        v4Spread,
         diff,
+        diffV4Hybrid,
         marketSpread: marketData || null,
       });
     }
