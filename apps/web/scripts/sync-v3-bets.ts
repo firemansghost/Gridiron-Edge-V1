@@ -147,8 +147,8 @@ async function getV3TotalsPickForGame(game: any): Promise<V3TotalsPick | null> {
       }),
     ]);
     
-    const homeDriveStats = homeStats?.rawJson ? (homeStats.rawJson as any).drive_stats as DriveStats | undefined : null;
-    const awayDriveStats = awayStats?.rawJson ? (awayStats.rawJson as any).drive_stats as DriveStats | undefined : null;
+    const homeDriveStats = homeStats?.rawJson ? ((homeStats.rawJson as any).drive_stats as DriveStats | undefined) ?? null : null;
+    const awayDriveStats = awayStats?.rawJson ? ((awayStats.rawJson as any).drive_stats as DriveStats | undefined) ?? null : null;
     
     // Calculate V3 model total
     const modelTotal = calculateV3Total(homeDriveStats, awayDriveStats);
