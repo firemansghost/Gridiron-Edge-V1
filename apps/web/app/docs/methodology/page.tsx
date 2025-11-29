@@ -272,46 +272,45 @@ export default function MethodologyPage() {
                   (where +14 represents approximately one standard deviation above average).
                 </p>
               </div>
-            </div>
-            
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Calibration & Backtesting
-              </h3>
-              <p className="text-gray-700 mb-4">
-                The 25/25/25/25 weight distribution is not arbitrary—it was determined through rigorous 
-                backtesting against historical game results. Our calibration engine simulates thousands 
-                of past games using different weight combinations to identify the configuration that 
-                minimizes prediction error.
-              </p>
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
-                <h4 className="font-medium text-green-800 mb-2">Optimization Process</h4>
-                <p className="text-green-700 text-sm mb-2">
-                  We test various weight combinations (e.g., 50% Efficiency/50% Talent, 40% Scoring/30% 
-                  Efficiency/30% Results, etc.) against actual game outcomes from the 2025 season. For 
-                  each configuration, we calculate the Mean Absolute Error (MAE) between predicted spreads 
-                  and actual score margins.
-                </p>
-                <p className="text-green-700 text-sm mb-2">
-                  <strong>Result:</strong> The balanced 25/25/25/25 approach achieved the lowest MAE 
-                  (approximately 10.8 points) for the 2025 season, outperforming alternative strategies 
-                  such as "Efficiency-Only" (higher error) and "Talent-Only" (higher error) models.
-                </p>
-                <p className="text-green-700 text-sm">
-                  <strong>Continuous Improvement:</strong> We re-calibrate these weights periodically 
-                  (typically at the start of each season or after significant rule changes) to ensure 
-                  the model adapts to the current season's meta. This ensures our predictions remain 
-                  accurate as the game evolves.
-                </p>
-              </div>
-            </div>
-            
                 </div>
-
+                
                 <div>
-                  <h4 className="text-lg font-medium text-gray-900 mb-2">
-                    V2 Component: Unit Matchup Analysis (30% weight)
-                  </h4>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    Calibration & Backtesting
+                  </h3>
+                  <p className="text-gray-700 mb-4">
+                    The 25/25/25/25 weight distribution is not arbitrary—it was determined through rigorous 
+                    backtesting against historical game results. Our calibration engine simulates thousands 
+                    of past games using different weight combinations to identify the configuration that 
+                    minimizes prediction error.
+                  </p>
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                    <h4 className="font-medium text-green-800 mb-2">Optimization Process</h4>
+                    <p className="text-green-700 text-sm mb-2">
+                      We test various weight combinations (e.g., 50% Efficiency/50% Talent, 40% Scoring/30% 
+                      Efficiency/30% Results, etc.) against actual game outcomes from the 2025 season. For 
+                      each configuration, we calculate the Mean Absolute Error (MAE) between predicted spreads 
+                      and actual score margins.
+                    </p>
+                    <p className="text-green-700 text-sm mb-2">
+                      <strong>Result:</strong> The balanced 25/25/25/25 approach achieved the lowest MAE 
+                      (approximately 10.8 points) for the 2025 season, outperforming alternative strategies 
+                      such as "Efficiency-Only" (higher error) and "Talent-Only" (higher error) models.
+                    </p>
+                    <p className="text-green-700 text-sm">
+                      <strong>Continuous Improvement:</strong> We re-calibrate these weights periodically 
+                      (typically at the start of each season or after significant rule changes) to ensure 
+                      the model adapts to the current season's meta. This ensures our predictions remain 
+                      accurate as the game evolves.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              <div>
+                <h4 className="text-lg font-medium text-gray-900 mb-2">
+                  V2 Component: Unit Matchup Analysis (30% weight)
+                </h4>
                   <p className="text-gray-700 mb-3">
                     V2 analyzes specific unit matchups to identify tactical advantages. It breaks down 
                     team performance into granular unit grades (Run Offense, Pass Defense, Explosiveness) 
