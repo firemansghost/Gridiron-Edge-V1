@@ -1,123 +1,212 @@
 # Gridiron Edge Roadmap
 
-## Milestone 0 - Project Skeleton (Current)
-**Purpose**: Establish stable foundation and shared language for feature development
-**Success**: Complete monorepo structure with comprehensive documentation
-**Out of Scope**: Any runtime code beyond scaffolding
-**Risks**: Over-engineering documentation; scope creep into implementation
-**Inputs**: Project requirements, tech stack decisions
-**Definition of Done**: All docs exist with real content; monorepo structure complete
+## Current Production Stack
 
-## Milestone 1 - Data Pipeline Foundation
-**Purpose**: Lock down JSON data shapes (seed files) and seed ingestion plan that mirrors final database tables
-**Success**: Complete seed data contracts with realistic CFB 2024 Week 1 data; UI can render Home, Teams, and Game Detail pages
-**Out of Scope**: Production ETL code; API adapters; power rating calculations
-**Risks**: Schema changes; data quality issues; UI rendering gaps
-**Inputs**: Database schema from M0; UI requirements
-**Definition of Done**: 
-- /seed/ folder exists with 5 JSON files and realistic example rows for CFB 2024 Week 1
-- /docs/seed.md includes JSON schemas, ingestion plan, and validation rules
-- /docs/ui.md updated to confirm seed coverage for Home, Teams, and Game Detail
-- All dates/times normalized to America/Chicago
-- No runtime adapter/ETL/model code introduced
+### Hybrid Spread Model (V1 + V2)
+**Status:** Production ATS Engine
 
-### Branch & PR Instructions
-- **Branch Name**: `m1-data-contracts-seed`
-- **PR Title**: "M1: Data contracts and seed files for CFB 2024 Week 1"
-- **Acceptance Criteria**:
-  - [ ] /seed/ folder with 5 JSON files created
-  - [ ] Realistic CFB 2024 Week 1 data in all files
-  - [ ] JSON schemas documented in /docs/seed.md
-  - [ ] Seed ingestion plan documented
-  - [ ] UI coverage confirmed in /docs/ui.md
-  - [ ] All timestamps in America/Chicago timezone
-  - [ ] No production code beyond documentation
+- **V1 Component (70%):** Power ratings from balanced four-pillar approach (Talent, Efficiency, Scoring, Record - 25% each)
+- **V2 Component (30%):** Unit matchup analysis (Run 40%, Pass 40%, Explosiveness 20%)
+- **Blend:** Optimized 70/30 split from backtesting against 2025 season results
+- **Performance:** Extremely strong Tier A results (~66% win rate, 25%+ ROI over 540 bets)
+- **Usage:** All ATS edges, confidence tiers, and official spread picks across Current Slate, My Picks, and Matchup pages
 
-## Milestone 2 - Power Rating Engine
-**Purpose**: Implement core power rating algorithm with opponent adjustment
-**Success**: Accurate team power ratings that correlate with game outcomes
-**Out of Scope**: Betting edge identification; UI for ratings
-**Risks**: Algorithm complexity; overfitting; computational performance
-**Inputs**: Team stats; game results; recruiting data
-**Definition of Done**: Power ratings calculated; validation against historical games; performance benchmarks
+### V3 Drive-Based Totals Model
+**Status:** Production Totals Engine
 
-## Milestone 3 - Linear Ratings and Seed UI
-**Purpose**: Deliver minimal vertical slice with linear ratings, implied lines, and basic UI
-**Success**: End-to-end flow from seed data → ratings → implied lines → API → UI
-**Out of Scope**: External data providers; advanced UI features; authentication
-**Risks**: Data quality; UI complexity; performance issues
-**Inputs**: Seed JSON files; Prisma database; Next.js app
-**Definition of Done**: 
-- Ratings job populates power_ratings and matchup_outputs for seed week with model_version=v0.0.1
-- Server route returns seeded slate with implied vs market and confidence tier
-- Home and Game Detail pages render from database via API routes
-- Tests for z-score, mapping, and tiering pass locally
-- Documentation updated with M3 constants and assumptions
+- **Core Insight:** Drives gaining 40+ yards ("Quality Drives") typically yield ~5 points
+- **Formula:** Projected Points = (Expected Drives × Quality Drive Rate) × 5.0
+- **Data Source:** Drive-level data from CFBD API, stored as `drive_stats` on `TeamSeasonStats`
+- **Performance:** Tier A profitable (~57% win rate, +9% ROI over 453 bets); Tier B/C negative ROI
+- **Usage:** All totals predictions on Game API, Week Slate API, My Picks, and Season Review
+- **Operational Rule:** Tier A only is the primary "serious" system; Tier B/C are experimental/action
 
-**M3 Implementation Details**:
-- **Jobs**: Node.js script loads seed JSONs, computes linear ratings using z-scored features (ypp_off, ypp_def, success_off, success_def), outputs to power_ratings and matchup_outputs
-- **API**: Next.js server routes return seed slate data and game details from Prisma database
-- **UI**: Minimal Home page (slate table) and Game Detail page (factor breakdown) using Tailwind
-- **Constants**: HFA=2.0 pts, Confidence thresholds A≥4.0, B≥3.0, C≥2.0 pts
-- **Model**: Linear regression with simple feature weights, constant HFA, seed-only z-scores
+### Tiering & UX
+**Status:** Production
 
-## Milestone 3 - Implied Lines & Edge Detection
-**Purpose**: Convert power ratings to implied spreads/totals and identify betting edges
-**Success**: Implied lines within 3 points of market 70% of the time; edge detection working
-**Out of Scope**: Betting execution; advanced strategy development
-**Risks**: Market efficiency; model overconfidence; edge decay
-**Inputs**: Power ratings; market lines; confidence thresholds
-**Definition of Done**: Implied lines generated; edge detection working; confidence tiers assigned
+- **Tier A (|edge| ≥ 4.0):** Best Bets — primary recommendations, green styling, top of My Picks page
+- **Tier B (3.0 ≤ |edge| < 4.0):** Medium confidence
+- **Tier C (|edge| < 3.0):** Leans/Experimental — muted styling, "High Risk" warnings for totals
+- **My Picks:** Two-section layout (Best Bets vs Leans/Action)
+- **Season Review & Week Review:** Confidence tier filters with all metrics respecting selected tier
 
-## Milestone 4 - Review Previous Weeks & Profitability (Seed-Mode)
-**Purpose**: Build historical week review with profitability tracking for seed data
-**Success**: Users can review past weeks with filters, see ROI analysis, and track performance
-**Out of Scope**: Real betting integration; advanced analytics; user accounts
-**Risks**: ROI calculation accuracy; data quality; UI complexity
-**Inputs**: Seed week data; pick helpers from M3.5; profitability requirements
-**Definition of Done**: 
-- /weeks page renders with filters (season, week, confidence, market)
-- Table shows matchup, kickoff, model line, picks, market close, edges, confidence
-- Summary card shows A/B/C counts and ROI if scores exist (else friendly note)
-- /api/weeks returns correct JSON with pick helpers
-- Home page links to /weeks for seed week
-- Documentation updated with M4 fields and DoD
+---
 
-**M4 Implementation Details**:
-- **Filters**: Season (2024), Week (1), Confidence (A/B/C), Market (spread/total)
-- **Table**: Matchup, Kickoff (CT), Model Line, Pick (Spread), Pick (Total), Market Close, Edges, Confidence
-- **Summary**: Confidence tier counts, ROI analysis with win/loss/push at -110 odds
-- **ROI Logic**: Compare model picks to closing market, track wins/losses/pushes
-- **No Results**: "No results yet — scores not seeded" when scores missing
-- **Deep Link**: /weeks?season=2024&week=1 from Home page
+## Near-Term Improvements (1-3 Months)
 
-## Milestone 5 - Betting Integration & Tracking
-**Purpose**: Enable bet logging and performance tracking
-**Success**: Complete bet lifecycle tracking; accurate P/L calculations
-**Out of Scope**: Real money integration; advanced analytics
-**Risks**: Data integrity; calculation accuracy; user experience
-**Inputs**: Betting data models; performance metrics
-**Definition of Done**: Bet logging working; P/L calculations accurate; performance dashboards functional
+### Harden V3 Totals
+**Priority:** High
 
-## Milestone 6 - Backtesting & Strategy Development
-**Purpose**: Enable historical strategy testing and optimization
-**Success**: Backtesting framework working; strategy performance metrics available
-**Out of Scope**: Real-time strategy execution; advanced ML models
-**Risks**: Data quality; backtesting accuracy; overfitting
-**Inputs**: Historical data; strategy definitions; performance metrics
-**Definition of Done**: 
-- ✅ M6 Lite Adjustments: Injuries/weather server-side heuristics with toggles
-- ✅ M6 Rules Engine: Create/edit rulesets with JSON-like builder
-- ✅ M6 Run Screen: Execute ruleset against week, save to strategy_runs
-- ✅ /strategies pages with rulesets and past runs tabs
-- ✅ API routes for rulesets CRUD and run execution
-- ✅ Documentation: /docs/ui.md strategies pages, /docs/calibration.md adjustments
-- Future: Real backtesting with historical results; performance optimization
+- Continue backtesting Tier A vs B/C by week and by conference
+- Confirm recommended edge thresholds (e.g., ≥ 2.0, ≥ 3.0) for different liquidity levels
+- Improve "Best Line" logic documentation and ensure we always display:
+  - Consensus line (neutral reference)
+  - Best line used for the bet (for the chosen side)
+- Add clear copy explaining "Consensus vs Best Book Line" in documentation
 
-## Milestone 7 - Production Optimization
-**Purpose**: Optimize for production scale and reliability
-**Success**: System handles production load; monitoring in place; user feedback incorporated
-**Out of Scope**: New features; major architectural changes
-**Risks**: Performance bottlenecks; reliability issues; user adoption
-**Inputs**: Performance requirements; user feedback; monitoring data
-**Definition of Done**: Production ready; monitoring active; performance targets met
+### Better Diagnostics & Monitoring
+**Priority:** Medium
+
+- Add documentation on how to:
+  - Run `sync-drives.ts` for new seasons
+  - Run `sync-v3-bets.ts` for specific weeks
+  - Run debug scripts to inspect why a game did/didn't generate a bet
+- Improve error handling and logging for V3 totals calculation failures
+- Add monitoring dashboards for drive data coverage and bet generation rates
+
+### Data Quality & Coverage
+**Priority:** Medium
+
+- Ensure 100% drive stats coverage for all FBS teams before season start
+- Automate drive data sync as part of weekly ingestion pipeline
+- Add validation checks to catch missing drive data early
+
+---
+
+## Mid-Term Model Upgrades (V4 Spread)
+
+### V4 Spread Model – SP+/FEI-Inspired
+**Timeline:** 3-6 months
+
+**Goal:** Replace/augment the current Hybrid model with a true tempo-free, opponent-adjusted efficiency engine.
+
+#### Tempo-Free Efficiency Core (SP+-style)
+
+**Components:**
+- **Success Rate:** Already implemented in V1/V2
+- **Explosiveness (IsoPPP):** Already implemented in V2
+- **Finishing Drives:**
+  - Points per scoring opportunity (inside the 40 or red zone)
+  - Build a dedicated "Finishing Drives / Red Zone" module
+  - Track conversion rates from quality drives to actual scores
+- **Opponent Adjustments:**
+  - Opponent strength weighting for all efficiency stats
+  - Iterative adjustment process (similar to SP+ methodology)
+- **Garbage Time Filters:**
+  - Define garbage time rules (e.g., spread & quarter thresholds)
+  - Exclude those plays/drives from the efficiency sample
+
+#### Possession-Based Layer (FEI-style)
+
+**Components:**
+- **Net Points per Drive (NPD):**
+  - Points scored per offensive drive minus points allowed per defensive drive
+  - Treat this as a top-level predictive metric
+  - More stable than play-level efficiency in small samples
+- **Available Yards %:**
+  - "How much of the field did you gain?" per drive
+  - Incorporate as an efficiency/field position component
+  - Complements quality drive rate from V3 totals
+
+#### Model Integration
+
+**Approach:**
+- Combine tempo-free play-level efficiency with possession-level metrics into a single team rating
+- Replace the current V1/V2 blend with this V4 rating in:
+  - ATS edges
+  - Season Review / Week Review
+  - Ratings pages
+- Maintain backward compatibility during transition (run V4 alongside Hybrid for validation)
+
+**Success Criteria:**
+- V4 achieves equal or better MAE than Hybrid on 2025 season
+- V4 Tier A spreads maintain or improve win rate vs Hybrid
+- V4 provides better calibration (predicted probabilities match actual outcomes)
+
+---
+
+## Long-Term Research Tracks
+
+### Transfer Portal & Roster Churn
+**Timeline:** 6-12 months
+
+**Concept:** Incorporate transfer portal activity as a pre-season / in-season adjustment to team ratings.
+
+**Data Source:**
+- 247Sports Transfer Portal feed (or equivalent)
+- Track incoming/outgoing transfers with star ratings, positional value, snap counts
+
+**Transfer Impact Score (TIS):**
+- For each team, compute a metric based on:
+  - Incoming transfers (star ratings, positional value, snap counts)
+  - Outgoing transfers (same inputs)
+  - Net rating (inbound – outbound)
+- Use this as:
+  - A prior adjustment on team ratings heading into the season
+  - A slow-decaying modifier that fades as real game data accumulates (Weeks 1-4)
+
+**Implementation Tasks:**
+1. Design schema for storing transfer portal events
+2. Implement a simple ingestion script
+3. Backtest: see if teams with high positive TIS outperform baseline spreads in Weeks 1-4
+4. If predictive, fold TIS into preseason & early-season V4 ratings
+
+**Success Criteria:**
+- TIS shows statistically significant predictive power in Weeks 1-4
+- Teams with high positive TIS outperform baseline by ≥2% ROI
+- TIS decay function properly weights early-season adjustments
+
+### Advanced Situational Adjustments
+**Timeline:** 6+ months
+
+**Potential Areas:**
+- Weather impact modeling (beyond current V2 wind/precipitation penalties)
+- Rest/bye week adjustments
+- Travel distance and time zone changes
+- Coaching changes and scheme adjustments
+- Injury impact modeling (if reliable data sources become available)
+
+### Machine Learning Integration
+**Timeline:** 12+ months
+
+**Potential Approaches:**
+- Gradient boosting models (XGBoost, LightGBM) for non-linear relationships
+- Neural networks for complex feature interactions
+- Ensemble methods combining multiple model types
+- Reinforcement learning for bet sizing optimization
+
+**Note:** ML integration should only proceed after establishing strong baseline performance with V4 and validating that ML approaches meaningfully improve upon existing models.
+
+---
+
+## Documentation & Transparency
+
+### Ongoing Documentation Updates
+- Keep methodology docs current with production model changes
+- Document all model versions and their performance characteristics
+- Maintain clear changelog of model updates and improvements
+- Provide reproducible examples and verification queries
+
+### User Education
+- Expand "Getting Started" guide with model explanations
+- Add glossary of terms (edge, tier, quality drive, etc.)
+- Create video tutorials for key features (My Picks, Season Review)
+- Publish blog posts explaining model insights and methodology
+
+---
+
+## Success Metrics
+
+### Model Performance
+- **Hybrid Tier A Spreads:** Maintain ≥65% win rate, ≥20% ROI
+- **V3 Totals Tier A:** Maintain ≥55% win rate, ≥5% ROI
+- **V4 Spread:** Achieve equal or better performance than Hybrid
+
+### User Engagement
+- Track usage of Best Bets vs Leans sections
+- Monitor Season Review tier filter usage
+- Measure user retention and return visits
+
+### Data Quality
+- 100% drive stats coverage for all FBS teams
+- <1% missing market line data for active games
+- <5% calculation errors or fallbacks in production
+
+---
+
+## Notes
+
+- This roadmap is a living document and will be updated as priorities shift
+- All timeline estimates are approximate and subject to change
+- Model improvements are prioritized based on backtesting results and user feedback
+- Production stability takes precedence over new feature development
