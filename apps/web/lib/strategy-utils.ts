@@ -6,11 +6,11 @@
  */
 
 export const STRATEGY_LABELS: Record<string, string> = {
-  'official_flat_100': 'V1 (Composite)',
-  'hybrid_v2': 'Hybrid (70/30)',
-  'v2_matchup': 'V2 (Matchup)',
-  'v3_barnes': 'V3 (Barnes)',
-  'v3_totals': 'V3 (Totals)',
+  'official_flat_100': 'Official Flat ($100)',
+  'hybrid_v2': 'Hybrid V2 (70/30)',
+  'v3_totals': 'V3 Totals',
+  'v4_labs': 'V4 (Labs)',
+  'demo_seed': 'Demo Data (Seed)',
   'all': 'All Strategies',
 };
 
