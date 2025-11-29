@@ -18,9 +18,6 @@ async function showV4TopTeams(season: number) {
       season,
       modelVersion: 'v4',
     },
-    include: {
-      team: true,
-    },
     orderBy: {
       rating: 'desc',
     },
@@ -33,8 +30,24 @@ async function showV4TopTeams(season: number) {
     return;
   }
   
+  // Get team IDs and fetch teams
+  const teamIds = ratings.map(r => r.teamId);
+  const teams = await prisma.team.findMany({
+    where: {
+      id: {
+        in: teamIds,
+      },
+    },
+  });
+  
+  // Create a map for quick lookup
+  const teamMap = new Map(teams.map(t => [t.id, t]));
+  
   for (let i = 0; i < ratings.length; i++) {
     const r = ratings[i];
+    const team = teamMap.get(r.teamId);
+    const teamName = team?.name || r.teamId;
+    
     const rating = r.rating ? Number(r.rating) : 0;
     const off = r.offenseRating ? Number(r.offenseRating) : 0;
     const def = r.defenseRating ? Number(r.defenseRating) : 0;
@@ -43,7 +56,7 @@ async function showV4TopTeams(season: number) {
     const offStr = off.toFixed(1).padStart(6);
     const defStr = def.toFixed(1).padStart(6);
     
-    console.log(`${(i + 1).toString().padStart(2)}) ${r.team.name.padEnd(20)} rating=${ratingStr}  off=${offStr}  def=${defStr}`);
+    console.log(`${(i + 1).toString().padStart(2)}) ${teamName.padEnd(20)} rating=${ratingStr}  off=${offStr}  def=${defStr}`);
   }
   
   console.log('');
