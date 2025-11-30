@@ -8,6 +8,11 @@ on:
         required: true
         default: '2024'
         type: string
+      weeks:
+        description: "Weeks to process (e.g., '1', '1-4', '1,3,5', or '1-14')"
+        required: false
+        default: '1-14'
+        type: string
 
 jobs:
   backfill-drives:
@@ -18,6 +23,8 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       DIRECT_URL: ${{ secrets.DIRECT_URL }}
       CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+      SEASON: ${{ github.event.inputs.season }}
+      WEEKS: ${{ github.event.inputs.weeks }}
     
     steps:
       - name: Checkout repository
@@ -39,12 +46,23 @@ jobs:
         run: npm run build:jobs
 
       - name: Sync CFBD drives
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
         run: |
-          echo "Syncing drives for season ${{ github.event.inputs.season }}..."
-          npx tsx apps/jobs/src/sync-drives.ts --season ${{ github.event.inputs.season }}
+          echo "Syncing drives for season $SEASON, weeks: $WEEKS"
+          if [ -z "$WEEKS" ]; then
+            npx tsx apps/jobs/src/sync-drives.ts --season "$SEASON"
+          else
+            npx tsx apps/jobs/src/sync-drives.ts --season "$SEASON" --weeks "$WEEKS"
+          fi
 
       - name: Drive coverage summary
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
         run: |
           echo "Checking drive_stats coverage after sync..."
-          npx tsx apps/web/scripts/debug-drive-coverage.ts --season ${{ github.event.inputs.season }}
+          npx tsx apps/web/scripts/debug-drive-coverage.ts --season "$SEASON"
 

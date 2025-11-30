@@ -9,6 +9,9 @@
  * 
  * Usage:
  *   npx tsx apps/jobs/src/sync-drives.ts --season 2025
+ *   npx tsx apps/jobs/src/sync-drives.ts --season 2025 --weeks 1
+ *   npx tsx apps/jobs/src/sync-drives.ts --season 2025 --weeks 1-4
+ *   npx tsx apps/jobs/src/sync-drives.ts --season 2025 --weeks 1,3,5
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -154,21 +157,72 @@ function calculateAvailableYards(
 }
 
 /**
+ * Parse weeks argument from CLI
+ * Supports: single (1), range (1-4), comma-separated (1,3,5)
+ */
+function parseWeeks(weeksArg: string | undefined): number[] | null {
+  if (!weeksArg) return null;
+  
+  const weeks: number[] = [];
+  
+  if (weeksArg.includes(',')) {
+    // Comma-separated list
+    weeks.push(...weeksArg.split(',').map(w => parseInt(w.trim())).filter(w => !isNaN(w)));
+  } else if (weeksArg.includes('-')) {
+    // Range format: 1-4
+    const [start, end] = weeksArg.split('-').map(w => parseInt(w.trim()));
+    if (!isNaN(start) && !isNaN(end) && start <= end) {
+      for (let w = start; w <= end; w++) {
+        weeks.push(w);
+      }
+    }
+  } else {
+    // Single week
+    const week = parseInt(weeksArg.trim());
+    if (!isNaN(week)) {
+      weeks.push(week);
+    }
+  }
+  
+  return weeks.length > 0 ? weeks : null;
+}
+
+/**
  * Process drives for a season and aggregate metrics per team
  */
-async function processDrivesForSeason(season: number): Promise<void> {
+async function processDrivesForSeason(season: number, weeks: number[] | null): Promise<void> {
   console.log(`\n🏈 Processing drives for season ${season}...`);
+  if (weeks) {
+    console.log(`   Weeks: ${weeks.join(', ')}`);
+  } else {
+    console.log('   Weeks: all (fetching entire season)');
+  }
   
   const client = new CFBDClient();
   const mapper = new CFBDTeamMapper();
   
-  // Fetch all drives for the season (no week filter to get all weeks)
-  console.log('   Fetching drives from CFBD API...');
-  const drives = await client.getDrives(season);
-  console.log(`   Fetched ${drives.length} drives`);
+  // Fetch drives week-by-week if weeks specified, otherwise fetch all at once
+  let allDrives: CFBDDrive[] = [];
   
-  if (drives.length === 0) {
-    console.log('   ⚠️  No drives found for this season');
+  if (weeks && weeks.length > 0) {
+    // Fetch week-by-week
+    for (const week of weeks) {
+      console.log(`   Processing season ${season}, week ${week}...`);
+      const weekDrives = await client.getDrives(season, week);
+      console.log(`   Fetched ${weekDrives.length} drives for week ${week}`);
+      allDrives.push(...(weekDrives as CFBDDrive[]));
+    }
+  } else {
+    // Fetch all drives for the season (no week filter to get all weeks)
+    console.log('   Fetching drives from CFBD API...');
+    const drives = await client.getDrives(season);
+    allDrives = drives as CFBDDrive[];
+  }
+  
+  console.log(`   Total drives fetched: ${allDrives.length}`);
+  
+  if (allDrives.length === 0) {
+    console.log('   ⚠️  No drives found for this season/week range');
     return;
   }
   
@@ -178,7 +232,7 @@ async function processDrivesForSeason(season: number): Promise<void> {
     defense: CFBDDrive[];
   }>();
   
-  for (const drive of drives as CFBDDrive[]) {
+  for (const drive of allDrives) {
     // CFBD may use 'offense'/'defense' or 'team'/'opponent' fields
     const offenseTeam = drive.offense || drive.team;
     const defenseTeam = drive.defense || drive.opponent;
@@ -399,23 +453,33 @@ async function processDrivesForSeason(season: number): Promise<void> {
 async function main() {
   const args = process.argv.slice(2);
   let season: number | null = null;
+  let weeksArg: string | undefined = undefined;
   
-  // Parse --season argument
+  // Parse CLI arguments
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--season' && i + 1 < args.length) {
       season = parseInt(args[i + 1], 10);
-      break;
+      i++;
+    } else if (args[i] === '--weeks' && i + 1 < args.length) {
+      weeksArg = args[i + 1];
+      i++;
     }
   }
   
   if (!season || isNaN(season)) {
-    console.error('Usage: npx tsx apps/jobs/src/sync-drives.ts --season <YEAR>');
-    console.error('Example: npx tsx apps/jobs/src/sync-drives.ts --season 2025');
+    console.error('Usage: npx tsx apps/jobs/src/sync-drives.ts --season <YEAR> [--weeks <WEEKS>]');
+    console.error('Examples:');
+    console.error('  npx tsx apps/jobs/src/sync-drives.ts --season 2025');
+    console.error('  npx tsx apps/jobs/src/sync-drives.ts --season 2025 --weeks 1');
+    console.error('  npx tsx apps/jobs/src/sync-drives.ts --season 2025 --weeks 1-4');
+    console.error('  npx tsx apps/jobs/src/sync-drives.ts --season 2025 --weeks 1,3,5');
     process.exit(1);
   }
   
+  const weeks = parseWeeks(weeksArg);
+  
   try {
-    await processDrivesForSeason(season);
+    await processDrivesForSeason(season, weeks);
     console.log('\n✅ Drive stats sync complete');
   } catch (error) {
     console.error('\n❌ Error syncing drive stats:', error);

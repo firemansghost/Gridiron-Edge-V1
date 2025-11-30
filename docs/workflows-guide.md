@@ -99,9 +99,13 @@ This workflow runs nightly at 2 AM CST and fetches schedules for the current wee
 
 #### 12. **Backfill Drives** (`backfill-drives.yml`)
 - **Status**: Manual only
-- **Purpose**: Run sync-drives.ts for a given season (e.g., 2024) on GitHub instead of locally
+- **Purpose**: Run sync-drives.ts for a given season and weeks on GitHub instead of locally
 - **When to run**: When you need to backfill drive_stats data for a season (e.g., 2024)
-- **Key steps**: npm ci, npm run build:jobs, npx tsx apps/jobs/src/sync-drives.ts --season <input>, optional coverage summary via debug-drive-coverage.ts
+- **Inputs**:
+  - `season` (e.g., 2024)
+  - `weeks` (e.g., "1", "1-4", "1,3,5", "1-14") - defaults to "1-14"
+- **Key steps**: npm ci, npm run build:jobs, npx tsx apps/jobs/src/sync-drives.ts --season <input> --weeks <input>, optional coverage summary via debug-drive-coverage.ts
+- **Note**: Internally sync-drives.ts fetches drives week-by-week to avoid timeouts when processing large seasons
 - **Recommendation**: ✅ Keep for manual use (run on GitHub to avoid hammering local machine with 37k+ drives)
 
 #### 13. **Monitor 2025 Archival Availability** (`monitor-2025-archival.yml`)
