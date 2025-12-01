@@ -308,7 +308,7 @@ export default function HybridLabsPage() {
                           <div className="font-medium text-gray-700 mb-1">V4 (Labs)</div>
                           <div className="space-y-0.5 text-gray-600">
                             <div>Bets: {v4Data?.bets ?? '—'}</div>
-                            <div>Win Rate: {v4Data?.winRate !== null ? `${v4Data.winRate.toFixed(1)}%` : '—'}</div>
+                            <div>Win Rate: {v4Data && v4Data.winRate !== null && v4Data.winRate !== undefined ? `${v4Data.winRate.toFixed(1)}%` : '—'}</div>
                             <div className={v4Data?.roi !== undefined && v4Data.roi < 0 ? 'text-red-600 font-medium' : 'text-gray-600'}>
                               ROI: {v4Data?.roi !== undefined ? `${v4Data.roi.toFixed(2)}%` : '—'}
                             </div>
@@ -318,7 +318,7 @@ export default function HybridLabsPage() {
                           <div className="font-medium text-gray-700 mb-1">Fade V4 (Labs)</div>
                           <div className="space-y-0.5 text-gray-600">
                             <div>Bets: {fadeData?.bets ?? '—'}</div>
-                            <div>Win Rate: {fadeData?.winRate !== null ? `${fadeData.winRate.toFixed(1)}%` : '—'}</div>
+                            <div>Win Rate: {fadeData && fadeData.winRate !== null && fadeData.winRate !== undefined ? `${fadeData.winRate.toFixed(1)}%` : '—'}</div>
                             <div className={fadeData?.roi !== undefined && fadeData.roi > 0 ? 'text-green-600 font-medium' : 'text-gray-600'}>
                               ROI: {fadeData?.roi !== undefined ? `${fadeData.roi.toFixed(2)}%` : '—'}
                             </div>
