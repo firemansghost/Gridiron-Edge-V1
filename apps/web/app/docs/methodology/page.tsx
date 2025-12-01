@@ -58,6 +58,23 @@ export default function MethodologyPage() {
                 <li><strong>Commit Points:</strong> Recruiting class point totals</li>
               </ul>
             </div>
+            
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Roster & Portal (Labs / V5 Prep)
+              </h3>
+              <p className="text-gray-700 mb-2">
+                Roster stability and transfer portal activity metrics:
+              </p>
+              <ul className="list-disc pl-6 space-y-1 text-gray-700">
+                <li><strong>Returning Production:</strong> Percentage of production returning from previous season (overall, offense, defense, passing, rushing, receiving)</li>
+                <li><strong>Transfer Portal Activity:</strong> Counts of transfers in, out, and net portal movement</li>
+              </ul>
+              <p className="text-gray-600 text-sm mt-2 italic">
+                Note: This data is currently labeled as "Labs / V5 Prep" and not yet used in production Hybrid or V3 models. 
+                It will be used for future off-season adjustments and mid-season recalibration in V5.
+              </p>
+            </div>
           </div>
         </section>
 
@@ -207,41 +224,18 @@ export default function MethodologyPage() {
 
         <section>
           <h2 className="text-2xl font-semibold text-gray-900 mb-4">
-            Production Models
+            Modeling (Balanced Composite V1)
           </h2>
-          <div className="space-y-6">
+          <div className="space-y-4">
             <div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-3">
-                Hybrid Spread Model (Production ATS Engine)
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Power Ratings: Balanced Composite
               </h3>
               <p className="text-gray-700 mb-4">
-                Our production ATS (Against The Spread) model is a <strong>Hybrid</strong> that blends 
-                V1 power ratings with V2 unit matchup analysis. All spread edges, confidence tiers, and 
-                official ATS picks on "Current Slate", "My Picks", and "Matchup" pages come from this Hybrid model.
+                Our V1 model generates team power ratings using a balanced four-pillar approach. 
+                Each component is normalized to Z-scores and weighted equally (25% each) to create 
+                a composite rating that captures multiple dimensions of team strength:
               </p>
-              
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                <h4 className="font-medium text-blue-800 mb-3">Hybrid Formula</h4>
-                <p className="text-blue-700 text-sm mb-2">
-                  <strong>Hybrid Spread = (V1 Spread × 70%) + (V2 Spread × 30%)</strong>
-                </p>
-                <p className="text-blue-700 text-sm">
-                  This blend leverages the stability of V1 (results-aware) with the matchup specificity 
-                  of V2 (stats-only). The weights were optimized through backtesting against 2025 season 
-                  results, achieving superior performance compared to pure V1 or V2 alone.
-                </p>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <h4 className="text-lg font-medium text-gray-900 mb-2">
-                    V1 Component: Power Ratings (70% weight)
-                  </h4>
-                  <p className="text-gray-700 mb-3">
-                    V1 generates team power ratings using a balanced four-pillar approach. 
-                    Each component is normalized to Z-scores and weighted equally (25% each) to create 
-                    a composite rating that captures multiple dimensions of team strength:
-                  </p>
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                 <h4 className="font-medium text-blue-800 mb-3">The Four Pillars</h4>
                 <ul className="space-y-2 text-blue-700">
@@ -272,223 +266,133 @@ export default function MethodologyPage() {
                   (where +14 represents approximately one standard deviation above average).
                 </p>
               </div>
-                </div>
-                
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    Calibration & Backtesting
-                  </h3>
-                  <p className="text-gray-700 mb-4">
-                    The 25/25/25/25 weight distribution is not arbitrary—it was determined through rigorous 
-                    backtesting against historical game results. Our calibration engine simulates thousands 
-                    of past games using different weight combinations to identify the configuration that 
-                    minimizes prediction error.
-                  </p>
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
-                    <h4 className="font-medium text-green-800 mb-2">Optimization Process</h4>
-                    <p className="text-green-700 text-sm mb-2">
-                      We test various weight combinations (e.g., 50% Efficiency/50% Talent, 40% Scoring/30% 
-                      Efficiency/30% Results, etc.) against actual game outcomes from the 2025 season. For 
-                      each configuration, we calculate the Mean Absolute Error (MAE) between predicted spreads 
-                      and actual score margins.
-                    </p>
-                    <p className="text-green-700 text-sm mb-2">
-                      <strong>Result:</strong> The balanced 25/25/25/25 approach achieved the lowest MAE 
-                      (approximately 10.8 points) for the 2025 season, outperforming alternative strategies 
-                      such as "Efficiency-Only" (higher error) and "Talent-Only" (higher error) models.
-                    </p>
-                    <p className="text-green-700 text-sm">
-                      <strong>Continuous Improvement:</strong> We re-calibrate these weights periodically 
-                      (typically at the start of each season or after significant rule changes) to ensure 
-                      the model adapts to the current season's meta. This ensures our predictions remain 
-                      accurate as the game evolves.
-                    </p>
-                  </div>
-                </div>
-              </div>
-              
-              <div>
-                <h4 className="text-lg font-medium text-gray-900 mb-2">
-                  V2 Component: Unit Matchup Analysis (30% weight)
-                </h4>
-                <p className="text-gray-700 mb-3">
-                  V2 analyzes specific unit matchups to identify tactical advantages. It breaks down 
-                  team performance into granular unit grades (Run Offense, Pass Defense, Explosiveness) 
-                  and compares them head-to-head to find hidden edges.
-                </p>
-                <p className="text-gray-700 mb-3">
-                  Unit grades are calculated by aggregating game-level stats to season averages, 
-                  normalizing to Z-scores, and blending related metrics (40% Run, 40% Pass, 20% Explosiveness).
-                </p>
-              </div>
-
-              <div>
-                <h4 className="text-lg font-medium text-gray-900 mb-2">
-                  Spread Calculation
-                </h4>
-                <p className="text-gray-700 mb-3">
-                  The Hybrid spread is calculated as:
-                </p>
-                <div className="bg-gray-100 p-4 rounded-lg mb-3">
-                  <p className="text-sm text-gray-700 font-mono mb-2">
-                    V1 Spread = (Home Rating - Away Rating) + HFA
-                  </p>
-                  <p className="text-sm text-gray-700 font-mono mb-2">
-                    V2 Spread = Unit Matchup Analysis (scaled by 9.0)
-                  </p>
-                  <p className="text-sm text-gray-700 font-mono">
-                    Hybrid Spread = (V1 × 0.7) + (V2 × 0.3)
-                  </p>
-                  <p className="text-xs text-gray-600 mt-2">
-                    Where HFA (Home Field Advantage) = 2.0 points for home games, 0.0 for neutral sites.
-                  </p>
-                </div>
-              </div>
             </div>
-
+            
             <div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-3">
-                V3 Drive-Based Totals Model (Production Totals Engine)
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Calibration & Backtesting
               </h3>
               <p className="text-gray-700 mb-4">
-                Our production totals model uses drive-level data to predict game totals. The core insight: 
-                drives that gain 40+ yards ("Quality Drives") typically yield ~5 points. By projecting the 
-                number of quality drives each team will have, we can estimate total scoring.
+                The 25/25/25/25 weight distribution is not arbitrary—it was determined through rigorous 
+                backtesting against historical game results. Our calibration engine simulates thousands 
+                of past games using different weight combinations to identify the configuration that 
+                minimizes prediction error.
               </p>
-              
               <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
-                <h4 className="font-medium text-green-800 mb-3">V3 Totals Formula</h4>
-                <ol className="list-decimal pl-6 space-y-2 text-green-700 text-sm">
-                  <li><strong>Quality Drive Rate:</strong> (Drives ≥ 40 yards) / (Total Drives) per team</li>
-                  <li><strong>Tempo:</strong> Average drives per game for each team</li>
-                  <li><strong>Expected Drives:</strong> Average of home and away team tempo</li>
-                  <li><strong>Projected Points:</strong> (Expected Drives × Quality Drive Rate) × 5.0</li>
-                  <li><strong>Model Total:</strong> Home Projected Points + Away Projected Points</li>
-                </ol>
-                <p className="text-green-700 text-sm mt-3">
-                  <strong>Data Source:</strong> Drive-level data from CFBD API, stored as <code>drive_stats</code> 
-                  on <code>TeamSeasonStats</code>. The model is wired into Game API (Matchup page), Week Slate API 
-                  (Current Slate), and My Picks via official Bet records.
+                <h4 className="font-medium text-green-800 mb-2">Optimization Process</h4>
+                <p className="text-green-700 text-sm mb-2">
+                  We test various weight combinations (e.g., 50% Efficiency/50% Talent, 40% Scoring/30% 
+                  Efficiency/30% Results, etc.) against actual game outcomes from the 2025 season. For 
+                  each configuration, we calculate the Mean Absolute Error (MAE) between predicted spreads 
+                  and actual score margins.
+                </p>
+                <p className="text-green-700 text-sm mb-2">
+                  <strong>Result:</strong> The balanced 25/25/25/25 approach achieved the lowest MAE 
+                  (approximately 10.8 points) for the 2025 season, outperforming alternative strategies 
+                  such as "Efficiency-Only" (higher error) and "Talent-Only" (higher error) models.
+                </p>
+                <p className="text-green-700 text-sm">
+                  <strong>Continuous Improvement:</strong> We re-calibrate these weights periodically 
+                  (typically at the start of each season or after significant rule changes) to ensure 
+                  the model adapts to the current season's meta. This ensures our predictions remain 
+                  accurate as the game evolves.
                 </p>
               </div>
-
-              <p className="text-gray-700 mb-4">
-                <strong>Bet Record as Source of Truth:</strong> When a V3 totals bet exists for a game, 
-                the Bet record stores the line taken, model price, closing price, edge magnitude, and Tier 
-                (A/B/C). This ensures consistency across all UI elements—the same edge and grade are displayed 
-                everywhere, derived from the stored bet rather than re-computed from current market lines.
-              </p>
-
-              <p className="text-gray-700 mb-4">
-                <strong>Fallback:</strong> If V3 drive data is unavailable, the system falls back to Core V1 
-                totals, which use spread-driven overlays based on market totals.
-              </p>
             </div>
-
+            
             <div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-3">
-                Confidence Tiers (A/B/C)
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Spread Calculation
               </h3>
               <p className="text-gray-700 mb-4">
-                All bets (spreads and totals) are assigned confidence tiers based on the magnitude of the edge. 
-                This logic is centralized in shared helpers and used consistently across Week Review, Season Review, 
-                and My Picks:
+                Spreads are derived directly from the power rating difference between teams, plus 
+                a home field advantage adjustment:
               </p>
-              <ul className="list-disc pl-6 space-y-2 text-gray-700">
-                <li><strong>Tier A:</strong> |edge| ≥ 4.0 points — High confidence, primary "Best Bets"</li>
-                <li><strong>Tier B:</strong> 3.0 ≤ |edge| &lt; 4.0 points — Medium confidence</li>
-                <li><strong>Tier C:</strong> |edge| &lt; 3.0 points — Lower confidence, experimental</li>
+              <div className="bg-gray-100 p-4 rounded-lg mb-4">
+                <p className="text-sm text-gray-700 font-mono mb-2">
+                  Spread (Home Minus Away) = (Home Rating - Away Rating) + HFA
+                </p>
+                <p className="text-xs text-gray-600">
+                  Where HFA (Home Field Advantage) = 2.0 points for home games, 0.0 for neutral sites.
+                </p>
+              </div>
+              <p className="text-gray-700 mb-4">
+                This direct calculation ensures that the spread reflects the model's assessment of 
+                team strength without additional overlays or market adjustments. The rating difference 
+                is already in "points above average" format, so the spread directly translates to 
+                expected margin of victory.
+              </p>
+            </div>
+            
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Betting Logic: Actionable Edge Threshold
+              </h3>
+              <p className="text-gray-700 mb-4">
+                The model identifies betting opportunities by comparing its predicted spread to the 
+                market consensus. An "edge" is the difference between the model's spread and the 
+                market line:
+              </p>
+              <div className="bg-gray-100 p-4 rounded-lg mb-4">
+                <p className="text-sm text-gray-700 font-mono mb-2">
+                  Edge = |Model Spread - Market Spread|
+                </p>
+              </div>
+              <p className="text-gray-700 mb-4">
+                <strong>0.1 Point Threshold:</strong> The model recommends a bet when the edge is 
+                at least 0.1 points. This minimal threshold ensures that any meaningful disagreement 
+                between the model and market is flagged as actionable. There are no caps, overlays, 
+                or decay factors—the model trusts its ratings completely.
+              </p>
+              <p className="text-gray-700 mb-4">
+                <strong>No Market Capping:</strong> Unlike previous versions, the V1 model does not 
+                apply "Trust-Market" safety layers. The model's spread is used directly, without 
+                capping edges or applying minimum thresholds above 0.1 points. This approach maximizes 
+                the model's predictive power while maintaining a low barrier for actionable picks.
+              </p>
+            </div>
+            
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Confidence Tiers
+              </h3>
+              <p className="text-gray-700 mb-4">
+                Bets are assigned confidence grades based on the magnitude of the edge:
+              </p>
+              <ul className="list-disc pl-6 space-y-1 text-gray-700">
+                <li><strong>Grade A:</strong> High confidence (edge ≥ 4.0 points)</li>
+                <li><strong>Grade B:</strong> Medium confidence (edge 3.0 - 3.9 points)</li>
+                <li><strong>Grade C:</strong> Low confidence (edge 0.1 - 2.9 points)</li>
               </ul>
               <p className="text-gray-700 mt-4">
-                <strong>Operational Rules:</strong>
+                The game's overall confidence grade is determined by the <strong>highest</strong> 
+                grade among all active bets (Spread, Total, Moneyline) for that matchup.
               </p>
-              <ul className="list-disc pl-6 space-y-1 text-gray-700">
-                <li><strong>Spreads (ATS):</strong> Hybrid model, primarily Tier A, optionally Tier B</li>
-                <li><strong>Totals:</strong> V3 Totals, Tier A only is the main "serious" system</li>
-                <li><strong>Tier B/C Totals:</strong> Experimental/action, visually de-emphasized with "High Risk" warnings</li>
-              </ul>
             </div>
-          </div>
-        </section>
-
-        <section>
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">
-            User Interface & Features
-          </h2>
-          <div className="space-y-6">
+            
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-2">
-                My Picks Page
+                Moneyline & Totals
               </h3>
               <p className="text-gray-700 mb-4">
-                The My Picks page is organized into two main sections that prioritize Tier A picks:
+                <strong>Moneyline:</strong> Win probabilities are derived from the spread using a 
+                standard sigmoid conversion (logistic function). The model compares its implied 
+                probability to the market's implied probability to identify value. Moneyline bets 
+                are only considered for games where the spread is ≤ 24 points (to avoid extreme 
+                favorites with unbettable odds).
               </p>
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                <h4 className="font-medium text-blue-800 mb-2">🔥 Best Bets (Tier A)</h4>
-                <ul className="list-disc pl-6 space-y-1 text-blue-700 text-sm">
-                  <li>Located at the top of the page with green styling and Tier A badges</li>
-                  <li>Shows games that have at least one Tier A pick (spread or total)</li>
-                  <li>Includes Hybrid Tier A spreads and V3 Totals Tier A picks</li>
-                  <li>These are the primary recommendations based on our strongest edges</li>
-                </ul>
-              </div>
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-                <h4 className="font-medium text-yellow-800 mb-2">👀 Leans / Action (Tier B & C)</h4>
-                <ul className="list-disc pl-6 space-y-1 text-yellow-700 text-sm">
-                  <li>Located below Best Bets with muted styling</li>
-                  <li>Shows games that only have Tier B/C picks or where users want more action</li>
-                  <li>V3 Totals Tier B/C picks are shown with an explicit "Experimental / High Risk" warning</li>
-                  <li>These are for users seeking additional betting opportunities beyond Tier A</li>
-                </ul>
-              </div>
-              <p className="text-gray-700">
-                <strong>Sorting:</strong> Games with any Tier A pick appear first (in Best Bets). Within each 
-                section, games are sorted by earliest kickoff or highest absolute edge.
+              <p className="text-gray-700 mb-4">
+                <strong>Totals:</strong> Over/Under picks are calculated using a spread-driven 
+                totals model that considers both offensive and defensive ratings, adjusted for 
+                game pace and scoring efficiency. The same 0.1 point edge threshold applies.
               </p>
-            </div>
-
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Current Slate Table
-              </h3>
-              <p className="text-gray-700 mb-3">
-                The Current Slate table displays key information for each game:
-              </p>
-              <ul className="list-disc pl-6 space-y-1 text-gray-700">
-                <li><strong>Best Spread / Best Total:</strong> Line and book pulled from market data (best available number at that moment, usually from DraftKings/others)</li>
-                <li><strong>Model Spread:</strong> From Hybrid model (70% V1 + 30% V2)</li>
-                <li><strong>Model Total:</strong> From V3 Drive-Based Totals model (or Core V1 fallback)</li>
-                <li><strong>Pick (ATS / Total):</strong> Derived from model vs best line; tied back to official Bet when one exists</li>
-                <li><strong>Max Edge:</strong> Largest edge among all bet types for that game</li>
-                <li><strong>Confidence:</strong> Highest tier (A/B/C) among all picks for that game</li>
-              </ul>
-            </div>
-
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Week Review & Season Review
-              </h3>
-              <p className="text-gray-700 mb-3">
-                Both Week Review and Season Review support filtering by Confidence Tier:
-              </p>
-              <ul className="list-disc pl-6 space-y-1 text-gray-700">
-                <li><strong>Confidence Filter:</strong> Users can filter by Tier (All / A / B / C)</li>
-                <li><strong>Summary Metrics:</strong> All metrics (PnL, ROI, record, cumulative PnL, per-week breakdowns) respect the selected Tier</li>
-                <li><strong>Performance Insights:</strong> 
-                  <ul className="list-disc pl-6 mt-2 space-y-1">
-                    <li>Hybrid Tier A spreads: Extremely strong performance (~66% win rate, 25%+ ROI over large sample)</li>
-                    <li>V3 Totals Tier A: Profitable (~57% win rate, +9% ROI)</li>
-                    <li>V3 Totals Tier B/C: Negative ROI (-14% to -20%) — hence operational rule to focus on Tier A only</li>
-                  </ul>
-                </li>
-              </ul>
             </div>
           </div>
         </section>
 
         <section>
           <h2 className="text-2xl font-semibold text-gray-900 mb-4">
-            Unit Matchup Analysis (V2 Component)
+            Unit Matchup Analysis (V2)
           </h2>
           <div className="space-y-4">
             <div>
@@ -496,8 +400,8 @@ export default function MethodologyPage() {
                 Overview
               </h3>
               <p className="text-gray-700 mb-4">
-                The V2 component of the Hybrid model analyzes specific unit matchups to identify 
-                tactical advantages. It breaks down team performance into granular unit grades 
+                Beyond the main Power Rating (V1), Gridiron Edge analyzes specific unit matchups to identify 
+                tactical advantages. The V2 system breaks down team performance into granular unit grades 
                 (Run Offense, Pass Defense, Explosiveness) and compares them head-to-head to find hidden edges.
               </p>
               <p className="text-gray-700 mb-4">
@@ -573,17 +477,27 @@ export default function MethodologyPage() {
             
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Integration with Hybrid Model
+                Hybrid Model V2 (Production)
               </h3>
               <p className="text-gray-700 mb-4">
-                The V2 unit matchup analysis is combined with the V1 Power Rating in the production Hybrid model. 
-                The Hybrid model (70% V1 + 30% V2) is the source of all ATS edges, confidence tiers, and official 
-                spread picks across the application.
+                The V2 unit matchup analysis is combined with the V1 Power Rating in a "Hybrid" model that 
+                blends both approaches:
               </p>
-              <p className="text-gray-700 mb-4">
-                For comparison and analysis, the "Labs (V2)" dashboard allows users to view pure V1, pure V2, 
-                and Hybrid predictions side-by-side.
-              </p>
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <p className="text-green-700 text-sm mb-2">
+                  <strong>Hybrid Spread = (V1 Spread × 70%) + (V2 Spread × 30%)</strong>
+                </p>
+                <p className="text-green-700 text-sm mb-2">
+                  This blend leverages the stability of V1 (results-aware) with the matchup specificity 
+                  of V2 (stats-only). The weights were optimized through backtesting against 2025 season 
+                  results.
+                </p>
+                <p className="text-green-700 text-sm font-semibold">
+                  <strong>Production Status:</strong> Hybrid V2 is the only production spread model used for 
+                  "My Picks" and live betting recommendations. All other models (V1, V2 standalone, V4) are 
+                  experimental/Labs-only.
+                </p>
+              </div>
             </div>
           </div>
         </section>
@@ -638,6 +552,86 @@ export default function MethodologyPage() {
                 The V1 Power Rating remains unchanged, as it reflects season-long performance that already 
                 accounts for typical weather conditions.
               </p>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h2 className="text-2xl font-semibold text-gray-900 mb-4">
+            Labs / Experimental Models
+          </h2>
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                V4 (Labs) — SP+/FEI-Style Spread Ratings
+              </h3>
+              <p className="text-gray-700 mb-4">
+                V4 is an experimental spread rating model inspired by SP+ and FEI methodologies. It uses 
+                drive-based metrics (Finishing Drives, Available Yards %) and advanced efficiency stats to 
+                generate spread predictions. V4 is <strong>not used in production</strong> and is available 
+                only in Labs for research and backtesting purposes.
+              </p>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                <h4 className="font-medium text-yellow-800 mb-2">V4 (Labs) & Fade V4 — Backtest Snapshot</h4>
+                <p className="text-yellow-700 text-sm mb-3">
+                  V4, as a standalone model, is currently unprofitable and is not used in production. However, 
+                  fading its picks ("Fade V4 (Labs)") has shown positive ROI in backtests for both 2024 and 
+                  2025. This overlay remains experimental and subject to regression.
+                </p>
+                
+                <div className="mt-4">
+                  <h5 className="font-semibold text-yellow-800 mb-2">2024 Season</h5>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <p className="font-medium text-yellow-800 mb-1">V4 Labs (standalone):</p>
+                      <ul className="text-yellow-700 space-y-0.5">
+                        <li>372 bets</li>
+                        <li>Win rate: 35.1%</li>
+                        <li>ROI: -32.75%</li>
+                        <li>Tier A ROI (edge ≥ 3): -35.08%</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="font-medium text-yellow-800 mb-1">Fade V4 (Labs):</p>
+                      <ul className="text-yellow-700 space-y-0.5">
+                        <li>372 bets</li>
+                        <li>Win rate: 58.0%</li>
+                        <li>ROI: +10.43%</li>
+                        <li>Tier A ROI: +7.48%</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <h5 className="font-semibold text-yellow-800 mb-2">2025 Season</h5>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <p className="font-medium text-yellow-800 mb-1">V4 Labs (standalone):</p>
+                      <ul className="text-yellow-700 space-y-0.5">
+                        <li>709 bets</li>
+                        <li>Win rate: 39.1%</li>
+                        <li>ROI: -24.96%</li>
+                        <li>Tier A ROI: -26.88%</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="font-medium text-yellow-800 mb-1">Fade V4 (Labs):</p>
+                      <ul className="text-yellow-700 space-y-0.5">
+                        <li>671 bets</li>
+                        <li>Win rate: 61.8%</li>
+                        <li>ROI: +17.81%</li>
+                        <li>Tier A ROI: +18.93%</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                <p className="text-yellow-600 text-xs mt-4 italic">
+                  All results are backtests, not guarantees. Fade V4 is Labs-only and is not part of the 
+                  main "My Picks" flow. Hybrid V2 remains the only official spread model.
+                </p>
+              </div>
             </div>
           </div>
         </section>

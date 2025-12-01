@@ -128,9 +128,7 @@ async function loadV4Features(season: number): Promise<TeamV4Features[]> {
   const fbsMemberships = await prisma.teamMembership.findMany({
     where: {
       season,
-      conference: {
-        not: null,
-      },
+      level: 'fbs',
     },
     include: {
       team: true,

@@ -89,27 +89,6 @@ export default function DocsPage() {
                 </Link>
 
                 <Link
-                  href="https://github.com/firemansghost/Gridiron-Edge-V1/blob/main/docs/roadmap.md"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block h-full bg-white rounded-lg shadow hover:shadow-md transition-all p-6 border border-gray-200"
-                >
-                  <div className="flex items-start">
-                    <div className="flex-shrink-0">
-                      <svg className="h-8 w-8 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                    <div className="ml-4">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-2">Roadmap</h3>
-                      <p className="text-sm text-gray-600">
-                        Current production stack, near-term improvements, and future model upgrades
-                      </p>
-                    </div>
-                  </div>
-                </Link>
-
-                <Link
                   href="/status"
                   className="block h-full bg-white rounded-lg shadow hover:shadow-md transition-all p-6 border border-gray-200"
                 >
@@ -204,6 +183,27 @@ export default function DocsPage() {
                       <h3 className="text-lg font-semibold text-gray-900 mb-2">Selections & Profitability</h3>
                       <p className="text-sm text-gray-600">
                         Bets ledger, grading, and performance tracking
+                      </p>
+                    </div>
+                  </div>
+                </Link>
+
+                <Link
+                  href="https://github.com/firemansghost/Gridiron-Edge-V1/blob/main/docs/labs-v4-overlays.md"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block h-full bg-white rounded-lg shadow hover:shadow-md transition-all p-6 border border-gray-200"
+                >
+                  <div className="flex items-start">
+                    <div className="flex-shrink-0">
+                      <svg className="h-8 w-8 text-purple-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div className="ml-4">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">V4 & Fade V4 (Labs Overlays)</h3>
+                      <p className="text-sm text-gray-600">
+                        Backtest results and methodology for the experimental V4 spread model and its Fade V4 overlay
                       </p>
                     </div>
                   </div>
@@ -403,7 +403,7 @@ export default function DocsPage() {
                   rel="noopener noreferrer"
                   className="text-blue-600 hover:text-blue-700 underline"
                 >
-                  View current production stack and future plans
+                  View planned features and milestones
                 </a>
               </p>
             </div>
