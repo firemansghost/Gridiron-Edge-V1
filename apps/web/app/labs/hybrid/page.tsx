@@ -37,18 +37,26 @@ interface HybridGame {
   v1Spread: SpreadInfo;
   v2Spread: SpreadInfo;
   hybridSpread: SpreadInfo;
-  v4Spread: {
-    hma: number | null;
-    favoriteSpread: number | null;
-    favoriteTeamId: string | null;
-    favoriteName: string | null;
-  } | null;
   diff: number; // Hybrid - V1 (in favorite-centric terms)
-  diffV4Hybrid: number | null; // V4 - Hybrid (in favorite-centric terms)
   marketSpread: {
     value: number | null;
     favoriteTeamId: string | null;
   } | null;
+}
+
+interface V4OverlaySummary {
+  season: number;
+  strategy: string;
+  bets: number;
+  wins: number;
+  losses: number;
+  pushes: number;
+  winRate: number | null;
+  totalStake: number;
+  pnl: number;
+  roi: number;
+  tierABets: number;
+  tierARoi: number | null;
 }
 
 export default function HybridLabsPage() {
@@ -58,9 +66,12 @@ export default function HybridLabsPage() {
   const [season, setSeason] = useState<number | null>(null);
   const [week, setWeek] = useState<number | null>(null);
   const [hideNoOdds, setHideNoOdds] = useState(false);
+  const [v4Summary, setV4Summary] = useState<V4OverlaySummary[]>([]);
+  const [v4SummaryLoading, setV4SummaryLoading] = useState(true);
 
   useEffect(() => {
     fetchHybridSlate();
+    fetchV4OverlaySummary();
   }, []);
 
   const fetchHybridSlate = async () => {
@@ -98,6 +109,25 @@ export default function HybridLabsPage() {
     }
   };
 
+  const fetchV4OverlaySummary = async () => {
+    try {
+      setV4SummaryLoading(true);
+      const response = await fetch('/api/labs/v4-overlay-summary');
+      if (!response.ok) {
+        console.warn('Failed to fetch V4 overlay summary:', response.statusText);
+        return;
+      }
+      const data = await response.json();
+      if (data.success && data.summaries) {
+        setV4Summary(data.summaries);
+      }
+    } catch (err) {
+      console.warn('Error fetching V4 overlay summary:', err);
+    } finally {
+      setV4SummaryLoading(false);
+    }
+  };
+
   const formatKickoff = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleString('en-US', {
@@ -127,22 +157,6 @@ export default function HybridLabsPage() {
     const absDiff = Math.abs(diff);
     if (absDiff >= 3.0) return 'bg-red-100 text-red-800';
     if (absDiff >= 1.5) return 'bg-yellow-100 text-yellow-800';
-    return 'bg-gray-100 text-gray-800';
-  };
-
-  const getV4DiffColor = (diff: number | null) => {
-    if (diff === null) return '';
-    const absDiff = Math.abs(diff);
-    if (absDiff >= 4.0) return 'bg-purple-50 border-purple-200';
-    if (absDiff >= 2.0) return 'bg-blue-50 border-blue-200';
-    return '';
-  };
-
-  const getV4DiffBadge = (diff: number | null) => {
-    if (diff === null) return 'bg-gray-100 text-gray-800';
-    const absDiff = Math.abs(diff);
-    if (absDiff >= 4.0) return 'bg-purple-100 text-purple-800';
-    if (absDiff >= 2.0) return 'bg-blue-100 text-blue-800';
     return 'bg-gray-100 text-gray-800';
   };
 
@@ -218,12 +232,6 @@ export default function HybridLabsPage() {
         V1_Spread: `${game.v1Spread.favoriteName} ${formatSpread(game.v1Spread.favoriteSpread)}`,
         V2_Spread: `${game.v2Spread.favoriteName} ${formatSpread(game.v2Spread.favoriteSpread)}`,
         Hybrid_Spread: `${game.hybridSpread.favoriteName} ${formatSpread(game.hybridSpread.favoriteSpread)}`,
-        V4_Spread: game.v4Spread && game.v4Spread.favoriteName
-          ? `${game.v4Spread.favoriteName} ${formatSpread(game.v4Spread.favoriteSpread!)}`
-          : '—',
-        Diff_V4_Hybrid: game.diffV4Hybrid !== null
-          ? (game.diffV4Hybrid > 0 ? `+${game.diffV4Hybrid.toFixed(1)}` : game.diffV4Hybrid.toFixed(1))
-          : '—',
         Diff_Hybrid_V1: game.diff > 0 ? `+${game.diff.toFixed(1)}` : game.diff.toFixed(1),
         Market_Line: game.marketSpread && game.marketSpread.value !== null
           ? formatSpread(game.marketSpread.value)
@@ -271,12 +279,61 @@ export default function HybridLabsPage() {
       <div className="container mx-auto px-4 py-8">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            🔬 Labs: Spread Model Dashboard
+            🔬 Labs: Hybrid Model Dashboard
           </h1>
           <p className="text-gray-600 mb-4">
-            Comparing V1 (Composite), V2 (Matchup), Hybrid (70% V1 + 30% V2), and V4 (Labs) spread predictions
+            Comparing V1 (Composite), V2 (Matchup), and Hybrid (70% V1 + 30% V2) spread predictions
             {season && week && ` - ${season} Week ${week}`}
           </p>
+
+          {/* V4 Overlay Summary Card */}
+          {!v4SummaryLoading && v4Summary.length > 0 && (
+            <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-yellow-900 mb-3">
+                📊 V4 (Labs) vs Fade V4 — Backtest Snapshot
+              </h3>
+              <div className="space-y-3">
+                {[2024, 2025].map((s) => {
+                  const seasonData = v4Summary.filter(sum => sum.season === s);
+                  if (seasonData.length === 0) return null;
+                  
+                  const v4Data = seasonData.find(sum => sum.strategy === 'v4_labs');
+                  const fadeData = seasonData.find(sum => sum.strategy === 'fade_v4_labs');
+                  
+                  return (
+                    <div key={s} className="bg-white rounded p-3 border border-yellow-200">
+                      <div className="text-xs font-semibold text-yellow-800 mb-2">{s} Season</div>
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div>
+                          <div className="font-medium text-gray-700 mb-1">V4 (Labs)</div>
+                          <div className="space-y-0.5 text-gray-600">
+                            <div>Bets: {v4Data?.bets ?? '—'}</div>
+                            <div>Win Rate: {v4Data?.winRate !== null ? `${v4Data.winRate.toFixed(1)}%` : '—'}</div>
+                            <div className={v4Data?.roi !== undefined && v4Data.roi < 0 ? 'text-red-600 font-medium' : 'text-gray-600'}>
+                              ROI: {v4Data?.roi !== undefined ? `${v4Data.roi.toFixed(2)}%` : '—'}
+                            </div>
+                          </div>
+                        </div>
+                        <div>
+                          <div className="font-medium text-gray-700 mb-1">Fade V4 (Labs)</div>
+                          <div className="space-y-0.5 text-gray-600">
+                            <div>Bets: {fadeData?.bets ?? '—'}</div>
+                            <div>Win Rate: {fadeData?.winRate !== null ? `${fadeData.winRate.toFixed(1)}%` : '—'}</div>
+                            <div className={fadeData?.roi !== undefined && fadeData.roi > 0 ? 'text-green-600 font-medium' : 'text-gray-600'}>
+                              ROI: {fadeData?.roi !== undefined ? `${fadeData.roi.toFixed(2)}%` : '—'}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-yellow-700 mt-3 italic">
+                V4 and Fade V4 are Labs-only strategies based on backtested data. Hybrid V2 remains the only production spread model used for My Picks.
+              </p>
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <input
@@ -322,10 +379,7 @@ export default function HybridLabsPage() {
                     Hybrid (70/30)
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    V4 (Labs)
-                  </th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Diff (V4 – Hybrid)
+                    Diff (Hybrid - V1)
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Hybrid Pick
@@ -347,7 +401,7 @@ export default function HybridLabsPage() {
                   if (visibleGames.length === 0) {
                     return (
                       <tr>
-                        <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                        <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                           {games.length === 0
                             ? 'No games found for this week.'
                             : hideNoOdds
@@ -360,13 +414,8 @@ export default function HybridLabsPage() {
 
                   return visibleGames.map((game) => {
                     const rowClass = getDiffColor(game.diff);
-                    const v4RowClass = getV4DiffColor(game.diffV4Hybrid);
-                    // Combine row classes if both have highlights
-                    const combinedRowClass = rowClass && v4RowClass 
-                      ? `${rowClass} ${v4RowClass}`
-                      : rowClass || v4RowClass;
                     return (
-                      <tr key={game.gameId} className={combinedRowClass}>
+                      <tr key={game.gameId} className={rowClass}>
                         <td className="px-4 py-4 whitespace-nowrap">
                           <div className="flex items-center space-x-2">
                             <div className="flex items-center space-x-1">
@@ -430,27 +479,9 @@ export default function HybridLabsPage() {
                           </div>
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-center">
-                          {game.v4Spread && game.v4Spread.favoriteName ? (
-                            <>
-                              <div className="text-sm font-medium text-purple-900">
-                                {game.v4Spread.favoriteName}
-                              </div>
-                              <div className="text-sm text-purple-600">
-                                {formatSpread(game.v4Spread.favoriteSpread!)}
-                              </div>
-                            </>
-                          ) : (
-                            <span className="text-xs text-gray-400">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-4 whitespace-nowrap text-center">
-                          {game.diffV4Hybrid !== null ? (
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getV4DiffBadge(game.diffV4Hybrid)}`}>
-                              {game.diffV4Hybrid > 0 ? '+' : ''}{game.diffV4Hybrid.toFixed(1)}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-400">—</span>
-                          )}
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getDiffBadge(game.diff)}`}>
+                            {game.diff > 0 ? '+' : ''}{game.diff.toFixed(1)}
+                          </span>
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-center">
                           {(() => {
@@ -497,9 +528,7 @@ export default function HybridLabsPage() {
             <li><strong>V1 (Composite):</strong> Power ratings from Talent, Efficiency, Scoring, and Record (25% each)</li>
             <li><strong>V2 (Matchup):</strong> Unit grades (Run 40%, Pass 40%, Explosiveness 20%) scaled by 9.0</li>
             <li><strong>Hybrid:</strong> 70% V1 + 30% V2 blend (optimized from backtesting)</li>
-            <li><strong>V4 (Labs):</strong> SP+/FEI-style efficiency + drives model (experimental). Uses Success Rate (50%), Explosiveness (25%), Finishing Drives (15%), and Available Yards % (10%).</li>
-            <li><strong>Diff (V4 – Hybrid):</strong> Positive = V4 more bullish on the favorite than Hybrid; Negative = V4 leans more to the dog. Highlighted rows show significant disagreements (≥2 pts soft highlight, ≥4 pts strong highlight).</li>
-            <li><strong>Row Highlighting:</strong> Rows are highlighted when Hybrid differs significantly from V1 (&gt;3 pts) or when V4 differs significantly from Hybrid (≥2 pts).</li>
+            <li><strong>Diff:</strong> Difference between Hybrid and V1 predictions. Highlighted rows show significant disagreements (&gt;3 pts).</li>
           </ul>
         </div>
 
