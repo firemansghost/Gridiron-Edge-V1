@@ -132,7 +132,7 @@ export default function BettingPlaybookPage() {
               <ul className="list-disc pl-6 space-y-1 text-gray-700 mb-4">
                 <li><code className="bg-gray-100 px-1 rounded">strategyTag = 'hybrid_v2'</code></li>
                 <li><code className="bg-gray-100 px-1 rounded">hybridConflictType = 'hybrid_strong'</code></li>
-                <li><code className="bg-gray-100 px-1 rounded">|edge| >= 4.0</code></li>
+                <li><code className="bg-gray-100 px-1 rounded">|edge| &gt;= 4.0</code></li>
               </ul>
               <p className="text-gray-700 mb-2">Results (2025):</p>
               <ul className="list-disc pl-6 space-y-1 text-gray-700">
@@ -207,18 +207,18 @@ export default function BettingPlaybookPage() {
               <h3 className="text-lg font-medium text-gray-900 mb-2">4.1 Tier Definitions (Hybrid V2)</h3>
               <p className="text-gray-700 mb-2">We tier Hybrid V2 bets by <strong>absolute edge</strong>:</p>
               <ul className="list-disc pl-6 space-y-2 text-gray-700">
-                <li><strong>Tier C:</strong> <code className="bg-gray-100 px-1 rounded">|edge| < 2.0</code>
+                <li><strong>Tier C:</strong> <code className="bg-gray-100 px-1 rounded">|edge| &lt; 2.0</code>
                   <ul className="list-disc pl-6 mt-1">
                     <li>Default: <strong>ignore</strong>. Info only.</li>
                   </ul>
                 </li>
-                <li><strong>Tier B:</strong> <code className="bg-gray-100 px-1 rounded">2.0 ≤ |edge| < 3.0</code>
+                <li><strong>Tier B:</strong> <code className="bg-gray-100 px-1 rounded">2.0 ≤ |edge| &lt; 3.0</code>
                   <ul className="list-disc pl-6 mt-1">
                     <li>"Leans / action plays".</li>
                     <li>Requires other confirmation (e.g., Barnes, Crick, matchup notes).</li>
                   </ul>
                 </li>
-                <li><strong>Tier A:</strong> <code className="bg-gray-100 px-1 rounded">3.0 ≤ |edge| < 4.0</code>
+                <li><strong>Tier A:</strong> <code className="bg-gray-100 px-1 rounded">3.0 ≤ |edge| &lt; 4.0</code>
                   <ul className="list-disc pl-6 mt-1">
                     <li>Serious plays.</li>
                   </ul>
@@ -242,8 +242,8 @@ export default function BettingPlaybookPage() {
                     <li>Used for:
                       <ul className="list-disc pl-6 mt-1">
                         <li><strong>Super Tier A</strong>: <code className="bg-gray-100 px-1 rounded">|edge| ≥ 4.0</code></li>
-                        <li><strong>Tier A (Strong)</strong>: <code className="bg-gray-100 px-1 rounded">3.0 ≤ |edge| < 4.0</code></li>
-                        <li><strong>Tier B (Strong)</strong>: <code className="bg-gray-100 px-1 rounded">2.0 ≤ |edge| < 3.0</code> (optional, needs external confirmation)</li>
+                        <li><strong>Tier A (Strong)</strong>: <code className="bg-gray-100 px-1 rounded">3.0 ≤ |edge| &lt; 4.0</code></li>
+                        <li><strong>Tier B (Strong)</strong>: <code className="bg-gray-100 px-1 rounded">2.0 ≤ |edge| &lt; 3.0</code> (optional, needs external confirmation)</li>
                       </ul>
                     </li>
                   </ul>
