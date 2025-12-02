@@ -10,8 +10,6 @@ import { pickMarketLine, getLineValue, getPointValue, looksLikePriceLeak, pickMo
 import { getCoreV1SpreadFromTeams, getATSPick, computeATSEdgeHma } from '@/lib/core-v1-spread';
 import { getOUPick } from '@/lib/core-v1-total';
 import { calculateHybridSpread } from '@/lib/core-v2-spread';
-import { calculateV3GameTotal } from '@/lib/v3-totals';
-import { getOfficialTotalsBet } from '@/lib/official-bets';
 import { NextResponse } from 'next/server';
 
 // === V1 MODE CONFIGURATION ===
@@ -2893,9 +2891,6 @@ export async function GET(
           : marketSpread) // Away is favorite, keep negative: -7.5
       : null;
     
-    // Declare v3Projection at higher scope so it's accessible later
-    let v3Projection: { homeProjectedScore: number; awayProjectedScore: number; modelTotal: number } | null = null;
-
     // Compute totals: Use Core V1 totals model when USE_CORE_V1 is true
     // (Now that marketTotal and marketSpreadHma are available)
     if (USE_CORE_V1 && coreV1SpreadInfo) {
@@ -2918,38 +2913,7 @@ export async function GET(
         });
       }
       
-      // Try V3 Totals first (Drive-Quality model)
-      try {
-        v3Projection = await calculateV3GameTotal(game.homeTeamId, game.awayTeamId, game.season);
-        if (v3Projection && v3Projection.modelTotal > 0) {
-          finalImpliedTotal = v3Projection.modelTotal;
-          ou_model_valid = finalImpliedTotal !== null && 
-                           !isNaN(finalImpliedTotal) && 
-                           isFinite(finalImpliedTotal) &&
-                           finalImpliedTotal >= 15 && 
-                           finalImpliedTotal <= 120;
-          
-          if (ou_model_valid) {
-            ou_reason = null;
-            console.log(`[Game ${gameId}] ✅ V3 Totals computed:`, {
-              modelTotal: finalImpliedTotal.toFixed(1),
-              homeScore: v3Projection.homeProjectedScore.toFixed(1),
-              awayScore: v3Projection.awayProjectedScore.toFixed(1),
-            });
-          } else {
-            ou_reason = `V3 total ${finalImpliedTotal.toFixed(1)} out of valid range (15-120)`;
-            v3Projection = null; // Fall through to Core V1
-          }
-        } else {
-          v3Projection = null; // Fall through to Core V1
-        }
-      } catch (error) {
-        console.warn(`[Game ${gameId}] ⚠️ V3 Totals calculation failed, falling back to Core V1:`, error);
-        v3Projection = null;
-      }
-
-      // Fall back to Core V1 total if V3 is unavailable
-      if (!v3Projection && marketTotal !== null && marketSpreadHmaForTotals !== null) {
+      if (marketTotal !== null && marketSpreadHmaForTotals !== null) {
         // Compute Core V1 total using spread-driven overlay
         const ouPick = getOUPick(marketTotal, marketSpreadHmaForTotals, coreV1SpreadInfo.coreSpreadHma);
         finalImpliedTotal = ouPick.modelTotal;
@@ -2978,7 +2942,7 @@ export async function GET(
           }
         }
         
-        console.log(`[Game ${gameId}] 📊 Core V1 Total computed (fallback):`, {
+        console.log(`[Game ${gameId}] 📊 Core V1 Total computed:`, {
           marketTotal: marketTotal.toFixed(1),
           marketSpreadHma: marketSpreadHmaForTotals.toFixed(2),
           modelSpreadHma: coreV1SpreadInfo.coreSpreadHma.toFixed(2),
@@ -2986,7 +2950,7 @@ export async function GET(
           ou_model_valid,
           ou_reason
         });
-      } else if (!v3Projection) {
+      } else {
         // Calculation skipped - set validation flag and reason
         ou_model_valid = false;
         if (marketTotal === null) {
@@ -3638,8 +3602,7 @@ export async function GET(
 
     // Total edge: In Trust-Market mode, edge IS the overlay (not model - market)
     // If model is invalid, edge is null (no pick, but card still shows)
-    // Note: totalEdgePts will be set later after ouPickInfo is populated
-    let totalEdgePts: number | null = null;
+    const totalEdgePts = ou_model_valid && marketTotal !== null ? totalOverlay : null;
     
     // ============================================
     // RANGE LOGIC: Bet-To and Flip Point (Totals)
@@ -3842,74 +3805,19 @@ export async function GET(
       });
     }
     
-    if (USE_CORE_V1 && marketTotal !== null) {
-      // Check for official V3 totals bet first (source of truth)
-      const officialTotals = await getOfficialTotalsBet(game.id, game.season, game.week);
-      
-      if (officialTotals) {
-        // Use official bet as source of truth
-        const pickLabel = `${officialTotals.side === 'over' ? 'Over' : 'Under'} ${officialTotals.line.toFixed(1)}`;
-        
-        ouPickInfo = {
-          modelTotal: officialTotals.modelPrice,
-          marketTotal: officialTotals.closePrice,
-          ouEdgePts: officialTotals.edge,
-          pickLabel: pickLabel,
-          confidence: officialTotals.tier,
-          rawModelTotal: officialTotals.modelPrice,
-          rawOuEdgePts: officialTotals.edge,
-        };
-        
-        console.log(`[Game ${gameId}] ✅ Using official V3 totals bet:`, {
-          line: officialTotals.line,
-          edge: officialTotals.edge,
-          tier: officialTotals.tier,
-        });
-      } else if (v3Projection && v3Projection.modelTotal > 0) {
-        // Fallback: Use V3 totals calculation (no official bet yet)
-        const ouEdgePts = v3Projection.modelTotal - marketTotal;
-        const absEdge = Math.abs(ouEdgePts);
-        let grade: 'A' | 'B' | 'C' | null = null;
-        if (absEdge >= 4.0) grade = 'A';
-        else if (absEdge >= 3.0) grade = 'B';
-        else if (absEdge >= 0.1) grade = 'C';
-        
-        const side = ouEdgePts > 0 ? 'over' : 'under';
-        const pickLabel = `${side === 'over' ? 'Over' : 'Under'} ${marketTotal.toFixed(1)}`;
-        
-        ouPickInfo = {
-          modelTotal: v3Projection.modelTotal,
-          marketTotal: marketTotal,
-          ouEdgePts: ouEdgePts,
-          pickLabel: pickLabel,
-          confidence: grade,
-          rawModelTotal: v3Projection.modelTotal,
-          rawOuEdgePts: ouEdgePts,
-        };
-      } else if (coreV1SpreadInfo && marketSpreadHmaForOuPick !== null) {
-        // Fall back to Core V1
-        const ouPick = getOUPick(marketTotal, marketSpreadHmaForOuPick, coreV1SpreadInfo.coreSpreadHma);
-        ouPickInfo = {
-          modelTotal: ouPick.modelTotal,
-          marketTotal: marketTotal,
-          ouEdgePts: ouPick.ouEdgePts,
-          pickLabel: ouPick.pickLabel,
-          confidence: ouPick.grade,
-          rawModelTotal: ouPick.modelTotal, // For now, raw = official (no Trust-Market on totals yet)
-          rawOuEdgePts: ouPick.ouEdgePts,
-        };
-      }
+    if (USE_CORE_V1 && coreV1SpreadInfo && marketTotal !== null && marketSpreadHmaForOuPick !== null) {
+      const ouPick = getOUPick(marketTotal, marketSpreadHmaForOuPick, coreV1SpreadInfo.coreSpreadHma);
+      ouPickInfo = {
+        modelTotal: ouPick.modelTotal,
+        marketTotal: marketTotal,
+        ouEdgePts: ouPick.ouEdgePts,
+        pickLabel: ouPick.pickLabel,
+        confidence: ouPick.grade,
+        rawModelTotal: ouPick.modelTotal, // For now, raw = official (no Trust-Market on totals yet)
+        rawOuEdgePts: ouPick.ouEdgePts,
+      };
     }
     // Legacy mode ouPickInfo will be computed later after totalPick is available
-
-    // Set totalEdgePts from ouPickInfo if available, otherwise use overlay
-    if (ouPickInfo && ouPickInfo.ouEdgePts !== null) {
-      // Use official bet edge (source of truth)
-      totalEdgePts = ouPickInfo.ouEdgePts;
-    } else if (ou_model_valid && marketTotal !== null && totalEdgePts === null) {
-      // Fallback: calculate from overlay (only if not already set)
-      totalEdgePts = totalOverlay;
-    }
 
     const model_view = {
       modelFavoriteTeamId: modelFavoriteTeamId,
@@ -4479,16 +4387,7 @@ export async function GET(
     };
 
     let spreadGrade = getGrade(atsEdge);
-    
-    // Use official bet tier for totals if available, otherwise calculate from edge
-    let totalGrade: 'A' | 'B' | 'C' | null = null;
-    if (ouPickInfo && ouPickInfo.confidence) {
-      // Use official bet tier from ouPickInfo (set from official bet record)
-      totalGrade = ouPickInfo.confidence;
-    } else {
-      // Fallback: calculate from current edge
-      totalGrade = getGrade(totalEdgePts);
-    }
+    let totalGrade = getGrade(totalEdgePts);
 
     // ============================================
     // TRUST-MARKET MODE: Confidence Degradation

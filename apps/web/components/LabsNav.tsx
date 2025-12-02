@@ -10,6 +10,7 @@ export function LabsNav() {
   const navItems = [
     { label: 'Hybrid Model', href: '/labs/hybrid' },
     { label: 'Portal Continuity', href: '/labs/portal' },
+    { label: 'Portfolio What-Ifs', href: '/labs/portfolio' },
   ];
 
   return (

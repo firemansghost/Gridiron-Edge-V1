@@ -390,6 +390,26 @@ export default function BettingPlaybookPage() {
               This is <strong>Labs-only evidence</strong> and not yet a hard rule, but it strongly supports the guardrail: low-continuity dogs were a significant drag on the 2025 official card. The experiment suggests that avoiding these bets in 2026 card construction could meaningfully improve performance.
             </p>
           </div>
+          <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">8.2 Hybrid V2 Portfolio Experiment: Dropping Low-Continuity Dogs (Labs)</h3>
+            <p className="text-gray-700 mb-2">
+              We simulated the 2025 Hybrid V2 portfolio (<code className="bg-gray-100 px-1 rounded">hybrid_v2</code>) with and without low-continuity dogs:
+            </p>
+            <div className="space-y-2 text-sm text-gray-700 mb-3">
+              <p><strong>Baseline (all bets):</strong> 710 bets, 63.2% win rate, +20.38% ROI, +$14,468.70 PnL</p>
+              <p><strong>Removed subset (low-continuity dogs only):</strong> 239 bets, 44.7% win rate, <strong className="text-red-600">-14.50% ROI</strong>, -$3,464.60 PnL</p>
+              <p><strong>Filtered portfolio (dropping low-continuity dogs):</strong> 471 bets, 72.6% win rate, <strong className="text-green-600">+38.07% ROI</strong>, +$17,933.30 PnL</p>
+            </div>
+            <p className="text-gray-700 mb-2">
+              <strong>Impact:</strong> Removing 239 low-continuity dog bets would have improved PnL by <strong>+$3,464.60</strong> and ROI by <strong>+17.70 percentage points</strong> (from +20.38% to +38.07%).
+            </p>
+            <p className="text-gray-700 mb-2 text-sm">
+              <strong>Observations:</strong> The pattern matches the official card: low-continuity dogs were a significant drag on Hybrid V2 performance. Hybrid V2's baseline ROI (+20.38%) was already strong, but filtering low-continuity dogs would have pushed it to <strong>+38.07% ROI</strong>. The filtered portfolio would have achieved a <strong>72.6% win rate</strong> (vs 63.2% baseline).
+            </p>
+            <p className="text-gray-700 text-sm">
+              This is <strong>Labs-only evidence</strong> and not yet a hard production rule, but it strongly supports the guardrail for both the official card and Hybrid V2 strategies. Avoiding low-continuity dogs in 2026 could meaningfully improve performance across both portfolios.
+            </p>
+          </div>
         </section>
 
         <section>

@@ -83,14 +83,13 @@ function gradeSpreadTotal(
   side: BetSide,
   modelLine: number,
   closeLine: number,
-  closeOdds: number | null,
   margin: number,
   totalPts: number,
   stake: number
 ): { result: BetResult; pnl: number; clv: number } {
   let result: BetResult;
   if (marketType === 'spread') {
-    // Spread logic: Compare from side perspective (matches API route logic)
+    // Compare from side perspective (matches API route logic)
     const sideMargin = side === 'home' ? margin : -margin;
     const diff = sideMargin - closeLine;
     
@@ -101,9 +100,7 @@ function gradeSpreadTotal(
       result = diff > 0 ? 'win' : 'loss';
     }
   } else {
-    // Total (Over/Under) logic
-    // If side === 'over': Win if totalPts > closeLine
-    // If side === 'under': Win if totalPts < closeLine
+    // total
     const diff = side === 'over' ? totalPts - closeLine : closeLine - totalPts;
     if (Math.abs(diff) < 0.5) {
       result = 'push';
@@ -112,30 +109,9 @@ function gradeSpreadTotal(
     }
   }
 
-  // PnL calculation using actual odds if available, otherwise default to -110 (standard for spread/total)
-  let pnl = 0;
-  if (result === 'win') {
-    if (closeOdds != null) {
-      // Use actual odds from closeOdds parameter
-      if (closeOdds > 0) {
-        // Underdog/Plus money: profit = stake * (price / 100)
-        // Example: $100 bet at +150 pays $150 profit
-        pnl = stake * (closeOdds / 100);
-      } else {
-        // Favorite/Minus money: profit = stake * (100 / abs(price))
-        // Example: $100 bet at -150 pays $66.67 profit
-        pnl = stake * (100 / Math.abs(closeOdds));
-      }
-    } else {
-      // Default to -110 if no closeOdds provided (standard for spread/total)
-      pnl = stake * 0.909; // -110 odds = 100/110 = 0.909
-    }
-  } else if (result === 'loss') {
-    pnl = -stake;
-  } else {
-    // push
-    pnl = 0;
-  }
+  // PnL: assume -110 if no explicit price (profit if win, else -stake, push 0)
+  // Matches API route: win = stake * 0.909, loss = -stake, push = 0
+  const pnl = result === 'win' ? stake * 0.909 : result === 'loss' ? -stake : 0;
 
   // CLV (bettor perspective) - matches API route logic
   let clv: number;
@@ -155,37 +131,23 @@ function gradeMoneyline(
   margin: number,
   stake: number
 ): { result: BetResult; pnl: number; clv: number } {
-  // Determine winner based on final score
+  // Winner
   let winner: 'home' | 'away' | 'push';
   if (margin > 0) winner = 'home';
   else if (margin < 0) winner = 'away';
   else winner = 'push';
 
-  // Determine result: Win if selected side matches winner, Loss otherwise, Push if tie
   let result: BetResult;
-  if (winner === 'push') {
-    result = 'push';
-  } else {
-    result = (side === winner ? 'win' : 'loss');
-  }
+  if (winner === 'push') result = 'push';
+  else result = (side === winner ? 'win' : 'loss');
 
-  // PnL calculation using American odds from closePrice (actual odds at bet time)
+  // PnL using American odds
   let pnl = 0;
   if (result === 'win') {
-    if (closePrice > 0) {
-      // Underdog/Plus money: profit = stake * (price / 100)
-      // Example: $100 bet at +150 pays $150 profit
-      pnl = stake * (closePrice / 100);
-    } else {
-      // Favorite/Minus money: profit = stake * (100 / abs(price))
-      // Example: $100 bet at -150 pays $66.67 profit
-      pnl = stake * (100 / Math.abs(closePrice));
-    }
+    if (modelPrice < 0) pnl = stake * (100 / Math.abs(modelPrice));
+    else pnl = stake * (modelPrice / 100);
   } else if (result === 'loss') {
     pnl = -stake;
-  } else {
-    // push (tie game)
-    pnl = 0;
   }
 
   // CLV in probability space for bet side
@@ -266,13 +228,8 @@ async function main() {
         const graded = gradeMoneyline(side, modelPrice, closePrice, margin, stake);
         result = graded.result; pnl = graded.pnl; clv = graded.clv;
       } else {
-        // Spread or Total
-        // For spread/total, closePrice stores the line value (e.g., -3.5, 45.5), not the odds
-        // Odds for spread/total are typically -110 (standard), so we default to that
         const modelLine = Number(bet.modelPrice); // modelPrice stores line for spread/total in our design
-        const closeLine = closePrice; // Line value for comparison
-        const closeOdds = null; // Default to -110 in the function (standard for spread/total)
-        const graded = gradeSpreadTotal(bet.marketType, side, modelLine, closeLine, closeOdds, margin, totalPts, stake);
+        const graded = gradeSpreadTotal(bet.marketType, side, modelLine, closePrice, margin, totalPts, stake);
         result = graded.result; pnl = graded.pnl; clv = graded.clv;
       }
 

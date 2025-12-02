@@ -344,6 +344,29 @@ We simulated the 2025 official card (`official_flat_100`) with and without low-c
 
 This is **Labs-only evidence** and not yet a hard rule, but it strongly supports the guardrail: low-continuity dogs were a significant drag on the 2025 official card. The experiment suggests that avoiding these bets in 2026 card construction could meaningfully improve performance.
 
+### 8.2 Hybrid V2 Portfolio Experiment: Dropping Low-Continuity Dogs (Labs)
+
+We simulated the 2025 Hybrid V2 portfolio (`hybrid_v2`) with and without low-continuity dogs:
+
+**Baseline (all bets):**
+- 710 bets, 63.2% win rate, +20.38% ROI, +$14,468.70 PnL
+
+**Removed subset (low-continuity dogs only):**
+- 239 bets, 44.7% win rate, **-14.50% ROI**, -$3,464.60 PnL
+
+**Filtered portfolio (dropping low-continuity dogs):**
+- 471 bets, 72.6% win rate, **+38.07% ROI**, +$17,933.30 PnL
+
+**Impact:**
+- Removing 239 low-continuity dog bets would have improved PnL by **+$3,464.60** and ROI by **+17.70 percentage points** (from +20.38% to +38.07%).
+
+**Observations:**
+- The pattern matches the official card: low-continuity dogs were a significant drag on Hybrid V2 performance.
+- Hybrid V2's baseline ROI (+20.38%) was already strong, but filtering low-continuity dogs would have pushed it to **+38.07% ROI**.
+- The filtered portfolio would have achieved a **72.6% win rate** (vs 63.2% baseline).
+
+This is **Labs-only evidence** and not yet a hard production rule, but it strongly supports the guardrail for both the official card and Hybrid V2 strategies. Avoiding low-continuity dogs in 2026 could meaningfully improve performance across both portfolios.
+
 ---
 
 ## 9. Future Model Enhancements (V5+)

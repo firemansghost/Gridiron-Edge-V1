@@ -57,6 +57,8 @@ interface SlateGame {
       betTeamContinuity?: number | null;
       oppContinuity?: number | null;
       continuityDiff?: number | null;
+      isDog?: boolean | null;
+      isLowContinuityDog?: boolean;
     };
     total?: {
       label: string | null;
@@ -589,6 +591,8 @@ export async function GET(request: NextRequest) {
         let betTeamContinuity: number | null = null;
         let oppContinuity: number | null = null;
         let continuityDiff: number | null = null;
+        let isDog: boolean | null = null;
+        let isLowContinuityDog: boolean = false;
 
         if (spreadPick && spreadEdgePts !== null && edgeHma !== null) {
           // Determine bet team and opponent for continuity lookup
@@ -609,6 +613,16 @@ export async function GET(request: NextRequest) {
           if (hybridBet) {
             hybridConflictType = hybridBet.hybridConflictType;
             betClv = hybridBet.clv ? Number(hybridBet.clv) : null;
+            
+            // Determine if bet team is dog based on closing price
+            // closePrice is in favorite-centric format:
+            // - Negative = favorite (laying points)
+            // - Positive = dog (getting points)
+            // - Zero = pick'em (treat as dog)
+            if (hybridBet.closePrice !== null) {
+              const closePriceNum = Number(hybridBet.closePrice);
+              isDog = closePriceNum >= 0;
+            }
             
             // Calculate edge from bet if available, otherwise use computed edge
             if (hybridBet.modelPrice && hybridBet.closePrice) {
@@ -643,6 +657,12 @@ export async function GET(request: NextRequest) {
               tierBucket = 'tier_b';
             }
           }
+          
+          // Determine if this is a low-continuity dog
+          // Condition: bet team continuity < 0.60 AND bet team is a dog
+          if (betTeamContinuity !== null && isDog === true && betTeamContinuity < 0.60) {
+            isLowContinuityDog = true;
+          }
         }
 
         // Add picks object with individual market data
@@ -658,6 +678,8 @@ export async function GET(request: NextRequest) {
             betTeamContinuity,
             oppContinuity,
             continuityDiff,
+            isDog,
+            isLowContinuityDog,
           },
           total: {
             label: totalPick,

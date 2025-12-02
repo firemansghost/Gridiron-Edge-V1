@@ -28,6 +28,8 @@ interface GamePick {
   betTeamContinuity?: number | null;
   oppContinuity?: number | null;
   continuityDiff?: number | null;
+  isDog?: boolean | null;
+  isLowContinuityDog?: boolean;
 }
 
 interface MoneylinePick {
@@ -356,6 +358,13 @@ export default function PicksPage() {
                     }
                     return `${betBand} (bet team only)`;
                   })()}
+                </div>
+              )}
+              {spreadPick.isLowContinuityDog && (
+                <div className="mt-1">
+                  <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 border border-red-200">
+                    Low-Continuity Dog
+                  </span>
                 </div>
               )}
             </div>

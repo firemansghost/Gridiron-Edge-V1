@@ -18,7 +18,6 @@ import { selectClosingLine } from '../lib/closing-line-helpers';
 import { Decimal } from '@prisma/client/runtime/library';
 
 const STRATEGY_TAG = 'hybrid_v2';
-const V2_STRATEGY_TAG = 'v2_matchup';
 const FLAT_STAKE = 100.0;
 const EDGE_THRESHOLD = 0.1; // Minimum edge to create a bet
 
@@ -30,7 +29,6 @@ interface HybridPick {
   closePrice: number | null; // Closing line/price
   pickLabel: string; // Human-readable pick (e.g., "Alabama -6.5")
   edge: number; // Edge magnitude
-  isV2?: boolean; // Flag to indicate if this is a V2 pick
 }
 
 /**
@@ -232,22 +230,10 @@ async function getHybridPicksForGame(game: any): Promise<HybridPick[]> {
       ? -closingValue
       : closingValue;
 
-    // ATS pick (Hybrid)
+    // ATS pick
     const atsPick = await getHybridATSPick(game, hybridSpreadHma, marketSpreadHma);
     if (atsPick) {
-      picks.push({ ...atsPick, isV2: false });
-    }
-
-    // ATS pick (Pure V2) - create separate pick with V2 spread
-    const v2SpreadHma = hybridResult.v2SpreadHma;
-    const v2AtsPick = await getHybridATSPick(game, v2SpreadHma, marketSpreadHma);
-    if (v2AtsPick) {
-      // Create V2 pick with V2 spread as modelPrice
-      picks.push({
-        ...v2AtsPick,
-        modelPrice: v2SpreadHma, // Use V2 spread instead of hybrid
-        isV2: true,
-      });
+      picks.push(atsPick);
     }
 
     // TODO: Add Total and Moneyline picks when needed
@@ -262,7 +248,7 @@ async function getHybridPicksForGame(game: any): Promise<HybridPick[]> {
 /**
  * Upsert a bet record (idempotent)
  */
-async function upsertBet(pick: HybridPick, season: number, week: number, strategyTag: string = STRATEGY_TAG): Promise<'created' | 'updated' | 'skipped'> {
+async function upsertBet(pick: HybridPick, season: number, week: number): Promise<'created' | 'updated' | 'skipped'> {
   try {
     // Check if bet already exists
     const existing = await prisma.bet.findFirst({
@@ -270,16 +256,11 @@ async function upsertBet(pick: HybridPick, season: number, week: number, strateg
         gameId: pick.gameId,
         marketType: pick.marketType,
         side: pick.side,
-        strategyTag,
+        strategyTag: STRATEGY_TAG,
         season,
         week,
       },
     });
-
-    // Determine notes based on strategy
-    const notes = strategyTag === V2_STRATEGY_TAG
-      ? `Auto: V2 (Matchup) pick, $100 flat. ${pick.pickLabel} (Edge: ${pick.edge.toFixed(1)} pts)`
-      : `Auto: Hybrid V2 (70/30) pick, $100 flat. ${pick.pickLabel} (Edge: ${pick.edge.toFixed(1)} pts)`;
 
     const betData = {
       gameId: pick.gameId,
@@ -288,11 +269,11 @@ async function upsertBet(pick: HybridPick, season: number, week: number, strateg
       modelPrice: new Decimal(pick.modelPrice),
       closePrice: pick.closePrice !== null ? new Decimal(pick.closePrice) : null,
       stake: new Decimal(FLAT_STAKE),
-      strategyTag,
+      strategyTag: STRATEGY_TAG,
       source: 'strategy_run' as const,
       season,
       week,
-      notes,
+      notes: `Auto: Hybrid V2 (70/30) pick, $100 flat. ${pick.pickLabel} (Edge: ${pick.edge.toFixed(1)} pts)`,
     };
 
     if (existing) {
@@ -345,10 +326,8 @@ export async function syncWeek(season: number, week: number): Promise<{ created:
   for (const game of games) {
     const picks = await getHybridPicksForGame(game);
     
-    // Process picks: use isV2 flag to determine strategy tag
     for (const pick of picks) {
-      const strategyTag = pick.isV2 ? V2_STRATEGY_TAG : STRATEGY_TAG;
-      const result = await upsertBet(pick, season, week, strategyTag);
+      const result = await upsertBet(pick, season, week);
       if (result === 'created') {
         created++;
       } else if (result === 'updated') {
@@ -359,7 +338,7 @@ export async function syncWeek(season: number, week: number): Promise<{ created:
     }
   }
 
-  console.log(`   ✅ ${season} Week ${week}: created ${created}, updated ${updated}, skipped ${skipped} bets (Hybrid + V2)`);
+  console.log(`   ✅ ${season} Week ${week}: created ${created}, updated ${updated}, skipped ${skipped} Hybrid V2 bets`);
 
   return { created, updated, skipped };
 }
