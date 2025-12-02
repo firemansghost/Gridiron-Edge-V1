@@ -22,21 +22,83 @@ export interface PortalIndices {
 }
 
 /**
- * Compute Continuity Score
+ * Compute Continuity Score v1
  * 
  * Measures roster stability based on returning production and transfer portal activity.
  * Higher scores indicate more stable rosters (more returning production, fewer transfers).
  * 
+ * Formula (adapted from suggested approach):
+ * - off_returning ∈ [0,1]: returning offensive production share (from returningProduction.offense / 100)
+ * - def_returning ∈ [0,1]: returning defensive production share (from returningProduction.defense / 100)
+ * - off_transfers_in ∈ [0,1]: estimated share of production from incoming transfers (normalized from inCount)
+ * - def_transfers_in ∈ [0,1]: same for defense (using same estimate since we don't have position-specific data)
+ * 
+ * - off_effective = off_returning + 0.75 * off_transfers_in
+ * - def_effective = def_returning + 0.75 * def_transfers_in
+ * - continuity = 0.5 * off_effective + 0.5 * def_effective
+ * 
+ * Note: Since we don't have position-specific transfer data, we estimate transfer impact
+ * by normalizing transfer counts to a [0, 0.3] scale (max 30% new production from transfers).
+ * 
  * @param teamSeason TeamSeasonStat with roster_churn data in rawJson
- * @returns Continuity score (0-100 scale, or null if data unavailable)
+ * @returns Continuity score (0-1 scale, or null if data unavailable)
  */
 export function computeContinuityScore(teamSeason: TeamSeasonStat): number | null {
-  // TODO: implement using returning production and transfers from rawJson.roster_churn
-  // Logic:
-  // - Base score from returning production percentage (weighted by position importance)
-  // - Penalty for high transfer portal activity (net transfers out)
-  // - Bonus for low transfer portal activity
-  return null;
+  const rawJson = teamSeason.rawJson as any;
+  if (!rawJson || !rawJson.roster_churn) {
+    return null;
+  }
+
+  const rosterChurn = rawJson.roster_churn;
+  const returningProd = rosterChurn.returningProduction;
+  const transferPortal = rosterChurn.transferPortal;
+
+  // Need at least returning production data
+  if (!returningProd) {
+    return null;
+  }
+
+  // Get offense and defense returning production (0-100 percentages)
+  // Use offense/defense if available, otherwise fall back to overall
+  const offReturning = returningProd.offense ?? returningProd.overall ?? null;
+  const defReturning = returningProd.defense ?? null;
+
+  // If we don't have at least overall returning production, can't calculate
+  if (offReturning === null && defReturning === null) {
+    return null;
+  }
+
+  // Normalize returning production to [0, 1]
+  const offReturningNorm = offReturning !== null ? Math.max(0, Math.min(1, offReturning / 100)) : 0;
+  const defReturningNorm = defReturning !== null ? Math.max(0, Math.min(1, defReturning / 100)) : 0;
+
+  // If we only have overall, use it for both sides
+  const finalOffReturning = offReturningNorm > 0 ? offReturningNorm : (defReturningNorm > 0 ? defReturningNorm : 0);
+  const finalDefReturning = defReturningNorm > 0 ? defReturningNorm : (offReturningNorm > 0 ? offReturningNorm : 0);
+
+  // Estimate transfer impact
+  // Since we don't have position-specific transfer data, we normalize transfer counts
+  // Assume max reasonable transfers = 20, which represents ~30% of roster production
+  const maxTransfers = 20;
+  const transferIn = transferPortal?.inCount ?? 0;
+  
+  // Normalize transfer count to [0, 0.3] (max 30% new production from transfers)
+  const transferInNorm = Math.min(0.3, (transferIn / maxTransfers) * 0.3);
+  
+  // Apply same transfer impact to both offense and defense (since we don't have position data)
+  const offTransfersInNorm = transferInNorm;
+  const defTransfersInNorm = transferInNorm;
+
+  // Calculate effective continuity using suggested formula:
+  // effective = returning + 0.75 * transfers_in
+  const offEffective = Math.max(0, Math.min(1, finalOffReturning + 0.75 * offTransfersInNorm));
+  const defEffective = Math.max(0, Math.min(1, finalDefReturning + 0.75 * defTransfersInNorm));
+
+  // Combine offense and defense equally (50/50)
+  const continuity = 0.5 * offEffective + 0.5 * defEffective;
+
+  // Clamp to [0, 1]
+  return Math.max(0, Math.min(1, continuity));
 }
 
 /**

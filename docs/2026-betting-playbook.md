@@ -294,13 +294,17 @@ To keep this playbook valid during the season:
 
 We're planning to add Portal & NIL Meta Indices as Labs overlays, with potential integration into a future V5 Hybrid model:
 
-- **Continuity Score**: Measures roster stability (returning production + transfer portal activity)
+- **Continuity Score v1** ✅ **Now Available**
+  - Measures roster stability (returning production + transfer portal activity)
+  - Stored in `team_season_stats.raw_json.portal_meta.continuityScore` (0-1 scale)
+  - Available in Labs page `/labs/portal` and CLI histogram tool
+  - **Not yet used in Hybrid V2 production model**; candidate feature for future Hybrid V5
 
-- **Positional Shock Index**: Flags teams with extreme turnover at key positions (QB, OL, DL)
+- **Positional Shock Index**: Flags teams with extreme turnover at key positions (QB, OL, DL) — *Planned*
 
-- **Mercenary Index**: Identifies teams heavily reliant on short-term transfers
+- **Mercenary Index**: Identifies teams heavily reliant on short-term transfers — *Planned*
 
-- **Portal Aggressor Flag**: Flags teams that aggressively use the transfer portal (net talent gain)
+- **Portal Aggressor Flag**: Flags teams that aggressively use the transfer portal (net talent gain) — *Planned*
 
 These will initially live as **Labs overlays** to test their predictive value. If they prove stable and additive in backtests, they may be folded into the core Hybrid model in a future V5 release.
 

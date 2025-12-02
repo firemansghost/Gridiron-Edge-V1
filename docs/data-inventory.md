@@ -190,11 +190,36 @@ Use this as a reference when:
 
 ---
 
-## Portal & NIL Meta Indices (V5 – Planned)
+## Portal & NIL Meta Indices (`raw_json.portal_meta`)
 
-**Status:** 🚧 **Not yet implemented** (stubs exist in `apps/jobs/src/talent/portal_indices.ts`)
+**Status:** 🚧 **Partially implemented** (Continuity Score v1 exists; others are stubs)
 
-These four indices will be computed from `raw_json.roster_churn` data and used as Labs overlays first, then potentially integrated into V5 Hybrid model.
+These indices are computed from `raw_json.roster_churn` data and used as Labs overlays first, then potentially integrated into V5 Hybrid model.
+
+### Continuity Score v1
+
+**Status:** ✅ **Implemented**
+
+**Definition:** A numeric score in [0, 1] measuring roster stability:
+- **0.0** ≈ total reboot (no returning production, high turnover)
+- **1.0** ≈ full continuity (everyone returns, minimal transfers)
+
+**Formula:**
+- Uses `returningProduction.offense` and `returningProduction.defense` (0-100 percentages)
+- Normalizes to [0, 1] and accounts for transfer portal activity
+- Combines offense and defense equally (50/50)
+- Transfers in reduce continuity (new players = less continuity than returning players)
+
+**Source:** Derived from `roster_churn` data (CFBD returning production + transfer portal)
+
+**Storage:** `team_season_stats.raw_json.portal_meta.continuityScore`
+
+**Usage:**
+- **Labs page:** `/labs/portal` displays continuity scores for all teams
+- **CLI tools:** `print-continuity-histogram.ts` for distribution analysis
+- **Sync script:** `sync_portal_indices.ts` computes and stores scores
+
+**Status:** Labs-only, not yet used in Hybrid V2 production model. Candidate feature for future Hybrid V5.
 
 ### 1. Continuity Score
 
