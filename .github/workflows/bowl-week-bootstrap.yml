@@ -1,0 +1,130 @@
+name: Bowl Week Bootstrap
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season (e.g., 2025)'
+        required: true
+        default: '2025'
+        type: string
+      week:
+        description: 'Week number (e.g., 16, 17 for bowls/CFP)'
+        required: true
+        type: string
+
+concurrency:
+  group: bowl-week-bootstrap-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bootstrap-week:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DATABASE_URL: ${{ secrets.DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      TZ: America/Chicago
+      CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+      SGO_API_KEY: ${{ secrets.SGO_API_KEY }}
+      ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+      SEASON: ${{ github.event.inputs.season }}
+      WEEK: ${{ github.event.inputs.week }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run prisma:generate
+
+      - name: Build jobs
+        run: npm run build:jobs
+
+      - name: Ingest schedules via CFBD
+        if: ${{ env.CFBD_API_KEY != '' }}
+        env:
+          JOBS_ALLOW_SIMULATED_ODDS: false
+        run: |
+          echo "🗓️ Ingesting schedules from CFBD for $SEASON Week $WEEK..."
+          node apps/jobs/dist/ingest.js cfbd --season $SEASON --weeks $WEEK
+          echo "✅ CFBD schedules ingested"
+
+      - name: Fallback - Ensure mock schedules (if no CFBD key)
+        if: ${{ env.CFBD_API_KEY == '' }}
+        run: |
+          echo "📥 Using mock data (no CFBD_API_KEY) for $SEASON Week $WEEK..."
+          node apps/jobs/ingest-simple.js mock --season $SEASON --weeks $WEEK
+          echo "✅ Mock data ingest complete"
+
+      - name: Fetch odds from Odds API (primary)
+        if: ${{ env.ODDS_API_KEY != '' }}
+        run: |
+          echo "📈 Fetching odds from Odds API for $SEASON Week $WEEK..."
+          node apps/jobs/dist/ingest-minimal.js oddsapi --season $SEASON --weeks $WEEK
+          echo "✅ Odds API odds fetched"
+
+      - name: Fetch odds from SGO (backup)
+        if: ${{ env.SGO_API_KEY != '' }}
+        run: |
+          echo "📈 Fetching odds from SGO (backup) for $SEASON Week $WEEK..."
+          node apps/jobs/ingest-simple.js sgo --season $SEASON --weeks $WEEK
+          echo "✅ SGO odds fetched"
+
+      - name: Skip odds (no API keys)
+        if: ${{ env.ODDS_API_KEY == '' && env.SGO_API_KEY == '' }}
+        run: echo "⚠️  No odds API keys set; skipping odds update."
+
+      - name: Run ratings calculation
+        run: |
+          echo "📊 Starting ratings calculation for $SEASON Week $WEEK..."
+          node apps/jobs/dist/seed-ratings.js
+          echo "✅ Ratings calculation complete"
+
+      - name: Generate Hybrid V2 bets
+        run: |
+          echo "🎯 Generating Hybrid V2 bets for $SEASON Week $WEEK..."
+          npx tsx apps/web/scripts/sync-hybrid-bets.ts $SEASON $WEEK
+          echo "✅ Hybrid V2 bets generated"
+
+      - name: Generate official card bets
+        run: |
+          echo "📋 Generating official card bets for $SEASON Week $WEEK..."
+          npx tsx apps/web/scripts/sync-official-picks-to-bets.ts $SEASON $WEEK
+          echo "✅ Official card bets generated"
+
+      - name: Sanity check - Log data counts
+        run: |
+          echo "📊 Sanity check for $SEASON Week $WEEK..."
+          npx tsx scripts/check-week-data.ts --season $SEASON --week $WEEK || echo "⚠️  Sanity check script failed (non-fatal)"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "============================================"
+          echo "🏈 BOWL WEEK BOOTSTRAP SUMMARY"
+          echo "============================================"
+          echo "Time (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')"
+          echo "Time (CST/CDT): $(TZ=America/Chicago date '+%Y-%m-%d %H:%M:%S %Z')"
+          echo "Season: $SEASON"
+          echo "Week: $WEEK"
+          echo "Status: ${{ job.status }}"
+          echo ""
+          echo "Steps executed:"
+          echo "  🗓️ CFBD schedules (enabled: ${{ env.CFBD_API_KEY != '' }})"
+          echo "  📈 Odds API (primary, enabled: ${{ env.ODDS_API_KEY != '' }})"
+          echo "  📈 SGO odds (backup, enabled: ${{ env.SGO_API_KEY != '' }})"
+          echo "  📊 Ratings + implied lines"
+          echo "  🎯 Hybrid V2 bets"
+          echo "  📋 Official card bets"
+          echo "============================================"
+

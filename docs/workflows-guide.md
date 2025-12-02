@@ -98,6 +98,55 @@ This workflow runs nightly at 2 AM CST and fetches schedules for the current wee
 - **Downstream use**: Labs-only, currently used for future V5 model development
 - **Recommendation**: ✅ Keep for manual use and yearly auto-run
 
+#### 11. **Bowl Week Bootstrap** (`bowl-week-bootstrap.yml`)
+- **Status**: Manual only (`workflow_dispatch`)
+- **Purpose**: One-off bootstrap of postseason weeks (bowls, CFP) for any given (season, week)
+- **Inputs**:
+  - `season` (required, default: "2025")
+  - `week` (required, no default; supply 16, 17, etc. as needed)
+- **What it does**:
+  - Ingests schedules via CFBD for that specific week
+  - Ingests odds from OddsAPI (primary) and SGO (backup)
+  - Runs ratings calculation for that week
+  - Generates Hybrid V2 bets and official card bets
+  - Logs sanity check counts (games, market lines, bets by strategy)
+- **What it does NOT do**:
+  - Does NOT run drive syncs or multi-week backfills
+  - Does NOT touch SGO team stats ingestion (SGO is used only for odds here)
+- **Downstream use**: Once data exists, `/api/weeks` will naturally detect the new week as current if it's closest in time
+- **Recommendation**: ✅ Keep for manual use when bootstrapping bowl/CFP weeks
+
+---
+
+### 📋 **Bowl & Postseason Checklist**
+
+When bootstrapping a new postseason week (e.g., Week 16, 17 for bowls/CFP):
+
+**Step 0: Confirm new week numbers in DB**
+```sql
+SELECT DISTINCT week FROM games WHERE season = 2025 ORDER BY week;
+```
+
+**Step 1: Run "Bowl Week Bootstrap" workflow**
+- Go to GitHub Actions → "Bowl Week Bootstrap"
+- Set `season` (e.g., 2025)
+- Set `week` (e.g., 16, 17, etc.)
+- Run the workflow
+
+**Step 2: Verify counts**
+- Check the workflow logs for the sanity check output
+- Or run locally: `npx tsx scripts/check-week-data.ts --season 2025 --week 16`
+
+**Step 3: Confirm UI**
+- `/api/weeks` returns the new week as current once it's closest in time
+- Current Slate shows the new week number and date chips for those games
+- Week Review & Season Review show bets for that week
+
+**Notes:**
+- Existing "Nightly Ingest + Ratings" workflow continues to run as-is for regular season weeks
+- "Bowl Week Bootstrap" is for one-off bootstrapping of postseason weeks (bowls, CFP)
+- No SGO team stats are involved; SGO is used only for odds ingestion in this context
+
 ---
 
 ### 📋 **KEEP FOR MANUAL USE** (On-Demand Workflows)

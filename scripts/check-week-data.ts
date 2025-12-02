@@ -1,46 +1,69 @@
 /**
- * Quick script to check Week 14 vs Week 15 data
+ * Check data counts for a specific season/week
  */
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('Checking Week 14 vs Week 15 data...\n');
+  const args = process.argv.slice(2);
+  let season = 2025;
+  let week: number | undefined;
   
-  // Week 14
-  const week14Games = await prisma.game.count({
-    where: { season: 2025, week: 14 }
-  });
-  
-  const week14Bets = await prisma.bet.count({
-    where: { 
-      season: 2025, 
-      week: 14,
-      strategyTag: 'hybrid_v2'
+  // Parse args
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--season' && i + 1 < args.length) {
+      season = parseInt(args[i + 1], 10);
+      i++;
+    } else if (args[i] === '--week' && i + 1 < args.length) {
+      week = parseInt(args[i + 1], 10);
+      i++;
     }
+  }
+  
+  if (!week) {
+    console.error('Usage: npx tsx scripts/check-week-data.ts --season <season> --week <week>');
+    console.error('Example: npx tsx scripts/check-week-data.ts --season 2025 --week 15');
+    process.exit(1);
+  }
+  
+  console.log(`Checking ${season} Week ${week} data...\n`);
+  
+  // Games
+  const gamesCount = await prisma.game.count({
+    where: { season, week }
   });
   
-  // Week 15
-  const week15Games = await prisma.game.count({
-    where: { season: 2025, week: 15 }
+  // Market lines
+  const marketLinesCount = await prisma.marketLine.count({
+    where: { season, week }
   });
   
-  const week15Bets = await prisma.bet.count({
+  // Bets by strategy
+  const betsByStrategy = await prisma.bet.groupBy({
+    by: ['strategyTag'],
     where: { 
-      season: 2025, 
-      week: 15,
-      strategyTag: 'hybrid_v2'
-    }
+      season, 
+      week,
+      source: 'strategy_run'
+    },
+    _count: { _all: true }
   });
   
-  console.log('Week 14:');
-  console.log(`  Games: ${week14Games}`);
-  console.log(`  Hybrid V2 Bets: ${week14Bets}\n`);
+  console.log(`${season} Week ${week}:`);
+  console.log(`  Games: ${gamesCount}`);
+  console.log(`  Market Lines: ${marketLinesCount}`);
+  console.log(`  Bets by Strategy:`);
   
-  console.log('Week 15:');
-  console.log(`  Games: ${week15Games}`);
-  console.log(`  Hybrid V2 Bets: ${week15Bets}\n`);
+  if (betsByStrategy.length === 0) {
+    console.log(`    (none)`);
+  } else {
+    betsByStrategy.forEach(s => {
+      console.log(`    ${s.strategyTag || '(null)'}: ${s._count._all}`);
+    });
+  }
+  
+  console.log('');
   
   await prisma.$disconnect();
 }
