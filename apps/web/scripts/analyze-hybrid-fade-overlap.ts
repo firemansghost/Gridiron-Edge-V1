@@ -190,7 +190,7 @@ async function analyzeSeason(season: number): Promise<void> {
   const bothSame: { hybrid: BetRecord; fade: BetRecord }[] = [];
   const bothOpposite: { hybrid: BetRecord; fade: BetRecord }[] = [];
 
-  for (const bucket of gameMap.values()) {
+  for (const bucket of Array.from(gameMap.values())) {
     if (bucket.hybridBet && !bucket.fadeBet) {
       hOnly.push(bucket.hybridBet);
     } else if (!bucket.hybridBet && bucket.fadeBet) {
