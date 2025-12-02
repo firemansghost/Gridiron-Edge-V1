@@ -321,17 +321,18 @@ export async function GET(request: NextRequest) {
         conflictMap.get(type)!.push(bet);
       }
 
-      for (const [type, bets] of conflictMap.entries()) {
-        const typeWins = bets.filter(b => b.result === 'win').length;
-        const typeLosses = bets.filter(b => b.result === 'loss').length;
-        const typePushes = bets.filter(b => b.result === 'push').length;
-        const typeStake = bets.reduce((sum, b) => sum + Number(b.stake), 0);
-        const typePnl = bets.reduce((sum, b) => sum + Number(b.pnl || 0), 0);
+      for (const [type, bets] of Array.from(conflictMap.entries())) {
+        const betsForType = bets;
+        const typeWins = betsForType.filter((b: typeof gradedBets[0]) => b.result === 'win').length;
+        const typeLosses = betsForType.filter((b: typeof gradedBets[0]) => b.result === 'loss').length;
+        const typePushes = betsForType.filter((b: typeof gradedBets[0]) => b.result === 'push').length;
+        const typeStake = betsForType.reduce((sum: number, b: typeof gradedBets[0]) => sum + Number(b.stake), 0);
+        const typePnl = betsForType.reduce((sum: number, b: typeof gradedBets[0]) => sum + Number(b.pnl || 0), 0);
         const typeRoi = typeStake > 0 ? (typePnl / typeStake) * 100 : 0;
         const typeWinRate = (typeWins + typeLosses) > 0 ? (typeWins / (typeWins + typeLosses)) * 100 : 0;
 
         conflictBreakdown[type] = {
-          bets: bets.length,
+          bets: betsForType.length,
           wins: typeWins,
           losses: typeLosses,
           pushes: typePushes,

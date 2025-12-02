@@ -331,7 +331,7 @@ export default function PicksPage() {
                   {getGradeBadge(spreadPick.grade)}
                 </div>
               </div>
-              {spreadPick.clv !== null && (
+              {spreadPick.clv !== null && spreadPick.clv !== undefined && (
                 <div className="text-xs text-gray-500 ml-0">
                   CLV: <span className={spreadPick.clv >= 0 ? 'text-green-600' : 'text-red-600'}>{spreadPick.clv >= 0 ? '+' : ''}{spreadPick.clv.toFixed(1)}</span>
                 </div>

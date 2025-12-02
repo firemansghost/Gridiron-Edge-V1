@@ -169,7 +169,7 @@ async function syncConflictTags(
     hybrid_only: 0,
   };
 
-  for (const gameKey of gameKeys) {
+  for (const gameKey of Array.from(gameKeys)) {
     const hybridBet = hybridByGame.get(gameKey);
     if (!hybridBet) continue;
 
@@ -201,7 +201,7 @@ async function syncConflictTags(
 
   console.log(`\n   Processing ${conflictMap.size} games for conflict tagging...`);
 
-  for (const [gameKey, conflictType] of conflictMap.entries()) {
+  for (const [gameKey, conflictType] of Array.from(conflictMap.entries())) {
     // gameKey format: "season-week-gameId" where gameId may contain dashes
     // Split and rejoin: take first 2 parts (season, week), rest is gameId
     const parts = gameKey.split('-');
@@ -236,8 +236,11 @@ async function syncConflictTags(
   const hybridBetsByConflict = new Map<ConflictType, number>();
   const fadeBetsByConflict = new Map<ConflictType, number>();
 
-  for (const [gameKey, conflictType] of conflictMap.entries()) {
-    const [seasonStr, weekStr, gameId] = gameKey.split('-');
+  for (const [gameKey, conflictType] of Array.from(conflictMap.entries())) {
+    const parts = gameKey.split('-');
+    const seasonStr = parts[0];
+    const weekStr = parts[1];
+    const gameId = parts.slice(2).join('-'); // Rejoin remaining parts as gameId
     const gameSeason = parseInt(seasonStr, 10);
     const gameWeek = parseInt(weekStr, 10);
 
@@ -273,7 +276,7 @@ async function syncConflictTags(
   }
 
   console.log(`\n   Strategy breakdown by conflict type:`);
-  for (const [type, count] of hybridBetsByConflict.entries()) {
+  for (const [type, count] of Array.from(hybridBetsByConflict.entries())) {
     console.log(`     ${type}:`);
     console.log(`       Hybrid bets: ${count}`);
     console.log(`       Fade V4 bets: ${fadeBetsByConflict.get(type) || 0}`);

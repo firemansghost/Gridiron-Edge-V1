@@ -9,17 +9,18 @@
  */
 
 import { prisma } from '../lib/prisma';
+import { BetSide, BetResult } from '@prisma/client';
 
 interface BetRecord {
   id: string;
   season: number;
   week: number;
   gameId: string;
-  side: 'home' | 'away';
+  side: BetSide;
   modelPrice: number;
   closePrice: number | null;
   clv: number | null;
-  result: 'win' | 'loss' | 'push' | null;
+  result: BetResult | null;
   pnl: number | null;
   stake: number;
   game: {
@@ -109,12 +110,12 @@ function isFavorite(bet: BetRecord): boolean | null {
   // This is simplified - in reality we'd need to check which team the line is for
   // For now, use heuristic: if closePrice (model) is positive, home is favored
   const modelPrice = Number(bet.modelPrice);
-  const isHomeBet = bet.side === 'home';
+  const isHomeBet = bet.side === BetSide.home;
   
   // If model says home is favored (positive) and we bet home, we're favorite
   // If model says away is favored (negative) and we bet away, we're favorite
   if (isHomeBet && modelPrice > 0) return true;
-  if (!isHomeBet && modelPrice < 0) return true;
+  if (bet.side === BetSide.away && modelPrice < 0) return true;
   return false;
 }
 
@@ -166,9 +167,25 @@ async function analyzeStability(season: number): Promise<void> {
       const modelPrice = Number(bet.modelPrice);
       const closePrice = bet.closePrice ? Number(bet.closePrice) : null;
       const edge = closePrice !== null ? Math.abs(modelPrice - closePrice) : 0;
-      return { ...bet, edge };
+      return {
+        id: bet.id,
+        season: bet.season,
+        week: bet.week,
+        gameId: bet.gameId,
+        side: bet.side,
+        modelPrice,
+        closePrice,
+        clv: bet.clv ? Number(bet.clv) : null,
+        result: bet.result,
+        pnl: bet.pnl ? Number(bet.pnl) : null,
+        stake: Number(bet.stake),
+        game: bet.game,
+      };
     })
-    .filter(bet => bet.edge >= 4.0) as BetRecord[];
+    .filter(bet => {
+      const edge = bet.closePrice !== null ? Math.abs(bet.modelPrice - bet.closePrice) : 0;
+      return edge >= 4.0;
+    });
 
   console.log(`\nFound ${bets.length} Super Tier A bets (hybrid_strong, |edge| >= 4.0, graded)\n`);
 
@@ -177,7 +194,12 @@ async function analyzeStability(season: number): Promise<void> {
   console.log('1. By Week Bucket');
   console.log('='.repeat(80));
   
-  const weekBuckets = [
+  type WeekBucket = {
+    name: string;
+    weeks: number[] | ((bets: BetRecord[]) => BetRecord[]);
+  };
+
+  const weekBuckets: WeekBucket[] = [
     { name: 'Weeks 1-4', weeks: [1, 2, 3, 4] },
     { name: 'Weeks 5-8', weeks: [5, 6, 7, 8] },
     { name: 'Weeks 9-12', weeks: [9, 10, 11, 12] },
@@ -189,7 +211,8 @@ async function analyzeStability(season: number): Promise<void> {
     if (typeof bucket.weeks === 'function') {
       bucketBets = bucket.weeks(bets);
     } else {
-      bucketBets = bets.filter(b => bucket.weeks.includes(b.week));
+      const weekArray = bucket.weeks;
+      bucketBets = bets.filter(b => weekArray.includes(b.week));
     }
 
     if (bucketBets.length > 0) {

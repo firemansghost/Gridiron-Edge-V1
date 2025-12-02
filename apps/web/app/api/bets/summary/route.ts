@@ -116,17 +116,18 @@ export async function GET(request: NextRequest) {
         conflictMap.get(type)!.push(bet);
       }
 
-      for (const [type, bets] of conflictMap.entries()) {
-        const wins = bets.filter(b => b.result === 'win').length;
-        const losses = bets.filter(b => b.result === 'loss').length;
-        const pushes = bets.filter(b => b.result === 'push').length;
-        const stake = bets.reduce((sum, b) => sum + Number(b.stake), 0);
-        const pnl = bets.reduce((sum, b) => sum + Number(b.pnl || 0), 0);
+      for (const [type, bets] of Array.from(conflictMap.entries())) {
+        const betsForType = bets;
+        const wins = betsForType.filter((b: typeof allBets[0]) => b.result === 'win').length;
+        const losses = betsForType.filter((b: typeof allBets[0]) => b.result === 'loss').length;
+        const pushes = betsForType.filter((b: typeof allBets[0]) => b.result === 'push').length;
+        const stake = betsForType.reduce((sum: number, b: typeof allBets[0]) => sum + Number(b.stake), 0);
+        const pnl = betsForType.reduce((sum: number, b: typeof allBets[0]) => sum + Number(b.pnl || 0), 0);
         const roi = stake > 0 ? (pnl / stake) * 100 : 0;
         const winRate = (wins + losses) > 0 ? (wins / (wins + losses)) * 100 : 0;
 
         conflictBreakdown[type] = {
-          bets: bets.length,
+          bets: betsForType.length,
           wins,
           losses,
           pushes,

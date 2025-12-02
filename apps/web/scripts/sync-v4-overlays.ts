@@ -15,6 +15,7 @@
 
 import { prisma } from '../lib/prisma';
 import { Decimal } from '@prisma/client/runtime/library';
+import { BetType, BetSide } from '@prisma/client';
 
 const HYBRID_TAG = 'hybrid_v2';
 const V4_TAG = 'v4_labs';
@@ -27,8 +28,8 @@ interface BetData {
   gameId: string;
   season: number;
   week: number;
-  marketType: string;
-  side: string;
+  marketType: BetType;
+  side: BetSide;
   modelPrice: number;
   closePrice: number | null;
   edge: number | null;
@@ -39,9 +40,9 @@ interface BetData {
 /**
  * Flip ATS side (home <-> away)
  */
-function flipSide(side: string): string {
-  if (side === 'home') return 'away';
-  if (side === 'away') return 'home';
+function flipSide(side: BetSide): BetSide {
+  if (side === BetSide.home) return BetSide.away;
+  if (side === BetSide.away) return BetSide.home;
   return side; // For over/under, return as-is (though we only handle ATS here)
 }
 
@@ -50,8 +51,8 @@ function flipSide(side: string): string {
  */
 async function upsertBet(
   gameId: string,
-  marketType: string,
-  side: string,
+  marketType: BetType,
+  side: BetSide,
   modelPrice: number,
   closePrice: number | null,
   edge: number,
@@ -77,8 +78,8 @@ async function upsertBet(
 
     const betData = {
       gameId,
-      marketType,
-      side,
+      marketType: marketType as BetType,
+      side: side as BetSide,
       modelPrice: new Decimal(modelPrice),
       closePrice: closePrice !== null ? new Decimal(closePrice) : null,
       stake: new Decimal(stake),
@@ -179,8 +180,8 @@ async function syncWeek(season: number, week: number): Promise<{
       gameId: bet.gameId,
       season: bet.season,
       week: bet.week,
-      marketType: bet.marketType,
-      side: bet.side,
+      marketType: bet.marketType as BetType,
+      side: bet.side as BetSide,
       modelPrice,
       closePrice,
       edge,
@@ -199,8 +200,8 @@ async function syncWeek(season: number, week: number): Promise<{
       gameId: bet.gameId,
       season: bet.season,
       week: bet.week,
-      marketType: bet.marketType,
-      side: bet.side,
+      marketType: bet.marketType as BetType,
+      side: bet.side as BetSide,
       modelPrice,
       closePrice,
       edge,
@@ -232,7 +233,7 @@ async function syncWeek(season: number, week: number): Promise<{
   let fadeUpdated = 0;
 
   // Process Hybrid + V4 Agreement strategy
-  for (const [gameId, hybridBetsForGame] of hybridByGame.entries()) {
+  for (const [gameId, hybridBetsForGame] of Array.from(hybridByGame.entries())) {
     const v4BetsForGame = v4ByGame.get(gameId);
     if (!v4BetsForGame || v4BetsForGame.length === 0) continue;
 
@@ -275,7 +276,7 @@ async function syncWeek(season: number, week: number): Promise<{
   }
 
   // Process Fade V4 strategy (for every V4 bet, take opposite side)
-  for (const [gameId, v4BetsForGame] of v4ByGame.entries()) {
+  for (const [gameId, v4BetsForGame] of Array.from(v4ByGame.entries())) {
     for (const v4Bet of v4BetsForGame) {
       // Flip side and modelPrice
       const fadeSide = flipSide(v4Bet.side);
