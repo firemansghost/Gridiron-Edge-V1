@@ -370,9 +370,26 @@ export default function BettingPlaybookPage() {
               </ul>
             </li>
           </ol>
-          <p className="text-gray-700 text-sm">
+          <p className="text-gray-700 mb-4">
             These are <strong>guardrails, not hard filters</strong>. They inform human review of the card and Labs experiments (e.g., re-running 2025 portfolios with low-continuity dogs removed). Any hard-coded model changes belong in a future Hybrid V5 cycle.
           </p>
+          <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">8.1 2025 Portfolio Experiment: Dropping Low-Continuity Dogs</h3>
+            <p className="text-gray-700 mb-2">
+              We simulated the 2025 official card (<code className="bg-gray-100 px-1 rounded">official_flat_100</code>) with and without low-continuity dogs:
+            </p>
+            <div className="space-y-2 text-sm text-gray-700 mb-3">
+              <p><strong>Baseline (all bets):</strong> 937 bets, 59.5% win rate, +13.53% ROI, +$12,676.80 PnL</p>
+              <p><strong>Removed subset (low-continuity dogs only):</strong> 316 bets, 40.8% win rate, <strong className="text-red-600">-22.04% ROI</strong>, -$6,964.80 PnL</p>
+              <p><strong>Filtered card (dropping low-continuity dogs):</strong> 621 bets, 69.2% win rate, <strong className="text-green-600">+31.63% ROI</strong>, +$19,641.60 PnL</p>
+            </div>
+            <p className="text-gray-700 mb-2">
+              <strong>Impact:</strong> Removing 316 low-continuity dog bets would have improved PnL by <strong>+$6,964.80</strong> and ROI by <strong>+18.10 percentage points</strong> (from +13.53% to +31.63%).
+            </p>
+            <p className="text-gray-700 text-sm">
+              This is <strong>Labs-only evidence</strong> and not yet a hard rule, but it strongly supports the guardrail: low-continuity dogs were a significant drag on the 2025 official card. The experiment suggests that avoiding these bets in 2026 card construction could meaningfully improve performance.
+            </p>
+          </div>
         </section>
 
         <section>

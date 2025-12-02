@@ -326,6 +326,24 @@ Continuity Score is a 0–100 roster stability metric built from CFBD returning 
 
 These are **guardrails, not hard filters**. They inform human review of the card and Labs experiments (e.g., re-running 2025 portfolios with low-continuity dogs removed). Any hard-coded model changes belong in a future Hybrid V5 cycle.
 
+### 8.1 2025 Portfolio Experiment: Dropping Low-Continuity Dogs
+
+We simulated the 2025 official card (`official_flat_100`) with and without low-continuity dogs:
+
+**Baseline (all bets):**
+- 937 bets, 59.5% win rate, +13.53% ROI, +$12,676.80 PnL
+
+**Removed subset (low-continuity dogs only):**
+- 316 bets, 40.8% win rate, **-22.04% ROI**, -$6,964.80 PnL
+
+**Filtered card (dropping low-continuity dogs):**
+- 621 bets, 69.2% win rate, **+31.63% ROI**, +$19,641.60 PnL
+
+**Impact:**
+- Removing 316 low-continuity dog bets would have improved PnL by **+$6,964.80** and ROI by **+18.10 percentage points** (from +13.53% to +31.63%).
+
+This is **Labs-only evidence** and not yet a hard rule, but it strongly supports the guardrail: low-continuity dogs were a significant drag on the 2025 official card. The experiment suggests that avoiding these bets in 2026 card construction could meaningfully improve performance.
+
 ---
 
 ## 9. Future Model Enhancements (V5+)
