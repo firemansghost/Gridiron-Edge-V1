@@ -290,7 +290,25 @@ To keep this playbook valid during the season:
 
 ---
 
-## 8. Disclaimer
+## 8. Future Model Enhancements (V5+)
+
+We're planning to add Portal & NIL Meta Indices as Labs overlays, with potential integration into a future V5 Hybrid model:
+
+- **Continuity Score**: Measures roster stability (returning production + transfer portal activity)
+
+- **Positional Shock Index**: Flags teams with extreme turnover at key positions (QB, OL, DL)
+
+- **Mercenary Index**: Identifies teams heavily reliant on short-term transfers
+
+- **Portal Aggressor Flag**: Flags teams that aggressively use the transfer portal (net talent gain)
+
+These will initially live as **Labs overlays** to test their predictive value. If they prove stable and additive in backtests, they may be folded into the core Hybrid model in a future V5 release.
+
+See [Data Inventory](/docs/data-inventory) for current data structures, and [Bowl & Postseason Ops](/docs/bowl-postseason-ops) for the operations side.
+
+---
+
+## 9. Disclaimer
 
 All numbers above are based on historical backtests (2024–2025).  
 
@@ -301,5 +319,7 @@ Performance can and will regress. The rules here are designed to:
 - Avoid overreacting to noisy or weak buckets.
 
 - Keep the UI honest about what is "hammer-worthy" vs "just interesting."
+
+
 
 

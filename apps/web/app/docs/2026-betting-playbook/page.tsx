@@ -338,7 +338,26 @@ export default function BettingPlaybookPage() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">8. Disclaimer</h2>
+          <h2 className="text-2xl font-semibold text-gray-900 mb-4">8. Future Model Enhancements (V5+)</h2>
+          <p className="text-gray-700 mb-4">
+            We're planning to add Portal & NIL Meta Indices as Labs overlays, with potential integration into a future V5 Hybrid model:
+          </p>
+          <ul className="list-disc pl-6 space-y-2 text-gray-700 mb-4">
+            <li><strong>Continuity Score</strong>: Measures roster stability (returning production + transfer portal activity)</li>
+            <li><strong>Positional Shock Index</strong>: Flags teams with extreme turnover at key positions (QB, OL, DL)</li>
+            <li><strong>Mercenary Index</strong>: Identifies teams heavily reliant on short-term transfers</li>
+            <li><strong>Portal Aggressor Flag</strong>: Flags teams that aggressively use the transfer portal (net talent gain)</li>
+          </ul>
+          <p className="text-gray-700 mb-2">
+            These will initially live as <strong>Labs overlays</strong> to test their predictive value. If they prove stable and additive in backtests, they may be folded into the core Hybrid model in a future V5 release.
+          </p>
+          <p className="text-gray-700 text-sm">
+            See <Link href="/docs/data-inventory" className="text-blue-600 hover:text-blue-700 underline">Data Inventory</Link> for current data structures, and <Link href="/docs/bowl-postseason-ops" className="text-blue-600 hover:text-blue-700 underline">Bowl & Postseason Ops</Link> for the operations side.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="text-2xl font-semibold text-gray-900 mb-4">9. Disclaimer</h2>
           <p className="text-gray-700 mb-2">
             All numbers above are based on historical backtests (2024–2025).
           </p>

@@ -246,6 +246,27 @@ export default function DocsPage() {
                     </div>
                   </div>
                 </Link>
+
+                <Link
+                  href="/docs/data-inventory"
+                  className="block h-full bg-white rounded-lg shadow hover:shadow-md transition-all p-6 border border-gray-200"
+                >
+                  <div className="flex items-start">
+                    <div className="flex-shrink-0">
+                      <svg className="h-8 w-8 text-indigo-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M3 12v3c0 1.657 3.134 3 7 3s7-1.343 7-3v-3c0 1.657-3.134 3-7 3s-7-1.343-7-3z" />
+                        <path d="M3 7v3c0 1.657 3.134 3 7 3s7-1.343 7-3V7c0 1.657-3.134 3-7 3S3 8.657 3 7z" />
+                        <path d="M17 5c0 1.657-3.134 3-7 3S3 6.657 3 5s3.134-3 7-3 7 1.343 7 3z" />
+                      </svg>
+                    </div>
+                    <div className="ml-4">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">Data Inventory & Feature Map</h3>
+                      <p className="text-sm text-gray-600">
+                        What we store for each team and season, where it comes from, and which models use it
+                      </p>
+                    </div>
+                  </div>
+                </Link>
               </div>
             </div>
           ) : (
