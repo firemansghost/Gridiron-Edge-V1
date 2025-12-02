@@ -1,0 +1,65 @@
+name: Roster Churn CFBD Sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season (e.g., 2025)'
+        required: true
+        default: '2025'
+        type: string
+      conference:
+        description: 'Conference filter (optional, e.g., SEC, Big Ten)'
+        required: false
+        type: string
+  schedule:
+    # Run yearly on Feb 15 at 03:00 UTC (off-season roster churn data available)
+    - cron: '0 3 15 2 *'
+
+jobs:
+  roster-churn:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+      SEASON: ${{ github.event.inputs.season || '2025' }}
+      CONFERENCE: ${{ github.event.inputs.conference }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run prisma:generate
+
+      - name: Build jobs
+        run: npm run build:jobs
+
+      - name: Sync CFBD roster churn
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+        run: |
+          echo "Syncing roster churn for season $SEASON..."
+          if [ -z "$CONFERENCE" ]; then
+            npx tsx apps/jobs/src/talent/cfbd_roster_churn.ts --season "$SEASON"
+          else
+            npx tsx apps/jobs/src/talent/cfbd_roster_churn.ts --season "$SEASON" --conference "$CONFERENCE"
+          fi
+          echo "✅ Updated roster_churn for season $SEASON"
+
+
+

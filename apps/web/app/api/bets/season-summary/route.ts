@@ -9,7 +9,6 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { matchesTierFilter } from '@/lib/bet-tier-helpers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -65,6 +64,16 @@ interface SeasonSummaryResponse {
     seasonsAvailable: number[];
     strategyTagsAvailable: string[];
     pendingBets: number;
+    conflictBreakdown?: Record<string, {
+      bets: number;
+      wins: number;
+      losses: number;
+      pushes: number;
+      winRate: number;
+      stake: number;
+      pnl: number;
+      roi: number;
+    }>;
   };
 }
 
@@ -74,14 +83,12 @@ export async function GET(request: NextRequest) {
     const seasonParam = searchParams.get('season');
     const strategyTagParam = searchParams.get('strategyTag') || 'all';
     const marketTypeParam = searchParams.get('marketType') || 'ALL';
-    const confidenceTierParam = searchParams.get('confidenceTier') || 'all';
     
     // Log API hit for debugging
     console.log('[season-summary] API hit', { 
       season: seasonParam, 
       strategyTag: strategyTagParam, 
-      marketType: marketTypeParam,
-      confidenceTier: confidenceTierParam
+      marketType: marketTypeParam 
     });
     
     // Map uppercase market type to lowercase (database uses lowercase)
@@ -126,7 +133,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get all graded bets matching filters
-    const allGradedBets = await prisma.bet.findMany({
+    const gradedBets = await prisma.bet.findMany({
       where,
       select: {
         week: true,
@@ -136,22 +143,9 @@ export async function GET(request: NextRequest) {
         marketType: true,
         modelPrice: true,
         closePrice: true,
+        hybridConflictType: true,
       },
     });
-
-    // Filter by confidence tier if specified (using same logic as Week Review)
-    const gradedBets = confidenceTierParam === 'all'
-      ? allGradedBets
-      : allGradedBets.filter(bet => 
-          matchesTierFilter(
-            { 
-              modelPrice: Number(bet.modelPrice), 
-              closePrice: bet.closePrice ? Number(bet.closePrice) : null, 
-              marketType: bet.marketType 
-            },
-            confidenceTierParam as 'A' | 'B' | 'C'
-          )
-        );
 
     // Get pending bets (same filters but result IS NULL)
     const pendingWhere: any = {
@@ -304,6 +298,51 @@ export async function GET(request: NextRequest) {
       new Set(seasonStrategyRunBets.map(b => b.strategyTag))
     ).sort();
 
+    // Calculate conflict breakdown if applicable
+    const conflictBreakdown: Record<string, {
+      bets: number;
+      wins: number;
+      losses: number;
+      pushes: number;
+      winRate: number;
+      stake: number;
+      pnl: number;
+      roi: number;
+    }> = {};
+
+    const betsWithConflict = gradedBets.filter(b => b.hybridConflictType !== null);
+    if (betsWithConflict.length > 0) {
+      const conflictMap = new Map<string, typeof gradedBets>();
+      for (const bet of betsWithConflict) {
+        const type = bet.hybridConflictType!;
+        if (!conflictMap.has(type)) {
+          conflictMap.set(type, []);
+        }
+        conflictMap.get(type)!.push(bet);
+      }
+
+      for (const [type, bets] of conflictMap.entries()) {
+        const typeWins = bets.filter(b => b.result === 'win').length;
+        const typeLosses = bets.filter(b => b.result === 'loss').length;
+        const typePushes = bets.filter(b => b.result === 'push').length;
+        const typeStake = bets.reduce((sum, b) => sum + Number(b.stake), 0);
+        const typePnl = bets.reduce((sum, b) => sum + Number(b.pnl || 0), 0);
+        const typeRoi = typeStake > 0 ? (typePnl / typeStake) * 100 : 0;
+        const typeWinRate = (typeWins + typeLosses) > 0 ? (typeWins / (typeWins + typeLosses)) * 100 : 0;
+
+        conflictBreakdown[type] = {
+          bets: bets.length,
+          wins: typeWins,
+          losses: typeLosses,
+          pushes: typePushes,
+          winRate: Math.round(typeWinRate * 100) / 100,
+          stake: Math.round(typeStake * 100) / 100,
+          pnl: Math.round(typePnl * 100) / 100,
+          roi: Math.round(typeRoi * 100) / 100,
+        };
+      }
+    }
+
     const response: SeasonSummaryResponse = {
       summary: {
         totalBets,
@@ -322,6 +361,7 @@ export async function GET(request: NextRequest) {
         seasonsAvailable,
         strategyTagsAvailable,
         pendingBets,
+        ...(Object.keys(conflictBreakdown).length > 0 && { conflictBreakdown }),
       },
     };
 

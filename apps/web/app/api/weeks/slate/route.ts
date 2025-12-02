@@ -11,8 +11,6 @@ import { prisma } from '@/lib/prisma';
 import { selectClosingLine } from '@/lib/closing-line-helpers';
 import { getCoreV1SpreadFromTeams, getATSPick, computeATSEdgeHma } from '@/lib/core-v1-spread';
 import { getOUPick } from '@/lib/core-v1-total';
-import { calculateV3GameTotal } from '@/lib/v3-totals';
-import { getOfficialTotalsBet } from '@/lib/official-bets';
 import { americanToProb } from '@/lib/market-line-helpers';
 
 interface SlateGame {
@@ -51,6 +49,11 @@ interface SlateGame {
       label: string | null;
       edge: number | null;
       grade: string | null;
+      // 2026 playbook fields
+      hybridConflictType?: string | null;
+      tierBucket?: string;
+      isSuperTierA?: boolean;
+      clv?: number | null;
     };
     total?: {
       label: string | null;
@@ -282,6 +285,31 @@ export async function GET(request: NextRequest) {
 
     console.log(`   Processed ${slateGames.length} games with closing lines`);
 
+    // Fetch all Hybrid V2 bets for this week to look up conflict types and tiers
+    const hybridBets = await prisma.bet.findMany({
+      where: {
+        season,
+        week,
+        strategyTag: 'hybrid_v2',
+        marketType: 'spread',
+      },
+      select: {
+        gameId: true,
+        hybridConflictType: true,
+        modelPrice: true,
+        closePrice: true,
+        clv: true,
+      },
+    });
+
+    // Create lookup map by gameId
+    const hybridBetMap = new Map<string, typeof hybridBets[0]>();
+    for (const bet of hybridBets) {
+      hybridBetMap.set(bet.gameId, bet);
+    }
+
+    console.log(`   Found ${hybridBets.length} Hybrid V2 spread bets for conflict/tier lookup`);
+
     // Fetch model projections using Core V1
     // ALWAYS compute Core V1 - no query parameter gates
     console.log(`   Computing Core V1 projections for ${slateGames.length} games...`);
@@ -407,62 +435,19 @@ export async function GET(request: NextRequest) {
           });
         }
 
-        // Totals: Try V3 totals first, fall back to Core V1
+        // Totals: Compute using Core V1 totals model
         const marketTotal = game.closingTotal?.value ?? null;
-        let modelTotal: number | null = null;
-        let totalPick: string | null = null;
-        let totalEdgePts: number | null = null;
-        let totalGrade: string | null = null;
-
-        // Check for official V3 totals bet first (source of truth)
-        const officialTotals = await getOfficialTotalsBet(game.gameId, season, week);
+        const ouPick = getOUPick(marketTotal, marketSpreadHma, modelSpreadHma);
+        const modelTotal = ouPick.modelTotal !== null ? Math.round(ouPick.modelTotal * 10) / 10 : null;
+        const totalPick = ouPick.pickLabel;
+        const totalEdgePts = ouPick.ouEdgePts !== null ? Math.round(ouPick.ouEdgePts * 10) / 10 : null;
         
-        if (officialTotals) {
-          // Use official bet as source of truth
-          modelTotal = Math.round(officialTotals.modelPrice * 10) / 10;
-          totalEdgePts = Math.round(officialTotals.edge * 10) / 10;
-          totalGrade = officialTotals.tier;
-          totalPick = `${officialTotals.side === 'over' ? 'Over' : 'Under'} ${officialTotals.line.toFixed(1)}`;
-        } else {
-          // Fallback: Try V3 totals calculation
-          try {
-            const v3Projection = await calculateV3GameTotal(game.homeTeamId, game.awayTeamId, season);
-            if (v3Projection && v3Projection.modelTotal > 0 && marketTotal !== null) {
-              modelTotal = Math.round(v3Projection.modelTotal * 10) / 10;
-              totalEdgePts = Math.round((v3Projection.modelTotal - marketTotal) * 10) / 10;
-              
-              // Calculate Totals grade
-              if (totalEdgePts !== null && Number.isFinite(totalEdgePts) && Math.abs(totalEdgePts) >= 0.1) {
-                const absEdge = Math.abs(totalEdgePts);
-                if (absEdge >= 4.0) totalGrade = 'A';
-                else if (absEdge >= 3.0) totalGrade = 'B';
-                else if (absEdge >= 0.1) totalGrade = 'C';
-              }
-              
-              // Generate pick label
-              if (totalEdgePts !== null && Math.abs(totalEdgePts) >= 0.1) {
-                const side = totalEdgePts > 0 ? 'over' : 'under';
-                totalPick = `${side === 'over' ? 'Over' : 'Under'} ${marketTotal.toFixed(1)}`;
-              }
-            }
-          } catch (error) {
-            console.warn(`[Slate API] V3 totals calculation failed for game ${game.gameId}, falling back to Core V1:`, error);
-          }
-        }
-
-        // Fall back to Core V1 if V3 unavailable
-        if (modelTotal === null && marketTotal !== null && marketSpreadHma !== null && modelSpreadHma !== null) {
-          const ouPick = getOUPick(marketTotal, marketSpreadHma, modelSpreadHma);
-          modelTotal = ouPick.modelTotal !== null ? Math.round(ouPick.modelTotal * 10) / 10 : null;
-          totalPick = ouPick.pickLabel;
-          totalEdgePts = ouPick.ouEdgePts !== null ? Math.round(ouPick.ouEdgePts * 10) / 10 : null;
-          
-          // Calculate Totals grade
-          if (totalEdgePts !== null && Number.isFinite(totalEdgePts) && totalEdgePts >= 0.1) {
-            if (totalEdgePts >= 4.0) totalGrade = 'A';
-            else if (totalEdgePts >= 3.0) totalGrade = 'B';
-            else if (totalEdgePts >= 0.1) totalGrade = 'C';
-          }
+        // Calculate Totals grade
+        let totalGrade: string | null = null;
+        if (totalEdgePts !== null && Number.isFinite(totalEdgePts) && totalEdgePts >= 0.1) {
+          if (totalEdgePts >= 4.0) totalGrade = 'A';
+          else if (totalEdgePts >= 3.0) totalGrade = 'B';
+          else if (totalEdgePts >= 0.1) totalGrade = 'C';
         }
 
         // Moneyline: Calculate win probabilities and value
@@ -564,12 +549,66 @@ export async function GET(request: NextRequest) {
         game.maxEdge = gameMaxEdge !== null && Number.isFinite(gameMaxEdge) ? Math.round(gameMaxEdge * 10) / 10 : null;
         game.confidence = gameConfidence;
         
+        // Look up Hybrid V2 bet for conflict type and tier info
+        let hybridConflictType: string | null = null;
+        let betEdge: number | null = null;
+        let betClv: number | null = null;
+        let tierBucket: string = 'none';
+        let isSuperTierA: boolean = false;
+
+        if (spreadPick && spreadEdgePts !== null) {
+          // Look up from pre-fetched map
+          const hybridBet = hybridBetMap.get(game.gameId);
+
+          if (hybridBet) {
+            hybridConflictType = hybridBet.hybridConflictType;
+            betClv = hybridBet.clv ? Number(hybridBet.clv) : null;
+            
+            // Calculate edge from bet if available, otherwise use computed edge
+            if (hybridBet.modelPrice && hybridBet.closePrice) {
+              const modelPriceNum = Number(hybridBet.modelPrice);
+              const closePriceNum = Number(hybridBet.closePrice);
+              betEdge = Math.abs(modelPriceNum - closePriceNum);
+            } else {
+              betEdge = Math.abs(spreadEdgePts);
+            }
+
+            // Determine tier bucket
+            const absEdge = betEdge;
+            if (hybridConflictType === 'hybrid_strong') {
+              if (absEdge >= 4.0) {
+                tierBucket = 'super_tier_a';
+                isSuperTierA = true;
+              } else if (absEdge >= 3.0) {
+                tierBucket = 'tier_a';
+              } else if (absEdge >= 2.0) {
+                tierBucket = 'tier_b';
+              }
+            }
+          } else {
+            // No bet found, use computed edge for tier (but no conflict type)
+            betEdge = Math.abs(spreadEdgePts);
+            const absEdge = betEdge;
+            if (absEdge >= 4.0) {
+              tierBucket = 'tier_a'; // Can't be super tier without conflict type
+            } else if (absEdge >= 3.0) {
+              tierBucket = 'tier_a';
+            } else if (absEdge >= 2.0) {
+              tierBucket = 'tier_b';
+            }
+          }
+        }
+
         // Add picks object with individual market data
         game.picks = {
           spread: {
             label: spreadPick,
             edge: spreadEdgePts,
-            grade: spreadGrade
+            grade: spreadGrade,
+            hybridConflictType,
+            tierBucket,
+            isSuperTierA,
+            clv: betClv,
           },
           total: {
             label: totalPick,

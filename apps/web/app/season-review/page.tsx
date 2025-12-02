@@ -56,6 +56,16 @@ interface SeasonSummaryData {
     seasonsAvailable: number[];
     strategyTagsAvailable: string[];
     pendingBets: number;
+    conflictBreakdown?: Record<string, {
+      bets: number;
+      wins: number;
+      losses: number;
+      pushes: number;
+      winRate: number;
+      stake: number;
+      pnl: number;
+      roi: number;
+    }>;
   };
 }
 
@@ -64,7 +74,6 @@ export default function SeasonReviewPage() {
   const [season, setSeason] = useState<number>(2025);
   const [strategyTag, setStrategyTag] = useState<string>('official_flat_100');
   const [selectedMarket, setSelectedMarket] = useState<string>('ALL');
-  const [selectedTier, setSelectedTier] = useState<'all' | 'A' | 'B' | 'C'>('all');
   const [data, setData] = useState<SeasonSummaryData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,7 +92,6 @@ export default function SeasonReviewPage() {
         season: season.toString(),
         strategyTag: strategyTag === 'all' ? 'all' : strategyTag,
         marketType: selectedMarket,
-        confidenceTier: selectedTier,
       });
 
       const response = await fetch(`/api/bets/season-summary?${params}`);
@@ -105,7 +113,7 @@ export default function SeasonReviewPage() {
 
   useEffect(() => {
     fetchData();
-  }, [season, strategyTag, selectedMarket, selectedTier]);
+  }, [season, strategyTag, selectedMarket]);
 
   // Initialize season and strategy from available data on first load
   useEffect(() => {
@@ -226,20 +234,6 @@ export default function SeasonReviewPage() {
                   <option value="ATS">Spread (ATS)</option>
                   <option value="TOTAL">Total (O/U)</option>
                   <option value="MONEYLINE">Moneyline</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-1">Confidence</label>
-                <select
-                  value={selectedTier}
-                  onChange={(e) => setSelectedTier(e.target.value as 'all' | 'A' | 'B' | 'C')}
-                  className="border rounded px-3 py-2"
-                >
-                  <option value="all">All Tiers</option>
-                  <option value="A">Tier A (Edge ≥ 4.0)</option>
-                  <option value="B">Tier B (Edge 3.0 - 3.9)</option>
-                  <option value="C">Tier C (Edge &lt; 3.0)</option>
                 </select>
               </div>
             </div>
@@ -431,6 +425,87 @@ export default function SeasonReviewPage() {
                   <p className="text-gray-500 text-center py-8">
                     No weekly breakdown available.
                   </p>
+                </div>
+              )}
+
+              {/* Conflict Breakdown Panel (Labs) */}
+              {data.meta?.conflictBreakdown && 
+               Object.keys(data.meta.conflictBreakdown).length > 0 &&
+               (strategyTag === 'hybrid_v2' || strategyTag === 'fade_v4_labs' || strategyTag === 'all') && (
+                <div className="bg-white p-6 rounded-lg shadow mb-8 border-l-4 border-blue-500">
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">
+                    Performance by Hybrid Conflict Type (Labs)
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Conflict types are Labs-only diagnostics comparing Hybrid V2 vs V4 (Labs). They do not change which bets are shown, only how we slice performance.
+                  </p>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Conflict Type
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Bets
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Win%
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            ROI
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            PnL
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {Object.entries(data.meta.conflictBreakdown)
+                          .sort(([a], [b]) => {
+                            // Sort: hybrid_strong, hybrid_weak, hybrid_only
+                            const order: Record<string, number> = {
+                              hybrid_strong: 0,
+                              hybrid_weak: 1,
+                              hybrid_only: 2,
+                            };
+                            return (order[a] ?? 999) - (order[b] ?? 999);
+                          })
+                          .map(([type, stats]) => {
+                            const rowBg = type === 'hybrid_strong' && stats.roi > 0
+                              ? 'bg-green-50'
+                              : type === 'hybrid_weak' && stats.roi < 0
+                              ? 'bg-red-50'
+                              : '';
+                            return (
+                              <tr key={type} className={rowBg}>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                                  {type === 'hybrid_strong' ? 'Hybrid Strong (disagree)' :
+                                   type === 'hybrid_weak' ? 'Hybrid Weak (agree)' :
+                                   'Hybrid Only'}
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+                                  {stats.bets}
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+                                  {stats.winRate.toFixed(1)}%
+                                </td>
+                                <td className={`px-4 py-3 whitespace-nowrap text-sm font-medium ${
+                                  stats.roi >= 0 ? 'text-green-600' : 'text-red-600'
+                                }`}>
+                                  {stats.roi >= 0 ? '+' : ''}{stats.roi.toFixed(2)}%
+                                </td>
+                                <td className={`px-4 py-3 whitespace-nowrap text-sm font-medium ${
+                                  stats.pnl >= 0 ? 'text-green-600' : 'text-red-600'
+                                }`}>
+                                  {stats.pnl >= 0 ? '+' : ''}{formatCurrency(stats.pnl)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
 

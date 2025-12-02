@@ -631,6 +631,24 @@ export default function MethodologyPage() {
                   All results are backtests, not guarantees. Fade V4 is Labs-only and is not part of the 
                   main "My Picks" flow. Hybrid V2 remains the only official spread model.
                 </p>
+                
+                <h4 className="font-medium text-yellow-800 mb-2 mt-4">Hybrid Conflict Types (Labs Analytics)</h4>
+                <p className="text-gray-700 mb-2">
+                  We compute conflict types for games with Hybrid V2 spread bets to understand where performance 
+                  comes from relative to V4 (Labs):
+                </p>
+                <ul className="list-disc pl-6 space-y-1 text-gray-700 mb-2">
+                  <li><strong>Hybrid Strong (disagree):</strong> Hybrid and V4 disagree on side (H.side !== V4.side). 
+                  These games historically show stronger performance for Hybrid/Fade V4.</li>
+                  <li><strong>Hybrid Weak (agree):</strong> Hybrid and V4 agree on side (H.side === V4.side). 
+                  These games historically show weaker/near-coinflip performance for Hybrid.</li>
+                  <li><strong>Hybrid Only:</strong> Hybrid bet exists but no V4 bet for that game.</li>
+                </ul>
+                <p className="text-gray-600 text-sm italic">
+                  Note: Conflict types are Labs-only diagnostics used for performance analysis in Week Review and 
+                  Season Review. They do not change which bets are shown or how bets are selected—they are purely 
+                  analytical tools for understanding where profit comes from.
+                </p>
               </div>
             </div>
           </div>

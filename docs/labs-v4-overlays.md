@@ -113,6 +113,35 @@ Fade V4 (Labs) is an overlay strategy that:
 - [Methodology](/docs/methodology) - Full modeling approach and data sources
 - [Backtesting Guide](/docs/backtest) - How to run backtests and analyze results
 
+## Hybrid Conflict Types (Labs Analytics)
+
+We compute conflict types for games with Hybrid V2 spread bets to understand where performance comes from relative to V4 (Labs). These conflict types are used to slice performance in Week Review and Season Review.
+
+### Conflict Type Definitions
+
+For a given game with at least one Hybrid V2 spread bet:
+
+1. **Hybrid Strong (disagree):** Hybrid and V4 disagree on side (H.side !== V4.side)
+   - These games historically show stronger performance for Hybrid/Fade V4
+   - Intuition: When models conflict, Hybrid tends to be correct
+
+2. **Hybrid Weak (agree):** Hybrid and V4 agree on side (H.side === V4.side)
+   - These games historically show weaker/near-coinflip performance for Hybrid
+   - Intuition: When models agree, the edge may be smaller or less reliable
+
+3. **Hybrid Only:** Hybrid bet exists but no V4 bet for that game
+   - Games where V4 did not generate a bet (e.g., insufficient edge)
+
+### Usage in Week Review & Season Review
+
+The conflict breakdown panel appears in Week Review and Season Review when:
+- The selected strategy is `hybrid_v2`, `fade_v4_labs`, or "All Strategies"
+- At least one bet has a conflict type assigned
+
+The panel shows performance metrics (bets, win rate, ROI, PnL) broken down by conflict type, helping identify where profit is coming from.
+
+**Note:** Conflict types are Labs-only diagnostics. They do not change which bets are shown or how bets are selected—they are purely analytical tools for understanding performance patterns.
+
 ## Future Work
 
 V4 is under active development. Potential improvements include:

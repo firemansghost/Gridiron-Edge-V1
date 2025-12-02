@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import { getStrategyLabel } from '@/lib/strategy-utils';
-import { calculateEdge, matchesTierFilter } from '@/lib/bet-tier-helpers';
 
 interface BetSummary {
   totalBets: number;
@@ -53,6 +52,16 @@ interface WeekReviewData {
   meta?: {
     totalStrategyRunBets: number;
     demoTagsPresent: string[];
+    conflictBreakdown?: Record<string, {
+      bets: number;
+      wins: number;
+      losses: number;
+      pushes: number;
+      winRate: number;
+      stake: number;
+      pnl: number;
+      roi: number;
+    }>;
   };
 }
 
@@ -61,84 +70,36 @@ export default function WeekReviewPage() {
   const [season, setSeason] = useState(2025);
   const [week, setWeek] = useState(9);
   const [strategy, setStrategy] = useState('official_flat_100');
-  const [selectedTier, setSelectedTier] = useState<'All' | 'A' | 'B' | 'C'>('All');
   const [data, setData] = useState<WeekReviewData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
   const [grading, setGrading] = useState(false);
-  const [strategies, setStrategies] = useState<Array<{ id: string; name: string; active: boolean; source: 'ruleset' | 'bet' }>>([]);
+  const [strategies, setStrategies] = useState<Array<{ id: string; name: string; active: boolean }>>([]);
   const [strategiesLoading, setStrategiesLoading] = useState(true);
 
-  // Fetch available strategies from both rulesets and actual bets
+  // Fetch available strategies from rulesets (same source as Strategies page)
   useEffect(() => {
     const fetchStrategies = async () => {
       setStrategiesLoading(true);
       try {
-        // Fetch rulesets
-        const rulesetsResponse = await fetch('/api/strategies/rulesets');
-        const rulesetsData = rulesetsResponse.ok ? await rulesetsResponse.json() : null;
-        
-        // Fetch strategy tags from bets for this season/week
-        const betsParams = new URLSearchParams({
-          season: season.toString(),
-          week: week.toString(),
-          strategy: 'all', // Get all strategies to see breakdown
-        });
-        const betsResponse = await fetch(`/api/bets/summary?${betsParams}`);
-        const betsData = betsResponse.ok ? await betsResponse.json() : null;
-
-        const strategyMap = new Map<string, { id: string; name: string; active: boolean; source: 'ruleset' | 'bet' }>();
-
-        // Add rulesets
-        if (rulesetsData?.success && rulesetsData.rulesets) {
-          rulesetsData.rulesets
-            .filter((r: { active: boolean }) => r.active)
-            .forEach((r: { id: string; name: string }) => {
-              strategyMap.set(r.id, {
+        const response = await fetch('/api/strategies/rulesets');
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success && result.rulesets) {
+            // Filter to only active strategies and map to the format we need
+            const activeStrategies = result.rulesets
+              .filter((r: { active: boolean }) => r.active)
+              .map((r: { id: string; name: string }) => ({
                 id: r.id,
                 name: r.name,
                 active: true,
-                source: 'ruleset',
-              });
-            });
-        }
-
-        // Add strategy tags from bets (these may not have rulesets)
-        if (betsData?.success && betsData.strategyBreakdown) {
-          betsData.strategyBreakdown.forEach((s: { strategy: string }) => {
-            if (s.strategy && !strategyMap.has(s.strategy)) {
-              // Use strategyTag as both id and name, with label formatting
-              strategyMap.set(s.strategy, {
-                id: s.strategy,
-                name: getStrategyLabel(s.strategy),
-                active: true,
-                source: 'bet',
-              });
-            }
-          });
-        }
-
-        // Always include official_flat_100 if it exists in bets
-        if (betsData?.success && betsData.strategyBreakdown?.some((s: { strategy: string }) => s.strategy === 'official_flat_100')) {
-          if (!strategyMap.has('official_flat_100')) {
-            strategyMap.set('official_flat_100', {
-              id: 'official_flat_100',
-              name: getStrategyLabel('official_flat_100'),
-              active: true,
-              source: 'bet',
-            });
+              }));
+            setStrategies(activeStrategies);
           }
+        } else {
+          console.error('Failed to fetch strategies:', response.statusText);
         }
-
-        // Sort strategies: rulesets first, then bet tags, both alphabetically
-        const sortedStrategies = Array.from(strategyMap.values()).sort((a, b) => {
-          if (a.source !== b.source) {
-            return a.source === 'ruleset' ? -1 : 1;
-          }
-          return a.name.localeCompare(b.name);
-        });
-        setStrategies(sortedStrategies);
       } catch (err) {
         console.error('Failed to fetch strategies:', err);
       } finally {
@@ -146,7 +107,7 @@ export default function WeekReviewPage() {
       }
     };
     fetchStrategies();
-  }, [season, week]);
+  }, []);
 
   const fetchData = async () => {
     setLoading(true);
@@ -159,7 +120,8 @@ export default function WeekReviewPage() {
         limit: '50'
       });
       // Only add strategy if it's not empty (not "All Strategies")
-      // The strategy value is now the strategyTag (id) from either rulesets or bets
+      // Note: The API expects strategyTag, but we're using strategy ID from rulesets
+      // We may need to map strategy ID to strategyTag, or update the API to accept both
       if (strategy && strategy.trim() !== '' && strategy !== 'all') {
         params.append('strategy', strategy);
       }
@@ -291,7 +253,12 @@ export default function WeekReviewPage() {
     return edge > 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
   };
 
-  // Use shared calculateEdge from bet-tier-helpers
+  const calculateEdge = (bet: any) => {
+    if (!bet.closePrice || bet.marketType === 'moneyline') return null;
+    const modelLine = Number(bet.modelPrice);
+    const closeLine = Number(bet.closePrice);
+    return modelLine - closeLine;
+  };
 
   const getResultColor = (result: string | null) => {
     switch (result) {
@@ -310,59 +277,6 @@ export default function WeekReviewPage() {
       default: return '⏳';
     }
   };
-
-  // Filter bets by confidence tier based on edge (using shared utility)
-  const filteredBets = data?.bets.filter(bet => {
-    if (selectedTier === 'All') return true;
-    
-    // Use shared matchesTierFilter function
-    return matchesTierFilter(
-      { modelPrice: bet.modelPrice, closePrice: bet.closePrice, marketType: bet.marketType },
-      selectedTier as 'A' | 'B' | 'C'
-    );
-  }) || [];
-
-  // Calculate summary from filtered bets
-  const calculateSummary = (bets: Bet[]) => {
-    const totalBets = bets.length;
-    const gradedBets = bets.filter(bet => bet.result !== null);
-    const wins = gradedBets.filter(bet => bet.result === 'win').length;
-    const losses = gradedBets.filter(bet => bet.result === 'loss').length;
-    const pushes = gradedBets.filter(bet => bet.result === 'push').length;
-    const hitRate = gradedBets.length > 0 ? wins / gradedBets.length : 0;
-    
-    const totalPnL = bets.reduce((sum, bet) => sum + Number(bet.pnl || 0), 0);
-    const totalStake = bets.reduce((sum, bet) => sum + Number(bet.stake), 0);
-    const roi = totalStake > 0 ? (totalPnL / totalStake) * 100 : 0;
-    
-    // Calculate average edge (only for bets with edge values)
-    const betsWithEdge = bets.filter(bet => calculateEdge(bet) !== null);
-    const avgEdge = betsWithEdge.length > 0
-      ? betsWithEdge.reduce((sum, bet) => sum + Math.abs(calculateEdge(bet)!), 0) / betsWithEdge.length
-      : 0;
-    
-    // Calculate average CLV
-    const betsWithCLV = bets.filter(bet => bet.clv !== null);
-    const avgCLV = betsWithCLV.length > 0
-      ? betsWithCLV.reduce((sum, bet) => sum + Number(bet.clv), 0) / betsWithCLV.length
-      : 0;
-    
-    return {
-      totalBets,
-      gradedBets: gradedBets.length,
-      wins,
-      losses,
-      pushes,
-      hitRate,
-      totalPnL,
-      roi,
-      avgEdge,
-      avgCLV,
-    };
-  };
-
-  // Calculate dynamic summary from filtered bets
-  const dynamicSummary = data ? calculateSummary(filteredBets) : null;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -421,11 +335,12 @@ export default function WeekReviewPage() {
               disabled={strategiesLoading}
             >
               <option value="">{getStrategyLabel('all')}</option>
+              <option value="official_flat_100">{getStrategyLabel('official_flat_100')}</option>
               {strategies.length === 0 && !strategiesLoading ? (
                 <option disabled>No strategies configured</option>
               ) : (
                 strategies.map((s) => (
-                  <option key={s.id} value={s.id}>
+                  <option key={s.id} value={s.name}>
                     {s.name}
                   </option>
                 ))
@@ -434,20 +349,6 @@ export default function WeekReviewPage() {
             {strategiesLoading && (
               <div className="text-xs text-gray-500 mt-1">Loading strategies...</div>
             )}
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium mb-1">Confidence</label>
-            <select 
-              value={selectedTier} 
-              onChange={(e) => setSelectedTier(e.target.value as 'All' | 'A' | 'B' | 'C')}
-              className="border rounded px-3 py-2"
-            >
-              <option value="All">All Tiers</option>
-              <option value="A">Tier A (Edge ≥ 4.0)</option>
-              <option value="B">Tier B (Edge 3.0 - 3.9)</option>
-              <option value="C">Tier C (Edge &lt; 3.0)</option>
-            </select>
           </div>
           
           <div className="flex items-end gap-2">
@@ -528,8 +429,9 @@ export default function WeekReviewPage() {
               <div className="bg-white p-6 rounded-lg shadow">
                 <h3 className="text-lg font-semibold text-gray-700 mb-3">ATS – Strategy-run picks</h3>
                 {(() => {
-                  // Filter to ATS/spread market type from filtered bets
-                  const atsBets = filteredBets.filter(bet => bet.marketType === 'spread');
+                  // Filter to ATS/spread market type
+                  // Note: The API already filters to strategy-run bets, so we just need to filter by market type here.
+                  const atsBets = data.bets.filter(bet => bet.marketType === 'spread');
                   const gradedAts = atsBets.filter(bet => bet.result !== null);
                   const wins = gradedAts.filter(bet => bet.result === 'win').length;
                   const losses = gradedAts.filter(bet => bet.result === 'loss').length;
@@ -539,7 +441,7 @@ export default function WeekReviewPage() {
                   if (atsBets.length === 0) {
                     return (
                       <div className="text-sm text-gray-500">
-                        No ATS picks {selectedTier !== 'All' ? `in ${selectedTier} tier` : 'this week'}.
+                        No ATS picks this week.
                       </div>
                     );
                   }
@@ -558,7 +460,7 @@ export default function WeekReviewPage() {
                         </div>
                       )}
                       <div className="text-xs text-gray-500 mt-2">
-                        {selectedTier !== 'All' ? `Filtered by ${selectedTier} tier. ` : ''}Counts all strategy-run ATS picks for this week.
+                        Counts all strategy-run ATS picks for this week.
                       </div>
                     </>
                   );
@@ -569,8 +471,9 @@ export default function WeekReviewPage() {
               <div className="bg-white p-6 rounded-lg shadow">
                 <h3 className="text-lg font-semibold text-gray-700 mb-3">Moneyline – Strategy-run picks</h3>
                 {(() => {
-                  // Filter to moneyline market type from filtered bets
-                  const mlBets = filteredBets.filter(bet => bet.marketType === 'moneyline');
+                  // Filter to moneyline market type
+                  // Note: The API already filters to strategy-run bets, so we just need to filter by market type here.
+                  const mlBets = data.bets.filter(bet => bet.marketType === 'moneyline');
                   const gradedMl = mlBets.filter(bet => bet.result !== null);
                   const wins = gradedMl.filter(bet => bet.result === 'win').length;
                   const losses = gradedMl.filter(bet => bet.result === 'loss').length;
@@ -580,7 +483,7 @@ export default function WeekReviewPage() {
                   if (mlBets.length === 0) {
                     return (
                       <div className="text-sm text-gray-500">
-                        No moneyline picks {selectedTier !== 'All' ? `in ${selectedTier} tier` : 'this week'}.
+                        No moneyline picks this week.
                       </div>
                     );
                   }
@@ -599,7 +502,7 @@ export default function WeekReviewPage() {
                         </div>
                       )}
                       <div className="text-xs text-gray-500 mt-2">
-                        {selectedTier !== 'All' ? `Filtered by ${selectedTier} tier. ` : ''}Counts all strategy-run moneyline picks for this week.
+                        Counts all strategy-run moneyline picks for this week.
                       </div>
                     </>
                   );
@@ -608,79 +511,136 @@ export default function WeekReviewPage() {
             </div>
           </div>
 
-          {/* Summary Cards - Dynamic based on filtered bets */}
-          {dynamicSummary && (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                <div className="bg-white p-6 rounded-lg shadow">
-                  <h3 className="text-lg font-semibold text-gray-700 mb-2">Total Bets</h3>
-                  <p className="text-3xl font-bold text-blue-600">{dynamicSummary.totalBets}</p>
-                  {selectedTier !== 'All' && (
-                    <p className="text-xs text-gray-500 mt-1">Filtered by {selectedTier}</p>
-                  )}
-                </div>
-                
-                <div className="bg-white p-6 rounded-lg shadow">
-                  <h3 className="text-lg font-semibold text-gray-700 mb-2">Hit Rate</h3>
-                  <p className="text-3xl font-bold text-green-600">
-                    {formatPercent(dynamicSummary.hitRate)}
-                  </p>
-                  {selectedTier !== 'All' && (
-                    <p className="text-xs text-gray-500 mt-1">Filtered by {selectedTier}</p>
-                  )}
-                </div>
-                
-                <div className="bg-white p-6 rounded-lg shadow">
-                  <h3 className="text-lg font-semibold text-gray-700 mb-2">ROI</h3>
-                  <p className={`text-3xl font-bold ${dynamicSummary.roi >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatPercent(dynamicSummary.roi / 100)}
-                  </p>
-                  {selectedTier !== 'All' && (
-                    <p className="text-xs text-gray-500 mt-1">Filtered by {selectedTier}</p>
-                  )}
-                </div>
-                
-                <div className="bg-white p-6 rounded-lg shadow">
-                  <h3 className="text-lg font-semibold text-gray-700 mb-2">Total PnL</h3>
-                  <p className={`text-3xl font-bold ${dynamicSummary.totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatCurrency(dynamicSummary.totalPnL)}
-                  </p>
-                  {selectedTier !== 'All' && (
-                    <p className="text-xs text-gray-500 mt-1">Filtered by {selectedTier}</p>
-                  )}
-                </div>
-              </div>
+          {/* Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div className="bg-white p-6 rounded-lg shadow">
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">Total Bets</h3>
+              <p className="text-3xl font-bold text-blue-600">{data.summary.totalBets}</p>
+            </div>
+            
+            <div className="bg-white p-6 rounded-lg shadow">
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">Hit Rate</h3>
+              <p className="text-3xl font-bold text-green-600">
+                {formatPercent(data.summary.hitRate)}
+              </p>
+            </div>
+            
+            <div className="bg-white p-6 rounded-lg shadow">
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">ROI</h3>
+              <p className={`text-3xl font-bold ${data.summary.roi >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {formatPercent(data.summary.roi / 100)}
+              </p>
+            </div>
+            
+            <div className="bg-white p-6 rounded-lg shadow">
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">Total PnL</h3>
+              <p className={`text-3xl font-bold ${data.summary.totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {formatCurrency(data.summary.totalPnL)}
+              </p>
+            </div>
+          </div>
 
-              {/* Additional Metrics */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-                <div className="bg-white p-6 rounded-lg shadow">
-                  <h3 className="text-lg font-semibold text-gray-700 mb-2">Avg Edge</h3>
-                  <p className="text-2xl font-bold text-blue-600">
-                    {dynamicSummary.avgEdge.toFixed(2)}
-                  </p>
-                  {selectedTier !== 'All' && (
-                    <p className="text-xs text-gray-500 mt-1">Filtered by {selectedTier}</p>
-                  )}
-                </div>
-                
-                <div className="bg-white p-6 rounded-lg shadow">
-                  <h3 className="text-lg font-semibold text-gray-700 mb-2">Avg CLV</h3>
-                  <p className="text-2xl font-bold text-purple-600">
-                    {dynamicSummary.avgCLV.toFixed(3)}
-                  </p>
-                  {selectedTier !== 'All' && (
-                    <p className="text-xs text-gray-500 mt-1">Filtered by {selectedTier}</p>
-                  )}
-                </div>
+          {/* Additional Metrics */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+            <div className="bg-white p-6 rounded-lg shadow">
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">Avg Edge</h3>
+              <p className="text-2xl font-bold text-blue-600">
+                {data.summary.avgEdge.toFixed(2)}
+              </p>
+            </div>
+            
+            <div className="bg-white p-6 rounded-lg shadow">
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">Avg CLV</h3>
+              <p className="text-2xl font-bold text-purple-600">
+                {data.summary.avgCLV.toFixed(3)}
+              </p>
+            </div>
+          </div>
+
+          {/* Conflict Breakdown Panel (Labs) */}
+          {data.meta?.conflictBreakdown && 
+           Object.keys(data.meta.conflictBreakdown).length > 0 &&
+           (strategy === 'hybrid_v2' || strategy === 'fade_v4_labs' || strategy === '') && (
+            <div className="bg-white p-6 rounded-lg shadow mb-8 border-l-4 border-blue-500">
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">
+                Performance by Hybrid Conflict Type (Labs)
+              </h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Conflict types are Labs-only diagnostics comparing Hybrid V2 vs V4 (Labs). They do not change which bets are shown, only how we slice performance.
+              </p>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Conflict Type
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Bets
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Win%
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        ROI
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        PnL
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {Object.entries(data.meta.conflictBreakdown)
+                      .sort(([a], [b]) => {
+                        // Sort: hybrid_strong, hybrid_weak, hybrid_only
+                        const order: Record<string, number> = {
+                          hybrid_strong: 0,
+                          hybrid_weak: 1,
+                          hybrid_only: 2,
+                        };
+                        return (order[a] ?? 999) - (order[b] ?? 999);
+                      })
+                      .map(([type, stats]) => {
+                        const rowBg = type === 'hybrid_strong' && stats.roi > 0
+                          ? 'bg-green-50'
+                          : type === 'hybrid_weak' && stats.roi < 0
+                          ? 'bg-red-50'
+                          : '';
+                        return (
+                          <tr key={type} className={rowBg}>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                              {type === 'hybrid_strong' ? 'Hybrid Strong (disagree)' :
+                               type === 'hybrid_weak' ? 'Hybrid Weak (agree)' :
+                               'Hybrid Only'}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+                              {stats.bets}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+                              {stats.winRate.toFixed(1)}%
+                            </td>
+                            <td className={`px-4 py-3 whitespace-nowrap text-sm font-medium ${
+                              stats.roi >= 0 ? 'text-green-600' : 'text-red-600'
+                            }`}>
+                              {stats.roi >= 0 ? '+' : ''}{stats.roi.toFixed(2)}%
+                            </td>
+                            <td className={`px-4 py-3 whitespace-nowrap text-sm font-medium ${
+                              stats.pnl >= 0 ? 'text-green-600' : 'text-red-600'
+                            }`}>
+                              {stats.pnl >= 0 ? '+' : ''}{formatCurrency(stats.pnl)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
               </div>
-            </>
+            </div>
           )}
 
           {/* Actions */}
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold">
-              Bets ({filteredBets.length}{selectedTier !== 'All' ? ` of ${data.pagination.totalItems} (${selectedTier} tier)` : ` of ${data.pagination.totalItems}`})
-            </h2>
+            <h2 className="text-2xl font-bold">Bets ({data.pagination.totalItems})</h2>
             <button
               onClick={exportCSV}
               className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
@@ -691,18 +651,14 @@ export default function WeekReviewPage() {
 
           {/* Bets Table */}
           <div className="bg-white rounded-lg shadow overflow-hidden">
-            {filteredBets.length === 0 ? (
+            {data.bets.length === 0 ? (
               <div className="px-6 py-12 text-center">
                 <div className="text-gray-400 text-5xl mb-4">📊</div>
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  {data.summary.gradedBets === 0 ? 'No graded bets yet' : selectedTier !== 'All' ? `No bets found in ${selectedTier} tier` : 'No bets found'}
+                  {data.summary.gradedBets === 0 ? 'No graded bets yet' : 'No bets found'}
                 </h3>
                 <p className="text-gray-600 mb-4">
                   {(() => {
-                    // Case: Filtered by tier but no matches
-                    if (selectedTier !== 'All' && data.bets.length > 0) {
-                      return `No bets match the ${selectedTier} tier filter (${selectedTier === 'A' ? 'Edge ≥ 4.0' : selectedTier === 'B' ? 'Edge 3.0 - 3.9' : 'Edge < 3.0'}) for ${season} Week ${week}${strategy ? ` with strategy "${strategy}"` : ''}. Try selecting a different tier or "All Tiers".`;
-                    }
                     // Case A: No strategy-run bets at all
                     if (data.meta && data.meta.totalStrategyRunBets === 0) {
                       return `No strategy-run bets found for ${season} Week ${week}${strategy ? ` with strategy "${strategy}"` : ''}. Your strategies haven't generated any picks yet.`;
@@ -777,7 +733,7 @@ export default function WeekReviewPage() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredBets.map((bet) => (
+                    {data.bets.map((bet) => (
                       <tr 
                         key={bet.id}
                         className="hover:bg-gray-50 cursor-pointer"

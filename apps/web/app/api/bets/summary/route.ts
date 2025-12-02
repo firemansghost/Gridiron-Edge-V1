@@ -61,6 +61,7 @@ export async function GET(request: NextRequest) {
         closePrice: true,
         marketType: true,
         stake: true,
+        hybridConflictType: true,
       },
     });
 
@@ -92,9 +93,55 @@ export async function GET(request: NextRequest) {
     const demoTagsPresent = Array.from(tagsByCount.keys())
       .filter(tag => isExcludedStrategyTag(tag));
 
+    // Calculate conflict breakdown if applicable
+    const conflictBreakdown: Record<string, {
+      bets: number;
+      wins: number;
+      losses: number;
+      pushes: number;
+      winRate: number;
+      stake: number;
+      pnl: number;
+      roi: number;
+    }> = {};
+
+    const betsWithConflict = allBets.filter(b => b.hybridConflictType !== null);
+    if (betsWithConflict.length > 0) {
+      const conflictMap = new Map<string, typeof allBets>();
+      for (const bet of betsWithConflict) {
+        const type = bet.hybridConflictType!;
+        if (!conflictMap.has(type)) {
+          conflictMap.set(type, []);
+        }
+        conflictMap.get(type)!.push(bet);
+      }
+
+      for (const [type, bets] of conflictMap.entries()) {
+        const wins = bets.filter(b => b.result === 'win').length;
+        const losses = bets.filter(b => b.result === 'loss').length;
+        const pushes = bets.filter(b => b.result === 'push').length;
+        const stake = bets.reduce((sum, b) => sum + Number(b.stake), 0);
+        const pnl = bets.reduce((sum, b) => sum + Number(b.pnl || 0), 0);
+        const roi = stake > 0 ? (pnl / stake) * 100 : 0;
+        const winRate = (wins + losses) > 0 ? (wins / (wins + losses)) * 100 : 0;
+
+        conflictBreakdown[type] = {
+          bets: bets.length,
+          wins,
+          losses,
+          pushes,
+          winRate: Math.round(winRate * 100) / 100,
+          stake: Math.round(stake * 100) / 100,
+          pnl: Math.round(pnl * 100) / 100,
+          roi: Math.round(roi * 100) / 100,
+        };
+      }
+    }
+
     const meta = {
       totalStrategyRunBets: allStrategyRunBets.length,
       demoTagsPresent: demoTagsPresent,
+      ...(Object.keys(conflictBreakdown).length > 0 && { conflictBreakdown }),
     };
 
     // Calculate metrics

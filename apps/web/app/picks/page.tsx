@@ -2,12 +2,12 @@
  * Best Bets / My Picks Page
  * 
  * Displays all active bets grouped by game, with Spread, Total, and Moneyline picks.
- * Redesigned to prioritize Tier A picks in "Best Bets" section, with Tier B/C in "Leans" section.
+ * Games are grouped by their highest confidence grade.
  */
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
@@ -19,6 +19,11 @@ interface GamePick {
   label: string | null;
   edge: number | null;
   grade: string | null;
+  // 2026 playbook fields
+  hybridConflictType?: string | null;
+  tierBucket?: string;
+  isSuperTierA?: boolean;
+  clv?: number | null;
 }
 
 interface MoneylinePick {
@@ -62,6 +67,9 @@ export default function PicksPage() {
   const [error, setError] = useState<string | null>(null);
   const [season, setSeason] = useState<number | null>(null);
   const [week, setWeek] = useState<number | null>(null);
+  // 2026 playbook filters
+  const [showOnlySuperTierA, setShowOnlySuperTierA] = useState(false);
+  const [showOnlyHybridStrong, setShowOnlyHybridStrong] = useState(false);
 
   useEffect(() => {
     fetchCurrentWeekAndSlate();
@@ -111,52 +119,27 @@ export default function PicksPage() {
     }
   };
 
-  // Helper: Check if a game has any Tier A pick
-  const hasTierAPick = (game: SlateGame): boolean => {
-    return (
-      game.picks?.spread?.grade === 'A' ||
-      game.picks?.total?.grade === 'A' ||
-      game.picks?.moneyline?.grade === 'A'
-    );
+  // Apply 2026 playbook filters
+  const filteredGames = games.filter(game => {
+    const spreadPick = game.picks?.spread;
+    
+    if (showOnlySuperTierA) {
+      return spreadPick?.isSuperTierA === true;
+    }
+    
+    if (showOnlyHybridStrong) {
+      return spreadPick?.hybridConflictType === 'hybrid_strong';
+    }
+    
+    return true;
+  });
+
+  // Group games by highest confidence grade
+  const groupedGames = {
+    A: filteredGames.filter(g => g.confidence === 'A').sort((a, b) => (b.maxEdge ?? 0) - (a.maxEdge ?? 0)),
+    B: filteredGames.filter(g => g.confidence === 'B').sort((a, b) => (b.maxEdge ?? 0) - (a.maxEdge ?? 0)),
+    C: filteredGames.filter(g => g.confidence === 'C').sort((a, b) => (b.maxEdge ?? 0) - (a.maxEdge ?? 0)),
   };
-
-  // Helper: Check if a pick is Tier B or C
-  const isTierBOrC = (grade: string | null | undefined): boolean => {
-    return grade === 'B' || grade === 'C';
-  };
-
-  // Helper: Check if a total pick is Tier B/C (for warning label)
-  const isTotalTierBOrC = (pick: GamePick | undefined): boolean => {
-    return pick !== undefined && isTierBOrC(pick.grade);
-  };
-
-  // Group games into Best Bets (Tier A) and Leans (Tier B/C)
-  const { bestBets, leans } = useMemo(() => {
-    const bestBetsGames: SlateGame[] = [];
-    const leansGames: SlateGame[] = [];
-
-    games.forEach(game => {
-      if (hasTierAPick(game)) {
-        bestBetsGames.push(game);
-      } else {
-        // Only include in Leans if it has at least one pick (even if B/C)
-        const hasAnyPick = game.picks?.spread?.label || game.picks?.total?.label || game.picks?.moneyline?.label;
-        if (hasAnyPick) {
-          leansGames.push(game);
-        }
-      }
-    });
-
-    // Sort by kickoff time (earliest first)
-    const sortByKickoff = (a: SlateGame, b: SlateGame) => {
-      return new Date(a.kickoffLocal).getTime() - new Date(b.kickoffLocal).getTime();
-    };
-
-    return {
-      bestBets: bestBetsGames.sort(sortByKickoff),
-      leans: leansGames.sort(sortByKickoff),
-    };
-  }, [games]);
 
   const formatKickoff = (dateString: string) => {
     const date = new Date(dateString);
@@ -210,6 +193,45 @@ export default function PicksPage() {
     return (
       <span className={`px-1.5 py-0.5 rounded text-xs font-semibold ${config.badgeColor}`}>
         {grade}
+      </span>
+    );
+  };
+
+  const getConflictBadge = (conflictType: string | null | undefined) => {
+    if (!conflictType) return null;
+    
+    const configs: Record<string, { text: string; className: string }> = {
+      hybrid_strong: { text: 'Strong', className: 'bg-green-100 text-green-800' },
+      hybrid_weak: { text: 'Weak', className: 'bg-yellow-100 text-yellow-800' },
+      hybrid_only: { text: 'Only', className: 'bg-gray-100 text-gray-800' },
+    };
+    
+    const config = configs[conflictType];
+    if (!config) return null;
+    
+    return (
+      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${config.className}`}>
+        {config.text}
+      </span>
+    );
+  };
+
+  const getTierLabel = (tierBucket: string | undefined, conflictType: string | null | undefined) => {
+    if (!tierBucket || tierBucket === 'none') return null;
+    if (conflictType !== 'hybrid_strong') return null; // Only show tier labels for hybrid_strong
+    
+    const labels: Record<string, string> = {
+      super_tier_a: 'Super Tier A',
+      tier_a: 'Tier A (Strong)',
+      tier_b: 'Tier B (Strong)',
+    };
+    
+    const label = labels[tierBucket];
+    if (!label) return null;
+    
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+        {label}
       </span>
     );
   };
@@ -269,90 +291,64 @@ export default function PicksPage() {
     downloadAsCsv(filename, csvRows);
   };
 
-  const renderGameCard = (game: SlateGame, isBestBet: boolean = false) => {
+  const renderGameCard = (game: SlateGame) => {
     const spreadPick = game.picks?.spread;
     const totalPick = game.picks?.total;
     const moneylinePick = game.picks?.moneyline;
-    
-    // Determine if this card should have muted styling (only for Leans section)
-    const isMuted = !isBestBet;
     
     return (
       <Link
         key={game.gameId}
         href={`/game/${game.gameId}`}
-        className={`block border rounded-lg p-3 transition-all ${
-          isBestBet
-            ? 'bg-white border-green-200 hover:border-green-400 hover:shadow-sm'
-            : 'bg-gray-50 border-gray-200 hover:border-gray-300 hover:shadow-sm'
-        }`}
+        className="block bg-white border border-gray-200 rounded-lg p-3 hover:border-blue-400 hover:shadow-sm transition-all"
       >
         {/* Header: Matchup */}
-        <div className={`flex items-center gap-2 mb-2 pb-2 border-b ${isMuted ? 'border-gray-200' : 'border-gray-100'}`}>
+        <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-100">
           <TeamLogo teamName={game.awayTeamName} teamId={game.awayTeamId} size="sm" />
-          <span className={`font-semibold text-sm ${isMuted ? 'text-gray-700' : 'text-gray-900'}`}>
-            {game.awayTeamName}
-          </span>
+          <span className="font-semibold text-sm text-gray-900">{game.awayTeamName}</span>
           <span className="text-gray-400 text-xs">@</span>
           <TeamLogo teamName={game.homeTeamName} teamId={game.homeTeamId} size="sm" />
-          <span className={`font-semibold text-sm ${isMuted ? 'text-gray-700' : 'text-gray-900'}`}>
-            {game.homeTeamName}
-          </span>
-          <span className={`ml-auto text-xs ${isMuted ? 'text-gray-400' : 'text-gray-500'}`}>
-            {formatKickoff(game.kickoffLocal)}
-          </span>
+          <span className="font-semibold text-sm text-gray-900">{game.homeTeamName}</span>
+          <span className="ml-auto text-xs text-gray-500">{formatKickoff(game.kickoffLocal)}</span>
         </div>
 
         {/* Body: Active Bets (Compact List) */}
         <div className="space-y-1.5">
           {/* Spread Bet */}
           {spreadPick?.label && (
-            <div className={`flex items-center justify-between text-sm ${isMuted ? 'text-gray-600' : ''}`}>
-              <div className="flex items-center gap-2">
-                <span className={`font-medium ${isMuted ? 'text-gray-500' : 'text-gray-600'}`}>Spread:</span>
-                <span className={`font-semibold ${isMuted ? 'text-gray-700' : 'text-gray-900'}`}>
-                  {spreadPick.label}
-                </span>
-                {spreadPick.grade === 'A' && (
-                  <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-800">
-                    Tier A
-                  </span>
-                )}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-sm">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-gray-600 font-medium">Spread:</span>
+                  <span className="text-gray-900 font-semibold">{spreadPick.label}</span>
+                  {getConflictBadge(spreadPick.hybridConflictType)}
+                  {getTierLabel(spreadPick.tierBucket, spreadPick.hybridConflictType)}
+                </div>
+                <div className="flex items-center gap-2">
+                  {spreadPick.edge !== null && (
+                    <span className="text-gray-600">Edge: <span className="font-semibold text-green-600">{spreadPick.edge.toFixed(1)} pts</span></span>
+                  )}
+                  {getGradeBadge(spreadPick.grade)}
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                {spreadPick.edge !== null && (
-                  <span className={isMuted ? 'text-gray-500' : 'text-gray-600'}>
-                    Edge: <span className={`font-semibold ${isMuted ? 'text-green-700' : 'text-green-600'}`}>
-                      {spreadPick.edge.toFixed(1)} pts
-                    </span>
-                  </span>
-                )}
-                {getGradeBadge(spreadPick.grade)}
-              </div>
+              {spreadPick.clv !== null && (
+                <div className="text-xs text-gray-500 ml-0">
+                  CLV: <span className={spreadPick.clv >= 0 ? 'text-green-600' : 'text-red-600'}>{spreadPick.clv >= 0 ? '+' : ''}{spreadPick.clv.toFixed(1)}</span>
+                </div>
+              )}
             </div>
           )}
 
           {/* Moneyline Bet */}
           {moneylinePick?.label && (
-            <div className={`flex items-center justify-between text-sm ${isMuted ? 'text-gray-600' : ''}`}>
+            <div className="flex items-center justify-between text-sm">
               <div className="flex items-center gap-2">
-                <span className={`font-medium ${isMuted ? 'text-gray-500' : 'text-gray-600'}`}>Moneyline:</span>
-                <span className={`font-semibold ${isMuted ? 'text-gray-700' : 'text-gray-900'}`}>
-                  {moneylinePick.label}
-                </span>
-                {moneylinePick.grade === 'A' && (
-                  <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-800">
-                    Tier A
-                  </span>
-                )}
+                <span className="text-gray-600 font-medium">Moneyline:</span>
+                <span className="text-gray-900 font-semibold">{moneylinePick.label}</span>
               </div>
               <div className="flex items-center gap-2">
                 {moneylinePick.value !== null && (
-                  <span className={isMuted ? 'text-gray-500' : 'text-gray-600'}>
-                    Value: <span className={`font-semibold ${isMuted ? 'text-green-700' : 'text-green-600'}`}>
-                      {moneylinePick.value.toFixed(1)}%
-                    </span>
-                  </span>
+                  <span className="text-gray-600">Value: <span className="font-semibold text-green-600">{moneylinePick.value.toFixed(1)}%</span></span>
                 )}
                 {getGradeBadge(moneylinePick.grade)}
               </div>
@@ -361,31 +357,14 @@ export default function PicksPage() {
 
           {/* Total Bet */}
           {totalPick?.label && (
-            <div className={`flex items-center justify-between text-sm ${isMuted ? 'text-gray-600' : ''}`}>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className={`font-medium ${isMuted ? 'text-gray-500' : 'text-gray-600'}`}>Total:</span>
-                <span className={`font-semibold ${isMuted ? 'text-gray-700' : 'text-gray-900'}`}>
-                  {totalPick.label}
-                </span>
-                {totalPick.grade === 'A' && (
-                  <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-800">
-                    Tier A
-                  </span>
-                )}
-                {/* Warning label for V3 Totals Tier B/C only (not Tier A) */}
-                {isTotalTierBOrC(totalPick) && totalPick.grade !== 'A' && (
-                  <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-800 border border-red-200">
-                    ⚠️ Experimental – High Risk
-                  </span>
-                )}
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-gray-600 font-medium">Total:</span>
+                <span className="text-gray-900 font-semibold">{totalPick.label}</span>
               </div>
               <div className="flex items-center gap-2">
                 {totalPick.edge !== null && (
-                  <span className={isMuted ? 'text-gray-500' : 'text-gray-600'}>
-                    Edge: <span className={`font-semibold ${isMuted ? 'text-green-700' : 'text-green-600'}`}>
-                      {totalPick.edge.toFixed(1)} pts
-                    </span>
-                  </span>
+                  <span className="text-gray-600">Edge: <span className="font-semibold text-green-600">{totalPick.edge.toFixed(1)} pts</span></span>
                 )}
                 {getGradeBadge(totalPick.grade)}
               </div>
@@ -412,8 +391,8 @@ export default function PicksPage() {
     );
   }
 
-  const totalGames = games.length;
-  const hasAnyBets = totalGames > 0;
+  const totalGames = filteredGames.length;
+  const hasAnyBets = games.length > 0;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -446,6 +425,48 @@ export default function PicksPage() {
             </p>
           </div>
 
+          {/* 2026 Playbook Filters */}
+          {hasAnyBets && (
+            <div className="mb-4 flex items-center gap-4 p-3 bg-white border border-gray-200 rounded-lg">
+              <span className="text-sm font-medium text-gray-700">Filters:</span>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showOnlySuperTierA}
+                  onChange={(e) => {
+                    setShowOnlySuperTierA(e.target.checked);
+                    if (e.target.checked) setShowOnlyHybridStrong(false); // Super Tier A implies Hybrid Strong
+                  }}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700">Show only Super Tier A</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showOnlyHybridStrong}
+                  onChange={(e) => {
+                    setShowOnlyHybridStrong(e.target.checked);
+                    if (e.target.checked && showOnlySuperTierA) setShowOnlySuperTierA(false); // Hybrid Strong is broader
+                  }}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700">Show only Hybrid Strong</span>
+              </label>
+              {(showOnlySuperTierA || showOnlyHybridStrong) && (
+                <button
+                  onClick={() => {
+                    setShowOnlySuperTierA(false);
+                    setShowOnlyHybridStrong(false);
+                  }}
+                  className="ml-auto text-xs text-gray-500 hover:text-gray-700 underline"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+          )}
+
           {loading ? (
             <div className="space-y-3">
               {[1, 2, 3].map(i => (
@@ -462,50 +483,58 @@ export default function PicksPage() {
               </p>
             </div>
           ) : (
-            <div className="space-y-8">
-              {/* Best Bets Section (Tier A) */}
-              {bestBets.length > 0 && (
+            <div className="space-y-6">
+              {/* Grade A */}
+              {groupedGames.A.length > 0 && (
                 <div>
-                  <div className="flex items-center gap-2 mb-4 px-4 py-2 rounded-lg bg-green-50 border border-green-200">
-                    <span className="text-2xl">🔥</span>
-                    <h2 className="text-xl font-bold text-green-900">
-                      Best Bets (Tier A)
+                  <div className={`flex items-center gap-2 mb-3 px-3 py-1.5 rounded-lg border ${getConfidenceConfig('A').color}`}>
+                    <span className="text-xl">{getConfidenceConfig('A').emoji}</span>
+                    <h2 className="text-lg font-bold">
+                      {getConfidenceConfig('A').title} (Grade A)
                     </h2>
-                    <span className="ml-auto px-3 py-1 rounded text-sm font-semibold bg-green-100 text-green-800">
-                      {bestBets.length} {bestBets.length === 1 ? 'game' : 'games'}
+                    <span className={`ml-auto px-2 py-0.5 rounded text-xs font-semibold ${getConfidenceConfig('A').badgeColor}`}>
+                      {groupedGames.A.length} {groupedGames.A.length === 1 ? 'game' : 'games'}
                     </span>
                   </div>
                   <div className="space-y-2">
-                    {bestBets.map(game => renderGameCard(game, true))}
+                    {groupedGames.A.map(renderGameCard)}
                   </div>
                 </div>
               )}
 
-              {/* Leans / Action Section (Tier B & C) */}
-              {leans.length > 0 && (
+              {/* Grade B */}
+              {groupedGames.B.length > 0 && (
                 <div>
-                  <div className="flex items-center gap-2 mb-4 px-4 py-2 rounded-lg bg-gray-100 border border-gray-300">
-                    <span className="text-2xl">👀</span>
-                    <h2 className="text-xl font-bold text-gray-700">
-                      Leans / Action (Tier B & C)
+                  <div className={`flex items-center gap-2 mb-3 px-3 py-1.5 rounded-lg border ${getConfidenceConfig('B').color}`}>
+                    <span className="text-xl">{getConfidenceConfig('B').emoji}</span>
+                    <h2 className="text-lg font-bold">
+                      {getConfidenceConfig('B').title} (Grade B)
                     </h2>
-                    <span className="ml-auto px-3 py-1 rounded text-sm font-semibold bg-gray-200 text-gray-700">
-                      {leans.length} {leans.length === 1 ? 'game' : 'games'}
+                    <span className={`ml-auto px-2 py-0.5 rounded text-xs font-semibold ${getConfidenceConfig('B').badgeColor}`}>
+                      {groupedGames.B.length} {groupedGames.B.length === 1 ? 'game' : 'games'}
                     </span>
                   </div>
                   <div className="space-y-2">
-                    {leans.map(game => renderGameCard(game, false))}
+                    {groupedGames.B.map(renderGameCard)}
                   </div>
                 </div>
               )}
 
-              {/* Empty state if no picks */}
-              {bestBets.length === 0 && leans.length === 0 && (
-                <div className="bg-white border border-gray-200 rounded-lg p-6 text-center">
-                  <p className="text-gray-500">No active bets for this week.</p>
-                  <p className="text-gray-400 text-sm mt-1">
-                    The model requires at least a 0.1 point edge to recommend a bet.
-                  </p>
+              {/* Grade C */}
+              {groupedGames.C.length > 0 && (
+                <div>
+                  <div className={`flex items-center gap-2 mb-3 px-3 py-1.5 rounded-lg border ${getConfidenceConfig('C').color}`}>
+                    <span className="text-xl">{getConfidenceConfig('C').emoji}</span>
+                    <h2 className="text-lg font-bold">
+                      {getConfidenceConfig('C').title} (Grade C)
+                    </h2>
+                    <span className={`ml-auto px-2 py-0.5 rounded text-xs font-semibold ${getConfidenceConfig('C').badgeColor}`}>
+                      {groupedGames.C.length} {groupedGames.C.length === 1 ? 'game' : 'games'}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {groupedGames.C.map(renderGameCard)}
+                  </div>
                 </div>
               )}
             </div>

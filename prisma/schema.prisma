@@ -263,8 +263,8 @@ model TeamUnitGrades {
   defExplosiveness Float @map("def_explosiveness")
   havocGrade       Float @map("havoc_grade")       // From Season Havoc
 
-  // V3: Barnes Luck-Adjusted Rating
-  barnesRating     Float? @map("barnes_rating")     // Net Yards + YPP based, ignores W/L
+  // Legacy field (preserved for existing data)
+  barnesRating     Float? @map("barnes_rating")
 
   // Relations
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
@@ -366,6 +366,7 @@ model Bet {
   strategyTag String     @map("strategy_tag")
   source      BetSource
   notes       String?
+  hybridConflictType String? @map("hybrid_conflict_type")
   updatedAt   DateTime   @updatedAt @map("updated_at")
   game        Game       @relation(fields: [gameId], references: [id], onDelete: Cascade)
 
