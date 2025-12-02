@@ -58,7 +58,8 @@ export function computeContinuityScore(teamSeason: TeamSeasonStat): number | nul
     return null;
   }
 
-  // Get offense and defense returning production (0-100 percentages)
+  // Get offense and defense returning production
+  // Note: CFBD returns these as decimals [0, 1], not percentages [0, 100]
   // Use offense/defense if available, otherwise fall back to overall
   const offReturning = returningProd.offense ?? returningProd.overall ?? null;
   const defReturning = returningProd.defense ?? null;
@@ -69,8 +70,16 @@ export function computeContinuityScore(teamSeason: TeamSeasonStat): number | nul
   }
 
   // Normalize returning production to [0, 1]
-  const offReturningNorm = offReturning !== null ? Math.max(0, Math.min(1, offReturning / 100)) : 0;
-  const defReturningNorm = defReturning !== null ? Math.max(0, Math.min(1, defReturning / 100)) : 0;
+  // CFBD already returns decimals, but handle both formats (0-1 or 0-100)
+  const normalizeValue = (val: number | null): number => {
+    if (val === null) return 0;
+    // If value > 1, assume it's a percentage and divide by 100
+    // Otherwise, assume it's already a decimal
+    return val > 1 ? Math.max(0, Math.min(1, val / 100)) : Math.max(0, Math.min(1, val));
+  };
+  
+  const offReturningNorm = normalizeValue(offReturning);
+  const defReturningNorm = normalizeValue(defReturning);
 
   // If we only have overall, use it for both sides
   const finalOffReturning = offReturningNorm > 0 ? offReturningNorm : (defReturningNorm > 0 ? defReturningNorm : 0);
