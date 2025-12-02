@@ -54,6 +54,9 @@ interface SlateGame {
       tierBucket?: string;
       isSuperTierA?: boolean;
       clv?: number | null;
+      betTeamContinuity?: number | null;
+      oppContinuity?: number | null;
+      continuityDiff?: number | null;
     };
     total?: {
       label: string | null;
@@ -310,6 +313,34 @@ export async function GET(request: NextRequest) {
 
     console.log(`   Found ${hybridBets.length} Hybrid V2 spread bets for conflict/tier lookup`);
 
+    // Fetch continuity scores for all teams in the slate
+    const allTeamIds = Array.from(new Set([
+      ...slateGames.map(g => g.homeTeamId),
+      ...slateGames.map(g => g.awayTeamId),
+    ]));
+
+    const teamSeasons = await prisma.teamSeasonStat.findMany({
+      where: {
+        season,
+        teamId: { in: allTeamIds },
+      },
+      select: {
+        teamId: true,
+        rawJson: true,
+      },
+    });
+
+    const continuityMap = new Map<string, number>();
+    for (const ts of teamSeasons) {
+      const rawJson = (ts.rawJson as any) || {};
+      const portalMeta = rawJson.portal_meta;
+      if (portalMeta && typeof portalMeta.continuityScore === 'number') {
+        continuityMap.set(ts.teamId, portalMeta.continuityScore);
+      }
+    }
+
+    console.log(`   Found ${continuityMap.size} teams with continuity scores`);
+
     // Fetch model projections using Core V1
     // ALWAYS compute Core V1 - no query parameter gates
     console.log(`   Computing Core V1 projections for ${slateGames.length} games...`);
@@ -555,8 +586,23 @@ export async function GET(request: NextRequest) {
         let betClv: number | null = null;
         let tierBucket: string = 'none';
         let isSuperTierA: boolean = false;
+        let betTeamContinuity: number | null = null;
+        let oppContinuity: number | null = null;
+        let continuityDiff: number | null = null;
 
-        if (spreadPick && spreadEdgePts !== null) {
+        if (spreadPick && spreadEdgePts !== null && edgeHma !== null) {
+          // Determine bet team and opponent for continuity lookup
+          // If edgeHma > 0, model thinks home should be more favored than market → bet home
+          // If edgeHma < 0, model thinks away should be more favored than market → bet away
+          const betTeamId = edgeHma > 0 ? game.homeTeamId : game.awayTeamId;
+          const oppTeamId = edgeHma > 0 ? game.awayTeamId : game.homeTeamId;
+          
+          betTeamContinuity = continuityMap.get(betTeamId) ?? null;
+          oppContinuity = continuityMap.get(oppTeamId) ?? null;
+          
+          if (betTeamContinuity !== null && oppContinuity !== null) {
+            continuityDiff = betTeamContinuity - oppContinuity;
+          }
           // Look up from pre-fetched map
           const hybridBet = hybridBetMap.get(game.gameId);
 
@@ -609,6 +655,9 @@ export async function GET(request: NextRequest) {
             tierBucket,
             isSuperTierA,
             clv: betClv,
+            betTeamContinuity,
+            oppContinuity,
+            continuityDiff,
           },
           total: {
             label: totalPick,

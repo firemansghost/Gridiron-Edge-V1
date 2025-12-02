@@ -13,6 +13,7 @@ import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import { TeamLogo } from '@/components/TeamLogo';
 import { ErrorState } from '@/components/ErrorState';
+import { LabsNav } from '@/components/LabsNav';
 import { downloadAsCsv } from '@/lib/csv-export';
 
 interface SpreadInfo {
@@ -285,6 +286,7 @@ export default function HybridLabsPage() {
             Comparing V1 (Composite), V2 (Matchup), and Hybrid (70% V1 + 30% V2) spread predictions
             {season && week && ` - ${season} Week ${week}`}
           </p>
+          <LabsNav />
 
           {/* V4 Overlay Summary Card */}
           {!v4SummaryLoading && v4Summary.length > 0 && (

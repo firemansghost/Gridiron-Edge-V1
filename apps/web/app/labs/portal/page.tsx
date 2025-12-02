@@ -12,6 +12,7 @@ import Link from 'next/link';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import { ErrorState } from '@/components/ErrorState';
+import { LabsNav } from '@/components/LabsNav';
 
 interface PortalContinuityRow {
   teamId: string;
@@ -68,11 +69,27 @@ export default function PortalLabsPage() {
             <h1 className="text-3xl font-bold text-gray-900 mb-2">
               Portal Continuity (Labs)
             </h1>
-            <p className="text-gray-600">
-              Roster stability scores based on returning production and transfer portal activity.
-              Higher scores indicate more stable rosters.
+            <p className="text-gray-600 mb-4">
+              Continuity Score measures roster stability on a 0–100 scale (displayed as 0.0–100.0).
+              Higher scores indicate more stable rosters with less turnover.
             </p>
+            <p className="text-gray-600 mb-4">
+              <strong>Inputs:</strong> Returning production percentage (offense/defense) + transfer portal activity.
+              High returning production and low churn → higher continuity score. The formula combines offense and defense equally, accounting for transfer impact.
+            </p>
+            <p className="text-gray-600 mb-4">
+              <strong>Status:</strong> Labs-only metric. Not used in Hybrid V2 or official picks. Candidate feature for future Hybrid V5.
+            </p>
+            <div className="bg-gray-50 border-l-4 border-gray-400 p-4 mb-4">
+              <p className="text-sm font-medium text-gray-900 mb-2">Continuity Bands:</p>
+              <ul className="text-sm text-gray-700 space-y-1">
+                <li><strong>High (≥ 0.80 / 80+):</strong> Stable / veteran roster</li>
+                <li><strong>Mid (0.60–0.79):</strong> Typical modern churn</li>
+                <li><strong>Low (&lt; 0.60):</strong> High churn / new pieces</li>
+              </ul>
+            </div>
           </div>
+          <LabsNav />
 
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">

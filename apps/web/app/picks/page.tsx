@@ -24,6 +24,10 @@ interface GamePick {
   tierBucket?: string;
   isSuperTierA?: boolean;
   clv?: number | null;
+  // Continuity fields (Labs-only)
+  betTeamContinuity?: number | null;
+  oppContinuity?: number | null;
+  continuityDiff?: number | null;
 }
 
 interface MoneylinePick {
@@ -334,6 +338,24 @@ export default function PicksPage() {
               {spreadPick.clv !== null && spreadPick.clv !== undefined && (
                 <div className="text-xs text-gray-500 ml-0">
                   CLV: <span className={spreadPick.clv >= 0 ? 'text-green-600' : 'text-red-600'}>{spreadPick.clv >= 0 ? '+' : ''}{spreadPick.clv.toFixed(1)}</span>
+                </div>
+              )}
+              {spreadPick.betTeamContinuity !== null && spreadPick.betTeamContinuity !== undefined && (
+                <div className="text-xs text-gray-500 ml-0 mt-1">
+                  Continuity: {(() => {
+                    const getBand = (score: number) => {
+                      if (score >= 0.80) return 'High';
+                      if (score >= 0.60) return 'Mid';
+                      return 'Low';
+                    };
+                    const betBand = getBand(spreadPick.betTeamContinuity!);
+                    if (spreadPick.oppContinuity !== null && spreadPick.oppContinuity !== undefined) {
+                      const oppBand = getBand(spreadPick.oppContinuity);
+                      const diff = spreadPick.continuityDiff ?? 0;
+                      return `${betBand} vs ${oppBand} (Δ ${diff >= 0 ? '+' : ''}${diff.toFixed(2)})`;
+                    }
+                    return `${betBand} (bet team only)`;
+                  })()}
                 </div>
               )}
             </div>

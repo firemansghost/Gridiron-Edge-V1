@@ -320,6 +320,74 @@ async function main() {
     }
   }
 
+  // Section D: Favorite vs Dog by continuity band
+  console.log(`\n${'='.repeat(80)}`);
+  console.log('Section D: Favorite vs Dog by Bet Team Continuity Band');
+  console.log('='.repeat(80));
+  console.log('(Favorite = bet team laying points, Dog = bet team getting points)');
+
+  for (const band of bands) {
+    const bandBets = betsWithContinuity.filter(b => getContinuityBand(b.betTeamCont) === band);
+    
+    // Classify as favorite or dog based on closing spread
+    // If closePrice < 0, bet team is favorite (laying points)
+    // If closePrice > 0, bet team is dog (getting points)
+    // If closePrice === 0 or null, treat as dog
+    const favoriteBets = bandBets.filter(b => b.closePrice !== null && Number(b.closePrice) < 0);
+    const dogBets = bandBets.filter(b => b.closePrice === null || Number(b.closePrice) >= 0);
+
+    if (favoriteBets.length > 0) {
+      const stats = calculateStats(favoriteBets);
+      console.log(`\n${bandLabels[band]} / Favorite:`);
+      console.log(formatStats(stats));
+    }
+
+    if (dogBets.length > 0) {
+      const stats = calculateStats(dogBets);
+      console.log(`\n${bandLabels[band]} / Dog:`);
+      console.log(formatStats(stats));
+    }
+  }
+
+  // Section E: Spread bands by continuity band
+  console.log(`\n${'='.repeat(80)}`);
+  console.log('Section E: Spread Bands by Bet Team Continuity Band');
+  console.log('='.repeat(80));
+
+  type SpreadBand = '0-3' | '3-7' | '7-14' | '14+';
+  const spreadBands: SpreadBand[] = ['0-3', '3-7', '7-14', '14+'];
+  const spreadBandLabels = {
+    '0-3': '0-3',
+    '3-7': '3-7',
+    '7-14': '7-14',
+    '14+': '14+',
+  };
+
+  function getSpreadBand(closePrice: number | null): SpreadBand | null {
+    if (closePrice === null) return null;
+    const absSpread = Math.abs(Number(closePrice));
+    if (absSpread < 3) return '0-3';
+    if (absSpread < 7) return '3-7';
+    if (absSpread < 14) return '7-14';
+    return '14+';
+  }
+
+  for (const band of bands) {
+    const bandBets = betsWithContinuity.filter(b => getContinuityBand(b.betTeamCont) === band);
+    
+    console.log(`\n${bandLabels[band]}:`);
+    
+    for (const spreadBand of spreadBands) {
+      const spreadBets = bandBets.filter(b => getSpreadBand(b.closePrice) === spreadBand);
+      
+      if (spreadBets.length === 0) continue;
+
+      const stats = calculateStats(spreadBets);
+      console.log(`\n  Spread ${spreadBandLabels[spreadBand]}:`);
+      console.log(formatStats(stats).split('\n').map(line => `    ${line}`).join('\n'));
+    }
+  }
+
   console.log(`\n${'='.repeat(80)}\n`);
 
   await prisma.$disconnect();
