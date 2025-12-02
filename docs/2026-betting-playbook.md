@@ -290,7 +290,45 @@ To keep this playbook valid during the season:
 
 ---
 
-## 8. Future Model Enhancements (V5+)
+## 8. Continuity Guardrails (Labs Only – Based on 2025 Backtest)
+
+Continuity Score is a 0–100 roster stability metric built from CFBD returning production + portal churn. High = stable/veteran, Low = chaos/new pieces. It is not in the production Hybrid V2 model yet, but we use it as a tactical overlay.
+
+**What 2025 showed:**
+
+- Hybrid V2 was profitable across all continuity bands (Low/Mid/High).
+
+- The big pattern was **favorites vs dogs**, not "high good, low bad."
+
+- **Low-continuity dogs were consistently terrible.**
+
+- **Low-, mid-, and high-continuity favorites all crushed.**
+
+**Soft rules for 2026 (subject to further testing):**
+
+1. **Low-continuity dogs (<0.60): yellow flag.**
+
+   - Avoid unless the game is Super Tier A and other context supports it.
+
+   - These profiles were -14% to -21% ROI in 2025 backtests.
+
+2. **Favor favorites.**
+
+   - Favorites performed extremely well across all bands, especially low-continuity favorites (~+50–60% ROI).
+
+   - Continuity should not scare us off a strong favorite if Hybrid likes the number.
+
+3. **Be picky on 14+ point spreads with mid/high continuity.**
+
+   - These were roughly breakeven in 2025.
+
+   - Treat them as lower priority or require stronger edge / conflict alignment.
+
+These are **guardrails, not hard filters**. They inform human review of the card and Labs experiments (e.g., re-running 2025 portfolios with low-continuity dogs removed). Any hard-coded model changes belong in a future Hybrid V5 cycle.
+
+---
+
+## 9. Future Model Enhancements (V5+)
 
 We're planning to add Portal & NIL Meta Indices as Labs overlays, with potential integration into a future V5 Hybrid model:
 
@@ -312,7 +350,7 @@ See [Data Inventory](/docs/data-inventory) for current data structures, and [Bow
 
 ---
 
-## 9. Disclaimer
+## 10. Disclaimer
 
 All numbers above are based on historical backtests (2024–2025).  
 

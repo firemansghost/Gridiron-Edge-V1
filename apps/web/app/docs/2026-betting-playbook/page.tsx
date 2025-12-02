@@ -338,7 +338,45 @@ export default function BettingPlaybookPage() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">8. Future Model Enhancements (V5+)</h2>
+          <h2 className="text-2xl font-semibold text-gray-900 mb-4">8. Continuity Guardrails (Labs Only – Based on 2025 Backtest)</h2>
+          <p className="text-gray-700 mb-4">
+            Continuity Score is a 0–100 roster stability metric built from CFBD returning production + portal churn. High = stable/veteran, Low = chaos/new pieces. It is not in the production Hybrid V2 model yet, but we use it as a tactical overlay.
+          </p>
+          <p className="text-gray-700 mb-2 font-medium">What 2025 showed:</p>
+          <ul className="list-disc pl-6 space-y-1 text-gray-700 mb-4">
+            <li>Hybrid V2 was profitable across all continuity bands (Low/Mid/High).</li>
+            <li>The big pattern was <strong>favorites vs dogs</strong>, not "high good, low bad."</li>
+            <li><strong>Low-continuity dogs were consistently terrible.</strong></li>
+            <li><strong>Low-, mid-, and high-continuity favorites all crushed.</strong></li>
+          </ul>
+          <p className="text-gray-700 mb-2 font-medium">Soft rules for 2026 (subject to further testing):</p>
+          <ol className="list-decimal pl-6 space-y-2 text-gray-700 mb-4">
+            <li><strong>Low-continuity dogs (&lt;0.60): yellow flag.</strong>
+              <ul className="list-disc pl-6 mt-1">
+                <li>Avoid unless the game is Super Tier A and other context supports it.</li>
+                <li>These profiles were -14% to -21% ROI in 2025 backtests.</li>
+              </ul>
+            </li>
+            <li><strong>Favor favorites.</strong>
+              <ul className="list-disc pl-6 mt-1">
+                <li>Favorites performed extremely well across all bands, especially low-continuity favorites (~+50–60% ROI).</li>
+                <li>Continuity should not scare us off a strong favorite if Hybrid likes the number.</li>
+              </ul>
+            </li>
+            <li><strong>Be picky on 14+ point spreads with mid/high continuity.</strong>
+              <ul className="list-disc pl-6 mt-1">
+                <li>These were roughly breakeven in 2025.</li>
+                <li>Treat them as lower priority or require stronger edge / conflict alignment.</li>
+              </ul>
+            </li>
+          </ol>
+          <p className="text-gray-700 text-sm">
+            These are <strong>guardrails, not hard filters</strong>. They inform human review of the card and Labs experiments (e.g., re-running 2025 portfolios with low-continuity dogs removed). Any hard-coded model changes belong in a future Hybrid V5 cycle.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="text-2xl font-semibold text-gray-900 mb-4">9. Future Model Enhancements (V5+)</h2>
           <p className="text-gray-700 mb-4">
             We're planning to add Portal & NIL Meta Indices as Labs overlays, with potential integration into a future V5 Hybrid model:
           </p>
@@ -357,7 +395,7 @@ export default function BettingPlaybookPage() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">9. Disclaimer</h2>
+          <h2 className="text-2xl font-semibold text-gray-900 mb-4">10. Disclaimer</h2>
           <p className="text-gray-700 mb-2">
             All numbers above are based on historical backtests (2024–2025).
           </p>
