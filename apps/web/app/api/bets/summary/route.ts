@@ -93,6 +93,23 @@ export async function GET(request: NextRequest) {
     const demoTagsPresent = Array.from(tagsByCount.keys())
       .filter(tag => isExcludedStrategyTag(tag));
 
+    // Get all distinct strategy tags for this season/week (for strategy selector)
+    const strategyTagsForScope = await prisma.bet.findMany({
+      where: {
+        ...(season && { season: parseInt(season) }),
+        ...(week && { week: parseInt(week) }),
+        source: 'strategy_run',
+      },
+      select: {
+        strategyTag: true,
+      },
+      distinct: ['strategyTag'],
+    });
+
+    const strategyTagsAvailable = Array.from(
+      new Set(strategyTagsForScope.map(b => b.strategyTag).filter((tag): tag is string => tag !== null))
+    ).sort();
+
     // Calculate conflict breakdown if applicable
     const conflictBreakdown: Record<string, {
       bets: number;
@@ -142,6 +159,7 @@ export async function GET(request: NextRequest) {
     const meta = {
       totalStrategyRunBets: allStrategyRunBets.length,
       demoTagsPresent: demoTagsPresent,
+      strategyTagsAvailable: strategyTagsAvailable,
       ...(Object.keys(conflictBreakdown).length > 0 && { conflictBreakdown }),
     };
 

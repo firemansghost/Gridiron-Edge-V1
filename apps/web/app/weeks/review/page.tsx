@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
-import { getStrategyLabel } from '@/lib/strategy-utils';
+import { getStrategyLabel, getDefaultStrategyTag } from '@/lib/strategy-utils';
 
 interface BetSummary {
   totalBets: number;
@@ -52,6 +52,7 @@ interface WeekReviewData {
   meta?: {
     totalStrategyRunBets: number;
     demoTagsPresent: string[];
+    strategyTagsAvailable?: string[];
     conflictBreakdown?: Record<string, {
       bets: number;
       wins: number;
@@ -69,45 +70,13 @@ export default function WeekReviewPage() {
   const router = useRouter();
   const [season, setSeason] = useState(2025);
   const [week, setWeek] = useState(9);
-  const [strategy, setStrategy] = useState('official_flat_100');
+  const [strategy, setStrategy] = useState<string>('');
   const [data, setData] = useState<WeekReviewData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
   const [grading, setGrading] = useState(false);
-  const [strategies, setStrategies] = useState<Array<{ id: string; name: string; active: boolean }>>([]);
-  const [strategiesLoading, setStrategiesLoading] = useState(true);
-
-  // Fetch available strategies from rulesets (same source as Strategies page)
-  useEffect(() => {
-    const fetchStrategies = async () => {
-      setStrategiesLoading(true);
-      try {
-        const response = await fetch('/api/strategies/rulesets');
-        if (response.ok) {
-          const result = await response.json();
-          if (result.success && result.rulesets) {
-            // Filter to only active strategies and map to the format we need
-            const activeStrategies = result.rulesets
-              .filter((r: { active: boolean }) => r.active)
-              .map((r: { id: string; name: string }) => ({
-                id: r.id,
-                name: r.name,
-                active: true,
-              }));
-            setStrategies(activeStrategies);
-          }
-        } else {
-          console.error('Failed to fetch strategies:', response.statusText);
-        }
-      } catch (err) {
-        console.error('Failed to fetch strategies:', err);
-      } finally {
-        setStrategiesLoading(false);
-      }
-    };
-    fetchStrategies();
-  }, []);
+  const defaultStrategySet = useRef(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -150,6 +119,20 @@ export default function WeekReviewPage() {
   useEffect(() => {
     fetchData();
   }, [season, week, strategy]);
+
+  // Set default strategy from available tags when data first loads
+  useEffect(() => {
+    if (data?.meta?.strategyTagsAvailable && data.meta.strategyTagsAvailable.length > 0 && !defaultStrategySet.current && strategy === '') {
+      const defaultTag = getDefaultStrategyTag(data.meta.strategyTagsAvailable);
+      setStrategy(defaultTag === 'all' ? '' : defaultTag);
+      defaultStrategySet.current = true;
+    }
+  }, [data?.meta?.strategyTagsAvailable, strategy]);
+
+  // Reset default strategy flag when season/week changes
+  useEffect(() => {
+    defaultStrategySet.current = false;
+  }, [season, week]);
 
   const handleSeed = async () => {
     setSeeding(true);
@@ -325,30 +308,25 @@ export default function WeekReviewPage() {
           <div>
             <label className="block text-sm font-medium mb-1">Strategy</label>
             <select 
-              value={strategy} 
+              value={strategy || ''} 
               onChange={(e) => {
                 const val = e.target.value;
                 // Normalize empty string and "all" to empty for API
-                setStrategy(val === 'all' ? '' : val);
+                setStrategy(val === 'all' || val === '' ? '' : val);
               }}
               className="border rounded px-3 py-2"
-              disabled={strategiesLoading}
             >
               <option value="">{getStrategyLabel('all')}</option>
-              <option value="official_flat_100">{getStrategyLabel('official_flat_100')}</option>
-              {strategies.length === 0 && !strategiesLoading ? (
-                <option disabled>No strategies configured</option>
-              ) : (
-                strategies.map((s) => (
-                  <option key={s.id} value={s.name}>
-                    {s.name}
+              {data?.meta?.strategyTagsAvailable && data.meta.strategyTagsAvailable.length > 0 ? (
+                data.meta.strategyTagsAvailable.map((tag) => (
+                  <option key={tag} value={tag}>
+                    {getStrategyLabel(tag)}
                   </option>
                 ))
+              ) : (
+                <option disabled>No strategies available for this week</option>
               )}
             </select>
-            {strategiesLoading && (
-              <div className="text-xs text-gray-500 mt-1">Loading strategies...</div>
-            )}
           </div>
           
           <div className="flex items-end gap-2">
