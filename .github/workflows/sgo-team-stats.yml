@@ -1,0 +1,63 @@
+name: SGO Team Season Stats Sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season (e.g., 2024)'
+        required: true
+        default: '2024'
+        type: string
+      conference:
+        description: 'Conference filter (optional, e.g., SEC, Big Ten)'
+        required: false
+        type: string
+  schedule:
+    # Run once a year in the offseason, Feb 20 @ 04:00 UTC for previous season wrap-up
+    - cron: '0 4 20 2 *'
+
+jobs:
+  sgo-team-stats:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      SGO_API_KEY: ${{ secrets.SGO_API_KEY }}
+      SEASON: ${{ github.event.inputs.season || '2024' }}
+      CONFERENCE: ${{ github.event.inputs.conference }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run prisma:generate
+
+      - name: Build jobs
+        run: npm run build:jobs
+
+      - name: Sync SGO team stats
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          SGO_API_KEY: ${{ secrets.SGO_API_KEY }}
+        run: |
+          echo "Syncing SGO team stats for season $SEASON..."
+          if [ -z "$CONFERENCE" ]; then
+            npx tsx apps/jobs/src/sgo/sync_team_sgo_stats.ts --season "$SEASON"
+          else
+            npx tsx apps/jobs/src/sgo/sync_team_sgo_stats.ts --season "$SEASON" --conference "$CONFERENCE"
+          fi
+          echo "✅ Updated sgo_stats for season $SEASON"
+

@@ -72,11 +72,37 @@ This workflow runs nightly at 2 AM CST and fetches schedules for the current wee
 - **Why keep**: Useful for preseason predictions
 - **Recommendation**: ✅ Keep auto-run enabled (low frequency, high value)
 
+#### 9. **CFBD Roster Churn Sync** (`roster-churn-cfbd.yml`)
+- **Status**: Manual + yearly schedule (Feb 15 at 03:00 UTC)
+- **Purpose**: Sync returning production + transfer portal counts into `team_season_stats.rawJson.roster_churn`
+- **Inputs**:
+  - `season` (e.g., 2025)
+  - `conference` (optional, e.g., SEC, Big Ten)
+- **Trigger**: `workflow_dispatch` (+ optional yearly schedule for off-season data)
+- **Downstream use**: Future V5 spread models, off-season power adjustments
+- **Recommendation**: ✅ Keep for manual use and yearly auto-run
+
+#### 10. **SGO Team Season Stats Sync** (`sgo-team-stats.yml`)
+- **Status**: Manual + yearly schedule (Feb 20 at 04:00 UTC)
+- **Purpose**: Sync curated SportsGameOdds team season stats into `team_season_stats.rawJson.sgo_stats`
+- **Inputs**:
+  - `season` (e.g., 2024)
+  - `conference` (optional, to limit to P5/G5 in the future; currently ignored)
+- **Trigger**: `workflow_dispatch` (+ optional yearly schedule for off-season data)
+- **What it writes**: Aggregated stats in `raw_json.sgo_stats`:
+  - Red zone efficiency (trips, TDs, TD rate)
+  - Penalties (count, yards, first downs, per-game rates)
+  - Pressure/havoc (offense sacks taken, INTs; defense sacks, TFL, QB hits, INTs, fumbles forced)
+  - Special teams (punting, returns, field goals)
+  - Game script (largest lead, time in lead, lead changes, scoring runs, ties)
+- **Downstream use**: Labs-only, currently used for future V5 model development
+- **Recommendation**: ✅ Keep for manual use and yearly auto-run
+
 ---
 
 ### 📋 **KEEP FOR MANUAL USE** (On-Demand Workflows)
 
-#### 9. **Ratings v1 Computation** (`ratings-v1.yml`)
+#### 10. **Ratings v1 Computation** (`ratings-v1.yml`)
 - **Status**: Manual only
 - **Purpose**: Computes power ratings for a specific season
 - **When to run**: 
@@ -85,19 +111,19 @@ This workflow runs nightly at 2 AM CST and fetches schedules for the current wee
   - Periodically to refresh ratings
 - **Recommendation**: ✅ Keep for manual use
 
-#### 10. **Backfill Historical Odds** (`backfill-odds-historical.yml`)
+#### 11. **Backfill Historical Odds** (`backfill-odds-historical.yml`)
 - **Status**: Manual only
 - **Purpose**: Backfills odds for past seasons/weeks
 - **When to run**: When you need historical data for backtesting
 - **Recommendation**: ✅ Keep for manual use (rarely needed)
 
-#### 11. **Backfill Scores 2025** (`backfill-scores-2025.yml`)
+#### 12. **Backfill Scores 2025** (`backfill-scores-2025.yml`)
 - **Status**: Manual only
 - **Purpose**: One-time backfill of scores for specific weeks
 - **When to run**: When you need to fill in missing scores
 - **Recommendation**: ✅ Keep for manual use (one-time per season)
 
-#### 12. **Backfill Drives** (`backfill-drives.yml`)
+#### 13. **Backfill Drives** (`backfill-drives.yml`)
 - **Status**: Manual only
 - **Purpose**: Run sync-drives.ts for a given season and weeks on GitHub instead of locally
 - **When to run**: When you need to backfill drive_stats data for a season (e.g., 2024)
@@ -108,7 +134,7 @@ This workflow runs nightly at 2 AM CST and fetches schedules for the current wee
 - **Note**: Internally sync-drives.ts fetches drives week-by-week to avoid timeouts when processing large seasons
 - **Recommendation**: ✅ Keep for manual use (run on GitHub to avoid hammering local machine with 37k+ drives)
 
-#### 13. **Monitor 2025 Archival Availability** (`monitor-2025-archival.yml`)
+#### 14. **Monitor 2025 Archival Availability** (`monitor-2025-archival.yml`)
 - **Status**: ⚠️ **AUTO-RUN** (daily at 2 AM UTC)
 - **Purpose**: Monitors when historical odds become available
 - **Recommendation**: ⚠️ **Disable auto-run** (only needed when you're actively backfilling)

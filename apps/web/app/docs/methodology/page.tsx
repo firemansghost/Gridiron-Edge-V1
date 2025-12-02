@@ -632,6 +632,24 @@ export default function MethodologyPage() {
                   main "My Picks" flow. Hybrid V2 remains the only official spread model.
                 </p>
                 
+                <h4 className="font-medium text-yellow-800 mb-2 mt-4">SGO Team Season Stats (Labs / V5 Prep)</h4>
+                <p className="text-yellow-700 text-sm mb-3">
+                  We ingest a curated subset of SportsGameOdds team season stats and aggregate them into structured 
+                  metrics stored in <code className="bg-yellow-100 px-1 rounded">team_season_stats.raw_json.sgo_stats</code>. 
+                  These include:
+                </p>
+                <ul className="text-yellow-700 text-sm list-disc pl-6 mb-3 space-y-1">
+                  <li><strong>Red zone efficiency:</strong> Trips, touchdowns, TD rate</li>
+                  <li><strong>Discipline:</strong> Penalty counts, yards, first downs (total and per-game)</li>
+                  <li><strong>Pressure/havoc:</strong> Offense sacks taken, INTs; defense sacks, TFL, QB hits, INTs, fumbles forced</li>
+                  <li><strong>Special teams:</strong> Punting, kickoff/punt returns, field goal accuracy</li>
+                  <li><strong>Game script:</strong> Largest lead, time in lead, lead changes, scoring runs, ties</li>
+                </ul>
+                <p className="text-yellow-700 text-sm">
+                  This data is currently Labs-only and not yet used in the production Hybrid V2 model. It is being 
+                  collected for future V5 model development and analysis.
+                </p>
+                
                 <h4 className="font-medium text-yellow-800 mb-2 mt-4">Hybrid Conflict Types (Labs Analytics)</h4>
                 <p className="text-gray-700 mb-2">
                   We compute conflict types for games with Hybrid V2 spread bets to understand where performance 
