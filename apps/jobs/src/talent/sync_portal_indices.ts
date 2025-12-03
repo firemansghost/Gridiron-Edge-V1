@@ -8,7 +8,12 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { computeContinuityScore } from './portal_indices';
+import { 
+  computeContinuityScore, 
+  computePositionalShock, 
+  computeMercenaryIndex, 
+  computePortalAggressor 
+} from './portal_indices';
 
 const prisma = new PrismaClient();
 
@@ -59,22 +64,29 @@ async function main() {
       continue;
     }
 
-    // Compute continuity score
+    // Compute all portal indices
     const continuityScore = computeContinuityScore(teamSeason);
+    const positionalShock = computePositionalShock(teamSeason);
+    const mercenaryIndex = computeMercenaryIndex(teamSeason);
+    const portalAggressor = computePortalAggressor(teamSeason);
     
+    // At least continuityScore should be computed (it's the most basic)
     if (continuityScore === null) {
       skipped++;
       skipReasons['could not compute continuity score'] = (skipReasons['could not compute continuity score'] || 0) + 1;
       continue;
     }
 
-    // Update raw_json.portal_meta.continuityScore
+    // Update raw_json.portal_meta with all indices
     // Preserve all existing keys
     const updatedRawJson = {
       ...rawJson,
       portal_meta: {
         ...(rawJson.portal_meta || {}),
         continuityScore,
+        positionalShock,
+        mercenaryIndex,
+        portalAggressor,
       },
     };
 

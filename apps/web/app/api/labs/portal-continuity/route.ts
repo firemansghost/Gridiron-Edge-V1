@@ -15,7 +15,9 @@ interface PortalContinuityRow {
   teamName: string;
   conference?: string | null;
   continuityScore: number; // 0–1
-  // TODO: Add wins, losses, atsWins, atsLosses if easy to compute
+  positionalShock?: number | null; // 0–1
+  mercenaryIndex?: number | null; // 0–1
+  portalAggressor?: number | null; // 0–1
 }
 
 export async function GET(request: NextRequest) {
@@ -56,7 +58,7 @@ export async function GET(request: NextRequest) {
 
     const teamMap = new Map(teams.map(t => [t.id, t]));
 
-    // Extract rows with continuity scores
+    // Extract rows with portal meta indices
     const rows: PortalContinuityRow[] = [];
 
     for (const teamSeason of teamSeasons) {
@@ -71,6 +73,9 @@ export async function GET(request: NextRequest) {
             teamName: team.name,
             conference: team.conference || null,
             continuityScore: portalMeta.continuityScore,
+            positionalShock: typeof portalMeta.positionalShock === 'number' ? portalMeta.positionalShock : null,
+            mercenaryIndex: typeof portalMeta.mercenaryIndex === 'number' ? portalMeta.mercenaryIndex : null,
+            portalAggressor: typeof portalMeta.portalAggressor === 'number' ? portalMeta.portalAggressor : null,
           });
         }
       }

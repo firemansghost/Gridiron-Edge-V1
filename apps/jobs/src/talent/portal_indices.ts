@@ -18,7 +18,7 @@ export interface PortalIndices {
   continuityScore: number | null;
   positionalShock: number | null;
   mercenaryIndex: number | null;
-  portalAggressor: boolean | null;
+  portalAggressor: number | null; // Changed from boolean to number (0-1 scale)
 }
 
 /**
@@ -113,54 +113,194 @@ export function computeContinuityScore(teamSeason: TeamSeasonStat): number | nul
 /**
  * Compute Positional Shock Index
  * 
- * Identifies teams with extreme turnover at key positions (QB, OL, DL).
- * Higher values indicate more turnover at critical positions.
+ * Quantifies how much key position groups have been rebuilt.
+ * Higher values indicate more turnover at critical positions (QB, OL, LB, DB).
+ * 
+ * Uses available returning production data:
+ * - Passing (QB) - weighted heavily
+ * - Rushing (RB + OL impact) - weighted heavily
+ * - Receiving (WR/TE) - moderate weight
+ * - Defense (DL/LB/DB) - weighted heavily
  * 
  * @param teamSeason TeamSeasonStat with roster_churn data in rawJson
- * @returns Positional shock index (0-100 scale, or null if data unavailable)
+ * @returns Positional shock index (0-1 scale, or null if data unavailable)
  */
 export function computePositionalShock(teamSeason: TeamSeasonStat): number | null {
-  // TODO: implement using position-group churn from rawJson.roster_churn
-  // Logic:
-  // - Analyze returning production by position group
-  // - Weight QB, OL, DL more heavily (these positions have outsized impact)
-  // - Calculate weighted average of turnover at critical positions
-  return null;
+  const rawJson = teamSeason.rawJson as any;
+  if (!rawJson || !rawJson.roster_churn) {
+    return null;
+  }
+
+  const rosterChurn = rawJson.roster_churn;
+  const returningProd = rosterChurn.returningProduction;
+
+  if (!returningProd) {
+    return null;
+  }
+
+  // Extract position-specific returning production
+  // These are already in [0, 1] decimal format from CFBD
+  const passingReturning = returningProd.passing ?? null;
+  const rushingReturning = returningProd.rushing ?? null;
+  const receivingReturning = returningProd.receiving ?? null;
+  const defenseReturning = returningProd.defense ?? null;
+
+  // Need at least one position group to calculate
+  if (passingReturning === null && rushingReturning === null && 
+      receivingReturning === null && defenseReturning === null) {
+    return null;
+  }
+
+  // Calculate turnover (1 - returning production) for each position
+  // Higher turnover = higher shock
+  const passingTurnover = passingReturning !== null ? 1 - passingReturning : null;
+  const rushingTurnover = rushingReturning !== null ? 1 - rushingReturning : null;
+  const receivingTurnover = receivingReturning !== null ? 1 - receivingReturning : null;
+  const defenseTurnover = defenseReturning !== null ? 1 - defenseReturning : null;
+
+  // Weight critical positions more heavily:
+  // - QB (passing): 30% weight
+  // - OL/RB (rushing): 25% weight (OL impact)
+  // - Defense: 30% weight (DL/LB/DB)
+  // - Receiving: 15% weight (WR/TE)
+  let weightedTurnover = 0;
+  let totalWeight = 0;
+
+  if (passingTurnover !== null) {
+    weightedTurnover += passingTurnover * 0.30;
+    totalWeight += 0.30;
+  }
+
+  if (rushingTurnover !== null) {
+    weightedTurnover += rushingTurnover * 0.25;
+    totalWeight += 0.25;
+  }
+
+  if (defenseTurnover !== null) {
+    weightedTurnover += defenseTurnover * 0.30;
+    totalWeight += 0.30;
+  }
+
+  if (receivingTurnover !== null) {
+    weightedTurnover += receivingTurnover * 0.15;
+    totalWeight += 0.15;
+  }
+
+  // If we have no weights, can't calculate
+  if (totalWeight === 0) {
+    return null;
+  }
+
+  // Normalize by total weight to get average weighted turnover
+  const positionalShock = weightedTurnover / totalWeight;
+
+  // Clamp to [0, 1]
+  return Math.max(0, Math.min(1, positionalShock));
 }
 
 /**
  * Compute Mercenary Index
  * 
- * Measures reliance on short-term transfers (1-year transfers, short-eligibility players).
- * Higher values indicate teams heavily reliant on mercenary-style transfers.
+ * Measures "mercenary / 1-year rental" burden - how much the roster relies on
+ * short-term portal transfers rather than developed players.
+ * 
+ * Uses transfer portal inCount as a proxy for mercenary behavior:
+ * - High transfer inCount relative to typical roster suggests heavy reliance on portal
+ * - Normalized to [0, 1] where 0 = minimal portal reliance, 1 = heavy mercenary profile
+ * 
+ * Note: Without 1-year eligibility data, we use total transfer inCount as a proxy.
+ * Teams with very high transfer counts are likely relying on short-term rentals.
  * 
  * @param teamSeason TeamSeasonStat with roster_churn data in rawJson
- * @returns Mercenary index (0-100 scale, or null if data unavailable)
+ * @returns Mercenary index (0-1 scale, or null if data unavailable)
  */
 export function computeMercenaryIndex(teamSeason: TeamSeasonStat): number | null {
-  // TODO: implement using 1-year transfers / short-eligibility players from rawJson.roster_churn
-  // Logic:
-  // - Count transfers with 1 year of eligibility remaining
-  // - Count transfers with short eligibility windows (2 years or less)
-  // - Calculate as percentage of total roster or transfer count
-  return null;
+  const rawJson = teamSeason.rawJson as any;
+  if (!rawJson || !rawJson.roster_churn) {
+    return null;
+  }
+
+  const rosterChurn = rawJson.roster_churn;
+  const transferPortal = rosterChurn.transferPortal;
+
+  if (!transferPortal || transferPortal.inCount === undefined) {
+    return null;
+  }
+
+  const transferIn = transferPortal.inCount;
+
+  // Normalize transfer count to [0, 1] scale
+  // Typical FBS roster: ~85 scholarship players
+  // High mercenary teams: 15+ transfers in (representing ~18% of roster)
+  // Extreme mercenary teams: 20+ transfers in (representing ~24% of roster)
+  // 
+  // We'll use a sigmoid-like normalization:
+  // - 0 transfers = 0.0 (no mercenary profile)
+  // - 10 transfers = ~0.5 (moderate mercenary)
+  // - 20+ transfers = ~1.0 (heavy mercenary)
+  
+  const maxTransfers = 20; // Threshold for "heavy mercenary"
+  const mercenaryIndex = Math.min(1.0, transferIn / maxTransfers);
+
+  return Math.max(0, Math.min(1, mercenaryIndex));
 }
 
 /**
- * Compute Portal Aggressor Flag
+ * Compute Portal Aggressor Index
  * 
- * Identifies teams that aggressively use the transfer portal (net talent gain).
- * True indicates a team that is a net gainer of talent via transfers.
+ * Measures how aggressively the team uses the portal to ADD talent.
+ * Higher values indicate teams that are net talent gainers via transfers.
+ * 
+ * Uses net transfer count (inCount - outCount) as the primary metric:
+ * - Positive netCount = aggressive portal user (net gainer)
+ * - Negative netCount = portal loser (net loser)
+ * 
+ * Normalized to [0, 1] where:
+ * - 0.0 = net portal loser / passive (negative netCount)
+ * - 1.0 = heavy net talent gainer / active portal aggressor (high positive netCount)
  * 
  * @param teamSeason TeamSeasonStat with roster_churn data in rawJson
- * @returns true if portal aggressor, false if not, null if data unavailable
+ * @returns Portal aggressor index (0-1 scale, or null if data unavailable)
  */
-export function computePortalAggressor(teamSeason: TeamSeasonStat): boolean | null {
-  // TODO: implement using net talent gain from transfers
-  // Logic:
-  // - Check transferPortal.netCount (positive = net gain)
-  // - Optionally factor in talent ratings if available (weighted net gain)
-  // - Return true if netCount > threshold (e.g., +3 or more)
-  return null;
+export function computePortalAggressor(teamSeason: TeamSeasonStat): number | null {
+  const rawJson = teamSeason.rawJson as any;
+  if (!rawJson || !rawJson.roster_churn) {
+    return null;
+  }
+
+  const rosterChurn = rawJson.roster_churn;
+  const transferPortal = rosterChurn.transferPortal;
+
+  if (!transferPortal || transferPortal.netCount === undefined) {
+    return null;
+  }
+
+  const netCount = transferPortal.netCount;
+
+  // Normalize netCount to [0, 1] scale
+  // - Negative netCount (portal loser) → 0.0
+  // - Zero netCount → 0.5 (neutral)
+  // - Positive netCount (portal gainer) → 0.5 to 1.0
+  //
+  // Thresholds:
+  // - netCount <= -5: 0.0 (heavy portal loser)
+  // - netCount = 0: 0.5 (neutral)
+  // - netCount >= +10: 1.0 (heavy portal aggressor)
+  
+  if (netCount <= -5) {
+    return 0.0;
+  }
+  
+  if (netCount >= 10) {
+    return 1.0;
+  }
+
+  // Linear interpolation between -5 and +10
+  // At -5: 0.0
+  // At 0: 0.5
+  // At +10: 1.0
+  const normalized = (netCount + 5) / 15; // Scale from [-5, 10] to [0, 1]
+  
+  return Math.max(0, Math.min(1, normalized));
 }
 

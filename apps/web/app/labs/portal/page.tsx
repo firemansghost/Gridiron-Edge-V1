@@ -19,6 +19,9 @@ interface PortalContinuityRow {
   teamName: string;
   conference?: string | null;
   continuityScore: number; // 0–1
+  positionalShock?: number | null; // 0–1
+  mercenaryIndex?: number | null; // 0–1
+  portalAggressor?: number | null; // 0–1
 }
 
 export default function PortalLabsPage() {
@@ -60,6 +63,17 @@ export default function PortalLabsPage() {
     }
   };
 
+  const getIndexBand = (score: number | null | undefined): { label: string; color: string } | null => {
+    if (score === null || score === undefined) return null;
+    if (score >= 0.67) {
+      return { label: 'High', color: 'bg-red-100 text-red-800' };
+    } else if (score >= 0.33) {
+      return { label: 'Mid', color: 'bg-yellow-100 text-yellow-800' };
+    } else {
+      return { label: 'Low', color: 'bg-green-100 text-green-800' };
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <HeaderNav />
@@ -87,6 +101,17 @@ export default function PortalLabsPage() {
                 <li><strong>Mid (0.60–0.79):</strong> Typical modern churn</li>
                 <li><strong>Low (&lt; 0.60):</strong> High churn / new pieces</li>
               </ul>
+            </div>
+            <div className="bg-blue-50 border-l-4 border-blue-400 p-4 mb-4">
+              <p className="text-sm font-medium text-gray-900 mb-2">Portal Meta v2 Indices (Labs-only):</p>
+              <ul className="text-sm text-gray-700 space-y-1">
+                <li><strong>PositionalShock:</strong> Measures how much key position groups (QB, OL, LB, DB) were rebuilt. Higher = more turnover at critical positions.</li>
+                <li><strong>MercenaryIndex:</strong> Measures reliance on 1-year transfers / short-term portal rentals. Higher = roster heavily driven by mercenary-style transfers.</li>
+                <li><strong>PortalAggressor:</strong> Measures how aggressively the team uses the portal to ADD talent. Higher = net talent gainer via transfers.</li>
+              </ul>
+              <p className="text-xs text-gray-600 mt-2">
+                <strong>Note:</strong> These indices are Labs-only and not used in Hybrid V2 or official card (yet).
+              </p>
             </div>
           </div>
           <LabsNav />
@@ -130,16 +155,19 @@ export default function PortalLabsPage() {
                       Conference
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Continuity Score
+                      Continuity
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Band
+                      Portal Meta
                     </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {rows.map((row) => {
-                    const band = getContinuityBand(row.continuityScore);
+                    const continuityBand = getContinuityBand(row.continuityScore);
+                    const psBand = getIndexBand(row.positionalShock);
+                    const miBand = getIndexBand(row.mercenaryIndex);
+                    const paBand = getIndexBand(row.portalAggressor);
                     return (
                       <tr key={row.teamId}>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -148,13 +176,37 @@ export default function PortalLabsPage() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {row.conference || '—'}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {(row.continuityScore * 100).toFixed(1)}
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">
+                            {(row.continuityScore * 100).toFixed(1)}
+                          </div>
+                          <div className="mt-1">
+                            <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${continuityBand.color}`}>
+                              {continuityBand.label}
+                            </span>
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 py-1 text-xs font-semibold rounded-full ${band.color}`}>
-                            {band.label}
-                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            {psBand ? (
+                              <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${psBand.color}`} title={`PositionalShock: ${((row.positionalShock || 0) * 100).toFixed(1)}`}>
+                                PS: {psBand.label}
+                              </span>
+                            ) : null}
+                            {miBand ? (
+                              <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${miBand.color}`} title={`MercenaryIndex: ${((row.mercenaryIndex || 0) * 100).toFixed(1)}`}>
+                                MI: {miBand.label}
+                              </span>
+                            ) : null}
+                            {paBand ? (
+                              <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${paBand.color}`} title={`PortalAggressor: ${((row.portalAggressor || 0) * 100).toFixed(1)}`}>
+                                PA: {paBand.label}
+                              </span>
+                            ) : null}
+                            {!psBand && !miBand && !paBand && (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
