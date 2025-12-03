@@ -3467,6 +3467,59 @@ export async function GET(
     let ats_dog_headline_blocked = false;
     
     // ============================================
+    // BUILD EXPLICIT officialSpreadBet FIELD (for UI to use directly)
+    // ============================================
+    let officialSpreadBet: {
+      teamId: string;
+      teamName: string;
+      isHome: boolean;
+      line: number;
+      edge: number;
+      betTo?: number | null;
+      grade?: string | null;
+      strategy: 'official_flat_100';
+      clv?: number | null;
+    } | null = null;
+
+    if (officialBet && officialBet.closePrice !== null && officialBet.modelPrice !== null) {
+      const betTeamId = officialBet.side === 'home' ? game.homeTeamId : game.awayTeamId;
+      const betTeam = officialBet.side === 'home' ? game.homeTeam : game.awayTeam;
+      const closePrice = Number(officialBet.closePrice);
+      const modelPrice = Number(officialBet.modelPrice);
+      
+      // Edge = |modelPrice - closePrice| (same calculation as /picks uses)
+      const edge = Math.abs(modelPrice - closePrice);
+      
+      // Calculate grade from edge (same logic as /picks)
+      let grade: string | null = null;
+      if (edge >= 4.0) grade = 'A';
+      else if (edge >= 3.0) grade = 'B';
+      else if (edge >= 0.1) grade = 'C';
+      
+      // betTo = modelPrice (the line where edge becomes 0)
+      const betTo = modelPrice;
+      
+      officialSpreadBet = {
+        teamId: betTeamId,
+        teamName: betTeam.name,
+        isHome: officialBet.side === 'home',
+        line: closePrice,
+        edge: edge,
+        betTo: betTo,
+        grade: grade,
+        strategy: 'official_flat_100',
+        clv: officialBet.clv ? Number(officialBet.clv) : null,
+      };
+      
+      console.log(`[Game ${gameId}] ✅ Built officialSpreadBet:`, {
+        team: officialSpreadBet.teamName,
+        line: officialSpreadBet.line,
+        edge: officialSpreadBet.edge,
+        grade: officialSpreadBet.grade,
+      });
+    }
+
+    // ============================================
     // PRIORITY: Use official_flat_100 bet if available (Official picks tab)
     // ============================================
     if (officialBet && officialBet.closePrice !== null) {
@@ -5602,6 +5655,9 @@ export async function GET(
       // Total diagnostics (for debugging model total pipeline)
       total_diag: process.env.NODE_ENV !== 'production' ? totalDiag : undefined,
 
+      // EXPLICIT: Official spread bet (for Official picks tab - bypasses model logic)
+      officialSpreadBet: officialSpreadBet,
+      
       // New explicit pick fields (ticket-style with grades)
       picks: {
         spread: {
