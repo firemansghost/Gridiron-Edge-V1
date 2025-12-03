@@ -369,7 +369,43 @@ This is **Labs-only evidence** and not yet a hard production rule, but it strong
 
 ---
 
-## 9. Future Model Enhancements (V5+)
+## 9. 2026 Guardrail Policy – Low-Continuity Dogs
+
+The official card treats "Low-Continuity Dog" as a **hard guardrail by default**.
+
+### Definition
+
+A **Low-Continuity Dog** is a spread bet where:
+- The bet team's `continuityScore < 0.60` (Low continuity band)
+- AND the bet team is a dog (getting points, based on closing spread)
+
+### Historical Evidence
+
+These plays have been a large negative ROI segment in both 2024 and 2025 simulations:
+- **2025 Official Card**: 316 low-continuity dogs had **-22.04% ROI** (vs +13.53% baseline)
+- **2025 Hybrid V2**: 239 low-continuity dogs had **-14.50% ROI** (vs +20.38% baseline)
+
+### Policy for 2026
+
+**Default behavior:**
+- The official card **auto-excludes** low-continuity dogs by default.
+- This is a **risk management rule**, not a model feature.
+- The model (Hybrid V2) can still like these games; the guardrail is on portfolio construction, not on the rating engine.
+
+**Manual override process:**
+- If a low-continuity dog is included in the official card:
+  - It must be **manually whitelisted** with a written handicap (injuries, matchup context, etc.).
+  - It should be treated as a **Labs-only** or **reduced-size** play.
+  - The rationale should be documented for review.
+
+**Implementation:**
+- Low-continuity dogs are flagged with a red "Low-Continuity Dog" pill on the `/picks` page.
+- The Portfolio What-Ifs panel (`/labs/portfolio`) shows the impact of dropping these bets.
+- This guardrail applies to the **official card** (`official_flat_100`); Labs strategies may experiment with different filters.
+
+---
+
+## 10. Future Model Enhancements (V5+)
 
 We're planning to add Portal & NIL Meta Indices as Labs overlays, with potential integration into a future V5 Hybrid model:
 

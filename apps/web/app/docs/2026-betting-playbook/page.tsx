@@ -413,7 +413,63 @@ export default function BettingPlaybookPage() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">9. Future Model Enhancements (V5+)</h2>
+          <h2 className="text-2xl font-semibold text-gray-900 mb-4">9. 2026 Guardrail Policy – Low-Continuity Dogs</h2>
+          <p className="text-gray-700 mb-4">
+            The official card treats "Low-Continuity Dog" as a <strong>hard guardrail by default</strong>.
+          </p>
+          
+          <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Definition</h3>
+            <p className="text-gray-700 mb-2">
+              A <strong>Low-Continuity Dog</strong> is a spread bet where:
+            </p>
+            <ul className="list-disc pl-6 space-y-1 text-gray-700 mb-2">
+              <li>The bet team's <code className="bg-gray-100 px-1 rounded">continuityScore &lt; 0.60</code> (Low continuity band)</li>
+              <li>AND the bet team is a dog (getting points, based on closing spread)</li>
+            </ul>
+          </div>
+
+          <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Historical Evidence</h3>
+            <p className="text-gray-700 mb-2">
+              These plays have been a large negative ROI segment in both 2024 and 2025 simulations:
+            </p>
+            <ul className="list-disc pl-6 space-y-1 text-gray-700 mb-2">
+              <li><strong>2025 Official Card</strong>: 316 low-continuity dogs had <strong className="text-red-600">-22.04% ROI</strong> (vs +13.53% baseline)</li>
+              <li><strong>2025 Hybrid V2</strong>: 239 low-continuity dogs had <strong className="text-red-600">-14.50% ROI</strong> (vs +20.38% baseline)</li>
+            </ul>
+          </div>
+
+          <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Policy for 2026</h3>
+            <p className="text-gray-700 mb-2">
+              <strong>Default behavior:</strong>
+            </p>
+            <ul className="list-disc pl-6 space-y-1 text-gray-700 mb-3">
+              <li>The official card <strong>auto-excludes</strong> low-continuity dogs by default.</li>
+              <li>This is a <strong>risk management rule</strong>, not a model feature.</li>
+              <li>The model (Hybrid V2) can still like these games; the guardrail is on portfolio construction, not on the rating engine.</li>
+            </ul>
+            <p className="text-gray-700 mb-2">
+              <strong>Manual override process:</strong>
+            </p>
+            <ul className="list-disc pl-6 space-y-1 text-gray-700 mb-3">
+              <li>If a low-continuity dog is included in the official card:
+                <ul className="list-disc pl-6 mt-1 space-y-1">
+                  <li>It must be <strong>manually whitelisted</strong> with a written handicap (injuries, matchup context, etc.).</li>
+                  <li>It should be treated as a <strong>Labs-only</strong> or <strong>reduced-size</strong> play.</li>
+                  <li>The rationale should be documented for review.</li>
+                </ul>
+              </li>
+            </ul>
+            <p className="text-gray-700 mb-2 text-sm">
+              <strong>Implementation:</strong> Low-continuity dogs are flagged with a red "Low-Continuity Dog" pill on the <Link href="/picks" className="text-blue-600 hover:text-blue-700 underline">/picks</Link> page. The Portfolio What-Ifs panel (<Link href="/labs/portfolio" className="text-blue-600 hover:text-blue-700 underline">/labs/portfolio</Link>) shows the impact of dropping these bets. This guardrail applies to the <strong>official card</strong> (<code className="bg-gray-100 px-1 rounded">official_flat_100</code>); Labs strategies may experiment with different filters.
+            </p>
+          </div>
+        </section>
+
+        <section>
+          <h2 className="text-2xl font-semibold text-gray-900 mb-4">10. Future Model Enhancements (V5+)</h2>
           <p className="text-gray-700 mb-4">
             We're planning to add Portal & NIL Meta Indices as Labs overlays, with potential integration into a future V5 Hybrid model:
           </p>
@@ -432,7 +488,7 @@ export default function BettingPlaybookPage() {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">10. Disclaimer</h2>
+          <h2 className="text-2xl font-semibold text-gray-900 mb-4">11. Disclaimer</h2>
           <p className="text-gray-700 mb-2">
             All numbers above are based on historical backtests (2024–2025).
           </p>

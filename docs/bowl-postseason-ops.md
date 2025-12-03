@@ -104,3 +104,4 @@ If something looks wrong:
 - **Bowl Week Bootstrap** (`bowl-week-bootstrap.yml`): Manual workflow for postseason weeks (this checklist)
 - **SGO Team Stats Sync** (`sgo-team-stats.yml`): Separate Labs-only workflow for team stats (not used in this checklist)
 
+
