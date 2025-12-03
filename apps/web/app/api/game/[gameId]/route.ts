@@ -105,6 +105,26 @@ export async function GET(
       );
     }
 
+    // ============================================
+    // LOAD OFFICIAL BET (for Official picks tab)
+    // ============================================
+    const officialBet = await prisma.bet.findFirst({
+      where: {
+        gameId: game.id,
+        strategyTag: 'official_flat_100',
+        marketType: 'spread',
+      },
+    });
+
+    // Also load Hybrid V2 bet for Model vs Market box
+    const hybridV2Bet = await prisma.bet.findFirst({
+      where: {
+        gameId: game.id,
+        strategyTag: 'hybrid_v2',
+        marketType: 'spread',
+      },
+    });
+
     const matchupOutput = game.matchupOutputs[0];
     
     // ============================================
@@ -3446,7 +3466,56 @@ export async function GET(
     let bettablePick: any;
     let ats_dog_headline_blocked = false;
     
-    if (!hasSpreadEdge) {
+    // ============================================
+    // PRIORITY: Use official_flat_100 bet if available (Official picks tab)
+    // ============================================
+    if (officialBet && officialBet.closePrice !== null) {
+      // Use the actual official bet as source of truth
+      const betTeamId = officialBet.side === 'home' ? game.homeTeamId : game.awayTeamId;
+      const betTeam = officialBet.side === 'home' ? game.homeTeam : game.awayTeam;
+      const closePrice = Number(officialBet.closePrice);
+      const modelPrice = officialBet.modelPrice ? Number(officialBet.modelPrice) : null;
+      
+      // closePrice is the line for the bet team (from side field)
+      // Negative = bet team is laying points, Positive = bet team is getting points
+      const edge = modelPrice !== null && closePrice !== null 
+        ? Math.abs(modelPrice - closePrice) 
+        : null;
+      
+      // Format the line: negative shows as-is (e.g., -4.0), positive shows with + (e.g., +3.5)
+      const lineStr = closePrice >= 0 ? `+${closePrice.toFixed(1)}` : closePrice.toFixed(1);
+      const label = `${betTeam.name} ${lineStr}`;
+      
+      // Compute betTo from model price if available
+      const betTo = modelPrice !== null ? modelPrice : null;
+      
+      bettablePick = {
+        teamId: betTeamId,
+        teamName: betTeam.name,
+        line: closePrice,
+        label: label,
+        edgePts: edge ?? atsEdgeAbs, // Use bet edge if available, fallback to computed edge
+        betTo: betTo,
+        flip: null, // Not computed from bet
+        favoritesDisagree: false,
+        reasoning: edge !== null 
+          ? `Official bet: ${label} with ${edge.toFixed(1)} pts edge.`
+          : `Official bet: ${label}.`,
+        suppressHeadline: false,
+        extremeFavoriteBlocked: false,
+        clv: officialBet.clv ? Number(officialBet.clv) : null,
+      };
+      
+      console.log(`[Game ${gameId}] ✅ Using official_flat_100 bet for spread pick:`, {
+        betId: officialBet.id,
+        side: officialBet.side,
+        team: betTeam.name,
+        line: closePrice,
+        label: label,
+        edge: edge,
+        clv: officialBet.clv,
+      });
+    } else if (!hasSpreadEdge) {
       // No pick - edge too small to bet (< 0.1)
       // BUT: Still populate betTo, flip, and edgePts for range guidance (transparency)
       bettablePick = {
@@ -3643,11 +3712,43 @@ export async function GET(
     }
     
     // Model favorite team (from finalSpreadWithOverlayFC or Core V1)
+    // PRIORITY: Use Hybrid V2 bet modelPrice if available (for consistency with /labs/hybrid and /picks)
     let modelFavoriteTeamId: string | null;
     let modelFavoriteName: string | null;
     let modelFavoriteLine: number;
     
-    if (USE_CORE_V1 && coreV1SpreadInfo) {
+    // Check if we should use Hybrid V2 spread for the header box
+    if (hybridV2Bet && hybridV2Bet.modelPrice !== null && hybridV2Bet.closePrice !== null) {
+      // Use Hybrid V2 bet as source of truth for model spread
+      const hybridModelPrice = Number(hybridV2Bet.modelPrice);
+      const hybridClosePrice = Number(hybridV2Bet.closePrice);
+      
+      // Determine which team is the model favorite from the bet side
+      // modelPrice is the line for the bet team (negative = bet team is favorite, positive = bet team is dog)
+      const betTeamId = hybridV2Bet.side === 'home' ? game.homeTeamId : game.awayTeamId;
+      const betTeam = hybridV2Bet.side === 'home' ? game.homeTeam : game.awayTeam;
+      const oppTeamId = hybridV2Bet.side === 'home' ? game.awayTeamId : game.homeTeamId;
+      const oppTeam = hybridV2Bet.side === 'home' ? game.awayTeam : game.homeTeam;
+      
+      // If modelPrice is negative, bet team is model favorite; if positive, opp team is favorite
+      if (hybridModelPrice < 0) {
+        modelFavoriteTeamId = betTeamId;
+        modelFavoriteName = betTeam.name;
+        modelFavoriteLine = hybridModelPrice; // Already negative (favorite-centric)
+      } else {
+        modelFavoriteTeamId = oppTeamId;
+        modelFavoriteName = oppTeam.name;
+        modelFavoriteLine = -hybridModelPrice; // Flip to negative (favorite-centric)
+      }
+      
+      console.log(`[Game ${gameId}] ✅ Using Hybrid V2 bet for model spread:`, {
+        betId: hybridV2Bet.id,
+        side: hybridV2Bet.side,
+        modelPrice: hybridModelPrice,
+        modelFavorite: modelFavoriteName,
+        modelFavoriteLine: modelFavoriteLine,
+      });
+    } else if (USE_CORE_V1 && coreV1SpreadInfo) {
       // V1: Use Core V1 favorite info directly
       modelFavoriteTeamId = coreV1SpreadInfo.favoriteTeamId;
       modelFavoriteName = coreV1SpreadInfo.favoriteName;
@@ -3677,7 +3778,23 @@ export async function GET(
     let modelDogTeamId: string | null;
     let modelDogName: string | null;
     
-    if (USE_CORE_V1 && coreV1SpreadInfo) {
+    if (hybridV2Bet && hybridV2Bet.modelPrice !== null && hybridV2Bet.closePrice !== null) {
+      // Use Hybrid V2 bet - underdog is the opposite of model favorite
+      const betTeamId = hybridV2Bet.side === 'home' ? game.homeTeamId : game.awayTeamId;
+      const betTeam = hybridV2Bet.side === 'home' ? game.homeTeam : game.awayTeam;
+      const oppTeamId = hybridV2Bet.side === 'home' ? game.awayTeamId : game.homeTeamId;
+      const oppTeam = hybridV2Bet.side === 'home' ? game.awayTeam : game.homeTeam;
+      
+      const hybridModelPrice = Number(hybridV2Bet.modelPrice);
+      // If modelPrice is negative, bet team is favorite, so opp is dog; if positive, bet team is dog
+      if (hybridModelPrice < 0) {
+        modelDogTeamId = oppTeamId;
+        modelDogName = oppTeam.name;
+      } else {
+        modelDogTeamId = betTeamId;
+        modelDogName = betTeam.name;
+      }
+    } else if (USE_CORE_V1 && coreV1SpreadInfo) {
       // V1: Use Core V1 dog info directly
       modelDogTeamId = coreV1SpreadInfo.dogTeamId;
       modelDogName = coreV1SpreadInfo.dogName;
