@@ -5223,6 +5223,178 @@ export async function GET(
       }
     }
 
+    // ============================================
+    // HYBRID V2 CALCULATION (for Game Detail V2)
+    // ============================================
+    let hybridV2Data: any = null;
+    let modelsDisagree = false;
+    
+    try {
+      // Get unit grades (already fetched in unitGrades block, but we need them here)
+      const prismaClient = prisma as any;
+      const [homeGrades, awayGrades] = await Promise.all([
+        prismaClient.teamUnitGrades.findUnique({
+          where: {
+            teamId_season: {
+              teamId: game.homeTeamId,
+              season: game.season,
+            },
+          },
+        }),
+        prismaClient.teamUnitGrades.findUnique({
+          where: {
+            teamId_season: {
+              teamId: game.awayTeamId,
+              season: game.season,
+            },
+          },
+        }),
+      ]);
+
+      if (homeRating && awayRating && homeGrades && awayGrades) {
+        const homeRatingValue = Number(homeRating.powerRating || homeRating.rating || 0);
+        const awayRatingValue = Number(awayRating.powerRating || awayRating.rating || 0);
+
+        // Calculate hybrid spread
+        const hybridResult = calculateHybridSpread(
+          homeRatingValue,
+          awayRatingValue,
+          {
+            offRunGrade: homeGrades.offRunGrade,
+            defRunGrade: homeGrades.defRunGrade,
+            offPassGrade: homeGrades.offPassGrade,
+            defPassGrade: homeGrades.defPassGrade,
+            offExplosiveness: homeGrades.offExplosiveness,
+            defExplosiveness: homeGrades.defExplosiveness,
+          },
+          {
+            offRunGrade: awayGrades.offRunGrade,
+            defRunGrade: awayGrades.defRunGrade,
+            offPassGrade: awayGrades.offPassGrade,
+            defPassGrade: awayGrades.defPassGrade,
+            offExplosiveness: awayGrades.offExplosiveness,
+            defExplosiveness: awayGrades.defExplosiveness,
+          },
+          game.neutralSite || false,
+          game.homeTeamId,
+          game.awayTeamId
+        );
+
+        // Get market spread for comparison
+        const marketSpreadValue = market_snapshot.favoriteLine !== null 
+          ? Math.abs(market_snapshot.favoriteLine) 
+          : null;
+        const marketFavoriteTeamId = market_snapshot.favoriteTeamId;
+
+        // Calculate hybrid pick using same logic as hybrid slate
+        let spreadPick: any = null;
+        let favoritesDisagree = false;
+        let lowContinuityDog = false;
+
+        if (marketSpreadValue !== null && marketFavoriteTeamId) {
+          // Convert market spread to HMA format
+          const isMarketHomeFavorite = marketFavoriteTeamId === game.homeTeamId;
+          const marketMargin = isMarketHomeFavorite ? -marketSpreadValue : marketSpreadValue;
+
+          // Calculate edge: positive = home has value, negative = away has value
+          const edge = hybridResult.hybridSpreadHma - marketMargin;
+          const absEdge = Math.abs(edge);
+
+          // Determine pick side
+          const pickHome = edge > 0;
+          const pickTeamId = pickHome ? game.homeTeamId : game.awayTeamId;
+          const pickTeamName = pickHome ? game.homeTeam.name : game.awayTeam.name;
+
+          // Get market line for the picked team
+          let marketLine: number;
+          if (pickHome) {
+            // Picking home: if market favors home, line is negative; if market favors away, line is positive
+            marketLine = isMarketHomeFavorite ? -marketSpreadValue : marketSpreadValue;
+          } else {
+            // Picking away: if market favors home, line is positive; if market favors away, line is negative
+            marketLine = isMarketHomeFavorite ? marketSpreadValue : -marketSpreadValue;
+          }
+
+          // Calculate favoritesDisagree
+          favoritesDisagree = hybridResult.favoriteTeamId !== marketFavoriteTeamId;
+
+          // Calculate grade from edge
+          let grade: 'A' | 'B' | 'C' | null = null;
+          if (absEdge >= 4.0) grade = 'A';
+          else if (absEdge >= 3.0) grade = 'B';
+          else if (absEdge >= 0.1) grade = 'C';
+
+          // Calculate bet-to (where edge would hit 0.1 threshold)
+          const betTo = absEdge >= 0.1 ? Math.max(0.1, absEdge - 0.1) : null;
+
+          // Check for low-continuity dog
+          if (pickTeamId && !pickHome) { // Only check if picking the dog
+            const [betTeamSeason, oppTeamSeason] = await Promise.all([
+              prisma.teamSeasonStat.findUnique({
+                where: {
+                  season_teamId: {
+                    season: game.season,
+                    teamId: pickTeamId,
+                  },
+                },
+              }),
+              prisma.teamSeasonStat.findUnique({
+                where: {
+                  season_teamId: {
+                    season: game.season,
+                    teamId: pickHome ? game.awayTeamId : game.homeTeamId,
+                  },
+                },
+              }),
+            ]);
+
+            if (betTeamSeason) {
+              const rawJson = (betTeamSeason.rawJson as any) || {};
+              const portalMeta = rawJson.portal_meta;
+              const continuityScore = portalMeta?.continuityScore;
+              if (continuityScore !== null && continuityScore !== undefined && continuityScore < 0.60) {
+                lowContinuityDog = true;
+              }
+            }
+          }
+
+          spreadPick = {
+            teamId: pickTeamId,
+            teamName: pickTeamName,
+            line: marketLine,
+            edgePts: absEdge,
+            grade,
+            betTo,
+          };
+        }
+
+        hybridV2Data = {
+          spreadPick,
+          favoritesDisagree,
+          lowContinuityDog,
+          hybridSpread: {
+            hma: hybridResult.hybridSpreadHma,
+            favoriteSpread: hybridResult.hybridFavoriteSpread,
+            favoriteTeamId: hybridResult.favoriteTeamId,
+            favoriteName: hybridResult.favoriteTeamId === game.homeTeamId 
+              ? game.homeTeam.name 
+              : game.awayTeam.name,
+          },
+        };
+      }
+    } catch (error) {
+      console.error(`[Game ${gameId}] Error calculating Hybrid V2 data:`, error);
+      // Continue without hybrid data rather than failing the entire request
+    }
+
+    // Calculate modelsDisagree: compare Core V1 pick vs Hybrid V2 pick
+    // This must be done after bettablePick is created (which happens later in the code)
+    // We'll set it in the response object after picks is created
+    let finalModelsDisagree = false;
+    if (hybridV2Data?.spreadPick?.teamId && bettablePick?.teamId) {
+      finalModelsDisagree = hybridV2Data.spreadPick.teamId !== bettablePick.teamId;
+    }
+
     const response = {
       success: true,
       game: {
@@ -5547,6 +5719,8 @@ export async function GET(
           ...(favoritesDisagree ? ['Model and market favor different teams'] : []),
           ...(edgeAbsGt20 ? ['Edge magnitude exceeds 20 points'] : [])
         ],
+        // Game Detail V2: Models disagree flag
+        modelsDisagree: finalModelsDisagree,
         // ============================================
         // ASSERTIONS: Overlay Consistency & Sign Sanity
         // ============================================
@@ -5657,6 +5831,9 @@ export async function GET(
 
       // EXPLICIT: Official spread bet (for Official picks tab - bypasses model logic)
       officialSpreadBet: officialSpreadBet,
+      
+      // Hybrid V2 data (for Game Detail V2 - Labs view)
+      hybrid: hybridV2Data,
       
       // New explicit pick fields (ticket-style with grades)
       picks: {
