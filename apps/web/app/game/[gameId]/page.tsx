@@ -218,6 +218,21 @@ export default function GameDetailPage() {
     );
   }
 
+  // SAFE: Check critical nested objects exist
+  if (!game.game || !game.market_snapshot || !game.model_view) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <HeaderNav />
+        <div className="flex-1 flex items-center justify-center px-4">
+          <div className="text-center">
+            <p className="text-gray-600">Loading game data...</p>
+          </div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
   // ============================================
   // SINGLE SOURCE OF TRUTH: market_snapshot
   // ============================================
@@ -339,9 +354,9 @@ export default function GameDetailPage() {
           <div className="mb-4 md:mb-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
               <div className="flex-1">
-                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{game.game.matchup}</h1>
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{game.game?.matchup || 'Game'}</h1>
                 <p className="text-sm sm:text-base text-gray-600 mt-1 sm:mt-2">
-                  {game.game.kickoff} • {game.game.venue} {game.game.neutralSite && '(Neutral)'}
+                  {game.game?.kickoff || ''} • {game.game?.venue || ''} {game.game?.neutralSite && '(Neutral)'}
                 </p>
               </div>
               <div className="text-left sm:text-right">
@@ -353,7 +368,7 @@ export default function GameDetailPage() {
                   href="/docs/changelog"
                   className="text-base sm:text-lg font-semibold text-blue-600 hover:text-blue-800 hover:underline transition-colors inline-block"
                 >
-                  {game.modelConfig.version}
+                  {game.modelConfig?.version || 'N/A'}
                 </Link>
               </div>
             </div>
@@ -381,8 +396,8 @@ export default function GameDetailPage() {
                         <span>
                           {game.model_view?.modelFavoriteName && game.market_snapshot?.favoriteTeamName && game.model_view?.edges?.atsEdgePts !== null ? (
                             <>
-                              Model prices {game.model_view.modelFavoriteName} {game.model_view.modelFavoriteLine.toFixed(1)} while market prices {game.market_snapshot.favoriteTeamName} {game.market_snapshot.favoriteLine.toFixed(1)} — value exists on {game.model_view.edges.atsEdgePts > 0.5 ? game.market_snapshot.dogTeamName : game.model_view.edges.atsEdgePts < -0.5 ? game.market_snapshot.favoriteTeamName : 'no edge'} {game.model_view.edges.atsEdgePts > 0.5 ? `+${game.market_snapshot.dogLine.toFixed(1)}` : game.model_view.edges.atsEdgePts < -0.5 ? game.market_snapshot.favoriteLine.toFixed(1) : ''}
-                              {game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && (
+                              Model prices {game.model_view.modelFavoriteName} {game.model_view.modelFavoriteLine?.toFixed(1) || 'N/A'} while market prices {game.market_snapshot.favoriteTeamName} {game.market_snapshot.favoriteLine?.toFixed(1) || 'N/A'} — value exists on {game.model_view.edges.atsEdgePts > 0.5 ? game.market_snapshot.dogTeamName : game.model_view.edges.atsEdgePts < -0.5 ? game.market_snapshot.favoriteTeamName : 'no edge'} {game.model_view.edges.atsEdgePts > 0.5 ? `+${game.market_snapshot.dogLine?.toFixed(1) || 'N/A'}` : game.model_view.edges.atsEdgePts < -0.5 ? game.market_snapshot.favoriteLine?.toFixed(1) || 'N/A' : ''}
+                              {game.picks?.spread?.betTo !== null && game.picks?.spread?.betTo !== undefined && (
                                 <> (up to {game.picks.spread.betTo >= 0 ? '+' : ''}{game.picks.spread.betTo.toFixed(1)})</>
                               )}
                             </>
@@ -426,18 +441,18 @@ export default function GameDetailPage() {
               {/* Away Team Strip */}
               <div className="flex items-center gap-4">
                 <TeamLogo 
-                  teamName={game.teams?.away?.team?.name || game.game.awayTeam}
+                  teamName={game.teams?.away?.team?.name || game.game?.awayTeam || 'Away Team'}
                   teamId={game.teams?.away?.team?.id}
                   size="lg"
                 />
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <Link 
-                      href={`/team/${game.teams?.away?.team?.id || game.game.awayTeam.toLowerCase().replace(/\s+/g, '-')}`}
+                      href={`/team/${game.teams?.away?.team?.id || game.game?.awayTeam?.toLowerCase().replace(/\s+/g, '-') || 'away'}`}
                       className="text-xl font-bold text-gray-900 hover:text-blue-600 hover:underline transition-colors"
-                      aria-label={`View ${game.teams?.away?.team?.name || game.game.awayTeam} team details`}
+                      aria-label={`View ${game.teams?.away?.team?.name || game.game?.awayTeam || 'Away Team'} team details`}
                     >
-                      {game.teams?.away?.team?.name || game.game.awayTeam}
+                      {game.teams?.away?.team?.name || game.game?.awayTeam || 'Away Team'}
                     </Link>
                     {/* Rank chips or Unranked */}
                     {renderRankChips(game.rankings?.away, game.game?.week, game.game?.season, 'CFBD', undefined) || (
@@ -449,21 +464,21 @@ export default function GameDetailPage() {
                     {game.teams?.away?.record && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
                         <InfoTooltip content="Overall record" />
-                        Record: {game.teams.away.record.wins}–{game.teams.away.record.losses}
+                        Record: {game.teams.away.record.wins || 0}–{game.teams.away.record.losses || 0}
                       </span>
                     )}
                     {/* Last 5 chip */}
                     {game.teams?.away?.form && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 font-mono tracking-wider">
                         <InfoTooltip content="Last five results" />
-                        Last 5: {game.teams.away.form}
+                        Last 5: {game.teams.away.form || 'N/A'}
                       </span>
                     )}
                     {/* Streak chip */}
                     {game.teams?.away?.streak && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
                         <InfoTooltip content="Current streak" />
-                        Streak: {game.teams.away.streak}
+                        Streak: {game.teams.away.streak || 'N/A'}
                       </span>
                     )}
                   </div>
@@ -473,18 +488,18 @@ export default function GameDetailPage() {
               {/* Home Team Strip */}
               <div className="flex items-center gap-4">
                 <TeamLogo 
-                  teamName={game.teams?.home?.team?.name || game.game.homeTeam}
+                  teamName={game.teams?.home?.team?.name || game.game?.homeTeam || 'Home Team'}
                   teamId={game.teams?.home?.team?.id}
                   size="lg"
                 />
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <Link 
-                      href={`/team/${game.teams?.home?.team?.id || game.game.homeTeam.toLowerCase().replace(/\s+/g, '-')}`}
+                      href={`/team/${game.teams?.home?.team?.id || game.game?.homeTeam?.toLowerCase().replace(/\s+/g, '-') || 'home'}`}
                       className="text-xl font-bold text-gray-900 hover:text-blue-600 hover:underline transition-colors"
-                      aria-label={`View ${game.teams?.home?.team?.name || game.game.homeTeam} team details`}
+                      aria-label={`View ${game.teams?.home?.team?.name || game.game?.homeTeam || 'Home Team'} team details`}
                     >
-                      {game.teams?.home?.team?.name || game.game.homeTeam}
+                      {game.teams?.home?.team?.name || game.game?.homeTeam || 'Home Team'}
                     </Link>
                     {/* Rank chips or Unranked */}
                     {renderRankChips(game.rankings?.home, game.game?.week, game.game?.season, 'CFBD', undefined) || (
@@ -496,7 +511,7 @@ export default function GameDetailPage() {
                     {game.teams?.home?.record && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
                         <InfoTooltip content="Overall record" />
-                        Record: {game.teams.home.record.wins}–{game.teams.home.record.losses}
+                        Record: {game.teams.home.record.wins || 0}–{game.teams.home.record.losses || 0}
                       </span>
                     )}
                     {/* PHASE 2.3: Home Edge chip / HFA v2 */}
@@ -541,14 +556,14 @@ export default function GameDetailPage() {
                     {game.teams?.home?.form && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 font-mono tracking-wider">
                         <InfoTooltip content="Last five results" />
-                        Last 5: {game.teams.home.form}
+                        Last 5: {game.teams.home.form || 'N/A'}
                       </span>
                     )}
                     {/* Streak chip */}
                     {game.teams?.home?.streak && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
                         <InfoTooltip content="Current streak" />
-                        Streak: {game.teams.home.streak}
+                        Streak: {game.teams.home.streak || 'N/A'}
                       </span>
                     )}
                   </div>
@@ -558,11 +573,11 @@ export default function GameDetailPage() {
           </div>
 
           {/* Game Status (if not scheduled) */}
-          {game.game.status !== 'scheduled' && (
+          {game.game?.status && game.game.status !== 'scheduled' && (
             <div className="mb-6 bg-white p-4 rounded-lg shadow">
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Game Status</h3>
               <div className="text-2xl font-bold text-gray-900">
-                {game.game.awayTeam} {game.game.awayScore} - {game.game.homeScore} {game.game.homeTeam}
+                {game.game?.awayTeam || 'Away'} {game.game?.awayScore ?? 0} - {game.game?.homeScore ?? 0} {game.game?.homeTeam || 'Home'}
               </div>
             </div>
           )}
@@ -596,7 +611,7 @@ export default function GameDetailPage() {
                   <>
                     <span>•</span>
                     <span>
-                      window {new Date(game.market_snapshot.window.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} → {new Date(game.market_snapshot.window.end).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                      window {game.market_snapshot?.window?.start ? new Date(game.market_snapshot.window.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : 'N/A'} → {game.market_snapshot?.window?.end ? new Date(game.market_snapshot.window.end).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : 'N/A'}
                     </span>
                   </>
                 )}
@@ -737,7 +752,7 @@ export default function GameDetailPage() {
               <div className="flex items-center gap-2">
                 {game.modelConfig?.version && (
                   <span className="text-xs text-gray-500">
-                    Model {game.modelConfig.version}
+                    Model {game.modelConfig?.version || 'N/A'}
                   </span>
                 )}
                 {renderRankChips(game.rankings?.home, game.game?.week, game.game?.season, 'CFBD', undefined)}
@@ -753,7 +768,7 @@ export default function GameDetailPage() {
                   <>
                     <span>•</span>
                     <span>
-                      Updated {new Date(game.market_snapshot.updatedAt).toLocaleString('en-US', {
+                      Updated {game.market_snapshot?.updatedAt ? new Date(game.market_snapshot.updatedAt).toLocaleString('en-US', {
                         month: 'short',
                         day: 'numeric',
                         hour: 'numeric',
@@ -833,7 +848,7 @@ export default function GameDetailPage() {
                         `${game.officialSpreadBet.teamName} ${game.officialSpreadBet.line >= 0 ? '+' : ''}${game.officialSpreadBet.line.toFixed(1)}`
                       ) : modelViewMode === 'official' ? (
                         /* Official mode but no officialSpreadBet - show explicit message */
-                        'No official spread pick for this game'
+                        'No official spread pick for this game (Hybrid-only)'
                       ) : weatherAdjusted && game.weatherAdjustedSpread ? (
                         // Show weather-adjusted spread when toggle is on
                         <div>
@@ -841,9 +856,9 @@ export default function GameDetailPage() {
                             Base: {game.picks.spread.bettablePick?.label || 'PASS'}
                           </div>
                           <div className="text-sm text-blue-600 font-semibold">
-                            Weather Adjusted: {game.weatherAdjustedSpread.favoriteTeamId === game.game.homeTeamId
-                              ? `${game.game.homeTeam} ${game.weatherAdjustedSpread.favoriteSpread.toFixed(1)}`
-                              : `${game.game.awayTeam} ${game.weatherAdjustedSpread.favoriteSpread.toFixed(1)}`}
+                            Weather Adjusted: {game.weatherAdjustedSpread?.favoriteTeamId === game.game?.homeTeamId
+                              ? `${game.game?.homeTeam || 'Home'} ${game.weatherAdjustedSpread.favoriteSpread?.toFixed(1) || 'N/A'}`
+                              : `${game.game?.awayTeam || 'Away'} ${game.weatherAdjustedSpread.favoriteSpread?.toFixed(1) || 'N/A'}`}
                           </div>
                         </div>
                       ) : modelViewMode === 'raw' && isOfficialPass && hasRawAtsEdge ? (
@@ -895,7 +910,7 @@ export default function GameDetailPage() {
                         ) : modelViewMode === 'official' ? (
                           /* Official mode but no officialSpreadBet - show explicit message */
                           <div className="text-sm text-gray-600 mb-2">
-                            No official spread bet for this game. The official card does not include a spread pick.
+                            No official spread pick for this game (Hybrid-only).
                           </div>
                         ) : !game.picks?.spread?.bettablePick?.label ? (
                           <>
@@ -923,7 +938,7 @@ export default function GameDetailPage() {
                             {/* Range text for PASS case */}
                             {game.model_view?.modelFavoriteLine !== null && game.model_view?.modelFavoriteName && snapshot && (
                               <div className="text-xs text-gray-600 mt-1 mb-2 border-t border-gray-200 pt-2">
-                                <span className="font-semibold">Raw model fair line</span> ≈ {game.model_view.modelFavoriteName} {game.model_view.modelFavoriteLine.toFixed(1)}. Current market line is {snapshot.favoriteLine.toFixed(1)} ({atsEdgeMagnitude.toFixed(1)} pts {game.model_view.modelFavoriteLine < snapshot.favoriteLine ? 'cheaper' : 'more expensive'}). {game.picks.spread.bettablePick?.edgePts !== null && game.picks.spread.bettablePick?.edgePts !== undefined && game.picks.spread.bettablePick.edgePts >= 0.1 ? 'Edge is below actionable threshold (< 0.1 pts).' : 'No actionable edge at current number.'}
+                                <span className="font-semibold">Raw model fair line</span> ≈ {game.model_view?.modelFavoriteName || 'N/A'} {game.model_view?.modelFavoriteLine?.toFixed(1) || 'N/A'}. Current market line is {snapshot?.favoriteLine?.toFixed(1) || 'N/A'} ({atsEdgeMagnitude.toFixed(1)} pts {game.model_view?.modelFavoriteLine !== null && game.model_view?.modelFavoriteLine !== undefined && snapshot?.favoriteLine !== null && game.model_view.modelFavoriteLine < snapshot.favoriteLine ? 'cheaper' : 'more expensive'}). {game.picks?.spread?.bettablePick?.edgePts !== null && game.picks?.spread?.bettablePick?.edgePts !== undefined && game.picks.spread.bettablePick.edgePts >= 0.1 ? 'Edge is below actionable threshold (< 0.1 pts).' : 'No actionable edge at current number.'}
                               </div>
                             )}
                           </>
@@ -942,7 +957,7 @@ export default function GameDetailPage() {
                                   <div className="text-xl font-extrabold text-gray-900">
                                     Bet to: <span className="text-blue-600">{modelView.modelFavoriteLine.toFixed(1)}</span> <span className="text-sm font-normal text-gray-500">(raw)</span>
                                   </div>
-                                ) : game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && (
+                                ) : game.picks?.spread?.betTo !== null && game.picks?.spread?.betTo !== undefined && (
                                   <div className="text-xl font-extrabold text-gray-900">
                                     Bet to: <span className="text-blue-600">{game.picks.spread.betTo.toFixed(1)}</span>
                                   </div>
@@ -1019,7 +1034,7 @@ export default function GameDetailPage() {
                     <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">AGAINST THE SPREAD</h3>
                     <div className="text-lg font-semibold text-gray-900 mb-2">
                       {modelViewMode === 'official' && !game.officialSpreadBet
-                        ? 'No official spread pick for this game'
+                        ? 'No official spread pick for this game (Hybrid-only)'
                         : 'PASS — No official bet'}
                     </div>
                     {/* ============================================ */}
