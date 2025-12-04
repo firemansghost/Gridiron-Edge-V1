@@ -35,6 +35,7 @@ export default function GameDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const { mode: modelViewMode } = useModelViewMode();
   const [weatherAdjusted, setWeatherAdjusted] = useState(false);
+  const [activeTab, setActiveTab] = useState<'hybrid' | 'core' | 'side'>('hybrid');
 
   useEffect(() => {
     if (params.gameId) {
@@ -333,6 +334,46 @@ export default function GameDetailPage() {
                   {game.modelConfig.version}
                 </Link>
               </div>
+            </div>
+            
+            {/* Warning Pills Row - Game Detail V2 */}
+            <div className="flex items-center gap-2 flex-wrap mt-3">
+              {/* Data Quality Warning (existing) */}
+              {game.validation?.dataQualityWarning && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-1.5 text-sm text-yellow-800">
+                  {game.validation.dataQualityWarning}
+                </div>
+              )}
+              
+              {/* Favs Disagree Pill */}
+              {(game.validation?.favoritesDisagree || game.hybrid?.favoritesDisagree) && (
+                <span 
+                  className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 border border-yellow-200"
+                  title="Model and market favor different teams. Treat as Labs-only unless manually whitelisted."
+                >
+                  Favs Disagree
+                </span>
+              )}
+              
+              {/* Models Disagree Pill */}
+              {game.validation?.modelsDisagree && (
+                <span 
+                  className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 border border-red-200"
+                  title="Core V1 and Hybrid V2 land on opposite spread sides. Treat as high-uncertainty."
+                >
+                  Models Disagree
+                </span>
+              )}
+              
+              {/* Low-Continuity Dog Pill */}
+              {game.hybrid?.lowContinuityDog && (
+                <span 
+                  className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 border border-red-200"
+                  title="Underdog with low continuity score (< 60%). Historically poor ROI."
+                >
+                  Low-Continuity Dog
+                </span>
+              )}
             </div>
           </div>
 
@@ -677,8 +718,562 @@ export default function GameDetailPage() {
             )}
           </div>
 
-          {/* Betting Ticket - Single unified block above fold */}
+          {/* Decision Strip - Game Detail V2 */}
+          <div className="mb-6">
+            <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-4">Decision Strip</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Official Card */}
+              <div className="bg-white border-2 border-gray-300 rounded-lg p-4 shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Official Spread</h3>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                    Official Card
+                  </span>
+                </div>
+                {game.officialSpreadBet ? (
+                  <div>
+                    <div className="text-xl font-bold text-gray-900 mb-2">
+                      {game.officialSpreadBet.teamName} {game.officialSpreadBet.line > 0 ? '+' : ''}{game.officialSpreadBet.line.toFixed(1)}
+                    </div>
+                    {game.officialSpreadBet.edge !== null && (
+                      <div className="text-sm text-gray-600 mb-1">
+                        Edge: <span className="font-semibold">{game.officialSpreadBet.edge.toFixed(1)} pts</span>
+                      </div>
+                    )}
+                    {game.officialSpreadBet.grade && (
+                      <div className="text-xs text-gray-500">
+                        Grade: {game.officialSpreadBet.grade}
+                      </div>
+                    )}
+                    <div className="text-xs text-gray-500 mt-2">
+                      Source: official_flat_100
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-gray-500 text-sm">
+                    No official spread pick for this game. Check Labs sections below.
+                  </div>
+                )}
+              </div>
+              
+              {/* Hybrid V2 Card */}
+              <div className="bg-white border-2 border-purple-300 rounded-lg p-4 shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Hybrid V2 (Labs)</h3>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                    Labs
+                  </span>
+                </div>
+                {game.hybrid?.spreadPick ? (
+                  <div>
+                    <div className="text-xl font-bold text-gray-900 mb-2">
+                      {game.hybrid.spreadPick.teamName} {game.hybrid.spreadPick.line > 0 ? '+' : ''}{game.hybrid.spreadPick.line.toFixed(1)}
+                    </div>
+                    {game.hybrid.spreadPick.edgePts !== null && (
+                      <div className="text-sm text-gray-600 mb-1">
+                        Edge: <span className="font-semibold">{game.hybrid.spreadPick.edgePts.toFixed(1)} pts</span>
+                      </div>
+                    )}
+                    {game.hybrid.spreadPick.grade && (
+                      <div className="text-xs text-gray-500 mb-2">
+                        Grade: {game.hybrid.spreadPick.grade}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 flex-wrap mt-2">
+                      {game.hybrid.lowContinuityDog && (
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 border border-red-200">
+                          Low-Continuity Dog
+                        </span>
+                      )}
+                      {game.hybrid.favoritesDisagree && (
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 border border-yellow-200">
+                          Favs Disagree
+                        </span>
+                      )}
+                      {game.validation?.modelsDisagree && (
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 border border-red-200">
+                          Models Disagree
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-2 italic">
+                      Not auto-bet. Included on Labs page only.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-gray-500 text-sm">
+                    Hybrid V2 data unavailable
+                  </div>
+                )}
+              </div>
+              
+              {/* Core V1 Card */}
+              <div className="bg-white border-2 border-blue-300 rounded-lg p-4 shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Core V1 (Legacy)</h3>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                    Legacy
+                  </span>
+                </div>
+                {game.picks?.spread?.bettablePick?.label ? (
+                  <div>
+                    <div className="text-xl font-bold text-gray-900 mb-2">
+                      {game.picks.spread.bettablePick.label}
+                    </div>
+                    {game.picks.spread.edgePts !== null && (
+                      <div className="text-sm text-gray-600 mb-1">
+                        Edge: <span className="font-semibold">{game.picks.spread.edgePts.toFixed(1)} pts</span>
+                      </div>
+                    )}
+                    {game.picks.spread.grade && (
+                      <div className="text-xs text-gray-500 mb-2">
+                        Grade: {game.picks.spread.grade}
+                      </div>
+                    )}
+                    {game.picks.spread.betTo !== null && (
+                      <div className="text-xs text-gray-500">
+                        Bet to: {game.picks.spread.betTo.toFixed(1)}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-gray-500 text-sm">
+                    No Core V1 spread pick
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Deep-dive Tabs - Game Detail V2 */}
           <div className="mb-4 md:mb-6">
+            {/* Tab Navigation */}
+            <div className="border-b border-gray-200 mb-6">
+              <nav className="-mb-px flex space-x-8">
+                <button
+                  onClick={() => setActiveTab('hybrid')}
+                  className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === 'hybrid'
+                      ? 'border-purple-500 text-purple-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Hybrid V2 (Labs)
+                </button>
+                <button
+                  onClick={() => setActiveTab('core')}
+                  className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === 'core'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Core V1 (Legacy)
+                </button>
+                <button
+                  onClick={() => setActiveTab('side')}
+                  className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === 'side'
+                      ? 'border-green-500 text-green-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Moneyline & Totals
+                </button>
+              </nav>
+            </div>
+            
+            {/* Tab Content */}
+            {activeTab === 'hybrid' && (
+              <div>
+                {/* Hybrid V2 Tab Content */}
+                {game.hybrid?.spreadPick ? (
+                  <div className="bg-white border-2 border-purple-300 rounded-lg p-4 shadow-sm mb-6">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Hybrid V2 ATS</h3>
+                      <div className="flex items-center gap-2">
+                        {game.hybrid.spreadPick.grade && (
+                          <div 
+                            className={`px-2 py-1 rounded text-xs font-bold ${
+                              game.hybrid.spreadPick.grade === 'A' ? 'bg-green-500 text-white' :
+                              game.hybrid.spreadPick.grade === 'B' ? 'bg-yellow-500 text-white' :
+                              'bg-orange-500 text-white'
+                            }`}
+                          >
+                            Grade {game.hybrid.spreadPick.grade}
+                          </div>
+                        )}
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                          Labs-only, not auto-bet
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-2xl font-bold text-gray-900 mb-2">
+                      {game.hybrid.spreadPick.teamName} {game.hybrid.spreadPick.line > 0 ? '+' : ''}{game.hybrid.spreadPick.line.toFixed(1)}
+                    </div>
+                    {game.hybrid.spreadPick.edgePts !== null && (
+                      <div className="text-sm text-gray-600 mb-2">
+                        Edge: <span className="font-semibold text-blue-600">{game.hybrid.spreadPick.edgePts.toFixed(1)} pts</span>
+                      </div>
+                    )}
+                    {game.hybrid.spreadPick.betTo !== null && (
+                      <div className="text-sm text-gray-600 mb-2">
+                        Bet to: <span className="font-semibold">{game.hybrid.spreadPick.betTo.toFixed(1)}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 flex-wrap mt-3">
+                      {game.hybrid.lowContinuityDog && (
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 border border-red-200">
+                          Low-Continuity Dog
+                        </span>
+                      )}
+                      {game.hybrid.favoritesDisagree && (
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 border border-yellow-200">
+                          Favs Disagree
+                        </span>
+                      )}
+                      {game.validation?.modelsDisagree && (
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 border border-red-200">
+                          Models Disagree
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-white border-2 border-gray-300 rounded-lg p-4 shadow-sm mb-6">
+                    <div className="text-gray-500 text-sm">
+                      Hybrid V2 data unavailable for this game.
+                    </div>
+                  </div>
+                )}
+                
+                {/* Unit Matchups - Hybrid V2 model inputs */}
+                {game.unitGrades && (
+                  <div className="mb-6">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Unit Matchups (Hybrid V2 model inputs)</h3>
+                    <UnitMatchupCard
+                      homeGrades={game.unitGrades.home}
+                      awayGrades={game.unitGrades.away}
+                      homeTeamName={game.game.homeTeam}
+                      awayTeamName={game.game.awayTeam}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {activeTab === 'core' && (
+              <div>
+                {/* Core V1 Tab Content */}
+                <div className="text-sm text-gray-600 mb-4 italic">
+                  Core V1 (Legacy) model view. This is the original model used for official picks.
+                </div>
+                
+                {/* Note: The existing Betting Ticket grid below will show in Core tab */}
+                {/* Additional Core V1 content sections (Edge Analysis, Model vs Market, etc.) appear below */}
+                
+                {/* Core V1 Spread Card - Detailed view in tab */}
+                <div className="mb-6">
+                  {hasCoreV1Spread ? (
+                    game.picks?.spread?.bettablePick ? (
+                      <div className="bg-white border-2 border-blue-300 rounded-lg p-4 shadow-sm">
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">AGAINST THE SPREAD</h3>
+                          <div className="flex items-center gap-2">
+                            {game.picks.spread.favoritesDisagree && (
+                              <div className="px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
+                                <InfoTooltip content={`Model rates ${modelView?.modelFavoriteName || 'one team'} ${modelView?.modelFavoriteLine?.toFixed(1) || ''} on neutral. Market price is ${snapshot?.favoriteTeamName || 'another team'} ${snapshot?.favoriteLine?.toFixed(1) || ''}. Value exists on ${game.picks?.spread?.bettablePick?.teamName || 'the underdog'} at ${game.picks?.spread?.bettablePick?.line?.toFixed(1) || ''} or better.`} />
+                                <span>Model vs Market Mismatch</span>
+                              </div>
+                            )}
+                            {game.picks.spread.grade && !(modelViewMode === 'official' && isOfficialPass) && (
+                              <div 
+                                className={`px-2 py-1 rounded text-xs font-bold ${
+                                  game.picks.spread.grade === 'A' ? 'bg-green-500 text-white' :
+                                  game.picks.spread.grade === 'B' ? 'bg-yellow-500 text-white' :
+                                  'bg-orange-500 text-white'
+                                }`}
+                                aria-label={`Grade ${game.picks.spread.grade} spread pick`}
+                              >
+                                Grade {game.picks.spread.grade}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Spread pick ${game.picks.spread.bettablePick.label || 'PASS'}`}>
+                          {weatherAdjusted && game.weatherAdjustedSpread ? (
+                            <div>
+                              <div className="text-lg text-gray-600 mb-1">
+                                Base: {game.picks.spread.bettablePick?.label || 'PASS'}
+                              </div>
+                              <div className="text-sm text-blue-600 font-semibold">
+                                Weather Adjusted: {game.weatherAdjustedSpread.favoriteTeamId === game.game.homeTeamId
+                                  ? `${game.game.homeTeam} ${game.weatherAdjustedSpread.favoriteSpread.toFixed(1)}`
+                                  : `${game.game.awayTeam} ${game.weatherAdjustedSpread.favoriteSpread.toFixed(1)}`}
+                              </div>
+                            </div>
+                          ) : modelViewMode === 'raw' && isOfficialPass && hasRawAtsEdge ? (
+                            modelView?.modelFavoriteName && modelView?.modelFavoriteLine !== null
+                              ? `${modelView.modelFavoriteName} ${modelView.modelFavoriteLine.toFixed(1)}`
+                              : 'Raw model spread'
+                          ) : game.picks.spread.bettablePick?.label ? (
+                            game.picks.spread.bettablePick.label
+                          ) : (
+                            'PASS — No official bet'
+                          )}
+                        </div>
+                        {modelViewMode === 'raw' && isOfficialPass && hasRawAtsEdge && (
+                          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-2 inline-block">
+                            ⚠ Officially PASS. Showing raw model only.
+                          </div>
+                        )}
+                        {snapshot?.favoriteLine !== null && snapshot?.favoriteLine !== undefined ? (
+                          <>
+                            {!game.picks.spread.bettablePick?.label ? (
+                              <>
+                                {modelViewMode === 'raw' ? (
+                                  <>
+                                    <div className="text-sm text-gray-600 mb-2">
+                                      Raw model edge: <span className="font-semibold">{atsEdgeMagnitude.toFixed(1)} pts</span>
+                                    </div>
+                                    {rawAtsEdgePts !== null && modelView?.modelFavoriteLine !== null && snapshot?.favoriteLine !== null && (
+                                      <div className="text-sm text-gray-600 mb-2">
+                                        Bet to: <span className="font-semibold">{modelView.modelFavoriteLine.toFixed(1)}</span> (raw model line)
+                                      </div>
+                                    )}
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="text-sm text-gray-600 mb-2">
+                                      Raw model disagreement: <span className="font-semibold">{rawAtsEdgePts !== null ? Math.abs(rawAtsEdgePts).toFixed(1) : atsEdgeMagnitude.toFixed(1)} pts</span> (official edge: <span className="font-semibold">{game.picks.spread.bettablePick?.edgePts !== null && game.picks.spread.bettablePick?.edgePts !== undefined ? game.picks.spread.bettablePick.edgePts.toFixed(1) : '0.0'} pts</span>)
+                                    </div>
+                                    <div className="text-sm text-gray-600 mb-2">
+                                      Bet to: <span className="font-semibold">—</span> • <span className="text-gray-500 italic">No official spread bet for this game</span>
+                                    </div>
+                                  </>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+                                  <div className="flex items-center gap-4 flex-wrap">
+                                    <div className="text-xl font-extrabold text-gray-900">
+                                      Edge: <span className="text-blue-600">{atsEdgeMagnitude.toFixed(1)} pts</span>
+                                      {modelViewMode === 'raw' && rawAtsEdgePts !== null && Math.abs(rawAtsEdgePts - atsEdgePtsOfficial!) > 0.1 && (
+                                        <span className="text-sm font-normal text-gray-500 ml-1">(raw: {Math.abs(rawAtsEdgePts).toFixed(1)} pts)</span>
+                                      )}
+                                    </div>
+                                    {modelViewMode === 'raw' && modelView?.modelFavoriteLine !== null ? (
+                                      <div className="text-xl font-extrabold text-gray-900">
+                                        Bet to: <span className="text-blue-600">{modelView.modelFavoriteLine.toFixed(1)}</span> <span className="text-sm font-normal text-gray-500">(raw)</span>
+                                      </div>
+                                    ) : game.picks.spread.betTo !== null && game.picks.spread.betTo !== undefined && (
+                                      <div className="text-xl font-extrabold text-gray-900">
+                                        Bet to: <span className="text-blue-600">{game.picks.spread.betTo.toFixed(1)}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </>
+                            )}
+                          </>
+                        ) : (
+                          <div className="text-sm text-gray-500 mb-2">
+                            {game.diagnostics?.marketConsensus?.spread?.perBookCount !== undefined && game.diagnostics.marketConsensus.spread.perBookCount < 2
+                              ? 'N/A • Not enough pre-kick quotes — bet-to/flip suppressed'
+                              : 'Market line unavailable or inconsistent — bet-to/flip suppressed'}
+                          </div>
+                        )}
+                        {game.model_view?.ratings && (
+                          <div className="flex items-center gap-2 mb-2">
+                            {game.model_view.ratings.rating_weighted !== null ? (
+                              <div className="bg-green-50 border border-green-300 rounded px-2 py-1 flex items-center gap-1">
+                                <span className="text-xs font-semibold text-green-800">Recency applied</span>
+                                <InfoTooltip content={`rating_base ${game.model_view.ratings.rating_base?.toFixed(1) || 'N/A'} → rating_weighted ${game.model_view.ratings.rating_weighted?.toFixed(1) || 'N/A'} (Δ ${game.model_view.ratings.recencyEffectPts >= 0 ? '+' : ''}${game.model_view.ratings.recencyEffectPts?.toFixed(1) || '0.0'})`} />
+                              </div>
+                            ) : (
+                              <div className="bg-gray-50 border border-gray-300 rounded px-2 py-1 flex items-center gap-1">
+                                <span className="text-xs font-semibold text-gray-600">Recency not used (fallback to base)</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {game.picks.spread.rationale && (
+                          <div className="text-xs text-gray-700 mt-2 italic border-t border-gray-200 pt-2">
+                            {game.picks.spread.rationale}
+                          </div>
+                        )}
+                        {game.picks.spread.bettablePick?.extremeFavoriteBlocked && (
+                          <div className="mt-2 text-yellow-800 bg-yellow-50 border border-yellow-300 rounded p-2 flex items-start gap-2">
+                            <span className="text-lg">🚫</span>
+                            <span className="flex-1">
+                              <span className="font-semibold">Extreme favorite game:</span> Model favors the underdog, but we don't recommend 20+ point dogs.
+                            </span>
+                          </div>
+                        )}
+                        {game.picks.spread.overlay?.confidenceDegraded && (
+                          <div className="mt-2 text-yellow-800 bg-yellow-50 border border-yellow-300 rounded p-2 flex items-start gap-2">
+                            <span className="text-lg">⚠️</span>
+                            <span className="flex-1">
+                              <span className="font-semibold">Large disagreement:</span> Model spread differs from market by {game.picks.spread.overlay.rawDisagreement.toFixed(1)} pts.
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="bg-white border-2 border-gray-300 rounded-lg p-4 shadow-sm">
+                        <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">AGAINST THE SPREAD</h3>
+                        <div className="text-lg font-semibold text-gray-900 mb-2">
+                          PASS — No official bet
+                        </div>
+                        <div className="text-sm text-gray-600 mb-2">
+                          Raw model disagreement: <span className="font-semibold">{atsEdgeMagnitude.toFixed(1)} pts</span> (official edge: <span className="font-semibold">{game.picks.spread.bettablePick?.edgePts !== null && game.picks.spread.bettablePick?.edgePts !== undefined ? game.picks.spread.bettablePick.edgePts.toFixed(1) : '0.0'} pts</span>)
+                        </div>
+                        <div className="text-sm text-gray-600 mb-2">
+                          Bet to: <span className="font-semibold">—</span> • <span className="text-gray-500 italic">No official spread bet for this game</span>
+                        </div>
+                      </div>
+                    )
+                  ) : (
+                    <div className="bg-white border-2 border-gray-300 rounded-lg p-4 shadow-sm">
+                      <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">AGAINST THE SPREAD</h3>
+                      <div className="text-gray-500 text-sm">
+                        Core V1 spread data unavailable
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Edge Analysis, Model vs Market, Power Ratings, etc. will be shown below */}
+              </div>
+            )}
+            
+            {activeTab === 'side' && (
+              <div>
+                {/* Moneyline & Totals Tab Content */}
+                <div className="text-sm text-gray-600 mb-4 italic">
+                  Moneyline and Totals analysis across all models.
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Total Card */}
+                  {game.picks?.total?.totalPickLabel ? (
+                    <div className="bg-white border-2 border-green-300 rounded-lg p-4 shadow-sm">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">TOTAL (Over/Under)</h3>
+                        {game.picks.total.grade && (
+                          <div 
+                            className={`px-2 py-1 rounded text-xs font-bold ${
+                              game.picks.total.grade === 'A' ? 'bg-green-500 text-white' :
+                              game.picks.total.grade === 'B' ? 'bg-yellow-500 text-white' :
+                              'bg-orange-500 text-white'
+                            }`}
+                            aria-label={`Grade ${game.picks.total.grade} total pick`}
+                          >
+                            Grade {game.picks.total.grade}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-2xl font-bold text-gray-900 mb-2">
+                        {game.picks.total.totalPickLabel}
+                      </div>
+                      {game.picks.total.edgePts !== null && (
+                        <div className="text-sm text-gray-600 mb-2">
+                          Edge: <span className="font-semibold text-blue-600">{game.picks.total.edgePts.toFixed(1)} pts</span>
+                        </div>
+                      )}
+                      {game.picks.total.betTo !== null && (
+                        <div className="text-sm text-gray-600 mb-2">
+                          Bet to: <span className="font-semibold">{game.picks.total.betTo.toFixed(1)}</span>
+                        </div>
+                      )}
+                      {game.picks.total.rationale && (
+                        <div className="text-xs text-gray-700 mt-2 italic border-t border-gray-200 pt-2">
+                          {game.picks.total.rationale}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="bg-white border-2 border-gray-300 rounded-lg p-4 shadow-sm">
+                      <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">TOTAL (Over/Under)</h3>
+                      <div className="text-lg font-semibold text-gray-900 mb-2">
+                        Total {game.picks?.total?.headlineTotal?.toFixed(1) || snapshot?.marketTotal?.toFixed(1) || 'N/A'}
+                      </div>
+                      <div className="text-sm text-gray-600 mb-2">
+                        {game.validation?.ou_reason || 'No edge at current number'}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Moneyline Card */}
+                  {game.picks?.moneyline?.pickLabel ? (
+                    <div className="bg-white border-2 border-green-300 rounded-lg p-4 shadow-sm">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">MONEYLINE</h3>
+                        {game.picks.moneyline.grade && (
+                          <div 
+                            className={`px-2 py-1 rounded text-xs font-bold ${
+                              game.picks.moneyline.grade === 'A' ? 'bg-green-500 text-white' :
+                              game.picks.moneyline.grade === 'B' ? 'bg-yellow-500 text-white' :
+                              'bg-orange-500 text-white'
+                            }`}
+                          >
+                            Grade {game.picks.moneyline.grade}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-2xl font-bold text-gray-900 mb-2">
+                        {game.picks.moneyline.pickLabel}
+                      </div>
+                      {game.picks.moneyline.price !== null && (
+                        <div className="text-sm text-gray-600 mb-2">
+                          Market: {game.picks.moneyline.price > 0 ? '+' : ''}{game.picks.moneyline.price}
+                        </div>
+                      )}
+                      {game.picks.moneyline.valuePercent !== null && (
+                        <div className="text-sm text-gray-600 mb-2">
+                          Value: <span className={`font-semibold ${game.picks.moneyline.valuePercent >= 0 ? 'text-green-600' : 'text-gray-600'}`}>
+                            {game.picks.moneyline.valuePercent >= 0 ? '+' : ''}{game.picks.moneyline.valuePercent.toFixed(1)}%
+                          </span>
+                        </div>
+                      )}
+                      {game.picks.moneyline.rationale && (
+                        <div className="text-xs text-gray-700 mt-2 italic border-t border-gray-200 pt-2">
+                          {game.picks.moneyline.rationale}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="bg-white border-2 border-gray-300 rounded-lg p-4 shadow-sm">
+                      <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">MONEYLINE</h3>
+                      <div className="text-sm text-gray-600">
+                        {snapshot && (snapshot.moneylineFavorite !== null || snapshot.moneylineDog !== null) ? (
+                          <>
+                            <div className="text-sm text-gray-700 mb-1">
+                              {snapshot.favoriteTeamName}: <span className="font-semibold text-gray-900">{formatMoneyline(snapshot.moneylineFavorite)}</span>
+                            </div>
+                            <div className="text-sm text-gray-700">
+                              {snapshot.dogTeamName}: <span className="font-semibold text-gray-900">{formatMoneyline(snapshot.moneylineDog)}</span>
+                            </div>
+                            <div className="text-xs text-gray-500 mt-2">
+                              No moneyline bet — no value detected
+                            </div>
+                          </>
+                        ) : (
+                          <div className="text-sm font-semibold text-gray-700">
+                            No moneyline bet — no pre-kick book prices available for this game.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Legacy Betting Ticket - Show in Core tab only, hidden in other tabs */}
+          <div className={`mb-4 md:mb-6 ${activeTab === 'core' ? '' : 'hidden'}`}>
             {/* PHASE 2.4: Model Mode Badge and Timestamp Row */}
             <div className="flex items-center justify-between mb-3 sm:mb-4 flex-wrap gap-3">
               <div className="flex items-center gap-3 flex-wrap">
@@ -759,7 +1354,8 @@ export default function GameDetailPage() {
             )}
             {/* Debug sections removed for cleaner UI */}
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Show grid in Core tab, hide in other tabs */}
+            <div className={`grid grid-cols-1 md:grid-cols-3 gap-4 ${activeTab === 'hybrid' || activeTab === 'side' ? 'hidden' : ''}`}>
               {/* Spread Card - Core V1 Availability Check */}
               {hasCoreV1Spread ? (
                 game.picks?.spread?.bettablePick ? (
