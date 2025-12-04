@@ -774,7 +774,7 @@ export default function GameDetailPage() {
                         hour: 'numeric',
                         minute: '2-digit',
                         hour12: true
-                      })}
+                      }) : 'N/A'}
                     </span>
                   </>
                 )}
