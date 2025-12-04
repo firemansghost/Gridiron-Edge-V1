@@ -43,6 +43,8 @@ interface HybridGame {
     value: number | null;
     favoriteTeamId: string | null;
   } | null;
+  // Validation flags
+  favoritesDisagree?: boolean;
 }
 
 interface V4OverlaySummary {
@@ -447,8 +449,18 @@ export default function HybridLabsPage() {
                               </span>
                             )}
                           </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            {formatKickoff(game.date)}
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            {game.favoritesDisagree && (
+                              <span 
+                                className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 border border-yellow-200"
+                                title="Model and market favor different teams — treat as Labs-only, not an official edge."
+                              >
+                                Favs Disagree
+                              </span>
+                            )}
+                            <div className="text-xs text-gray-500">
+                              {formatKickoff(game.date)}
+                            </div>
                           </div>
                           {game.status === 'final' && (
                             <div className="text-xs font-semibold text-gray-700 mt-1">

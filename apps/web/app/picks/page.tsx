@@ -65,6 +65,7 @@ interface SlateGame {
     total?: GamePick;
     moneyline?: MoneylinePick;
   };
+  favoritesDisagree?: boolean;
 }
 
 export default function PicksPage() {
@@ -364,6 +365,16 @@ export default function PicksPage() {
                 <div className="mt-1">
                   <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 border border-red-200">
                     Low-Continuity Dog
+                  </span>
+                </div>
+              )}
+              {game.favoritesDisagree && (
+                <div className="mt-1">
+                  <span 
+                    className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 border border-yellow-200"
+                    title="Model and market favor different teams — treat as Labs-only, not an official edge."
+                  >
+                    Favs Disagree
                   </span>
                 </div>
               )}

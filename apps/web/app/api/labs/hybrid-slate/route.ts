@@ -49,6 +49,8 @@ interface HybridGame {
     value: number | null;
     favoriteTeamId: string | null;
   } | null;
+  // Validation flags
+  favoritesDisagree?: boolean;
 }
 
 export async function GET(request: NextRequest) {
@@ -216,6 +218,12 @@ export async function GET(request: NextRequest) {
       // Get market spread
       const marketData = marketMap.get(game.id);
 
+      // Compute favoritesDisagree: Check if hybrid model and market favor different teams
+      let favoritesDisagree = false;
+      if (hybridResult.favoriteTeamId && marketData?.favoriteTeamId) {
+        favoritesDisagree = hybridResult.favoriteTeamId !== marketData.favoriteTeamId;
+      }
+
       hybridGames.push({
         gameId: game.id,
         date: game.date.toISOString(),
@@ -253,6 +261,7 @@ export async function GET(request: NextRequest) {
         },
         diff,
         marketSpread: marketData || null,
+        favoritesDisagree,
       });
     }
 

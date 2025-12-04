@@ -79,6 +79,8 @@ interface SlateGame {
     edgeHma?: number | null;
     errorMessage?: string | null;
   };
+  // Validation flags
+  favoritesDisagree?: boolean;
 }
 
 
@@ -434,6 +436,17 @@ export async function GET(request: NextRequest) {
           }
         }
 
+        // Compute favoritesDisagree: Check if model and market favor different teams
+        // Model favorite: positive HMA = home favorite, negative = away favorite
+        // Market favorite: positive HMA = home favorite, negative = away favorite
+        let favoritesDisagree = false;
+        if (modelSpreadHma !== null && Number.isFinite(modelSpreadHma) && 
+            marketSpreadHma !== null && Number.isFinite(marketSpreadHma)) {
+          const modelFavoriteIsHome = modelSpreadHma > 0;
+          const marketFavoriteIsHome = marketSpreadHma > 0;
+          favoritesDisagree = modelFavoriteIsHome !== marketFavoriteIsHome;
+        }
+
         // Compute ATS edge and pick
         let spreadPick: string | null = null;
         let spreadEdgePts: number | null = null;
@@ -692,6 +705,9 @@ export async function GET(request: NextRequest) {
             grade: moneylineGrade
           }
         };
+        
+        // Add favoritesDisagree flag
+        game.favoritesDisagree = favoritesDisagree;
         
         // Populate debug block on success
         if (debug) {
