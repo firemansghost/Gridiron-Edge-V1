@@ -766,10 +766,23 @@ export default function GameDetailPage() {
             )}
             {/* Debug sections removed for cleaner UI */}
             
+            {/* DEBUG: Show officialSpreadBet when in official mode */}
+            {modelViewMode === 'official' && (
+              <div className="mb-2 p-2 bg-red-50 border border-red-300 rounded text-xs text-red-600">
+                DEBUG officialSpreadBet: {game.officialSpreadBet 
+                  ? `${game.officialSpreadBet.teamName} ${game.officialSpreadBet.line >= 0 ? '+' : ''}${game.officialSpreadBet.line.toFixed(1)} (edge ${game.officialSpreadBet.edge.toFixed(1)})`
+                  : 'null - no official_flat_100 bet found'}
+              </div>
+            )}
+            
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* Spread Card - Core V1 Availability Check */}
               {hasCoreV1Spread ? (
-                (useOfficialBet || game.picks?.spread?.bettablePick) ? (
+                // HARD-WIRED: In official mode, ONLY show card if officialSpreadBet exists
+                // In raw mode, show if bettablePick exists
+                (modelViewMode === 'official' 
+                  ? (game.officialSpreadBet !== null)
+                  : (game.picks?.spread?.bettablePick !== null)) ? (
                   /* Show card if we have officialSpreadBet (official mode) OR bettablePick (raw mode) */
                   <div className="bg-white border-2 border-blue-300 rounded-lg p-4 shadow-sm">
                     <div className="flex items-center justify-between mb-3">
@@ -782,25 +795,28 @@ export default function GameDetailPage() {
                             <span>Model vs Market Mismatch</span>
                           </div>
                         )}
-                        {/* Show Grade pill - use officialSpreadBet.grade if available, otherwise game.picks.spread.grade */}
-                        {((useOfficialBet && officialSpreadBet?.grade) || (!useOfficialBet && game.picks.spread.grade)) && !(modelViewMode === 'official' && isOfficialPass) && (
+                        {/* Show Grade pill - HARD-WIRED: in official mode, ONLY use officialSpreadBet.grade */}
+                        {((modelViewMode === 'official' && game.officialSpreadBet?.grade) || (modelViewMode === 'raw' && game.picks.spread.grade)) && !(modelViewMode === 'official' && !game.officialSpreadBet) && (
                           <div 
                             className={`px-2 py-1 rounded text-xs font-bold ${
-                              (useOfficialBet ? officialSpreadBet?.grade : game.picks.spread.grade) === 'A' ? 'bg-green-500 text-white' :
-                              (useOfficialBet ? officialSpreadBet?.grade : game.picks.spread.grade) === 'B' ? 'bg-yellow-500 text-white' :
+                              (modelViewMode === 'official' ? game.officialSpreadBet?.grade : game.picks.spread.grade) === 'A' ? 'bg-green-500 text-white' :
+                              (modelViewMode === 'official' ? game.officialSpreadBet?.grade : game.picks.spread.grade) === 'B' ? 'bg-yellow-500 text-white' :
                               'bg-orange-500 text-white'
                             }`}
-                            aria-label={`Grade ${useOfficialBet ? officialSpreadBet?.grade : game.picks.spread.grade} spread pick`}
+                            aria-label={`Grade ${modelViewMode === 'official' ? game.officialSpreadBet?.grade : game.picks.spread.grade} spread pick`}
                           >
-                            Grade {useOfficialBet ? officialSpreadBet?.grade : game.picks.spread.grade}
+                            Grade {modelViewMode === 'official' ? game.officialSpreadBet?.grade : game.picks.spread.grade}
                           </div>
                         )}
                       </div>
                     </div>
-                    <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Spread pick ${useOfficialBet ? `${officialSpreadBet.teamName} ${officialSpreadBet.line >= 0 ? '+' : ''}${officialSpreadBet.line.toFixed(1)}` : (game.picks.spread.bettablePick?.label || 'PASS')}`}>
-                      {useOfficialBet ? (
-                        /* EXPLICIT: Use officialSpreadBet when in official mode */
-                        `${officialSpreadBet.teamName} ${officialSpreadBet.line >= 0 ? '+' : ''}${officialSpreadBet.line.toFixed(1)}`
+                    <div className="text-2xl font-bold text-gray-900 mb-2" aria-label={`Spread pick ${modelViewMode === 'official' && game.officialSpreadBet ? `${game.officialSpreadBet.teamName} ${game.officialSpreadBet.line >= 0 ? '+' : ''}${game.officialSpreadBet.line.toFixed(1)}` : (game.picks.spread.bettablePick?.label || 'PASS')}`}>
+                      {modelViewMode === 'official' && game.officialSpreadBet ? (
+                        /* HARD-WIRED: In official mode, ONLY use officialSpreadBet - no fallback to bettablePick */
+                        `${game.officialSpreadBet.teamName} ${game.officialSpreadBet.line >= 0 ? '+' : ''}${game.officialSpreadBet.line.toFixed(1)}`
+                      ) : modelViewMode === 'official' ? (
+                        /* Official mode but no officialSpreadBet - show explicit message */
+                        'No official spread pick for this game'
                       ) : weatherAdjusted && game.weatherAdjustedSpread ? (
                         // Show weather-adjusted spread when toggle is on
                         <div>
@@ -837,28 +853,33 @@ export default function GameDetailPage() {
                     {/* ============================================ */}
                     {snapshot?.favoriteLine !== null && snapshot?.favoriteLine !== undefined ? (
                       <>
-                        {/* Case A: No official edge (PASS) - Trust API: only show PASS if label doesn't exist */}
-                        {useOfficialBet ? (
-                          /* EXPLICIT: Use officialSpreadBet when in official mode */
+                        {/* HARD-WIRED: In official mode, ONLY use officialSpreadBet */}
+                        {modelViewMode === 'official' && game.officialSpreadBet ? (
+                          /* Official mode with officialSpreadBet - show ONLY from officialSpreadBet */
                           <>
                             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
                               <div className="flex items-center gap-4 flex-wrap">
                                 <div className="text-xl font-extrabold text-gray-900">
-                                  Edge: <span className="text-blue-600">{officialSpreadBet.edge.toFixed(1)} pts</span>
+                                  Edge: <span className="text-blue-600">{game.officialSpreadBet.edge.toFixed(1)} pts</span>
                                 </div>
-                                {officialSpreadBet.betTo !== null && officialSpreadBet.betTo !== undefined && (
+                                {game.officialSpreadBet.betTo !== null && game.officialSpreadBet.betTo !== undefined && (
                                   <div className="text-xl font-extrabold text-gray-900">
-                                    Bet to: <span className="text-blue-600">{officialSpreadBet.betTo >= 0 ? '+' : ''}{officialSpreadBet.betTo.toFixed(1)}</span>
+                                    Bet to: <span className="text-blue-600">{game.officialSpreadBet.betTo >= 0 ? '+' : ''}{game.officialSpreadBet.betTo.toFixed(1)}</span>
                                   </div>
                                 )}
                               </div>
                             </div>
-                            {officialSpreadBet.clv !== null && officialSpreadBet.clv !== undefined && (
+                            {game.officialSpreadBet.clv !== null && game.officialSpreadBet.clv !== undefined && (
                               <div className="text-xs text-gray-600 mb-2">
-                                CLV: <span className={officialSpreadBet.clv >= 0 ? 'text-green-600' : 'text-red-600'}>{officialSpreadBet.clv >= 0 ? '+' : ''}{officialSpreadBet.clv.toFixed(1)}</span>
+                                CLV: <span className={game.officialSpreadBet.clv >= 0 ? 'text-green-600' : 'text-red-600'}>{game.officialSpreadBet.clv >= 0 ? '+' : ''}{game.officialSpreadBet.clv.toFixed(1)}</span>
                               </div>
                             )}
                           </>
+                        ) : modelViewMode === 'official' ? (
+                          /* Official mode but no officialSpreadBet - show explicit message */
+                          <div className="text-sm text-gray-600 mb-2">
+                            No official spread bet for this game. The official card does not include a spread pick.
+                          </div>
                         ) : !game.picks.spread.bettablePick?.label ? (
                           <>
                             {modelViewMode === 'raw' ? (
@@ -980,7 +1001,7 @@ export default function GameDetailPage() {
                   <div className="bg-white border-2 border-gray-300 rounded-lg p-4 shadow-sm">
                     <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">AGAINST THE SPREAD</h3>
                     <div className="text-lg font-semibold text-gray-900 mb-2">
-                      {useOfficialBet && !officialSpreadBet 
+                      {modelViewMode === 'official' && !game.officialSpreadBet
                         ? 'No official spread pick for this game'
                         : 'PASS — No official bet'}
                     </div>
