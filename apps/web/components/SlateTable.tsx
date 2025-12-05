@@ -692,7 +692,7 @@ export default function SlateTable({
     } else if (isLive) {
       return <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">LIVE</span>;
     } else {
-      return <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">SCHEDULED</span>;
+      return <span className="inline-flex items-center rounded-full border border-slate-200 px-2.5 py-0.5 text-[11px] font-medium text-slate-500 bg-slate-50">SCHEDULED</span>;
     }
   };
 
@@ -1231,81 +1231,109 @@ export default function SlateTable({
         className="overflow-auto"
         style={{ height: '70vh', maxHeight: '70vh' }}
       >
-        <table className="min-w-full divide-y divide-gray-200" style={{ minWidth: showAdvancedColumns ? '1400px' : '1100px' }}>
+        <div className="w-full overflow-x-auto md:overflow-visible">
+          <table className="min-w-full divide-y divide-gray-200" style={{ minWidth: showAdvancedColumns ? '1400px' : '1100px' }}>
           <thead className="bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/70 sticky top-0 z-10 border-b">
+            {/* Row 1: Grouped headers */}
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[200px]">
+              <th rowSpan={2} className="sticky left-0 z-20 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/70 border-r border-slate-200 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[200px]">
                 Matchup
               </th>
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
+              <th rowSpan={2} className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
                 Time / Score
               </th>
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
-                <div className="flex items-center justify-center gap-1">
-                  Best Spread
-                  <InfoTooltip content="The best available point spread from the betting market (prefers SGO source, then latest). Negative values mean the home team is favored." position="bottom" />
-                </div>
+              <th colSpan={showAdvancedColumns ? 4 : 1} className="text-center text-xs font-semibold text-slate-500 border-l border-slate-200 px-6 py-2">
+                SPREAD
               </th>
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[120px]">
-                <div className="flex items-center justify-center gap-1">
-                  Best Total
-                  <InfoTooltip content="The best available total points line from the betting market (prefers SGO source, then latest). This is the combined points both teams are expected to score." position="bottom" />
-                </div>
+              <th colSpan={showAdvancedColumns ? (allGamesHaveNullTotals ? 1 : 4) : 1} className="text-center text-xs font-semibold text-slate-500 border-l border-slate-200 px-6 py-2">
+                TOTAL
               </th>
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
+              <th rowSpan={2} className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
                 Status
               </th>
               {showAdvancedColumns && (
                 <>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
+                  <th colSpan={2} className="text-center text-xs font-semibold text-slate-500 border-l border-slate-200 px-6 py-2">
+                    EDGE
+                  </th>
+                </>
+              )}
+            </tr>
+            {/* Row 2: Individual column labels */}
+            <tr>
+              {/* SPREAD columns */}
+              <th className="px-6 py-3 text-center text-[11px] font-medium text-slate-500 border-l border-slate-200 min-w-[120px]">
+                <div className="flex items-center justify-center gap-1">
+                  Best
+                  <InfoTooltip content="The best available point spread from the betting market (prefers SGO source, then latest). Negative values mean the home team is favored." position="bottom" />
+                </div>
+              </th>
+              {showAdvancedColumns && (
+                <>
+                  <th className="px-6 py-3 text-center text-[11px] font-medium text-slate-500 min-w-[80px]">
                     <div className="flex items-center justify-center gap-1">
-                      Model Spread
+                      Model
                       <InfoTooltip content="Our model's predicted point spread based on team power ratings. Compare this to Market Spread to find edge opportunities." position="bottom" />
                     </div>
                   </th>
+                  <th className="px-6 py-3 text-center text-[11px] font-medium text-slate-500 min-w-[100px]">
+                    <div className="flex items-center justify-center gap-1">
+                      Pick
+                      <InfoTooltip content="Model's pick against the spread. Shows which team to bet based on our spread prediction vs. the market." position="bottom" />
+                    </div>
+                  </th>
+                  <th className="px-6 py-3 text-center text-[11px] font-medium text-slate-500 min-w-[80px]">
+                    <div className="flex items-center justify-center gap-1">
+                      Edge
+                      <InfoTooltip content={modelViewMode === 'raw' ? "Raw model edge (before Trust-Market caps). Higher edge means stronger betting opportunity." : "Spread edge (in points), after Trust-Market caps. Higher edge means stronger betting opportunity."} position="bottom" />
+                    </div>
+                  </th>
+                </>
+              )}
+              {/* TOTAL columns */}
+              <th className="px-6 py-3 text-center text-[11px] font-medium text-slate-500 border-l border-slate-200 min-w-[120px]">
+                <div className="flex items-center justify-center gap-1">
+                  Best
+                  <InfoTooltip content="The best available total points line from the betting market (prefers SGO source, then latest). This is the combined points both teams are expected to score." position="bottom" />
+                </div>
+              </th>
+              {showAdvancedColumns && (
+                <>
                   {!allGamesHaveNullTotals && (
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
+                    <th className="px-6 py-3 text-center text-[11px] font-medium text-slate-500 min-w-[80px]">
                       <div className="flex items-center justify-center gap-1">
-                        Model Total
+                        Model
                         <InfoTooltip content="Our model's predicted total points for this game. Compare to Market Total to find edge opportunities." position="bottom" />
                       </div>
                     </th>
                   )}
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
-                    <div className="flex items-center justify-center gap-1">
-                      Pick (ATS)
-                      <InfoTooltip content="Model's pick against the spread. Shows which team to bet based on our spread prediction vs. the market." position="bottom" />
-                    </div>
-                  </th>
                   {!allGamesHaveNullTotals && (
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
+                    <th className="px-6 py-3 text-center text-[11px] font-medium text-slate-500 min-w-[100px]">
                       <div className="flex items-center justify-center gap-1">
-                        Pick (Total)
+                        Pick
                         <InfoTooltip content="Model's pick for the total (over/under). Based on our total prediction vs. the market line." position="bottom" />
                       </div>
                     </th>
                   )}
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
-                    <div className="flex flex-col items-center justify-center gap-1">
-                      <div className="flex items-center justify-center gap-1">
-                        Max Edge
-                        <InfoTooltip content={modelViewMode === 'raw' ? "Raw model edge (before Trust-Market caps). Higher edge means stronger betting opportunity." : "The larger of spread edge or total edge (in points), after Trust-Market caps. Higher edge means stronger betting opportunity."} position="bottom" />
-                      </div>
-                      {modelViewMode === 'raw' && (
-                        <div className="text-xs text-amber-600 font-normal">
-                          Raw mode — Trust-Market caps not applied
-                        </div>
-                      )}
+                  <th className="px-6 py-3 text-center text-[11px] font-medium text-slate-500 min-w-[80px]">
+                    <div className="flex items-center justify-center gap-1">
+                      Edge
+                      <InfoTooltip content={modelViewMode === 'raw' ? "Raw model edge (before Trust-Market caps). Higher edge means stronger betting opportunity." : "Total edge (in points), after Trust-Market caps. Higher edge means stronger betting opportunity."} position="bottom" />
                     </div>
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
+                  {/* PICKS group columns (already handled above) */}
+                  {/* EDGE group columns */}
+                  <th className="px-6 py-3 text-center text-[11px] font-medium text-slate-500 border-l border-slate-200 min-w-[80px]">
                     <div className="flex items-center justify-center gap-1">
-                      Confidence
+                      Max
+                      <InfoTooltip content={modelViewMode === 'raw' ? "Raw model edge (before Trust-Market caps). Higher edge means stronger betting opportunity." : "The larger of spread edge or total edge (in points), after Trust-Market caps. Higher edge means stronger betting opportunity."} position="bottom" />
+                    </div>
+                  </th>
+                  <th className="px-6 py-3 text-center text-[11px] font-medium text-slate-500 min-w-[80px]">
+                    <div className="flex items-center justify-center gap-1">
+                      Conf
                       <InfoTooltip content={modelViewMode === 'raw' ? "Raw confidence tier (A/B/C) based on raw edge size. A = 4.0+ pts (highest), B = 3.0-3.9 pts, C = 2.0-2.9 pts (lowest)." : "Confidence tier (A/B/C) based on edge size after Trust-Market caps. A = 4.0+ pts (highest), B = 3.0-3.9 pts, C = 2.0-2.9 pts (lowest)."} position="bottom" />
                     </div>
-                  </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[80px]">
-                    Action
                   </th>
                 </>
               )}
@@ -1323,33 +1351,42 @@ export default function SlateTable({
                     }}
                     className="bg-white/90 sticky top-[var(--header-height,48px)] z-9 border-b"
                   >
-                    <td colSpan={showAdvancedColumns ? 12 : 5} className="px-6 py-3 text-sm font-medium text-gray-700">
+                    <td colSpan={showAdvancedColumns ? (allGamesHaveNullTotals ? 10 : 13) : 5} className="px-6 py-3 text-sm font-medium text-gray-700">
                       {dateData.formattedDate}
                     </td>
                   </tr>
                 )}
-                {dateData.games.map((game) => (
+                {dateData.games.map((game) => {
+                  const noOdds = !game.closingSpread && !game.closingTotal && !game.modelSpread && !game.modelTotal;
+                  
+                  return (
                   <tr 
                     key={game.gameId} 
                     id={`game-${game.gameId}`}
-                    className="hover:bg-gray-50 cursor-pointer"
+                    className={`border-b border-slate-100 transition-colors ${!noOdds ? 'hover:bg-slate-50' : ''} ${noOdds ? 'opacity-40 italic' : ''} cursor-pointer`}
                     onClick={() => window.location.href = `/game/${game.gameId}`}
                   >
-                    <td className={`px-6 whitespace-nowrap ${compactMode ? 'py-1' : 'py-4'}`}>
-                      <div className="text-sm font-medium text-gray-900">
-                        <Link href={`/team/${game.awayTeamId}`} className="hover:text-blue-600 transition-colors">
+                    <td className={`sticky left-0 z-10 bg-white border-r border-slate-200 px-6 whitespace-nowrap ${compactMode ? 'py-1.5' : 'py-3'}`}>
+                      <div className="flex flex-col">
+                        <Link
+                          href={`/game/${game.gameId}`}
+                          className="text-sm font-medium text-slate-900 hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           {game.awayTeamId.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                        </Link>
-                        <span className="text-gray-400 mx-1">@</span>
-                        <Link href={`/team/${game.homeTeamId}`} className="hover:text-blue-600 transition-colors">
+                          <span className="text-gray-400 mx-1">@</span>
                           {game.homeTeamId.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
                         </Link>
+                        <span className="text-xs text-slate-500">
+                          {game.date ? new Date(game.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}
+                        </span>
                       </div>
                     </td>
-                    <td className={`px-6 whitespace-nowrap ${compactMode ? 'py-1' : 'py-4'}`}>
+                    <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1.5' : 'py-3'}`}>
                       {getScoreDisplay(game)}
                     </td>
-                    <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
+                    {/* SPREAD: Best */}
+                    <td className={`px-6 whitespace-nowrap text-center border-l border-slate-200 ${compactMode ? 'py-1.5' : 'py-3'}`}>
                       {game.closingSpread ? (
                         <div className="text-center">
                           <div 
@@ -1367,11 +1404,43 @@ export default function SlateTable({
                         </div>
                       ) : (
                         <div className="text-sm text-gray-400 italic">
-                          No odds
+                          {noOdds ? '—' : 'No odds'}
                         </div>
                       )}
                     </td>
-                    <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
+                    {showAdvancedColumns && (
+                      <>
+                        {/* SPREAD: Model */}
+                        <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1.5' : 'py-3'}`}>
+                          <div className="text-sm text-gray-900">
+                            {Number.isFinite(game.modelSpread) ? game.modelSpread!.toFixed(1) : '—'}
+                          </div>
+                        </td>
+                        {/* SPREAD: Pick */}
+                        <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1.5' : 'py-3'}`}>
+                          <div className="text-sm text-gray-900">
+                            {game.pickSpread || '—'}
+                          </div>
+                        </td>
+                        {/* SPREAD: Edge */}
+                        <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1.5' : 'py-3'}`}>
+                          {(() => {
+                            if (game.modelSpread !== null && game.modelSpread !== undefined && Number.isFinite(game.modelSpread) && 
+                                game.closingSpread !== null && game.closingSpread.value !== null && Number.isFinite(game.closingSpread.value)) {
+                              const spreadEdge = Math.abs(game.modelSpread - game.closingSpread.value);
+                              return (
+                                <div className="text-sm text-gray-900">
+                                  {spreadEdge.toFixed(1)}
+                                </div>
+                              );
+                            }
+                            return <div className="text-sm text-gray-400">—</div>;
+                          })()}
+                        </td>
+                      </>
+                    )}
+                    {/* TOTAL: Best */}
+                    <td className={`px-6 whitespace-nowrap text-center border-l border-slate-200 ${compactMode ? 'py-1.5' : 'py-3'}`}>
                       {game.closingTotal ? (
                         <div className="text-center">
                           <div 
@@ -1389,52 +1458,52 @@ export default function SlateTable({
                         </div>
                       ) : (
                         <div className="text-sm text-gray-400 italic">
-                          No odds
+                          {noOdds ? '—' : 'No odds'}
                         </div>
                       )}
                     </td>
-                    <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
-                      {getStatusBadge(game)}
-                    </td>
                     {showAdvancedColumns && (
                       <>
-                        <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
-                          <div className="text-sm text-gray-900">
-                            {Number.isFinite(game.modelSpread) ? game.modelSpread!.toFixed(1) : '—'}
-                          </div>
-                          {process.env.NODE_ENV !== 'production' && (
-                            <div className="text-xs text-gray-400">
-                              {game.modelSpread !== null && game.modelSpread !== undefined 
-                                ? `raw: ${game.modelSpread}, finite: ${Number.isFinite(game.modelSpread)}` 
-                                : 'null/undefined'}
-                            </div>
-                          )}
-                        </td>
+                        {/* TOTAL: Model */}
                         {!allGamesHaveNullTotals && (
-                          <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
+                          <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1.5' : 'py-3'}`}>
                             <div className="text-sm text-gray-900">
                               {Number.isFinite(game.modelTotal) ? game.modelTotal!.toFixed(1) : '—'}
                             </div>
                           </td>
                         )}
-                        <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
-                          <div className="text-sm text-gray-900">
-                            {game.pickSpread || '—'}
-                          </div>
-                          {process.env.NODE_ENV !== 'production' && (
-                            <div className="text-xs text-gray-400">
-                              pickSpread: {game.pickSpread ?? 'null/undefined'}
-                            </div>
-                          )}
-                        </td>
+                        {/* TOTAL: Pick */}
                         {!allGamesHaveNullTotals && (
-                          <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
+                          <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1.5' : 'py-3'}`}>
                             <div className="text-sm text-gray-900">
                               {game.pickTotal || '—'}
                             </div>
                           </td>
                         )}
-                        <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
+                        {/* TOTAL: Edge */}
+                        <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1.5' : 'py-3'}`}>
+                          {(() => {
+                            if (game.modelTotal !== null && game.modelTotal !== undefined && Number.isFinite(game.modelTotal) && 
+                                game.closingTotal !== null && game.closingTotal.value !== null && Number.isFinite(game.closingTotal.value)) {
+                              const totalEdge = Math.abs(game.modelTotal - game.closingTotal.value);
+                              return (
+                                <div className="text-sm text-gray-900">
+                                  {totalEdge.toFixed(1)}
+                                </div>
+                              );
+                            }
+                            return <div className="text-sm text-gray-400">—</div>;
+                          })()}
+                        </td>
+                      </>
+                    )}
+                    <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1.5' : 'py-3'}`}>
+                      {getStatusBadge(game)}
+                    </td>
+                    {showAdvancedColumns && (
+                      <>
+                        {/* Max Edge */}
+                        <td className={`px-6 whitespace-nowrap text-center border-l border-slate-200 ${compactMode ? 'py-1.5' : 'py-3'}`}>
                           {(() => {
                             // Compute raw edge if in raw mode
                             let displayEdge: number | null = null;
@@ -1457,15 +1526,9 @@ export default function SlateTable({
                               </div>
                             );
                           })()}
-                          {process.env.NODE_ENV !== 'production' && (
-                            <div className="text-xs text-gray-400">
-                              {game.maxEdge !== null && game.maxEdge !== undefined 
-                                ? `raw: ${game.maxEdge}, finite: ${Number.isFinite(game.maxEdge)}` 
-                                : 'null/undefined'}
-                            </div>
-                          )}
                         </td>
-                        <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
+                        {/* Confidence */}
+                        <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1.5' : 'py-3'}`}>
                           {(() => {
                             // Compute raw confidence if in raw mode
                             let displayConfidence: string | null = null;
@@ -1493,23 +1556,16 @@ export default function SlateTable({
                             );
                           })()}
                         </td>
-                        <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1' : 'py-4'}`}>
-                          <Link 
-                            href={`/game/${game.gameId}`}
-                            className="text-blue-600 hover:text-blue-800 font-medium"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            View →
-                          </Link>
-                        </td>
                       </>
                     )}
                   </tr>
-                ))}
+                  );
+                })}
               </React.Fragment>
             ))}
           </tbody>
         </table>
+        </div>
         
         {/* Floating action buttons */}
         {showFloatingButtons && (
@@ -1556,23 +1612,6 @@ export default function SlateTable({
         </div>
       </div>
       
-      {/* Legend */}
-      <div className="px-6 py-3 border-t border-gray-200 bg-gray-50">
-        <div className="text-xs text-gray-600 space-y-1">
-          <div className="font-medium text-gray-700 mb-2">Legend:</div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            <div>
-              <span className="font-medium">Tooltips:</span> Hover over spread/total values to see book name and timestamp
-            </div>
-            <div>
-              <span className="font-medium">Status badges:</span> 
-              <span className="ml-1 px-1.5 py-0.5 text-xs bg-green-100 text-green-800 rounded">FINAL</span> = Game complete, 
-              <span className="ml-1 px-1.5 py-0.5 text-xs bg-red-100 text-red-800 rounded">LIVE</span> = In progress, 
-              <span className="ml-1 px-1.5 py-0.5 text-xs bg-gray-100 text-gray-800 rounded">SCHEDULED</span> = Upcoming
-            </div>
-          </div>
-        </div>
-      </div>
       
       {/* Totals are now enabled */}
     </div>
