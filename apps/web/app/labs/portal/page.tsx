@@ -144,75 +144,77 @@ export default function PortalLabsPage() {
               </p>
             </div>
           ) : (
-            <div className="bg-white shadow overflow-hidden sm:rounded-md">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Team
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Conference
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Continuity
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Portal Meta
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {rows.map((row) => {
-                    const continuityBand = getContinuityBand(row.continuityScore);
-                    const psBand = getIndexBand(row.positionalShock);
-                    const miBand = getIndexBand(row.mercenaryIndex);
-                    const paBand = getIndexBand(row.portalAggressor);
-                    return (
-                      <tr key={row.teamId}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {row.teamName}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {row.conference || '—'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            {(row.continuityScore * 100).toFixed(1)}
-                          </div>
-                          <div className="mt-1">
-                            <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${continuityBand.color}`}>
-                              {continuityBand.label}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex flex-wrap gap-1">
-                            {psBand ? (
-                              <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${psBand.color}`} title={`PositionalShock: ${((row.positionalShock || 0) * 100).toFixed(1)}`}>
-                                PS: {psBand.label}
+            <div className="bg-white shadow sm:rounded-md">
+              <div className="w-full overflow-x-auto md:overflow-visible">
+                <table className="min-w-[900px] md:min-w-0 w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Team
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Conference
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Continuity
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Portal Meta
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {rows.map((row) => {
+                      const continuityBand = getContinuityBand(row.continuityScore);
+                      const psBand = getIndexBand(row.positionalShock);
+                      const miBand = getIndexBand(row.mercenaryIndex);
+                      const paBand = getIndexBand(row.portalAggressor);
+                      return (
+                        <tr key={row.teamId}>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            {row.teamName}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {row.conference || '—'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">
+                              {(row.continuityScore * 100).toFixed(1)}
+                            </div>
+                            <div className="mt-1">
+                              <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${continuityBand.color}`}>
+                                {continuityBand.label}
                               </span>
-                            ) : null}
-                            {miBand ? (
-                              <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${miBand.color}`} title={`MercenaryIndex: ${((row.mercenaryIndex || 0) * 100).toFixed(1)}`}>
-                                MI: {miBand.label}
-                              </span>
-                            ) : null}
-                            {paBand ? (
-                              <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${paBand.color}`} title={`PortalAggressor: ${((row.portalAggressor || 0) * 100).toFixed(1)}`}>
-                                PA: {paBand.label}
-                              </span>
-                            ) : null}
-                            {!psBand && !miBand && !paBand && (
-                              <span className="text-xs text-gray-400">—</span>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex flex-wrap gap-1">
+                              {psBand ? (
+                                <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${psBand.color}`} title={`PositionalShock: ${((row.positionalShock || 0) * 100).toFixed(1)}`}>
+                                  PS: {psBand.label}
+                                </span>
+                              ) : null}
+                              {miBand ? (
+                                <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${miBand.color}`} title={`MercenaryIndex: ${((row.mercenaryIndex || 0) * 100).toFixed(1)}`}>
+                                  MI: {miBand.label}
+                                </span>
+                              ) : null}
+                              {paBand ? (
+                                <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${paBand.color}`} title={`PortalAggressor: ${((row.portalAggressor || 0) * 100).toFixed(1)}`}>
+                                  PA: {paBand.label}
+                                </span>
+                              ) : null}
+                              {!psBand && !miBand && !paBand && (
+                                <span className="text-xs text-gray-400">—</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
