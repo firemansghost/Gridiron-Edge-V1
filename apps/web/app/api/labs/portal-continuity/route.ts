@@ -10,6 +10,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentSeasonWeek } from '@/lib/current-week';
 
+type RiskBand = "low" | "medium" | "high";
+
 interface PortalContinuityRow {
   teamId: string;
   teamName: string;
@@ -18,6 +20,63 @@ interface PortalContinuityRow {
   positionalShock?: number | null; // 0–1
   mercenaryIndex?: number | null; // 0–1
   portalAggressor?: number | null; // 0–1
+  riskLabel: string;
+  riskBand: RiskBand;
+}
+
+function classifyPortalRisk(meta: {
+  continuityScore: number | null;
+  positionalShock: number | null;
+  mercenaryIndex: number | null;
+  portalAggressor: number | null;
+} | null): { riskLabel: string; riskBand: RiskBand } {
+  if (!meta) {
+    return { riskLabel: "Unknown", riskBand: "medium" };
+  }
+
+  const { continuityScore, positionalShock, mercenaryIndex, portalAggressor } = meta;
+
+  let riskScore = 0;
+
+  // Lower continuity = more risk
+  if (continuityScore != null) {
+    if (continuityScore < 0.5) riskScore += 2;
+    else if (continuityScore < 0.7) riskScore += 1;
+    else riskScore += 0;
+  }
+
+  // High positional shock (QB/OL/DEF turnover) = more risk
+  if (positionalShock != null) {
+    if (positionalShock > 0.67) riskScore += 2;
+    else if (positionalShock > 0.33) riskScore += 1;
+  }
+
+  // Heavy mercenary behavior = more risk
+  if (mercenaryIndex != null) {
+    if (mercenaryIndex > 0.67) riskScore += 2;
+    else if (mercenaryIndex > 0.33) riskScore += 1;
+  }
+
+  // Aggressive portal net gain = some extra variance
+  if (portalAggressor != null && portalAggressor > 0.67) {
+    riskScore += 1;
+  }
+
+  let riskBand: RiskBand;
+  let riskLabel: string;
+
+  if (riskScore >= 5) {
+    riskBand = "high";
+    riskLabel = "Portal Chaos";
+  } else if (riskScore >= 3) {
+    riskBand = "medium";
+    riskLabel = "High-Churn Reload";
+  } else {
+    riskBand = "low";
+    riskLabel = "Solid Core";
+  }
+
+  return { riskLabel, riskBand };
 }
 
 export async function GET(request: NextRequest) {
@@ -68,6 +127,13 @@ export async function GET(request: NextRequest) {
       if (portalMeta && typeof portalMeta.continuityScore === 'number') {
         const team = teamMap.get(teamSeason.teamId);
         if (team) {
+          const risk = classifyPortalRisk({
+            continuityScore: portalMeta.continuityScore ?? null,
+            positionalShock: typeof portalMeta.positionalShock === 'number' ? portalMeta.positionalShock : null,
+            mercenaryIndex: typeof portalMeta.mercenaryIndex === 'number' ? portalMeta.mercenaryIndex : null,
+            portalAggressor: typeof portalMeta.portalAggressor === 'number' ? portalMeta.portalAggressor : null,
+          });
+
           rows.push({
             teamId: teamSeason.teamId,
             teamName: team.name,
@@ -76,6 +142,8 @@ export async function GET(request: NextRequest) {
             positionalShock: typeof portalMeta.positionalShock === 'number' ? portalMeta.positionalShock : null,
             mercenaryIndex: typeof portalMeta.mercenaryIndex === 'number' ? portalMeta.mercenaryIndex : null,
             portalAggressor: typeof portalMeta.portalAggressor === 'number' ? portalMeta.portalAggressor : null,
+            riskLabel: risk.riskLabel,
+            riskBand: risk.riskBand,
           });
         }
       }

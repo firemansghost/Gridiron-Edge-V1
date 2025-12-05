@@ -22,6 +22,8 @@ interface PortalContinuityRow {
   positionalShock?: number | null; // 0–1
   mercenaryIndex?: number | null; // 0–1
   portalAggressor?: number | null; // 0–1
+  riskLabel: string;
+  riskBand: "low" | "medium" | "high";
 }
 
 export default function PortalLabsPage() {
@@ -31,6 +33,7 @@ export default function PortalLabsPage() {
   const [season, setSeason] = useState<number>(2025);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [showSwipeHint, setShowSwipeHint] = useState(false);
+  const [continuityFilter, setContinuityFilter] = useState<"all" | "low" | "mid" | "high">("all");
 
   useEffect(() => {
     fetchContinuityData();
@@ -173,6 +176,39 @@ export default function PortalLabsPage() {
             </div>
           ) : (
             <div className="bg-white shadow sm:rounded-md">
+              {/* Legend for bands + indices */}
+              <div className="px-3 pt-3 pb-1 text-xs text-gray-500 space-y-1">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="font-semibold">Legend:</span>
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                    <span>Low (0.00–0.33)</span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-amber-500" />
+                    <span>Mid (0.33–0.67)</span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-rose-500" />
+                    <span>High (0.67–1.00)</span>
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="flex items-center gap-1">
+                    <span className="font-mono">PS</span>
+                    <span>= Positional Shock</span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="font-mono">MI</span>
+                    <span>= Mercenary Index</span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="font-mono">PA</span>
+                    <span>= Portal Aggressor</span>
+                  </span>
+                </div>
+              </div>
+
               {/* Mobile swipe hint */}
               {showSwipeHint && (
                 <div className="md:hidden px-3 pt-3 text-xs text-gray-500 flex items-center justify-between">
@@ -186,7 +222,7 @@ export default function PortalLabsPage() {
                 ref={scrollRef}
                 className="w-full overflow-x-auto md:overflow-visible"
               >
-                <table className="min-w-[900px] md:min-w-0 w-full divide-y divide-gray-200">
+                <table className="min-w-[1000px] md:min-w-0 w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -198,36 +234,67 @@ export default function PortalLabsPage() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Continuity
                       </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Risk
+                      </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Portal Meta
                       </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {rows.map((row) => {
-                      const continuityBand = getContinuityBand(row.continuityScore);
-                      const psBand = getIndexBand(row.positionalShock);
-                      const miBand = getIndexBand(row.mercenaryIndex);
-                      const paBand = getIndexBand(row.portalAggressor);
-                      return (
-                        <tr key={row.teamId}>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            {row.teamName}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {row.conference || '—'}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-900">
-                              {(row.continuityScore * 100).toFixed(1)}
-                            </div>
-                            <div className="mt-1">
-                              <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${continuityBand.color}`}>
-                                {continuityBand.label}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                    {rows
+                      .filter((row) => {
+                        if (continuityFilter === "all") return true;
+                        const c = row.continuityScore;
+                        if (c == null) return false;
+
+                        if (continuityFilter === "low") return c < 0.6;
+                        if (continuityFilter === "mid") return c >= 0.6 && c < 0.8;
+                        if (continuityFilter === "high") return c >= 0.8;
+                        return true;
+                      })
+                      .map((row) => {
+                        const continuityBand = getContinuityBand(row.continuityScore);
+                        const psBand = getIndexBand(row.positionalShock);
+                        const miBand = getIndexBand(row.mercenaryIndex);
+                        const paBand = getIndexBand(row.portalAggressor);
+                        return (
+                          <tr key={row.teamId}>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                              {row.teamName}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {row.conference || '—'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-900">
+                                {(row.continuityScore * 100).toFixed(1)}
+                              </div>
+                              <div className="mt-1">
+                                <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${continuityBand.color}`}>
+                                  {continuityBand.label}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap">
+                              {row.riskLabel ? (
+                                <span
+                                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium border ${
+                                    row.riskBand === "low"
+                                      ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                      : row.riskBand === "medium"
+                                      ? "bg-amber-50 text-amber-800 border-amber-200"
+                                      : "bg-rose-50 text-rose-800 border-rose-200"
+                                  }`}
+                                >
+                                  {row.riskLabel}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-gray-400">–</span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex flex-wrap gap-1">
                               {psBand ? (
                                 <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${psBand.color}`} title={`PositionalShock: ${((row.positionalShock || 0) * 100).toFixed(1)}`}>
