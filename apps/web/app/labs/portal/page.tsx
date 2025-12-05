@@ -7,7 +7,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
@@ -29,10 +29,38 @@ export default function PortalLabsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [season, setSeason] = useState<number>(2025);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [showSwipeHint, setShowSwipeHint] = useState(false);
 
   useEffect(() => {
     fetchContinuityData();
   }, [season]);
+
+  // Check for horizontal overflow to show mobile swipe hint
+  useEffect(() => {
+    const checkOverflow = () => {
+      if (!scrollRef.current) return;
+      const el = scrollRef.current;
+      const hasOverflow = el.scrollWidth > el.clientWidth;
+      setShowSwipeHint(hasOverflow);
+    };
+
+    // Check initially and after data loads
+    checkOverflow();
+    
+    // Check on resize/orientation change
+    window.addEventListener('resize', checkOverflow);
+    
+    // Also check when rows change (data loaded)
+    if (rows.length > 0) {
+      // Small delay to ensure DOM is updated
+      setTimeout(checkOverflow, 100);
+    }
+
+    return () => {
+      window.removeEventListener('resize', checkOverflow);
+    };
+  }, [rows]);
 
   const fetchContinuityData = async () => {
     try {
@@ -145,7 +173,19 @@ export default function PortalLabsPage() {
             </div>
           ) : (
             <div className="bg-white shadow sm:rounded-md">
-              <div className="w-full overflow-x-auto md:overflow-visible">
+              {/* Mobile swipe hint */}
+              {showSwipeHint && (
+                <div className="md:hidden px-3 pt-3 text-xs text-gray-500 flex items-center justify-between">
+                  <span>← Swipe to see continuity & portal columns</span>
+                  <span className="text-[10px] uppercase tracking-wide opacity-70">
+                    Labs tip
+                  </span>
+                </div>
+              )}
+              <div
+                ref={scrollRef}
+                className="w-full overflow-x-auto md:overflow-visible"
+              >
                 <table className="min-w-[900px] md:min-w-0 w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
