@@ -95,6 +95,36 @@ export default function HomePage() {
       <HeaderNav />
       <div className="flex-1">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Season Update Banner */}
+        <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-l-4 border-amber-400 p-6 rounded-r-lg mb-8">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-gray-900 mb-3">Season Update (Dec 22, 2025)</h3>
+              <p className="text-sm text-gray-700 mb-2">
+                Regular season: ✅ complete. Bowl season: 💤 (limited updates).
+              </p>
+              <p className="text-sm text-gray-700 mb-3">
+                Gridiron Edge will be back for the 2026 season with improvements and updated models.
+              </p>
+              <p className="text-sm text-gray-700 mb-2">
+                Want receipts? See how the different models performed this year on{' '}
+                <Link 
+                  href="https://gridiron-edge-v1.vercel.app/labs/portfolio"
+                  className="text-blue-600 hover:text-blue-800 underline font-medium"
+                >
+                  Portfolio What-Ifs (Labs)
+                </Link>:
+              </p>
+              <p className="text-xs text-gray-500 italic mb-3">
+                Labs results are historical simulations — not guarantees, not financial advice, and definitely not a promise you'll stop doing degenerate things on Saturdays.
+              </p>
+              <p className="text-xs text-gray-600">
+                Offseason plan: tuning the model, cleaning data, and making the site faster/cleaner for 2026.
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between">
