@@ -6,6 +6,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { NextRequest } from 'next/server';
+import { normalizeSlateApiResponse } from '../lib/config/slate-model';
 
 const prisma = new PrismaClient();
 
@@ -26,14 +27,15 @@ async function diagnoseSlateTableData() {
   
   try {
     const response = await GET(request);
-    const data = await response.json();
-    
-    if (!Array.isArray(data)) {
-      console.error('❌ Slate API returned non-array response:', data);
+    const raw = await response.json();
+    const { games: data, meta } = normalizeSlateApiResponse<any>(raw);
+
+    if (data.length === 0 && raw && typeof raw === 'object' && 'error' in raw) {
+      console.error('❌ Slate API returned error:', (raw as { error: string }).error);
       return;
     }
-    
-    console.log(`✅ Slate API returned ${data.length} games\n`);
+
+    console.log(`✅ Slate API returned ${data.length} games${meta ? ` (model=${meta.activeModel})` : ''}\n`);
     
     // Find target games
     const targetGames = [
