@@ -9,12 +9,16 @@
  */
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { getStrategyLabel, getDefaultStrategyTag } from '@/lib/strategy-utils';
+import {
+  getStrategyLabel,
+  getDefaultStrategyTag,
+  resolveReviewStrategySelection,
+} from '@/lib/strategy-utils';
 
 interface WeekBreakdown {
   week: number;
@@ -72,11 +76,13 @@ interface SeasonSummaryData {
 export default function SeasonReviewPage() {
   const router = useRouter();
   const [season, setSeason] = useState<number>(2025);
-  const [strategyTag, setStrategyTag] = useState<string>('official_flat_100');
+  const [strategyTag, setStrategyTag] = useState<string>('hybrid_v2');
   const [selectedMarket, setSelectedMarket] = useState<string>('ALL');
   const [data, setData] = useState<SeasonSummaryData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const defaultStrategySet = useRef(false);
+  const urlParamsApplied = useRef(false);
   
   // Version banner for deployment verification
   // Shows build timestamp to verify new deployments
@@ -112,28 +118,46 @@ export default function SeasonReviewPage() {
   };
 
   useEffect(() => {
+    if (typeof window === 'undefined' || urlParamsApplied.current) {
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    const strategyParam = params.get('strategyTag') ?? params.get('strategy');
+    if (strategyParam !== null) {
+      setStrategyTag(resolveReviewStrategySelection(strategyParam, []));
+      defaultStrategySet.current = true;
+    }
+    urlParamsApplied.current = true;
+  }, []);
+
+  useEffect(() => {
     fetchData();
   }, [season, strategyTag, selectedMarket]);
 
-  // Initialize season and strategy from available data on first load
+  // Initialize season and strategy defaults from available data on first load
   useEffect(() => {
     if (data?.meta.seasonsAvailable && data.meta.seasonsAvailable.length > 0) {
-      // Default to latest season (last in array since sorted ascending)
       const latestSeason = data.meta.seasonsAvailable[data.meta.seasonsAvailable.length - 1];
       if (!data.meta.seasonsAvailable.includes(season)) {
         setSeason(latestSeason);
       }
     }
-    
-    // Set default strategy to official_flat_100 if available, otherwise 'all'
-    if (data?.meta.strategyTagsAvailable && data.meta.strategyTagsAvailable.length > 0) {
-      const defaultTag = getDefaultStrategyTag(data.meta.strategyTagsAvailable);
-      if (strategyTag === 'official_flat_100' && !data.meta.strategyTagsAvailable.includes('official_flat_100')) {
-        setStrategyTag(defaultTag);
-      } else if (strategyTag === 'all' && data.meta.strategyTagsAvailable.includes('official_flat_100')) {
-        setStrategyTag('official_flat_100');
-      }
+
+    if (!data?.meta.strategyTagsAvailable || data.meta.strategyTagsAvailable.length === 0) {
+      return;
     }
+
+    const available = data.meta.strategyTagsAvailable;
+
+    if (defaultStrategySet.current) {
+      if (strategyTag !== 'all' && !available.includes(strategyTag)) {
+        setStrategyTag(getDefaultStrategyTag(available));
+      }
+      return;
+    }
+
+    setStrategyTag(getDefaultStrategyTag(available));
+    defaultStrategySet.current = true;
   }, [data?.meta.seasonsAvailable, data?.meta.strategyTagsAvailable]);
 
   const formatCurrency = (value: number) =>

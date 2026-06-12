@@ -27,6 +27,7 @@ import { TeamLogo } from '@/components/TeamLogo';
 import { ModelViewModeToggle } from '@/components/ModelViewModeToggle';
 import { useModelViewMode } from '@/contexts/ModelViewModeContext';
 import { UnitMatchupCard } from '@/components/UnitMatchupCard';
+import { GAME_DETAIL_LABELS } from '@/lib/config/game-detail-labels';
 
 export default function GameDetailPage() {
   const params = useParams();
@@ -349,7 +350,7 @@ export default function GameDetailPage() {
               {(game.validation?.favoritesDisagree || game.hybrid?.favoritesDisagree) && (
                 <span 
                   className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 border border-yellow-200"
-                  title="Model and market favor different teams. Treat as Labs-only unless manually whitelisted."
+                  title="Model and market favor different teams. Use extra caution before betting."
                 >
                   Favs Disagree
                 </span>
@@ -722,46 +723,12 @@ export default function GameDetailPage() {
           <div className="mb-6">
             <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-4">Decision Strip</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Official Card */}
-              <div className="bg-white border-2 border-gray-300 rounded-lg p-4 shadow-sm">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Official Spread</h3>
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                    Official Card
-                  </span>
-                </div>
-                {game.officialSpreadBet ? (
-                  <div>
-                    <div className="text-xl font-bold text-gray-900 mb-2">
-                      {game.officialSpreadBet.teamName} {game.officialSpreadBet.line > 0 ? '+' : ''}{game.officialSpreadBet.line.toFixed(1)}
-                    </div>
-                    {game.officialSpreadBet.edge !== null && (
-                      <div className="text-sm text-gray-600 mb-1">
-                        Edge: <span className="font-semibold">{game.officialSpreadBet.edge.toFixed(1)} pts</span>
-                      </div>
-                    )}
-                    {game.officialSpreadBet.grade && (
-                      <div className="text-xs text-gray-500">
-                        Grade: {game.officialSpreadBet.grade}
-                      </div>
-                    )}
-                    <div className="text-xs text-gray-500 mt-2">
-                      Source: official_flat_100
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-gray-500 text-sm">
-                    No official spread pick for this game. Check Labs sections below.
-                  </div>
-                )}
-              </div>
-              
-              {/* Hybrid V2 Card */}
+              {/* Hybrid V2 — primary 2026 spread model */}
               <div className="bg-white border-2 border-purple-300 rounded-lg p-4 shadow-sm">
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Hybrid V2 (Labs)</h3>
+                  <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">{GAME_DETAIL_LABELS.hybridV2.title}</h3>
                   <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                    Labs
+                    {GAME_DETAIL_LABELS.hybridV2.badge}
                   </span>
                 </div>
                 {game.hybrid?.spreadPick ? (
@@ -796,23 +763,23 @@ export default function GameDetailPage() {
                         </span>
                       )}
                     </div>
-                    <div className="text-xs text-gray-500 mt-2 italic">
-                      Not auto-bet. Included on Labs page only.
+                    <div className="text-xs text-gray-500 mt-2">
+                      {GAME_DETAIL_LABELS.hybridV2.scopeNote}
                     </div>
                   </div>
                 ) : (
                   <div className="text-gray-500 text-sm">
-                    Hybrid V2 data unavailable
+                    {GAME_DETAIL_LABELS.hybridV2.unavailable}
                   </div>
                 )}
               </div>
-              
-              {/* Core V1 Card */}
+
+              {/* Core V1 — comparison spread model */}
               <div className="bg-white border-2 border-blue-300 rounded-lg p-4 shadow-sm">
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Core V1 (Legacy)</h3>
+                  <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">{GAME_DETAIL_LABELS.coreV1.title}</h3>
                   <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                    Legacy
+                    {GAME_DETAIL_LABELS.coreV1.badge}
                   </span>
                 </div>
                 {game.picks?.spread?.bettablePick?.label ? (
@@ -838,7 +805,41 @@ export default function GameDetailPage() {
                   </div>
                 ) : (
                   <div className="text-gray-500 text-sm">
-                    No Core V1 spread pick
+                    {GAME_DETAIL_LABELS.coreV1.unavailable}
+                  </div>
+                )}
+              </div>
+
+              {/* Core V1 Card — synced official_flat_100 graded bet */}
+              <div className="bg-white border-2 border-gray-300 rounded-lg p-4 shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">{GAME_DETAIL_LABELS.officialCard.title}</h3>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                    {GAME_DETAIL_LABELS.officialCard.badge}
+                  </span>
+                </div>
+                {game.officialSpreadBet ? (
+                  <div>
+                    <div className="text-xl font-bold text-gray-900 mb-2">
+                      {game.officialSpreadBet.teamName} {game.officialSpreadBet.line > 0 ? '+' : ''}{game.officialSpreadBet.line.toFixed(1)}
+                    </div>
+                    {game.officialSpreadBet.edge !== null && (
+                      <div className="text-sm text-gray-600 mb-1">
+                        Edge: <span className="font-semibold">{game.officialSpreadBet.edge.toFixed(1)} pts</span>
+                      </div>
+                    )}
+                    {game.officialSpreadBet.grade && (
+                      <div className="text-xs text-gray-500">
+                        Grade: {game.officialSpreadBet.grade}
+                      </div>
+                    )}
+                    <div className="text-xs text-gray-500 mt-2">
+                      {GAME_DETAIL_LABELS.officialCard.sourceNote}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-gray-500 text-sm">
+                    {GAME_DETAIL_LABELS.officialCard.empty}
                   </div>
                 )}
               </div>
@@ -858,7 +859,7 @@ export default function GameDetailPage() {
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
-                  Hybrid V2 (Labs)
+                  {GAME_DETAIL_LABELS.hybridV2.tab}
                 </button>
                 <button
                   onClick={() => setActiveTab('core')}
@@ -868,7 +869,7 @@ export default function GameDetailPage() {
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
-                  Core V1 (Legacy)
+                  {GAME_DETAIL_LABELS.coreV1.tab}
                 </button>
                 <button
                   onClick={() => setActiveTab('side')}
@@ -890,7 +891,7 @@ export default function GameDetailPage() {
                 {game.hybrid?.spreadPick ? (
                   <div className="bg-white border-2 border-purple-300 rounded-lg p-4 shadow-sm mb-6">
                     <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Hybrid V2 ATS</h3>
+                      <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">{GAME_DETAIL_LABELS.hybridV2.atsHeader}</h3>
                       <div className="flex items-center gap-2">
                         {game.hybrid.spreadPick.grade && (
                           <div 
@@ -904,7 +905,7 @@ export default function GameDetailPage() {
                           </div>
                         )}
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                          Labs-only, not auto-bet
+                          {GAME_DETAIL_LABELS.hybridV2.badgeDetail}
                         </span>
                       </div>
                     </div>
@@ -942,7 +943,7 @@ export default function GameDetailPage() {
                 ) : (
                   <div className="bg-white border-2 border-gray-300 rounded-lg p-4 shadow-sm mb-6">
                     <div className="text-gray-500 text-sm">
-                      Hybrid V2 data unavailable for this game.
+                      {GAME_DETAIL_LABELS.hybridV2.unavailable} for this game.
                     </div>
                   </div>
                 )}
@@ -966,7 +967,7 @@ export default function GameDetailPage() {
               <div>
                 {/* Core V1 Tab Content */}
                 <div className="text-sm text-gray-600 mb-4 italic">
-                  Core V1 (Legacy) model view. This is the original model used for official picks.
+                  {GAME_DETAIL_LABELS.coreV1.intro}
                 </div>
                 
                 {/* Note: The existing Betting Ticket grid below will show in Core tab */}

@@ -12,8 +12,15 @@ import Link from 'next/link';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import { TeamLogo } from '@/components/TeamLogo';
+import { ProductionModelSelector } from '@/components/ProductionModelSelector';
+import { useProductionModel } from '@/contexts/ProductionModelContext';
 import { ErrorState } from '@/components/ErrorState';
 import { downloadAsCsv } from '@/lib/csv-export';
+import {
+  buildSlateApiUrl,
+  normalizeSlateApiResponse,
+  type SlateResponseMeta,
+} from '@/lib/config/slate-model';
 
 interface GamePick {
   label: string | null;
@@ -69,18 +76,20 @@ interface SlateGame {
 }
 
 export default function PicksPage() {
+  const { model, modelLabel } = useProductionModel();
   const [games, setGames] = useState<SlateGame[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [season, setSeason] = useState<number | null>(null);
   const [week, setWeek] = useState<number | null>(null);
+  const [slateMeta, setSlateMeta] = useState<SlateResponseMeta | null>(null);
   // 2026 playbook filters
   const [showOnlySuperTierA, setShowOnlySuperTierA] = useState(false);
   const [showOnlyHybridStrong, setShowOnlyHybridStrong] = useState(false);
 
   useEffect(() => {
     fetchCurrentWeekAndSlate();
-  }, []);
+  }, [model]);
 
   const fetchCurrentWeekAndSlate = async () => {
     try {
@@ -102,13 +111,16 @@ export default function PicksPage() {
       setSeason(currentSeason);
       setWeek(currentWeek);
       
-      // Then fetch the slate for current week
-      const slateResponse = await fetch(`/api/weeks/slate?season=${currentSeason}&week=${currentWeek}`);
+      const slateResponse = await fetch(
+        buildSlateApiUrl(currentSeason, currentWeek, model)
+      );
       if (!slateResponse.ok) {
         throw new Error(`Failed to fetch slate: ${slateResponse.statusText}`);
       }
       
-      const data: SlateGame[] = await slateResponse.json();
+      const raw = await slateResponse.json();
+      const { games: data, meta } = normalizeSlateApiResponse<SlateGame>(raw);
+      setSlateMeta(meta);
       
       // Filter to only games with at least ONE active bet (Spread OR Total OR Moneyline)
       const gamesWithBets = data.filter(game => {
@@ -443,10 +455,8 @@ export default function PicksPage() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           {/* Header */}
           <div className="mb-6">
-            <div className="flex items-center justify-between mb-1">
-              <h1 className="text-2xl font-bold text-gray-900">
-                Official Picks{week !== null ? ` - Week ${week}` : ''}
-              </h1>
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-3">
+              <ProductionModelSelector />
               {hasAnyBets && (
                 <button
                   onClick={handleExportCsv}
@@ -459,12 +469,26 @@ export default function PicksPage() {
                 </button>
               )}
             </div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-1">
+              Official Picks{week !== null ? ` - Week ${week}` : ''}
+            </h1>
             <p className="text-sm text-gray-600">
+              Spread model: <span className="font-medium">{modelLabel}</span>
+              {slateMeta?.modelScope.total === 'current' && (
+                <span className="text-gray-500"> • Totals/ML use current logic</span>
+              )}
+            </p>
+            <p className="text-sm text-gray-600 mt-1">
               {hasAnyBets 
                 ? `${totalGames} ${totalGames === 1 ? 'game' : 'games'} with active bets${season !== null && week !== null ? ` for ${season} Week ${week}` : ''}`
                 : `No active bets found${season !== null && week !== null ? ` for ${season} Week ${week}` : ''}. All edges are below the 0.1 pt threshold.`
               }
             </p>
+            {model === 'core_v1' && (showOnlySuperTierA || showOnlyHybridStrong) && (
+              <p className="text-xs text-amber-700 mt-2">
+                Hybrid Strong / Super Tier A filters apply to Hybrid V2 spread metadata. Switch to Hybrid V2 for live hybrid-tier picks.
+              </p>
+            )}
           </div>
 
           {/* 2026 Playbook Filters */}

@@ -5,6 +5,13 @@ import Link from 'next/link';
 import { InfoTooltip } from './InfoTooltip';
 import { ModelViewModeToggle } from './ModelViewModeToggle';
 import { useModelViewMode } from '@/contexts/ModelViewModeContext';
+import { useProductionModel } from '@/contexts/ProductionModelContext';
+import type { ProductionModelId } from '@/lib/config/production-models';
+import {
+  buildSlateApiUrl,
+  normalizeSlateApiResponse,
+  type SlateResponseMeta,
+} from '@/lib/config/slate-model';
 
 /**
  * Terminology:
@@ -52,6 +59,9 @@ interface SlateTableProps {
   showDateHeaders?: boolean;
   showAdvanced?: boolean;
   onAdvancedToggle?: (show: boolean) => void;
+  model?: ProductionModelId;
+  providedGames?: SlateGame[] | null;
+  slateMeta?: SlateResponseMeta | null;
 }
 
 export default function SlateTable({ 
@@ -60,7 +70,10 @@ export default function SlateTable({
   title = `Week ${week} Games`,
   showDateHeaders = true,
   showAdvanced = false,
-  onAdvancedToggle
+  onAdvancedToggle,
+  model: modelProp,
+  providedGames = null,
+  slateMeta = null,
 }: SlateTableProps) {
   const [games, setGames] = useState<SlateGame[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,6 +96,8 @@ export default function SlateTable({
   
   // Get model view mode from context
   const { mode: modelViewMode } = useModelViewMode();
+  const { model: contextModel, modelLabel } = useProductionModel();
+  const activeModel = modelProp ?? contextModel;
   
   // Refs for scroll synchronization
   const topScrollRef = useRef<HTMLDivElement>(null);
@@ -92,8 +107,14 @@ export default function SlateTable({
   const datePillsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (providedGames) {
+      setGames(providedGames);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     fetchSlate();
-  }, [season, week]);
+  }, [season, week, activeModel, providedGames]);
 
   // Handle URL hash for deep linking
   useEffect(() => {
@@ -531,14 +552,15 @@ export default function SlateTable({
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/weeks/slate?season=${season}&week=${week}`);
+      const response = await fetch(buildSlateApiUrl(season, week, activeModel));
       if (!response.ok) throw new Error('Failed to fetch slate');
       
-      const data = await response.json();
+      const raw = await response.json();
+      const { games: data } = normalizeSlateApiResponse<SlateGame>(raw);
       
       // Dev logging
       if (process.env.NODE_ENV !== 'production') {
-        console.log('[CoreV1 Slate] Received games:', data.length);
+        console.log(`[Slate ${activeModel}] Received games:`, data.length);
         data.slice(0, 3).forEach((game: SlateGame) => {
           console.log('[CoreV1 Slate Row]', {
             matchup: `${game.awayTeamId} @ ${game.homeTeamId}`,

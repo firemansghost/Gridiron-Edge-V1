@@ -6,7 +6,13 @@ This document defines how we actually **use** the Gridiron Edge models in 2026, 
 
 The core ideas:
 
-- **Hybrid V2** is the **only production spread model**.
+- **Dual-Model Mode (2026):** **Hybrid V2** is the **primary/default spread model**; **Core V1** remains **selectable for comparison and reporting**.
+
+- **Hybrid V2** (`strategyTag = 'hybrid_v2'`) drives live spread picks on homepage, **My Picks**, slate API (default `?model=hybrid_v2`), Week Review, and Season Review.
+
+- **Core V1 comparison** uses historical DB tag `official_flat_100` for synced graded bets — display as **Core V1 Card (Flat $100)**. **Do not rename** the DB tag.
+
+- **Totals and moneyline** remain on **current/existing (Core V1) logic** until separate Hybrid totals/ML exists. Hybrid V2 applies to **spreads only** for now.
 
 - **Conflict tags** (`hybrid_strong`, `hybrid_weak`, `hybrid_only`) tell us **when to trust Hybrid more or less**.
 
@@ -16,11 +22,17 @@ The core ideas:
 
 ## 1. Models: Production vs Labs
 
-**Production:**
+**Production (Dual-Model):**
 
 - **Hybrid V2** (`strategyTag = 'hybrid_v2'`)
 
-  - This is the model used for **My Picks** and live recommendation logic.
+  - Primary/default **spread** model for live picks, homepage slate, My Picks, and game detail.
+
+- **Core V1** (comparison / reporting)
+
+  - Live spread comparison via Core V1 math (`?model=core_v1` on `/api/weeks/slate`).
+  - Graded/synced bet rows use DB tag `official_flat_100` (UI: **Core V1 Card (Flat $100)**).
+  - Weekly `official_flat_100` sync continues for side-by-side performance tracking.
 
 **Labs / Experimental:**
 
@@ -38,7 +50,19 @@ The core ideas:
 
   - Still treated as **experimental**, not production.
 
-All non-Hybrid strategies are informational overlays and **do not** drive My Picks directly.
+V4 and Fade V4 are informational overlays and **do not** drive production My Picks directly.
+
+### 1.1 Dual-Model UI (implemented)
+
+| Surface | Default spread model | Core V1 selectable? |
+|---------|---------------------|---------------------|
+| Homepage slate | Hybrid V2 | Yes (`ProductionModelSelector`) |
+| `/picks` | Hybrid V2 | Yes |
+| `/api/weeks/slate` | `hybrid_v2` if `model` omitted | `?model=core_v1` |
+| Week Review / Season Review | `hybrid_v2` strategy | Yes (dropdown) |
+| Game detail | Hybrid V2 primary | Core V1 comparison card |
+
+Totals and ML on slate/picks use **current logic** regardless of spread model selection.
 
 ---
 
@@ -244,7 +268,9 @@ Fade V4 remains **Labs-only**, but:
 
 To make the 2026 playbook usable from the couch:
 
-For each Hybrid V2 pick shown on **My Picks**:
+**Model selector:** My Picks and homepage use **ProductionModelSelector** (`hybrid_v2` | `core_v1`). Labs models are not in the selector.
+
+For each Hybrid V2 spread pick shown on **My Picks** (when Hybrid V2 is selected):
 
 - Show a **Conflict badge**:
 
@@ -371,7 +397,7 @@ This is **Labs-only evidence** and not yet a hard production rule, but it strong
 
 ## 9. 2026 Guardrail Policy – Low-Continuity Dogs
 
-The official card treats "Low-Continuity Dog" as a **hard guardrail by default**.
+The Core V1 Card treats "Low-Continuity Dog" as a **hard guardrail by default**.
 
 ### Definition
 
@@ -382,18 +408,18 @@ A **Low-Continuity Dog** is a spread bet where:
 ### Historical Evidence
 
 These plays have been a large negative ROI segment in both 2024 and 2025 simulations:
-- **2025 Official Card**: 316 low-continuity dogs had **-22.04% ROI** (vs +13.53% baseline)
+- **2025 Core V1 Card** (`official_flat_100`): 316 low-continuity dogs had **-22.04% ROI** (vs +13.53% baseline)
 - **2025 Hybrid V2**: 239 low-continuity dogs had **-14.50% ROI** (vs +20.38% baseline)
 
 ### Policy for 2026
 
 **Default behavior:**
-- The official card **auto-excludes** low-continuity dogs by default.
+- The Core V1 Card **auto-excludes** low-continuity dogs by default.
 - This is a **risk management rule**, not a model feature.
 - The model (Hybrid V2) can still like these games; the guardrail is on portfolio construction, not on the rating engine.
 
 **Manual override process:**
-- If a low-continuity dog is included in the official card:
+- If a low-continuity dog is included in the Core V1 Card:
   - It must be **manually whitelisted** with a written handicap (injuries, matchup context, etc.).
   - It should be treated as a **Labs-only** or **reduced-size** play.
   - The rationale should be documented for review.
@@ -401,7 +427,7 @@ These plays have been a large negative ROI segment in both 2024 and 2025 simulat
 **Implementation:**
 - Low-continuity dogs are flagged with a red "Low-Continuity Dog" pill on the `/picks` page.
 - The Portfolio What-Ifs panel (`/labs/portfolio`) shows the impact of dropping these bets.
-- This guardrail applies to the **official card** (`official_flat_100`); Labs strategies may experiment with different filters.
+- This guardrail applies to the **Core V1 Card** (DB tag `official_flat_100`); Labs strategies may experiment with different filters.
 
 ---
 

@@ -68,11 +68,11 @@ npm install
 npm run dev
 ```
 
-#### ETL Jobs (Python)
+#### ETL Jobs (TypeScript/Node)
 ```bash
-cd apps/jobs
-pip install -r requirements.txt
-python -m jobs.etl.main
+# From repo root
+npm run ingest -- --help
+npm run seed:ratings
 ```
 
 #### Database Operations
@@ -105,7 +105,7 @@ Check the **Actions** tab in GitHub to see execution logs and summaries.
 
 ## Project Structure
 - `/apps/web` - Next.js frontend
-- `/apps/jobs` - Python ETL pipeline
+- `/apps/jobs` - TypeScript ETL jobs (`apps/jobs/src`)
 - `/docs` - Project documentation
 
 ## Documentation
