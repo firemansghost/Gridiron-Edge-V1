@@ -1,6 +1,7 @@
 # Season Status — Gridiron Edge
 
-_Last updated: June 2026 (2026 preseason preparation)_
+**Status:** Offseason / paused for regular-season automation  
+**Updated:** 2026-06-12 (2026 preseason preparation)
 
 Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISABLE_REPORT.md` and `docs/2026-betting-playbook.md`.
 
@@ -11,10 +12,11 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | Item | Status |
 |------|--------|
 | **Calendar context** | 2026 preseason prep (post–2025 bowl/offseason) |
-| **Production app** | Deployed; Season Update banner reflects Dec 2025 wrap |
+| **2025 regular season** | Complete |
+| **Production app** | Deployed; Season Update banner (Dec 22, 2025) points users to Labs → Portfolio What-Ifs |
 | **GitHub Actions** | **All workflows disabled in GitHub UI** (Bobby confirmation, Dec 2025) |
 | **Workflow YAML** | Schedules still present in `.github/workflows/` — disablement is **UI state**, not encoded in YAML |
-| **Branch (dual-model)** | `feat/dual-model-labels-preservation-tests` — not merged to `main` yet |
+| **Dual-model branch** | `feat/dual-model-labels-preservation-tests` — Phase H verified; PR pending merge to `main` |
 
 ---
 
@@ -51,7 +53,8 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | D | `/api/weeks/slate?model=hybrid_v2\|core_v1`; homepage/picks default Hybrid V2 |
 | E | Week Review + Season Review default `hybrid_v2` |
 | F | Game detail labels — Hybrid primary, no misleading Labs/auto-bet copy |
-| G | This file + playbook/doc alignment |
+| G | Playbook/doc alignment + this file |
+| H | Verification pass — tests, typecheck, build, manual smoke checklist |
 
 ---
 
@@ -74,17 +77,33 @@ Do **not** re-enable workflows until explicit review:
 2. **ETL smoke test** — manual ingest/ratings run against staging or controlled window
 3. **Odds / schedule ingestion** — verify CFBD + market line paths for Week 0/1
 4. **Grading check** — `grade-bets` workflow + bet result integrity
-5. **V3 totals script** — `sync-v3-bets.ts` referenced by workflow but may be missing; investigate before totals workflow reactivation
+5. **V3 totals script** — `sync-v3-bets.ts` referenced by workflow but missing; investigate before totals workflow reactivation
 6. **Slate API consumers** — scripts expecting bare array from `/api/weeks/slate` should use `normalizeSlateApiResponse()` or read `{ games, meta }`
-7. **Dual-model smoke** — homepage, picks, review pages, game detail with both models
+7. **Dual-model smoke** — homepage, picks, review pages, game detail with both models (Phase H manual checklist passed)
+8. **Stale docs** — `labs/hybrid` and `docs/methodology` still say "only production spread model"
+9. **Integration/React tests** — full slate route tests (mocked Prisma) and component tests pending (`@testing-library/react` not installed)
+
+### Before 2026 Week 0
+
+1. Re-enable the needed GitHub Actions workflows in the GitHub UI.
+2. Run a quick pipeline sanity check (`npm run build` plus one ingest/test run if applicable).
+3. Confirm homepage copy still makes sense for preseason / current season.
 
 ---
 
 ## Next recommended phases
 
-1. **Phase H** — Build/typecheck smoke + manual dual-model checklist on preview deploy
+1. **PR/merge review** — merge dual-model branch after PR approval
 2. **Phase 2 (audit)** — Offseason/workflow reactivation audit with GitHub UI confirmation
-3. **Merge dual-model branch** — after Phase H sign-off; then preseason ETL reactivation
+3. **Preseason ETL reactivation** — after merge + Phase 2 sign-off
+
+---
+
+## Operator notes
+
+- Weekly pick-processing rules are documented in the project operator files / ChatGPT Project instructions.
+- Moneyline overlap is treated as **winner-only** (ignore Kalshi vs American-odds scale mismatch).
+- Always include **Near Overlaps** for spreads/totals with drift in `(1.0, 2.0]`.
 
 ---
 
