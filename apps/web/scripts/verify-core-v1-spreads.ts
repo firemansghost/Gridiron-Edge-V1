@@ -10,6 +10,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { NextRequest } from 'next/server';
+import { normalizeSlateApiResponse } from '../lib/config/slate-model';
 
 const prisma = new PrismaClient();
 
@@ -100,24 +101,19 @@ async function getSlateData(season: number, week: number): Promise<SlateGame[]> 
   
   try {
     const response = await GET(request);
-    const data = await response.json();
-    
-    if (Array.isArray(data)) {
-      // Map the API response to our SlateGame interface
-      return data.map((game: any) => ({
-        gameId: game.gameId,
-        modelSpread: game.modelSpread ?? null,
-        modelTotal: game.modelTotal ?? null,
-        marketSpread: game.closingSpread?.value ?? null,
-        spreadPick: game.pickSpread ?? null,
-        spreadEdgePts: game.maxEdge ?? null, // maxEdge is the ATS edge for V1
-        totalPick: game.pickTotal ?? null,
-        totalEdgePts: null, // Totals disabled
-      }));
-    } else {
-      console.error('Slate API returned non-array response:', data);
-      return [];
-    }
+    const raw = await response.json();
+    const { games } = normalizeSlateApiResponse<any>(raw);
+
+    return games.map((game: any) => ({
+      gameId: game.gameId,
+      modelSpread: game.modelSpread ?? null,
+      modelTotal: game.modelTotal ?? null,
+      marketSpread: game.closingSpread?.value ?? null,
+      spreadPick: game.pickSpread ?? null,
+      spreadEdgePts: game.maxEdge ?? null,
+      totalPick: game.pickTotal ?? null,
+      totalEdgePts: null,
+    }));
   } catch (error) {
     console.error('Error calling Slate API:', error);
     return [];

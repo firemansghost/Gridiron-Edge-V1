@@ -3,6 +3,8 @@
  * This simulates what the browser does
  */
 
+import { normalizeSlateApiResponse } from '../lib/config/slate-model';
+
 async function testHttpSlate() {
   console.log('\n═══════════════════════════════════════════════════════════');
   console.log('TESTING: HTTP /api/weeks/slate endpoint');
@@ -22,14 +24,15 @@ async function testHttpSlate() {
       return;
     }
     
-    const data = await response.json();
-    
-    if (!Array.isArray(data)) {
-      console.error('❌ Response is not an array:', data);
+    const raw = await response.json();
+    const { games: data, meta } = normalizeSlateApiResponse<any>(raw);
+
+    if (data.length === 0 && raw && typeof raw === 'object' && 'error' in raw) {
+      console.error('❌ API error:', (raw as { error: string }).error);
       return;
     }
-    
-    console.log(`✅ Received ${data.length} games\n`);
+
+    console.log(`✅ Received ${data.length} games${meta ? ` (model=${meta.activeModel})` : ''}\n`);
     
     // Find OU @ Alabama game
     const ouAlabama = data.find((g: any) => 
