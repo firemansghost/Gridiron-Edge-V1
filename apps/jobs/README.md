@@ -1,18 +1,20 @@
 # Gridiron Edge ETL Jobs
 
-Python ETL pipeline for data ingestion and processing.
+TypeScript/Node ETL pipeline for data ingestion and processing.
+
+> **Note:** Older docs may reference Python ETL; the current implementation lives under `apps/jobs/src` and runs via npm scripts / GitHub Actions.
 
 ## Tech Stack
-- Python 3.11+
-- SQLAlchemy for database operations
-- Requests for API calls
-- Pandas for data processing
+- TypeScript / Node.js
+- Prisma for database access
+- CFBD, Odds API, and other provider clients in `apps/jobs/src`
 
 ## Development
 ```bash
-pip install -r requirements.txt
-python -m jobs.etl.main
+# From repo root
+npm run ingest -- --help
+npm run seed:ratings
 ```
 
 ## Deployment
-Runs via GitHub Actions on schedule or Render/Fly cron jobs.
+Runs via GitHub Actions on schedule or manual workflow dispatch. **As of 2026 preseason prep, all workflows are disabled in the GitHub UI** — see `SEASON_STATUS.md` and `WORKFLOW_DISABLE_REPORT.md`.

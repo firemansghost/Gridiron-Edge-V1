@@ -19,9 +19,12 @@ export default function BettingPlaybookPage() {
             The core ideas:
           </p>
           <ul className="list-disc pl-6 space-y-2 text-gray-700">
-            <li><strong>Hybrid V2</strong> is the <strong>only production spread model</strong>.</li>
+            <li><strong>Dual-Model Mode (2026):</strong> <strong>Hybrid V2</strong> is the <strong>primary/default spread model</strong>; <strong>Core V1</strong> remains <strong>selectable for comparison and reporting</strong>.</li>
+            <li><strong>Hybrid V2</strong> (<code className="bg-gray-100 px-1 rounded">strategyTag = &apos;hybrid_v2&apos;</code>) drives live spread picks on homepage, My Picks, and slate API (default <code className="bg-gray-100 px-1 rounded">?model=hybrid_v2</code>).</li>
+            <li><strong>Core V1 Card</strong> uses historical DB tag <code className="bg-gray-100 px-1 rounded">official_flat_100</code> for synced graded bets — display as <strong>Core V1 Card (Flat $100)</strong>. Do not rename the DB tag.</li>
+            <li><strong>Totals and moneyline</strong> remain on <strong>current/existing (Core V1) logic</strong> until separate Hybrid totals/ML exists.</li>
             <li><strong>Conflict tags</strong> (<code className="bg-gray-100 px-1 rounded">hybrid_strong</code>, <code className="bg-gray-100 px-1 rounded">hybrid_weak</code>, <code className="bg-gray-100 px-1 rounded">hybrid_only</code>) tell us <strong>when to trust Hybrid more or less</strong>.</li>
-            <li><strong>V4 / Fade V4</strong> remain <strong>Labs-only</strong>, but fading V4 has shown consistent positive ROI and helps define our "strong" vs "weak" buckets.</li>
+            <li><strong>V4 / Fade V4</strong> remain <strong>Labs-only</strong>, but fading V4 has shown consistent positive ROI and helps define our &quot;strong&quot; vs &quot;weak&quot; buckets.</li>
           </ul>
         </section>
 
@@ -29,11 +32,17 @@ export default function BettingPlaybookPage() {
           <h2 className="text-2xl font-semibold text-gray-900 mb-4">1. Models: Production vs Labs</h2>
           
           <div className="mb-4">
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Production:</h3>
-            <ul className="list-disc pl-6 space-y-1 text-gray-700">
-              <li><strong>Hybrid V2</strong> (<code className="bg-gray-100 px-1 rounded">strategyTag = 'hybrid_v2'</code>)
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Production (Dual-Model):</h3>
+            <ul className="list-disc pl-6 space-y-2 text-gray-700">
+              <li><strong>Hybrid V2</strong> (<code className="bg-gray-100 px-1 rounded">strategyTag = &apos;hybrid_v2&apos;</code>)
                 <ul className="list-disc pl-6 mt-1">
-                  <li>This is the model used for <strong>My Picks</strong> and live recommendation logic.</li>
+                  <li>Primary/default <strong>spread</strong> model for My Picks, homepage slate, and game detail.</li>
+                </ul>
+              </li>
+              <li><strong>Core V1</strong> (comparison / reporting)
+                <ul className="list-disc pl-6 mt-1">
+                  <li>Live spread comparison via <code className="bg-gray-100 px-1 rounded">?model=core_v1</code> on slate API.</li>
+                  <li>Graded bets: DB tag <code className="bg-gray-100 px-1 rounded">official_flat_100</code> (UI: Core V1 Card).</li>
                 </ul>
               </li>
             </ul>
@@ -58,7 +67,14 @@ export default function BettingPlaybookPage() {
             </ul>
           </div>
           <p className="text-gray-700 mt-4">
-            All non-Hybrid strategies are informational overlays and <strong>do not</strong> drive My Picks directly.
+            V4 and Fade V4 are informational overlays and <strong>do not</strong> drive production My Picks directly.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="text-2xl font-semibold text-gray-900 mb-4">1.1 Dual-Model UI</h2>
+          <p className="text-gray-700 mb-3">
+            Production model selector: <code className="bg-gray-100 px-1 rounded">hybrid_v2</code> | <code className="bg-gray-100 px-1 rounded">core_v1</code> (labs models excluded). Defaults to Hybrid V2 on homepage, My Picks, Week Review, and Season Review. Totals/ML stay on current logic regardless of spread model.
           </p>
         </section>
 
@@ -286,8 +302,11 @@ export default function BettingPlaybookPage() {
           <p className="text-gray-700 mb-2">
             To make the 2026 playbook usable from the couch:
           </p>
+          <p className="text-gray-700 mb-4">
+            <strong>Model selector:</strong> My Picks and homepage use <strong>ProductionModelSelector</strong> (<code className="bg-gray-100 px-1 rounded">hybrid_v2</code> | <code className="bg-gray-100 px-1 rounded">core_v1</code>). Labs models are not in the selector.
+          </p>
           <p className="text-gray-700 mb-2">
-            For each Hybrid V2 pick shown on <strong>My Picks</strong>:
+            For each Hybrid V2 spread pick shown on <strong>My Picks</strong> (when Hybrid V2 is selected):
           </p>
           <ul className="list-disc pl-6 space-y-2 text-gray-700 mb-4">
             <li>Show a <strong>Conflict badge</strong>:
@@ -415,7 +434,7 @@ export default function BettingPlaybookPage() {
         <section>
           <h2 className="text-2xl font-semibold text-gray-900 mb-4">9. 2026 Guardrail Policy – Low-Continuity Dogs</h2>
           <p className="text-gray-700 mb-4">
-            The official card treats "Low-Continuity Dog" as a <strong>hard guardrail by default</strong>.
+            The Core V1 Card treats &quot;Low-Continuity Dog&quot; as a <strong>hard guardrail by default</strong>.
           </p>
           
           <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-4">
@@ -435,7 +454,7 @@ export default function BettingPlaybookPage() {
               These plays have been a large negative ROI segment in both 2024 and 2025 simulations:
             </p>
             <ul className="list-disc pl-6 space-y-1 text-gray-700 mb-2">
-              <li><strong>2025 Official Card</strong>: 316 low-continuity dogs had <strong className="text-red-600">-22.04% ROI</strong> (vs +13.53% baseline)</li>
+              <li><strong>2025 Core V1 Card</strong> (<code className="bg-gray-100 px-1 rounded">official_flat_100</code>): 316 low-continuity dogs had <strong className="text-red-600">-22.04% ROI</strong> (vs +13.53% baseline)</li>
               <li><strong>2025 Hybrid V2</strong>: 239 low-continuity dogs had <strong className="text-red-600">-14.50% ROI</strong> (vs +20.38% baseline)</li>
             </ul>
           </div>
@@ -446,7 +465,7 @@ export default function BettingPlaybookPage() {
               <strong>Default behavior:</strong>
             </p>
             <ul className="list-disc pl-6 space-y-1 text-gray-700 mb-3">
-              <li>The official card <strong>auto-excludes</strong> low-continuity dogs by default.</li>
+              <li>The Core V1 Card <strong>auto-excludes</strong> low-continuity dogs by default.</li>
               <li>This is a <strong>risk management rule</strong>, not a model feature.</li>
               <li>The model (Hybrid V2) can still like these games; the guardrail is on portfolio construction, not on the rating engine.</li>
             </ul>
@@ -454,7 +473,7 @@ export default function BettingPlaybookPage() {
               <strong>Manual override process:</strong>
             </p>
             <ul className="list-disc pl-6 space-y-1 text-gray-700 mb-3">
-              <li>If a low-continuity dog is included in the official card:
+              <li>If a low-continuity dog is included in the Core V1 Card:
                 <ul className="list-disc pl-6 mt-1 space-y-1">
                   <li>It must be <strong>manually whitelisted</strong> with a written handicap (injuries, matchup context, etc.).</li>
                   <li>It should be treated as a <strong>Labs-only</strong> or <strong>reduced-size</strong> play.</li>
@@ -463,7 +482,7 @@ export default function BettingPlaybookPage() {
               </li>
             </ul>
             <p className="text-gray-700 mb-2 text-sm">
-              <strong>Implementation:</strong> Low-continuity dogs are flagged with a red "Low-Continuity Dog" pill on the <Link href="/picks" className="text-blue-600 hover:text-blue-700 underline">/picks</Link> page. The Portfolio What-Ifs panel (<Link href="/labs/portfolio" className="text-blue-600 hover:text-blue-700 underline">/labs/portfolio</Link>) shows the impact of dropping these bets. This guardrail applies to the <strong>official card</strong> (<code className="bg-gray-100 px-1 rounded">official_flat_100</code>); Labs strategies may experiment with different filters.
+              <strong>Implementation:</strong> Low-continuity dogs are flagged with a red &quot;Low-Continuity Dog&quot; pill on the <Link href="/picks" className="text-blue-600 hover:text-blue-700 underline">/picks</Link> page. The Portfolio What-Ifs panel (<Link href="/labs/portfolio" className="text-blue-600 hover:text-blue-700 underline">/labs/portfolio</Link>) shows the impact of dropping these bets. This guardrail applies to the <strong>Core V1 Card</strong> (DB tag <code className="bg-gray-100 px-1 rounded">official_flat_100</code>); Labs strategies may experiment with different filters.
             </p>
           </div>
         </section>
