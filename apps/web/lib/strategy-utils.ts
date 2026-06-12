@@ -9,6 +9,7 @@
 
 import {
   STRATEGY_TAG_LABELS,
+  getDefaultProductionStrategyTag,
   getStrategyTagLabel,
 } from '@/lib/config/production-models';
 
@@ -24,13 +25,45 @@ export function getStrategyLabel(tag: string): string {
 }
 
 /**
- * Default strategy tag for review pages (legacy until Phase E).
- * Prefers official_flat_100 if available, otherwise 'all'.
- * For 2026 production default (hybrid_v2 first), use getDefaultProductionStrategyTag.
+ * Default strategy tag for Week Review and Season Review (2026+).
+ * Prefers hybrid_v2, then official_flat_100 (Core V1), then 'all'.
  */
 export function getDefaultStrategyTag(availableTags: string[]): string {
-  if (availableTags.includes('official_flat_100')) {
-    return 'official_flat_100';
+  return getDefaultProductionStrategyTag(availableTags);
+}
+
+const EXPLICIT_REVIEW_STRATEGY_TAGS = new Set([
+  'hybrid_v2',
+  'official_flat_100',
+  'v4_labs',
+  'fade_v4_labs',
+  'all',
+]);
+
+/**
+ * Resolve review strategy from URL param and available tags.
+ * Explicit URL wins; otherwise uses getDefaultStrategyTag (hybrid_v2 first).
+ */
+export function resolveReviewStrategySelection(
+  urlStrategy: string | null | undefined,
+  availableTags: string[]
+): string {
+  const trimmed = urlStrategy?.trim();
+  if (trimmed) {
+    if (trimmed === 'all') {
+      return 'all';
+    }
+    if (EXPLICIT_REVIEW_STRATEGY_TAGS.has(trimmed)) {
+      return trimmed;
+    }
+    if (availableTags.includes(trimmed)) {
+      return trimmed;
+    }
   }
-  return 'all';
+  return getDefaultStrategyTag(availableTags);
+}
+
+/** Map review strategy tag to Week Review empty-string convention ('all' => ''). */
+export function reviewStrategyToWeekReviewState(strategy: string): string {
+  return strategy === 'all' ? '' : strategy;
 }

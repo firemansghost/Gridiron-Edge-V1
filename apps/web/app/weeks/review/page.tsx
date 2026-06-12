@@ -4,7 +4,12 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
-import { getStrategyLabel, getDefaultStrategyTag } from '@/lib/strategy-utils';
+import {
+  getStrategyLabel,
+  getDefaultStrategyTag,
+  resolveReviewStrategySelection,
+  reviewStrategyToWeekReviewState,
+} from '@/lib/strategy-utils';
 
 interface BetSummary {
   totalBets: number;
@@ -77,6 +82,30 @@ export default function WeekReviewPage() {
   const [seeding, setSeeding] = useState(false);
   const [grading, setGrading] = useState(false);
   const defaultStrategySet = useRef(false);
+  const urlParamsApplied = useRef(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || urlParamsApplied.current) {
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    const seasonParam = params.get('season');
+    const weekParam = params.get('week');
+    const strategyParam = params.get('strategy');
+
+    if (seasonParam) {
+      setSeason(parseInt(seasonParam, 10));
+    }
+    if (weekParam) {
+      setWeek(parseInt(weekParam, 10));
+    }
+    if (strategyParam !== null) {
+      const resolved = resolveReviewStrategySelection(strategyParam, []);
+      setStrategy(reviewStrategyToWeekReviewState(resolved));
+      defaultStrategySet.current = true;
+    }
+    urlParamsApplied.current = true;
+  }, []);
 
   const fetchData = async () => {
     setLoading(true);
@@ -120,13 +149,24 @@ export default function WeekReviewPage() {
     fetchData();
   }, [season, week, strategy]);
 
-  // Set default strategy from available tags when data first loads
+  // Default to Hybrid V2 when no URL strategy; validate explicit URL against available tags
   useEffect(() => {
-    if (data?.meta?.strategyTagsAvailable && data.meta.strategyTagsAvailable.length > 0 && !defaultStrategySet.current && strategy === '') {
-      const defaultTag = getDefaultStrategyTag(data.meta.strategyTagsAvailable);
-      setStrategy(defaultTag === 'all' ? '' : defaultTag);
-      defaultStrategySet.current = true;
+    if (!data?.meta?.strategyTagsAvailable || data.meta.strategyTagsAvailable.length === 0) {
+      return;
     }
+
+    const available = data.meta.strategyTagsAvailable;
+
+    if (defaultStrategySet.current) {
+      if (strategy && strategy !== 'all' && !available.includes(strategy)) {
+        setStrategy(reviewStrategyToWeekReviewState(getDefaultStrategyTag(available)));
+      }
+      return;
+    }
+
+    const defaultTag = getDefaultStrategyTag(available);
+    setStrategy(reviewStrategyToWeekReviewState(defaultTag));
+    defaultStrategySet.current = true;
   }, [data?.meta?.strategyTagsAvailable, strategy]);
 
   // Reset default strategy flag when season/week changes
