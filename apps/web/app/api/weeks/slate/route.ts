@@ -12,6 +12,19 @@ import { selectClosingLine } from '@/lib/closing-line-helpers';
 import { getCoreV1SpreadFromTeams, getATSPick, computeATSEdgeHma } from '@/lib/core-v1-spread';
 import { getOUPick } from '@/lib/core-v1-total';
 import { americanToProb } from '@/lib/market-line-helpers';
+import {
+  buildSlateResponseMeta,
+  resolveSlateModelParam,
+} from '@/lib/config/slate-model';
+import {
+  deriveHybridConflictType,
+  deriveHybridSpreadSide,
+  deriveHybridTierFields,
+  tryComputeHybridSpreadHma,
+  type HybridConflictType,
+  type HybridSpreadInputs,
+  type TeamUnitGradesRow,
+} from '@/lib/slate-hybrid-spread';
 
 interface SlateGame {
   gameId: string;
@@ -95,6 +108,9 @@ export async function GET(request: NextRequest) {
     const afterDate = url.searchParams.get('afterDate');
     const includeAdvanced = url.searchParams.get('includeAdvanced') === 'true';
     const debug = url.searchParams.get('debug') === '1' || url.searchParams.get('debug') === 'true';
+    const requestedModel = url.searchParams.get('model');
+    const { activeModel, invalidRequest: invalidModelFallback } =
+      resolveSlateModelParam(requestedModel);
 
     if (!season || !week) {
       return NextResponse.json(
@@ -103,7 +119,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log(`📅 Fetching slate for ${season} Week ${week}${limitDates > 0 ? ` (limitDates: ${limitDates})` : ''}${afterDate ? ` (afterDate: ${afterDate})` : ''}`);
+    console.log(
+      `📅 Fetching slate for ${season} Week ${week} (model=${activeModel})${limitDates > 0 ? ` (limitDates: ${limitDates})` : ''}${afterDate ? ` (afterDate: ${afterDate})` : ''}`
+    );
 
     // Build where clause with date filtering
     const whereClause: any = { season, week };
@@ -292,30 +310,134 @@ export async function GET(request: NextRequest) {
 
     console.log(`   Processed ${slateGames.length} games with closing lines`);
 
-    // Fetch all Hybrid V2 bets for this week to look up conflict types and tiers
-    const hybridBets = await prisma.bet.findMany({
-      where: {
-        season,
-        week,
-        strategyTag: 'hybrid_v2',
-        marketType: 'spread',
-      },
-      select: {
-        gameId: true,
-        hybridConflictType: true,
-        modelPrice: true,
-        closePrice: true,
-        clv: true,
-      },
-    });
+    // Core V1 path: persisted Hybrid V2 bets for conflict/tier lookup (pre-Phase-D behavior)
+    const hybridBets =
+      activeModel === 'core_v1'
+        ? await prisma.bet.findMany({
+            where: {
+              season,
+              week,
+              strategyTag: 'hybrid_v2',
+              marketType: 'spread',
+            },
+            select: {
+              gameId: true,
+              hybridConflictType: true,
+              modelPrice: true,
+              closePrice: true,
+              clv: true,
+            },
+          })
+        : [];
 
-    // Create lookup map by gameId
-    const hybridBetMap = new Map<string, typeof hybridBets[0]>();
+    const hybridBetMap = new Map<string, (typeof hybridBets)[0]>();
     for (const bet of hybridBets) {
       hybridBetMap.set(bet.gameId, bet);
     }
 
-    console.log(`   Found ${hybridBets.length} Hybrid V2 spread bets for conflict/tier lookup`);
+    if (activeModel === 'core_v1') {
+      console.log(`   Found ${hybridBets.length} Hybrid V2 spread bets for conflict/tier lookup`);
+    }
+
+    // Hybrid V2 path: runtime spread inputs + V4 bets for conflict labeling
+    const hybridInputsByGame = new Map<string, HybridSpreadInputs>();
+    const v4BetSideByGame = new Map<string, 'home' | 'away'>();
+    let hybridFallbackGames = 0;
+
+    if (activeModel === 'hybrid_v2') {
+      const allTeamIds = Array.from(
+        new Set(slateGames.flatMap((g) => [g.homeTeamId, g.awayTeamId]))
+      );
+
+      const [teamRatings, teamGrades, v4Bets] = await Promise.all([
+        prisma.teamSeasonRating.findMany({
+          where: {
+            season,
+            teamId: { in: allTeamIds },
+            modelVersion: 'v1',
+          },
+          select: {
+            teamId: true,
+            powerRating: true,
+            rating: true,
+          },
+        }),
+        prisma.teamUnitGrades.findMany({
+          where: {
+            season,
+            teamId: { in: allTeamIds },
+          },
+        }),
+        prisma.bet.findMany({
+          where: {
+            season,
+            week,
+            strategyTag: 'v4_labs',
+            marketType: 'spread',
+          },
+          select: {
+            gameId: true,
+            side: true,
+          },
+        }),
+      ]);
+
+      const ratingsMap = new Map<string, number>();
+      for (const row of teamRatings) {
+        const value =
+          row.powerRating !== null
+            ? Number(row.powerRating)
+            : row.rating !== null
+              ? Number(row.rating)
+              : null;
+        if (value !== null && Number.isFinite(value)) {
+          ratingsMap.set(row.teamId, value);
+        }
+      }
+
+      const gradesMap = new Map<string, TeamUnitGradesRow>();
+      for (const row of teamGrades) {
+        gradesMap.set(row.teamId, {
+          offRunGrade: row.offRunGrade,
+          defRunGrade: row.defRunGrade,
+          offPassGrade: row.offPassGrade,
+          defPassGrade: row.defPassGrade,
+          offExplosiveness: row.offExplosiveness,
+          defExplosiveness: row.defExplosiveness,
+        });
+      }
+
+      for (const game of slateGames) {
+        const homeRating = ratingsMap.get(game.homeTeamId);
+        const awayRating = ratingsMap.get(game.awayTeamId);
+        const homeGrades = gradesMap.get(game.homeTeamId);
+        const awayGrades = gradesMap.get(game.awayTeamId);
+
+        if (
+          homeRating !== undefined &&
+          awayRating !== undefined &&
+          homeGrades &&
+          awayGrades
+        ) {
+          hybridInputsByGame.set(game.gameId, {
+            homeRating,
+            awayRating,
+            homeGrades,
+            awayGrades,
+          });
+        }
+      }
+
+      for (const bet of v4Bets) {
+        if (bet.side === 'home' || bet.side === 'away') {
+          v4BetSideByGame.set(bet.gameId, bet.side);
+        }
+      }
+
+      console.log(
+        `   Hybrid V2 runtime inputs ready for ${hybridInputsByGame.size}/${slateGames.length} games; V4 conflict refs: ${v4Bets.length}`
+      );
+    }
 
     // Fetch continuity scores for all teams in the slate
     const allTeamIds = Array.from(new Set([
@@ -345,9 +467,10 @@ export async function GET(request: NextRequest) {
 
     console.log(`   Found ${continuityMap.size} teams with continuity scores`);
 
-    // Fetch model projections using Core V1
-    // ALWAYS compute Core V1 - no query parameter gates
-    console.log(`   Computing Core V1 projections for ${slateGames.length} games...`);
+    // Compute projections: Core V1 always for totals/ML; spread model selected by `model` param
+    console.log(
+      `   Computing slate projections for ${slateGames.length} games (spread=${activeModel}, totals/ML=current)...`
+    );
     
     let gamesWithModelData = 0;
     let gamesWithErrors = 0;
@@ -387,19 +510,37 @@ export async function GET(request: NextRequest) {
           fullGame.awayTeam.name
         );
 
-        const modelSpreadHma = coreSpreadInfo.coreSpreadHma;
-        
-        // Validate Core V1 result
-        if (!Number.isFinite(modelSpreadHma)) {
-          const errorMsg = `Core V1 returned non-finite spread: ${modelSpreadHma}`;
+        const coreSpreadHma = coreSpreadInfo.coreSpreadHma;
+
+        // Validate Core V1 result (required for totals/ML and Core V1 spread path)
+        if (!Number.isFinite(coreSpreadHma)) {
+          const errorMsg = `Core V1 returned non-finite spread: ${coreSpreadHma}`;
           console.error(`[Slate API] ${errorMsg} for game ${game.gameId}`);
           if (debug) {
             game.coreV1Debug!.errorMessage = errorMsg;
           }
           continue;
         }
-        
-        const modelSpread = Math.round(modelSpreadHma * 10) / 10;
+
+        let spreadModelHma = coreSpreadHma;
+        if (activeModel === 'hybrid_v2') {
+          const hybridInputs = hybridInputsByGame.get(game.gameId) ?? null;
+          const hybridSpreadHma = tryComputeHybridSpreadHma(
+            hybridInputs,
+            fullGame.neutralSite || false,
+            game.homeTeamId,
+            game.awayTeamId
+          );
+
+          if (hybridSpreadHma !== null && Number.isFinite(hybridSpreadHma)) {
+            spreadModelHma = hybridSpreadHma;
+          } else {
+            spreadModelHma = coreSpreadHma;
+            hybridFallbackGames++;
+          }
+        }
+
+        const modelSpread = Math.round(spreadModelHma * 10) / 10;
 
         // Get market spread and convert to HMA frame
         // CRITICAL FIX: closingSpread.value is in favorite-centric format (negative for favorite)
@@ -430,7 +571,7 @@ export async function GET(request: NextRequest) {
             // No teamId - use heuristic: assume negative means favorite-centric
             // If model says home is favorite (positive HMA) and market is negative, likely home is market favorite
             // So convert: HMA = -marketSpreadRaw
-            const isModelHomeFavorite = modelSpreadHma > 0;
+            const isModelHomeFavorite = spreadModelHma > 0;
             marketSpreadHma = isModelHomeFavorite ? -marketSpreadRaw : marketSpreadRaw;
             console.warn(`[Slate API] Game ${game.gameId}: No teamId for spread line, using heuristic conversion`);
           }
@@ -440,9 +581,9 @@ export async function GET(request: NextRequest) {
         // Model favorite: positive HMA = home favorite, negative = away favorite
         // Market favorite: positive HMA = home favorite, negative = away favorite
         let favoritesDisagree = false;
-        if (modelSpreadHma !== null && Number.isFinite(modelSpreadHma) && 
+        if (spreadModelHma !== null && Number.isFinite(spreadModelHma) && 
             marketSpreadHma !== null && Number.isFinite(marketSpreadHma)) {
-          const modelFavoriteIsHome = modelSpreadHma > 0;
+          const modelFavoriteIsHome = spreadModelHma > 0;
           const marketFavoriteIsHome = marketSpreadHma > 0;
           favoritesDisagree = modelFavoriteIsHome !== marketFavoriteIsHome;
         }
@@ -455,10 +596,10 @@ export async function GET(request: NextRequest) {
 
         if (marketSpreadHma !== null && Number.isFinite(marketSpreadHma)) {
           // Compute raw edge in HMA frame (model - market)
-          edgeHma = modelSpreadHma - marketSpreadHma;
+          edgeHma = spreadModelHma - marketSpreadHma;
           
           const atsPick = getATSPick(
-            modelSpreadHma,
+            spreadModelHma,
             marketSpreadHma,
             fullGame.homeTeam.name,
             fullGame.awayTeam.name,
@@ -472,7 +613,7 @@ export async function GET(request: NextRequest) {
           maxEdge = spreadEdgePts;
           
           console.log(`[Slate API] Game ${game.gameId} Edge Calculation:`, {
-            modelSpreadHma: modelSpreadHma.toFixed(2),
+            modelSpreadHma: spreadModelHma.toFixed(2),
             marketSpreadRaw: marketSpreadRaw?.toFixed(2),
             marketSpreadHma: marketSpreadHma.toFixed(2),
             edgeHma: edgeHma.toFixed(2),
@@ -483,7 +624,7 @@ export async function GET(request: NextRequest) {
 
         // Totals: Compute using Core V1 totals model
         const marketTotal = game.closingTotal?.value ?? null;
-        const ouPick = getOUPick(marketTotal, marketSpreadHma, modelSpreadHma);
+        const ouPick = getOUPick(marketTotal, marketSpreadHma, coreSpreadHma);
         const modelTotal = ouPick.modelTotal !== null ? Math.round(ouPick.modelTotal * 10) / 10 : null;
         const totalPick = ouPick.pickLabel;
         const totalEdgePts = ouPick.ouEdgePts !== null ? Math.round(ouPick.ouEdgePts * 10) / 10 : null;
@@ -506,9 +647,9 @@ export async function GET(request: NextRequest) {
         const homeMLPrice = gameMoneylineLines.find((ml: any) => ml.teamId === game.homeTeamId)?.lineValue ?? null;
         const awayMLPrice = gameMoneylineLines.find((ml: any) => ml.teamId === game.awayTeamId)?.lineValue ?? null;
         
-        if (modelSpreadHma !== null && Number.isFinite(modelSpreadHma) && Math.abs(modelSpreadHma) <= 24.0) {
-          // Calculate win probabilities from spread using sigmoid
-          const spreadForHome = -modelSpreadHma; // Flip sign: positive HMA = home favored
+        if (coreSpreadHma !== null && Number.isFinite(coreSpreadHma) && Math.abs(coreSpreadHma) <= 24.0) {
+          // Calculate win probabilities from spread using sigmoid (Core V1 / current logic)
+          const spreadForHome = -coreSpreadHma; // Flip sign: positive HMA = home favored
           const homeProbRaw = 1 / (1 + Math.pow(10, spreadForHome / 14.5));
           const modelHomeWinProb = Math.max(0.01, Math.min(0.99, homeProbRaw));
           const modelAwayWinProb = 1 - modelHomeWinProb;
@@ -595,9 +736,8 @@ export async function GET(request: NextRequest) {
         game.maxEdge = gameMaxEdge !== null && Number.isFinite(gameMaxEdge) ? Math.round(gameMaxEdge * 10) / 10 : null;
         game.confidence = gameConfidence;
         
-        // Look up Hybrid V2 bet for conflict type and tier info
+        // Spread conflict/tier fields (Hybrid runtime for hybrid_v2; persisted bets for core_v1)
         let hybridConflictType: string | null = null;
-        let betEdge: number | null = null;
         let betClv: number | null = null;
         let tierBucket: string = 'none';
         let isSuperTierA: boolean = false;
@@ -608,71 +748,77 @@ export async function GET(request: NextRequest) {
         let isLowContinuityDog: boolean = false;
 
         if (spreadPick && spreadEdgePts !== null && edgeHma !== null) {
-          // Determine bet team and opponent for continuity lookup
-          // If edgeHma > 0, model thinks home should be more favored than market → bet home
-          // If edgeHma < 0, model thinks away should be more favored than market → bet away
           const betTeamId = edgeHma > 0 ? game.homeTeamId : game.awayTeamId;
           const oppTeamId = edgeHma > 0 ? game.awayTeamId : game.homeTeamId;
-          
+
           betTeamContinuity = continuityMap.get(betTeamId) ?? null;
           oppContinuity = continuityMap.get(oppTeamId) ?? null;
-          
+
           if (betTeamContinuity !== null && oppContinuity !== null) {
             continuityDiff = betTeamContinuity - oppContinuity;
           }
-          // Look up from pre-fetched map
-          const hybridBet = hybridBetMap.get(game.gameId);
 
-          if (hybridBet) {
-            hybridConflictType = hybridBet.hybridConflictType;
-            betClv = hybridBet.clv ? Number(hybridBet.clv) : null;
-            
-            // Determine if bet team is dog based on closing price
-            // closePrice is in favorite-centric format:
-            // - Negative = favorite (laying points)
-            // - Positive = dog (getting points)
-            // - Zero = pick'em (treat as dog)
-            if (hybridBet.closePrice !== null) {
-              const closePriceNum = Number(hybridBet.closePrice);
-              isDog = closePriceNum >= 0;
-            }
-            
-            // Calculate edge from bet if available, otherwise use computed edge
-            if (hybridBet.modelPrice && hybridBet.closePrice) {
-              const modelPriceNum = Number(hybridBet.modelPrice);
-              const closePriceNum = Number(hybridBet.closePrice);
-              betEdge = Math.abs(modelPriceNum - closePriceNum);
+          if (activeModel === 'hybrid_v2') {
+            const hybridSide = deriveHybridSpreadSide(edgeHma);
+            hybridConflictType = deriveHybridConflictType(
+              hybridSide,
+              v4BetSideByGame.get(game.gameId)
+            );
+
+            const spreadLine = spreadMap.get(game.gameId);
+            const closePrice =
+              spreadLine && spreadLine.lineValue !== null && spreadLine.lineValue !== undefined
+                ? Number(spreadLine.lineValue)
+                : null;
+
+            const tierFields = deriveHybridTierFields(
+              spreadEdgePts,
+              hybridConflictType as HybridConflictType | null,
+              closePrice
+            );
+            tierBucket = tierFields.tierBucket;
+            isSuperTierA = tierFields.isSuperTierA;
+            isDog = tierFields.isDog;
+          } else {
+            const hybridBet = hybridBetMap.get(game.gameId);
+
+            if (hybridBet) {
+              hybridConflictType = hybridBet.hybridConflictType;
+              betClv = hybridBet.clv ? Number(hybridBet.clv) : null;
+
+              if (hybridBet.closePrice !== null) {
+                const closePriceNum = Number(hybridBet.closePrice);
+                isDog = closePriceNum >= 0;
+              }
+
+              const betEdge =
+                hybridBet.modelPrice && hybridBet.closePrice
+                  ? Math.abs(Number(hybridBet.modelPrice) - Number(hybridBet.closePrice))
+                  : Math.abs(spreadEdgePts);
+
+              const absEdge = betEdge;
+              if (hybridConflictType === 'hybrid_strong') {
+                if (absEdge >= 4.0) {
+                  tierBucket = 'super_tier_a';
+                  isSuperTierA = true;
+                } else if (absEdge >= 3.0) {
+                  tierBucket = 'tier_a';
+                } else if (absEdge >= 2.0) {
+                  tierBucket = 'tier_b';
+                }
+              }
             } else {
-              betEdge = Math.abs(spreadEdgePts);
-            }
-
-            // Determine tier bucket
-            const absEdge = betEdge;
-            if (hybridConflictType === 'hybrid_strong') {
+              const absEdge = Math.abs(spreadEdgePts);
               if (absEdge >= 4.0) {
-                tierBucket = 'super_tier_a';
-                isSuperTierA = true;
+                tierBucket = 'tier_a';
               } else if (absEdge >= 3.0) {
                 tierBucket = 'tier_a';
               } else if (absEdge >= 2.0) {
                 tierBucket = 'tier_b';
               }
             }
-          } else {
-            // No bet found, use computed edge for tier (but no conflict type)
-            betEdge = Math.abs(spreadEdgePts);
-            const absEdge = betEdge;
-            if (absEdge >= 4.0) {
-              tierBucket = 'tier_a'; // Can't be super tier without conflict type
-            } else if (absEdge >= 3.0) {
-              tierBucket = 'tier_a';
-            } else if (absEdge >= 2.0) {
-              tierBucket = 'tier_b';
-            }
           }
-          
-          // Determine if this is a low-continuity dog
-          // Condition: bet team continuity < 0.60 AND bet team is a dog
+
           if (betTeamContinuity !== null && isDog === true && betTeamContinuity < 0.60) {
             isLowContinuityDog = true;
           }
@@ -712,7 +858,7 @@ export async function GET(request: NextRequest) {
         // Populate debug block on success
         if (debug) {
           game.coreV1Debug!.success = true;
-          game.coreV1Debug!.modelSpreadHma = modelSpreadHma;
+          game.coreV1Debug!.modelSpreadHma = spreadModelHma;
           game.coreV1Debug!.edgeHma = edgeHma;
           game.coreV1Debug!.errorMessage = null;
         }
@@ -738,10 +884,27 @@ export async function GET(request: NextRequest) {
       }
     }
     
-    console.log(`   ✅ Computed Core V1 projections for ${gamesWithModelData} of ${slateGames.length} games`);
+    console.log(`   ✅ Computed slate projections for ${gamesWithModelData} of ${slateGames.length} games`);
     if (gamesWithErrors > 0) {
-      console.warn(`   ⚠️  ${gamesWithErrors} games had errors during Core V1 computation`);
+      console.warn(`   ⚠️  ${gamesWithErrors} games had errors during slate computation`);
     }
+
+    const slateMeta = buildSlateResponseMeta({
+      activeModel,
+      requestedModel,
+      invalidModelFallback,
+      fallback:
+        activeModel === 'hybrid_v2' && hybridFallbackGames > 0
+          ? {
+              used: true,
+              from: 'hybrid_v2',
+              to: 'core_v1',
+              reason:
+                'Hybrid V2 spread inputs unavailable for one or more games; Core V1 spread used with explicit fallback metadata',
+              gamesAffected: hybridFallbackGames,
+            }
+          : undefined,
+    });
 
     // Determine cache headers based on game status
     const hasFinalGames = slateGames.some(g => g.status === 'final');
@@ -749,7 +912,13 @@ export async function GET(request: NextRequest) {
       ? { 'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=1200' } // 10min cache for final games
       : { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=120' }; // 1min cache for live games
 
-    return NextResponse.json(slateGames, { headers: cacheHeaders });
+    return NextResponse.json(
+      {
+        games: slateGames,
+        meta: slateMeta,
+      },
+      { headers: cacheHeaders }
+    );
 
   } catch (error) {
     console.error('Slate API error:', error);

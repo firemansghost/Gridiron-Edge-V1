@@ -1,35 +1,64 @@
 /**
- * Slate API model parameter — pending tests for Phase D.
- *
- * `/api/weeks/slate` does not yet accept `?model=hybrid_v2|core_v1`.
- * These tests document expected behavior and are skipped until Phase D implements
- * the model param without changing spread/total/ML math.
+ * Slate API model parameter tests (Phase D).
+ * Route integration tests requiring live DB are pending — helpers are covered in slate-model.test.ts.
  */
 
-describe('/api/weeks/slate model parameter (Phase D — pending)', () => {
-  describe.skip('model=hybrid_v2', () => {
-    it('returns spread picks computed from Hybrid V2 math', () => {
-      // TODO Phase D: fetch slate with model=hybrid_v2; assert meta.activeModel and spread picks.
-    });
+import {
+  buildSlateResponseMeta,
+  resolveSlateModelParam,
+} from '@/lib/config/slate-model';
 
-    it('keeps totals and moneyline on Core V1 logic with clear meta labeling', () => {
-      // TODO Phase D: totals/ML fields unchanged vs current slate; meta notes spread-only Hybrid.
+describe('/api/weeks/slate model parameter', () => {
+  describe('model=hybrid_v2', () => {
+    it('resolves hybrid_v2 as active model with hybrid spread scope', () => {
+      const { activeModel, invalidRequest } = resolveSlateModelParam('hybrid_v2');
+      expect(activeModel).toBe('hybrid_v2');
+      expect(invalidRequest).toBe(false);
+
+      const meta = buildSlateResponseMeta({ activeModel });
+      expect(meta.modelScope.spread).toBe('hybrid_v2');
+      expect(meta.modelScope.total).toBe('current');
+      expect(meta.modelScope.moneyline).toBe('current');
     });
   });
 
-  describe.skip('model=core_v1', () => {
-    it('matches current Core V1 slate behavior (regression)', () => {
-      // TODO Phase D: compare pick fields to pre-Phase-D baseline fixtures.
+  describe('model=core_v1', () => {
+    it('resolves core_v1 with core spread scope for regression path', () => {
+      const { activeModel } = resolveSlateModelParam('core_v1');
+      expect(activeModel).toBe('core_v1');
+
+      const meta = buildSlateResponseMeta({ activeModel });
+      expect(meta.modelScope.spread).toBe('core_v1');
     });
   });
 
-  describe.skip('default model when param omitted', () => {
+  describe('default model when param omitted', () => {
     it('defaults to hybrid_v2 after Phase D', () => {
-      // TODO Phase D: omitted model => meta.activeModel === 'hybrid_v2'.
+      expect(resolveSlateModelParam(null).activeModel).toBe('hybrid_v2');
+      expect(buildSlateResponseMeta({ activeModel: 'hybrid_v2' }).defaultModel).toBe(
+        'hybrid_v2'
+      );
     });
   });
 
-  it('documents that model param is not implemented yet', () => {
-    expect(true).toBe(true);
+  describe('invalid model param', () => {
+    it('falls back to hybrid_v2 and flags invalidModelFallback in meta', () => {
+      const resolved = resolveSlateModelParam('fade_v4_labs');
+      expect(resolved.activeModel).toBe('hybrid_v2');
+      expect(resolved.invalidRequest).toBe(true);
+
+      const meta = buildSlateResponseMeta({
+        activeModel: resolved.activeModel,
+        requestedModel: 'fade_v4_labs',
+        invalidModelFallback: true,
+      });
+      expect(meta.invalidModelFallback).toBe(true);
+      expect(meta.availableModels).not.toContain('v4_labs' as any);
+    });
   });
 });
+
+/**
+ * Pending: full HTTP/route tests against GET /api/weeks/slate with mocked Prisma.
+ * Avoids fragile dependency on production database state.
+ */

@@ -8,64 +8,72 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { SlateData } from '@/types';
-import { TeamLogo } from '@/components/TeamLogo';
-import { DataModeBadge } from '@/components/DataModeBadge';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
-import { SkeletonTable } from '@/components/SkeletonRow';
-import { SyncScrollX } from '@/components/SyncScrollX';
 import SlateTable from '@/components/SlateTable';
-import { abbrevSource, formatSourceTooltip } from '@/lib/market-badges';
+import { ProductionModelSelector } from '@/components/ProductionModelSelector';
+import { useProductionModel } from '@/contexts/ProductionModelContext';
 import { InfoTooltip } from '@/components/InfoTooltip';
 import { ErrorState } from '@/components/ErrorState';
+import {
+  buildSlateApiUrl,
+  computeSlateConfidenceSummary,
+  normalizeSlateApiResponse,
+  type SlateResponseMeta,
+} from '@/lib/config/slate-model';
+
+interface HomeSlateState {
+  season: number;
+  week: number;
+  games: Array<{ confidence?: string | null; homeScore?: number | null; awayScore?: number | null }>;
+  summary: ReturnType<typeof computeSlateConfidenceSummary>;
+  meta: SlateResponseMeta | null;
+}
 
 export default function HomePage() {
-  const [slate, setSlate] = useState<SlateData | null>(null);
+  const { model, modelLabel } = useProductionModel();
+  const [slate, setSlate] = useState<HomeSlateState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [injuriesOn, setInjuriesOn] = useState(false);
-  const [weatherOn, setWeatherOn] = useState(false);
 
   useEffect(() => {
     fetchSlate();
-  }, [injuriesOn, weatherOn]);
+  }, [model]);
 
   const fetchSlate = async () => {
     try {
-      const params = new URLSearchParams();
-      if (injuriesOn) params.append('injuries', 'on');
-      if (weatherOn) params.append('weather', 'on');
-      
-      const response = await fetch(`/api/seed-slate?${params.toString()}`);
-      const data = await response.json();
-      
-      if (data.success) {
-        setSlate(data);
-      } else {
-        setError(data.error || 'Failed to fetch slate data');
+      setLoading(true);
+      setError(null);
+
+      const weeksResponse = await fetch('/api/weeks');
+      if (!weeksResponse.ok) {
+        throw new Error('Failed to fetch current week');
       }
+      const weeksData = await weeksResponse.json();
+      const season = weeksData.season || 2025;
+      const week = weeksData.week || 13;
+
+      const response = await fetch(buildSlateApiUrl(season, week, model));
+      if (!response.ok) {
+        throw new Error('Failed to fetch slate data');
+      }
+
+      const raw = await response.json();
+      const { games, meta } = normalizeSlateApiResponse<HomeSlateState['games'][number]>(raw);
+
+      setSlate({
+        season,
+        week,
+        games,
+        summary: computeSlateConfidenceSummary(games),
+        meta,
+      });
     } catch (err) {
       setError('Network error: ' + (err instanceof Error ? err.message : 'Unknown error'));
     } finally {
       setLoading(false);
     }
   };
-
-  const getConfidenceColor = (confidence: string) => {
-    switch (confidence) {
-      case 'A': return 'text-green-600 bg-green-100';
-      case 'B': return 'text-yellow-600 bg-yellow-100';
-      case 'C': return 'text-red-600 bg-red-100';
-      default: return 'text-gray-600 bg-gray-100';
-    }
-  };
-
-  const formatEdge = (edge: number) => {
-    return edge >= 1.0 ? `+${edge.toFixed(1)}` : edge.toFixed(1);
-  };
-
-  // Removed old full-page loading spinner - now shows skeleton in-place
 
   if (error) {
     return (
@@ -143,12 +151,15 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
-            <Link 
-              href={`/weeks?season=${slate?.season}&week=${slate?.week}`}
-              className="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm"
-            >
-              Review Previous Weeks
-            </Link>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+              <ProductionModelSelector />
+              <Link 
+                href={`/weeks?season=${slate?.season}&week=${slate?.week}`}
+                className="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm"
+              >
+                Review Previous Weeks
+              </Link>
+            </div>
           </div>
           
           {/* Subheader with today's date and auto-selected season/week */}
@@ -174,7 +185,12 @@ export default function HomePage() {
             <div className="flex items-center gap-3 mt-2">
               <p className="text-gray-600">
                 {slate.week && slate.season ? (
-                  <>Week {slate.week} • {slate.season} Season • Model {slate.modelVersion || 'v0.0.1'}</>
+                  <>
+                    Week {slate.week} • {slate.season} Season • Spread model: {modelLabel}
+                    {slate.meta?.modelScope.total === 'current' && (
+                      <span className="text-gray-500"> (totals/ML: current logic)</span>
+                    )}
+                  </>
                 ) : (
                   <span className="text-yellow-600">Season/Week detection failed - try selecting manually</span>
                 )}
@@ -313,6 +329,9 @@ export default function HomePage() {
             title="This Week's Slate"
             showDateHeaders={true}
             showAdvanced={false}
+            model={model}
+            providedGames={slate.games as any}
+            slateMeta={slate.meta}
           />
         )}
         </div>
