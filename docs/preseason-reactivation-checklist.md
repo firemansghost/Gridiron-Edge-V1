@@ -8,17 +8,18 @@ Complements `SEASON_STATUS.md` and `WORKFLOW_DISABLE_REPORT.md`.
 
 ## Before you start
 
-- [ ] Read `SEASON_STATUS.md` P0 blockers — bulk reactivation is **not** ready until Phase 2B/2C complete
-- [ ] Confirm target season is **2026** (many workflows still default to 2025 until Phase 2B)
+- [ ] Read `SEASON_STATUS.md` P0 blockers — bulk reactivation is **not** ready until Phase 2C-1+
+- [ ] Confirm target season is **2026** (`TARGET_SEASON` repo variable recommended — see [preseason-season-parameterization.md](preseason-season-parameterization.md))
 - [ ] Leave `v3-totals-nightly.yml` **disabled** (`sync-v3-bets.ts` is missing)
 - [ ] Keep historical odds backfill **manual only** with `dry_run` and credit limits
+- [ ] Context (2026-08-04): Week Zero **2026-08-27**; public schedules exist; production DB has **zero 2026 rows**
 
 ---
 
 ## A. GitHub UI and CI safety
 
 - [ ] Open GitHub → Actions → confirm which workflows are disabled vs enabled
-- [ ] Confirm **all ETL schedules remain disabled** during prep
+- [ ] Confirm **all ETL schedules remain disabled** during prep (intentional offseason disable)
 - [ ] If `prisma-guardrails` is disabled, **re-enable it** for PR schema safety (no DB writes)
 - [ ] Document UI state (screenshot or list) for the season log
 
@@ -26,34 +27,67 @@ Complements `SEASON_STATUS.md` and `WORKFLOW_DISABLE_REPORT.md`.
 
 ## B. Secrets (names only — do not paste values)
 
-Confirm these exist in GitHub Secrets / local `.env` for dry runs:
+Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provider dashboard keys as authoritative** — update GitHub secrets if unsure the stored Odds key matches the upgraded plan.
 
 - [ ] `DATABASE_URL`
 - [ ] `DIRECT_URL`
-- [ ] `CFBD_API_KEY`
-- [ ] `ODDS_API_KEY` (if using Odds API ingest)
+- [ ] `CFBD_API_KEY` (dashboard key → GitHub secret)
+- [ ] `ODDS_API_KEY` (dashboard key → GitHub secret; 20k credits/mo plan)
 - [ ] `SGO_API_KEY` (if using SGO fallback)
 - [ ] `VISUALCROSSING_API_KEY` (optional weather)
 
 **Risk:** `nightly-ingest` falls back to **mock schedules** if `CFBD_API_KEY` is missing. Never dry-run ingest without a valid CFBD key unless you intend mock data.
 
+**Do not** paste keys into Cursor/chat. Update secrets only in GitHub Settings → Secrets and variables → Actions (or local `.env` privately).
+
+---
+
+## B2. Provider validation (read-only — Phase 2C-0)
+
+**Manual only.** Workflow: `Validate Preseason Providers (Manual)` → `.github/workflows/validate-preseason-providers.yml`
+
+- Trigger: **`workflow_dispatch` only** (no schedule / push / PR)
+- Secrets: `CFBD_API_KEY`, `ODDS_API_KEY` only — **no database credentials**
+- Default (`probe_odds=false`): CFBD 2026 games + Odds `/v4/sports` (**0** Odds credits)
+- Optional (`probe_odds=true`): NCAAF featured odds — **up to 3** credits (1 region × 3 markets); actual = `x-requests-last`
+
+After secrets are configured (optional; **do not run until Bobby approves**):
+
+```bash
+# Default: CFBD + Odds /v4/sports (0 Odds credits)
+npx tsx scripts/validate-preseason-providers.ts
+
+# Explicit probe: may consume up to 3 Odds credits; trust x-requests-* headers
+npx tsx scripts/validate-preseason-providers.ts --probe-odds
+```
+
+- [ ] Update GitHub Secrets `ODDS_API_KEY` and `CFBD_API_KEY` from provider dashboards
+- [ ] Run GitHub Actions workflow with `probe_odds=false` (or local CLI)
+- [ ] Confirm CFBD returns 2026 games; NCAAF active; no secrets in logs; Odds usage 0
+- [ ] Optional: one run with `probe_odds=true`; confirm `x-requests-last` ≤ 3
+- [ ] **Stop** — do not start Phase 2C-1 schedule ingest until validation passes
+
+**Production ingest:** `nightly-ingest` / `bowl-week-bootstrap` **fail closed** if `CFBD_API_KEY` is missing (no automatic mock schedules). Mock tooling remains for deliberate local/test use only.
+
 ---
 
 ## C. 2026 season strategy
 
-- [ ] Decide whether dry runs use `workflow_dispatch` inputs or wait for Phase 2B season defaults
+- [ ] Use manual `workflow_dispatch` with `season=2026` until Phase 2D scheduled-path update
 - [ ] Confirm `games` table will have **2026** schedule rows before relying on `get-current-week.mjs`
 - [ ] Plan homepage Season Update banner update before public preseason
 
 ---
 
-## D. Schedule / odds ingest (manual dry run)
+## D. Schedule / odds ingest (manual dry run) — Phase 2C-1+
 
-Use **manual** `workflow_dispatch` only (e.g. `bowl-week-bootstrap` pattern or `nightly-ingest` with explicit week input) once 2026 schedules exist:
+**Phase 2C-1 (next):** schedule-only CFBD ingest for 2026 (no odds/bets). Not started in 2C-0.
+
+Use **manual** `workflow_dispatch` only (never enable schedules yet):
 
 - [ ] Run schedule ingest for **2026 Week 0 or Week 1**
 - [ ] Verify game count in DB for that week
-- [ ] Run odds ingest for same week (if keys available)
+- [ ] Run odds ingest for same week (if keys available; credit-aware)
 - [ ] Verify closing lines exist for sample games
 - [ ] Rollback if wrong season/week: **disable workflow in GitHub UI**; do not re-run with `force` unless intended
 
@@ -75,7 +109,15 @@ Local verification scripts (after Phase 2A) use `normalizeSlateApiResponse()` fo
 
 ## F. Bet sync (manual dry run)
 
-Graded bet rows are **not** in `nightly-ingest`. Run manually after ratings/lines exist:
+Graded bet rows are **not** in `nightly-ingest`. Use the manual workflow or local scripts after ratings/lines exist:
+
+**GitHub Actions (recommended):** `Sync Weekly Bets (Manual)` — `.github/workflows/sync-weekly-bets.yml`
+
+- Inputs: `season` (default `2026`), `week` (required)
+- Syncs `hybrid_v2` and `official_flat_100` only
+- **workflow_dispatch only** — workflow must stay disabled in UI until dry-run approval, then run manually via "Run workflow"
+
+**Local alternative:**
 
 ```bash
 npx tsx apps/web/scripts/sync-hybrid-bets.ts 2026 <week>
@@ -84,7 +126,6 @@ npx tsx apps/web/scripts/sync-official-picks-to-bets.ts 2026 <week>
 
 - [ ] Verify `bets` rows with `strategyTag = hybrid_v2`
 - [ ] Verify `bets` rows with `strategyTag = official_flat_100`
-- [ ] Phase 2B will add a manual-first GitHub workflow for these steps
 
 ---
 
@@ -139,5 +180,6 @@ If a workflow writes bad data:
 ## Related docs
 
 - [Season Status](../SEASON_STATUS.md)
+- [Season Parameterization Plan](preseason-season-parameterization.md)
 - [Workflow Disable Report](../WORKFLOW_DISABLE_REPORT.md)
 - [2026 Betting Playbook](2026-betting-playbook.md)

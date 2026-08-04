@@ -43,7 +43,8 @@
     "backfill:consensus": "npx tsx scripts/backfill-consensus.ts",
     "calibrate:ridge": "npx tsx scripts/calibrate-model-ridge.ts",
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
-    "postinstall": "npm run prisma:generate"
+    "postinstall": "npm run prisma:generate",
+    "validate:preseason-providers": "tsx scripts/validate-preseason-providers.ts"
   },
   "devDependencies": {
     "@prisma/client": "6.17.0",
