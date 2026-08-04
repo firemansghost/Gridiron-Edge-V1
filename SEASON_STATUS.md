@@ -1,7 +1,7 @@
 # Season Status — Gridiron Edge
 
 **Status:** Offseason / paused for regular-season automation  
-**Updated:** 2026-06-12 (2026 preseason preparation)
+**Updated:** 2026-08-04 (Phase 2B-R finalization — fail-closed ingest + provider validation workflow)
 
 Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISABLE_REPORT.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -11,13 +11,16 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 
 | Item | Status |
 |------|--------|
-| **Calendar context** | 2026 preseason prep (post–2025 bowl/offseason) |
+| **Calendar context** | **2026-08-04** — Week Zero begins **2026-08-27**; public 2026 schedules exist |
+| **Production Supabase** | **Zero 2026 rows** in games, market_lines, ratings, outputs, bets (operator report) |
 | **2025 regular season** | Complete |
 | **Production app** | Deployed; Season Update banner (Dec 22, 2025) is stale — update before public preseason |
 | **Dual-model** | **Merged to `main`** (PR #34); Phase H verification passed |
-| **GitHub Actions** | **All workflows disabled in GitHub UI** (Bobby confirmation, Dec 2025) — re-confirm before reactivation |
-| **Workflow YAML** | Schedules still present in `.github/workflows/` — disablement is **UI state**, not encoded in YAML |
-| **Reactivation readiness** | **Not ready** for bulk scheduled reactivation; manual dry runs and blockers remain |
+| **Phase 2A** | **Merged to `main`** (PR #35) |
+| **GitHub Actions** | **All workflows disabled in GitHub UI** (Bobby, offseason) — intentional |
+| **Workflow YAML** | Schedules still present — disablement is **UI state**, not encoded in YAML |
+| **Mock schedule fallback** | **Removed** from production-connected ingest workflows (fail-closed on missing `CFBD_API_KEY`) |
+| **Reactivation readiness** | **Not ready** for bulk scheduled reactivation; Phase 2C-1 not started |
 
 ---
 
@@ -30,18 +33,7 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **V4** | Labs only | `v4_labs` | V4 Labs (Flat $100) |
 | **Fade V4** | Labs only | `fade_v4_labs` | Fade V4 Labs (Flat $100) |
 
-**Scope notes:**
-
-- Hybrid V2 applies to **spreads only** for now.
-- **Totals and moneyline** use **current/existing (Core V1) logic** on slate/picks.
-- Weekly `official_flat_100` sync continues for Core V1 graded comparison rows.
-
-**Surfaces (default = Hybrid V2):**
-
-- Homepage slate (`/api/weeks/slate`, not `/api/seed-slate`)
-- `/picks` + `ProductionModelSelector`
-- Week Review / Season Review strategy default
-- Game detail: Hybrid V2 primary; Core V1 comparison card
+**Scope notes:** Hybrid V2 = spreads only; totals/ML = current Core V1 logic; weekly `official_flat_100` sync for comparison.
 
 ---
 
@@ -49,94 +41,83 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 
 | Phase | Summary |
 |-------|---------|
-| A1+B–G | Dual-model labels, selector, slate API, review defaults, game detail, docs |
-| H | Verification — tests, typecheck, build, manual smoke checklist |
-| 2 | Workflow/offseason reactivation audit (report only) |
-| 2A | Pre-reactivation safety fixes (docs + slate script compatibility) |
+| A1+B–H | Dual-model + verification |
+| 2 / 2A | Workflow audit + safety docs (2A merged) |
+| 2B / 2B-R | Season param plan, `sync-weekly-bets.yml`, fail-closed ingest, credit docs |
+| 2C-0 | Provider validation script + **manual** `validate-preseason-providers.yml` |
 
 ---
 
-## What has NOT changed
+## Provider validation (manual only)
 
-- Model math, coefficients, ratings, edge, grading, CLV, backtest assumptions
-- Database schema / migrations
-- GitHub Actions workflow files or cron schedules (YAML unchanged)
-- Sync scripts (`sync-hybrid-bets.ts`, `sync-official-picks-to-bets.ts`, etc.)
-- ETL job implementations under `apps/jobs/src`
-- Workflow enablement (still off in GitHub UI)
+| Item | Detail |
+|------|--------|
+| **Workflow** | `.github/workflows/validate-preseason-providers.yml` — **`workflow_dispatch` only** |
+| **Automatic runs** | **None** (no schedule / push / PR) |
+| **Secrets** | `CFBD_API_KEY`, `ODDS_API_KEY` only — **no** `DATABASE_URL` / `DIRECT_URL` / Prisma |
+| **Default run** (`probe_odds=false`) | 1× CFBD 2026 games + 1× Odds `/v4/sports` (**0** Odds credits) |
+| **Optional probe** (`probe_odds=true`) | NCAAF odds `h2h,spreads,totals` region `us` — **up to 3** credits; trust `x-requests-*` headers |
+| **Zero-event probe** | Valid; typically **0** credits |
+| **Before first run** | Update GitHub secrets from provider dashboards (names only; never paste into chat) |
+
+Local CLI:
+
+```bash
+npx tsx scripts/validate-preseason-providers.ts
+npx tsx scripts/validate-preseason-providers.ts --probe-odds
+```
+
+**Do not start Phase 2C-1 schedule ingest until provider validation passes.**
 
 ---
 
-## P0 reactivation blockers (unresolved)
-
-Do **not** bulk re-enable scheduled workflows until these are addressed:
+## P0 reactivation blockers
 
 | Blocker | Status | Notes |
 |---------|--------|-------|
-| **Season 2025 hardcoding** | Open | Scheduled workflows default to 2025; Phase 2B will parameterize |
-| **Missing `sync-v3-bets.ts`** | Open | `v3-totals-nightly.yml` is **blocked** — see below |
-| **No weekly bet sync automation** | Open | Graded rows need manual sync scripts; Phase 2B will add manual-first workflow |
-| **Slate `{ games, meta }` wrapper** | Partially fixed (2A) | Verification scripts updated; API unchanged |
-| **Secrets / mock fallback risk** | Open | `nightly-ingest` writes mock data if `CFBD_API_KEY` missing |
-| **GitHub UI state** | Open | Re-confirm all workflows disabled; re-enable `prisma-guardrails` for PRs if off |
+| **Season 2025 hardcoding** | Open | Scheduled paths still 2025 — Phase 2D before UI re-enable |
+| **Empty 2026 DB** | Open | Schedule-only ingest = Phase 2C-1 |
+| **Provider secrets** | Open | Confirm GitHub keys match dashboards |
+| **Weekly bet sync** | Manual workflow ready | `sync-weekly-bets.yml` — dispatch only |
+| **V3 totals** | **Blocked** | Missing `sync-v3-bets.ts` — leave disabled |
+| **Mock fallback** | **Fixed (2B-R)** | Production ingest fails closed if `CFBD_API_KEY` missing |
+| **nightly-ingest** | Keep UI-disabled | Still has 2025 literals + fail-closed CFBD |
 
-### V3 totals — blocked (do not re-enable)
+### V3 totals — blocked
 
-- **Workflow:** `v3-totals-nightly.yml` must remain **disabled** in GitHub UI.
-- **Cause:** References `apps/web/scripts/sync-v3-bets.ts`, which **does not exist** in the repo.
-- **2026 scope:** V3 totals **excluded** from reactivation until Bobby decides to restore the script or retire the workflow.
-- **Cron:** Do not change schedule in Phase 2A/2B; leave workflow off.
+`v3-totals-nightly.yml` remains disabled. Do not re-enable until script restored or workflow retired.
+
+### Provider quotas (Aug 2026)
+
+| Provider | Plan | Notes |
+|----------|------|-------|
+| The Odds API | 20,000 credits / month | Dashboard key authoritative |
+| CFBD | 30,000 calls / month | PBP available but **out of restart scope** |
 
 ---
 
-## Preseason reactivation — still pending
+## Production ingest safety (2B-R)
 
-1. **GitHub UI audit** — confirm disabled state; enable `prisma-guardrails` for PR safety
-2. **Phase 2B** — season parameterization (2026 defaults) + manual weekly bet sync workflow
-3. **Phase 2C** — manual dry-run checklist execution (Week 0/1 when schedules exist)
-4. **ETL smoke test** — manual `workflow_dispatch` only; no bulk schedule enable
-5. **Odds / schedule ingestion** — CFBD + market lines for 2026 Week 0/1
-6. **Grading check** — `grade-bets` after scores verified
-7. **Conflict tags** — `sync-hybrid-conflict-tags.ts` remains manual for now
-8. **Homepage banner** — update before public preseason (not urgent today)
-9. **Stale docs** — `labs/hybrid`, `docs/methodology`, `docs/workflows-guide.md` vs UI-disabled state
+- `nightly-ingest.yml` and `bowl-week-bootstrap.yml`: **fail closed** if `CFBD_API_KEY` empty — **no automatic mock schedule writes**
+- `ingest-simple.js mock` remains for **deliberate local/test** use only
+- Cron schedules **unchanged**; workflows remain **UI-disabled**
+
+---
+
+## Next phases
+
+1. Update GitHub secrets → run manual provider validation (`probe_odds=false`, then optional `true`)
+2. **Phase 2C-1** — schedule-only 2026 CFBD ingest (after validation passes)
+3. **Phase 2C-2+** — odds, ratings, bet sync, scores/grade
+4. **Phase 2D** — `TARGET_SEASON` in scheduled YAML before bulk UI enables
 
 See [Preseason Reactivation Checklist](docs/preseason-reactivation-checklist.md).
 
 ---
 
-## Next recommended phases
-
-1. **Phase 2B** — Season parameterization + manual weekly bet sync workflow (no nightly bury yet)
-2. **Phase 2C** — Execute dry-run checklist on Week 0/1
-3. **Preseason ETL reactivation** — staged GitHub UI enables after 2C sign-off
-
----
-
-## Operator notes
-
-- Weekly pick-processing rules are documented in the project operator files / ChatGPT Project instructions.
-- Moneyline overlap is treated as **winner-only** (ignore Kalshi vs American-odds scale mismatch).
-- Always include **Near Overlaps** for spreads/totals with drift in `(1.0, 2.0]`.
-- Historical odds backfill: **manual only** with `dry_run` / credit limits — do not automate large backfills.
-
----
-
-## Known doc drift
-
-| Topic | Note |
-|-------|------|
-| Python ETL | README/jobs README updated; some older docs may still mention Python |
-| `prisma/seed.ts` | Referenced in places but may be missing — use `npm run seed:ratings` |
-| `/api/seed-slate` | Deprecated for homepage; still exists for legacy callers |
-| `docs/workflows-guide.md` | Still recommends auto-enabled workflows; conflicts with offseason disable policy |
-| Deleted workflows in docs | `monitor-2025-archival.yml`, `odds-poll-3x.yml`, etc. no longer in YAML |
-
----
-
 ## Quick links
 
-- [2026 Betting Playbook](docs/2026-betting-playbook.md)
 - [Preseason Reactivation Checklist](docs/preseason-reactivation-checklist.md)
+- [Preseason Season Parameterization Plan](docs/preseason-season-parameterization.md)
+- [2026 Betting Playbook](docs/2026-betting-playbook.md)
 - [Workflow disable report](WORKFLOW_DISABLE_REPORT.md)
-- [Bowl & postseason ops](docs/bowl-postseason-ops.md)

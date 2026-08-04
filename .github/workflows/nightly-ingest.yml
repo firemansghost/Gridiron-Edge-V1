@@ -45,6 +45,13 @@ jobs:
       - name: Build jobs (for schedule ingestion)
         run: npm run build:jobs
 
+      - name: Require CFBD_API_KEY (fail-closed — no mock schedules)
+        run: |
+          if [ -z "$CFBD_API_KEY" ]; then
+            echo "::error::CFBD_API_KEY is missing or empty. Refusing to write mock schedules to production. Set the CFBD_API_KEY GitHub secret and re-run."
+            exit 1
+          fi
+
       - name: Calculate current week
         id: current-week
         run: |
@@ -57,21 +64,13 @@ jobs:
           echo "📅 Using week: $POLL_WEEK"
           echo "POLL_WEEK=$POLL_WEEK" >> $GITHUB_ENV
 
-      - name: Ingest schedules via CFBD (optional)
-        if: ${{ env.CFBD_API_KEY != '' }}
+      - name: Ingest schedules via CFBD
         env:
           JOBS_ALLOW_SIMULATED_ODDS: false
         run: |
           echo "🗓️ Ingesting real schedules from CFBD..."
           node apps/jobs/dist/ingest.js cfbd --season 2025 --weeks $POLL_WEEK
           echo "✅ CFBD schedules ingested"
-
-      - name: Fallback - Ensure mock schedules (if no CFBD key)
-        if: ${{ env.CFBD_API_KEY == '' }}
-        run: |
-          echo "📥 Using mock data (no CFBD_API_KEY)..."
-          node apps/jobs/ingest-simple.js mock --season 2025 --weeks $POLL_WEEK
-          echo "✅ Mock data ingest complete"
 
   ingest-odds:
     runs-on: ubuntu-latest
@@ -413,8 +412,7 @@ jobs:
           echo "Status: ${{ job.status }}"
           echo ""
           echo "Steps executed:"
-          echo "  🗓️ CFBD schedules (optional, enabled: ${{ env.CFBD_API_KEY != '' }})"
-          echo "  📥 Mock fallback (enabled: ${{ env.CFBD_API_KEY == '' }})"
+          echo "  🗓️ CFBD schedules (required; fail-closed if CFBD_API_KEY missing)"
           echo "  📈 Odds API (primary, enabled: ${{ env.ODDS_API_KEY != '' }})"
           echo "  📈 SGO odds (fallback, enabled: ${{ env.SGO_API_KEY != '' }})"
           echo "  🏈 Roster talent sync (conditional)"

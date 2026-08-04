@@ -1,0 +1,64 @@
+# Read-only preseason provider validation (CFBD + The Odds API).
+# workflow_dispatch ONLY — no schedule, push, or pull_request.
+# No DATABASE_URL / DIRECT_URL / Prisma / ETL — cannot write to Supabase.
+# Default: CFBD 2026 games + free Odds /v4/sports. Optional probe may cost up to 3 credits.
+
+name: Validate Preseason Providers (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      probe_odds:
+        description: 'Optional NCAAF featured odds probe (h2h,spreads,totals). May consume up to 3 Odds API credits; actual charge is x-requests-last. Default false = zero Odds credits.'
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: validate-preseason-providers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+      ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate providers (read-only)
+        run: |
+          echo "probe_odds=${{ inputs.probe_odds }}"
+          echo "DB credentials: not provided to this workflow"
+          if [ "${{ inputs.probe_odds }}" = "true" ]; then
+            echo "Running with --probe-odds (may consume up to 3 Odds API credits)"
+            npx tsx scripts/validate-preseason-providers.ts --probe-odds
+          else
+            echo "Running default validation (Odds /v4/sports = 0 credits)"
+            npx tsx scripts/validate-preseason-providers.ts
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "============================================"
+          echo "PRESEASON PROVIDER VALIDATION SUMMARY"
+          echo "============================================"
+          echo "probe_odds: ${{ inputs.probe_odds }}"
+          echo "Status: ${{ job.status }}"
+          echo "Secrets used (names only): CFBD_API_KEY, ODDS_API_KEY"
+          echo "Database secrets: none"
+          echo "============================================"

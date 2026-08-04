@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       season:
-        description: 'Season (e.g., 2025)'
+        description: 'Season (e.g., 2026)'
         required: true
-        default: '2025'
+        default: '2026'
         type: string
       week:
         description: 'Week number (e.g., 16, 17 for bowls/CFP)'
@@ -50,21 +50,20 @@ jobs:
       - name: Build jobs
         run: npm run build:jobs
 
+      - name: Require CFBD_API_KEY (fail-closed — no mock schedules)
+        run: |
+          if [ -z "$CFBD_API_KEY" ]; then
+            echo "::error::CFBD_API_KEY is missing or empty. Bowl week bootstrap will not write mock schedules. Set the CFBD_API_KEY GitHub secret and re-run."
+            exit 1
+          fi
+
       - name: Ingest schedules via CFBD
-        if: ${{ env.CFBD_API_KEY != '' }}
         env:
           JOBS_ALLOW_SIMULATED_ODDS: false
         run: |
           echo "🗓️ Ingesting schedules from CFBD for $SEASON Week $WEEK..."
           node apps/jobs/dist/ingest.js cfbd --season $SEASON --weeks $WEEK
           echo "✅ CFBD schedules ingested"
-
-      - name: Fallback - Ensure mock schedules (if no CFBD key)
-        if: ${{ env.CFBD_API_KEY == '' }}
-        run: |
-          echo "📥 Using mock data (no CFBD_API_KEY) for $SEASON Week $WEEK..."
-          node apps/jobs/ingest-simple.js mock --season $SEASON --weeks $WEEK
-          echo "✅ Mock data ingest complete"
 
       - name: Fetch odds from Odds API (primary)
         if: ${{ env.ODDS_API_KEY != '' }}
@@ -120,7 +119,7 @@ jobs:
           echo "Status: ${{ job.status }}"
           echo ""
           echo "Steps executed:"
-          echo "  🗓️ CFBD schedules (enabled: ${{ env.CFBD_API_KEY != '' }})"
+          echo "  🗓️ CFBD schedules (required; fail-closed if CFBD_API_KEY missing)"
           echo "  📈 Odds API (primary, enabled: ${{ env.ODDS_API_KEY != '' }})"
           echo "  📈 SGO odds (backup, enabled: ${{ env.SGO_API_KEY != '' }})"
           echo "  📊 Ratings + implied lines"

@@ -1,0 +1,78 @@
+# Manual weekly bet sync — Hybrid V2 + Core V1 Card (official_flat_100).
+# workflow_dispatch ONLY. Do not add schedule triggers.
+# Workflows remain disabled in GitHub UI until Phase 2C dry-run sign-off.
+# Does NOT run ingest, ratings, V3 totals, or V4/Fade V4.
+
+name: Sync Weekly Bets (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (e.g., 2026)'
+        required: true
+        default: '2026'
+        type: string
+      week:
+        description: 'CFB week to sync (required)'
+        required: true
+        type: string
+
+concurrency:
+  group: sync-weekly-bets-${{ github.ref }}-${{ github.event.inputs.season }}-${{ github.event.inputs.week }}
+  cancel-in-progress: true
+
+jobs:
+  sync-bets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      TZ: America/Chicago
+      SEASON: ${{ github.event.inputs.season }}
+      WEEK: ${{ github.event.inputs.week }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run prisma:generate
+
+      - name: Sync Hybrid V2 bets (hybrid_v2)
+        run: |
+          echo "🎯 Syncing Hybrid V2 bets for season $SEASON week $WEEK..."
+          npx tsx apps/web/scripts/sync-hybrid-bets.ts "$SEASON" "$WEEK"
+          echo "✅ Hybrid V2 sync complete"
+
+      - name: Sync Core V1 Card bets (official_flat_100)
+        run: |
+          echo "📋 Syncing Core V1 Card bets for season $SEASON week $WEEK..."
+          npx tsx apps/web/scripts/sync-official-picks-to-bets.ts "$SEASON" "$WEEK"
+          echo "✅ Core V1 Card sync complete"
+
+      - name: Sanity check (non-fatal)
+        run: |
+          npx tsx scripts/check-week-data.ts --season "$SEASON" --week "$WEEK" || echo "⚠️  Sanity check failed (non-fatal)"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "============================================"
+          echo "📋 SYNC WEEKLY BETS SUMMARY"
+          echo "============================================"
+          echo "Season: $SEASON"
+          echo "Week: $WEEK"
+          echo "Strategy tags: hybrid_v2, official_flat_100"
+          echo "Status: ${{ job.status }}"
+          echo "============================================"
