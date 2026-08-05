@@ -78,40 +78,45 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 
 | Phase | Status |
 |-------|--------|
-| **2C-1A audit** | **Stopped safely** — monolithic `ingest.js cfbd` not approved (ratings side-effect) |
-| **2C-1A2 isolated path** | **Prepared** — schedule-only module/CLI + read-only preview workflow |
-| **2C-1B production write** | **Not yet approved** (write workflow not created) |
+| **2C-1A audit** | **Stopped safely** — monolithic `ingest.js cfbd` not approved |
+| **2C-1A2 preview** | **PASSED** (live weeks 0/1/2; PR #37) |
+| **2C-1B write implementation** | **In preparation** — **no production write yet** |
 | **Odds ingestion** | **Not yet approved** |
 | **Nightly reactivation** | **Not yet approved** |
 
 **Do not** use `node apps/jobs/dist/ingest.js cfbd ...` for 2026 schedule-only work.
 
-### Isolated schedule-only tools
+### Live preview results
+
+| Week | Outcome | Notes |
+|------|---------|-------|
+| **0** | Failed safely | Full-season leak; no provider week 0; **0** writes |
+| **1** | Passed | 211 provider → **51** FBS; Aug 27–Sep 7; unresolved **0**; DB **0** |
+| **2** | Passed | 134 provider → **49** FBS; Sep 11–13; unresolved **0**; DB **0** |
+
+**Mapping:** CFBD provider week **1** is the first production schedule bucket.
+
+### Tools
 
 | Tool | Purpose |
 |------|---------|
-| `apps/jobs/ingest-schedules.ts` | **Preview-only** (`--preview` required; writes disabled until 2C-1B) |
-| `scripts/preview-cfbd-schedules.ts` | Always forces `--preview` |
-| `Preview 2026 CFBD Schedules (Manual, Read Only)` | GitHub `workflow_dispatch` only; command includes `--preview` |
+| Preview CLI / workflow | Read-only (`--preview` required) |
+| `apps/jobs/write-schedules.ts` | One-week write — `--confirm-write WRITE_2026_WEEK_<n>` |
+| `Ingest 2026 CFBD Schedules (Manual, One Week)` | `workflow_dispatch` only; week 0 prohibited |
 
-Team stubs are **prohibited** (fail closed). Aliases come only from existing `team_aliases_cfbd.yml`.
+### First proposed production write (do not run until approved)
 
-**Read-only boundary (accurate claim):** The preview workflow uses the existing production `DIRECT_URL` secret for Prisma queries. That credential is **not** a database-level read-only account. Read-only behavior is enforced by: (1) preview-only executable, (2) `ReadOnlyScheduleStore` query-only interface, (3) runtime hostile-mutation tests, (4) static workflow checks. No production schedule-write workflow exists; Phase 2C-1B remains unapproved.
+* season: `2026`
+* week: `1`
+* confirm: `WRITE_2026_WEEK_1`
+* expected inserts: **51**; updates: **0**; final rows: **51**
+* ~2 CFBD calls
 
-Kickoffs must include explicit `Z` or a numeric UTC offset; timezone-less provider values are rejected.
-
-### First live step (after merge / operator approval — not this coding phase)
-
-1. Run preview workflow: season **2026**, week **0** (~2 CFBD calls) — review raw + normalized UTC kickoffs
-2. Review counts, dates, team resolution, DB comparison
-3. Run preview: season **2026**, week **1**
-4. Decide whether CFBD Week Zero is week `0` or `1`
-5. **Stop** before any production write
-
-- [ ] Preview week 0 reviewed
-- [ ] Preview week 1 reviewed
-- [ ] Week Zero mapping confirmed
-- [ ] Production write workflow created only after separate 2C-1B approval
+- [x] Preview week 0 reviewed (safe failure)
+- [x] Preview week 1 reviewed
+- [x] Preview week 2 reviewed
+- [x] Week Zero mapping confirmed → use provider week **1**
+- [ ] Week 1 production write approved and executed
 - [ ] Odds / ratings / bets remain **out of scope** until separately approved
 
 ---

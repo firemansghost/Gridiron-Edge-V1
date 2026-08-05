@@ -319,9 +319,26 @@ describe('preseason cfbd schedule-only', () => {
       await writeValidatedScheduleBatch(
         [game],
         {
-          async createMany() {},
+          async createMany() {
+            return 0;
+          },
           async updateScheduleFields(_id, data) {
             updates.push(data as unknown as Record<string, unknown>);
+          },
+          async loadExistingForWeek() {
+            return [
+              {
+                id: game.id,
+                season: 2026,
+                week: 0,
+                homeTeamId: 'georgia',
+                awayTeamId: 'clemson',
+                date: game.date,
+                homeScore: null,
+                awayScore: null,
+                status: 'scheduled',
+              },
+            ];
           },
           async transaction(fn) {
             return fn();
@@ -337,8 +354,13 @@ describe('preseason cfbd schedule-only', () => {
         writeValidatedScheduleBatch(
           [baseNormalized()],
           {
-            async createMany() {},
+            async createMany() {
+              return 0;
+            },
             async updateScheduleFields() {},
+            async loadExistingForWeek() {
+              return [];
+            },
           } as never,
           { season: 2026, week: 0 }
         )
@@ -427,21 +449,47 @@ describe('preseason cfbd schedule-only', () => {
       const game = baseNormalized();
       let createCalls = 0;
       let updateCalls = 0;
+      let existing: typeof game[] = [];
       const deps = {
-        async createMany() {
+        async createMany(rows: unknown[]) {
           createCalls += 1;
+          existing = [game];
+          return rows.length;
         },
         async updateScheduleFields() {
           updateCalls += 1;
+        },
+        async loadExistingForWeek() {
+          return existing.map((g) => ({
+            id: g.id,
+            season: g.season,
+            week: g.week,
+            homeTeamId: g.homeTeamId,
+            awayTeamId: g.awayTeamId,
+            date: g.date,
+            homeScore: null as number | null,
+            awayScore: null as number | null,
+            status: 'scheduled',
+          }));
         },
         async transaction<T>(fn: () => Promise<T>) {
           return fn();
         },
       };
-      await writeValidatedScheduleBatch([game], deps, { season: 2026, week: 0 });
-      await writeValidatedScheduleBatch([game], deps, { season: 2026, week: 0 });
-      expect(createCalls).toBe(2);
-      expect(updateCalls).toBe(2);
+      const first = await writeValidatedScheduleBatch([game], deps, {
+        season: 2026,
+        week: 0,
+      });
+      const second = await writeValidatedScheduleBatch([game], deps, {
+        season: 2026,
+        week: 0,
+      });
+      expect(first.inserted).toBe(1);
+      expect(first.updated).toBe(0);
+      expect(second.inserted).toBe(0);
+      expect(second.updated).toBe(1);
+      expect(createCalls).toBe(1);
+      expect(updateCalls).toBe(1);
     });
 
     it('sample output includes raw and normalized kickoffs', () => {
