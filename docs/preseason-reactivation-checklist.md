@@ -12,7 +12,7 @@ Complements `SEASON_STATUS.md` and `WORKFLOW_DISABLE_REPORT.md`.
 - [ ] Confirm target season is **2026** (`TARGET_SEASON` repo variable recommended — see [preseason-season-parameterization.md](preseason-season-parameterization.md))
 - [ ] Leave `v3-totals-nightly.yml` **disabled** (`sync-v3-bets.ts` is missing)
 - [ ] Keep historical odds backfill **manual only** with `dry_run` and credit limits
-- [ ] Context (2026-08-04): Week Zero **2026-08-27**; public schedules exist; production DB has **zero 2026 rows**
+- [x] Context (2026-08-04): Week Zero **2026-08-27**; public schedules exist; production DB had **zero 2026 rows** before write phase (re-verify before 2C-1B)
 
 ---
 
@@ -36,38 +36,33 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 - [ ] `SGO_API_KEY` (if using SGO fallback)
 - [ ] `VISUALCROSSING_API_KEY` (optional weather)
 
-**Risk:** `nightly-ingest` falls back to **mock schedules** if `CFBD_API_KEY` is missing. Never dry-run ingest without a valid CFBD key unless you intend mock data.
+**Safety:** Production-connected CFBD workflows **fail closed** if `CFBD_API_KEY` is missing (no automatic mock schedules). Mock tooling remains for deliberate local/test use only.
 
 **Do not** paste keys into Cursor/chat. Update secrets only in GitHub Settings → Secrets and variables → Actions (or local `.env` privately).
 
 ---
 
-## B2. Provider validation (read-only — Phase 2C-0)
+## B2. Provider validation (read-only — Phase 2C-0) — PASSED 2026-08-04
 
 **Manual only.** Workflow: `Validate Preseason Providers (Manual)` → `.github/workflows/validate-preseason-providers.yml`
 
 - Trigger: **`workflow_dispatch` only** (no schedule / push / PR)
 - Secrets: `CFBD_API_KEY`, `ODDS_API_KEY` only — **no database credentials**
-- Default (`probe_odds=false`): CFBD 2026 games + Odds `/v4/sports` (**0** Odds credits)
-- Optional (`probe_odds=true`): NCAAF featured odds — **up to 3** credits (1 region × 3 markets); actual = `x-requests-last`
 
-After secrets are configured (optional; **do not run until Bobby approves**):
+### Results (2026-08-04)
 
-```bash
-# Default: CFBD + Odds /v4/sports (0 Odds credits)
-npx tsx scripts/validate-preseason-providers.ts
+| Run | Result |
+|-----|--------|
+| Default `probe_odds=false` | CFBD HTTP 200; **1,638** season-2026 games; earliest **2026-08-27**; latest **2026-12-12**; NCAAF active; `x-requests-last=0` |
+| Optional `probe_odds=true` | HTTP 200; **126** events; `x-requests-last=3`; remaining **19,713** |
 
-# Explicit probe: may consume up to 3 Odds credits; trust x-requests-* headers
-npx tsx scripts/validate-preseason-providers.ts --probe-odds
-```
+- [x] Update GitHub Secrets `ODDS_API_KEY` and `CFBD_API_KEY` from provider dashboards
+- [x] Run GitHub Actions workflow with `probe_odds=false`
+- [x] Confirm CFBD 2026 games; NCAAF active; no secrets in logs; Odds usage 0
+- [x] Optional `probe_odds=true`; `x-requests-last=3`
+- [x] Phase 2C-0 gate **PASSED**
 
-- [ ] Update GitHub Secrets `ODDS_API_KEY` and `CFBD_API_KEY` from provider dashboards
-- [ ] Run GitHub Actions workflow with `probe_odds=false` (or local CLI)
-- [ ] Confirm CFBD returns 2026 games; NCAAF active; no secrets in logs; Odds usage 0
-- [ ] Optional: one run with `probe_odds=true`; confirm `x-requests-last` ≤ 3
-- [ ] **Stop** — do not start Phase 2C-1 schedule ingest until validation passes
-
-**Production ingest:** `nightly-ingest` / `bowl-week-bootstrap` **fail closed** if `CFBD_API_KEY` is missing (no automatic mock schedules). Mock tooling remains for deliberate local/test use only.
+**Production ingest:** `nightly-ingest` / `bowl-week-bootstrap` **fail closed** if `CFBD_API_KEY` is missing (no automatic mock schedules).
 
 ---
 
@@ -79,17 +74,45 @@ npx tsx scripts/validate-preseason-providers.ts --probe-odds
 
 ---
 
-## D. Schedule / odds ingest (manual dry run) — Phase 2C-1+
+## D. Schedule ingest — Phase 2C-1A / 2C-1A2 / 2C-1B
 
-**Phase 2C-1 (next):** schedule-only CFBD ingest for 2026 (no odds/bets). Not started in 2C-0.
+| Phase | Status |
+|-------|--------|
+| **2C-1A audit** | **Stopped safely** — monolithic `ingest.js cfbd` not approved (ratings side-effect) |
+| **2C-1A2 isolated path** | **Prepared** — schedule-only module/CLI + read-only preview workflow |
+| **2C-1B production write** | **Not yet approved** (write workflow not created) |
+| **Odds ingestion** | **Not yet approved** |
+| **Nightly reactivation** | **Not yet approved** |
 
-Use **manual** `workflow_dispatch` only (never enable schedules yet):
+**Do not** use `node apps/jobs/dist/ingest.js cfbd ...` for 2026 schedule-only work.
 
-- [ ] Run schedule ingest for **2026 Week 0 or Week 1**
-- [ ] Verify game count in DB for that week
-- [ ] Run odds ingest for same week (if keys available; credit-aware)
-- [ ] Verify closing lines exist for sample games
-- [ ] Rollback if wrong season/week: **disable workflow in GitHub UI**; do not re-run with `force` unless intended
+### Isolated schedule-only tools
+
+| Tool | Purpose |
+|------|---------|
+| `apps/jobs/ingest-schedules.ts` | **Preview-only** (`--preview` required; writes disabled until 2C-1B) |
+| `scripts/preview-cfbd-schedules.ts` | Always forces `--preview` |
+| `Preview 2026 CFBD Schedules (Manual, Read Only)` | GitHub `workflow_dispatch` only; command includes `--preview` |
+
+Team stubs are **prohibited** (fail closed). Aliases come only from existing `team_aliases_cfbd.yml`.
+
+**Read-only boundary (accurate claim):** The preview workflow uses the existing production `DIRECT_URL` secret for Prisma queries. That credential is **not** a database-level read-only account. Read-only behavior is enforced by: (1) preview-only executable, (2) `ReadOnlyScheduleStore` query-only interface, (3) runtime hostile-mutation tests, (4) static workflow checks. No production schedule-write workflow exists; Phase 2C-1B remains unapproved.
+
+Kickoffs must include explicit `Z` or a numeric UTC offset; timezone-less provider values are rejected.
+
+### First live step (after merge / operator approval — not this coding phase)
+
+1. Run preview workflow: season **2026**, week **0** (~2 CFBD calls) — review raw + normalized UTC kickoffs
+2. Review counts, dates, team resolution, DB comparison
+3. Run preview: season **2026**, week **1**
+4. Decide whether CFBD Week Zero is week `0` or `1`
+5. **Stop** before any production write
+
+- [ ] Preview week 0 reviewed
+- [ ] Preview week 1 reviewed
+- [ ] Week Zero mapping confirmed
+- [ ] Production write workflow created only after separate 2C-1B approval
+- [ ] Odds / ratings / bets remain **out of scope** until separately approved
 
 ---
 
