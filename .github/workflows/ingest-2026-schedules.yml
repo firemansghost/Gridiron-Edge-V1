@@ -1,0 +1,112 @@
+# Manual one-week 2026 CFBD schedule WRITE to production Supabase.
+# workflow_dispatch ONLY — no schedule, push, or pull_request.
+# Requires exact confirmation WRITE_2026_WEEK_<week>. Week 0 prohibited.
+# Does not invoke monolithic ingest, ratings, odds, bets, scores, grading, mock, or migrations.
+
+name: Ingest 2026 CFBD Schedules (Manual, One Week)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (must be 2026)'
+        required: true
+        type: string
+        default: '2026'
+      week:
+        description: 'Exactly one positive integer provider week (week 0 prohibited; first bucket is week 1)'
+        required: true
+        type: string
+        default: '1'
+      confirm_write:
+        description: 'Enter WRITE_2026_WEEK_<week> exactly'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ingest-2026-schedules-${{ inputs.season }}-${{ inputs.week }}
+  cancel-in-progress: false
+
+jobs:
+  ingest-week:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+      DATABASE_URL: ${{ secrets.DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight (names/presence only)
+        run: |
+          set -euo pipefail
+          SEASON="${{ inputs.season }}"
+          WEEK="${{ inputs.week }}"
+          CONFIRM="${{ inputs.confirm_write }}"
+          echo "season_input=${SEASON}"
+          echo "week_input=${WEEK}"
+          echo "confirm_write_received=${CONFIRM}"
+          if [ "$SEASON" != "2026" ]; then
+            echo "::error::season must equal 2026 (got ${SEASON})"
+            exit 1
+          fi
+          if ! [[ "$WEEK" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::week must be a single positive integer (got ${WEEK}); week 0 is prohibited"
+            exit 1
+          fi
+          EXPECTED="WRITE_2026_WEEK_${WEEK}"
+          if [ "$CONFIRM" != "$EXPECTED" ]; then
+            echo "::error::confirm_write must be exactly ${EXPECTED}"
+            exit 1
+          fi
+          if [ -z "${CFBD_API_KEY:-}" ]; then
+            echo "::error::CFBD_API_KEY secret is missing or empty"
+            exit 1
+          fi
+          if [ -z "${DIRECT_URL:-}" ] && [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::DIRECT_URL / DATABASE_URL secret is missing"
+            exit 1
+          fi
+          echo "CFBD_API_KEY: present"
+          echo "DIRECT_URL: present (value not printed)"
+          echo "ODDS_API_KEY: not provided"
+          echo "ratings/odds/bets/scores/mock/migrations: not invoked"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: Write one-week CFBD schedules
+        run: |
+          npx tsx apps/jobs/write-schedules.ts \
+            --season "${{ inputs.season }}" \
+            --week "${{ inputs.week }}" \
+            --confirm-write "${{ inputs.confirm_write }}"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "============================================"
+          echo "INGEST 2026 CFBD SCHEDULES (ONE WEEK)"
+          echo "============================================"
+          echo "season: ${{ inputs.season }}"
+          echo "week: ${{ inputs.week }}"
+          echo "status: ${{ job.status }}"
+          echo "mode: guarded one-week schedule write only"
+          echo "secrets used (names only): CFBD_API_KEY, DIRECT_URL"
+          echo "prohibited: ratings, odds, bets, scores, mock, monolithic ingest, migrations"
+          echo "============================================"

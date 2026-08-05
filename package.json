@@ -45,7 +45,8 @@
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "postinstall": "npm run prisma:generate",
     "validate:preseason-providers": "tsx scripts/validate-preseason-providers.ts",
-    "preview:cfbd-schedules": "tsx scripts/preview-cfbd-schedules.ts"
+    "preview:cfbd-schedules": "tsx scripts/preview-cfbd-schedules.ts",
+    "write:cfbd-schedules": "tsx apps/jobs/write-schedules.ts"
   },
   "devDependencies": {
     "@prisma/client": "6.17.0",

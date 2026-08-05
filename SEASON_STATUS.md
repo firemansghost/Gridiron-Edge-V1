@@ -1,7 +1,7 @@
 # Season Status — Gridiron Edge
 
 **Status:** Offseason / paused for regular-season automation  
-**Updated:** 2026-08-05 (Phase 2C-1A2 final hardening — preview-only executable + read-only DB boundary)
+**Updated:** 2026-08-05 (Phase 2C-1B prep — guarded one-week write pathway; no production write yet)
 
 Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISABLE_REPORT.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -23,8 +23,9 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **Mock schedule fallback** | **Removed** from production-connected ingest (fail-closed on missing `CFBD_API_KEY`) |
 | **Phase 2C-0 provider validation** | **PASSED** (2026-08-04) |
 | **Phase 2C-1A audit** | **Stopped safely** — monolithic `ingest.js cfbd` not approved for schedule-only |
-| **Phase 2C-1A2** | **In progress** — isolated schedule-only module + **read-only** preview workflow |
-| **Phase 2C-1B production schedule write** | **Not yet approved** |
+| **Phase 2C-1A2** | **Merged (PR #37)** — preview-only pathway live-validated |
+| **Phase 2C-1A2 preview validation** | **PASSED** (weeks 0/1/2 reviewed) |
+| **Phase 2C-1B production schedule write** | **Implementation in preparation** — **no production write has occurred** |
 | **Odds ingestion** | **Not yet approved** |
 | **Nightly workflow reactivation** | **Not yet approved** |
 
@@ -79,39 +80,69 @@ Manual GitHub Actions runs using current secrets (no secret values recorded).
 | Commence range | `2026-08-29T16:00:00Z` → `2026-11-28T17:00:00Z` |
 | Credits | `x-requests-last=3`; used=287; remaining=**19,713** |
 
-**Gate:** Phase 2C-0 provider validation is **PASSED**. Do **not** start Phase 2C-1B until 2C-1A blockers below are resolved and Bobby approves a write.
+**Gate:** Phase 2C-0 provider validation is **PASSED**. Phase 2C-1A2 live previews are **PASSED**. First proposed production write: season **2026**, provider week **1** only (after 2C-1B approval).
 
 ---
 
-## Phase 2C-1A / 2C-1A2 — schedule path
+## Phase 2C-1A2 live preview results (PASSED)
+
+### Week 0 preview — failed safely (no writes)
+
+* CFBD returned the full **1,638**-game season rather than a Week 0 slice
+* Distinct provider weeks: 1–13 and 15 — **no provider week 0**
+* Normalized batch: **0** → `empty_batch` fail-closed
+* **Conclusion:** CFBD does **not** expose 2026 Week Zero as provider week `0`
+
+### Week 1 preview — succeeded (no writes)
+
+* Provider rows: **211**; distinct weeks: `[1]`
+* Kickoff range: **2026-08-27** → **2026-09-07**
+* FBS-vs-FBS normalized: **51**; unresolved teams: **0**
+* Existing DB rows: **0**; proposed inserts: **51**; updates: **0**
+* **Conclusion:** Provider week **1** is the first production schedule bucket (includes calendar “Week Zero” openers)
+
+### Week 2 preview — succeeded (no writes)
+
+* Provider rows: **134**; distinct weeks: `[2]`
+* Kickoff range: **2026-09-11** → **2026-09-13**
+* FBS-vs-FBS normalized: **49**; unresolved teams: **0**
+* Existing DB rows: **0**; proposed inserts: **49**
+* **Conclusion:** Week 1 / Week 2 boundary is clean and non-overlapping
+
+---
+
+## Phase 2C-1A / 2C-1A2 / 2C-1B — schedule path
 
 ### 2C-1A initial audit (stopped safely)
 
 Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always runs ratings/`seed-ratings` with hardcoded 2024 behavior; CI week-trim; stub teams). **Monolithic ingest is not approved for schedule-only use.**
 
-### 2C-1A2 isolated path (prepared — preview hardened)
+### 2C-1A2 isolated preview (merged — live-validated)
 
 | Artifact | Role |
 |----------|------|
-| `apps/jobs/src/preseason/cfbd-schedule-ingest.ts` | Pure helpers + future write helper (not executable) |
 | `apps/jobs/ingest-schedules.ts` | **Preview-only** CLI (`--preview` required) |
-| `scripts/preview-cfbd-schedules.ts` | Forces preview; never exports write helpers |
-| `.github/workflows/preview-2026-schedules.yml` | Manual **read-only** preview (`workflow_dispatch` only) |
+| `scripts/preview-cfbd-schedules.ts` | Forces preview |
+| `.github/workflows/preview-2026-schedules.yml` | Manual read-only preview |
 
-**Guarantees of the new path:**
+### 2C-1B guarded one-week write (implementation prep — not executed)
 
-- Executable surface is **preview-only** — omitting `--preview` exits nonzero; no env var or flag can enable writes
-- Does **not** import or call ratings / `seed-ratings` / odds / weather / injuries / bets / scores / PBP / mock
-- **No team stubs** / no automatic `Independent` fallback — missing/ambiguous/conflicting teams → nonzero, zero writes
-- Reuses existing `apps/jobs/config/team_aliases_cfbd.yml` only
-- Singular `--week` only (allows `0`); never inspects `GITHUB_ACTIONS`
-- Kickoffs require **explicit** `Z` or numeric UTC offset; timezone-less strings are rejected (no silent UTC/local assumption)
-- Preview uses `ReadOnlyScheduleStore` (query methods only). Workflow still supplies `DIRECT_URL` for Prisma connectivity — **that credential is not a database-level read-only role**; read-only behavior is application-enforced (preview-only CLI + narrow interface + hostile mutation tests + static workflow checks)
-- Internal `writeValidatedScheduleBatch` remains for future 2C-1B unit tests only (requires `$transaction`); **not** reachable from CLI, preview script, package scripts, or workflows
-- **No production schedule-write workflow** exists; Phase 2C-1B remains unapproved
-- Action runtime: `checkout@v6` / `setup-node@v6` with project Node **20**
+| Artifact | Role |
+|----------|------|
+| `apps/jobs/write-schedules.ts` | Dedicated write CLI — `--confirm-write WRITE_2026_WEEK_<n>` |
+| `.github/workflows/ingest-2026-schedules.yml` | Manual one-week write (`workflow_dispatch` only) |
 
-**Still out of scope:** odds ingestion; ratings; nightly reactivation; production schedule write.
+**Write path guarantees:**
+
+- Separate from preview executables; preview remains write-incapable
+- Season **2026** only; week **≥ 1** (week **0** prohibited)
+- Exact confirmation phrase required; no env bypass
+- Same validation as preview before any mutation
+- One Prisma transaction; accurate insert/update counts; no deletes; no score/status updates; no team creation
+- Post-write verification; exit nonzero on integrity failure
+- **No production schedule write has occurred yet**
+
+**Still out of scope:** odds ingestion; ratings; nightly reactivation.
 
 ---
 
@@ -119,11 +150,11 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 
 | Blocker | Status | Notes |
 |---------|--------|-------|
-| **Schedule-only CLI** | **Prepared (2C-1A2)** | Isolated path ready; live preview not run yet |
-| **Week Zero mapping** | Open | Confirm via read-only preview week 0 then week 1 |
-| **Production write workflow** | **Not created** | Await preview review + 2C-1B approval |
+| **Schedule-only CLI** | **Ready** | Preview merged; write CLI prepared (not run) |
+| **Week Zero mapping** | **Resolved** | No CFBD week 0; first bucket = provider week **1** |
+| **Production write** | **Prepared / not executed** | First proposed: `2026` / week `1` / `WRITE_2026_WEEK_1` |
 | **Season 2025 hardcoding** | Open | Scheduled paths still 2025 — Phase 2D before UI re-enable |
-| **Empty 2026 DB** | Open | Schedule write = Phase 2C-1B after preview |
+| **Empty 2026 DB** | Open | Awaits approved Week 1 write |
 | **Provider secrets** | **Validated** | GitHub secrets worked 2026-08-04 |
 | **Weekly bet sync** | Manual workflow ready | `sync-weekly-bets.yml` — dispatch only |
 | **V3 totals** | **Blocked** | Missing `sync-v3-bets.ts` — leave disabled |
@@ -153,9 +184,9 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 
 ## Next phases
 
-1. **Run read-only preview** (`preview-2026-schedules.yml`) for season 2026 week `0`, then week `1` — confirm Week Zero
-2. Review team-resolution + integrity; stop on failures
-3. **Phase 2C-1B** — approved production schedule write (after write workflow is separately created)
+1. **Operator-approved Week 1 write** — season `2026`, week `1`, confirm `WRITE_2026_WEEK_1` (expect ~51 inserts)
+2. Verify post-write counts; stop on integrity failure
+3. Optional Week 2 write after Week 1 success
 4. **Phase 2C-2+** — odds, ratings, bet sync (separate approvals)
 5. **Phase 2D** — `TARGET_SEASON` in scheduled YAML before bulk UI enables
 

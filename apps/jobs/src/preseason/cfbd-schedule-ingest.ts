@@ -1,9 +1,9 @@
 /**
  * Isolated CFBD schedule-only helpers (preseason).
  *
- * Phase 2C-1A2 executable surface is PREVIEW-ONLY.
- * Write helper is retained for future 2C-1B tests but is not reachable
- * from CLI, preview script, package scripts, or workflows.
+ * Phase 2C-1A2 executable surface (ingest-schedules / preview script) is PREVIEW-ONLY.
+ * Phase 2C-1B write surface is apps/jobs/write-schedules.ts (separate confirmation-gated CLI).
+ * Preview pathway must never call writeValidatedScheduleBatch.
  *
  * No ratings, odds, weather, injuries, talent, bets, scores, grading, or PBP.
  * No team stub creation. No mock adapters.
@@ -203,7 +203,7 @@ export interface DbComparison {
 }
 
 export interface ScheduleWriteDeps {
-  createMany(games: Array<Record<string, unknown>>): Promise<void>;
+  createMany(games: Array<Record<string, unknown>>): Promise<number>;
   updateScheduleFields(
     id: string,
     data: {
@@ -214,8 +214,410 @@ export interface ScheduleWriteDeps {
       conferenceGame: boolean;
     }
   ): Promise<void>;
+  /** Re-read existing rows for the week inside the transaction when practical. */
+  loadExistingForWeek(season: number, week: number): Promise<DbGameRow[]>;
   /** Required — nontransactional fallback is not allowed. */
   transaction<T>(fn: () => Promise<T>): Promise<T>;
+}
+
+export interface ScheduleWriteResult {
+  inserted: number;
+  updated: number;
+  insertedIds: string[];
+  updatedIds: string[];
+  dbOnlyIds: string[];
+}
+
+export interface PostWriteVerification {
+  ok: boolean;
+  issues: BatchValidationIssue[];
+  expectedNormalizedCount: number;
+  actualDbCount: number;
+  insertedCount: number;
+  updatedCount: number;
+  missingExpectedIds: string[];
+  unexpectedDbOnlyIds: string[];
+  retainedDbOnlyIds: string[];
+}
+
+export function buildWriteConfirmPhrase(week: number): string {
+  return `WRITE_2026_WEEK_${week}`;
+}
+
+export interface WriteScheduleArgs {
+  season: number;
+  week: number;
+  confirmWrite: string;
+}
+
+export interface ParseWriteArgsResult {
+  ok: boolean;
+  args?: WriteScheduleArgs;
+  errors: string[];
+}
+
+/**
+ * Parse production one-week write CLI args.
+ * Season must be 2026. Week must be a single integer 1..MAX. Confirmation must match exactly.
+ */
+export function parseWriteScheduleArgs(argv: string[]): ParseWriteArgsResult {
+  const errors: string[] = [];
+  let season: number | undefined;
+  let week: number | undefined;
+  let confirmWrite: string | undefined;
+  const unknown: string[] = [];
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--season') {
+      const raw = argv[++i];
+      if (raw === undefined || raw === '') {
+        errors.push('--season requires an integer value');
+        continue;
+      }
+      if (/[,-]/.test(raw)) {
+        errors.push(`--season rejects lists/ranges: ${raw}`);
+        continue;
+      }
+      const n = Number(raw);
+      if (!Number.isInteger(n) || Number.isNaN(n)) {
+        errors.push(`--season must be an integer (got ${raw})`);
+        continue;
+      }
+      season = n;
+      continue;
+    }
+    if (arg === '--week') {
+      const raw = argv[++i];
+      if (raw === undefined || raw === '') {
+        errors.push('--week requires a single integer value');
+        continue;
+      }
+      if (raw.includes(',') || raw.includes('-')) {
+        errors.push(
+          `--week accepts exactly one integer (no comma lists or ranges). Got: ${raw}`
+        );
+        continue;
+      }
+      const n = Number(raw);
+      if (!Number.isInteger(n) || Number.isNaN(n)) {
+        errors.push(`--week must be an integer (got ${raw})`);
+        continue;
+      }
+      week = n;
+      continue;
+    }
+    if (arg === '--confirm-write') {
+      const raw = argv[++i];
+      if (raw === undefined || raw === '') {
+        errors.push('--confirm-write requires the exact confirmation phrase');
+        continue;
+      }
+      confirmWrite = raw;
+      continue;
+    }
+    if (arg === '--weeks') {
+      errors.push('Use singular --week <integer>, not --weeks');
+      continue;
+    }
+    if (arg === '--preview') {
+      errors.push(
+        '--preview is not valid on the write CLI; use the preview pathway instead'
+      );
+      continue;
+    }
+    if (arg.startsWith('-')) {
+      unknown.push(arg);
+      continue;
+    }
+    unknown.push(arg);
+  }
+
+  if (unknown.length) {
+    errors.push(`Unknown flag(s) or arguments: ${unknown.join(', ')}`);
+  }
+  if (season === undefined) {
+    errors.push('--season is required');
+  } else if (season !== 2026) {
+    errors.push(`--season must be 2026 for Phase 2C-1B (got ${season})`);
+  }
+  if (week === undefined) {
+    errors.push('--week is required');
+  } else if (week === 0) {
+    errors.push(
+      '--week 0 is prohibited (CFBD has no provider week 0 for 2026; use week 1+)'
+    );
+  } else if (week < 1 || week > MAX_REGULAR_SEASON_WEEK) {
+    errors.push(
+      `--week must be between 1 and ${MAX_REGULAR_SEASON_WEEK} inclusive (got ${week})`
+    );
+  }
+  if (confirmWrite === undefined) {
+    errors.push('--confirm-write is required');
+  } else if (week !== undefined && week >= 1) {
+    const expected = buildWriteConfirmPhrase(week);
+    if (confirmWrite !== expected) {
+      errors.push(
+        `--confirm-write must be exactly "${expected}" (got "${confirmWrite}")`
+      );
+    }
+  }
+
+  // Environment variables cannot bypass confirmation — parse never reads them for auth.
+  if (errors.length) {
+    return { ok: false, errors };
+  }
+
+  return {
+    ok: true,
+    args: { season: season!, week: week!, confirmWrite: confirmWrite! },
+    errors: [],
+  };
+}
+
+/** Every provider row must carry the requested week (fail closed on full-season leakage). */
+export function assertProviderWeeksMatch(
+  games: CfbdProviderGame[],
+  week: number
+): BatchValidationIssue[] {
+  const issues: BatchValidationIssue[] = [];
+  const unexpected = [
+    ...new Set(games.map((g) => g.week).filter((w) => w !== week)),
+  ].sort((a, b) => a - b);
+  if (unexpected.length) {
+    issues.push({
+      code: 'unexpected_provider_week',
+      message: `Provider returned week(s) [${unexpected.join(', ')}] in addition to requested week ${week}`,
+    });
+  }
+  return issues;
+}
+
+export function isProtectedExistingGame(row: DbGameRow): boolean {
+  if (row.homeScore != null || row.awayScore != null) return true;
+  const status = String(row.status || '').toLowerCase();
+  return status === 'final' || status === 'in_progress' || status === 'completed';
+}
+
+export function findProtectedUpdateTargets(
+  wouldUpdateIds: string[],
+  existing: DbGameRow[]
+): DbGameRow[] {
+  const byId = new Map(existing.map((e) => [e.id, e]));
+  return wouldUpdateIds
+    .map((id) => byId.get(id))
+    .filter((row): row is DbGameRow => !!row && isProtectedExistingGame(row));
+}
+
+export function kickoffRangeIso(games: NormalizedScheduleGame[]): {
+  earliest: string | null;
+  latest: string | null;
+} {
+  if (games.length === 0) return { earliest: null, latest: null };
+  const times = games.map((g) => g.date.getTime());
+  return {
+    earliest: new Date(Math.min(...times)).toISOString(),
+    latest: new Date(Math.max(...times)).toISOString(),
+  };
+}
+
+/**
+ * Atomic one-week schedule write. Accurate insert/update counts.
+ * Inserts only missing IDs; updates only unprotected existing IDs.
+ * Never deletes DB-only rows. Never writes scores/status on update.
+ */
+export async function writeValidatedScheduleBatch(
+  games: NormalizedScheduleGame[],
+  deps: ScheduleWriteDeps,
+  expected: { season: number; week: number }
+): Promise<ScheduleWriteResult> {
+  if (typeof deps.transaction !== 'function') {
+    throw new Error(
+      'writeValidatedScheduleBatch requires deps.transaction — nontransactional writes are not allowed'
+    );
+  }
+  if (typeof deps.loadExistingForWeek !== 'function') {
+    throw new Error(
+      'writeValidatedScheduleBatch requires deps.loadExistingForWeek'
+    );
+  }
+
+  const precheck = validateNormalizedBatch(
+    games,
+    expected.season,
+    expected.week,
+    {
+      allowEmpty: false,
+      source: 'cfbd',
+    }
+  );
+  if (!precheck.ok) {
+    throw new Error(
+      `writeValidatedScheduleBatch refused: ${precheck.issues.map((i) => i.code).join(', ')}`
+    );
+  }
+
+  return deps.transaction(async () => {
+    const existingNow = await deps.loadExistingForWeek(
+      expected.season,
+      expected.week
+    );
+    const comparison = compareToExistingDb(games, existingNow);
+    const protectedRows = findProtectedUpdateTargets(
+      comparison.wouldUpdateIds,
+      existingNow
+    );
+    if (protectedRows.length) {
+      throw new Error(
+        `Refusing metadata update for protected games with scores/completed status: ${protectedRows
+          .map((r) => r.id)
+          .join(', ')}`
+      );
+    }
+
+    const byId = new Map(games.map((g) => [g.id, g]));
+    const insertGames = comparison.wouldInsertIds.map((id) => byId.get(id)!);
+    const updateGames = comparison.wouldUpdateIds.map((id) => byId.get(id)!);
+
+    let inserted = 0;
+    if (insertGames.length) {
+      inserted = await deps.createMany(insertGames.map(toScheduleInsertRow));
+    }
+
+    for (const g of updateGames) {
+      await deps.updateScheduleFields(g.id, {
+        date: g.date,
+        venue: g.venue || 'TBD',
+        city: g.city || 'TBD',
+        neutralSite: g.neutralSite,
+        conferenceGame: g.conferenceGame,
+      });
+    }
+
+    return {
+      inserted,
+      updated: updateGames.length,
+      insertedIds: comparison.wouldInsertIds,
+      updatedIds: comparison.wouldUpdateIds,
+      dbOnlyIds: comparison.dbOnlyIds,
+    };
+  });
+}
+
+export function verifyPostWriteSchedule(options: {
+  season: number;
+  week: number;
+  normalized: NormalizedScheduleGame[];
+  writeResult: ScheduleWriteResult;
+  actualRows: DbGameRow[];
+  preWriteComparison: DbComparison;
+}): PostWriteVerification {
+  const issues: BatchValidationIssue[] = [];
+  const expectedIds = new Set(options.normalized.map((g) => g.id));
+  const actualIds = options.actualRows.map((r) => r.id);
+  const actualSet = new Set(actualIds);
+
+  const missingExpectedIds = [...expectedIds].filter((id) => !actualSet.has(id));
+  const unexpectedDbOnlyIds = actualIds.filter((id) => !expectedIds.has(id));
+  // DB-only rows that were present pre-write are intentionally retained
+  const retainedAllowed = new Set(options.writeResult.dbOnlyIds);
+  const unexpectedStructural = unexpectedDbOnlyIds.filter(
+    (id) => !retainedAllowed.has(id)
+  );
+
+  if (missingExpectedIds.length) {
+    issues.push({
+      code: 'missing_expected_id',
+      message: `Missing expected IDs: ${missingExpectedIds.join(', ')}`,
+    });
+  }
+  if (unexpectedStructural.length) {
+    issues.push({
+      code: 'unexpected_db_row',
+      message: `Unexpected DB-only IDs after write: ${unexpectedStructural.join(', ')}`,
+    });
+  }
+
+  const idCounts = new Map<string, number>();
+  for (const id of actualIds) {
+    idCounts.set(id, (idCounts.get(id) ?? 0) + 1);
+  }
+  const duplicates = [...idCounts.entries()]
+    .filter(([, n]) => n > 1)
+    .map(([id]) => id);
+  if (duplicates.length) {
+    issues.push({
+      code: 'duplicate_id',
+      message: `Duplicate IDs in DB: ${duplicates.join(', ')}`,
+    });
+  }
+
+  for (const row of options.actualRows) {
+    if (row.season !== options.season) {
+      issues.push({
+        code: 'wrong_season',
+        message: `Row ${row.id} has season ${row.season}`,
+      });
+    }
+    if (row.week !== options.week) {
+      issues.push({
+        code: 'wrong_week',
+        message: `Row ${row.id} has week ${row.week}`,
+      });
+    }
+    if (!row.homeTeamId || !row.awayTeamId) {
+      issues.push({
+        code: 'missing_team',
+        message: `Row ${row.id} missing team FK`,
+      });
+    }
+    if (!row.date || Number.isNaN(row.date.getTime())) {
+      issues.push({
+        code: 'invalid_kickoff',
+        message: `Row ${row.id} missing/invalid kickoff`,
+      });
+    }
+  }
+
+  const expectedFinalCount =
+    options.normalized.length + options.writeResult.dbOnlyIds.length;
+  if (options.actualRows.length !== expectedFinalCount) {
+    issues.push({
+      code: 'count_mismatch',
+      message: `Actual DB count ${options.actualRows.length} != expected ${expectedFinalCount} (normalized ${options.normalized.length} + retained DB-only ${options.writeResult.dbOnlyIds.length})`,
+    });
+  }
+
+  if (
+    options.writeResult.inserted !==
+    options.preWriteComparison.wouldInsertIds.length
+  ) {
+    issues.push({
+      code: 'insert_count_conflict',
+      message: `Inserted ${options.writeResult.inserted} != pre-write wouldInsert ${options.preWriteComparison.wouldInsertIds.length}`,
+    });
+  }
+  if (
+    options.writeResult.updated !==
+    options.preWriteComparison.wouldUpdateIds.length
+  ) {
+    issues.push({
+      code: 'update_count_conflict',
+      message: `Updated ${options.writeResult.updated} != pre-write wouldUpdate ${options.preWriteComparison.wouldUpdateIds.length}`,
+    });
+  }
+
+  return {
+    ok: issues.length === 0,
+    issues,
+    expectedNormalizedCount: options.normalized.length,
+    actualDbCount: options.actualRows.length,
+    insertedCount: options.writeResult.inserted,
+    updatedCount: options.writeResult.updated,
+    missingExpectedIds,
+    unexpectedDbOnlyIds,
+    retainedDbOnlyIds: options.writeResult.dbOnlyIds,
+  };
 }
 
 /** Slugify a CFBD team name the same way production CFBDAdapter does. */
@@ -740,51 +1142,6 @@ export function toScheduleInsertRow(game: NormalizedScheduleGame) {
     homeScore: null,
     awayScore: null,
   };
-}
-
-/**
- * FUTURE Phase 2C-1B helper — not reachable from preview CLI/scripts/workflows.
- * Requires deps.transaction; throws before any write if unavailable.
- * Caller must pass expected season/week; full batch is validated before the transaction.
- */
-export async function writeValidatedScheduleBatch(
-  games: NormalizedScheduleGame[],
-  deps: ScheduleWriteDeps,
-  expected: { season: number; week: number }
-): Promise<{ inserted: number; updated: number }> {
-  if (typeof deps.transaction !== 'function') {
-    throw new Error(
-      'writeValidatedScheduleBatch requires deps.transaction — nontransactional writes are not allowed'
-    );
-  }
-
-  const precheck = validateNormalizedBatch(games, expected.season, expected.week, {
-    allowEmpty: false,
-    source: 'cfbd',
-  });
-  if (!precheck.ok) {
-    throw new Error(
-      `writeValidatedScheduleBatch refused: ${precheck.issues.map((i) => i.code).join(', ')}`
-    );
-  }
-
-  return deps.transaction(async () => {
-    const rows = games.map(toScheduleInsertRow);
-    await deps.createMany(rows);
-
-    let updated = 0;
-    for (const g of games) {
-      await deps.updateScheduleFields(g.id, {
-        date: g.date,
-        venue: g.venue || 'TBD',
-        city: g.city || 'TBD',
-        neutralSite: g.neutralSite,
-        conferenceGame: g.conferenceGame,
-      });
-      updated += 1;
-    }
-    return { inserted: rows.length, updated };
-  });
 }
 
 export function buildCfbdWeekGamesUrl(
