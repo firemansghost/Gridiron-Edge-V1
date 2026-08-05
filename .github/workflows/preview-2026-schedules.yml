@@ -1,0 +1,96 @@
+# Read-only preview of 2026 CFBD schedules for a single week.
+# workflow_dispatch ONLY — no schedule, push, or pull_request.
+# Incapable of writing: always runs preview mode. No confirm_write input.
+# Does not invoke monolithic CFBD ingest, ratings, odds, mock, bets, scores, or grading.
+
+name: Preview 2026 CFBD Schedules (Manual, Read Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (must be 2026 for this workflow)'
+        required: true
+        type: string
+        default: '2026'
+      week:
+        description: 'Exactly one integer week (0 allowed for Week Zero probe). No comma lists or ranges.'
+        required: true
+        type: string
+        default: '0'
+
+concurrency:
+  group: preview-2026-schedules-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+      DATABASE_URL: ${{ secrets.DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight (names/presence only)
+        run: |
+          set -euo pipefail
+          SEASON="${{ inputs.season }}"
+          WEEK="${{ inputs.week }}"
+          echo "season_input=${SEASON}"
+          echo "week_input=${WEEK}"
+          if [ "$SEASON" != "2026" ]; then
+            echo "::error::season must equal 2026 (got ${SEASON})"
+            exit 1
+          fi
+          if ! [[ "$WEEK" =~ ^[0-9]+$ ]]; then
+            echo "::error::week must be a single non-negative integer (got ${WEEK})"
+            exit 1
+          fi
+          if [ -z "${CFBD_API_KEY:-}" ]; then
+            echo "::error::CFBD_API_KEY secret is missing or empty"
+            exit 1
+          fi
+          if [ -z "${DIRECT_URL:-}" ] && [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::DIRECT_URL / DATABASE_URL secret is missing (required for read-only Prisma queries)"
+            exit 1
+          fi
+          echo "CFBD_API_KEY: present"
+          echo "DIRECT_URL: present (value not printed)"
+          echo "ODDS_API_KEY: not provided"
+          echo "write mode: disabled (application-level read-only; DIRECT_URL is not a DB read-only role)"
+          echo "read-only boundary: preview-only CLI + ReadOnlyScheduleStore + runtime mutation tests"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: Preview CFBD schedules (read-only)
+        run: |
+          npx tsx scripts/preview-cfbd-schedules.ts --season "${{ inputs.season }}" --week "${{ inputs.week }}" --preview
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "============================================"
+          echo "PREVIEW 2026 CFBD SCHEDULES (READ ONLY)"
+          echo "============================================"
+          echo "season: ${{ inputs.season }}"
+          echo "week: ${{ inputs.week }}"
+          echo "status: ${{ job.status }}"
+          echo "mode: preview only — no schedule writes"
+          echo "secrets used (names only): CFBD_API_KEY, DIRECT_URL"
+          echo "prohibited: ratings, odds, bets, scores, mock, monolithic CFBD ingest CLI"
+          echo "============================================"
