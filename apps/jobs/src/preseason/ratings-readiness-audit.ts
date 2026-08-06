@@ -219,6 +219,8 @@ export interface RatingsReadinessAuditResult {
   structuralIssues: AuditFinding[];
   operatorReviewRequired: boolean;
   ratingsWriteAuthorized: false;
+  teamSeasonRatingCollisionRisk: boolean;
+  weeklyPowerRatingCollisionRisk: boolean;
   writeCollisionRisk: boolean;
   asOfIso: string;
   season: number;
@@ -236,6 +238,7 @@ export interface RatingsReadinessAuditResult {
     fbsMembershipCount: number;
     distinctFbsTeamIds: number;
     duplicateMembershipKeys: string[];
+    fbsMembershipMissingFromTeam: string[];
     scheduleTeamCount: number;
     scheduleTeamsMissingFromTeam: string[];
     scheduleTeamsMissingFromFbs: string[];
@@ -344,46 +347,64 @@ export function parseRatingsReadinessArgs(
 /** Static findings from repository inspection (Phase 2C-2A). Not mutated. */
 export const DEFAULT_WORKFLOW_RISK_FINDINGS: AuditFinding[] = [
   {
-    code: 'ratings_v1_default_2025',
+    code: 'ratings_v1_yml',
     severity: 'review',
     message:
-      'ratings-v1.yml defaults season to 2025; accepts arbitrary season string; writes via compute_ratings_v1 upsert',
+      'ratings-v1.yml: workflow_dispatch only (no schedule in YAML); season default 2025; accepts arbitrary season; checkout@v4 + setup-node@v4 + Node 18; calls compute_ratings_v1 (DB upserts); count-based >=98% verify; NOT safe for direct 2026 execution',
   },
   {
-    code: 'ratings_v2_default_2025',
+    code: 'ratings_v2_yml',
     severity: 'review',
     message:
-      'ratings-v2.yml defaults season to 2025; accepts arbitrary season; writes via compute_ratings_v2 upsert',
-  },
-  {
-    code: 'ratings_workflows_outdated_runtime',
-    severity: 'review',
-    message:
-      'ratings-v1.yml and ratings-v2.yml use actions/checkout@v4, setup-node@v4, and Node 18 (preseason audits use @v6 / Node 20)',
-  },
-  {
-    code: 'ratings_verify_count_only',
-    severity: 'review',
-    message:
-      'Ratings workflows verify primarily by FBS membership vs rating row count (>=98%); weak base-feature / talent-only quality is not blocked',
+      'ratings-v2.yml: workflow_dispatch only (no schedule in YAML); season default 2025; accepts arbitrary season; checkout@v4 + setup-node@v4 + Node 18; calls compute_ratings_v2 (DB upserts); count-based >=98% verify; NOT safe for direct 2026 execution',
   },
   {
     code: 'ratings_talent_only_fallback',
     severity: 'review',
     message:
-      'compute_ratings_v1.ts early-season path can produce talent-only ratings when base features are missing',
+      'compute_ratings_v1.ts early-season path can produce talent-only / low-confidence ratings when base features are missing',
   },
   {
-    code: 'talent_stats_workflows_default_2025',
+    code: 'talent_cfbd_yml',
     severity: 'review',
     message:
-      'talent-cfbd.yml and stats-cfbd.yml default season to 2025; use checkout@v4 / Node 18; call CFBD providers and write tables',
+      'talent-cfbd.yml: yearly schedule present in YAML; season default 2025; arbitrary season input; checkout@v4 + setup-node@v4 + Node 18; calls CFBD and writes talent tables; NOT safe for direct 2026 execution. GitHub UI enable/disable cannot be proven from source alone',
   },
   {
-    code: 'ratings_workflows_unsafe_for_direct_2026',
+    code: 'talent_roster_sync_yml',
     severity: 'review',
     message:
-      'Existing ratings/talent/stats workflows are NOT safe for direct 2026 execution without separate approval — they upsert, call providers, and lack this audit gate',
+      'talent-roster-sync.yml: yearly schedule present in YAML; season default 2025; arbitrary season input; checkout@v4 + setup-node@v4 + Node 20; calls CFBD and writes; NOT safe for direct 2026 execution. UI enable/disable not proven from source',
+  },
+  {
+    code: 'talent_commits_sync_yml',
+    severity: 'review',
+    message:
+      'talent-commits-sync.yml: yearly schedule present in YAML; season default 2025; arbitrary season input; checkout@v4 + setup-node@v4 + Node 20; calls CFBD and writes; NOT safe for direct 2026 execution. UI enable/disable not proven from source',
+  },
+  {
+    code: 'stats_cfbd_yml',
+    severity: 'review',
+    message:
+      'stats-cfbd.yml: schedule trigger commented out (dispatch-only in YAML); season default 2025; arbitrary season; checkout@v4 + setup-node@v4 + Node 18; calls CFBD and writes TeamGameStat; NOT safe for direct 2026 execution',
+  },
+  {
+    code: 'stats_season_cfbd_yml',
+    severity: 'review',
+    message:
+      'stats-season-cfbd.yml: active nightly schedule remains in YAML; season default 2025; arbitrary season; checkout@v4 + setup-node@v4 + Node 18; calls CFBD and writes TeamSeasonStat; NOT safe for direct 2026 execution. UI enable/disable not proven from source',
+  },
+  {
+    code: 'stats_advanced_cfbd_yml',
+    severity: 'review',
+    message:
+      'stats-advanced-cfbd.yml: active nightly schedule remains in YAML; season default 2025; arbitrary season; checkout@v4 + setup-node@v4 + Node 18; calls CFBD and writes advanced/season stats; NOT safe for direct 2026 execution. UI enable/disable not proven from source',
+  },
+  {
+    code: 'nightly_ingest_yml',
+    severity: 'review',
+    message:
+      'nightly-ingest.yml: schedule present in YAML; remains unapproved for 2026; checkout@v4 + setup-node@v4 + Node 20; multi-step provider ingest + writes; must NOT be invoked in Phase 2C-2A. UI enable/disable not proven from source',
   },
   {
     code: 'no_provider_in_this_audit',
@@ -744,6 +765,23 @@ export function auditRatingsReadiness(
     });
   }
 
+  const fbsMembershipMissingFromTeam = fbsIds.filter((id) => !teamIdSet.has(id));
+  if (fbsMembershipMissingFromTeam.length > 0) {
+    structuralIssues.push({
+      code: 'fbs_membership_missing_from_team',
+      severity: 'structural',
+      message: `${season} FBS membership team IDs absent from Team: ${fbsMembershipMissingFromTeam.slice(0, SAMPLE_MISSING_CAP).join(', ')}`,
+    });
+  }
+
+  if (games.length === 0) {
+    structuralIssues.push({
+      code: 'no_schedule_games',
+      severity: 'structural',
+      message: `No ${season} Game rows loaded — cannot validate schedule-team alignment`,
+    });
+  }
+
   const scheduleTeamIds = new Set<string>();
   for (const g of games) {
     scheduleTeamIds.add(g.homeTeamId);
@@ -812,6 +850,13 @@ export function auditRatingsReadiness(
     if (g.homeScore != null || g.awayScore != null) scoredRowCount += 1;
   }
   const distinctWeeks = [...weeks].sort((a, b) => a - b);
+  if (games.length > 0 && earliestKickoff == null) {
+    structuralIssues.push({
+      code: 'no_valid_kickoff',
+      severity: 'structural',
+      message: `All ${season} game dates are invalid — earliest kickoff cannot be determined`,
+    });
+  }
   const preseason =
     earliestKickoff != null ? asOf.getTime() < earliestKickoff.getTime() : true;
 
@@ -869,11 +914,27 @@ export function auditRatingsReadiness(
   const targetSeasonStats = seasonStatsBySeason.find((s) => s.season === season);
   const targetGameStats = gameStatsBySeason.find((s) => s.season === season);
   if (preseason) {
-    dataCoverageFindings.push({
-      code: 'preseason_empty_stats_expected',
-      severity: 'info',
-      message: `preseason=true; empty ${season} season/game stats are allowed (seasonStatRows=${targetSeasonStats?.totalRows ?? 0}, gameStatRows=${targetGameStats?.totalRows ?? 0})`,
-    });
+    if ((targetSeasonStats?.totalRows ?? 0) === 0 && (targetGameStats?.totalRows ?? 0) === 0) {
+      dataCoverageFindings.push({
+        code: 'preseason_empty_stats_expected',
+        severity: 'info',
+        message: `preseason=true; empty ${season} season/game stats are allowed`,
+      });
+    }
+    if ((targetSeasonStats?.totalRows ?? 0) > 0) {
+      dataCoverageFindings.push({
+        code: 'preseason_season_stats_present',
+        severity: 'review',
+        message: `preseason=true but ${season} TeamSeasonStat rows=${targetSeasonStats?.totalRows} distinctTeams=${targetSeasonStats?.distinctTeamIds} — operator review required (do not auto-delete)`,
+      });
+    }
+    if ((targetGameStats?.totalRows ?? 0) > 0) {
+      dataCoverageFindings.push({
+        code: 'preseason_game_stats_present',
+        severity: 'review',
+        message: `preseason=true but ${season} TeamGameStat rows=${targetGameStats?.totalRows} distinctTeams=${targetGameStats?.distinctTeamIds} — operator review required (do not auto-delete)`,
+      });
+    }
   } else {
     if ((targetSeasonStats?.totalRows ?? 0) === 0) {
       dataCoverageFindings.push({
@@ -908,12 +969,17 @@ export function auditRatingsReadiness(
     ),
   };
 
-  const writeCollisionRisk = targetRatings.length > 0;
-  if (writeCollisionRisk) {
+  const teamSeasonRatingCollisionRisk = targetRatings.length > 0;
+  const weeklyPowerRatingCollisionRisk = powerRatings.length > 0;
+  // Note: powerRatings loop below; collision OR computed after both known.
+  // Placeholder — recomputed after power inventory.
+  let writeCollisionRisk = teamSeasonRatingCollisionRisk;
+
+  if (teamSeasonRatingCollisionRisk) {
     existingOutputFindings.push({
-      code: 'write_collision_risk',
+      code: 'team_season_rating_collision',
       severity: 'review',
-      message: `${targetRatings.length} existing ${season} TeamSeasonRating row(s) — writeCollisionRisk=true; do not overwrite without operator review`,
+      message: `${targetRatings.length} existing ${season} TeamSeasonRating row(s) — teamSeasonRatingCollisionRisk=true; do not overwrite without operator review`,
     });
   } else {
     existingOutputFindings.push({
@@ -985,13 +1051,41 @@ export function auditRatingsReadiness(
       message: `Duplicate PowerRating logical keys: ${duplicateLogicalKeys.slice(0, 10).join(', ')}`,
     });
   }
-  if (powerRatings.length > 0) {
+
+  writeCollisionRisk =
+    teamSeasonRatingCollisionRisk || weeklyPowerRatingCollisionRisk;
+
+  if (weeklyPowerRatingCollisionRisk) {
     existingOutputFindings.push({
-      code: 'existing_power_ratings',
+      code: 'weekly_power_rating_collision',
       severity: 'review',
-      message: `${powerRatings.length} ${season} PowerRating row(s) present — inventory only; no mutation`,
+      message: `${powerRatings.length} existing ${season} PowerRating row(s) — weeklyPowerRatingCollisionRisk=true; do not overwrite without operator review`,
+    });
+  } else {
+    existingOutputFindings.push({
+      code: 'no_existing_power_ratings',
+      severity: 'info',
+      message: `No ${season} PowerRating rows present`,
     });
   }
+
+  const weeksNotInSchedule = [...weeksNotInScheduleSet].sort((a, b) => a - b);
+  if (weeksNotInSchedule.length > 0) {
+    existingOutputFindings.push({
+      code: 'power_rating_weeks_not_in_schedule',
+      severity: 'review',
+      message: `PowerRating weeks not present in verified schedule: [${weeksNotInSchedule.join(', ')}] — inventory only; no mutation`,
+    });
+  }
+
+  if (writeCollisionRisk) {
+    existingOutputFindings.push({
+      code: 'write_collision_risk',
+      severity: 'review',
+      message: `writeCollisionRisk=true (teamSeasonRatingCollisionRisk=${teamSeasonRatingCollisionRisk}, weeklyPowerRatingCollisionRisk=${weeklyPowerRatingCollisionRisk})`,
+    });
+  }
+
   const powerTs = timestampRange(
     powerRatings.flatMap((p) => [p.createdAt, p.updatedAt])
   );
@@ -1061,6 +1155,8 @@ export function auditRatingsReadiness(
     structuralIssues,
     operatorReviewRequired,
     ratingsWriteAuthorized: false,
+    teamSeasonRatingCollisionRisk,
+    weeklyPowerRatingCollisionRisk,
     writeCollisionRisk,
     asOfIso: asOf.toISOString(),
     season,
@@ -1078,6 +1174,7 @@ export function auditRatingsReadiness(
       fbsMembershipCount: fbsMembership.length,
       distinctFbsTeamIds: fbsIds.length,
       duplicateMembershipKeys,
+      fbsMembershipMissingFromTeam,
       scheduleTeamCount: scheduleTeams.length,
       scheduleTeamsMissingFromTeam,
       scheduleTeamsMissingFromFbs,
@@ -1098,7 +1195,7 @@ export function auditRatingsReadiness(
       distinctTeams: powerTeamIds.size,
       earliestCreatedAt: powerTs.earliest,
       latestUpdatedAt: powerTs.latest,
-      weeksNotInSchedule: [...weeksNotInScheduleSet].sort((a, b) => a - b),
+      weeksNotInSchedule,
       nonFiniteCount,
       duplicateLogicalKeys,
     },
@@ -1112,6 +1209,10 @@ export function formatRatingsReadinessReport(
 ): string {
   const lines: string[] = [];
   const push = (s = '') => lines.push(s);
+  const sample = (ids: string[]) =>
+    ids.length === 0
+      ? ''
+      : `\n    sample=[${ids.slice(0, SAMPLE_MISSING_CAP).join(', ')}]`;
 
   push('============================================');
   push('2026 RATINGS READINESS AUDIT (READ ONLY)');
@@ -1146,13 +1247,19 @@ export function formatRatingsReadinessReport(
   push(`  distinctFbsTeamIds: ${f.distinctFbsTeamIds}`);
   push(`  scheduleTeamCount: ${f.scheduleTeamCount}`);
   push(
-    `  scheduleTeamsMissingFromTeam: ${f.scheduleTeamsMissingFromTeam.length}`
+    `  scheduleTeamsMissingFromTeam: ${f.scheduleTeamsMissingFromTeam.length}${sample(f.scheduleTeamsMissingFromTeam)}`
   );
   push(
-    `  scheduleTeamsMissingFromFbs: ${f.scheduleTeamsMissingFromFbs.length}`
+    `  scheduleTeamsMissingFromFbs: ${f.scheduleTeamsMissingFromFbs.length}${sample(f.scheduleTeamsMissingFromFbs)}`
   );
   push(
-    `  fbsTeamsAbsentFromSchedule: ${f.fbsTeamsAbsentFromSchedule.length}`
+    `  fbsTeamsAbsentFromSchedule: ${f.fbsTeamsAbsentFromSchedule.length}${sample(f.fbsTeamsAbsentFromSchedule)}`
+  );
+  push(
+    `  fbsMembershipMissingFromTeam: ${f.fbsMembershipMissingFromTeam.length}${sample(f.fbsMembershipMissingFromTeam)}`
+  );
+  push(
+    `  duplicateMembershipKeys: ${f.duplicateMembershipKeys.length}${sample(f.duplicateMembershipKeys)}`
   );
   push(`  membershipMissingConference: ${f.membershipMissingConference}`);
   push(`  conferenceBreakdown: ${JSON.stringify(f.conferenceBreakdown)}`);
@@ -1161,66 +1268,137 @@ export function formatRatingsReadinessReport(
   push('4. Talent coverage');
   for (const t of result.talentBySeason) {
     push(
-      `  season=${t.season} rows=${t.totalRows} fbsCovered=${t.fbsCovered} missing=${t.fbsMissing} coveragePct=${t.coveragePct ?? 'n/a'} compositeMin/Avg/Max=${t.talentCompositeMin}/${t.talentCompositeAvg}/${t.talentCompositeMax}`
+      `  season=${t.season} rows=${t.totalRows} distinctTeams=${t.distinctTeamIds} fbsCovered=${t.fbsCovered} fbsMissing=${t.fbsMissing} coveragePct=${t.coveragePct ?? 'n/a'}`
     );
+    push(
+      `    nonNullTalentComposite=${t.nonNullTalentComposite} nonNullBlueChipsPct=${t.nonNullBlueChipsPct} compositeMin/Avg/Max=${t.talentCompositeMin}/${t.talentCompositeAvg}/${t.talentCompositeMax}`
+    );
+    push(
+      `    sourceUpdatedAt earliest=${t.earliestSourceUpdatedAt ?? 'n/a'} latest=${t.latestSourceUpdatedAt ?? 'n/a'}`
+    );
+    if (t.sampleMissingFbsIds.length > 0) {
+      push(`    missingFbsSample=[${t.sampleMissingFbsIds.join(', ')}]`);
+    }
   }
   push('');
 
   push('5. Recruiting-commit coverage');
   for (const c of result.commitsBySeason) {
     push(
-      `  season=${c.season} rows=${c.totalRows} fbsCovered=${c.fbsCovered} missing=${c.fbsMissing} coveragePct=${c.coveragePct ?? 'n/a'} zeroCommits=${c.zeroTotalCommits}`
+      `  season=${c.season} rows=${c.totalRows} distinctTeams=${c.distinctTeamIds} fbsCovered=${c.fbsCovered} fbsMissing=${c.fbsMissing} coveragePct=${c.coveragePct ?? 'n/a'}`
     );
+    push(
+      `    nonNullClassRank=${c.nonNullClassRank} nonNullAvgRating=${c.nonNullAvgRating} zeroTotalCommits=${c.zeroTotalCommits}`
+    );
+    push(
+      `    sourceUpdatedAt earliest=${c.earliestSourceUpdatedAt ?? 'n/a'} latest=${c.latestSourceUpdatedAt ?? 'n/a'}`
+    );
+    if (c.sampleMissingFbsIds.length > 0) {
+      push(`    missingFbsSample=[${c.sampleMissingFbsIds.join(', ')}]`);
+    }
   }
   push('');
 
   push('6. Season-stat coverage');
   for (const s of result.seasonStatsBySeason) {
     push(
-      `  season=${s.season} rows=${s.totalRows} fbsCovered=${s.fbsCovered} missing=${s.fbsMissing} offense=${s.meaningfulOffense} defense=${s.meaningfulDefense} epa=${s.withEpa}`
+      `  season=${s.season} rows=${s.totalRows} distinctTeams=${s.distinctTeamIds} fbsCovered=${s.fbsCovered} fbsMissing=${s.fbsMissing} coveragePct=${s.coveragePct ?? 'n/a'}`
     );
+    push(
+      `    meaningfulOffense=${s.meaningfulOffense} meaningfulDefense=${s.meaningfulDefense} epa=${s.withEpa} successRate=${s.withSuccessRate} ypp=${s.withYpp}`
+    );
+    push(
+      `    timestamps earliest=${s.earliestTimestamp ?? 'n/a'} latest=${s.latestTimestamp ?? 'n/a'}`
+    );
+    if (s.sampleMissingFbsIds.length > 0) {
+      push(`    missingFbsSample=[${s.sampleMissingFbsIds.join(', ')}]`);
+    }
   }
   push('');
 
   push('7. Game-stat coverage');
   for (const s of result.gameStatsBySeason) {
     push(
-      `  season=${s.season} rows=${s.totalRows} distinctTeams=${s.distinctTeamIds} fbsCovered=${s.fbsCovered} missing=${s.fbsMissing}`
+      `  season=${s.season} rows=${s.totalRows} distinctTeams=${s.distinctTeamIds} fbsCovered=${s.fbsCovered} fbsMissing=${s.fbsMissing} coveragePct=${s.coveragePct ?? 'n/a'}`
     );
+    push(
+      `    meaningfulOffense=${s.meaningfulOffense} meaningfulDefense=${s.meaningfulDefense} epa=${s.withEpa} successRate=${s.withSuccessRate} ypp=${s.withYpp}`
+    );
+    push(
+      `    timestamps earliest=${s.earliestTimestamp ?? 'n/a'} latest=${s.latestTimestamp ?? 'n/a'}`
+    );
+    if (s.sampleMissingFbsIds.length > 0) {
+      push(`    missingFbsSample=[${s.sampleMissingFbsIds.join(', ')}]`);
+    }
   }
   push('');
 
+  const printRatingModels = (
+    label: string,
+    totalRows: number,
+    models: ModelVersionRatingSummary[]
+  ) => {
+    push(`  ${label} totalRows=${totalRows}`);
+    for (const m of models) {
+      push(
+        `    model=${m.modelVersion} rows=${m.rowCount} distinctTeams=${m.distinctTeams} nonNullRating=${m.nonNullRating} nonNullPowerRating=${m.nonNullPowerRating} nonNullConfidence=${m.nonNullConfidence}`
+      );
+      push(
+        `      confidenceMin/Avg/Max=${m.confidenceMin}/${m.confidenceAvg}/${m.confidenceMax} powerMin/Avg/Max=${m.powerRatingMin}/${m.powerRatingAvg}/${m.powerRatingMax}`
+      );
+      push(`      dataSources=${JSON.stringify(m.dataSourceBreakdown)}`);
+      push(
+        `      gamesMin/Avg/Max=${m.gamesCountSummary ? `${m.gamesCountSummary.min}/${m.gamesCountSummary.avg}/${m.gamesCountSummary.max}` : 'n/a'} fbsMissing=${m.fbsMissingCount} nonFbsRows=${m.nonFbsRowCount}`
+      );
+      push(`      sampleTeamIds=[${m.sampleTeamIds.join(', ')}]`);
+      if (m.sampleMissingFbsIds.length > 0) {
+        push(`      missingFbsSample=[${m.sampleMissingFbsIds.join(', ')}]`);
+      }
+    }
+  };
+
   push('8. Existing team-season ratings');
   push(
-    `  ${result.season} totalRows=${result.seasonRatingsTarget.totalRows} writeCollisionRisk=${result.writeCollisionRisk}`
+    `  teamSeasonRatingCollisionRisk=${result.teamSeasonRatingCollisionRisk} writeCollisionRisk=${result.writeCollisionRisk}`
   );
-  for (const m of result.seasonRatingsTarget.byModelVersion) {
-    push(
-      `    model=${m.modelVersion} rows=${m.rowCount} teams=${m.distinctTeams} power=${m.nonNullPowerRating} conf=${m.nonNullConfidence} fbsMissing=${m.fbsMissingCount} sources=${JSON.stringify(m.dataSourceBreakdown)}`
-    );
-  }
-  push(
-    `  ${result.comparisonSeason} totalRows=${result.seasonRatingsComparison.totalRows}`
+  printRatingModels(
+    String(result.season),
+    result.seasonRatingsTarget.totalRows,
+    result.seasonRatingsTarget.byModelVersion
   );
-  for (const m of result.seasonRatingsComparison.byModelVersion) {
-    push(
-      `    model=${m.modelVersion} rows=${m.rowCount} teams=${m.distinctTeams}`
-    );
-  }
+  printRatingModels(
+    String(result.comparisonSeason),
+    result.seasonRatingsComparison.totalRows,
+    result.seasonRatingsComparison.byModelVersion
+  );
   push('');
 
   push('9. Existing weekly power ratings');
   const p = result.powerRatings;
   push(
-    `  totalRows=${p.totalRows} distinctTeams=${p.distinctTeams} byModel=${JSON.stringify(p.byModelVersion)} byWeek=${JSON.stringify(p.byWeek)} weeksNotInSchedule=[${p.weeksNotInSchedule.join(', ')}] nonFinite=${p.nonFiniteCount}`
+    `  totalRows=${p.totalRows} distinctTeams=${p.distinctTeams} weeklyPowerRatingCollisionRisk=${result.weeklyPowerRatingCollisionRisk}`
+  );
+  push(`  byModelVersion=${JSON.stringify(p.byModelVersion)}`);
+  push(`  byWeek=${JSON.stringify(p.byWeek)}`);
+  push(
+    `  earliestCreatedAt=${p.earliestCreatedAt ?? 'n/a'} latestUpdatedAt=${p.latestUpdatedAt ?? 'n/a'}`
+  );
+  push(
+    `  weeksNotInSchedule=[${p.weeksNotInSchedule.join(', ')}] nonFinite=${p.nonFiniteCount}`
+  );
+  push(
+    `  duplicateLogicalKeys=${p.duplicateLogicalKeys.length}${sample(p.duplicateLogicalKeys)}`
   );
   push('');
 
   push('10. Unit-grade coverage');
   for (const u of result.unitGradesBySeason) {
     push(
-      `  season=${u.season} rows=${u.totalRows} fbsCovered=${u.fbsCovered} missing=${u.fbsMissing} coveragePct=${u.coveragePct ?? 'n/a'}`
+      `  season=${u.season} rows=${u.totalRows} distinctTeams=${u.distinctTeamIds} fbsCovered=${u.fbsCovered} fbsMissing=${u.fbsMissing} coveragePct=${u.coveragePct ?? 'n/a'}`
     );
+    if (u.sampleMissingFbsIds.length > 0) {
+      push(`    missingFbsSample=[${u.sampleMissingFbsIds.join(', ')}]`);
+    }
   }
   push(`  unitGradeInvalidCount: ${result.unitGradeInvalidCount}`);
   push('');
@@ -1253,6 +1431,12 @@ export function formatRatingsReadinessReport(
   push('15. Final classifications');
   push(`  structuralOk: ${result.structuralOk}`);
   push(`  preseason: ${result.preseason}`);
+  push(
+    `  teamSeasonRatingCollisionRisk: ${result.teamSeasonRatingCollisionRisk}`
+  );
+  push(
+    `  weeklyPowerRatingCollisionRisk: ${result.weeklyPowerRatingCollisionRisk}`
+  );
   push(`  writeCollisionRisk: ${result.writeCollisionRisk}`);
   push(`  operatorReviewRequired: ${result.operatorReviewRequired}`);
   push(`  ratingsWriteAuthorized: ${result.ratingsWriteAuthorized}`);

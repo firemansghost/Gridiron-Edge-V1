@@ -6,6 +6,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+  decimalToAuditNumber,
   runRatingsReadinessAudit,
   sanitizeRatingsReadinessRuntimeError,
 } from '../audit-ratings-readiness';
@@ -17,6 +18,7 @@ import {
   buildFixtureGame,
   buildFixtureMembership,
   buildFixtureTeam,
+  formatRatingsReadinessReport,
   parseRatingsReadinessArgs,
   type CommitsRow,
   type GameStatRow,
@@ -27,6 +29,7 @@ import {
   type TalentRow,
   type UnitGradeRow,
 } from '../src/preseason/ratings-readiness-audit';
+import { Prisma } from '@prisma/client';
 
 const AS_OF_PRESEASON = new Date('2026-08-06T12:00:00.000Z');
 const EARLIEST_KICKOFF = new Date('2026-08-29T16:00:00.000Z');
@@ -382,8 +385,178 @@ describe('auditRatingsReadiness', () => {
       ],
     });
     const result = auditRatingsReadiness(input);
+    expect(result.teamSeasonRatingCollisionRisk).toBe(true);
+    expect(result.weeklyPowerRatingCollisionRisk).toBe(false);
     expect(result.writeCollisionRisk).toBe(true);
     expect(result.ratingsWriteAuthorized).toBe(false);
+  });
+
+  it('PowerRating-only output sets writeCollisionRisk=true', () => {
+    const input = healthyInput({
+      powerRatings: [
+        {
+          id: 'p1',
+          teamId: 'alabama',
+          season: 2026,
+          week: 1,
+          rating: 10,
+          modelVersion: 'v2',
+          confidence: 0.5,
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ],
+    });
+    const result = auditRatingsReadiness(input);
+    expect(result.teamSeasonRatingCollisionRisk).toBe(false);
+    expect(result.weeklyPowerRatingCollisionRisk).toBe(true);
+    expect(result.writeCollisionRisk).toBe(true);
+    expect(result.ratingsWriteAuthorized).toBe(false);
+  });
+
+  it('both ratings tables empty sets collision risk false', () => {
+    const result = auditRatingsReadiness(
+      healthyInput({ seasonRatings: [], powerRatings: [] })
+    );
+    expect(result.teamSeasonRatingCollisionRisk).toBe(false);
+    expect(result.weeklyPowerRatingCollisionRisk).toBe(false);
+    expect(result.writeCollisionRisk).toBe(false);
+  });
+
+  it('empty target-season schedule fails structurally', () => {
+    const result = auditRatingsReadiness(healthyInput({ games: [] }));
+    expect(result.structuralOk).toBe(false);
+    expect(
+      result.structuralIssues.some((i) => i.code === 'no_schedule_games')
+    ).toBe(true);
+  });
+
+  it('all-invalid schedule dates fail structurally', () => {
+    const input = healthyInput();
+    input.games = input.games.map((g) => ({ ...g, date: 'not-a-date' }));
+    const result = auditRatingsReadiness(input);
+    expect(result.structuralOk).toBe(false);
+    expect(
+      result.structuralIssues.some((i) => i.code === 'no_valid_kickoff')
+    ).toBe(true);
+  });
+
+  it('preseason TeamSeasonStat rows produce a review finding', () => {
+    const input = healthyInput({
+      seasonStats: [
+        ...healthyInput().seasonStats,
+        {
+          season: 2026,
+          teamId: 'alabama',
+          yppOff: 6,
+          successOff: 0.5,
+          epaOff: 0.1,
+          yppDef: 5,
+          successDef: 0.4,
+          epaDef: -0.05,
+          createdAt: new Date('2026-07-01T00:00:00.000Z'),
+        },
+      ],
+    });
+    const result = auditRatingsReadiness(input);
+    expect(result.preseason).toBe(true);
+    expect(result.structuralOk).toBe(true);
+    expect(
+      result.dataCoverageFindings.some(
+        (f) => f.code === 'preseason_season_stats_present'
+      )
+    ).toBe(true);
+  });
+
+  it('preseason TeamGameStat rows produce a review finding', () => {
+    const input = healthyInput({
+      gameStats: [
+        {
+          season: 2026,
+          teamId: 'alabama',
+          week: 0,
+          yppOff: 6,
+          successOff: 0.5,
+          epaOff: 0.1,
+          yppDef: 5,
+          successDef: 0.4,
+          epaDef: -0.1,
+          createdAt: new Date('2026-07-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-07-01T00:00:00.000Z'),
+        },
+      ],
+    });
+    const result = auditRatingsReadiness(input);
+    expect(result.preseason).toBe(true);
+    expect(
+      result.dataCoverageFindings.some(
+        (f) => f.code === 'preseason_game_stats_present'
+      )
+    ).toBe(true);
+  });
+
+  it('FBS membership team absent from Team fails structurally', () => {
+    const input = healthyInput();
+    input.memberships.push(buildFixtureMembership(2026, 'orphan-fbs'));
+    const result = auditRatingsReadiness(input);
+    expect(result.structuralOk).toBe(false);
+    expect(
+      result.structuralIssues.some(
+        (i) => i.code === 'fbs_membership_missing_from_team'
+      )
+    ).toBe(true);
+  });
+
+  it('formatted output includes required metrics and capped samples', () => {
+    const input = healthyInput();
+    input.teams.push(buildFixtureTeam('bye-team', 'SEC'));
+    input.memberships.push(buildFixtureMembership(2026, 'bye-team'));
+    input.memberships.push(buildFixtureMembership(2025, 'bye-team'));
+    const result = auditRatingsReadiness(input);
+    const report = formatRatingsReadinessReport(result);
+    expect(report).toContain('nonNullTalentComposite=');
+    expect(report).toContain('nonNullClassRank=');
+    expect(report).toContain('meaningfulOffense=');
+    expect(report).toContain('teamSeasonRatingCollisionRisk=');
+    expect(report).toContain('weeklyPowerRatingCollisionRisk=');
+    expect(report).toContain('confidenceMin/Avg/Max=');
+    expect(report).toContain('fbsTeamsAbsentFromSchedule:');
+    expect(report).toContain('bye-team');
+    expect(report).toContain('talent-roster-sync.yml');
+    expect(report).toContain('Node 20');
+    expect(report).toContain('stats-season-cfbd.yml');
+    expect(report).toContain('active nightly schedule');
+  });
+
+  it('workflow-risk findings identify Node/action/trigger differences', () => {
+    const codes = DEFAULT_WORKFLOW_RISK_FINDINGS.map((f) => f.code);
+    expect(codes).toEqual(
+      expect.arrayContaining([
+        'ratings_v1_yml',
+        'ratings_v2_yml',
+        'talent_cfbd_yml',
+        'talent_roster_sync_yml',
+        'talent_commits_sync_yml',
+        'stats_cfbd_yml',
+        'stats_season_cfbd_yml',
+        'stats_advanced_cfbd_yml',
+        'nightly_ingest_yml',
+      ])
+    );
+    const roster = DEFAULT_WORKFLOW_RISK_FINDINGS.find(
+      (f) => f.code === 'talent_roster_sync_yml'
+    )!;
+    expect(roster.message).toMatch(/Node 20/);
+    expect(roster.message).toMatch(/checkout@v4/);
+    const statsCfbd = DEFAULT_WORKFLOW_RISK_FINDINGS.find(
+      (f) => f.code === 'stats_cfbd_yml'
+    )!;
+    expect(statsCfbd.message).toMatch(/schedule trigger commented out/);
+    expect(statsCfbd.message).toMatch(/Node 18/);
+    const seasonStats = DEFAULT_WORKFLOW_RISK_FINDINGS.find(
+      (f) => f.code === 'stats_season_cfbd_yml'
+    )!;
+    expect(seasonStats.message).toMatch(/active nightly schedule/);
   });
 
   it('existing ratings do not authorize a write', () => {
@@ -591,6 +764,50 @@ describe('auditRatingsReadiness', () => {
     );
     expect(a.ratingsWriteAuthorized).toBe(false);
     expect(b.ratingsWriteAuthorized).toBe(false);
+  });
+});
+
+describe('decimalToAuditNumber', () => {
+  it('preserves null, finite, NaN, and infinity', () => {
+    expect(decimalToAuditNumber(null)).toBeNull();
+    expect(decimalToAuditNumber(undefined)).toBeNull();
+    expect(decimalToAuditNumber(12.5)).toBe(12.5);
+    expect(Number.isNaN(decimalToAuditNumber(Number.NaN) as number)).toBe(true);
+    expect(decimalToAuditNumber(Number.POSITIVE_INFINITY)).toBe(
+      Number.POSITIVE_INFINITY
+    );
+    expect(decimalToAuditNumber(Number.NEGATIVE_INFINITY)).toBe(
+      Number.NEGATIVE_INFINITY
+    );
+  });
+
+  it('preserves non-finite Prisma Decimal when supported', () => {
+    const nanDec = new Prisma.Decimal(NaN);
+    const converted = decimalToAuditNumber(nanDec);
+    expect(converted == null || Number.isNaN(converted)).toBe(true);
+  });
+
+  it('preserved invalid TeamSeasonRating value causes structural failure', () => {
+    const invalid = decimalToAuditNumber(Number.NaN);
+    const input = healthyInput({
+      seasonRatings: [
+        {
+          season: 2026,
+          teamId: 'alabama',
+          modelVersion: 'v2',
+          games: 0,
+          rating: invalid,
+          powerRating: 1,
+          confidence: 0.1,
+          dataSource: 'baseline',
+        },
+      ],
+    });
+    const result = auditRatingsReadiness(input);
+    expect(result.structuralOk).toBe(false);
+    expect(
+      result.structuralIssues.some((i) => i.code === 'non_finite_season_rating')
+    ).toBe(true);
   });
 });
 

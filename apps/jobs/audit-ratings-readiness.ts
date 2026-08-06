@@ -27,15 +27,15 @@ export function sanitizeRatingsReadinessRuntimeError(_err?: unknown): string {
   return 'Database read failed; connection details suppressed';
 }
 
-function decToNumber(
+/**
+ * Preserve non-finite Decimal/number values for structural detection.
+ * Do not convert NaN/Infinity to null — that would hide invalid stored values.
+ */
+export function decimalToAuditNumber(
   value: Prisma.Decimal | number | null | undefined
 ): number | null {
   if (value == null) return null;
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : null;
-  }
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
+  return typeof value === 'number' ? value : Number(value);
 }
 
 function createPrismaRatingsReadinessStore(
@@ -123,12 +123,12 @@ function createPrismaRatingsReadinessStore(
       return rows.map((r) => ({
         season: r.season,
         teamId: r.teamId,
-        yppOff: decToNumber(r.yppOff),
-        successOff: decToNumber(r.successOff),
-        epaOff: decToNumber(r.epaOff),
-        yppDef: decToNumber(r.yppDef),
-        successDef: decToNumber(r.successDef),
-        epaDef: decToNumber(r.epaDef),
+        yppOff: decimalToAuditNumber(r.yppOff),
+        successOff: decimalToAuditNumber(r.successOff),
+        epaOff: decimalToAuditNumber(r.epaOff),
+        yppDef: decimalToAuditNumber(r.yppDef),
+        successDef: decimalToAuditNumber(r.successDef),
+        epaDef: decimalToAuditNumber(r.epaDef),
         createdAt: r.createdAt,
       }));
     },
@@ -169,9 +169,9 @@ function createPrismaRatingsReadinessStore(
         teamId: r.teamId,
         modelVersion: r.modelVersion,
         games: r.games,
-        rating: decToNumber(r.rating),
-        powerRating: decToNumber(r.powerRating),
-        confidence: decToNumber(r.confidence),
+        rating: decimalToAuditNumber(r.rating),
+        powerRating: decimalToAuditNumber(r.powerRating),
+        confidence: decimalToAuditNumber(r.confidence),
         dataSource: r.dataSource,
       }));
     },
