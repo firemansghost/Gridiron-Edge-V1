@@ -6,6 +6,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+  runScheduleInventoryAudit,
+  sanitizeAuditRuntimeError,
+} from '../audit-schedule-inventory';
+import {
   EXPECTED_2026_TOTAL,
   EXPECTED_2026_WEEKLY_BASELINE,
   EXPECTED_ABSENT_WEEKS_2026,
@@ -71,6 +75,98 @@ describe('parseAuditScheduleArgs', () => {
   it('rejects unexpected positional arguments', () => {
     const r = parseAuditScheduleArgs(['--season', '2026', 'extra']);
     expect(r.ok).toBe(false);
+  });
+
+  it('rejects duplicate identical --season values', () => {
+    const r = parseAuditScheduleArgs([
+      '--season',
+      '2026',
+      '--season',
+      '2026',
+    ]);
+    expect(r.ok).toBe(false);
+    expect(
+      r.ok === false &&
+        r.errors.some((e) => e.includes('--season may be provided exactly once'))
+    ).toBe(true);
+  });
+
+  it('rejects invalid --season followed by valid --season (no rescue)', () => {
+    const r = parseAuditScheduleArgs([
+      '--season',
+      '2025',
+      '--season',
+      '2026',
+    ]);
+    expect(r.ok).toBe(false);
+    expect(
+      r.ok === false &&
+        r.errors.some((e) => e.includes('--season may be provided exactly once'))
+    ).toBe(true);
+    expect(
+      r.ok === false && r.errors.some((e) => e.includes('must be 2026'))
+    ).toBe(true);
+  });
+
+  it('rejects valid --season followed by invalid --season', () => {
+    const r = parseAuditScheduleArgs([
+      '--season',
+      '2026',
+      '--season',
+      '2025',
+    ]);
+    expect(r.ok).toBe(false);
+    expect(
+      r.ok === false &&
+        r.errors.some((e) => e.includes('--season may be provided exactly once'))
+    ).toBe(true);
+  });
+});
+
+describe('sanitizeAuditRuntimeError / runScheduleInventoryAudit catch', () => {
+  it('sanitizes fake postgres URL and password from thrown errors', async () => {
+    const fakeUrl =
+      'postgresql://audit_user:SuperSecretPassw0rd!@db.example.internal:5432/gridiron';
+    const fakePassword = 'SuperSecretPassw0rd!';
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+    try {
+      const { exitCode } = await runScheduleInventoryAudit({
+        season: 2026,
+        store: {
+          async loadGamesForSeason() {
+            throw new Error(
+              `Can't reach database server at ${fakeUrl} password=${fakePassword}`
+            );
+          },
+        },
+      });
+
+      expect(exitCode).toBe(1);
+      const output = [...errorSpy.mock.calls, ...logSpy.mock.calls]
+        .map((c) => c.map(String).join(' '))
+        .join('\n');
+
+      expect(output).not.toContain(fakeUrl);
+      expect(output).not.toContain('postgresql://');
+      expect(output).not.toContain('postgres://');
+      expect(output).not.toContain('audit_user');
+      expect(output).not.toContain(fakePassword);
+      expect(output).not.toContain('SuperSecretPassw0rd');
+      expect(output).toContain(
+        'Database read failed; connection details suppressed'
+      );
+      expect(output).toContain(
+        'FAILED — read-only findings require operator review; no repair attempted'
+      );
+      expect(sanitizeAuditRuntimeError(new Error(fakeUrl))).not.toContain(
+        'postgresql://'
+      );
+    } finally {
+      errorSpy.mockRestore();
+      logSpy.mockRestore();
+    }
   });
 });
 

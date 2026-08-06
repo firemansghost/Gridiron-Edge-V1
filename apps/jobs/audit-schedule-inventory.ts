@@ -22,6 +22,35 @@ import {
   type InventoryGameRow,
 } from './src/preseason/schedule-inventory-audit';
 
+/**
+ * Audit-local error sanitizer. Never prints connection URLs, credentials,
+ * DIRECT_URL, DATABASE_URL, or password/token fields.
+ */
+export function sanitizeAuditRuntimeError(err: unknown): string {
+  const parts: string[] = [
+    'Database read failed; connection details suppressed',
+  ];
+  if (err && typeof err === 'object') {
+    const name =
+      'name' in err && typeof (err as { name?: unknown }).name === 'string'
+        ? (err as { name: string }).name
+        : undefined;
+    const code =
+      'code' in err &&
+      (typeof (err as { code?: unknown }).code === 'string' ||
+        typeof (err as { code?: unknown }).code === 'number')
+        ? String((err as { code: string | number }).code)
+        : undefined;
+    if (name && name !== 'Error') {
+      parts.push(`type=${name}`);
+    }
+    if (code) {
+      parts.push(`code=${code}`);
+    }
+  }
+  return parts.join('; ');
+}
+
 function createPrismaInventoryReadStore(
   prisma: PrismaClient
 ): InventoryAuditReadStore {
@@ -127,8 +156,9 @@ export async function runScheduleInventoryAudit(
     );
     return { exitCode: 1 };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`[schedule-inventory-audit] ${message}`);
+    console.error(
+      `[schedule-inventory-audit] ${sanitizeAuditRuntimeError(err)}`
+    );
     console.error(
       '[schedule-inventory-audit] FAILED — read-only findings require operator review; no repair attempted'
     );
@@ -142,7 +172,7 @@ export async function runScheduleInventoryAudit(
 
 async function main(): Promise<void> {
   const parsed = parseAuditScheduleArgs(process.argv.slice(2));
-  if (!parsed.ok) {
+  if (parsed.ok === false) {
     for (const e of parsed.errors) {
       console.error(`[schedule-inventory-audit] ${e}`);
     }
@@ -160,7 +190,12 @@ async function main(): Promise<void> {
 
 if (require.main === module) {
   main().catch((err) => {
-    console.error(err);
+    console.error(
+      `[schedule-inventory-audit] ${sanitizeAuditRuntimeError(err)}`
+    );
+    console.error(
+      '[schedule-inventory-audit] FAILED — read-only findings require operator review; no repair attempted'
+    );
     process.exit(1);
   });
 }

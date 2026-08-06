@@ -128,6 +128,7 @@ const WRITE_FLAGS = new Set([
 export function parseAuditScheduleArgs(argv: string[]): ParseAuditArgsResult {
   const errors: string[] = [];
   let season: number | undefined;
+  let seasonSeen = false;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -138,6 +139,14 @@ export function parseAuditScheduleArgs(argv: string[]): ParseAuditArgsResult {
       continue;
     }
     if (arg === '--season') {
+      if (seasonSeen) {
+        errors.push('--season may be provided exactly once');
+        // Consume the following token so it is not treated as a positional arg,
+        // but never overwrite the first season value (no rescue by a later flag).
+        i += 1;
+        continue;
+      }
+      seasonSeen = true;
       const raw = argv[++i];
       if (raw === undefined || raw === '') {
         errors.push('--season requires an integer value');
