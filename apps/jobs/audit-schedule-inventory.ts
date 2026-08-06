@@ -24,31 +24,11 @@ import {
 
 /**
  * Audit-local error sanitizer. Never prints connection URLs, credentials,
- * DIRECT_URL, DATABASE_URL, or password/token fields.
+ * DIRECT_URL, DATABASE_URL, password/token fields, or any thrown-error metadata.
+ * The unused parameter is retained so call sites can pass the caught value.
  */
-export function sanitizeAuditRuntimeError(err: unknown): string {
-  const parts: string[] = [
-    'Database read failed; connection details suppressed',
-  ];
-  if (err && typeof err === 'object') {
-    const name =
-      'name' in err && typeof (err as { name?: unknown }).name === 'string'
-        ? (err as { name: string }).name
-        : undefined;
-    const code =
-      'code' in err &&
-      (typeof (err as { code?: unknown }).code === 'string' ||
-        typeof (err as { code?: unknown }).code === 'number')
-        ? String((err as { code: string | number }).code)
-        : undefined;
-    if (name && name !== 'Error') {
-      parts.push(`type=${name}`);
-    }
-    if (code) {
-      parts.push(`code=${code}`);
-    }
-  }
-  return parts.join('; ');
+export function sanitizeAuditRuntimeError(_err?: unknown): string {
+  return 'Database read failed; connection details suppressed';
 }
 
 function createPrismaInventoryReadStore(

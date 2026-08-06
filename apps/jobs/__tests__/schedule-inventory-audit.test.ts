@@ -160,8 +160,57 @@ describe('sanitizeAuditRuntimeError / runScheduleInventoryAudit catch', () => {
       expect(output).toContain(
         'FAILED — read-only findings require operator review; no repair attempted'
       );
+      expect(sanitizeAuditRuntimeError(new Error(fakeUrl))).toBe(
+        'Database read failed; connection details suppressed'
+      );
       expect(sanitizeAuditRuntimeError(new Error(fakeUrl))).not.toContain(
         'postgresql://'
+      );
+    } finally {
+      errorSpy.mockRestore();
+      logSpy.mockRestore();
+    }
+  });
+
+  it('does not emit arbitrary name/code/message from a malicious thrown object', async () => {
+    const malicious = {
+      name: 'postgresql://audit_user:Password@db.example/gridiron',
+      code: 'SuperSecretPassw0rd',
+      message: 'password=SuperSecretPassw0rd',
+    };
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+    try {
+      const { exitCode } = await runScheduleInventoryAudit({
+        season: 2026,
+        store: {
+          async loadGamesForSeason() {
+            throw malicious;
+          },
+        },
+      });
+
+      expect(exitCode).toBe(1);
+      const output = [...errorSpy.mock.calls, ...logSpy.mock.calls]
+        .map((c) => c.map(String).join(' '))
+        .join('\n');
+
+      expect(output).not.toContain('postgresql://');
+      expect(output).not.toContain('audit_user');
+      expect(output).not.toContain('Password');
+      expect(output).not.toContain('SuperSecretPassw0rd');
+      expect(output).not.toContain(malicious.name);
+      expect(output).not.toContain(malicious.code);
+      expect(output).not.toContain(malicious.message);
+      expect(output).toContain(
+        'Database read failed; connection details suppressed'
+      );
+      expect(output).toContain(
+        'FAILED — read-only findings require operator review; no repair attempted'
+      );
+      expect(sanitizeAuditRuntimeError(malicious)).toBe(
+        'Database read failed; connection details suppressed'
       );
     } finally {
       errorSpy.mockRestore();
