@@ -74,15 +74,17 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 
 ---
 
-## D. Schedule ingest — Phase 2C-1A / 2C-1A2 / 2C-1B / 2C-1C
+## D. Schedule ingest — Phase 2C-1A / 2C-1A2 / 2C-1B / 2C-1C / 2C-2A
 
 | Phase | Status |
 |-------|--------|
 | **2C-1A audit** | **Stopped safely** — monolithic `ingest.js cfbd` not approved |
 | **2C-1A2 preview** | **PASSED** (live weeks 0/1/2; PR #37) |
-| **2C-1B write** | **Merged (PR #38)** — operator reports Weeks **1–13** and **15** written |
-| **2C-1C inventory audit** | **In preparation** — manual read-only; **not yet run against production** |
-| **Expected baseline** | **761** games (1–13 + 15); Week **14** absent (zero provider games) |
+| **2C-1B write** | **Merged (PR #38)** — Weeks **1–13** and **15** written |
+| **2C-1C inventory audit** | **PASSED** (PR #39; production SUCCESS) — **761** rows verified |
+| **2C-2A ratings readiness** | **In preparation** — manual read-only; **not yet run against production** |
+| **Expected baseline** | **761** games (1–13 + 15); Week **14** absent — **verified** |
+| **Ratings computation** | **Not yet approved** |
 | **Odds ingestion** | **Not yet approved** |
 | **Nightly reactivation** | **Not yet approved** |
 
@@ -107,22 +109,25 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | `Ingest 2026 CFBD Schedules (Manual, One Week)` | `workflow_dispatch` only; week 0 prohibited |
 | `apps/jobs/audit-schedule-inventory.ts` | Full-season read-only inventory audit |
 | `Audit 2026 Schedule Inventory (Manual, Read Only)` | `workflow_dispatch` only; season `2026`; no CFBD/Odds keys |
+| `apps/jobs/audit-ratings-readiness.ts` | Read-only ratings-input readiness audit |
+| `Audit 2026 Ratings Readiness (Manual, Read Only)` | `workflow_dispatch` only; season `2026`; no CFBD/Odds/ratings compute |
 
-### Production write status (operator-reported)
+### Production schedule status (verified)
 
 * Weeks **1–13** and **15** ingested through guarded one-week writes
 * Week **14** returned zero provider games and was **not** written
-* Expected production total: **761**
-* Ratings, odds, scores, bets, and automation remain disabled / unapproved
-* **Do not claim inventory audit PASSED until the 2C-1C workflow has been run after merge**
+* Production inventory audit **PASSED**: **761** rows; all `scheduled`; zero scores; zero integrity findings
+* Ratings computation/persistence, odds, scores, bets, and automation remain disabled / unapproved
+* **Do not claim ratings readiness PASSED until the 2C-2A workflow has been run after merge**
 
 - [x] Preview week 0 reviewed (safe failure)
 - [x] Preview week 1 reviewed
 - [x] Preview week 2 reviewed
 - [x] Week Zero mapping confirmed → use provider week **1**
-- [x] Week 1–13 + 15 production writes (operator-reported)
-- [ ] 2C-1C inventory audit run and reviewed
-- [ ] Odds / ratings / bets remain **out of scope** until separately approved
+- [x] Week 1–13 + 15 production writes
+- [x] 2C-1C inventory audit PASSED (761)
+- [ ] 2C-2A ratings readiness audit run and reviewed
+- [ ] Odds / ratings compute / bets remain **out of scope** until separately approved
 
 ---
 
