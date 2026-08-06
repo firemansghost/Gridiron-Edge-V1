@@ -1,0 +1,85 @@
+# Manual READ-ONLY audit of the complete 2026 schedule inventory in production Supabase.
+# workflow_dispatch ONLY — no schedule, push, or pull_request.
+# Does not call CFBD or The Odds API. Does not mutate the database (application-level read-only).
+# Does not invoke monolithic ingest, ratings, odds, bets, scores, grading, mock, or migrations.
+
+name: Audit 2026 Schedule Inventory (Manual, Read Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (must be 2026)'
+        required: true
+        type: string
+        default: '2026'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-2026-schedule-inventory-${{ inputs.season }}
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight (names/presence only)
+        run: |
+          set -euo pipefail
+          SEASON="${{ inputs.season }}"
+          echo "season_input=${SEASON}"
+          if [ "$SEASON" != "2026" ]; then
+            echo "::error::season must equal 2026 (got ${SEASON})"
+            exit 1
+          fi
+          if [ -z "${DIRECT_URL:-}" ] && [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::DIRECT_URL / DATABASE_URL secret is missing (required for read-only Prisma queries)"
+            exit 1
+          fi
+          echo "CFBD_API_KEY: not provided"
+          echo "ODDS_API_KEY: not provided"
+          echo "DIRECT_URL: present (value not printed)"
+          echo "database mutations: not invoked"
+          echo "ratings/odds/bets/scores/mock/migrations: not invoked"
+          echo "read-only boundary: audit CLI SELECT-only via InventoryAuditReadStore (DIRECT_URL is not claimed as a DB read-only role)"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: Audit 2026 schedule inventory (read-only)
+        run: |
+          npx tsx apps/jobs/audit-schedule-inventory.ts --season "${{ inputs.season }}"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "============================================"
+          echo "AUDIT 2026 SCHEDULE INVENTORY (READ ONLY)"
+          echo "============================================"
+          echo "season: ${{ inputs.season }}"
+          echo "status: ${{ job.status }}"
+          echo "mode: read-only inventory audit — no schedule writes"
+          echo "secrets used (names only): DIRECT_URL"
+          echo "CFBD_API_KEY: not provided"
+          echo "ODDS_API_KEY: not provided"
+          echo "prohibited: CFBD, Odds API, ratings, odds ingest, bets, scores, mock, monolithic ingest, migrations, mutations"
+          echo "============================================"

@@ -74,13 +74,15 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 
 ---
 
-## D. Schedule ingest — Phase 2C-1A / 2C-1A2 / 2C-1B
+## D. Schedule ingest — Phase 2C-1A / 2C-1A2 / 2C-1B / 2C-1C
 
 | Phase | Status |
 |-------|--------|
 | **2C-1A audit** | **Stopped safely** — monolithic `ingest.js cfbd` not approved |
 | **2C-1A2 preview** | **PASSED** (live weeks 0/1/2; PR #37) |
-| **2C-1B write implementation** | **In preparation** — **no production write yet** |
+| **2C-1B write** | **Merged (PR #38)** — operator reports Weeks **1–13** and **15** written |
+| **2C-1C inventory audit** | **In preparation** — manual read-only; **not yet run against production** |
+| **Expected baseline** | **761** games (1–13 + 15); Week **14** absent (zero provider games) |
 | **Odds ingestion** | **Not yet approved** |
 | **Nightly reactivation** | **Not yet approved** |
 
@@ -103,20 +105,23 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | Preview CLI / workflow | Read-only (`--preview` required) |
 | `apps/jobs/write-schedules.ts` | One-week write — `--confirm-write WRITE_2026_WEEK_<n>` |
 | `Ingest 2026 CFBD Schedules (Manual, One Week)` | `workflow_dispatch` only; week 0 prohibited |
+| `apps/jobs/audit-schedule-inventory.ts` | Full-season read-only inventory audit |
+| `Audit 2026 Schedule Inventory (Manual, Read Only)` | `workflow_dispatch` only; season `2026`; no CFBD/Odds keys |
 
-### First proposed production write (do not run until approved)
+### Production write status (operator-reported)
 
-* season: `2026`
-* week: `1`
-* confirm: `WRITE_2026_WEEK_1`
-* expected inserts: **51**; updates: **0**; final rows: **51**
-* ~2 CFBD calls
+* Weeks **1–13** and **15** ingested through guarded one-week writes
+* Week **14** returned zero provider games and was **not** written
+* Expected production total: **761**
+* Ratings, odds, scores, bets, and automation remain disabled / unapproved
+* **Do not claim inventory audit PASSED until the 2C-1C workflow has been run after merge**
 
 - [x] Preview week 0 reviewed (safe failure)
 - [x] Preview week 1 reviewed
 - [x] Preview week 2 reviewed
 - [x] Week Zero mapping confirmed → use provider week **1**
-- [ ] Week 1 production write approved and executed
+- [x] Week 1–13 + 15 production writes (operator-reported)
+- [ ] 2C-1C inventory audit run and reviewed
 - [ ] Odds / ratings / bets remain **out of scope** until separately approved
 
 ---

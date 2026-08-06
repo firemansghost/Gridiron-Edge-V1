@@ -1,7 +1,7 @@
 # Season Status — Gridiron Edge
 
 **Status:** Offseason / paused for regular-season automation  
-**Updated:** 2026-08-05 (Phase 2C-1B prep — guarded one-week write pathway; no production write yet)
+**Updated:** 2026-08-06 (Phase 2C-1C — read-only 2026 schedule inventory audit; production write claimed complete by operator, audit not yet run)
 
 Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISABLE_REPORT.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -25,7 +25,9 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **Phase 2C-1A audit** | **Stopped safely** — monolithic `ingest.js cfbd` not approved for schedule-only |
 | **Phase 2C-1A2** | **Merged (PR #37)** — preview-only pathway live-validated |
 | **Phase 2C-1A2 preview validation** | **PASSED** (weeks 0/1/2 reviewed) |
-| **Phase 2C-1B production schedule write** | **Implementation in preparation** — **no production write has occurred** |
+| **Phase 2C-1B production schedule write** | **Merged (PR #38)** — operator reports Weeks **1–13** and **15** written via guarded workflow |
+| **Phase 2C-1C inventory audit** | **In preparation** — manual read-only audit; **not yet run against production** |
+| **Expected 2026 schedule baseline** | **761** games (weeks 1–13 + 15; week **14** absent) |
 | **Odds ingestion** | **Not yet approved** |
 | **Nightly workflow reactivation** | **Not yet approved** |
 
@@ -125,24 +127,30 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 | `scripts/preview-cfbd-schedules.ts` | Forces preview |
 | `.github/workflows/preview-2026-schedules.yml` | Manual read-only preview |
 
-### 2C-1B guarded one-week write (implementation prep — not executed)
+### 2C-1B guarded one-week write (merged — PR #38)
 
 | Artifact | Role |
 |----------|------|
 | `apps/jobs/write-schedules.ts` | Dedicated write CLI — `--confirm-write WRITE_2026_WEEK_<n>` |
 | `.github/workflows/ingest-2026-schedules.yml` | Manual one-week write (`workflow_dispatch` only) |
 
-**Write path guarantees:**
+**Operator-reported production writes (2026):** Weeks **1–13** written individually; CFBD returned **no provider Week 14** (not written); Week **15** contains Navy at Army (**1** game). Expected production total: **761**.
 
-- Separate from preview executables; preview remains write-incapable
-- Season **2026** only; week **≥ 1** (week **0** prohibited)
-- Exact confirmation phrase required; no env bypass
-- Same validation as preview before any mutation
-- One Prisma transaction; accurate insert/update counts; no deletes; no score/status updates; no team creation
-- Post-write verification; exit nonzero on integrity failure
-- **No production schedule write has occurred yet**
+**Expected weekly baseline:** 1:51, 2:49, 3:57, 4:58, 5:56, 6:58, 7:59, 8:56, 9:56, 10:62, 11:67, 12:66, 13:65, 15:1 (week **14** absent).
 
-**Still out of scope:** odds ingestion; ratings; nightly reactivation.
+### 2C-1C read-only inventory audit (in preparation)
+
+| Artifact | Role |
+|----------|------|
+| `apps/jobs/audit-schedule-inventory.ts` | Read-only full-season inventory audit CLI |
+| `.github/workflows/audit-2026-schedule-inventory.yml` | Manual read-only audit (`workflow_dispatch` only) |
+
+- Season **2026** only; SELECT-only via narrow read-store; **no** CFBD / Odds API
+- Compares stored rows to the **761**-game baseline; integrity checks (status, scores, IDs, matchups)
+- Fail-closed reporting only — **no automatic repair**
+- **Do not claim the production audit passed until the workflow has been run after merge**
+
+**Still out of scope / unapproved:** odds ingestion; ratings; scores; bets; nightly reactivation.
 
 ---
 
@@ -150,11 +158,12 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 
 | Blocker | Status | Notes |
 |---------|--------|-------|
-| **Schedule-only CLI** | **Ready** | Preview merged; write CLI prepared (not run) |
+| **Schedule-only CLI** | **Ready** | Preview + write merged; inventory audit in prep |
 | **Week Zero mapping** | **Resolved** | No CFBD week 0; first bucket = provider week **1** |
-| **Production write** | **Prepared / not executed** | First proposed: `2026` / week `1` / `WRITE_2026_WEEK_1` |
+| **Production write** | **Operator-reported complete** | Weeks 1–13 + 15; expect **761** rows — verify via 2C-1C audit |
+| **Inventory audit** | **Not yet run** | Manual workflow after 2C-1C merge |
 | **Season 2025 hardcoding** | Open | Scheduled paths still 2025 — Phase 2D before UI re-enable |
-| **Empty 2026 DB** | Open | Awaits approved Week 1 write |
+| **Empty 2026 DB** | **Superseded** | Operator reports 2026 schedule rows present — confirm with audit |
 | **Provider secrets** | **Validated** | GitHub secrets worked 2026-08-04 |
 | **Weekly bet sync** | Manual workflow ready | `sync-weekly-bets.yml` — dispatch only |
 | **V3 totals** | **Blocked** | Missing `sync-v3-bets.ts` — leave disabled |
@@ -184,11 +193,10 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 
 ## Next phases
 
-1. **Operator-approved Week 1 write** — season `2026`, week `1`, confirm `WRITE_2026_WEEK_1` (expect ~51 inserts)
-2. Verify post-write counts; stop on integrity failure
-3. Optional Week 2 write after Week 1 success
-4. **Phase 2C-2+** — odds, ratings, bet sync (separate approvals)
-5. **Phase 2D** — `TARGET_SEASON` in scheduled YAML before bulk UI enables
+1. **Phase 2C-1C** — merge + run `Audit 2026 Schedule Inventory (Manual, Read Only)` with `season=2026`
+2. Confirm **761** rows, weeks 1–13 + 15, week 14 absent, all `scheduled`, zero scores
+3. **Phase 2C-2+** — odds, ratings, bet sync (separate approvals)
+4. **Phase 2D** — `TARGET_SEASON` in scheduled YAML before bulk UI enables
 
 See [Preseason Reactivation Checklist](docs/preseason-reactivation-checklist.md).
 
