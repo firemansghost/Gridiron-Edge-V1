@@ -250,7 +250,10 @@ describe('writeFbsMembership', () => {
    * - on resolve: copy clone → committed
    * - on throw: discard clone (committed unchanged)
    */
-  function makeTransactionalDeps(existing: MembershipRow[] = []) {
+  function makeTransactionalDeps(
+    existing: MembershipRow[] = [],
+    options: { reportedInsertCount?: number } = {}
+  ) {
     let committed: MembershipRow[] = existing.map((r) => ({ ...r }));
     let transactions = 0;
     let outerLoadCalls = 0;
@@ -276,7 +279,8 @@ describe('writeFbsMembership', () => {
             for (const r of rows) {
               working.push({ ...r });
             }
-            return rows.length;
+            // Optionally lie about insert count while still mutating working copy
+            return options.reportedInsertCount ?? rows.length;
           },
         };
         // Narrow surface — only membership load/create (no Team/schedules/etc.)
@@ -417,6 +421,41 @@ describe('writeFbsMembership', () => {
     expect(state.getTransactions()).toBe(1);
   });
 
+  it('insert-count mismatch 137 rolls back with zero committed rows', async () => {
+    const state = makeTransactionalDeps([], { reportedInsertCount: 137 });
+    const outerBefore = state.getOuterLoadCalls();
+    await expect(
+      writeFbsMembership({
+        snapshot: buildHealthyMembershipSnapshot(),
+        deps: state.deps,
+      })
+    ).rejects.toThrow(
+      /membership insert count mismatch inside transaction: 137 != 138/
+    );
+    expect(state.getCommitted()).toHaveLength(0);
+    expect(state.getTxCreateCalls()).toBe(1);
+    expect(state.getTransactions()).toBe(1);
+    // No successful post-commit verification read
+    expect(state.getOuterLoadCalls()).toBe(outerBefore);
+  });
+
+  it('insert-count mismatch 139 rolls back with zero committed rows', async () => {
+    const state = makeTransactionalDeps([], { reportedInsertCount: 139 });
+    const outerBefore = state.getOuterLoadCalls();
+    await expect(
+      writeFbsMembership({
+        snapshot: buildHealthyMembershipSnapshot(),
+        deps: state.deps,
+      })
+    ).rejects.toThrow(
+      /membership insert count mismatch inside transaction: 139 != 138/
+    );
+    expect(state.getCommitted()).toHaveLength(0);
+    expect(state.getTxCreateCalls()).toBe(1);
+    expect(state.getTransactions()).toBe(1);
+    expect(state.getOuterLoadCalls()).toBe(outerBefore);
+  });
+
   it('passes exactly 138 rows with season=2026 and level=fbs', async () => {
     const state = makeTransactionalDeps();
     await writeFbsMembership({
@@ -516,7 +555,12 @@ describe('isolation', () => {
     );
     expect(src).toMatch(/transaction\(async \(tx\) => \{/);
     expect(src).toMatch(/await tx\.loadAllMembership\(TARGET_SEASON\)/);
-    expect(src).toMatch(/return tx\.createMembershipRows\(rows\)/);
+    expect(src).toMatch(
+      /const count = await tx\.createMembershipRows\(rows\)/
+    );
+    expect(src).toMatch(
+      /membership insert count mismatch inside transaction/
+    );
     expect(src).not.toMatch(/deps\.createMembershipRows/);
     // Inside-transaction emptiness must not use outer deps reader
     expect(src).not.toMatch(

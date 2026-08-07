@@ -680,28 +680,17 @@ export async function writeFbsMembership(options: {
         `${TARGET_SEASON} membership no longer empty inside transaction (${existing.length} rows)`
       );
     }
-    return tx.createMembershipRows(rows);
+    const count = await tx.createMembershipRows(rows);
+    // Hard invariant inside the interactive transaction — mismatch aborts/rolls back
+    if (count !== EXPECTED_CANDIDATE_COUNT) {
+      throw new Error(
+        `membership insert count mismatch inside transaction: ${count} != ${EXPECTED_CANDIDATE_COUNT}`
+      );
+    }
+    return count;
   });
 
-  if (inserted !== EXPECTED_CANDIDATE_COUNT) {
-    const verification = verifyMembershipWrite({
-      writtenMembership: await options.deps.loadAllMembership(TARGET_SEASON),
-      candidateIds: preview.candidateIds,
-      scheduleTeamIds: preview.scheduleTeamIds,
-    });
-    verification.findings.push({
-      code: 'insert_count_mismatch',
-      severity: 'structural',
-      message: `createMembershipRows returned ${inserted}, expected ${EXPECTED_CANDIDATE_COUNT}`,
-    });
-    return {
-      preview,
-      inserted,
-      verification: { ...verification, ok: false },
-      ok: false,
-    };
-  }
-
+  // Fresh post-commit verification only (insert-count invariant already enforced in-tx)
   const writtenMembership = await options.deps.loadAllMembership(TARGET_SEASON);
   const verification = verifyMembershipWrite({
     writtenMembership,
