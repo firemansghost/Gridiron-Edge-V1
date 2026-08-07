@@ -91,7 +91,10 @@ export type RecruitingBucket =
 export interface MatchedConferenceRow {
   teamId: string;
   providerSchool: string;
+  /** Raw CFBD /teams/fbs conference string */
   providerConference: string | null;
+  /** V1-compatible conference after CFBD label normalization */
+  providerConferenceNormalized: string | null;
   currentTeamConference: string | null;
   conferencesAgree: boolean;
   currentIsIndependentOrMissing: boolean;
@@ -281,6 +284,20 @@ export function isRecognizedV1Conference(conference: string | null): boolean {
 }
 
 /**
+ * Map CFBD /teams/fbs conference labels onto V1 CONFERENCE_ADJUSTMENTS keys.
+ * Does not change weights. Preserves unrecognized strings as-is (trimmed).
+ */
+export function normalizeCfbdConferenceForV1(
+  conference: string | null | undefined
+): string | null {
+  if (conference === null || conference === undefined) return null;
+  const t = String(conference).trim();
+  if (t === '') return null;
+  if (t === 'FBS Independents') return 'Independent';
+  return t;
+}
+
+/**
  * In-memory conference diagnostic from /teams/fbs vs DB FBS + Team.conference.
  */
 export function diagnoseConferenceMap(options: {
@@ -364,17 +381,19 @@ export function diagnoseConferenceMap(options: {
       current === null || current === undefined || String(current).trim() === ''
         ? null
         : String(current).trim();
+    const providerNormalized = normalizeCfbdConferenceForV1(m.conference);
     matchedRows.push({
       teamId: id,
       providerSchool: m.school,
       providerConference: m.conference,
+      providerConferenceNormalized: providerNormalized,
       currentTeamConference: currentNorm,
       conferencesAgree:
-        (currentNorm ?? '') === (m.conference ?? '') &&
-        m.conference !== null &&
+        (currentNorm ?? '') === (providerNormalized ?? '') &&
+        providerNormalized !== null &&
         currentNorm !== null,
       currentIsIndependentOrMissing: isIndependentOrMissing(currentNorm),
-      providerRecognizedByV1: isRecognizedV1Conference(m.conference),
+      providerRecognizedByV1: isRecognizedV1Conference(providerNormalized),
     });
   }
 
@@ -986,8 +1005,10 @@ export function formatConferenceRecruitingDiagnosticReport(
   );
   push(`  conferenceDifferences (${c.conferenceDifferences.length}):`);
   for (const d of c.conferenceDifferences) {
+    const row = c.matchedRows.find((r) => r.teamId === d.teamId);
+    const normalized = row?.providerConferenceNormalized ?? null;
     push(
-      `    - ${d.teamId}: current=${d.currentConference ?? '(null)'} provider=${d.providerConference ?? '(null)'}`
+      `    - ${d.teamId}: current=${d.currentConference ?? '(null)'} provider=${d.providerConference ?? '(null)'} normalized=${normalized ?? '(null)'}`
     );
   }
   push(

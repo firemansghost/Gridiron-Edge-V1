@@ -241,9 +241,16 @@ aliases:
   "James Madison Dukes": james-madison
   "Tulane Green Wave": tulane
   "Georgia Bulldogs": georgia
+  "North Dakota State": north-dakota-state
+  "North Dakota State Bison": north-dakota-state
+  "Sacramento State": sacramento-state
+  "Sacramento State Hornets": sacramento-state
 
 # FCS/Non-FBS denylist - these teams should be rejected
 # NOTE: "Delaware Blue Hens" and "Missouri State Bears" removed - these teams are FBS in 2025
 denylist:
   # Removed: "Delaware Blue Hens" - Delaware is now FBS
   # Removed: "Missouri State Bears" - Missouri State is now FBS
+  - "North Carolina A&T"
+  - "Alabama A&M"
+  - "San Diego"

@@ -127,9 +127,11 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 * Schedule verified: **761** / **138** teams; Week 14 absent
 * Membership **PASSED**: **138/138** FBS ↔ schedule
 * 2C-2A rerun: `structuralOk=true`; talent/commits **0/138**; unit grades **0/138** (expected preseason for grades/stats)
-* 2C-2C production: `/talent` **0** rows; recruiting **221** raw / **136** unique FBS; NDSU+Sac missing; **3** excess mapped collisions TBD; schema mismatch; **88 Independent** unsafe
+* 2C-2C production: `/talent` **0** rows; recruiting **221** raw / **136** unique FBS; schema mismatch; **88 Independent** unsafe
+* 2C-2D production: `/teams/fbs` **138** raw / **136** resolved (NDSU+Sac unresolved); recruiting false-positives NC A&T / Alabama A&M / San Diego; `providerFbsSetExact=false`; static Team.conference still unsafe
+* 2C-2E: CFBD fail-closed resolver + aliases + `FBS Independents`→`Independent` normalize (diagnostic only) — rerun 2C-2D workflow after merge
 * `ratingsWriteAuthorized=false` / `ratingsComputeAuthorized=false`
-* **Do not claim `/teams/fbs` conference map or ratings ready until 2C-2D production diagnostic + separate approvals**
+* **Do not claim `/teams/fbs` conference map production-ready until 2C-2E merge + diagnostic rerun + separate approvals**
 
 - [x] Preview week 0–2 reviewed
 - [x] Week 1–13 + 15 production writes
@@ -137,7 +139,8 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 - [x] 2C-2B membership PASSED (138)
 - [x] 2C-2A ratings readiness rerun (`structuralOk=true`)
 - [x] 2C-2C ratings-input provider preview (production)
-- [ ] 2C-2D conference + recruiting diagnostic
+- [x] 2C-2D conference + recruiting diagnostic (production)
+- [ ] 2C-2E CFBD resolver hardening + diagnostic rerun
 - [ ] Odds / ratings compute / bets remain **out of scope** until separately approved
 
 ---

@@ -322,7 +322,11 @@ export class TeamResolver {
     if (name.includes('san josé') || name.includes('san jose')) {
       return 'san-jos-state';
     }
-    if (name.includes('san diego')) {
+    // Only San Diego State (not University of San Diego / "San Diego")
+    if (
+      name === 'san diego state' ||
+      name.startsWith('san diego state ')
+    ) {
       return 'san-diego-state';
     }
     
@@ -432,7 +436,12 @@ export class TeamResolver {
       return normalizedMatch;
     }
 
-    // Step 3: Fallback fuzzy match (very conservative)
+    // Step 3: Fallback fuzzy match — not used for CFBD (fail-closed).
+    // CFBD school names are stable; provider-specific + general exact aliases are authoritative.
+    if (options?.provider === 'cfbd') {
+      return null;
+    }
+
     const fuzzyMatch = this.fuzzyMatch(providerName);
     if (fuzzyMatch) {
       if (this.denylist.has(fuzzyMatch)) {
