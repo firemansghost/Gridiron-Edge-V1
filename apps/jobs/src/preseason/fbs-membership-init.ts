@@ -49,13 +49,26 @@ export interface FbsMembershipReadStore {
   loadTeamsByIds(ids: string[]): Promise<TeamIdRow[]>;
 }
 
-/** Narrow write deps — TeamMembership createMany only inside required transaction. */
-export interface FbsMembershipWriteDeps {
-  transaction<T>(fn: () => Promise<T>): Promise<T>;
+/**
+ * Transaction-scoped store — the only surface allowed for mutation-path reads/writes.
+ * Must be backed by Prisma's interactive transaction client (`tx`), not the outer client.
+ */
+export interface FbsMembershipTransactionStore {
+  loadAllMembership(season: number): Promise<MembershipRow[]>;
   createMembershipRows(
     rows: Array<{ season: number; teamId: string; level: string }>
   ): Promise<number>;
-  /** Fresh reload inside/after transaction for verification. */
+}
+
+/**
+ * Narrow write deps — mutations run only via transaction-scoped store.
+ * Outer `loadAllMembership` is for fresh post-commit verification only.
+ */
+export interface FbsMembershipWriteDeps {
+  transaction<T>(
+    fn: (tx: FbsMembershipTransactionStore) => Promise<T>
+  ): Promise<T>;
+  /** Fresh post-commit reload for verification — not for mutation. */
   loadAllMembership(season: number): Promise<MembershipRow[]>;
 }
 
@@ -256,6 +269,7 @@ export function parseWriteMembershipArgs(
   let season: number | undefined;
   let seasonSeen = false;
   let confirmWrite: string | undefined;
+  let confirmWriteSeen = false;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -284,6 +298,12 @@ export function parseWriteMembershipArgs(
       continue;
     }
     if (arg === '--confirm-write') {
+      if (confirmWriteSeen) {
+        errors.push('--confirm-write may be provided exactly once');
+        i += 1;
+        continue;
+      }
+      confirmWriteSeen = true;
       const raw = argv[++i];
       if (raw === undefined || raw === '') {
         errors.push('--confirm-write requires the exact confirmation phrase');
@@ -652,15 +672,15 @@ export async function writeFbsMembership(options: {
     level: 'fbs',
   }));
 
-  const inserted = await options.deps.transaction(async () => {
-    // Re-check emptiness inside transaction where practical
-    const existing = await options.deps.loadAllMembership(TARGET_SEASON);
+  const inserted = await options.deps.transaction(async (tx) => {
+    // Emptiness check + insert MUST use transaction-scoped store only
+    const existing = await tx.loadAllMembership(TARGET_SEASON);
     if (existing.length > 0) {
       throw new Error(
         `${TARGET_SEASON} membership no longer empty inside transaction (${existing.length} rows)`
       );
     }
-    return options.deps.createMembershipRows(rows);
+    return tx.createMembershipRows(rows);
   });
 
   if (inserted !== EXPECTED_CANDIDATE_COUNT) {

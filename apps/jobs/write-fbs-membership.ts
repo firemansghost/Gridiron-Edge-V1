@@ -28,15 +28,30 @@ export function createPrismaMembershipWriteDeps(
 ): FbsMembershipWriteDeps {
   return {
     async transaction(fn) {
-      return prisma.$transaction(async () => fn());
-    },
-    async createMembershipRows(rows) {
-      // Exact insert count — do not use skipDuplicates (would conceal preexisting rows)
-      const result = await prisma.teamMembership.createMany({
-        data: rows,
+      // Interactive transaction: mutation-path ops MUST use `tx`, not outer prisma
+      return prisma.$transaction(async (tx) => {
+        const txStore = {
+          async loadAllMembership(season: number) {
+            return tx.teamMembership.findMany({
+              where: { season },
+              select: { season: true, teamId: true, level: true },
+              orderBy: { teamId: 'asc' as const },
+            });
+          },
+          async createMembershipRows(
+            rows: Array<{ season: number; teamId: string; level: string }>
+          ) {
+            // Exact insert count — do not use skipDuplicates (would conceal preexisting rows)
+            const result = await tx.teamMembership.createMany({
+              data: rows,
+            });
+            return result.count;
+          },
+        };
+        return fn(txStore);
       });
-      return result.count;
     },
+    /** Fresh post-commit verification read only — not used inside the transaction callback. */
     async loadAllMembership(season) {
       return prisma.teamMembership.findMany({
         where: { season },

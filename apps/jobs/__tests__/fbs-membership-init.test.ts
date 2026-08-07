@@ -85,6 +85,57 @@ describe('parse args', () => {
       confirmWrite: WRITE_CONFIRM_PHRASE,
     });
   });
+
+  it('rejects duplicate --confirm-write with identical phrases', () => {
+    const r = parseWriteMembershipArgs([
+      '--season',
+      '2026',
+      '--confirm-write',
+      WRITE_CONFIRM_PHRASE,
+      '--confirm-write',
+      WRITE_CONFIRM_PHRASE,
+    ]);
+    expect(r.ok).toBe(false);
+    if (r.ok === false) {
+      expect(r.errors.some((e) => e.includes('--confirm-write may be provided exactly once'))).toBe(
+        true
+      );
+    }
+  });
+
+  it('rejects duplicate --confirm-write when wrong then correct', () => {
+    const r = parseWriteMembershipArgs([
+      '--season',
+      '2026',
+      '--confirm-write',
+      'WRONG',
+      '--confirm-write',
+      WRITE_CONFIRM_PHRASE,
+    ]);
+    expect(r.ok).toBe(false);
+    if (r.ok === false) {
+      expect(r.errors.some((e) => e.includes('--confirm-write may be provided exactly once'))).toBe(
+        true
+      );
+    }
+  });
+
+  it('rejects duplicate --confirm-write when correct then wrong', () => {
+    const r = parseWriteMembershipArgs([
+      '--season',
+      '2026',
+      '--confirm-write',
+      WRITE_CONFIRM_PHRASE,
+      '--confirm-write',
+      'WRONG',
+    ]);
+    expect(r.ok).toBe(false);
+    if (r.ok === false) {
+      expect(r.errors.some((e) => e.includes('--confirm-write may be provided exactly once'))).toBe(
+        true
+      );
+    }
+  });
 });
 
 describe('candidate construction and preview', () => {
@@ -192,33 +243,75 @@ describe('candidate construction and preview', () => {
 });
 
 describe('writeFbsMembership', () => {
-  function makeDeps(existing: MembershipRow[] = []) {
-    let rows = [...existing];
+  /**
+   * Fake transaction with commit/rollback semantics:
+   * - clone committed rows at start
+   * - tx reads/writes hit the clone only
+   * - on resolve: copy clone → committed
+   * - on throw: discard clone (committed unchanged)
+   */
+  function makeTransactionalDeps(existing: MembershipRow[] = []) {
+    let committed: MembershipRow[] = existing.map((r) => ({ ...r }));
     let transactions = 0;
+    let outerLoadCalls = 0;
+    let txLoadCalls = 0;
+    let txCreateCalls = 0;
+    let lastCreateRows: Array<{ season: number; teamId: string; level: string }> =
+      [];
+
     const deps: FbsMembershipWriteDeps = {
       async transaction(fn) {
         transactions += 1;
-        return fn();
-      },
-      async createMembershipRows(input) {
-        for (const r of input) {
-          rows.push({ ...r });
+        const working = committed.map((r) => ({ ...r }));
+        const txStore = {
+          async loadAllMembership(_season: number) {
+            txLoadCalls += 1;
+            return working.filter((r) => r.season === _season);
+          },
+          async createMembershipRows(
+            rows: Array<{ season: number; teamId: string; level: string }>
+          ) {
+            txCreateCalls += 1;
+            lastCreateRows = rows.map((r) => ({ ...r }));
+            for (const r of rows) {
+              working.push({ ...r });
+            }
+            return rows.length;
+          },
+        };
+        // Narrow surface — only membership load/create (no Team/schedules/etc.)
+        expect(Object.keys(txStore).sort()).toEqual([
+          'createMembershipRows',
+          'loadAllMembership',
+        ]);
+        try {
+          const result = await fn(txStore);
+          committed = working.map((r) => ({ ...r }));
+          return result;
+        } catch (err) {
+          // rollback — discard working clone
+          return Promise.reject(err);
         }
-        return input.length;
       },
-      async loadAllMembership() {
-        return [...rows];
+      async loadAllMembership(season: number) {
+        outerLoadCalls += 1;
+        return committed.filter((r) => r.season === season).map((r) => ({ ...r }));
       },
     };
+
     return {
       deps,
-      getRows: () => rows,
+      getCommitted: () => committed.map((r) => ({ ...r })),
       getTransactions: () => transactions,
+      getOuterLoadCalls: () => outerLoadCalls,
+      getTxLoadCalls: () => txLoadCalls,
+      getTxCreateCalls: () => txCreateCalls,
+      getLastCreateRows: () => lastCreateRows,
     };
   }
 
   it('write uses exactly one transaction and inserts only membership', async () => {
-    const state = makeDeps();
+    const state = makeTransactionalDeps();
     const snap = buildHealthyMembershipSnapshot();
     const result = await writeFbsMembership({
       snapshot: snap,
@@ -227,19 +320,127 @@ describe('writeFbsMembership', () => {
     expect(result.ok).toBe(true);
     expect(result.inserted).toBe(EXPECTED_CANDIDATE_COUNT);
     expect(state.getTransactions()).toBe(1);
+    expect(state.getTxCreateCalls()).toBe(1);
+    expect(state.getTxLoadCalls()).toBe(1);
+    expect(state.getLastCreateRows()).toHaveLength(EXPECTED_CANDIDATE_COUNT);
+    expect(
+      state.getLastCreateRows().every(
+        (r) => r.season === 2026 && r.level === 'fbs'
+      )
+    ).toBe(true);
     expect(result.verification?.ok).toBe(true);
     expect(result.verification?.targetFbsCount).toBe(138);
+    expect(state.getCommitted()).toHaveLength(EXPECTED_CANDIDATE_COUNT);
+  });
+
+  it('insert and emptiness check use only transaction-scoped store', async () => {
+    const state = makeTransactionalDeps();
+    const snap = buildHealthyMembershipSnapshot();
+    const outerBefore = state.getOuterLoadCalls();
+    await writeFbsMembership({ snapshot: snap, deps: state.deps });
+    // Outer reader used only for post-commit verification (not mutation)
+    expect(state.getTxLoadCalls()).toBe(1);
+    expect(state.getTxCreateCalls()).toBe(1);
+    expect(state.getOuterLoadCalls()).toBe(outerBefore + 1);
+    expect(state.getTransactions()).toBe(1);
+  });
+
+  it('outer post-write reader is not used for mutation', async () => {
+    let mutationPhaseOuterLoads = 0;
+    let inTransaction = false;
+    let committed: MembershipRow[] = [];
+    const deps: FbsMembershipWriteDeps = {
+      async transaction(fn) {
+        inTransaction = true;
+        const working: MembershipRow[] = [];
+        const result = await fn({
+          async loadAllMembership() {
+            return [...working];
+          },
+          async createMembershipRows(rows) {
+            // Prove outer reader was not consulted during mutation
+            expect(mutationPhaseOuterLoads).toBe(0);
+            working.push(...rows.map((r) => ({ ...r })));
+            return rows.length;
+          },
+        });
+        committed = working;
+        inTransaction = false;
+        return result;
+      },
+      async loadAllMembership() {
+        if (inTransaction) {
+          mutationPhaseOuterLoads += 1;
+          throw new Error('outer loadAllMembership must not run during transaction');
+        }
+        return [...committed];
+      },
+    };
+    const result = await writeFbsMembership({
+      snapshot: buildHealthyMembershipSnapshot(),
+      deps,
+    });
+    expect(result.ok).toBe(true);
+    expect(mutationPhaseOuterLoads).toBe(0);
+  });
+
+  it('transaction callback failure prevents commit (rollback)', async () => {
+    const state = makeTransactionalDeps();
+    const snap = buildHealthyMembershipSnapshot();
+    // Force create to throw after emptiness check would pass
+    const originalTx = state.deps.transaction.bind(state.deps);
+    state.deps.transaction = async (fn) =>
+      originalTx(async (tx) => {
+        await tx.loadAllMembership(2026);
+        throw new Error('simulated mid-transaction failure');
+      });
+
+    await expect(
+      writeFbsMembership({ snapshot: snap, deps: state.deps })
+    ).rejects.toThrow(/simulated mid-transaction failure/);
+    expect(state.getCommitted()).toHaveLength(0);
+    expect(state.getTxCreateCalls()).toBe(0);
+  });
+
+  it('existing membership inside transaction yields zero committed inserts', async () => {
+    const preexisting = [
+      { season: 2026, teamId: 'team-001', level: 'fbs' },
+    ];
+    // Snapshot appears empty so preview allows write; DB (committed) already has a row
+    const state = makeTransactionalDeps(preexisting);
+    const snap = buildHealthyMembershipSnapshot();
+    await expect(
+      writeFbsMembership({ snapshot: snap, deps: state.deps })
+    ).rejects.toThrow(/no longer empty inside transaction/);
+    expect(state.getCommitted()).toEqual(preexisting);
+    expect(state.getTxCreateCalls()).toBe(0);
+    expect(state.getTransactions()).toBe(1);
+  });
+
+  it('passes exactly 138 rows with season=2026 and level=fbs', async () => {
+    const state = makeTransactionalDeps();
+    await writeFbsMembership({
+      snapshot: buildHealthyMembershipSnapshot(),
+      deps: state.deps,
+    });
+    const rows = state.getLastCreateRows();
+    expect(rows).toHaveLength(138);
+    expect(new Set(rows.map((r) => r.teamId)).size).toBe(138);
+    for (const r of rows) {
+      expect(r.season).toBe(2026);
+      expect(r.level).toBe('fbs');
+    }
   });
 
   it('rerun-after-success fails safely', async () => {
-    const state = makeDeps();
+    const state = makeTransactionalDeps();
     const snap = buildHealthyMembershipSnapshot();
     const first = await writeFbsMembership({ snapshot: snap, deps: state.deps });
     expect(first.ok).toBe(true);
     const second = await writeFbsMembership({
       snapshot: {
         ...snap,
-        existingTargetMembership: state.getRows(),
+        existingTargetMembership: state.getCommitted(),
       },
       deps: state.deps,
     });
@@ -265,11 +466,7 @@ describe('writeFbsMembership', () => {
   it('transaction unavailable refuses write', async () => {
     const snap = buildHealthyMembershipSnapshot();
     const deps: FbsMembershipWriteDeps = {
-      // intentionally invalid
       transaction: null as unknown as FbsMembershipWriteDeps['transaction'],
-      async createMembershipRows() {
-        return 0;
-      },
       async loadAllMembership() {
         return [];
       },
@@ -298,14 +495,33 @@ describe('isolation', () => {
     expect(preview).not.toMatch(/createMany|updateMany|upsert|deleteMany/);
   });
 
-  it('writer inserts only TeamMembership', () => {
+  it('writer inserts only TeamMembership via transaction-scoped client', () => {
     const writer = fs.readFileSync(
       path.join(__dirname, '../write-fbs-membership.ts'),
       'utf8'
     );
-    expect(writer).toMatch(/teamMembership\.createMany/);
+    expect(writer).toMatch(/\$transaction\(async \(tx\)/);
+    expect(writer).toMatch(/tx\.teamMembership\.createMany/);
+    expect(writer).toMatch(/tx\.teamMembership\.findMany/);
+    expect(writer).not.toMatch(/prisma\.teamMembership\.createMany/);
     expect(writer).not.toMatch(/prisma\.team\.(update|upsert|delete|create)/);
+    expect(writer).not.toMatch(/skipDuplicates:\s*true/);
     expect(writer).not.toMatch(/compute_ratings|seed-ratings|seed-talent|OddsApi|cfbdClient/i);
+  });
+
+  it('writeFbsMembership mutation path uses only tx store methods', () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, '../src/preseason/fbs-membership-init.ts'),
+      'utf8'
+    );
+    expect(src).toMatch(/transaction\(async \(tx\) => \{/);
+    expect(src).toMatch(/await tx\.loadAllMembership\(TARGET_SEASON\)/);
+    expect(src).toMatch(/return tx\.createMembershipRows\(rows\)/);
+    expect(src).not.toMatch(/deps\.createMembershipRows/);
+    // Inside-transaction emptiness must not use outer deps reader
+    expect(src).not.toMatch(
+      /transaction\(async \(tx\) => \{[^}]*options\.deps\.loadAllMembership/
+    );
   });
 
   it('secret-safe runtime errors', () => {
