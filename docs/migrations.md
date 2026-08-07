@@ -65,12 +65,14 @@ A one-time Oct 2025 repair previously DELETE/INSERT-rewrote `_prisma_migrations`
 
 #### Prisma Guardrails (PR Checks)
 - **Workflow**: `.github/workflows/prisma-guardrails.yml`
-- **Trigger**: Pull requests with changes to `prisma/` directory
+- **Trigger**: Pull requests targeting `main`
 - **Checks**:
   1. **Format**: Ensures schema is properly formatted
   2. **Validate**: Checks schema syntax and relationships
   3. **Migration**: Verifies schema changes have corresponding migrations
+- **Comparison base (Phase 2C-2G-1B)**: `github.event.pull_request.base.sha` with `checkout@v6` `fetch-depth: 0` — fail-closed (`set -euo pipefail`). Does **not** use `origin/main...HEAD` (Run 31219442075 falsely passed when that ref was missing under shallow checkout).
 - **Purpose**: Prevents broken schemas from landing in main
+- Does **not** run `prisma migrate deploy` or touch production DB
 
 ## Schema Design Principles
 
