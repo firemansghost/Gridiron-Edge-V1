@@ -1,7 +1,7 @@
 # Season Status — Gridiron Edge
 
 **Status:** Offseason / paused for regular-season automation  
-**Updated:** 2026-08-07 (Phase 2C-2F — season conference design + read-only preview; 2C-2E production PASSED)
+**Updated:** 2026-08-07 (Phase 2C-2G-1 — harden Prisma migrate workflow; 2C-2F production preview PASSED)
 
 Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISABLE_REPORT.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -32,7 +32,8 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **Phase 2C-2C ratings-input provider preview** | **Executed** (PR #42) — `/talent` **0** rows; recruiting 221 raw / 136 unique FBS; schema mismatch; conference unsafe |
 | **Phase 2C-2D conference + recruiting diagnostic** | **PASSED** (PR #43) — initial run found resolver gaps; post-2C-2E rerun exact |
 | **Phase 2C-2E CFBD resolver hardening** | **PASSED** (PR #44) — 138/138 provider FBS + conference map safe; recruitingResolverSafe=true |
-| **Phase 2C-2F season conference design** | **In preparation** — architecture + read-only persistence preview (no schema write) |
+| **Phase 2C-2F season conference design** | **PASSED** (PR #45) — production preview writeEligible=true (classification); no schema write |
+| **Phase 2C-2G-1 Prisma migrate hardening** | **In preparation** — manual-only migrate deploy; remove recurring `_prisma_migrations` repair |
 | **Expected 2026 schedule baseline** | **761** games / **138** distinct teams — **verified** |
 | **Ratings computation / persistence** | **Not yet approved** (`ratingsWriteAuthorized=false`) |
 | **Odds ingestion** | **Not yet approved** |
@@ -222,37 +223,34 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 * Static `Team.conference`: **88 Independent**; **100** differences; still unsafe — **do not mutate**
 * `/talent?year=2026` still **0** rows (2C-2C)
 
-### 2C-2F season-aware conference design + read-only preview (in preparation)
+### 2C-2F season-aware conference design + read-only preview (production PASSED)
 
 | Artifact | Role |
 |----------|------|
 | `apps/jobs/preview-2026-season-conferences.ts` | Read-only would-be season conference rows from `/teams/fbs` |
 | `.github/workflows/preview-2026-season-conferences.yml` | Manual read-only (`workflow_dispatch` only); **1** CFBD call |
 
-#### Consumer inventory (blast radius)
+**Production run (post PR #45):** `season=2026` — `ok=true`, `exactSetMatch=true`, `writeEligible=true` (classification only), `mutationsInvoked=false`, `ratingsComputeAuthorized=false`, `schemaChanged=false`, `migrationCreated=false`.
 
-| Area | Role of conference / membership |
-|------|----------------------------------|
-| `Team.conference` (static) | V1 ratings adjustment via `compute_ratings_v1`; web team/ratings pages; diagnostics compare against provider |
-| `TeamMembership` | Season×team FBS denominator (138); membership init/preview; readiness audits; schedule inventory |
-| `Game.conferenceGame` | Schedule flag from CFBD ingest — **not** Team.conference |
-| Hybrid V2 / feature-loader / V2 ratings | No direct Team.conference adjustment path found |
-| Deploy | `prisma-migrate.yml` runs `migrate deploy` on **push to main** when `prisma/**` changes — **not** Vercel |
+* Candidate **138/138**; integrity lists empty; NDSU → Mountain West; Sac State → Mid-American; Independent **2**
+* Static `Team.conference` still unsafe (**92** semantic differences after canonicalization) — **do not mutate**
+* `/talent` still unavailable; ratings unauthorized
 
-#### Storage options
+**Recommendation remains:** nullable `TeamMembership.conference` (Option 1). Schema/migration deferred until migrate workflow is hardened.
 
-1. **Nullable `conference` on TeamMembership** (recommended) — season-aware, one row/team/season, natural V1 join; requires migration in **2C-2G**
-2. New `TeamSeasonConference` table — cleaner provenance (`source`, `sourceUpdatedAt`) but duplicates membership keyspace
-3. Provider map at compute time — rejected (non-reproducible / provider-dependent ratings)
-4. Checked-in YAML snapshot — reproducible but annual drift / dual source of truth
+### 2C-2G-1 Prisma production migration workflow hardening (in preparation)
 
-**Recommendation:** Option 1. **No schema/migration in 2C-2F** because merging `prisma/**` would auto-apply via GitHub Actions.
+| Artifact | Role |
+|----------|------|
+| `.github/workflows/prisma-migrate.yml` | **Manual-only** production `migrate deploy` |
 
-#### V1 future plan
+- **Before:** `push` to `main` on `prisma/**` auto-ran migrate + recurring `_prisma_migrations` DELETE/INSERT/`migrate resolve` for `20251027_t6q_fixup_missing_teams`
+- **After:** `workflow_dispatch` only; `confirm=MIGRATE_PRODUCTION`; fail-closed status preflight; post-deploy must be up to date; **no** metadata repair on the normal path
+- Historical Oct 2025 repair was one-time; loose SQL under `prisma/migrations/*cleanup*|resolve*|mark-migration*` is emergency reference only (not CI-invoked)
+- **No** `schema.prisma` change and **no** migration created in this phase
+- Future **2C-2G-2** can merge schema+migration without auto-applying; operator then runs this workflow deliberately
 
-`resolveSeasonAwareConferenceMap()` helper: require complete season-aware map for 2026+; **prohibit** Team.conference fallback for 2026; historical seasons may allow explicit legacy fallback. Production `compute_ratings_v1` **unchanged** this phase.
-
-**Still out of scope / unapproved:** TeamMembership.conference write; Team.conference mutation; talent/commits persistence; ratings compute; odds; bets; nightly reactivation.
+**Still out of scope / unapproved:** TeamMembership.conference schema/write; Team.conference mutation; talent/commits persistence; ratings compute; odds; bets; nightly reactivation.
 
 ---
 
@@ -267,8 +265,9 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 | **Ratings readiness** | **Structural OK** | Membership fixed; talent/commits/unit-grades/conference still block write auth |
 | **2026 FBS membership** | **PASSED** | Phase 2C-2B — **138/138** |
 | **Talent / recruiting preview** | **Executed** | 2C-2C: `/talent` empty; recruiting schema unsafe |
-| **Team.conference / V1 adj** | **Open** | 2C-2E: provider map safe; static still 100 diffs / 88 Independent |
-| **Season conference persistence** | **Design (2C-2F)** | Recommend TeamMembership.conference; preview-only; migrate in 2C-2G |
+| **Team.conference / V1 adj** | **Open** | Provider map safe; static still unsafe (~92 semantic diffs) |
+| **Season conference persistence** | **Preview PASSED (2C-2F)** | writeEligible classification; schema write blocked pending migrate harden |
+| **Prisma migrate auto-deploy** | **Hardening (2C-2G-1)** | Becoming manual `MIGRATE_PRODUCTION` only |
 | **CFBD resolver hardening** | **PASSED (2C-2E)** | 138/138 FBS + recruitingResolverSafe |
 | **Season 2025 hardcoding** | Open | Scheduled paths still 2025 — Phase 2D before UI re-enable |
 | **Empty 2026 DB** | **Partial** | Schedule + membership verified; talent/ratings still empty |
@@ -301,9 +300,9 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 
 ## Next phases
 
-1. **Phase 2C-2F** — merge; run `Preview 2026 Season Conferences (Manual, Read Only)` with `season=2026`
-2. **Phase 2C-2G** (separate approval) — Prisma migration + guarded write of TeamMembership.conference
-3. Wire V1 to season-aware conference (fail-closed for 2026); talent availability still blocks ratings
+1. **Phase 2C-2G-1** — merge hardened Prisma Migrate workflow (manual-only)
+2. **Phase 2C-2G-2** — add nullable `TeamMembership.conference` + migration file; merge without auto-apply; run **Prisma Migrate** with `confirm=MIGRATE_PRODUCTION`
+3. Guarded write of season conferences; wire V1 fail-closed for 2026; talent still blocks ratings
 4. **Phase 2D** — `TARGET_SEASON` in scheduled YAML before bulk UI enables
 
 See [Preseason Reactivation Checklist](docs/preseason-reactivation-checklist.md).

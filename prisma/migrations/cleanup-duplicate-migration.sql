@@ -1,3 +1,6 @@
+-- HISTORICAL / EMERGENCY REFERENCE ONLY (Phase 2C-2G-1).
+-- Not invoked by .github/workflows/prisma-migrate.yml.
+-- One-time Oct 2025 repair for 20251027_t6q_fixup_missing_teams duplicates.
 -- Cleanup script for duplicate migration entries: 20251027_t6q_fixup_missing_teams
 -- This removes invalid/duplicate entries and keeps only the valid one
 

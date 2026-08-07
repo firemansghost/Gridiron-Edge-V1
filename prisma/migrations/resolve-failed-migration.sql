@@ -1,3 +1,5 @@
+-- HISTORICAL / EMERGENCY REFERENCE ONLY (Phase 2C-2G-1).
+-- Not invoked by .github/workflows/prisma-migrate.yml.
 -- Manual resolution script for failed migration: 20251027_t6q_fixup_missing_teams
 -- Run this in Supabase SQL Editor to mark the migration as applied
 

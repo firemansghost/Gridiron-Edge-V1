@@ -1,3 +1,5 @@
+-- HISTORICAL / EMERGENCY REFERENCE ONLY (Phase 2C-2G-1).
+-- Not invoked by .github/workflows/prisma-migrate.yml.
 -- Final cleanup: Remove ALL duplicate entries
 -- Then use Prisma's resolve command to properly mark it
 

@@ -1,3 +1,5 @@
+-- HISTORICAL / EMERGENCY REFERENCE ONLY (Phase 2C-2G-1).
+-- Not invoked by .github/workflows/prisma-migrate.yml.
 -- Fix: Mark migration as applied since teams already exist
 -- The migration SQL can't run due to updated_at constraint, but data is already there
 

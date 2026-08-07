@@ -1,126 +1,212 @@
+# Manual production Prisma migration deployment.
+# workflow_dispatch ONLY — no push/schedule/pull_request auto-migrate.
+#
+# Operational note (Phase 2C-2G-1):
+# Merging prisma/schema.prisma or prisma/migrations/** to main does NOT
+# apply production migrations. After a schema PR merges, an operator must
+# deliberately run this workflow with confirm=MIGRATE_PRODUCTION.
+#
+# Historical note: The former recurring DELETE/INSERT against
+# _prisma_migrations for 20251027_t6q_fixup_missing_teams was a one-time
+# Oct 2025 repair for a failed team-backfill migration. It is intentionally
+# NOT part of the normal deploy path. Ad-hoc SQL under prisma/migrations/
+# (*cleanup*, *resolve*, *mark-migration*) remains historical/emergency only.
+
 name: Prisma Migrate
 
 on:
   workflow_dispatch:
-  push:
-    branches: ["main"]
-    paths:
-      - "prisma/**"
-      - ".github/workflows/prisma-migrate.yml"
+    inputs:
+      confirm:
+        description: 'Type MIGRATE_PRODUCTION to authorize production migrate deploy'
+        required: true
+        type: string
+      migration_reason:
+        description: 'Short reason for this production migration (log context only)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prisma-migrate-production
+  cancel-in-progress: false
 
 jobs:
   migrate:
     runs-on: ubuntu-latest
-    timeout-minutes: 7
+    timeout-minutes: 15
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      DIRECT_URL:   ${{ secrets.DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+
     steps:
+      - name: Confirm production migration authorization
+        env:
+          MIGRATION_CONFIRM: ${{ inputs.confirm }}
+          MIGRATION_REASON: ${{ inputs.migration_reason }}
+        run: |
+          set -euo pipefail
+          if [ "$MIGRATION_CONFIRM" != "MIGRATE_PRODUCTION" ]; then
+            echo "::error::Refusing migrate deploy. confirm must equal MIGRATE_PRODUCTION."
+            exit 1
+          fi
+          echo "confirm: MIGRATE_PRODUCTION"
+          if [ -n "$MIGRATION_REASON" ]; then
+            printf 'migration_reason: %s\n' "$MIGRATION_REASON"
+          else
+            echo "migration_reason: (none provided)"
+          fi
+          echo "ODDS_API_KEY: not provided"
+          echo "CFBD_API_KEY: not provided"
+          echo "providers/ETL/ratings: not invoked"
+          echo "_prisma_migrations repair: not invoked"
+
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight secrets (names/presence only)
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::DATABASE_URL secret is missing"
+            exit 1
+          fi
+          if [ -z "${DIRECT_URL:-}" ]; then
+            echo "::error::DIRECT_URL secret is missing"
+            exit 1
+          fi
+          echo "DATABASE_URL: present (value not printed)"
+          echo "DIRECT_URL: present (value not printed)"
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Prisma version (from package.json)
+      - name: Prisma version
         run: npx prisma -v
 
-      - name: Show targets (redacted)
+      - name: Verify migration directory
         run: |
-          echo "Pooled: aws-1-us-east-2.pooler.supabase.com:6543"
-          echo "Direct: aws-1-us-east-2.pooler.supabase.com:5432"
-          echo "DATABASE_URL set? ${{ secrets.DATABASE_URL != '' }}"
-          echo "DIRECT_URL set?   ${{ secrets.DIRECT_URL != '' }}"
+          set -euo pipefail
+          test -f prisma/schema.prisma
+          test -d prisma/migrations
+          ls -la prisma/migrations
 
       - name: Wait for pooled (6543)
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
           for i in {1..12}; do
             if timeout 5 bash -lc "echo > /dev/tcp/aws-1-us-east-2.pooler.supabase.com/6543"; then
-              echo "Pooled reachable"; break
+              echo "Pooled reachable"
+              exit 0
             fi
-            echo "Waiting pooled... ($i/12)"; sleep 5
+            echo "Waiting pooled... ($i/12)"
+            sleep 5
           done
+          echo "::error::Pooled database endpoint not reachable"
+          exit 1
 
       - name: Wait for direct (5432)
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
           for i in {1..12}; do
             if timeout 5 bash -lc "echo > /dev/tcp/aws-1-us-east-2.pooler.supabase.com/5432"; then
-              echo "Direct reachable"; break
+              echo "Direct reachable"
+              exit 0
             fi
-            echo "Waiting direct... ($i/12)"; sleep 5
+            echo "Waiting direct... ($i/12)"
+            sleep 5
           done
+          echo "::error::Direct database endpoint not reachable"
+          exit 1
 
-      - name: List migrations (should exist, or deploy will no-op)
+      - name: Prisma migrate status (fail closed on failed/unsafe state)
+        shell: bash
         run: |
-          ls -la prisma || true
-          ls -la prisma/migrations || true
-
-      - name: Prisma migrate status (non-fatal)
-        run: npx prisma migrate status --schema=prisma/schema.prisma || true
-
-      - name: Clean up and resolve problematic migration
-        run: |
-          set +e  # Don't exit on error
-          
-          echo "🔍 Checking for problematic migration: 20251027_t6q_fixup_missing_teams"
-          echo "This migration can't run due to schema changes but teams already exist"
-          echo ""
-          
-          # First, clean up any duplicate entries in the database
-          echo "Step 1: Cleaning up duplicate migration entries..."
-          CLEANUP_SQL="
-          DELETE FROM _prisma_migrations WHERE migration_name = '20251027_t6q_fixup_missing_teams';
-          INSERT INTO _prisma_migrations (migration_name, checksum, started_at, finished_at, applied_steps_count)
-          VALUES ('20251027_t6q_fixup_missing_teams', '', NOW() - INTERVAL '1 day', NOW(), 1)
-          ON CONFLICT DO NOTHING;
-          "
-          
-          echo "$CLEANUP_SQL" | npx prisma db execute --schema=prisma/schema.prisma --stdin 2>&1 || echo "Cleanup attempted"
-          
-          echo ""
-          echo "Step 2: Using Prisma resolve to mark as rolled back..."
-          # Mark as rolled back so Prisma skips it (teams already exist)
-          RESOLVE_OUTPUT=$(npx prisma migrate resolve --rolled-back 20251027_t6q_fixup_missing_teams --schema=prisma/schema.prisma 2>&1)
-          RESOLVE_CODE=$?
-          
-          if [ "$RESOLVE_CODE" = "0" ]; then
-            echo "✅ Successfully marked migration as rolled back"
-            echo "$RESOLVE_OUTPUT"
-          elif echo "$RESOLVE_OUTPUT" | grep -qi "already\|not found\|No failed"; then
-            echo "✅ Migration already handled"
-            echo "$RESOLVE_OUTPUT"
-          else
-            echo "⚠️  Resolve command output:"
-            echo "$RESOLVE_OUTPUT"
-            echo "Continuing - deploy will show if there are still issues"
-          fi
-          
-          echo ""
-          echo "Step 3: Verifying migration status..."
-          STATUS_OUTPUT=$(npx prisma migrate status --schema=prisma/schema.prisma 2>&1 || true)
-          echo "$STATUS_OUTPUT"
-          
-          if echo "$STATUS_OUTPUT" | grep -qi "20251027_t6q_fixup_missing_teams.*failed\|P3009"; then
-            echo ""
-            echo "❌ WARNING: Migration still appears problematic"
-          else
-            echo ""
-            echo "✅ Migration status looks resolved"
-          fi
-          
+          set -uo pipefail
+          set +e
+          STATUS_OUTPUT=$(npx prisma migrate status --schema=prisma/schema.prisma 2>&1)
+          STATUS_CODE=$?
           set -e
+          echo "$STATUS_OUTPUT"
+
+          # Failed / P3009 / unresolved failed migration → operator intervention required
+          if echo "$STATUS_OUTPUT" | grep -Eqi 'P3009|have failed|migration .* failed|failed migrations? in the (target )?database|The following migration\(s\) have failed'; then
+            echo "::error::Unsafe failed-migration state detected. Do not auto-repair. Resolve manually, then re-run."
+            exit 1
+          fi
+
+          # Expected before deliberate deploy: up to date OR pending migrations
+          if echo "$STATUS_OUTPUT" | grep -Eqi 'Database schema is up to date|have not yet been applied|Following migration|not yet been applied'; then
+            echo "Preflight status acceptable for migrate deploy (pending or up-to-date)."
+            exit 0
+          fi
+
+          # Unknown / connection / other errors — fail closed
+          echo "::error::Unexpected prisma migrate status output (exit=${STATUS_CODE}). Refusing deploy."
+          exit 1
 
       - name: Prisma migrate deploy
         run: npx prisma migrate deploy --schema=prisma/schema.prisma
 
-      - name: Prisma generate (optional)
+      - name: Prisma generate
         run: npx prisma generate --schema=prisma/schema.prisma
+
+      - name: Post-deploy migrate status (must be healthy)
+        shell: bash
+        run: |
+          set -uo pipefail
+          set +e
+          STATUS_OUTPUT=$(npx prisma migrate status --schema=prisma/schema.prisma 2>&1)
+          STATUS_CODE=$?
+          set -e
+          echo "$STATUS_OUTPUT"
+
+          if echo "$STATUS_OUTPUT" | grep -Eqi 'P3009|have failed|migration .* failed|failed migrations?'; then
+            echo "::error::Post-deploy status reports a failed migration"
+            exit 1
+          fi
+
+          if echo "$STATUS_OUTPUT" | grep -Eqi 'have not yet been applied|Following migration|not yet been applied'; then
+            echo "::error::Post-deploy status still reports pending migrations"
+            exit 1
+          fi
+
+          if ! echo "$STATUS_OUTPUT" | grep -Eqi 'Database schema is up to date'; then
+            echo "::error::Post-deploy status did not confirm database schema is up to date (exit=${STATUS_CODE})"
+            exit 1
+          fi
+
+          echo "Post-deploy migration status healthy."
+
+      - name: Summary
+        if: always()
+        env:
+          MIGRATION_CONFIRM: ${{ inputs.confirm }}
+          MIGRATION_REASON: ${{ inputs.migration_reason }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "============================================"
+          echo "PRISMA MIGRATE (MANUAL PRODUCTION)"
+          echo "============================================"
+          printf 'confirm: %s\n' "$MIGRATION_CONFIRM"
+          if [ -n "$MIGRATION_REASON" ]; then
+            printf 'migration_reason: %s\n' "$MIGRATION_REASON"
+          else
+            echo "migration_reason: (none provided)"
+          fi
+          printf 'status: %s\n' "$JOB_STATUS"
+          echo "auto push trigger: disabled"
+          echo "_prisma_migrations repair: not invoked"
+          echo "secrets used (names only): DATABASE_URL, DIRECT_URL"
+          echo "============================================"
