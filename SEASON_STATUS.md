@@ -1,7 +1,7 @@
 # Season Status — Gridiron Edge
 
 **Status:** Offseason / paused for regular-season automation  
-**Updated:** 2026-08-07 (Phase 2C-2C — read-only 2026 ratings-input/provider preview; 2C-2B membership PASSED)
+**Updated:** 2026-08-07 (Phase 2C-2D — conference/recruiting diagnostic; 2C-2C production preview completed)
 
 Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISABLE_REPORT.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -29,7 +29,8 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **Phase 2C-1C inventory audit** | **PASSED** (PR #39) — **761** verified rows |
 | **Phase 2C-2A ratings readiness audit** | **Rerun PASSED structural** after 2C-2B — talent/commits still 0/138; `ratingsWriteAuthorized=false` |
 | **Phase 2C-2B FBS membership init** | **PASSED** (PR #41) — **138/138** membership ↔ schedule |
-| **Phase 2C-2C ratings-input provider preview** | **In preparation** — read-only CFBD talent + recruiting preview; conference source under investigation |
+| **Phase 2C-2C ratings-input provider preview** | **Executed** (PR #42) — `/talent` **0** rows; recruiting 221 raw / 136 unique FBS; schema mismatch; conference unsafe |
+| **Phase 2C-2D conference + recruiting diagnostic** | **In preparation** — `/teams/fbs` + recruiting resolver collision diagnosis (read-only) |
 | **Expected 2026 schedule baseline** | **761** games / **138** distinct teams — **verified** |
 | **Ratings computation / persistence** | **Not yet approved** (`ratingsWriteAuthorized=false`) |
 | **Odds ingestion** | **Not yet approved** |
@@ -179,24 +180,35 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 
 **Production:** **138** 2026 FBS `TeamMembership` rows; exact equality with schedule team set (PR #41).
 
-### 2C-2C ratings-input / provider preview (in preparation)
+### 2C-2C ratings-input / provider preview (EXECUTED — production)
 
 | Artifact | Role |
 |----------|------|
 | `apps/jobs/preview-2026-ratings-inputs.ts` | Read-only CFBD talent + recruiting preview vs DB FBS 138 |
 | `.github/workflows/preview-2026-ratings-inputs.yml` | Manual read-only (`workflow_dispatch` only) |
 
-- Provider budget: **2** CFBD calls — `GET /talent?year=2026` (`school`/`year`/`talent`), `GET /recruiting/teams?year=2026` (`year`/`team`/`rank`/`points`)
-- Blue-chip / star breakdown: **not available from `/talent`**
-- Recruiting schema mismatch under investigation (would repeat 2025 zero-commit anomaly) — **do not persist commits yet**
-- Ratings computation remains **blocked** (`ratingsComputeAuthorized=false`); conference source unsafe (88 Independent)
-- No talent/commit/unit-grade/ratings writes; no Odds
-- Investigates unit-grade producers/consumers and V1 conference source
-- **Do not claim 2026 talent/recruiting available until production provider preview is run**
-- **Do not claim ratings ready**
-- Production talent writer `cfbd_team_roster_talent.ts` still maps `team`/`season` (latent schema risk vs current `school`/`year`) — **not modified in 2C-2C**
+**Production run (post PR #42):** `season=2026` — `ok=true`, `structuralOk=true`, `ratingsComputeAuthorized=false`, `conferenceReadyForRatings=false`, `commitPersistenceSafe=false`, mutations=false.
 
-**Still out of scope / unapproved:** talent/commits persistence; Team.conference repair; ratings compute; odds; bets; nightly reactivation.
+* `/talent?year=2026`: **rawRowCount=0** — 2026 Team Talent Composite **unavailable** from CFBD (not a resolver failure)
+* `/recruiting/teams?year=2026`: **221** raw → **136** unique FBS matches; missing **NDSU** + **Sacramento State**; **82** unresolved; **3** excess mapped rows collapse onto already-resolved IDs; schema mismatch (`points` present; `commits`/`averageRating` absent) → would repeat 2025 zero-commit anomaly
+* Team.conference: **88 Independent** remains unsafe for V1 (−5 path)
+* Do **not** write talent/commits; do **not** copy 2025 talent; do **not** compute ratings
+
+### 2C-2D conference + recruiting diagnostic (in preparation)
+
+| Artifact | Role |
+|----------|------|
+| `apps/jobs/diagnose-2026-conference-recruiting.ts` | Read-only `/teams/fbs` conference map + recruiting resolver buckets |
+| `.github/workflows/diagnose-2026-conference-recruiting.yml` | Manual read-only (`workflow_dispatch` only) |
+
+- Provider budget: **2** CFBD calls — `GET /teams/fbs?year=2026`, `GET /recruiting/teams?year=2026` (**no** `/talent`)
+- Readiness flags: `providerFbsSetExact`, `providerConferenceMapSafeForV1`, `currentTeamConferenceSafeFor2026`, `recruitingResolverSafe` (exact set/match — no Independent-count heuristic)
+- Explains recruiting collisions/false-positives as **review** findings; `structuralOk` tracks DB FBS count only
+- **Do not claim `/teams/fbs` conference map is good until production diagnostic runs**
+- No alias/Team.conference/membership writes
+- One `TeamResolver` instance per CLI run
+
+**Still out of scope / unapproved:** talent/commits persistence; Team.conference mutation; ratings compute; odds; bets; nightly reactivation.
 
 ---
 
@@ -210,8 +222,8 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 | **Inventory audit** | **PASSED** | Production workflow SUCCESS after PR #39 |
 | **Ratings readiness** | **Structural OK** | Membership fixed; talent/commits/unit-grades/conference still block write auth |
 | **2026 FBS membership** | **PASSED** | Phase 2C-2B — **138/138** |
-| **Talent / recruiting preview** | **Pending** | Phase 2C-2C read-only provider preview |
-| **Team.conference / V1 adj** | **Open** | 88 Independent suspicious; season-aware source needed before V1 compute |
+| **Talent / recruiting preview** | **Executed** | 2C-2C: `/talent` empty; recruiting schema unsafe; 3 excess mappings TBD |
+| **Team.conference / V1 adj** | **Open** | 88 Independent; 2C-2D diagnoses `/teams/fbs` season-aware candidate |
 | **Season 2025 hardcoding** | Open | Scheduled paths still 2025 — Phase 2D before UI re-enable |
 | **Empty 2026 DB** | **Partial** | Schedule + membership verified; talent/ratings still empty |
 | **Provider secrets** | **Validated** | GitHub secrets worked 2026-08-04 |
@@ -243,9 +255,9 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 
 ## Next phases
 
-1. **Phase 2C-2C** — merge; run `Preview 2026 Ratings Inputs (Manual, Read Only)` with `season=2026`
-2. Operator review of talent/recruiting coverage + commits schema anomaly + conference source decision
-3. Separate approvals for talent/commits ingest (and conference handling) before any ratings compute
+1. **Phase 2C-2D** — merge; run `Diagnose 2026 Conference & Recruiting Mapping (Manual, Read Only)` with `season=2026`
+2. Operator review of `/teams/fbs` conference candidate + recruiting collision/false-positive findings
+3. Separate approvals for aliases / season-aware conference handling / talent availability before any ratings compute
 4. **Phase 2D** — `TARGET_SEASON` in scheduled YAML before bulk UI enables
 
 See [Preseason Reactivation Checklist](docs/preseason-reactivation-checklist.md).

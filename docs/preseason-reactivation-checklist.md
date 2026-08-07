@@ -74,7 +74,7 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 
 ---
 
-## D. Schedule ingest — Phase 2C-1A … 2C-2C
+## D. Schedule ingest — Phase 2C-1A … 2C-2D
 
 | Phase | Status |
 |-------|--------|
@@ -84,7 +84,8 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | **2C-1C inventory audit** | **PASSED** (PR #39) — **761** rows / **138** teams verified |
 | **2C-2A ratings readiness** | **Rerun structural OK** after 2C-2B — talent/commits still 0/138; `ratingsWriteAuthorized=false` |
 | **2C-2B FBS membership** | **PASSED** (PR #41) — **138/138** membership ↔ schedule |
-| **2C-2C ratings-input preview** | **In preparation** — read-only CFBD talent + recruiting; conference source under investigation |
+| **2C-2C ratings-input preview** | **Executed** (PR #42) — `/talent` 0 rows; recruiting 221/136; schema mismatch; conference unsafe |
+| **2C-2D conference/recruiting diagnostic** | **In preparation** — `/teams/fbs` + recruiting resolver buckets |
 | **Ratings computation** | **Not yet approved** |
 | **Odds ingestion** | **Not yet approved** |
 | **Nightly reactivation** | **Not yet approved** |
@@ -118,22 +119,25 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | `Initialize 2026 FBS Membership (Manual, Guarded)` | Membership write workflow |
 | `apps/jobs/preview-2026-ratings-inputs.ts` | Read-only CFBD talent + recruiting preview |
 | `Preview 2026 Ratings Inputs (Manual, Read Only)` | Provider preview workflow (`season=2026`) |
+| `apps/jobs/diagnose-2026-conference-recruiting.ts` | Read-only `/teams/fbs` + recruiting resolver diagnostic (`providerFbsSetExact` / `recruitingResolverSafe`) |
+| `Diagnose 2026 Conference & Recruiting Mapping (Manual, Read Only)` | Diagnostic workflow (`season=2026`) |
 
 ### Production status notes
 
 * Schedule verified: **761** / **138** teams; Week 14 absent
 * Membership **PASSED**: **138/138** FBS ↔ schedule
 * 2C-2A rerun: `structuralOk=true`; talent/commits **0/138**; unit grades **0/138** (expected preseason for grades/stats)
-* Team.conference distribution suspicious (**88 Independent**) — Core V1 would apply −5; **do not mutate in 2C-2C**
-* No 2026 ratings collision; `ratingsWriteAuthorized=false`
-* **Do not claim talent/recruiting available or ratings ready until 2C-2C provider preview + separate write approvals**
+* 2C-2C production: `/talent` **0** rows; recruiting **221** raw / **136** unique FBS; NDSU+Sac missing; **3** excess mapped collisions TBD; schema mismatch; **88 Independent** unsafe
+* `ratingsWriteAuthorized=false` / `ratingsComputeAuthorized=false`
+* **Do not claim `/teams/fbs` conference map or ratings ready until 2C-2D production diagnostic + separate approvals**
 
 - [x] Preview week 0–2 reviewed
 - [x] Week 1–13 + 15 production writes
 - [x] 2C-1C inventory audit PASSED (761)
 - [x] 2C-2B membership PASSED (138)
 - [x] 2C-2A ratings readiness rerun (`structuralOk=true`)
-- [ ] 2C-2C ratings-input provider preview
+- [x] 2C-2C ratings-input provider preview (production)
+- [ ] 2C-2D conference + recruiting diagnostic
 - [ ] Odds / ratings compute / bets remain **out of scope** until separately approved
 
 ---
