@@ -1,7 +1,7 @@
 # Season Status — Gridiron Edge
 
 **Status:** Offseason / paused for regular-season automation  
-**Updated:** 2026-08-07 (Phase 2C-2E — CFBD resolver hardening; 2C-2D production diagnostic completed)
+**Updated:** 2026-08-07 (Phase 2C-2F — season conference design + read-only preview; 2C-2E production PASSED)
 
 Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISABLE_REPORT.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -30,8 +30,9 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **Phase 2C-2A ratings readiness audit** | **Rerun PASSED structural** after 2C-2B — talent/commits still 0/138; `ratingsWriteAuthorized=false` |
 | **Phase 2C-2B FBS membership init** | **PASSED** (PR #41) — **138/138** membership ↔ schedule |
 | **Phase 2C-2C ratings-input provider preview** | **Executed** (PR #42) — `/talent` **0** rows; recruiting 221 raw / 136 unique FBS; schema mismatch; conference unsafe |
-| **Phase 2C-2D conference + recruiting diagnostic** | **Executed** (PR #43) — `/teams/fbs` 138 raw / 136 resolved; NDSU+Sac unresolved; 3 recruiting false-positives; static conference unsafe |
-| **Phase 2C-2E CFBD resolver hardening** | **In preparation** — exact aliases + fail-closed CFBD (no fuzzy) + conference label normalize |
+| **Phase 2C-2D conference + recruiting diagnostic** | **PASSED** (PR #43) — initial run found resolver gaps; post-2C-2E rerun exact |
+| **Phase 2C-2E CFBD resolver hardening** | **PASSED** (PR #44) — 138/138 provider FBS + conference map safe; recruitingResolverSafe=true |
+| **Phase 2C-2F season conference design** | **In preparation** — architecture + read-only persistence preview (no schema write) |
 | **Expected 2026 schedule baseline** | **761** games / **138** distinct teams — **verified** |
 | **Ratings computation / persistence** | **Not yet approved** (`ratingsWriteAuthorized=false`) |
 | **Odds ingestion** | **Not yet approved** |
@@ -212,16 +213,46 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 * `/talent?year=2026` remains empty (from 2C-2C)
 * Provider conference candidate **not production-approved** until 2C-2E resolver hardening merges and diagnostic is **rerun**
 
-### 2C-2E CFBD resolver hardening (in preparation)
+### 2C-2E CFBD resolver hardening (production PASSED)
 
-- Exact CFBD aliases: North Dakota State, Sacramento State, James Madison, South Alabama
-- CFBD provider path: **no generic fuzzy fallback** (fail-closed after exact/normalized aliases)
-- San Diego mis-map guard narrowed (plain `San Diego` must not map to SDSU)
-- Denylist defense-in-depth: North Carolina A&T, Alabama A&M, San Diego
-- `normalizeCfbdConferenceForV1('FBS Independents') === 'Independent'` for diagnostic recognition only — no Team.conference writes; no weight changes
-- After merge: rerun existing `Diagnose 2026 Conference & Recruiting Mapping (Manual, Read Only)` — do not claim provider map production-ready until that rerun
+**Production diagnostic rerun (post PR #44):** `season=2026` — mutations=false, Odds=false, `ratingsComputeAuthorized=false`.
 
-**Still out of scope / unapproved:** talent/commits persistence; Team.conference mutation; season-aware conference persistence; ratings compute; odds; bets; nightly reactivation.
+* `/teams/fbs`: **138/138** exact (`providerFbsSetExact=true`, `providerConferenceMapSafeForV1=true`); NDSU → Mountain West; Sac State → Mid-American; `FBS Independents`→`Independent` in-memory
+* Recruiting: **138/138** provider-FBS validated; false-positives=0; `recruitingResolverSafe=true` (persistence still unsafe — schema mismatch)
+* Static `Team.conference`: **88 Independent**; **100** differences; still unsafe — **do not mutate**
+* `/talent?year=2026` still **0** rows (2C-2C)
+
+### 2C-2F season-aware conference design + read-only preview (in preparation)
+
+| Artifact | Role |
+|----------|------|
+| `apps/jobs/preview-2026-season-conferences.ts` | Read-only would-be season conference rows from `/teams/fbs` |
+| `.github/workflows/preview-2026-season-conferences.yml` | Manual read-only (`workflow_dispatch` only); **1** CFBD call |
+
+#### Consumer inventory (blast radius)
+
+| Area | Role of conference / membership |
+|------|----------------------------------|
+| `Team.conference` (static) | V1 ratings adjustment via `compute_ratings_v1`; web team/ratings pages; diagnostics compare against provider |
+| `TeamMembership` | Season×team FBS denominator (138); membership init/preview; readiness audits; schedule inventory |
+| `Game.conferenceGame` | Schedule flag from CFBD ingest — **not** Team.conference |
+| Hybrid V2 / feature-loader / V2 ratings | No direct Team.conference adjustment path found |
+| Deploy | `prisma-migrate.yml` runs `migrate deploy` on **push to main** when `prisma/**` changes — **not** Vercel |
+
+#### Storage options
+
+1. **Nullable `conference` on TeamMembership** (recommended) — season-aware, one row/team/season, natural V1 join; requires migration in **2C-2G**
+2. New `TeamSeasonConference` table — cleaner provenance (`source`, `sourceUpdatedAt`) but duplicates membership keyspace
+3. Provider map at compute time — rejected (non-reproducible / provider-dependent ratings)
+4. Checked-in YAML snapshot — reproducible but annual drift / dual source of truth
+
+**Recommendation:** Option 1. **No schema/migration in 2C-2F** because merging `prisma/**` would auto-apply via GitHub Actions.
+
+#### V1 future plan
+
+`resolveSeasonAwareConferenceMap()` helper: require complete season-aware map for 2026+; **prohibit** Team.conference fallback for 2026; historical seasons may allow explicit legacy fallback. Production `compute_ratings_v1` **unchanged** this phase.
+
+**Still out of scope / unapproved:** TeamMembership.conference write; Team.conference mutation; talent/commits persistence; ratings compute; odds; bets; nightly reactivation.
 
 ---
 
@@ -236,8 +267,9 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 | **Ratings readiness** | **Structural OK** | Membership fixed; talent/commits/unit-grades/conference still block write auth |
 | **2026 FBS membership** | **PASSED** | Phase 2C-2B — **138/138** |
 | **Talent / recruiting preview** | **Executed** | 2C-2C: `/talent` empty; recruiting schema unsafe |
-| **Team.conference / V1 adj** | **Open** | 2C-2D: 102 diffs / 88 Independent; provider candidate pending 2C-2E rerun |
-| **CFBD resolver hardening** | **In prep (2C-2E)** | Fail-closed CFBD + NDSU/Sac aliases + false-positive denylist |
+| **Team.conference / V1 adj** | **Open** | 2C-2E: provider map safe; static still 100 diffs / 88 Independent |
+| **Season conference persistence** | **Design (2C-2F)** | Recommend TeamMembership.conference; preview-only; migrate in 2C-2G |
+| **CFBD resolver hardening** | **PASSED (2C-2E)** | 138/138 FBS + recruitingResolverSafe |
 | **Season 2025 hardcoding** | Open | Scheduled paths still 2025 — Phase 2D before UI re-enable |
 | **Empty 2026 DB** | **Partial** | Schedule + membership verified; talent/ratings still empty |
 | **Provider secrets** | **Validated** | GitHub secrets worked 2026-08-04 |
@@ -269,9 +301,9 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 
 ## Next phases
 
-1. **Phase 2C-2E** — merge CFBD resolver hardening; rerun `Diagnose 2026 Conference & Recruiting Mapping (Manual, Read Only)` with `season=2026`
-2. Operator review of post-hardening `/teams/fbs` candidate (`providerConferenceMapSafeForV1`) + recruitingResolverSafe
-3. Separate approvals for season-aware conference handling / talent availability before any ratings compute — **do not write Team.conference in 2C-2E**
+1. **Phase 2C-2F** — merge; run `Preview 2026 Season Conferences (Manual, Read Only)` with `season=2026`
+2. **Phase 2C-2G** (separate approval) — Prisma migration + guarded write of TeamMembership.conference
+3. Wire V1 to season-aware conference (fail-closed for 2026); talent availability still blocks ratings
 4. **Phase 2D** — `TARGET_SEASON` in scheduled YAML before bulk UI enables
 
 See [Preseason Reactivation Checklist](docs/preseason-reactivation-checklist.md).

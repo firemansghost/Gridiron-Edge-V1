@@ -298,6 +298,34 @@ export function normalizeCfbdConferenceForV1(
 }
 
 /**
+ * Canonical labels for season-aware persistence (Option 1: TeamMembership.conference).
+ * Collapses known V1 aliases to a single stable spelling without merging distinct conferences.
+ * Does not change adjustment weights.
+ */
+const PERSISTENCE_CANONICAL: Record<string, string> = {
+  'FBS Independents': 'Independent',
+  Independent: 'Independent',
+  MAC: 'Mid-American',
+  'Mid-American': 'Mid-American',
+  AAC: 'American Athletic',
+  'American Athletic': 'American Athletic',
+  B1G: 'Big Ten',
+  'Big Ten': 'Big Ten',
+  MWC: 'Mountain West',
+  'Mountain West': 'Mountain West',
+  'C-USA': 'Conference USA',
+  'Conference USA': 'Conference USA',
+};
+
+export function canonicalizeConferenceForPersistence(
+  conference: string | null | undefined
+): string | null {
+  const normalized = normalizeCfbdConferenceForV1(conference);
+  if (!normalized) return null;
+  return PERSISTENCE_CANONICAL[normalized] ?? normalized;
+}
+
+/**
  * In-memory conference diagnostic from /teams/fbs vs DB FBS + Team.conference.
  */
 export function diagnoseConferenceMap(options: {

@@ -121,17 +121,19 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | `Preview 2026 Ratings Inputs (Manual, Read Only)` | Provider preview workflow (`season=2026`) |
 | `apps/jobs/diagnose-2026-conference-recruiting.ts` | Read-only `/teams/fbs` + recruiting resolver diagnostic (`providerFbsSetExact` / `recruitingResolverSafe`) |
 | `Diagnose 2026 Conference & Recruiting Mapping (Manual, Read Only)` | Diagnostic workflow (`season=2026`) |
+| `apps/jobs/preview-2026-season-conferences.ts` | Read-only would-be season conference rows (`TeamMembership.conference` candidate) |
+| `Preview 2026 Season Conferences (Manual, Read Only)` | Conference persistence preview (`season=2026`; 1 CFBD call) |
 
 ### Production status notes
 
 * Schedule verified: **761** / **138** teams; Week 14 absent
 * Membership **PASSED**: **138/138** FBS ↔ schedule
 * 2C-2A rerun: `structuralOk=true`; talent/commits **0/138**; unit grades **0/138** (expected preseason for grades/stats)
-* 2C-2C production: `/talent` **0** rows; recruiting **221** raw / **136** unique FBS; schema mismatch; **88 Independent** unsafe
-* 2C-2D production: `/teams/fbs` **138** raw / **136** resolved (NDSU+Sac unresolved); recruiting false-positives NC A&T / Alabama A&M / San Diego; `providerFbsSetExact=false`; static Team.conference still unsafe
-* 2C-2E: CFBD fail-closed resolver + aliases + `FBS Independents`→`Independent` normalize (diagnostic only) — rerun 2C-2D workflow after merge
+* 2C-2C production: `/talent` **0** rows; recruiting schema mismatch
+* 2C-2D/2E: provider FBS+conference **138/138 safe**; recruitingResolverSafe=true; static Team.conference still **100** diffs / **88** Independent
+* 2C-2F: architecture recommends nullable `TeamMembership.conference`; **no migration/write** this phase — preview only
 * `ratingsWriteAuthorized=false` / `ratingsComputeAuthorized=false`
-* **Do not claim `/teams/fbs` conference map production-ready until 2C-2E merge + diagnostic rerun + separate approvals**
+* **Do not mutate Team.conference; do not compute ratings until talent + season conference persistence are approved**
 
 - [x] Preview week 0–2 reviewed
 - [x] Week 1–13 + 15 production writes
@@ -140,7 +142,8 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 - [x] 2C-2A ratings readiness rerun (`structuralOk=true`)
 - [x] 2C-2C ratings-input provider preview (production)
 - [x] 2C-2D conference + recruiting diagnostic (production)
-- [ ] 2C-2E CFBD resolver hardening + diagnostic rerun
+- [x] 2C-2E CFBD resolver hardening + diagnostic rerun PASSED
+- [ ] 2C-2F season conference design + read-only preview
 - [ ] Odds / ratings compute / bets remain **out of scope** until separately approved
 
 ---

@@ -52,7 +52,8 @@
     "preview:2026-fbs-membership": "tsx apps/jobs/preview-fbs-membership.ts",
     "write:2026-fbs-membership": "tsx apps/jobs/write-fbs-membership.ts",
     "preview:2026-ratings-inputs": "tsx apps/jobs/preview-2026-ratings-inputs.ts",
-    "diagnose:2026-conference-recruiting": "tsx apps/jobs/diagnose-2026-conference-recruiting.ts"
+    "diagnose:2026-conference-recruiting": "tsx apps/jobs/diagnose-2026-conference-recruiting.ts",
+    "preview:2026-season-conferences": "tsx apps/jobs/preview-2026-season-conferences.ts"
   },
   "devDependencies": {
     "@prisma/client": "6.17.0",
