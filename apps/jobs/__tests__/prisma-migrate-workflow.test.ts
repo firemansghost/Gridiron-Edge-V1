@@ -11,8 +11,38 @@ const WORKFLOW = path.join(
   '../../../.github/workflows/prisma-migrate.yml'
 );
 
+/** Extract YAML `run: |` block bodies (shell scripts), not `env:` mappings. */
+function extractRunBlocks(yaml: string): string[] {
+  const blocks: string[] = [];
+  const lines = yaml.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^\s+run:\s*\|?\s*$/.test(lines[i]) && !/^\s+run:\s*\|/.test(lines[i])) {
+      continue;
+    }
+    if (!lines[i].includes('|')) continue;
+    const indentMatch = lines[i].match(/^(\s*)/);
+    const baseIndent = indentMatch ? indentMatch[1].length : 0;
+    const body: string[] = [];
+    for (let j = i + 1; j < lines.length; j++) {
+      const line = lines[j];
+      if (line.trim() === '') {
+        body.push(line);
+        continue;
+      }
+      const m = line.match(/^(\s*)/);
+      const ind = m ? m[1].length : 0;
+      if (ind <= baseIndent) break;
+      body.push(line);
+    }
+    blocks.push(body.join('\n'));
+  }
+  return blocks;
+}
+
 describe('prisma-migrate workflow hardening', () => {
   const text = fs.readFileSync(WORKFLOW, 'utf8');
+  const runBlocks = extractRunBlocks(text);
+  const runBodies = runBlocks.join('\n---\n');
 
   it('is workflow_dispatch only (no push auto-migrate)', () => {
     expect(text).toMatch(/workflow_dispatch:/);
@@ -25,8 +55,20 @@ describe('prisma-migrate workflow hardening', () => {
     expect(text).toMatch(/confirm:/);
     expect(text).toMatch(/MIGRATE_PRODUCTION/);
     expect(text).toMatch(
-      /confirm must equal MIGRATE_PRODUCTION|CONFIRM" != "MIGRATE_PRODUCTION"/
+      /MIGRATION_CONFIRM" != "MIGRATE_PRODUCTION"|confirm must equal MIGRATE_PRODUCTION/
     );
+  });
+
+  it('passes workflow inputs through env mappings, not shell interpolation', () => {
+    expect(text).toMatch(/MIGRATION_CONFIRM:\s*\$\{\{\s*inputs\.confirm\s*\}\}/);
+    expect(text).toMatch(
+      /MIGRATION_REASON:\s*\$\{\{\s*inputs\.migration_reason\s*\}\}/
+    );
+    // Safe in YAML env: — expected. Unsafe inside run: bodies — forbidden.
+    expect(runBodies).not.toMatch(/\$\{\{\s*inputs\.confirm\s*\}\}/);
+    expect(runBodies).not.toMatch(/\$\{\{\s*inputs\.migration_reason\s*\}\}/);
+    expect(runBodies).toMatch(/\$MIGRATION_CONFIRM/);
+    expect(runBodies).toMatch(/\$MIGRATION_REASON/);
   });
 
   it('uses checkout@v6, setup-node@v6, Node 20, contents read', () => {

@@ -44,17 +44,18 @@ jobs:
 
     steps:
       - name: Confirm production migration authorization
+        env:
+          MIGRATION_CONFIRM: ${{ inputs.confirm }}
+          MIGRATION_REASON: ${{ inputs.migration_reason }}
         run: |
           set -euo pipefail
-          CONFIRM="${{ inputs.confirm }}"
-          if [ "$CONFIRM" != "MIGRATE_PRODUCTION" ]; then
-            echo "::error::Refusing migrate deploy. confirm must equal MIGRATE_PRODUCTION (got non-matching input)."
+          if [ "$MIGRATION_CONFIRM" != "MIGRATE_PRODUCTION" ]; then
+            echo "::error::Refusing migrate deploy. confirm must equal MIGRATE_PRODUCTION."
             exit 1
           fi
           echo "confirm: MIGRATE_PRODUCTION"
-          REASON="${{ inputs.migration_reason }}"
-          if [ -n "$REASON" ]; then
-            echo "migration_reason: ${REASON}"
+          if [ -n "$MIGRATION_REASON" ]; then
+            printf 'migration_reason: %s\n' "$MIGRATION_REASON"
           else
             echo "migration_reason: (none provided)"
           fi
@@ -190,13 +191,21 @@ jobs:
 
       - name: Summary
         if: always()
+        env:
+          MIGRATION_CONFIRM: ${{ inputs.confirm }}
+          MIGRATION_REASON: ${{ inputs.migration_reason }}
+          JOB_STATUS: ${{ job.status }}
         run: |
           echo "============================================"
           echo "PRISMA MIGRATE (MANUAL PRODUCTION)"
           echo "============================================"
-          echo "confirm: ${{ inputs.confirm }}"
-          echo "migration_reason: ${{ inputs.migration_reason }}"
-          echo "status: ${{ job.status }}"
+          printf 'confirm: %s\n' "$MIGRATION_CONFIRM"
+          if [ -n "$MIGRATION_REASON" ]; then
+            printf 'migration_reason: %s\n' "$MIGRATION_REASON"
+          else
+            echo "migration_reason: (none provided)"
+          fi
+          printf 'status: %s\n' "$JOB_STATUS"
           echo "auto push trigger: disabled"
           echo "_prisma_migrations repair: not invoked"
           echo "secrets used (names only): DATABASE_URL, DIRECT_URL"
