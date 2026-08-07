@@ -130,8 +130,9 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 * Membership **PASSED**: **138/138** FBS ↔ schedule
 * 2C-2A rerun: `structuralOk=true`; talent/commits **0/138**; unit grades **0/138** (expected preseason for grades/stats)
 * 2C-2C production: `/talent` **0** rows; recruiting schema mismatch
-* 2C-2D/2E: provider FBS+conference **138/138 safe**; recruitingResolverSafe=true; static Team.conference still **100** diffs / **88** Independent
-* 2C-2F: architecture recommends nullable `TeamMembership.conference`; **no migration/write** this phase — preview only
+* 2C-2D/2E: provider FBS+conference **138/138 safe**; recruitingResolverSafe=true; static Team.conference still unsafe
+* 2C-2F production: conference candidate **138/138** `writeEligible=true` (classification); **92** static semantic diffs; no schema write
+* 2C-2G-1: harden Prisma Migrate to **manual-only** before TeamMembership.conference schema
 * `ratingsWriteAuthorized=false` / `ratingsComputeAuthorized=false`
 * **Do not mutate Team.conference; do not compute ratings until talent + season conference persistence are approved**
 
@@ -143,7 +144,8 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 - [x] 2C-2C ratings-input provider preview (production)
 - [x] 2C-2D conference + recruiting diagnostic (production)
 - [x] 2C-2E CFBD resolver hardening + diagnostic rerun PASSED
-- [ ] 2C-2F season conference design + read-only preview
+- [x] 2C-2F season conference design + read-only preview PASSED
+- [ ] 2C-2G-1 Prisma migrate workflow hardening
 - [ ] Odds / ratings compute / bets remain **out of scope** until separately approved
 
 ---

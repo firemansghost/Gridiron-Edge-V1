@@ -41,12 +41,27 @@ npm run db:generate
 
 #### Prisma Migrate (Production)
 - **Workflow**: `.github/workflows/prisma-migrate.yml`
-- **Trigger**: Push to main branch with changes to `prisma/` directory
-- **Actions**: 
-  1. Generate Prisma client
-  2. Run `prisma migrate deploy`
-  3. Verify migration success
+- **Trigger**: **`workflow_dispatch` only** (Phase 2C-2G-1) — merging `prisma/**` to `main` does **not** auto-deploy
+- **Authorization**: input `confirm` must equal `MIGRATE_PRODUCTION`
+- **Actions**:
+  1. Confirm authorization + secret presence (names only)
+  2. Connectivity preflight
+  3. Fail-closed `prisma migrate status` (refuse P3009 / failed migrations; pending OK)
+  4. `prisma migrate deploy`
+  5. `prisma generate`
+  6. Post-deploy `prisma migrate status` must report up to date
 - **Secrets Required**: `DATABASE_URL`, `DIRECT_URL`
+- **Not invoked**: providers, Odds, ETL, ratings, `_prisma_migrations` repair SQL
+
+##### Historical note (`20251027_t6q_fixup_missing_teams`)
+A one-time Oct 2025 repair previously DELETE/INSERT-rewrote `_prisma_migrations` and ran `migrate resolve --rolled-back` on every migrate job. That recurring behavior is **removed**. Loose SQL under `prisma/migrations/*cleanup*`, `*resolve*`, `*mark-migration*` is historical/emergency reference only and is **not** called by CI.
+
+##### Operator procedure (after a schema/migration PR merges)
+1. Merge the schema + migration PR to `main` (no automatic DB change).
+2. Run **Prisma Migrate** via Actions → Run workflow.
+3. Set `confirm` = `MIGRATE_PRODUCTION`.
+4. Optionally set `migration_reason`.
+5. Verify post-deploy status is healthy before application writes that depend on the new columns.
 
 #### Prisma Guardrails (PR Checks)
 - **Workflow**: `.github/workflows/prisma-guardrails.yml`
