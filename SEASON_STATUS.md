@@ -1,7 +1,7 @@
 # Season Status — Gridiron Edge
 
 **Status:** Offseason / paused for regular-season automation  
-**Updated:** 2026-08-06 (Phase 2C-2A — read-only 2026 ratings-input readiness audit; schedule inventory PASSED)
+**Updated:** 2026-08-07 (Phase 2C-2B — guarded 2026 FBS TeamMembership init; 2C-2A audit found zero 2026 membership)
 
 Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISABLE_REPORT.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -12,7 +12,7 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | Item | Status |
 |------|--------|
 | **Calendar context** | **2026-08-04** — Week Zero begins **2026-08-27**; public 2026 schedules exist |
-| **Production Supabase** | **761** verified 2026 schedule rows (2C-1C PASSED); ratings inputs not yet audited in production |
+| **Production Supabase** | **761** schedule rows verified; **0** 2026 FBS TeamMembership (blocks ratings readiness) |
 | **2025 regular season** | Complete |
 | **Production app** | Deployed; Season Update banner (Dec 22, 2025) is stale — update before public preseason |
 | **Dual-model** | **Merged to `main`** (PR #34); Phase H verification passed |
@@ -26,10 +26,11 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **Phase 2C-1A2** | **Merged (PR #37)** — preview-only pathway live-validated |
 | **Phase 2C-1A2 preview validation** | **PASSED** (weeks 0/1/2 reviewed) |
 | **Phase 2C-1B production schedule write** | **Merged (PR #38)** — Weeks **1–13** and **15** written via guarded workflow |
-| **Phase 2C-1C inventory audit** | **PASSED** (PR #39 merged; production workflow SUCCESS) — **761** verified rows |
-| **Phase 2C-2A ratings readiness audit** | **In preparation** — manual read-only; **not yet run against production** |
-| **Expected 2026 schedule baseline** | **761** games (weeks 1–13 + 15; week **14** absent) — **verified in production** |
-| **Ratings computation / persistence** | **Not yet approved** |
+| **Phase 2C-1C inventory audit** | **PASSED** (PR #39) — **761** verified rows |
+| **Phase 2C-2A ratings readiness audit** | **Executed** (PR #40) — structural fail: **0** 2026 FBS membership; schedule OK; no 2026 ratings collision |
+| **Phase 2C-2B FBS membership init** | **In preparation** — candidate = 2025 FBS (136) + NDSU + Sac State = **138** |
+| **Expected 2026 schedule baseline** | **761** games / **138** distinct teams — **verified** |
+| **Ratings computation / persistence** | **Not yet approved** (blocked on membership) |
 | **Odds ingestion** | **Not yet approved** |
 | **Nightly workflow reactivation** | **Not yet approved** |
 
@@ -155,20 +156,38 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 * Blank venues/cities: **0**; integrity issues: **none**
 * Providers/mutations: **not invoked**
 
-### 2C-2A ratings-input readiness audit (in preparation)
+### 2C-2A ratings-input readiness audit (executed — structural fail)
 
 | Artifact | Role |
 |----------|------|
 | `apps/jobs/audit-ratings-readiness.ts` | Read-only ratings-input inventory CLI |
 | `.github/workflows/audit-2026-ratings-readiness.yml` | Manual read-only audit (`workflow_dispatch` only) |
 
-- Inventories FBS membership vs schedule, talent, commits, season/game stats, existing ratings/power ratings/unit grades
-- Compares against **2025** for coverage context
-- Documents workflow risks (defaults 2025, Node 18, upserts, count-only verify, talent-only fallback)
-- **`ratingsWriteAuthorized` always false** — no compute/persist in this phase
-- **Do not claim ratings readiness PASSED until the 2C-2A workflow has been run after merge**
+**Production run (post PR #40 merge):** `season=2026` — process completed read-only; **exited nonzero** due to structural prerequisite:
 
-**Still out of scope / unapproved:** ratings computation; ratings persistence; odds ingestion; scores; bets; nightly reactivation.
+* Schedule: **761** games / **138** distinct teams; preseason; zero scores/finals — OK
+* **2026 FBS TeamMembership: 0** (all 138 schedule teams fail membership check)
+* **2025 FBS TeamMembership: 136**
+* Schedule teams not in 2025 FBS: `north-dakota-state`, `sacramento-state` (approved 2026 FBS transitions; Team rows exist; conference metadata still `Independent` — **do not modify in 2C-2B**)
+* 2026 talent/commits/stats/ratings/power/unit-grades: **0** (expected preseason for stats; talent/commits not addressed here)
+* No 2026 ratings collision
+* **`ratingsWriteAuthorized=false`** — ratings readiness **not** PASSED
+
+### 2C-2B FBS membership initialization (in preparation)
+
+| Artifact | Role |
+|----------|------|
+| `apps/jobs/preview-fbs-membership.ts` | Read-only candidate/schedule set preview |
+| `apps/jobs/write-fbs-membership.ts` | Guarded one-time insert — `--confirm-write WRITE_2026_FBS_MEMBERSHIP` |
+| Preview / Init workflows | Manual `workflow_dispatch` only |
+
+**Candidate rule:** 2025 FBS (136) ∪ {`north-dakota-state`, `sacramento-state`} = **138**, must exactly equal 2026 schedule team IDs.
+
+- Mutation scope: insert **only** `TeamMembership` rows (`season=2026`, `level=fbs`)
+- No Team updates, no deletes, no providers, no ratings/talent/stats
+- **Do not claim membership write succeeded until the production write workflow is run**
+
+**Still out of scope / unapproved:** ratings computation; talent/commits ingest; odds; scores; bets; nightly reactivation; Team.conference history.
 
 ---
 
@@ -180,9 +199,10 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 | **Week Zero mapping** | **Resolved** | No CFBD week 0; first bucket = provider week **1** |
 | **Production write** | **Complete** | Weeks 1–13 + 15; **761** rows verified by 2C-1C |
 | **Inventory audit** | **PASSED** | Production workflow SUCCESS after PR #39 |
-| **Ratings readiness** | **Not yet run** | Phase 2C-2A audit after merge |
+| **Ratings readiness** | **Blocked** | 2C-2A executed; fail = **0** 2026 FBS membership |
+| **2026 FBS membership** | **Not initialized** | Phase 2C-2B — candidate **138** (136 + NDSU + Sac State) |
 | **Season 2025 hardcoding** | Open | Scheduled paths still 2025 — Phase 2D before UI re-enable |
-| **Empty 2026 DB** | **Resolved** | Schedule verified; ratings inputs TBD via 2C-2A |
+| **Empty 2026 DB** | **Partial** | Schedule verified; membership/talent/ratings still empty |
 | **Provider secrets** | **Validated** | GitHub secrets worked 2026-08-04 |
 | **Weekly bet sync** | Manual workflow ready | `sync-weekly-bets.yml` — dispatch only |
 | **V3 totals** | **Blocked** | Missing `sync-v3-bets.ts` — leave disabled |
@@ -212,9 +232,9 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 
 ## Next phases
 
-1. **Phase 2C-2A** — merge + run `Audit 2026 Ratings Readiness (Manual, Read Only)` with `season=2026`
-2. Operator review of coverage / collision findings; **do not** run ratings-v1/v2 until separately approved
-3. **Phase 2C-2+** — ratings compute (if approved), then odds / bet sync (separate approvals)
+1. **Phase 2C-2B** — merge; run membership **preview**; then guarded write with `WRITE_2026_FBS_MEMBERSHIP`
+2. Re-run `Audit 2026 Ratings Readiness` after membership success (expect membership structural pass; talent/commits still review)
+3. Separate approvals for talent/commits ingest before any ratings compute
 4. **Phase 2D** — `TARGET_SEASON` in scheduled YAML before bulk UI enables
 
 See [Preseason Reactivation Checklist](docs/preseason-reactivation-checklist.md).

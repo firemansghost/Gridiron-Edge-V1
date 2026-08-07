@@ -48,7 +48,9 @@
     "preview:cfbd-schedules": "tsx scripts/preview-cfbd-schedules.ts",
     "write:cfbd-schedules": "tsx apps/jobs/write-schedules.ts",
     "audit:2026-schedules": "tsx apps/jobs/audit-schedule-inventory.ts",
-    "audit:2026-ratings-readiness": "tsx apps/jobs/audit-ratings-readiness.ts"
+    "audit:2026-ratings-readiness": "tsx apps/jobs/audit-ratings-readiness.ts",
+    "preview:2026-fbs-membership": "tsx apps/jobs/preview-fbs-membership.ts",
+    "write:2026-fbs-membership": "tsx apps/jobs/write-fbs-membership.ts"
   },
   "devDependencies": {
     "@prisma/client": "6.17.0",
