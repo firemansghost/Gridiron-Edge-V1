@@ -186,11 +186,15 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 | `apps/jobs/preview-2026-ratings-inputs.ts` | Read-only CFBD talent + recruiting preview vs DB FBS 138 |
 | `.github/workflows/preview-2026-ratings-inputs.yml` | Manual read-only (`workflow_dispatch` only) |
 
-- Provider budget: **2** CFBD calls — `GET /talent?year=2026`, `GET /recruiting/teams?year=2026`
+- Provider budget: **2** CFBD calls — `GET /talent?year=2026` (`school`/`year`/`talent`), `GET /recruiting/teams?year=2026` (`year`/`team`/`rank`/`points`)
+- Blue-chip / star breakdown: **not available from `/talent`**
+- Recruiting schema mismatch under investigation (would repeat 2025 zero-commit anomaly) — **do not persist commits yet**
+- Ratings computation remains **blocked** (`ratingsComputeAuthorized=false`); conference source unsafe (88 Independent)
 - No talent/commit/unit-grade/ratings writes; no Odds
 - Investigates unit-grade producers/consumers and V1 conference source
-- **Do not claim 2026 talent/recruiting available until provider preview proves coverage**
+- **Do not claim 2026 talent/recruiting available until production provider preview is run**
 - **Do not claim ratings ready**
+- Production talent writer `cfbd_team_roster_talent.ts` still maps `team`/`season` (latent schema risk vs current `school`/`year`) — **not modified in 2C-2C**
 
 **Still out of scope / unapproved:** talent/commits persistence; Team.conference repair; ratings compute; odds; bets; nightly reactivation.
 

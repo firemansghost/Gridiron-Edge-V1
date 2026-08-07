@@ -22,16 +22,15 @@ export interface AuditFinding {
 export type ResolveTeamId = (providerTeamName: string) => string | null;
 
 export interface RawTalentRow {
-  team?: string;
-  conference?: string;
-  season?: number;
+  /** Canonical CFBD /talent school name */
+  school?: string;
+  /** Canonical CFBD /talent year */
   year?: number;
   talent?: number;
-  recruiting?: {
-    fiveStars?: number;
-    fourStars?: number;
-    threeStars?: number;
-  };
+  /** Legacy compatibility only — production mapper historically read `team` */
+  team?: string;
+  /** Legacy compatibility only — production mapper historically read `season` */
+  season?: number;
   [key: string]: unknown;
 }
 
@@ -56,11 +55,9 @@ export interface WouldBeTalentRow {
   season: number;
   providerTeamName: string;
   talentComposite: number | null;
-  fiveStar: number | null;
-  fourStar: number | null;
-  threeStar: number | null;
-  blueChipsPct: number | null;
   providerSeason: number | null;
+  /** /talent does not expose star counts or blue-chip % */
+  blueChipDataAvailableFromTalentEndpoint: false;
 }
 
 export interface WouldBeCommitsRow {
@@ -96,7 +93,8 @@ export interface ProviderFamilyCoverage {
 
 export interface TalentPreviewSummary extends ProviderFamilyCoverage {
   talentCompositeFiniteCount: number;
-  blueChipsPctFiniteCount: number;
+  /** Always false — CFBD /talent provides composite only, not star/blue-chip breakdown */
+  blueChipDataAvailableFromTalentEndpoint: false;
   talentMin: number | null;
   talentAvg: number | null;
   talentMax: number | null;
@@ -158,6 +156,13 @@ export interface ConferenceInvestigation {
 export interface RatingsInputPreviewResult {
   ok: boolean;
   structuralOk: boolean;
+  previewCompleted: boolean;
+  /** Always false in Phase 2C-2C — this preview never authorizes computation */
+  ratingsComputeAuthorized: false;
+  ratingsComputeBlocked: boolean;
+  ratingsComputeBlockReasons: string[];
+  conferenceReadyForRatings: boolean;
+  commitPersistenceSafe: boolean;
   mutationsInvoked: false;
   ratingsComputed: false;
   ratingsPersisted: false;
@@ -214,58 +219,45 @@ function numericStats(values: number[]): {
   return { min, avg, max };
 }
 
-function calculateBlueChipsPct(row: {
-  fiveStar: number | null;
-  fourStar: number | null;
-  threeStar: number | null;
-}): number | null {
-  const five = row.fiveStar ?? 0;
-  const four = row.fourStar ?? 0;
-  const three = row.threeStar ?? 0;
-  const total = five + four + three;
-  if (total === 0) return null;
-  return ((five + four) / total) * 100;
+function nonblankString(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const t = v.trim();
+  return t === '' ? null : t;
 }
 
 /**
- * Mirrors `mapCFBDTalentToTalentData` + blue-chip calc from cfbd_team_roster_talent.ts
- * (in-memory only — no persistence).
+ * Maps CFBD /talent rows (canonical: school/year/talent).
+ * Name resolution: school → legacy team fallback → unresolved.
+ * Year preferred over legacy season.
+ * Does not invent star/blue-chip fields (endpoint does not provide them).
+ *
+ * Note: production writer `cfbd_team_roster_talent.ts#mapCFBDTalentToTalentData`
+ * still reads `team`/`season` — latent schema risk; not modified in this read-only phase.
  */
 export function mapTalentProviderRow(
   raw: RawTalentRow,
   resolveTeamId: ResolveTeamId,
   requestedSeason: number
 ): WouldBeTalentRow | { unresolved: string } {
-  const name = typeof raw.team === 'string' ? raw.team.trim() : '';
+  const name =
+    nonblankString(raw.school) ?? nonblankString(raw.team) ?? null;
   if (!name) return { unresolved: '(blank)' };
   const teamId = resolveTeamId(name);
   if (!teamId) return { unresolved: name };
 
-  const providerSeason = isFiniteNumber(raw.season)
-    ? raw.season
-    : isFiniteNumber(raw.year)
-      ? raw.year
+  const providerSeason = isFiniteNumber(raw.year)
+    ? raw.year
+    : isFiniteNumber(raw.season)
+      ? raw.season
       : null;
-  const fiveStar = isFiniteNumber(raw.recruiting?.fiveStars)
-    ? raw.recruiting!.fiveStars!
-    : null;
-  const fourStar = isFiniteNumber(raw.recruiting?.fourStars)
-    ? raw.recruiting!.fourStars!
-    : null;
-  const threeStar = isFiniteNumber(raw.recruiting?.threeStars)
-    ? raw.recruiting!.threeStars!
-    : null;
 
   return {
     teamId,
     season: providerSeason ?? requestedSeason,
     providerTeamName: name,
     talentComposite: isFiniteNumber(raw.talent) ? raw.talent : null,
-    fiveStar,
-    fourStar,
-    threeStar,
-    blueChipsPct: calculateBlueChipsPct({ fiveStar, fourStar, threeStar }),
     providerSeason,
+    blueChipDataAvailableFromTalentEndpoint: false,
   };
 }
 
@@ -420,15 +412,12 @@ export function previewTalentInputs(options: {
   const talentValues = fbsMapped
     .map((m) => m.talentComposite)
     .filter(isFiniteNumber);
-  const blueChipValues = fbsMapped
-    .map((m) => m.blueChipsPct)
-    .filter(isFiniteNumber);
   const stats = numericStats(talentValues);
 
   return {
     ...coverageBase,
     talentCompositeFiniteCount: talentValues.length,
-    blueChipsPctFiniteCount: blueChipValues.length,
+    blueChipDataAvailableFromTalentEndpoint: false,
     talentMin: stats.min,
     talentAvg: stats.avg,
     talentMax: stats.max,
@@ -639,7 +628,7 @@ export function investigateConferenceAlignment(options: {
 
   findings.push({
     code: 'conference_source_team_table',
-    severity: 'structural',
+    severity: 'review',
     message:
       'Core V1 conference adjustment reads Team.conference only (compute_ratings_v1.ts) — not season-specific',
   });
@@ -659,7 +648,7 @@ export function investigateConferenceAlignment(options: {
   if (independentOrMissing >= 50) {
     findings.push({
       code: 'conference_distribution_suspicious',
-      severity: 'structural',
+      severity: 'review',
       message: `${independentOrMissing}/${options.fbsIds.length} FBS teams are Independent/missing — unreliable for 2026 V1 conference adjustment`,
     });
   }
@@ -794,6 +783,7 @@ export function buildRatingsInputPreview(options: {
   findings.push(...unitGrades.findings, ...conference.findings);
 
   if (talent.seasonMismatch) {
+    structuralOk = false;
     findings.push({
       code: 'talent_season_mismatch',
       severity: 'structural',
@@ -801,6 +791,7 @@ export function buildRatingsInputPreview(options: {
     });
   }
   if (commits.seasonMismatch) {
+    structuralOk = false;
     findings.push({
       code: 'commits_season_mismatch',
       severity: 'structural',
@@ -856,14 +847,49 @@ export function buildRatingsInputPreview(options: {
       .map((r) => r.teamId)
   ).size;
 
-  // Conference findings are investigative — do not fail provider preview alone.
-  // Structural fail: wrong FBS count or provider season mismatch.
-  const previewOk =
-    structuralOk && !talent.seasonMismatch && !commits.seasonMismatch;
+  const conferenceReadyForRatings =
+    conference.independentOrMissingCount < 50 &&
+    conference.wouldReceiveIndependentOrUnknownAdj < 50;
+  const commitPersistenceSafe = !commits.wouldRepeat2025ZeroCommitAnomaly;
+
+  const ratingsComputeBlockReasons: string[] = [];
+  if (!conferenceReadyForRatings) {
+    ratingsComputeBlockReasons.push(
+      `Team.conference unsafe for 2026 V1 adjustment (${conference.independentOrMissingCount}/${conference.fbsCount} Independent/missing)`
+    );
+  }
+  if (talent.matchedFbsCount < EXPECTED_FBS_COUNT) {
+    ratingsComputeBlockReasons.push(
+      `Talent coverage incomplete: ${talent.matchedFbsCount}/${EXPECTED_FBS_COUNT} FBS matched`
+    );
+  }
+  if (talent.talentCompositeFiniteCount < EXPECTED_FBS_COUNT) {
+    ratingsComputeBlockReasons.push(
+      `Talent composite finite values incomplete: ${talent.talentCompositeFiniteCount}/${EXPECTED_FBS_COUNT}`
+    );
+  }
+  if (!commitPersistenceSafe) {
+    ratingsComputeBlockReasons.push(
+      'Recruiting /recruiting/teams schema mismatch blocks safe TeamClassCommits persistence (does not alone block Core V1 if talent exists)'
+    );
+  }
+  // Phase 2C-2C never authorizes compute regardless of coverage
+  ratingsComputeBlockReasons.push(
+    'Phase 2C-2C is read-only preview — ratings computation not authorized'
+  );
+
+  const ratingsComputeBlocked = true;
+  const previewOk = structuralOk;
 
   return {
     ok: previewOk,
     structuralOk,
+    previewCompleted: true,
+    ratingsComputeAuthorized: false,
+    ratingsComputeBlocked,
+    ratingsComputeBlockReasons,
+    conferenceReadyForRatings,
+    commitPersistenceSafe,
     mutationsInvoked: false,
     ratingsComputed: false,
     ratingsPersisted: false,
@@ -897,8 +923,16 @@ export function formatRatingsInputPreviewReport(
   push(`  mode: READ_ONLY`);
   push(`  targetSeason: ${result.targetSeason}`);
   push(`  dbFbsCount: ${result.dbFbsCount}`);
+  push(`  previewCompleted: ${result.previewCompleted}`);
   push(`  structuralOk: ${result.structuralOk}`);
   push(`  ok: ${result.ok}`);
+  push(`  ratingsComputeAuthorized: ${result.ratingsComputeAuthorized}`);
+  push(`  ratingsComputeBlocked: ${result.ratingsComputeBlocked}`);
+  push(`  conferenceReadyForRatings: ${result.conferenceReadyForRatings}`);
+  push(`  commitPersistenceSafe: ${result.commitPersistenceSafe}`);
+  push(
+    `  ratingsComputeBlockReasons: [${result.ratingsComputeBlockReasons.join('; ')}]`
+  );
   push(`  providerRequestCount: ${result.providerRequestCount}`);
   push(`  providerEndpoints: [${result.providerEndpoints.join(', ')}]`);
   push(`  mutationsInvoked: ${result.mutationsInvoked}`);
@@ -910,7 +944,7 @@ export function formatRatingsInputPreviewReport(
   push(`  unitGradeWrites: ${result.unitGradeWrites}`);
   push(`  statsWrites: ${result.statsWrites}`);
   push('');
-  push('--- Talent (CFBD /talent) ---');
+  push('--- Talent (CFBD /talent: school/year/talent) ---');
   push(`  rawRowCount: ${result.talent.rawRowCount}`);
   push(`  normalizedTeamCount: ${result.talent.normalizedTeamCount}`);
   push(
@@ -922,7 +956,10 @@ export function formatRatingsInputPreviewReport(
   push(
     `  talentCompositeFinite: ${result.talent.talentCompositeFiniteCount}`
   );
-  push(`  blueChipsPctFinite: ${result.talent.blueChipsPctFiniteCount}`);
+  push(
+    `  blueChipDataAvailableFromTalentEndpoint: ${result.talent.blueChipDataAvailableFromTalentEndpoint}`
+  );
+  push(`  blueChipsPct: not available from /talent`);
   push(
     `  talent min/avg/max: ${result.talent.talentMin}/${result.talent.talentAvg}/${result.talent.talentMax}`
   );

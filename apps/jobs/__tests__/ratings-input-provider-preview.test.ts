@@ -13,6 +13,7 @@ import {
   buildRatingsInputPreview,
   investigateConferenceAlignment,
   investigateUnitGrades,
+  mapTalentProviderRow,
   parsePreviewRatingsInputArgs,
   previewCommitsInputs,
   previewTalentInputs,
@@ -27,10 +28,11 @@ function nameMapForFbs(fbs: string[]): Record<string, string> {
   return map;
 }
 
+/** Official CFBD /talent shape: school / year / talent */
 function healthyTalentRows(fbs: string[]) {
   return fbs.map((id, i) => ({
-    team: `Name ${id}`,
-    season: 2026,
+    school: `Name ${id}`,
+    year: 2026,
     talent: 600 + i,
   }));
 }
@@ -88,11 +90,11 @@ describe('parse args', () => {
   });
 });
 
-describe('talent preview', () => {
+describe('talent preview (official /talent school/year/talent)', () => {
   const fbs = buildFbsFixture();
   const resolve = buildIdentityResolver(nameMapForFbs(fbs));
 
-  it('healthy 138 DB membership baseline + full talent coverage', () => {
+  it('138 official-shape school/year/talent rows → 138 matched', () => {
     const summary = previewTalentInputs({
       fbsIds: fbs,
       rawRows: healthyTalentRows(fbs),
@@ -103,9 +105,10 @@ describe('talent preview', () => {
     expect(summary.missingFbsIds).toHaveLength(0);
     expect(summary.talentCompositeFiniteCount).toBe(138);
     expect(summary.seasonMismatch).toBe(false);
+    expect(summary.blueChipDataAvailableFromTalentEndpoint).toBe(false);
   });
 
-  it('talent partial coverage', () => {
+  it('talent partial official-shape coverage', () => {
     const summary = previewTalentInputs({
       fbsIds: fbs,
       rawRows: healthyTalentRows(fbs.slice(0, 100)),
@@ -115,10 +118,10 @@ describe('talent preview', () => {
     expect(summary.missingFbsIds).toHaveLength(38);
   });
 
-  it('talent duplicate team', () => {
+  it('talent duplicate school', () => {
     const rows = [
       ...healthyTalentRows(fbs.slice(0, 1)),
-      { team: `Name ${fbs[0]}`, season: 2026, talent: 700 },
+      { school: `Name ${fbs[0]}`, year: 2026, talent: 700 },
     ];
     const summary = previewTalentInputs({
       fbsIds: fbs,
@@ -128,26 +131,90 @@ describe('talent preview', () => {
     expect(summary.duplicateTeamIds).toContain(fbs[0]);
   });
 
-  it('talent unknown team', () => {
+  it('talent unresolved school', () => {
     const summary = previewTalentInputs({
       fbsIds: fbs,
-      rawRows: [{ team: 'Unknown U', season: 2026, talent: 500 }],
+      rawRows: [{ school: 'Unknown U', year: 2026, talent: 500 }],
       resolveTeamId: resolve,
     });
     expect(summary.unresolvedProviderNames).toContain('Unknown U');
     expect(summary.matchedFbsCount).toBe(0);
   });
 
+  it('blank/missing school unresolved', () => {
+    expect(
+      mapTalentProviderRow({ year: 2026, talent: 500 }, resolve, 2026)
+    ).toEqual({ unresolved: '(blank)' });
+    expect(
+      mapTalentProviderRow({ school: '   ', year: 2026, talent: 500 }, resolve, 2026)
+    ).toEqual({ unresolved: '(blank)' });
+  });
+
+  it('optional legacy team fallback when school absent', () => {
+    const mapped = mapTalentProviderRow(
+      { team: `Name ${fbs[0]}`, year: 2026, talent: 612 },
+      resolve,
+      2026
+    );
+    expect(mapped).toMatchObject({
+      teamId: fbs[0],
+      talentComposite: 612,
+      blueChipDataAvailableFromTalentEndpoint: false,
+    });
+  });
+
+  it('prefers school over legacy team when both present', () => {
+    const mapped = mapTalentProviderRow(
+      {
+        school: `Name ${fbs[0]}`,
+        team: 'Wrong Name',
+        year: 2026,
+        talent: 700,
+      },
+      resolve,
+      2026
+    );
+    expect(mapped).toMatchObject({ teamId: fbs[0], providerTeamName: `Name ${fbs[0]}` });
+  });
+
   it('talent nonfinite fields', () => {
     const summary = previewTalentInputs({
       fbsIds: fbs,
       rawRows: [
-        { team: `Name ${fbs[0]}`, season: 2026, talent: Number.NaN },
-        { team: `Name ${fbs[1]}`, season: 2026, talent: 650 },
+        { school: `Name ${fbs[0]}`, year: 2026, talent: Number.NaN },
+        { school: `Name ${fbs[1]}`, year: 2026, talent: 650 },
       ],
       resolveTeamId: resolve,
     });
     expect(summary.talentCompositeFiniteCount).toBe(1);
+  });
+
+  it('year=2025 when 2026 requested → season mismatch', () => {
+    const summary = previewTalentInputs({
+      fbsIds: fbs,
+      rawRows: fbs.map((id) => ({
+        school: `Name ${id}`,
+        year: 2025,
+        talent: 600,
+      })),
+      resolveTeamId: resolve,
+    });
+    expect(summary.seasonMismatch).toBe(true);
+    expect(summary.providerSeasonValues).toEqual([2025]);
+  });
+
+  it('no false blue-chip-data claim from /talent', () => {
+    const summary = previewTalentInputs({
+      fbsIds: fbs,
+      rawRows: healthyTalentRows(fbs),
+      resolveTeamId: resolve,
+    });
+    expect(summary.blueChipDataAvailableFromTalentEndpoint).toBe(false);
+    expect(
+      summary.wouldBeRows.every(
+        (r) => r.blueChipDataAvailableFromTalentEndpoint === false
+      )
+    ).toBe(true);
   });
 });
 
@@ -231,7 +298,7 @@ describe('recruiting preview', () => {
   });
 });
 
-describe('season mismatch and membership authority', () => {
+describe('season mismatch, membership authority, readiness classification', () => {
   const fbs = buildFbsFixture();
   const resolve = buildIdentityResolver(nameMapForFbs(fbs));
 
@@ -239,8 +306,8 @@ describe('season mismatch and membership authority', () => {
     const result = buildRatingsInputPreview({
       fbsIds: fbs,
       talentRaw: fbs.map((id) => ({
-        team: `Name ${id}`,
-        season: 2025,
+        school: `Name ${id}`,
+        year: 2025,
         talent: 600,
       })),
       commitsRaw: healthyCommitsRows(fbs).map((r) => ({ ...r, year: 2025 })),
@@ -251,7 +318,9 @@ describe('season mismatch and membership authority', () => {
     });
     expect(result.talent.seasonMismatch).toBe(true);
     expect(result.commits.seasonMismatch).toBe(true);
+    expect(result.structuralOk).toBe(false);
     expect(result.ok).toBe(false);
+    expect(result.ratingsComputeAuthorized).toBe(false);
   });
 
   it('FBS membership count not 138 => structural fail', () => {
@@ -274,15 +343,15 @@ describe('season mismatch and membership authority', () => {
   it('provider response cannot redefine FBS membership', () => {
     const map = nameMapForFbs(fbs);
     map['Extra FCS'] = 'extra-fcs-team';
-    const resolve = buildIdentityResolver(map);
+    const resolveExtra = buildIdentityResolver(map);
     const result = buildRatingsInputPreview({
       fbsIds: fbs,
       talentRaw: [
         ...healthyTalentRows(fbs),
-        { team: 'Extra FCS', season: 2026, talent: 400 },
+        { school: 'Extra FCS', year: 2026, talent: 400 },
       ],
       commitsRaw: healthyCommitsRows(fbs),
-      resolveTeamId: resolve,
+      resolveTeamId: resolveExtra,
       conferenceByTeamId: Object.fromEntries(fbs.map((id) => [id, 'ACC'])),
       providerRequestCount: 2,
       providerEndpoints: ['/talent?year=2026', '/recruiting/teams?year=2026'],
@@ -290,11 +359,65 @@ describe('season mismatch and membership authority', () => {
     expect(result.dbFbsCount).toBe(138);
     expect(result.talent.unexpectedNonFbsIds).toContain('extra-fcs-team');
     expect(result.talent.matchedFbsCount).toBe(138);
-    expect(
-      result.findings.some(
-        (f) => f.code === 'provider_non_fbs_ignored_for_membership'
-      )
-    ).toBe(true);
+  });
+
+  it('ok=true may coexist with review findings but not contradictory structural findings', () => {
+    const conferenceByTeamId: Record<string, string | null> = {};
+    for (let i = 0; i < fbs.length; i++) {
+      conferenceByTeamId[fbs[i]] = i < 88 ? 'Independent' : 'SEC';
+    }
+    const result = buildRatingsInputPreview({
+      fbsIds: fbs,
+      talentRaw: healthyTalentRows(fbs),
+      commitsRaw: healthyCommitsRows(fbs),
+      resolveTeamId: resolve,
+      conferenceByTeamId,
+      providerRequestCount: 2,
+      providerEndpoints: ['/talent?year=2026', '/recruiting/teams?year=2026'],
+    });
+    expect(result.ok).toBe(true);
+    expect(result.structuralOk).toBe(true);
+    expect(result.previewCompleted).toBe(true);
+    expect(result.findings.some((f) => f.severity === 'review')).toBe(true);
+    expect(result.findings.every((f) => f.severity !== 'structural')).toBe(
+      true
+    );
+  });
+
+  it('ratingsComputeAuthorized=false always; unsafe conference blocks ratings readiness', () => {
+    const conferenceByTeamId: Record<string, string | null> = {};
+    for (let i = 0; i < fbs.length; i++) {
+      conferenceByTeamId[fbs[i]] = i < 88 ? 'Independent' : 'SEC';
+    }
+    const result = buildRatingsInputPreview({
+      fbsIds: fbs,
+      talentRaw: healthyTalentRows(fbs),
+      commitsRaw: healthyCommitsRows(fbs),
+      resolveTeamId: resolve,
+      conferenceByTeamId,
+      providerRequestCount: 2,
+      providerEndpoints: ['/talent?year=2026', '/recruiting/teams?year=2026'],
+    });
+    expect(result.ratingsComputeAuthorized).toBe(false);
+    expect(result.ratingsComputeBlocked).toBe(true);
+    expect(result.conferenceReadyForRatings).toBe(false);
+    expect(result.commitPersistenceSafe).toBe(false);
+    expect(result.providerRequestCount).toBe(2);
+  });
+
+  it('recruiting schema anomaly → commitPersistenceSafe=false', () => {
+    const result = buildRatingsInputPreview({
+      fbsIds: fbs,
+      talentRaw: healthyTalentRows(fbs),
+      commitsRaw: healthyCommitsRows(fbs),
+      resolveTeamId: resolve,
+      conferenceByTeamId: Object.fromEntries(fbs.map((id) => [id, 'SEC'])),
+      providerRequestCount: 2,
+      providerEndpoints: ['/talent?year=2026', '/recruiting/teams?year=2026'],
+    });
+    expect(result.commits.schemaMismatchLikely).toBe(true);
+    expect(result.commitPersistenceSafe).toBe(false);
+    expect(result.ratingsComputeAuthorized).toBe(false);
   });
 });
 
@@ -322,6 +445,9 @@ describe('unit grades and conference investigations', () => {
     expect(inv.affectsCoreV1).toBe(true);
     expect(inv.affectsHybridV2ViaV1).toBe(true);
     expect(inv.affectsRatingsV2Directly).toBe(false);
+    expect(
+      inv.findings.every((f) => f.severity !== 'structural')
+    ).toBe(true);
   });
 });
 
@@ -385,7 +511,7 @@ describe('isolation and safety', () => {
     expect(text).toMatch(/preview-2026-ratings-inputs\.ts/);
   });
 
-  it('mutationsInvoked remains false on healthy preview', () => {
+  it('mutationsInvoked remains false; provider budget exactly 2', () => {
     const fbs = buildFbsFixture();
     const resolve = buildIdentityResolver(nameMapForFbs(fbs));
     const result = buildRatingsInputPreview({
@@ -406,5 +532,6 @@ describe('isolation and safety', () => {
     expect(result.oddsInvoked).toBe(false);
     expect(result.providerRequestCount).toBe(2);
     expect(result.targetSeason).toBe(TARGET_SEASON);
+    expect(result.ratingsComputeAuthorized).toBe(false);
   });
 });
