@@ -1,0 +1,87 @@
+# Manual READ-ONLY preview of 2026 ratings inputs (talent + recruiting) from CFBD.
+# workflow_dispatch ONLY — no schedule, push, or pull_request.
+# Does not write talent/commits/unit grades/ratings. Does not call Odds.
+# Provider budget: 2 CFBD calls (/talent, /recruiting/teams).
+
+name: Preview 2026 Ratings Inputs (Manual, Read Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (must be 2026)'
+        required: true
+        type: string
+        default: '2026'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-2026-ratings-inputs-${{ inputs.season }}
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight (names/presence only)
+        run: |
+          set -euo pipefail
+          SEASON="${{ inputs.season }}"
+          echo "season_input=${SEASON}"
+          if [ "$SEASON" != "2026" ]; then
+            echo "::error::season must equal 2026 (got ${SEASON})"
+            exit 1
+          fi
+          if [ -z "${DIRECT_URL:-}" ] && [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::DIRECT_URL / DATABASE_URL secret is missing"
+            exit 1
+          fi
+          if [ -z "${CFBD_API_KEY:-}" ]; then
+            echo "::error::CFBD_API_KEY secret is missing"
+            exit 1
+          fi
+          echo "CFBD_API_KEY: present (value not printed)"
+          echo "ODDS_API_KEY: not provided"
+          echo "DIRECT_URL: present (value not printed)"
+          echo "database mutations: not invoked"
+          echo "talent/commit/unit-grade/ratings writes: not invoked"
+          echo "provider budget: 2 CFBD calls (/talent, /recruiting/teams)"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: Preview 2026 ratings inputs (read-only)
+        run: |
+          npx tsx apps/jobs/preview-2026-ratings-inputs.ts --season "${{ inputs.season }}" --preview
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "============================================"
+          echo "PREVIEW 2026 RATINGS INPUTS (READ ONLY)"
+          echo "============================================"
+          echo "season: ${{ inputs.season }}"
+          echo "status: ${{ job.status }}"
+          echo "mode: preview only — no talent/commit/ratings writes"
+          echo "secrets used (names only): DIRECT_URL, CFBD_API_KEY"
+          echo "============================================"
