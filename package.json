@@ -50,7 +50,8 @@
     "audit:2026-schedules": "tsx apps/jobs/audit-schedule-inventory.ts",
     "audit:2026-ratings-readiness": "tsx apps/jobs/audit-ratings-readiness.ts",
     "preview:2026-fbs-membership": "tsx apps/jobs/preview-fbs-membership.ts",
-    "write:2026-fbs-membership": "tsx apps/jobs/write-fbs-membership.ts"
+    "write:2026-fbs-membership": "tsx apps/jobs/write-fbs-membership.ts",
+    "preview:2026-ratings-inputs": "tsx apps/jobs/preview-2026-ratings-inputs.ts"
   },
   "devDependencies": {
     "@prisma/client": "6.17.0",
