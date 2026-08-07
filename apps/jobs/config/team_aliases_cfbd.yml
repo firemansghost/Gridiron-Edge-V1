@@ -44,6 +44,12 @@
 "Delaware": delaware
 "Missouri State": missouri-state
 
+# 2026 FBS entrants + plain CFBD school names that previously relied on fuzzy
+"North Dakota State": north-dakota-state
+"Sacramento State": sacramento-state
+"James Madison": james-madison
+"South Alabama": south-alabama
+
 # Other common teams
 "Liberty": liberty
 "UNLV": unlv

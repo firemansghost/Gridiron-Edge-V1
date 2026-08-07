@@ -324,6 +324,59 @@ describe('conference diagnostic', () => {
     expect(d.sacramentoState.providerConference).toBe('MAC');
   });
 
+  it('FBS Independents normalizes for V1 recognition while preserving raw', () => {
+    const rows = healthyTeamsFbs(fbs).map((r, i) =>
+      i === 0 ? { ...r, conference: 'FBS Independents' } : r
+    );
+    const conferenceByTeamId = matchingConferenceByTeamId(fbs);
+    conferenceByTeamId[fbs[0]] = 'Independent';
+    const d = diagnoseConferenceMap({
+      fbsIds: fbs,
+      teamsFbsRaw: rows,
+      conferenceByTeamId,
+      resolveTeamId: resolve,
+    });
+    const row = d.matchedRows.find((r) => r.teamId === fbs[0])!;
+    expect(row.providerConference).toBe('FBS Independents');
+    expect(row.providerConferenceNormalized).toBe('Independent');
+    expect(row.providerRecognizedByV1).toBe(true);
+    expect(row.conferencesAgree).toBe(true);
+    expect(d.unrecognizedProviderConferences).not.toContain('FBS Independents');
+    expect(d.providerConferenceMapSafeForV1).toBe(true);
+    expect(d.currentTeamConferenceSafeFor2026).toBe(true);
+  });
+
+  it('138 exact provider map can be V1-safe while static Team.conference remains unsafe', () => {
+    const rows = healthyTeamsFbs(fbs).map((r) => {
+      if (r.school === 'Sacramento State') {
+        return { ...r, conference: 'Mid-American' };
+      }
+      if (r.school === `Name ${fbs[0]}`) {
+        return { ...r, conference: 'FBS Independents' };
+      }
+      return r;
+    });
+    const d = diagnoseConferenceMap({
+      fbsIds: fbs,
+      teamsFbsRaw: rows,
+      conferenceByTeamId: Object.fromEntries(
+        fbs.map((id) => [id, 'Independent'])
+      ),
+      resolveTeamId: resolve,
+    });
+    expect(d.matchedDbFbsCount).toBe(EXPECTED_FBS_COUNT);
+    expect(d.unresolvedProviderSchools).toEqual([]);
+    expect(d.providerFbsOutsideDb).toEqual([]);
+    expect(d.duplicateTeamIds).toEqual([]);
+    expect(d.mappingCollisions).toEqual([]);
+    expect(d.providerFbsSetExact).toBe(true);
+    expect(d.providerConferenceMapSafeForV1).toBe(true);
+    expect(d.currentTeamConferenceSafeFor2026).toBe(false);
+    expect(d.seasonAwareConferenceSolutionRequired).toBe(true);
+    expect(d.ndsu.providerConference).toBe('Mountain West');
+    expect(d.sacramentoState.providerConference).toBe('Mid-American');
+  });
+
   it('report prints exact evidence lists and conference counts', () => {
     const conferenceByTeamId = matchingConferenceByTeamId(fbs);
     conferenceByTeamId[fbs[0]] = 'ACC';
@@ -590,6 +643,27 @@ describe('full diagnostic + safety', () => {
     expect(result.coreV1.currentConferenceReady).toBe(
       result.conference.currentTeamConferenceSafeFor2026
     );
+  });
+
+  it('provider candidate ready with FBS Independents still leaves ratings unauthorized', () => {
+    const rows = healthyTeamsFbs(fbs).map((r, i) =>
+      i === 1 ? { ...r, conference: 'FBS Independents' } : r
+    );
+    const conferenceByTeamId = matchingConferenceByTeamId(fbs);
+    // Stale static map — does not match provider
+    const result = buildConferenceRecruitingDiagnostic({
+      fbsIds: fbs,
+      teamsFbsRaw: rows,
+      recruitingRaw: [],
+      conferenceByTeamId: Object.fromEntries(
+        fbs.map((id) => [id, 'Independent'])
+      ),
+      resolveTeamId: resolve,
+    });
+    expect(result.conference.providerConferenceMapSafeForV1).toBe(true);
+    expect(result.conference.currentTeamConferenceSafeFor2026).toBe(false);
+    expect(result.ratingsComputeAuthorized).toBe(false);
+    expect(result.coreV1.ratingsComputeAuthorized).toBe(false);
   });
 
   it('wrong FBS count structural fail', () => {
