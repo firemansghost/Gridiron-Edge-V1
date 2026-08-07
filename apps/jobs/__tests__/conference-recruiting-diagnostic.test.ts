@@ -12,6 +12,7 @@ import {
   buildIdentityResolver,
   diagnoseConferenceMap,
   diagnoseRecruitingMapping,
+  formatConferenceRecruitingDiagnosticReport,
   parseConferenceRecruitingDiagnosticArgs,
   sanitizeConferenceRecruitingDiagnosticError,
 } from '../src/preseason/conference-recruiting-diagnostic';
@@ -47,6 +48,22 @@ function healthyTeamsFbs(fbs: string[]) {
       division: 'fbs',
     };
   });
+}
+
+/** Current Team.conference values that exactly match provider rows. */
+function matchingConferenceByTeamId(fbs: string[]): Record<string, string> {
+  const bySchool = Object.fromEntries(
+    healthyTeamsFbs(fbs).map((r) => {
+      const id =
+        r.school === 'North Dakota State'
+          ? 'north-dakota-state'
+          : r.school === 'Sacramento State'
+            ? 'sacramento-state'
+            : r.school.replace(/^Name /, '');
+      return [id, r.conference];
+    })
+  );
+  return Object.fromEntries(fbs.map((id) => [id, bySchool[id]]));
 }
 
 describe('parse args', () => {
@@ -98,38 +115,42 @@ describe('conference diagnostic', () => {
   const fbs = buildFbsFixture();
   const resolve = buildIdentityResolver(nameMapForFbs(fbs));
 
-  it('138/138 healthy provider FBS map with full conference coverage', () => {
-    const conferenceByTeamId = Object.fromEntries(
-      fbs.map((id) => [id, 'SEC'])
-    );
+  it('exact provider FBS set 138/138 with recognized conferences', () => {
     const d = diagnoseConferenceMap({
       fbsIds: fbs,
       teamsFbsRaw: healthyTeamsFbs(fbs),
-      conferenceByTeamId,
+      conferenceByTeamId: matchingConferenceByTeamId(fbs),
       resolveTeamId: resolve,
     });
     expect(d.matchedDbFbsCount).toBe(EXPECTED_FBS_COUNT);
+    expect(d.providerFbsSetExact).toBe(true);
     expect(d.providerConferenceCoverageComplete).toBe(true);
     expect(d.providerConferenceMapSafeForV1).toBe(true);
+    expect(d.currentTeamConferenceSafeFor2026).toBe(true);
+    expect(d.seasonAwareConferenceSolutionRequired).toBe(false);
     expect(d.ndsu.providerConference).toBe('Mountain West');
     expect(d.sacramentoState.providerConference).toBe('MAC');
+    expect(d.conferenceDifferences).toHaveLength(0);
   });
 
-  it('provider missing FBS team', () => {
+  it('missing provider FBS => providerFbsSetExact false', () => {
     const rows = healthyTeamsFbs(fbs).filter(
       (r) => r.school !== 'North Dakota State'
     );
     const d = diagnoseConferenceMap({
       fbsIds: fbs,
       teamsFbsRaw: rows,
-      conferenceByTeamId: Object.fromEntries(fbs.map((id) => [id, 'SEC'])),
+      conferenceByTeamId: matchingConferenceByTeamId(fbs),
       resolveTeamId: resolve,
     });
     expect(d.dbFbsMissingFromProvider).toContain('north-dakota-state');
+    expect(d.providerFbsSetExact).toBe(false);
     expect(d.providerConferenceCoverageComplete).toBe(false);
+    expect(d.providerConferenceMapSafeForV1).toBe(false);
+    expect(d.currentTeamConferenceSafeFor2026).toBe(false);
   });
 
-  it('unexpected provider FBS team', () => {
+  it('extra provider FBS => providerFbsSetExact false', () => {
     const map = nameMapForFbs(fbs);
     map['Ghost FBS'] = 'ghost-fbs';
     const d = diagnoseConferenceMap({
@@ -138,29 +159,140 @@ describe('conference diagnostic', () => {
         ...healthyTeamsFbs(fbs),
         { school: 'Ghost FBS', conference: 'SEC', classification: 'fbs' },
       ],
-      conferenceByTeamId: Object.fromEntries(fbs.map((id) => [id, 'SEC'])),
+      conferenceByTeamId: matchingConferenceByTeamId(fbs),
       resolveTeamId: buildIdentityResolver(map),
     });
     expect(d.providerFbsOutsideDb).toContain('ghost-fbs');
+    expect(d.providerFbsSetExact).toBe(false);
+    expect(d.providerConferenceMapSafeForV1).toBe(false);
   });
 
-  it('duplicate provider team and unresolved school', () => {
+  it('unresolved provider FBS school => providerFbsSetExact false', () => {
     const rows = [
-      ...healthyTeamsFbs(fbs.slice(0, 1)),
-      { school: `Name ${fbs[0]}`, conference: 'ACC' },
-      { school: 'Unknown School', conference: 'SEC' },
+      ...healthyTeamsFbs(fbs).slice(0, -1),
+      { school: 'Unknown School', conference: 'SEC', classification: 'fbs' },
     ];
     const d = diagnoseConferenceMap({
       fbsIds: fbs,
       teamsFbsRaw: rows,
-      conferenceByTeamId: Object.fromEntries(fbs.map((id) => [id, 'SEC'])),
+      conferenceByTeamId: matchingConferenceByTeamId(fbs),
+      resolveTeamId: resolve,
+    });
+    expect(d.unresolvedProviderSchools).toContain('Unknown School');
+    expect(d.providerFbsSetExact).toBe(false);
+    expect(d.providerConferenceMapSafeForV1).toBe(false);
+  });
+
+  it('duplicate canonical provider FBS => provider map not safe', () => {
+    const rows = [
+      ...healthyTeamsFbs(fbs),
+      { school: `Name ${fbs[0]}`, conference: 'ACC', classification: 'fbs' },
+    ];
+    // Second row uses same school name → duplicate mapping to same ID
+    const d = diagnoseConferenceMap({
+      fbsIds: fbs,
+      teamsFbsRaw: rows,
+      conferenceByTeamId: matchingConferenceByTeamId(fbs),
       resolveTeamId: resolve,
     });
     expect(d.duplicateTeamIds).toContain(fbs[0]);
-    expect(d.unresolvedProviderSchools).toContain('Unknown School');
+    expect(d.mappingCollisions.some((m) => m.teamId === fbs[0])).toBe(true);
+    expect(d.providerFbsSetExact).toBe(false);
+    expect(d.providerConferenceMapSafeForV1).toBe(false);
   });
 
-  it('current Independent versus valid provider conference', () => {
+  it('provider conference incomplete => safe false', () => {
+    const rows = healthyTeamsFbs(fbs).map((r, i) =>
+      i === 0 ? { ...r, conference: undefined } : r
+    );
+    const d = diagnoseConferenceMap({
+      fbsIds: fbs,
+      teamsFbsRaw: rows,
+      conferenceByTeamId: matchingConferenceByTeamId(fbs),
+      resolveTeamId: resolve,
+    });
+    expect(d.providerConferenceCoverage).toBe(EXPECTED_FBS_COUNT - 1);
+    expect(d.providerFbsSetExact).toBe(false);
+    expect(d.providerConferenceMapSafeForV1).toBe(false);
+  });
+
+  it('unrecognized provider conference => provider candidate unsafe', () => {
+    const rows = healthyTeamsFbs(fbs).map((r, i) =>
+      i === 0 ? { ...r, conference: 'WAC' } : r
+    );
+    const d = diagnoseConferenceMap({
+      fbsIds: fbs,
+      teamsFbsRaw: rows,
+      conferenceByTeamId: matchingConferenceByTeamId(fbs),
+      resolveTeamId: resolve,
+    });
+    expect(d.unrecognizedProviderConferences).toContain('WAC');
+    expect(d.providerFbsSetExact).toBe(true);
+    expect(d.providerConferenceMapSafeForV1).toBe(false);
+    expect(d.currentTeamConferenceSafeFor2026).toBe(false);
+  });
+
+  it('one stale current conference => current map unsafe', () => {
+    const conferenceByTeamId = matchingConferenceByTeamId(fbs);
+    conferenceByTeamId[fbs[0]] = 'ACC';
+    const d = diagnoseConferenceMap({
+      fbsIds: fbs,
+      teamsFbsRaw: healthyTeamsFbs(fbs),
+      conferenceByTeamId,
+      resolveTeamId: resolve,
+    });
+    expect(d.providerConferenceMapSafeForV1).toBe(true);
+    expect(d.currentTeamConferenceSafeFor2026).toBe(false);
+    expect(d.conferenceDifferences).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          teamId: fbs[0],
+          currentConference: 'ACC',
+          providerConference: 'SEC',
+        }),
+      ])
+    );
+    expect(d.seasonAwareConferenceSolutionRequired).toBe(true);
+  });
+
+  it('19 stale current conferences => still unsafe (no count threshold)', () => {
+    const conferenceByTeamId = matchingConferenceByTeamId(fbs);
+    for (let i = 0; i < 19; i++) {
+      conferenceByTeamId[fbs[i]] = 'Independent';
+    }
+    const d = diagnoseConferenceMap({
+      fbsIds: fbs,
+      teamsFbsRaw: healthyTeamsFbs(fbs),
+      conferenceByTeamId,
+      resolveTeamId: resolve,
+    });
+    expect(d.currentIndependentCount).toBe(19);
+    expect(d.differFromProviderCount).toBe(19);
+    expect(d.currentTeamConferenceSafeFor2026).toBe(false);
+    expect(d.seasonAwareConferenceSolutionRequired).toBe(true);
+  });
+
+  it('legitimate Independent agreement is not automatically unsafe', () => {
+    const rows = healthyTeamsFbs(fbs).map((r, i) =>
+      i === 0 ? { ...r, conference: 'Independent' } : r
+    );
+    const conferenceByTeamId = matchingConferenceByTeamId(fbs);
+    conferenceByTeamId[fbs[0]] = 'Independent';
+    // Fix NDSU/Sac from matching helper against modified provider for index 0 only
+    const d = diagnoseConferenceMap({
+      fbsIds: fbs,
+      teamsFbsRaw: rows,
+      conferenceByTeamId,
+      resolveTeamId: resolve,
+    });
+    expect(d.providerConferenceMapSafeForV1).toBe(true);
+    expect(d.currentTeamConferenceSafeFor2026).toBe(true);
+    expect(d.matchedRows.find((r) => r.teamId === fbs[0])?.conferencesAgree).toBe(
+      true
+    );
+  });
+
+  it('all Independent current vs provider conferences => unsafe', () => {
     const conferenceByTeamId = Object.fromEntries(
       fbs.map((id) => [id, 'Independent'])
     );
@@ -172,37 +304,44 @@ describe('conference diagnostic', () => {
     });
     expect(d.currentIndependentCount).toBe(138);
     expect(d.independentButProviderHasConference).toBe(138);
+    expect(d.providerConferenceMapSafeForV1).toBe(true);
     expect(d.currentTeamConferenceSafeFor2026).toBe(false);
     expect(d.seasonAwareConferenceSolutionRequired).toBe(true);
-  });
-
-  it('provider conference unrecognized by V1 adjustment', () => {
-    const rows = healthyTeamsFbs(fbs).map((r, i) =>
-      i === 0 ? { ...r, conference: 'WAC' } : r
-    );
-    const d = diagnoseConferenceMap({
-      fbsIds: fbs,
-      teamsFbsRaw: rows,
-      conferenceByTeamId: Object.fromEntries(fbs.map((id) => [id, 'SEC'])),
-      resolveTeamId: resolve,
-    });
-    expect(d.unrecognizedProviderConferences).toContain('WAC');
-    expect(d.providerConferenceMapSafeForV1).toBe(false);
   });
 
   it('NDSU Mountain West and Sac State MAC fixtures', () => {
     const d = diagnoseConferenceMap({
       fbsIds: fbs,
       teamsFbsRaw: healthyTeamsFbs(fbs),
-      conferenceByTeamId: Object.fromEntries(
-        fbs.map((id) => [id, 'Independent'])
-      ),
+      conferenceByTeamId: matchingConferenceByTeamId(fbs),
       resolveTeamId: resolve,
     });
     expect(d.ndsu.presentInProviderFbs).toBe(true);
+    expect(d.ndsu.providerSchool).toBe('North Dakota State');
     expect(d.ndsu.providerConference).toBe('Mountain West');
     expect(d.sacramentoState.presentInProviderFbs).toBe(true);
+    expect(d.sacramentoState.providerSchool).toBe('Sacramento State');
     expect(d.sacramentoState.providerConference).toBe('MAC');
+  });
+
+  it('report prints exact evidence lists and conference counts', () => {
+    const conferenceByTeamId = matchingConferenceByTeamId(fbs);
+    conferenceByTeamId[fbs[0]] = 'ACC';
+    const result = buildConferenceRecruitingDiagnostic({
+      fbsIds: fbs,
+      teamsFbsRaw: healthyTeamsFbs(fbs),
+      recruitingRaw: [],
+      conferenceByTeamId,
+      resolveTeamId: resolve,
+    });
+    const report = formatConferenceRecruitingDiagnosticReport(result);
+    expect(report).toMatch(/providerFbsSetExact: true/);
+    expect(report).toMatch(/providerConferenceCounts:/);
+    expect(report).toMatch(/SEC:/);
+    expect(report).toMatch(/conferenceDifferences \(1\):/);
+    expect(report).toContain(fbs[0]);
+    expect(report).toMatch(/NDSU: present=true school=North Dakota State conf=Mountain West/);
+    expect(report).toMatch(/SacState: present=true school=Sacramento State conf=MAC/);
   });
 });
 
@@ -210,7 +349,6 @@ describe('recruiting diagnostic', () => {
   const fbs = buildFbsFixture();
   const resolve = buildIdentityResolver(nameMapForFbs(fbs));
   const providerSchools = healthyTeamsFbs(fbs).map((r) => r.school);
-  const providerIds = fbs.filter((id) => resolve(`Name ${id}`) || true);
 
   it('FBS provider row resolves correctly', () => {
     const d = diagnoseRecruitingMapping({
@@ -219,25 +357,26 @@ describe('recruiting diagnostic', () => {
         { team: `Name ${fbs[0]}`, year: 2026, rank: 1, points: 100 },
       ],
       providerFbsSchoolNames: providerSchools,
-      providerFbsTeamIds: fbs,
       resolveTeamId: resolve,
     });
     expect(d.bucketCounts.maps_to_db_fbs).toBe(1);
     expect(d.providerFbsValidatedMatchedCount).toBe(1);
+    expect(d.recruitingResolverSafe).toBe(true);
   });
 
-  it('FBS provider row resolver failure', () => {
+  it('FBS provider row resolver failure => resolver safe false', () => {
     const d = diagnoseRecruitingMapping({
       fbsIds: fbs,
       recruitingRaw: [
         { team: 'North Dakota State', year: 2026, rank: 50, points: 10 },
       ],
       providerFbsSchoolNames: ['North Dakota State', ...providerSchools],
-      providerFbsTeamIds: fbs,
       resolveTeamId: (name) =>
         name === 'North Dakota State' ? null : resolve(name),
     });
     expect(d.bucketCounts.provider_fbs_resolver_failed).toBe(1);
+    expect(d.unresolvedProviderFbsSchools).toContain('North Dakota State');
+    expect(d.recruitingResolverSafe).toBe(false);
     expect(d.ndsu.unresolvedLikelyMissingAlias).toBe(true);
   });
 
@@ -248,13 +387,13 @@ describe('recruiting diagnostic', () => {
         { team: 'Montana State', year: 2026, rank: 1, points: 5 },
       ],
       providerFbsSchoolNames: providerSchools,
-      providerFbsTeamIds: fbs,
       resolveTeamId: resolve,
     });
     expect(d.bucketCounts.non_fbs_unresolved).toBe(1);
+    expect(d.recruitingResolverSafe).toBe(true);
   });
 
-  it('non-FBS provider row falsely maps to FBS => flagged', () => {
+  it('false-positive mapping => resolver safe false; review not structural', () => {
     const map = nameMapForFbs(fbs);
     map['Montana State'] = fbs[0];
     const d = diagnoseRecruitingMapping({
@@ -263,16 +402,18 @@ describe('recruiting diagnostic', () => {
         { team: 'Montana State', year: 2026, rank: 1, points: 5 },
       ],
       providerFbsSchoolNames: providerSchools,
-      providerFbsTeamIds: fbs,
       resolveTeamId: buildIdentityResolver(map),
     });
     expect(d.bucketCounts.non_fbs_false_positive_fbs).toBe(1);
     expect(d.falsePositiveMappings[0].resolvedTeamId).toBe(fbs[0]);
-    expect(d.resolverMatchedFbsCount).toBe(1);
-    expect(d.providerFbsValidatedMatchedCount).toBe(0);
+    expect(d.recruitingResolverSafe).toBe(false);
+    expect(
+      d.findings.find((f) => f.code === 'recruiting_false_positive_fbs_mapping')
+        ?.severity
+    ).toBe('review');
   });
 
-  it('duplicate canonical mapping and three excess mapped rows', () => {
+  it('duplicate/ambiguous recruiting canonical collision surfaced', () => {
     const idA = fbs[0];
     const idB = fbs[1];
     const idC = fbs[2];
@@ -298,10 +439,11 @@ describe('recruiting diagnostic', () => {
       fbsIds: fbs,
       recruitingRaw,
       providerFbsSchoolNames: schools,
-      providerFbsTeamIds: fbs,
       resolveTeamId: buildIdentityResolver(map),
     });
     expect(d.excessMappedRows).toHaveLength(3);
+    expect(d.collisions).toHaveLength(3);
+    expect(d.recruitingResolverSafe).toBe(false);
     expect(d.mappedRowCount).toBe(6);
     expect(d.normalizedUniqueTeamIds).toBe(3);
     expect(d.providerFbsValidatedMatchedCount).toBe(3);
@@ -327,17 +469,16 @@ describe('recruiting diagnostic', () => {
       points: 2,
     };
     const map = nameMapForFbs(fbs);
-    // Map false-positive onto an FBS ID outside the 10 validated recruiting rows
     map['FCS False Pos'] = fbs[50];
     const d = diagnoseRecruitingMapping({
       fbsIds: fbs,
       recruitingRaw: [...fbsRows, ...fcsUnresolved, falsePos],
       providerFbsSchoolNames: providerSchools,
-      providerFbsTeamIds: fbs,
       resolveTeamId: buildIdentityResolver(map),
     });
     expect(d.bucketCounts.non_fbs_unresolved).toBe(5);
     expect(d.bucketCounts.non_fbs_false_positive_fbs).toBe(1);
+    expect(d.recruitingResolverSafe).toBe(false);
     expect(d.resolverMatchedFbsCount).toBeGreaterThan(
       d.providerFbsValidatedMatchedCount
     );
@@ -361,7 +502,6 @@ describe('recruiting diagnostic', () => {
         'Sacramento State',
         ...providerSchools,
       ],
-      providerFbsTeamIds: fbs,
       resolveTeamId: resolveNoNew,
     });
     expect(d.ndsu.presentInProviderFbs).toBe(true);
@@ -369,6 +509,7 @@ describe('recruiting diagnostic', () => {
     expect(d.ndsu.resolvedTeamId).toBeNull();
     expect(d.ndsu.unresolvedLikelyMissingAlias).toBe(true);
     expect(d.sacramentoState.unresolvedLikelyMissingAlias).toBe(true);
+    expect(d.recruitingResolverSafe).toBe(false);
   });
 });
 
@@ -376,10 +517,52 @@ describe('full diagnostic + safety', () => {
   const fbs = buildFbsFixture();
   const resolve = buildIdentityResolver(nameMapForFbs(fbs));
 
-  it('DB FBS denominator authoritative; ratingsComputeAuthorized false', () => {
-    const conferenceByTeamId = Object.fromEntries(
-      fbs.map((id) => [id, 'Independent'])
+  it('false-positive mapping completes successfully with recruitingResolverSafe false', () => {
+    const map = nameMapForFbs(fbs);
+    map['Montana State'] = fbs[0];
+    const result = buildConferenceRecruitingDiagnostic({
+      fbsIds: fbs,
+      teamsFbsRaw: healthyTeamsFbs(fbs),
+      recruitingRaw: [
+        { team: 'Montana State', year: 2026, rank: 1, points: 5 },
+      ],
+      conferenceByTeamId: matchingConferenceByTeamId(fbs),
+      resolveTeamId: buildIdentityResolver(map),
+    });
+    expect(result.structuralOk).toBe(true);
+    expect(result.ok).toBe(true);
+    expect(result.recruitingResolverSafe).toBe(false);
+    expect(result.recruiting.falsePositiveMappings).toHaveLength(1);
+    expect(
+      result.findings.filter((f) => f.severity === 'structural')
+    ).toHaveLength(0);
+    expect(
+      result.findings.some(
+        (f) =>
+          f.code === 'recruiting_false_positive_fbs_mapping' &&
+          f.severity === 'review'
+      )
+    ).toBe(true);
+  });
+
+  it('no contradictory structural finding when structuralOk true', () => {
+    const result = buildConferenceRecruitingDiagnostic({
+      fbsIds: fbs,
+      teamsFbsRaw: healthyTeamsFbs(fbs),
+      recruitingRaw: [],
+      conferenceByTeamId: Object.fromEntries(
+        fbs.map((id) => [id, 'Independent'])
+      ),
+      resolveTeamId: resolve,
+    });
+    expect(result.structuralOk).toBe(true);
+    expect(result.ok).toBe(true);
+    expect(result.findings.every((f) => f.severity !== 'structural')).toBe(
+      true
     );
+  });
+
+  it('DB FBS denominator authoritative; ratingsComputeAuthorized false', () => {
     const result = buildConferenceRecruitingDiagnostic({
       fbsIds: fbs,
       teamsFbsRaw: healthyTeamsFbs(fbs),
@@ -389,7 +572,7 @@ describe('full diagnostic + safety', () => {
         rank: i + 1,
         points: 10,
       })),
-      conferenceByTeamId,
+      conferenceByTeamId: matchingConferenceByTeamId(fbs),
       resolveTeamId: resolve,
       providerRequestCount: 2,
     });
@@ -399,8 +582,13 @@ describe('full diagnostic + safety', () => {
     expect(result.coreV1.recruitingPersistenceReady).toBe(false);
     expect(result.providerRequestCount).toBe(2);
     expect(result.mutationsInvoked).toBe(false);
+    expect(result.oddsInvoked).toBe(false);
+    expect(result.recruitingResolverSafe).toBe(true);
     expect(result.coreV1.providerConferenceCandidateReady).toBe(
       result.conference.providerConferenceMapSafeForV1
+    );
+    expect(result.coreV1.currentConferenceReady).toBe(
+      result.conference.currentTeamConferenceSafeFor2026
     );
   });
 
@@ -437,9 +625,10 @@ describe('full diagnostic + safety', () => {
     );
     expect(src).not.toMatch(/\bfetch\s*\(/);
     expect(src).not.toMatch(/from ['"]@prisma\/client['"]/);
+    expect(src).not.toMatch(/currentIndependentCount\s*<\s*20/);
   });
 
-  it('CLI has no mutation APIs and uses exactly two endpoints', () => {
+  it('CLI reuses one TeamResolver and has no mutation APIs', () => {
     const cli = fs.readFileSync(
       path.join(__dirname, '../diagnose-2026-conference-recruiting.ts'),
       'utf8'
@@ -454,6 +643,15 @@ describe('full diagnostic + safety', () => {
     expect(cli).toMatch(/\/talent not called|Does not call \/talent|No \/talent/);
     expect(cli).not.toMatch(/ODDS_API_KEY|OddsApi/);
     expect(cli).not.toMatch(/compute_ratings|seed-ratings/);
+    // Exactly one construction outside any per-name callback
+    const resolverNews = cli.match(/new TeamResolver\s*\(/g) ?? [];
+    expect(resolverNews).toHaveLength(1);
+    expect(cli).toMatch(
+      /const teamResolver = options\.resolveTeamId \? null : new TeamResolver\(\)/
+    );
+    expect(cli).not.toMatch(
+      /\(\(name[\s\S]*?new TeamResolver\s*\(/
+    );
   });
 
   it('workflow is dispatch-only with no Odds', () => {

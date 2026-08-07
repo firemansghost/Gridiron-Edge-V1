@@ -119,7 +119,7 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | `Initialize 2026 FBS Membership (Manual, Guarded)` | Membership write workflow |
 | `apps/jobs/preview-2026-ratings-inputs.ts` | Read-only CFBD talent + recruiting preview |
 | `Preview 2026 Ratings Inputs (Manual, Read Only)` | Provider preview workflow (`season=2026`) |
-| `apps/jobs/diagnose-2026-conference-recruiting.ts` | Read-only `/teams/fbs` + recruiting resolver diagnostic |
+| `apps/jobs/diagnose-2026-conference-recruiting.ts` | Read-only `/teams/fbs` + recruiting resolver diagnostic (`providerFbsSetExact` / `recruitingResolverSafe`) |
 | `Diagnose 2026 Conference & Recruiting Mapping (Manual, Read Only)` | Diagnostic workflow (`season=2026`) |
 
 ### Production status notes

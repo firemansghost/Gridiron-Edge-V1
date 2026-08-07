@@ -155,14 +155,14 @@ export async function runConferenceRecruitingDiagnostic(options: {
     return { exitCode: 1 };
   }
 
+  // Construct exactly one TeamResolver for the entire run (alias/config load once).
+  const teamResolver = options.resolveTeamId ? null : new TeamResolver();
   const resolveTeamId =
     options.resolveTeamId ??
-    ((name: string) => {
-      const teamResolver = new TeamResolver();
-      return teamResolver.resolveTeam(name, 'college-football', {
+    ((name: string) =>
+      teamResolver!.resolveTeam(name, 'college-football', {
         provider: 'cfbd',
-      });
-    });
+      }));
 
   try {
     const fbsIds = await store.loadFbsTeamIds(TARGET_SEASON);

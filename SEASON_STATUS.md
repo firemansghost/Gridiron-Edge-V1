@@ -202,9 +202,11 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 | `.github/workflows/diagnose-2026-conference-recruiting.yml` | Manual read-only (`workflow_dispatch` only) |
 
 - Provider budget: **2** CFBD calls — `GET /teams/fbs?year=2026`, `GET /recruiting/teams?year=2026` (**no** `/talent`)
-- Explains recruiting collisions; evaluates season-aware conference candidate from `/teams/fbs`
+- Readiness flags: `providerFbsSetExact`, `providerConferenceMapSafeForV1`, `currentTeamConferenceSafeFor2026`, `recruitingResolverSafe` (exact set/match — no Independent-count heuristic)
+- Explains recruiting collisions/false-positives as **review** findings; `structuralOk` tracks DB FBS count only
 - **Do not claim `/teams/fbs` conference map is good until production diagnostic runs**
 - No alias/Team.conference/membership writes
+- One `TeamResolver` instance per CLI run
 
 **Still out of scope / unapproved:** talent/commits persistence; Team.conference mutation; ratings compute; odds; bets; nightly reactivation.
 

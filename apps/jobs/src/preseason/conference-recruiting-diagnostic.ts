@@ -110,8 +110,14 @@ export interface ConferenceDiagnostic {
   mappingCollisions: Array<{ teamId: string; providerSchools: string[] }>;
   providerClassificationValues: string[];
   providerConferenceValues: string[];
+  providerConferenceCounts: Record<string, number>;
   providerConferenceMissingCount: number;
   matchedRows: MatchedConferenceRow[];
+  conferenceDifferences: Array<{
+    teamId: string;
+    currentConference: string | null;
+    providerConference: string | null;
+  }>;
   providerConferenceCoverage: number;
   currentIndependentCount: number;
   differFromProviderCount: number;
@@ -128,6 +134,7 @@ export interface ConferenceDiagnostic {
     providerSchool: string | null;
     providerConference: string | null;
   };
+  providerFbsSetExact: boolean;
   providerConferenceCoverageComplete: boolean;
   providerConferenceMapSafeForV1: boolean;
   currentTeamConferenceSafeFor2026: boolean;
@@ -158,6 +165,8 @@ export interface RecruitingDiagnostic {
   excessMappedRows: RecruitingRowClassification[];
   collisions: RecruitingRowClassification[];
   falsePositiveMappings: RecruitingRowClassification[];
+  unresolvedProviderFbsSchools: string[];
+  recruitingResolverSafe: boolean;
   bucketCounts: Record<RecruitingBucket, number>;
   rows: RecruitingRowClassification[];
   ndsu: {
@@ -203,6 +212,7 @@ export interface ConferenceRecruitingDiagnosticResult {
   membershipWrites: false;
   oddsInvoked: false;
   ratingsComputeAuthorized: false;
+  recruitingResolverSafe: boolean;
   targetSeason: number;
   dbFbsCount: number;
   providerRequestCount: number;
@@ -361,19 +371,26 @@ export function diagnoseConferenceMap(options: {
       currentTeamConference: currentNorm,
       conferencesAgree:
         (currentNorm ?? '') === (m.conference ?? '') &&
-        currentNorm !== null &&
-        m.conference !== null,
+        m.conference !== null &&
+        currentNorm !== null,
       currentIsIndependentOrMissing: isIndependentOrMissing(currentNorm),
       providerRecognizedByV1: isRecognizedV1Conference(m.conference),
     });
   }
 
   const providerConferenceValues = sortedUnique(
-    mapped.map((m) => m.conference).filter((c): c is string => !!c)
+    matchedRows
+      .map((m) => m.providerConference)
+      .filter((c): c is string => !!c)
   );
   const providerClassificationValues = sortedUnique(
     mapped.map((m) => m.classification).filter((c): c is string => !!c)
   );
+  const providerConferenceCounts: Record<string, number> = {};
+  for (const row of matchedRows) {
+    const label = row.providerConference ?? '(missing)';
+    providerConferenceCounts[label] = (providerConferenceCounts[label] ?? 0) + 1;
+  }
   const providerConferenceMissingCount = matchedRows.filter(
     (r) => !r.providerConference
   ).length;
@@ -381,9 +398,29 @@ export function diagnoseConferenceMap(options: {
   const currentIndependentCount = fbsIds.filter((id) =>
     isIndependentOrMissing(options.conferenceByTeamId[id])
   ).length;
-  const differFromProviderCount = matchedRows.filter(
-    (r) => !r.conferencesAgree
-  ).length;
+  const conferenceDifferences = matchedRows
+    .filter((r) => !r.conferencesAgree)
+    .map((r) => ({
+      teamId: r.teamId,
+      currentConference: r.currentTeamConference,
+      providerConference: r.providerConference,
+    }));
+  // Missing-from-provider teams also count as differences
+  for (const id of dbFbsMissingFromProvider) {
+    const current = options.conferenceByTeamId[id] ?? null;
+    const currentNorm =
+      current === null || current === undefined || String(current).trim() === ''
+        ? null
+        : String(current).trim();
+    conferenceDifferences.push({
+      teamId: id,
+      currentConference: currentNorm,
+      providerConference: null,
+    });
+  }
+  conferenceDifferences.sort((a, b) => a.teamId.localeCompare(b.teamId));
+
+  const differFromProviderCount = conferenceDifferences.length;
   const independentButProviderHasConference = matchedRows.filter(
     (r) => r.currentIsIndependentOrMissing && !!r.providerConference
   ).length;
@@ -395,20 +432,47 @@ export function diagnoseConferenceMap(options: {
   const ndsuRow = matchedRows.find((r) => r.teamId === 'north-dakota-state');
   const sacRow = matchedRows.find((r) => r.teamId === 'sacramento-state');
 
+  const unresolvedProviderSchools = sortedUnique(unresolved);
   const providerConferenceCoverage = matchedRows.filter(
     (r) => !!r.providerConference
   ).length;
-  const providerConferenceCoverageComplete =
+
+  const providerFbsSetExact =
+    fbsIds.length === EXPECTED_FBS_COUNT &&
     matchedDbFbsIds.length === EXPECTED_FBS_COUNT &&
-    providerConferenceCoverage === EXPECTED_FBS_COUNT &&
-    dbFbsMissingFromProvider.length === 0;
+    dbFbsMissingFromProvider.length === 0 &&
+    providerFbsOutsideDb.length === 0 &&
+    unresolvedProviderSchools.length === 0 &&
+    duplicateTeamIds.length === 0 &&
+    mappingCollisions.length === 0 &&
+    providerConferenceCoverage === EXPECTED_FBS_COUNT;
+
+  const providerConferenceCoverageComplete =
+    providerFbsSetExact &&
+    providerConferenceCoverage === EXPECTED_FBS_COUNT;
+
   const providerConferenceMapSafeForV1 =
+    providerFbsSetExact &&
     providerConferenceCoverageComplete &&
     unrecognizedProviderConferences.length === 0;
-  const currentTeamConferenceSafeFor2026 = currentIndependentCount < 20;
+
+  const currentExactMatch =
+    providerConferenceMapSafeForV1 &&
+    matchedRows.length === EXPECTED_FBS_COUNT &&
+    matchedRows.every((r) => r.conferencesAgree) &&
+    matchedRows.every((r) => isRecognizedV1Conference(r.currentTeamConference));
+
+  const currentTeamConferenceSafeFor2026 = currentExactMatch;
   const seasonAwareConferenceSolutionRequired =
     !currentTeamConferenceSafeFor2026;
 
+  if (!providerFbsSetExact) {
+    findings.push({
+      code: 'provider_fbs_set_not_exact',
+      severity: 'review',
+      message: `Provider /teams/fbs set is not an exact 138 match (matched=${matchedDbFbsIds.length}, missing=${dbFbsMissingFromProvider.length}, outside=${providerFbsOutsideDb.length}, unresolved=${unresolvedProviderSchools.length}, duplicates=${duplicateTeamIds.length})`,
+    });
+  }
   if (!providerConferenceCoverageComplete) {
     findings.push({
       code: 'provider_conference_incomplete',
@@ -427,7 +491,7 @@ export function diagnoseConferenceMap(options: {
     findings.push({
       code: 'season_aware_conference_required',
       severity: 'review',
-      message: `Current Team.conference unsafe (${currentIndependentCount} Independent/missing); season-aware source required before V1 compute`,
+      message: `Current Team.conference unsafe for 2026 (exact provider match=${currentExactMatch}; differences=${differFromProviderCount}; Independent/missing=${currentIndependentCount})`,
     });
   }
 
@@ -438,13 +502,15 @@ export function diagnoseConferenceMap(options: {
     matchedDbFbsIds,
     dbFbsMissingFromProvider,
     providerFbsOutsideDb,
-    unresolvedProviderSchools: sortedUnique(unresolved),
+    unresolvedProviderSchools,
     duplicateTeamIds: duplicateTeamIds.sort(),
     mappingCollisions,
     providerClassificationValues,
     providerConferenceValues,
+    providerConferenceCounts,
     providerConferenceMissingCount,
     matchedRows,
+    conferenceDifferences,
     providerConferenceCoverage,
     currentIndependentCount,
     differFromProviderCount,
@@ -461,6 +527,7 @@ export function diagnoseConferenceMap(options: {
       providerSchool: sacRow?.providerSchool ?? null,
       providerConference: sacRow?.providerConference ?? null,
     },
+    providerFbsSetExact,
     providerConferenceCoverageComplete,
     providerConferenceMapSafeForV1,
     currentTeamConferenceSafeFor2026,
@@ -473,7 +540,6 @@ export function diagnoseRecruitingMapping(options: {
   fbsIds: string[];
   recruitingRaw: RawRecruitingRow[];
   providerFbsSchoolNames: string[];
-  providerFbsTeamIds: string[];
   resolveTeamId: ResolveTeamId;
   resolveDetailed?: ResolveDetailed;
 }): RecruitingDiagnostic {
@@ -500,6 +566,7 @@ export function diagnoseRecruitingMapping(options: {
   const falsePositiveMappings: RecruitingRowClassification[] = [];
   const collisions: RecruitingRowClassification[] = [];
   const excessMappedRows: RecruitingRowClassification[] = [];
+  const unresolvedProviderFbsSchools: string[] = [];
 
   for (const raw of options.recruitingRaw) {
     const name = nonblank(raw.team) ?? '(blank)';
@@ -516,6 +583,9 @@ export function diagnoseRecruitingMapping(options: {
       bucket = inProviderFbs
         ? 'provider_fbs_resolver_failed'
         : 'non_fbs_unresolved';
+      if (bucket === 'provider_fbs_resolver_failed' && name !== '(blank)') {
+        unresolvedProviderFbsSchools.push(name);
+      }
     } else if (!fbsSet.has(resolved.teamId)) {
       bucket = 'other';
     } else if (!inProviderFbs) {
@@ -582,12 +652,21 @@ export function diagnoseRecruitingMapping(options: {
   );
 
   const missingDbFbsIds = fbsIds.filter((id) => !validatedIds.has(id)).sort();
+  const unresolvedProviderFbsUnique = sortedUnique(unresolvedProviderFbsSchools);
 
+  // Diagnostic discoveries — review, not structural (structuralOk tracks DB FBS count only)
   if (falsePositiveMappings.length > 0) {
     findings.push({
       code: 'recruiting_false_positive_fbs_mapping',
-      severity: 'structural',
+      severity: 'review',
       message: `${falsePositiveMappings.length} recruiting row(s) resolved to DB FBS but provider school is not in /teams/fbs`,
+    });
+  }
+  if (unresolvedProviderFbsUnique.length > 0) {
+    findings.push({
+      code: 'recruiting_provider_fbs_resolver_failed',
+      severity: 'review',
+      message: `${unresolvedProviderFbsUnique.length} provider-FBS recruiting school(s) failed to resolve`,
     });
   }
   if (excessMappedRows.length > 0) {
@@ -597,6 +676,11 @@ export function diagnoseRecruitingMapping(options: {
       message: `${excessMappedRows.length} excess mapped recruiting row(s) collapse onto already-resolved canonical IDs`,
     });
   }
+
+  const recruitingResolverSafe =
+    falsePositiveMappings.length === 0 &&
+    unresolvedProviderFbsUnique.length === 0 &&
+    collisions.length === 0;
 
   const findSpecial = (nameHints: string[]) => {
     const fbsSchool =
@@ -631,6 +715,8 @@ export function diagnoseRecruitingMapping(options: {
     excessMappedRows,
     collisions,
     falsePositiveMappings,
+    unresolvedProviderFbsSchools: unresolvedProviderFbsUnique,
+    recruitingResolverSafe,
     bucketCounts,
     rows,
     ndsu: findSpecial(['north dakota state', 'ndsu']),
@@ -691,20 +777,16 @@ export function buildConferenceRecruitingDiagnostic(options: {
   });
 
   const providerFbsSchoolNames: string[] = [];
-  const providerFbsTeamIds: string[] = [];
   for (const row of options.teamsFbsRaw) {
     const school = providerSchoolName(row);
     if (!school) continue;
     providerFbsSchoolNames.push(school);
-    const id = options.resolveTeamId(school);
-    if (id) providerFbsTeamIds.push(id);
   }
 
   const recruiting = diagnoseRecruitingMapping({
     fbsIds,
     recruitingRaw: options.recruitingRaw,
     providerFbsSchoolNames,
-    providerFbsTeamIds,
     resolveTeamId: options.resolveTeamId,
     resolveDetailed: options.resolveDetailed,
   });
@@ -722,6 +804,15 @@ export function buildConferenceRecruitingDiagnostic(options: {
     });
   }
 
+  // Consistency: structural findings only when structuralOk is false (DB FBS count)
+  if (structuralOk) {
+    for (const f of findings) {
+      if (f.severity === 'structural') {
+        f.severity = 'review';
+      }
+    }
+  }
+
   return {
     ok: structuralOk,
     structuralOk,
@@ -735,6 +826,7 @@ export function buildConferenceRecruitingDiagnostic(options: {
     membershipWrites: false,
     oddsInvoked: false,
     ratingsComputeAuthorized: false,
+    recruitingResolverSafe: recruiting.recruitingResolverSafe,
     targetSeason: TARGET_SEASON,
     dbFbsCount: fbsIds.length,
     providerRequestCount: options.providerRequestCount ?? 2,
@@ -831,6 +923,7 @@ export function formatConferenceRecruitingDiagnosticReport(
   push(`  previewCompleted: ${result.previewCompleted}`);
   push(`  structuralOk: ${result.structuralOk}`);
   push(`  ok: ${result.ok}`);
+  push(`  recruitingResolverSafe: ${result.recruitingResolverSafe}`);
   push(`  ratingsComputeAuthorized: ${result.ratingsComputeAuthorized}`);
   push(`  providerRequestCount: ${result.providerRequestCount}`);
   push(`  providerEndpoints: [${result.providerEndpoints.join(', ')}]`);
@@ -847,9 +940,29 @@ export function formatConferenceRecruitingDiagnosticReport(
   push(`  rawProviderFbsRows: ${c.rawProviderFbsRows}`);
   push(`  normalizedUniqueTeamIds: ${c.normalizedUniqueTeamIds}`);
   push(`  matchedDbFbs: ${c.matchedDbFbsCount}/${EXPECTED_FBS_COUNT}`);
-  push(`  dbFbsMissingFromProvider: ${c.dbFbsMissingFromProvider.length}`);
-  push(`  providerFbsOutsideDb: ${c.providerFbsOutsideDb.length}`);
-  push(`  unresolvedProviderSchools: ${c.unresolvedProviderSchools.length}`);
+  push(`  providerFbsSetExact: ${c.providerFbsSetExact}`);
+  push(`  dbFbsMissingFromProvider (${c.dbFbsMissingFromProvider.length}):`);
+  for (const id of c.dbFbsMissingFromProvider) push(`    - ${id}`);
+  push(`  providerFbsOutsideDb (${c.providerFbsOutsideDb.length}):`);
+  for (const id of c.providerFbsOutsideDb) push(`    - ${id}`);
+  push(`  unresolvedProviderSchools (${c.unresolvedProviderSchools.length}):`);
+  for (const s of c.unresolvedProviderSchools) push(`    - ${s}`);
+  push(`  duplicateTeamIds (${c.duplicateTeamIds.length}):`);
+  for (const id of c.duplicateTeamIds) push(`    - ${id}`);
+  push(`  mappingCollisions (${c.mappingCollisions.length}):`);
+  for (const m of c.mappingCollisions) {
+    push(`    - ${m.teamId} <= [${m.providerSchools.join(', ')}]`);
+  }
+  push(
+    `  providerClassificationValues: [${c.providerClassificationValues.join(', ')}]`
+  );
+  push(
+    `  providerConferenceValues: [${c.providerConferenceValues.join(', ')}]`
+  );
+  push('  providerConferenceCounts:');
+  for (const key of Object.keys(c.providerConferenceCounts).sort()) {
+    push(`    ${key}: ${c.providerConferenceCounts[key]}`);
+  }
   push(`  providerConferenceCoverage: ${c.providerConferenceCoverage}/${EXPECTED_FBS_COUNT}`);
   push(`  currentIndependentCount: ${c.currentIndependentCount}`);
   push(`  differFromProviderCount: ${c.differFromProviderCount}`);
@@ -871,6 +984,12 @@ export function formatConferenceRecruitingDiagnosticReport(
   push(
     `  seasonAwareConferenceSolutionRequired: ${c.seasonAwareConferenceSolutionRequired}`
   );
+  push(`  conferenceDifferences (${c.conferenceDifferences.length}):`);
+  for (const d of c.conferenceDifferences) {
+    push(
+      `    - ${d.teamId}: current=${d.currentConference ?? '(null)'} provider=${d.providerConference ?? '(null)'}`
+    );
+  }
   push(
     `  NDSU: present=${c.ndsu.presentInProviderFbs} school=${c.ndsu.providerSchool} conf=${c.ndsu.providerConference}`
   );
@@ -887,9 +1006,15 @@ export function formatConferenceRecruitingDiagnosticReport(
   push(
     `  providerFbsValidatedMatchedCount: ${r.providerFbsValidatedMatchedCount}`
   );
-  push(`  missingDbFbsIds: ${r.missingDbFbsIds.length}`);
+  push(`  recruitingResolverSafe: ${r.recruitingResolverSafe}`);
+  push(`  missingDbFbsIds (${r.missingDbFbsIds.length}):`);
+  for (const id of r.missingDbFbsIds) push(`    - ${id}`);
   push(`  excessMappedRows: ${r.excessMappedRows.length}`);
   push(`  falsePositiveMappings: ${r.falsePositiveMappings.length}`);
+  push(
+    `  unresolvedProviderFbsSchools (${r.unresolvedProviderFbsSchools.length}):`
+  );
+  for (const s of r.unresolvedProviderFbsSchools) push(`    - ${s}`);
   push(`  bucketCounts: ${JSON.stringify(r.bucketCounts)}`);
   for (const ex of r.excessMappedRows) {
     push(
@@ -902,10 +1027,10 @@ export function formatConferenceRecruitingDiagnosticReport(
     );
   }
   push(
-    `  NDSU recruiting: inFbs=${r.ndsu.presentInProviderFbs} inRecruiting=${r.ndsu.presentInRecruiting} team=${r.ndsu.recruitingProviderTeam} resolved=${r.ndsu.resolvedTeamId} missingAliasLikely=${r.ndsu.unresolvedLikelyMissingAlias}`
+    `  NDSU recruiting: inFbs=${r.ndsu.presentInProviderFbs} inRecruiting=${r.ndsu.presentInRecruiting} school=${r.ndsu.providerSchool} team=${r.ndsu.recruitingProviderTeam} resolved=${r.ndsu.resolvedTeamId} missingAliasLikely=${r.ndsu.unresolvedLikelyMissingAlias}`
   );
   push(
-    `  SacState recruiting: inFbs=${r.sacramentoState.presentInProviderFbs} inRecruiting=${r.sacramentoState.presentInRecruiting} team=${r.sacramentoState.recruitingProviderTeam} resolved=${r.sacramentoState.resolvedTeamId} missingAliasLikely=${r.sacramentoState.unresolvedLikelyMissingAlias}`
+    `  SacState recruiting: inFbs=${r.sacramentoState.presentInProviderFbs} inRecruiting=${r.sacramentoState.presentInRecruiting} school=${r.sacramentoState.providerSchool} team=${r.sacramentoState.recruitingProviderTeam} resolved=${r.sacramentoState.resolvedTeamId} missingAliasLikely=${r.sacramentoState.unresolvedLikelyMissingAlias}`
   );
   push('');
   push('--- Core V1 prerequisites (static) ---');
