@@ -58,10 +58,18 @@ A one-time Oct 2025 repair previously DELETE/INSERT-rewrote `_prisma_migrations`
 
 ##### Operator procedure (after a schema/migration PR merges)
 1. Merge the schema + migration PR to `main` (no automatic DB change).
-2. Run **Prisma Migrate** via Actions → Run workflow.
+2. Run **Prisma Migrate** via Actions → Run workflow on **`main`**.
 3. Set `confirm` = `MIGRATE_PRODUCTION`.
-4. Optionally set `migration_reason`.
-5. Verify post-deploy status is healthy before application writes that depend on the new columns.
+4. Optionally set `migration_reason` (for 2C-2G-2: `Add nullable TeamMembership.conference for 2026 season-aware conference data`).
+5. Inspect preflight — confirm exactly the intended migration is pending.
+6. Confirm `migrate deploy` succeeds.
+7. Confirm post-deploy reports the database schema is up to date.
+8. Do **not** run dependent writers (e.g. season conference backfill) until a separate verification phase.
+
+##### Phase 2C-2G-2 migration
+- Directory: `prisma/migrations/20260808010000_add_team_membership_conference/`
+- SQL: `ALTER TABLE "team_membership" ADD COLUMN "conference" TEXT;` (nullable; no backfill)
+- Authored **manually** (local `.env` points at remote/production — `prisma migrate dev` was **not** used against production)
 
 #### Prisma Guardrails (PR Checks)
 - **Workflow**: `.github/workflows/prisma-guardrails.yml`

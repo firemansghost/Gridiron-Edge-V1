@@ -113,19 +113,12 @@ describe('prisma-migrate workflow hardening', () => {
   });
 });
 
-describe('prisma schema unchanged in this phase (repo snapshot)', () => {
-  it('TeamMembership still has no conference field in schema.prisma', () => {
-    const schema = fs.readFileSync(
-      path.join(__dirname, '../../../prisma/schema.prisma'),
-      'utf8'
-    );
-    const membershipBlock = schema.match(
-      /model TeamMembership \{[\s\S]*?\n\}/
-    )?.[0];
-    expect(membershipBlock).toBeTruthy();
-    expect(membershipBlock).toMatch(/season\s+Int/);
-    expect(membershipBlock).toMatch(/teamId\s+String/);
-    expect(membershipBlock).toMatch(/level\s+String/);
-    expect(membershipBlock).not.toMatch(/conference\s+String/);
+describe('prisma migrate workflow does not embed schema DDL', () => {
+  const workflow = fs.readFileSync(WORKFLOW, 'utf8');
+
+  it('workflow YAML does not add TeamMembership.conference or ALTER team_membership', () => {
+    expect(workflow).not.toMatch(/TeamMembership\.conference/);
+    expect(workflow).not.toMatch(/ADD COLUMN "conference"/);
+    expect(workflow).not.toMatch(/ALTER TABLE "team_membership"/);
   });
 });
