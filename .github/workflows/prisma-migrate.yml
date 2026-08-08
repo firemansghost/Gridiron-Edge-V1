@@ -6,6 +6,10 @@
 # apply production migrations. After a schema PR merges, an operator must
 # deliberately run this workflow with confirm=MIGRATE_PRODUCTION.
 #
+# Phase 2C-2G-2B: Preflight/post-deploy fail closed on migration-history
+# divergence (DB migrations not found locally), even when pending migrations
+# are also present. Do not auto-repair _prisma_migrations.
+#
 # Historical note: The former recurring DELETE/INSERT against
 # _prisma_migrations for 20251027_t6q_fixup_missing_teams was a one-time
 # Oct 2025 repair for a failed team-backfill migration. It is intentionally
@@ -140,19 +144,28 @@ jobs:
           set -e
           echo "$STATUS_OUTPUT"
 
-          # Failed / P3009 / unresolved failed migration → operator intervention required
+          # 1) Failed / P3009 / unresolved failed migration → operator intervention required
           if echo "$STATUS_OUTPUT" | grep -Eqi 'P3009|have failed|migration .* failed|failed migrations? in the (target )?database|The following migration\(s\) have failed'; then
             echo "::error::Unsafe failed-migration state detected. Do not auto-repair. Resolve manually, then re-run."
             exit 1
           fi
 
-          # Expected before deliberate deploy: up to date OR pending migrations
+          # 2) Migration-history divergence (DB has migrations absent from repo) → fail closed
+          # Must run BEFORE accepting pending/up-to-date: real production status can contain BOTH.
+          if echo "$STATUS_OUTPUT" | grep -Eqi 'Your local migration history and the migrations table from your database are different|The migrations from the database are not found locally in prisma/migrations'; then
+            echo "::error::Production migration history contains migrations that are not present in the repository."
+            echo "::error::Refusing migrate deploy. Investigate migration history before applying new migrations."
+            echo "::error::Do not auto-repair or modify _prisma_migrations."
+            exit 1
+          fi
+
+          # 3) Expected before deliberate deploy: up to date OR pending migrations only
           if echo "$STATUS_OUTPUT" | grep -Eqi 'Database schema is up to date|have not yet been applied|Following migration|not yet been applied'; then
             echo "Preflight status acceptable for migrate deploy (pending or up-to-date)."
             exit 0
           fi
 
-          # Unknown / connection / other errors — fail closed
+          # 4) Unknown / connection / other errors — fail closed
           echo "::error::Unexpected prisma migrate status output (exit=${STATUS_CODE}). Refusing deploy."
           exit 1
 
@@ -174,6 +187,13 @@ jobs:
 
           if echo "$STATUS_OUTPUT" | grep -Eqi 'P3009|have failed|migration .* failed|failed migrations?'; then
             echo "::error::Post-deploy status reports a failed migration"
+            exit 1
+          fi
+
+          # History divergence remains unsafe even if schema appears up to date
+          if echo "$STATUS_OUTPUT" | grep -Eqi 'Your local migration history and the migrations table from your database are different|The migrations from the database are not found locally in prisma/migrations'; then
+            echo "::error::Post-deploy status reports migration-history divergence."
+            echo "::error::Do not auto-repair or modify _prisma_migrations."
             exit 1
           fi
 

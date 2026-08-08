@@ -134,16 +134,11 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 * 2C-2F production: conference candidate **138/138** `writeEligible=true` (classification); **92** static semantic diffs; no schema write
 * 2C-2G-1: Prisma Migrate hardened and **merged** (PR #46) — manual-only; no production migrate from Run 31219442075 (that run was Schema Guardrails)
 * 2C-2G-1B: Schema Guardrails repaired and **merged** (PR #47) — live base-SHA comparison verified
-* 2C-2G-2: nullable `TeamMembership.conference` schema + migration (no value writes; no production migrate until operator Actions run)
+* 2C-2G-2: **PASSED** — PR #48 + production migrate; `TeamMembership.conference` text/nullable; **138/138 still NULL**; no writer
+* 2C-2G-2 discovery: production migration table lists `20251009001406_init` and `20250101_add_game_snapshots` not found in repo — do not auto-repair
+* 2C-2G-2B: fail-closed migrate preflight/post-deploy on history divergence (in prep)
 * `ratingsWriteAuthorized=false` / `ratingsComputeAuthorized=false` (`/talent?year=2026` still empty)
 * **Do not mutate Team.conference; do not compute ratings until talent + season conference persistence are approved**
-
-##### After 2C-2G-2 merges — operator Prisma Migrate
-1. Actions → **Prisma Migrate** on `main`
-2. `confirm=MIGRATE_PRODUCTION`
-3. Reason: `Add nullable TeamMembership.conference for 2026 season-aware conference data`
-4. Confirm intended migration pending → deploy succeeds → post-deploy up to date
-5. Do **not** run conference writer until separate verification
 
 - [x] Preview week 0–2 reviewed
 - [x] Week 1–13 + 15 production writes
@@ -156,8 +151,9 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 - [x] 2C-2F season conference design + read-only preview PASSED
 - [x] 2C-2G-1 Prisma migrate workflow hardening PASSED
 - [x] 2C-2G-1B Prisma Schema Guardrails repair PASSED
-- [ ] 2C-2G-2 TeamMembership.conference schema + migration
-- [ ] Operator production migrate (after 2C-2G-2 merge)
+- [x] 2C-2G-2 TeamMembership.conference schema + production migrate PASSED
+- [ ] 2C-2G-2B migrate history-divergence fail-closed
+- [ ] 2C-2G-3 guarded 138-row conference population
 - [ ] Odds / ratings compute / bets remain **out of scope** until separately approved
 
 ---

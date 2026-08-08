@@ -46,10 +46,13 @@ npm run db:generate
 - **Actions**:
   1. Confirm authorization + secret presence (names only)
   2. Connectivity preflight
-  3. Fail-closed `prisma migrate status` (refuse P3009 / failed migrations; pending OK)
+  3. Fail-closed `prisma migrate status`:
+     - refuse P3009 / failed migrations
+     - refuse **migration-history divergence** (DB migrations not found locally) — Phase **2C-2G-2B**
+     - accept pending-only or up-to-date
   4. `prisma migrate deploy`
   5. `prisma generate`
-  6. Post-deploy `prisma migrate status` must report up to date
+  6. Post-deploy `prisma migrate status` must report up to date **and** must not report history divergence
 - **Secrets Required**: `DATABASE_URL`, `DIRECT_URL`
 - **Not invoked**: providers, Odds, ETL, ratings, `_prisma_migrations` repair SQL
 
@@ -60,16 +63,23 @@ A one-time Oct 2025 repair previously DELETE/INSERT-rewrote `_prisma_migrations`
 1. Merge the schema + migration PR to `main` (no automatic DB change).
 2. Run **Prisma Migrate** via Actions → Run workflow on **`main`**.
 3. Set `confirm` = `MIGRATE_PRODUCTION`.
-4. Optionally set `migration_reason` (for 2C-2G-2: `Add nullable TeamMembership.conference for 2026 season-aware conference data`).
-5. Inspect preflight — confirm exactly the intended migration is pending.
+4. Optionally set `migration_reason`.
+5. Inspect preflight — confirm intended pending migration **and** that history-divergence is absent (or investigate before deploying).
 6. Confirm `migrate deploy` succeeds.
-7. Confirm post-deploy reports the database schema is up to date.
+7. Confirm post-deploy reports the database schema is up to date (no divergence).
 8. Do **not** run dependent writers (e.g. season conference backfill) until a separate verification phase.
 
-##### Phase 2C-2G-2 migration
+##### Phase 2C-2G-2 migration (applied in production)
 - Directory: `prisma/migrations/20260808010000_add_team_membership_conference/`
 - SQL: `ALTER TABLE "team_membership" ADD COLUMN "conference" TEXT;` (nullable; no backfill)
-- Authored **manually** (local `.env` points at remote/production — `prisma migrate dev` was **not** used against production)
+- Authored **manually** (local `.env` pointed at remote — `prisma migrate dev` was **not** used against production)
+- Production column verified text/nullable; 2026 FBS conference values still all NULL
+
+##### Phase 2C-2G-2B — migration-history divergence
+During 2C-2G-2 production preflight, Prisma also reported DB-only migration names not present in the repo:
+- `20251009001406_init`
+- `20250101_add_game_snapshots`
+Repository evidence for their SQL contents was **not** found. Do **not** invent directories or auto-repair `_prisma_migrations`. Workflow must fail closed on this condition going forward.
 
 #### Prisma Guardrails (PR Checks)
 - **Workflow**: `.github/workflows/prisma-guardrails.yml`

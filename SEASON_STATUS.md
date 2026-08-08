@@ -1,7 +1,7 @@
 # Season Status — Gridiron Edge
 
 **Status:** Offseason / paused for regular-season automation  
-**Updated:** 2026-08-07 (Phase 2C-2G-2 — nullable TeamMembership.conference schema + migration; no production migrate yet)
+**Updated:** 2026-08-08 (Phase 2C-2G-2B — fail closed on Prisma migration-history divergence; 2C-2G-2 production migrate PASSED)
 
 Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISABLE_REPORT.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -35,7 +35,8 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **Phase 2C-2F season conference design** | **PASSED** (PR #45) — production preview writeEligible=true (classification); no schema write |
 | **Phase 2C-2G-1 Prisma migrate hardening** | **PASSED** (PR #46) — manual-only `MIGRATE_PRODUCTION`; no recurring `_prisma_migrations` repair |
 | **Phase 2C-2G-1B Schema Guardrails repair** | **PASSED** (PR #47) — live base-SHA comparison; fail-closed |
-| **Phase 2C-2G-2 TeamMembership.conference schema** | **In preparation** — nullable column + migration only; no data write; no production migrate yet |
+| **Phase 2C-2G-2 TeamMembership.conference schema** | **PASSED** (PR #48) — production migrate applied; column text/nullable; 138/138 still NULL |
+| **Phase 2C-2G-2B migrate history-divergence guard** | **In preparation** — fail closed when DB has migrations absent from repo |
 | **Expected 2026 schedule baseline** | **761** games / **138** distinct teams — **verified** |
 | **Ratings computation / persistence** | **Not yet approved** (`ratingsWriteAuthorized=false`) |
 | **Odds ingestion** | **Not yet approved** |
@@ -259,29 +260,40 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 - **Merged (PR #47):** repaired false-green from Run **31219442075**
 - Live verification: PR base SHA comparison; `checkout@v6` `fetch-depth: 0`; fail-closed; no bare `origin/main...HEAD` dependency
 
-### 2C-2G-2 TeamMembership.conference schema + migration (in preparation)
+### 2C-2G-2 TeamMembership.conference schema + migration (PASSED)
 
 | Artifact | Role |
 |----------|------|
 | `prisma/schema.prisma` | Nullable `TeamMembership.conference String?` |
 | `prisma/migrations/20260808010000_add_team_membership_conference/` | `ALTER TABLE "team_membership" ADD COLUMN "conference" TEXT` only |
 
-- Schema/migration **only** — **no** conference value writes; **no** `Team.conference` mutation; **no** production `migrate deploy` from Cursor
-- Production conference candidate remains **138/138** `writeEligible=true` (classification); persistence deferred to a later guarded write phase
-- Ratings still blocked: `/talent?year=2026` empty → `ratingsComputeAuthorized=false`
+- **Merged (PR #48)** then operator ran **Prisma Migrate** with `confirm=MIGRATE_PRODUCTION`
+- Deploy applied `20260808010000_add_team_membership_conference`; post-deploy: Database schema is up to date
+- Direct verification: `public.team_membership.conference` = **text**, **nullable**; migration record applied_steps_count=1
+- **2026 FBS rows = 138**; `conference IS NULL = 138`; `conference IS NOT NULL = 0` (correct pre-writer state)
+- No conference writer; no providers/ETL/ratings/Odds; no `_prisma_migrations` repair
 
-#### Operator procedure (after this PR merges)
+#### Discovered during 2C-2G-2 preflight (not repaired)
 
-1. GitHub Actions → **Prisma Migrate**
-2. Run workflow on **`main`**
-3. `confirm=MIGRATE_PRODUCTION`
-4. Suggested `migration_reason`: `Add nullable TeamMembership.conference for 2026 season-aware conference data`
-5. Inspect preflight — confirm exactly this migration is pending
-6. Confirm `migrate deploy` succeeds
-7. Confirm post-deploy reports database schema up to date
-8. **Do not** run the conference writer until a separate verification phase
+Production `_prisma_migrations` also listed names **not present** in this repository’s `prisma/migrations/`:
 
-**Still out of scope / unapproved:** conference value writes; Team.conference mutation; talent/commits persistence; ratings compute; odds; bets; nightly reactivation.
+* `20251009001406_init`
+* `20250101_add_game_snapshots`
+
+Repository search (current tree, docs, pickaxe history) found **no** SQL directories or committed content for those names. Do **not** invent SQL or auto-repair. Histories differ; future migrate must fail closed pending investigation.
+
+### 2C-2G-2B Prisma migrate history-divergence guard (in preparation)
+
+| Artifact | Role |
+|----------|------|
+| `.github/workflows/prisma-migrate.yml` | Fail closed on migration-history divergence before accepting pending/up-to-date |
+| `apps/jobs/src/preseason/prisma-migrate-status.ts` | Pure status classifier (tests) |
+
+- Preflight/post-deploy refuse when Prisma reports local vs DB migration history differ / DB migrations not found locally
+- Mixed pending + divergence (exact 2C-2G-2 production shape) must be **unsafe**
+- **No** `_prisma_migrations` mutation; **no** `migrate resolve`; **no** fabricated migrations
+
+**Still out of scope / unapproved:** conference value writes (2C-2G-3); Team.conference mutation; talent/commits; ratings; odds; bets; nightly reactivation.
 
 ---
 
@@ -297,9 +309,10 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 | **2026 FBS membership** | **PASSED** | Phase 2C-2B — **138/138** |
 | **Talent / recruiting preview** | **Executed** | 2C-2C: `/talent` empty; recruiting schema unsafe |
 | **Team.conference / V1 adj** | **Open** | Provider map safe; static still unsafe (~92 semantic diffs) |
-| **Season conference persistence** | **Schema in prep (2C-2G-2)** | Column + migration PR; values still unwritten; preview still writeEligible |
+| **Season conference persistence** | **Column live; values NULL (2C-2G-2)** | 138/138 NULL; writer = 2C-2G-3; migrate history divergence under investigation |
 | **Prisma migrate auto-deploy** | **PASSED (2C-2G-1)** | Manual `MIGRATE_PRODUCTION` only |
 | **Prisma Schema Guardrails** | **PASSED (2C-2G-1B / PR #47)** | Live base-SHA fail-closed comparison |
+| **Prisma migrate history divergence** | **Guard in prep (2C-2G-2B)** | DB-only names: `20251009001406_init`, `20250101_add_game_snapshots` |
 | **CFBD resolver hardening** | **PASSED (2C-2E)** | 138/138 FBS + recruitingResolverSafe |
 | **Season 2025 hardcoding** | Open | Scheduled paths still 2025 — Phase 2D before UI re-enable |
 | **Empty 2026 DB** | **Partial** | Schedule + membership verified; talent/ratings still empty |
@@ -332,9 +345,10 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 
 ## Next phases
 
-1. **Phase 2C-2G-2** — merge nullable `TeamMembership.conference` + migration; then operator runs **Prisma Migrate** (`confirm=MIGRATE_PRODUCTION`)
-2. Guarded write of season conferences (separate phase); wire V1 fail-closed for 2026; talent still blocks ratings
-3. **Phase 2D** — `TARGET_SEASON` in scheduled YAML before bulk UI enables
+1. **Phase 2C-2G-2B** — merge fail-closed migrate history-divergence guard (do not auto-repair)
+2. **Phase 2C-2G-3** — guarded write of 138 season conference values (column already live; all NULL)
+3. Wire V1 fail-closed for 2026; talent still blocks ratings
+4. **Phase 2D** — `TARGET_SEASON` in scheduled YAML before bulk UI enables
 
 See [Preseason Reactivation Checklist](docs/preseason-reactivation-checklist.md).
 
