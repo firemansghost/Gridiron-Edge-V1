@@ -1,43 +1,92 @@
+# Prisma Schema Guardrails
+#
+# pull_request only — validates schema format/syntax and requires a migration
+# whenever prisma/schema.prisma changes in the PR.
+#
+# Phase 2C-2G-1B: Run 31219442075 showed the default branch remote tip was
+# unavailable under a shallow PR merge checkout; piping a failing git-diff into
+# an if-condition swallowed the fatal and falsely passed. Comparison now uses
+# github.event.pull_request.base.sha with fail-closed git/diff semantics.
+# Do not compare against a bare origin/<default-branch>...HEAD range.
+
 name: Prisma Schema Guardrails
 
 on:
   pull_request:
-    branches: [ "main" ]
+    branches: ['main']
+
+permissions:
+  contents: read
 
 jobs:
   validate-schema:
     runs-on: ubuntu-latest
 
     steps:
-      - name: ⬇️ Checkout
-        uses: actions/checkout@v4
-
-      - name: 🟢 Setup Node
-        uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v6
         with:
-          node-version: 20
+          # Full history so github.event.pull_request.base.sha is resolvable
+          fetch-depth: 0
 
-      - name: 📦 Install deps (no scripts)
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install deps (no scripts)
         run: |
           npm ci --ignore-scripts
 
-      - name: 🧹 Prisma format
+      - name: Prisma format
         run: npx prisma format --schema=prisma/schema.prisma
 
       # Provide dummy envs so prisma validate doesn't fail on env("...") lookups.
       # Validation does NOT connect to the DB; it just needs the variables to exist.
-      - name: 🔍 Validate Prisma schema
+      - name: Validate Prisma schema
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/postgres
-          DIRECT_URL:   postgresql://user:pass@localhost:5432/postgres
+          DIRECT_URL: postgresql://user:pass@localhost:5432/postgres
         run: npx prisma validate --schema=prisma/schema.prisma
 
-      # If the schema file changed, require a migration in the same PR
-      - name: 🚦 Require migration when schema changes
+      # If the schema file changed, require a migration in the same PR.
+      # Run 31219442075: missing base ref under shallow checkout + if-guarded
+      # git-diff caused enforcement to skip while the step stayed green.
+      - name: Require migration when schema changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^prisma/schema.prisma$'; then
-            if ! git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^prisma/migrations/'; then
-              echo "::error::Detected changes to prisma/schema.prisma but no prisma/migrations/* were added. Run: npx prisma migrate dev --name <reason> and commit the migration."
-              exit 1
-            fi
+          set -euo pipefail
+
+          if [ -z "${BASE_SHA:-}" ]; then
+            echo "::error::PR base SHA unavailable (github.event.pull_request.base.sha empty)"
+            exit 1
           fi
+
+          echo "Comparing against PR base SHA: ${BASE_SHA}"
+          git cat-file -e "${BASE_SHA}^{commit}"
+
+          CHANGED_FILES="$(git diff --name-only "${BASE_SHA}"...HEAD)"
+          echo "Changed files vs PR base:"
+          printf '%s\n' "$CHANGED_FILES"
+
+          SCHEMA_CHANGED=false
+          MIGRATION_CHANGED=false
+
+          if printf '%s\n' "$CHANGED_FILES" | grep -qx 'prisma/schema.prisma'; then
+            SCHEMA_CHANGED=true
+          fi
+          if printf '%s\n' "$CHANGED_FILES" | grep -q '^prisma/migrations/'; then
+            MIGRATION_CHANGED=true
+          fi
+
+          echo "schemaChanged=${SCHEMA_CHANGED}"
+          echo "migrationChanged=${MIGRATION_CHANGED}"
+
+          if [ "$SCHEMA_CHANGED" = "true" ] && [ "$MIGRATION_CHANGED" != "true" ]; then
+            echo "::error::Detected prisma/schema.prisma change without prisma/migrations/*. Run: npx prisma migrate dev --name <reason> and commit the migration."
+            exit 1
+          fi
+
+          echo "Prisma schema/migration guardrail comparison completed."

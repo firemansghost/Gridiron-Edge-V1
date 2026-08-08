@@ -1,7 +1,7 @@
 # Season Status — Gridiron Edge
 
 **Status:** Offseason / paused for regular-season automation  
-**Updated:** 2026-08-07 (Phase 2C-2G-1 — harden Prisma migrate workflow; 2C-2F production preview PASSED)
+**Updated:** 2026-08-07 (Phase 2C-2G-1B — repair Prisma Schema Guardrails comparison; 2C-2G-1 migrate workflow merged)
 
 Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISABLE_REPORT.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -33,7 +33,8 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **Phase 2C-2D conference + recruiting diagnostic** | **PASSED** (PR #43) — initial run found resolver gaps; post-2C-2E rerun exact |
 | **Phase 2C-2E CFBD resolver hardening** | **PASSED** (PR #44) — 138/138 provider FBS + conference map safe; recruitingResolverSafe=true |
 | **Phase 2C-2F season conference design** | **PASSED** (PR #45) — production preview writeEligible=true (classification); no schema write |
-| **Phase 2C-2G-1 Prisma migrate hardening** | **In preparation** — manual-only migrate deploy; remove recurring `_prisma_migrations` repair |
+| **Phase 2C-2G-1 Prisma migrate hardening** | **PASSED** (PR #46) — manual-only `MIGRATE_PRODUCTION`; no recurring `_prisma_migrations` repair |
+| **Phase 2C-2G-1B Schema Guardrails repair** | **In preparation** — fail-closed PR base-SHA comparison (Run 31219442075 false green) |
 | **Expected 2026 schedule baseline** | **761** games / **138** distinct teams — **verified** |
 | **Ratings computation / persistence** | **Not yet approved** (`ratingsWriteAuthorized=false`) |
 | **Odds ingestion** | **Not yet approved** |
@@ -238,19 +239,27 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 
 **Recommendation remains:** nullable `TeamMembership.conference` (Option 1). Schema/migration deferred until migrate workflow is hardened.
 
-### 2C-2G-1 Prisma production migration workflow hardening (in preparation)
+### 2C-2G-1 Prisma production migration workflow hardening (PASSED)
 
 | Artifact | Role |
 |----------|------|
 | `.github/workflows/prisma-migrate.yml` | **Manual-only** production `migrate deploy` |
 
-- **Before:** `push` to `main` on `prisma/**` auto-ran migrate + recurring `_prisma_migrations` DELETE/INSERT/`migrate resolve` for `20251027_t6q_fixup_missing_teams`
-- **After:** `workflow_dispatch` only; `confirm=MIGRATE_PRODUCTION`; fail-closed status preflight; post-deploy must be up to date; **no** metadata repair on the normal path
-- Historical Oct 2025 repair was one-time; loose SQL under `prisma/migrations/*cleanup*|resolve*|mark-migration*` is emergency reference only (not CI-invoked)
-- **No** `schema.prisma` change and **no** migration created in this phase
-- Future **2C-2G-2** can merge schema+migration without auto-applying; operator then runs this workflow deliberately
+- **Merged (PR #46):** `workflow_dispatch` only; `confirm=MIGRATE_PRODUCTION`; fail-closed status; no recurring `_prisma_migrations` DELETE/INSERT/`migrate resolve`
+- Investigation of Actions run **31219442075** / job **93000485694**: that run was **Prisma Schema Guardrails**, not production migrate — **no production migration occurred**
+- Historical Oct 2025 repair remains documented emergency SQL only
 
-**Still out of scope / unapproved:** TeamMembership.conference schema/write; Team.conference mutation; talent/commits persistence; ratings compute; odds; bets; nightly reactivation.
+### 2C-2G-1B Prisma Schema Guardrails repair (in preparation)
+
+| Artifact | Role |
+|----------|------|
+| `.github/workflows/prisma-guardrails.yml` | PR-only schema format/validate + migration-required-when-schema-changes |
+
+- **Bug (Run 31219442075):** shallow PR checkout lacked `origin/main`; `if git diff origin/main...HEAD` fatal was swallowed → guardrail falsely green
+- **Fix:** `checkout@v6` `fetch-depth: 0`; compare `github.event.pull_request.base.sha...HEAD` under `set -euo pipefail`; missing base / diff errors fail the job
+- **Blocked:** Phase 2C-2G-2 (`TeamMembership.conference` schema + migration) until this guardrail PR’s live check passes
+
+**Still out of scope / unapproved:** TeamMembership.conference schema/write; Team.conference mutation; talent/commits persistence; ratings compute; odds; bets; nightly reactivation; production migrate.
 
 ---
 
@@ -267,7 +276,8 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 | **Talent / recruiting preview** | **Executed** | 2C-2C: `/talent` empty; recruiting schema unsafe |
 | **Team.conference / V1 adj** | **Open** | Provider map safe; static still unsafe (~92 semantic diffs) |
 | **Season conference persistence** | **Preview PASSED (2C-2F)** | writeEligible classification; schema write blocked pending migrate harden |
-| **Prisma migrate auto-deploy** | **Hardening (2C-2G-1)** | Becoming manual `MIGRATE_PRODUCTION` only |
+| **Prisma migrate auto-deploy** | **PASSED (2C-2G-1)** | Manual `MIGRATE_PRODUCTION` only |
+| **Prisma Schema Guardrails** | **Repair (2C-2G-1B)** | Base-SHA fail-closed comparison before 2C-2G-2 |
 | **CFBD resolver hardening** | **PASSED (2C-2E)** | 138/138 FBS + recruitingResolverSafe |
 | **Season 2025 hardcoding** | Open | Scheduled paths still 2025 — Phase 2D before UI re-enable |
 | **Empty 2026 DB** | **Partial** | Schedule + membership verified; talent/ratings still empty |
@@ -300,7 +310,7 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 
 ## Next phases
 
-1. **Phase 2C-2G-1** — merge hardened Prisma Migrate workflow (manual-only)
+1. **Phase 2C-2G-1B** — merge repaired Prisma Schema Guardrails; confirm live check executes comparison
 2. **Phase 2C-2G-2** — add nullable `TeamMembership.conference` + migration file; merge without auto-apply; run **Prisma Migrate** with `confirm=MIGRATE_PRODUCTION`
 3. Guarded write of season conferences; wire V1 fail-closed for 2026; talent still blocks ratings
 4. **Phase 2D** — `TARGET_SEASON` in scheduled YAML before bulk UI enables
