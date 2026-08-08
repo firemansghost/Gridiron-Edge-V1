@@ -5,8 +5,8 @@
  * Provider budget (CLI): exactly 1 CFBD call — GET /teams/fbs?year=2026.
  * Does not write Team.conference, TeamMembership, talent, recruiting, or ratings.
  *
- * Recommended persistence (deferred to 2C-2G): nullable `conference` on TeamMembership.
- * This phase does NOT modify prisma/schema.prisma (merge would auto-run migrate deploy).
+ * Recommended persistence: nullable `conference` on TeamMembership (column live as of 2C-2G-2).
+ * This preview remains read-only; writes use the guarded 2C-2G-3 initializer.
  */
 
 import {
@@ -29,7 +29,7 @@ export {
   isRecognizedV1Conference,
 };
 
-/** Proposed storage — not yet in schema; preview only. */
+/** Storage target for season-aware conference (column live; writer is separate). */
 export const PROPOSED_STORAGE = 'TeamMembership.conference' as const;
 
 export interface SeasonConferenceCandidateRow {
@@ -377,7 +377,7 @@ export function buildSeasonConferencePreview(options: {
     },
     findings,
     notes: [
-      'Recommended storage: nullable TeamMembership.conference (season-aware); deferred — prisma-migrate.yml auto-deploys on main prisma/** pushes',
+      'Recommended storage: nullable TeamMembership.conference (season-aware); column live — use guarded 2C-2G-3 initializer for writes',
       'Do not mutate Team.conference; static source remains unsafe when differences > 0',
       'ratingsComputeAuthorized=false — /talent still unavailable; recruiting schema mismatch separate',
       `V1 recognized conference keys: ${V1_CONFERENCE_ADJUSTMENT_KEYS.join(', ')}`,

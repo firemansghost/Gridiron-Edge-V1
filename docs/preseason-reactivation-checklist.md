@@ -136,9 +136,15 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 * 2C-2G-1B: Schema Guardrails repaired and **merged** (PR #47) — live base-SHA comparison verified
 * 2C-2G-2: **PASSED** — PR #48 + production migrate; `TeamMembership.conference` text/nullable; **138/138 still NULL**; no writer
 * 2C-2G-2 discovery: production migration table lists `20251009001406_init` and `20250101_add_game_snapshots` not found in repo — do not auto-repair
-* 2C-2G-2B: fail-closed migrate preflight/post-deploy on history divergence (in prep)
+* 2C-2G-2B: history-divergence fail-closed **merged** (PR #49)
+* 2C-2G-3: guarded 138-row conference initializer (in prep) — default READ_ONLY; COMMIT needs `WRITE_2026_CONFERENCES`
 * `ratingsWriteAuthorized=false` / `ratingsComputeAuthorized=false` (`/talent?year=2026` still empty)
 * **Do not mutate Team.conference; do not compute ratings until talent + season conference persistence are approved**
+
+##### After 2C-2G-3 merges — operator procedure
+1. Rerun read-only preview (or initializer `mode=preview`) — confirm 138/138 candidate + all NULL
+2. Run **Initialize 2026 Season Conferences** with `mode=commit` + `confirm=WRITE_2026_CONFERENCES`
+3. Inspect atomic verification; stop — do not compute ratings
 
 - [x] Preview week 0–2 reviewed
 - [x] Week 1–13 + 15 production writes
@@ -152,7 +158,7 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 - [x] 2C-2G-1 Prisma migrate workflow hardening PASSED
 - [x] 2C-2G-1B Prisma Schema Guardrails repair PASSED
 - [x] 2C-2G-2 TeamMembership.conference schema + production migrate PASSED
-- [ ] 2C-2G-2B migrate history-divergence fail-closed
+- [x] 2C-2G-2B migrate history-divergence fail-closed PASSED
 - [ ] 2C-2G-3 guarded 138-row conference population
 - [ ] Odds / ratings compute / bets remain **out of scope** until separately approved
 
