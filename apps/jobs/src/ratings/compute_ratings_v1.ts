@@ -11,54 +11,19 @@ import { PrismaClient } from '@prisma/client';
 import { FeatureLoader, TeamFeatures } from './feature-loader';
 import { TeamResolver } from '../../adapters/TeamResolver';
 import { getModelConfig } from '../config/model-weights';
+import {
+  createPrismaV1ConferenceStore,
+  formatV1ConferenceLoadFailure,
+  loadV1ConferenceMap,
+} from './v1-conference-loader';
+import { getConferenceAdjustment } from './conference-adjustments';
+
+export {
+  CONFERENCE_ADJUSTMENTS,
+  getConferenceAdjustment,
+} from './conference-adjustments';
 
 const prisma = new PrismaClient();
-
-// Conference Strength Adjustments (SRS-like adjustment for V1)
-// These adjustments account for Strength of Schedule differences between conferences
-const CONFERENCE_ADJUSTMENTS: Record<string, number> = {
-  // Power 5 - Top Tier
-  'SEC': 5.0,
-  'Big Ten': 5.0,
-  'B1G': 5.0,
-  
-  // Power 5 - Upper Tier
-  'ACC': 2.0,
-  'Big 12': 2.0,
-  'Pac-12': 2.0,
-  'Pac-10': 2.0,
-  
-  // Group of 5 - Mid Tier
-  'American Athletic': -2.0,
-  'AAC': -2.0,
-  'Mountain West': -2.0,
-  'MWC': -2.0,
-  'Sun Belt': -2.0,
-  
-  // Group of 5 - Lower Tier
-  'Mid-American': -3.5,
-  'MAC': -3.5,
-  'Conference USA': -3.5,
-  'C-USA': -3.5,
-  'C-USA (FCS)': -3.5,
-  
-  // Independent / FCS
-  'Independent': -5.0,
-  'Unknown': -5.0,
-  
-  // FCS Conferences (if any slip through)
-  'Big Sky': -6.0,
-  'Big Sky (FCS)': -6.0,
-  'FCS': -6.0,
-};
-
-/**
- * Get conference adjustment for a team
- */
-function getConferenceAdjustment(conference: string | null): number {
-  if (!conference) return CONFERENCE_ADJUSTMENTS['Unknown'] || 0;
-  return CONFERENCE_ADJUSTMENTS[conference] || CONFERENCE_ADJUSTMENTS['Independent'] || -5.0;
-}
 
 // Export types and interfaces for testing
 export type { TeamFeatures };
@@ -315,6 +280,31 @@ async function main() {
     const fbsTeamIds = await teamResolver.loadFBSTeamsForSeason(season);
     console.log(`📋 Loaded ${fbsTeamIds.size} FBS teams for season ${season}`);
 
+    // Conference source: 2026+ → TeamMembership.conference (fail closed);
+    // <2026 → legacy Team.conference. Fail before ratings calc/persist.
+    const expectedFbsIds = Array.from(fbsTeamIds);
+    console.log(`\n🏈 Loading V1 conference map for season=${season}...`);
+    const conferenceLoad = await loadV1ConferenceMap({
+      season,
+      expectedFbsIds,
+      store: createPrismaV1ConferenceStore(prisma),
+    });
+    if (conferenceLoad.legacyConferenceMode) {
+      console.log(`   conferenceSource=Team.conference`);
+      console.log(`   conferenceSeason=${season}`);
+      console.log(`   legacyConferenceMode=true`);
+    } else {
+      console.log(`   conferenceSource=TeamMembership.conference`);
+      console.log(`   conferenceSeason=${season}`);
+      console.log(`   conferenceExpected=${conferenceLoad.expectedFbsCount}`);
+      console.log(`   conferenceLoaded=${conferenceLoad.loadedConferenceCount}`);
+      console.log(`   legacyFallback=false`);
+    }
+    if (!conferenceLoad.ok) {
+      throw new Error(formatV1ConferenceLoadFailure(conferenceLoad));
+    }
+    const conferenceMap = conferenceLoad.conferenceMap;
+
     // Load features for all FBS teams
     const loader = new FeatureLoader(prisma);
     const allFeatures: TeamFeatures[] = [];
@@ -331,21 +321,6 @@ async function main() {
     }
 
     console.log(`\n✅ Loaded features for ${allFeatures.length} teams`);
-
-    // Load team conferences for strength adjustments
-    console.log(`\n🏈 Loading team conferences for strength adjustments...`);
-    const teamIds = Array.from(fbsTeamIds);
-    const teams = await prisma.team.findMany({
-      where: {
-        id: { in: teamIds },
-      },
-      select: {
-        id: true,
-        conference: true,
-      },
-    });
-    const conferenceMap = new Map(teams.map(t => [t.id.toLowerCase(), t.conference]));
-    console.log(`   Loaded conferences for ${teams.length} teams`);
 
     // Calculate z-score statistics across all teams
     console.log(`\n📈 Calculating z-score statistics...`);
@@ -503,5 +478,7 @@ async function main() {
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
 
