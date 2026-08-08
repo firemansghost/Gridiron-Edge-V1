@@ -1,0 +1,147 @@
+# Manual GUARDED initialization of 2026 TeamMembership.conference (138 rows).
+# workflow_dispatch ONLY — no schedule, push, or pull_request.
+# Preview by default. COMMIT requires mode=commit and confirm=WRITE_2026_CONFERENCES.
+# Exactly 1 CFBD call: /teams/fbs. No Odds. No ratings. No Prisma Migrate.
+# Does not mutate Team.conference.
+
+name: Initialize 2026 Season Conferences (Manual, Guarded)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (must be 2026)'
+        required: true
+        type: string
+        default: '2026'
+      mode:
+        description: 'preview (read-only) or commit (atomic write)'
+        required: true
+        type: choice
+        options:
+          - preview
+          - commit
+        default: preview
+      confirm:
+        description: 'For commit, type WRITE_2026_CONFERENCES exactly'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: init-2026-season-conferences-${{ inputs.season }}
+  cancel-in-progress: false
+
+jobs:
+  initialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight (names/presence only)
+        env:
+          TARGET_SEASON: ${{ inputs.season }}
+          RUN_MODE: ${{ inputs.mode }}
+          WRITE_CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          echo "targetSeason=${TARGET_SEASON}"
+          echo "mode=${RUN_MODE}"
+          echo "table=team_membership"
+          echo "column=conference"
+          echo "expectedRows=138"
+          echo "staticTeamConferenceMutation=false"
+          echo "ratingsCompute=false"
+          echo "talentWrite=false"
+          echo "recruitingWrite=false"
+          echo "Odds=false"
+          echo "provider=/teams/fbs?year=2026"
+          echo "providerBudget=1"
+
+          if [ "$TARGET_SEASON" != "2026" ]; then
+            echo "::error::season must equal 2026 (got ${TARGET_SEASON})"
+            exit 1
+          fi
+
+          if [ "$RUN_MODE" != "preview" ] && [ "$RUN_MODE" != "commit" ]; then
+            echo "::error::mode must be preview or commit"
+            exit 1
+          fi
+
+          if [ "$RUN_MODE" = "commit" ] && [ "$WRITE_CONFIRM" != "WRITE_2026_CONFERENCES" ]; then
+            echo "::error::commit requires confirm=WRITE_2026_CONFERENCES"
+            exit 1
+          fi
+
+          if [ -z "${DIRECT_URL:-}" ] && [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::DIRECT_URL / DATABASE_URL secret is missing"
+            exit 1
+          fi
+          if [ -z "${CFBD_API_KEY:-}" ]; then
+            echo "::error::CFBD_API_KEY secret is missing"
+            exit 1
+          fi
+
+          echo "CFBD_API_KEY: present (value not printed)"
+          echo "ODDS_API_KEY: not provided"
+          echo "DIRECT_URL: present (value not printed)"
+          echo "prisma migrate: not invoked"
+          echo "Team.conference mutation: false"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: Run 2026 season conference initializer
+        env:
+          TARGET_SEASON: ${{ inputs.season }}
+          RUN_MODE: ${{ inputs.mode }}
+          WRITE_CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          if [ "$RUN_MODE" = "commit" ]; then
+            npx tsx apps/jobs/initialize-2026-season-conferences.ts \
+              --season "$TARGET_SEASON" \
+              --commit \
+              --confirm "$WRITE_CONFIRM"
+          else
+            npx tsx apps/jobs/initialize-2026-season-conferences.ts \
+              --season "$TARGET_SEASON"
+          fi
+
+      - name: Summary
+        if: always()
+        env:
+          TARGET_SEASON: ${{ inputs.season }}
+          RUN_MODE: ${{ inputs.mode }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "============================================"
+          echo "INITIALIZE 2026 SEASON CONFERENCES"
+          echo "============================================"
+          printf 'targetSeason: %s\n' "$TARGET_SEASON"
+          printf 'mode: %s\n' "$RUN_MODE"
+          printf 'status: %s\n' "$JOB_STATUS"
+          echo "table: team_membership"
+          echo "column: conference"
+          echo "prisma migrate: not invoked"
+          echo "secrets used (names only): DIRECT_URL, CFBD_API_KEY"
+          echo "============================================"

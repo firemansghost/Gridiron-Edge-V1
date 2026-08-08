@@ -24,6 +24,8 @@ export interface SeasonConferenceReadStore {
   loadTeamConferences(
     teamIds: string[]
   ): Promise<Array<{ id: string; conference: string | null }>>;
+  /** Count of season FBS memberships with non-null conference (0 before initializer). */
+  countPopulatedSeasonConferences?(season: number): Promise<number>;
 }
 
 export interface SeasonConferenceProviderClient {
@@ -48,6 +50,15 @@ export function createPrismaSeasonConferenceReadStore(
       return prisma.team.findMany({
         where: { id: { in: teamIds } },
         select: { id: true, conference: true },
+      });
+    },
+    async countPopulatedSeasonConferences(season) {
+      return prisma.teamMembership.count({
+        where: {
+          season,
+          level: 'fbs',
+          NOT: { conference: null },
+        },
       });
     },
   };
@@ -167,6 +178,9 @@ export async function runSeasonConferencePreview(options: {
       `[season-conference-preview] CFBD requestCount=${providerRequestCount}`
     );
 
+    const existingCount =
+      (await store.countPopulatedSeasonConferences?.(TARGET_SEASON)) ?? 0;
+
     const result = buildSeasonConferencePreview({
       fbsIds,
       teamsFbsRaw: fbsResp.rows,
@@ -174,8 +188,7 @@ export async function runSeasonConferencePreview(options: {
       resolveTeamId,
       providerRequestCount,
       providerEndpoints: endpoints,
-      // TeamMembership.conference does not exist yet — always 0 in this phase
-      existingTargetSeasonConferenceDataCount: 0,
+      existingTargetSeasonConferenceDataCount: existingCount,
     });
 
     console.log(formatSeasonConferencePreviewReport(result));
