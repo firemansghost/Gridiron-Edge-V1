@@ -1,7 +1,7 @@
 # Season Status — Gridiron Edge
 
 **Status:** Offseason / paused for regular-season automation  
-**Updated:** 2026-08-08 (Phase 2C-2G-3 — guarded 2026 TeamMembership.conference initializer; no production write yet)
+**Updated:** 2026-08-08 (Phase 2C-2G-4 — wire Core V1 to TeamMembership.conference; no ratings run)
 
 Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISABLE_REPORT.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -37,7 +37,8 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **Phase 2C-2G-1B Schema Guardrails repair** | **PASSED** (PR #47) — live base-SHA comparison; fail-closed |
 | **Phase 2C-2G-2 TeamMembership.conference schema** | **PASSED** (PR #48) — production migrate applied; column text/nullable; 138/138 still NULL |
 | **Phase 2C-2G-2B migrate history-divergence guard** | **PASSED** (PR #49) — future migrate fails closed on DB/repo history divergence |
-| **Phase 2C-2G-3 season conference initializer** | **In preparation** — guarded atomic 138-row write; production still 138 NULL |
+| **Phase 2C-2G-3 season conference initializer** | **PASSED** — production COMMIT: 138/138 populated, 0 NULL, verificationExact=true |
+| **Phase 2C-2G-4 Core V1 season-aware conferences** | **In preparation** — 2026+ TeamMembership.conference fail-closed; &lt;2026 legacy Team.conference |
 | **Expected 2026 schedule baseline** | **761** games / **138** distinct teams — **verified** |
 | **Ratings computation / persistence** | **Not yet approved** (`ratingsWriteAuthorized=false`) |
 | **Odds ingestion** | **Not yet approved** |
@@ -294,7 +295,7 @@ Repository search (current tree, docs, pickaxe history) found **no** SQL directo
 - **No** `_prisma_migrations` mutation; **no** `migrate resolve`; **no** fabricated migrations
 - Does **not** block conference writer — column already live
 
-### 2C-2G-3 Guarded 2026 season conference initializer (in preparation)
+### 2C-2G-3 Guarded 2026 season conference initializer (PASSED)
 
 | Artifact | Role |
 |----------|------|
@@ -302,20 +303,32 @@ Repository search (current tree, docs, pickaxe history) found **no** SQL directo
 | `apps/jobs/initialize-2026-season-conferences.ts` | CLI (default READ_ONLY; `--commit` + `WRITE_2026_CONFERENCES`) |
 | `.github/workflows/initialize-2026-season-conferences.yml` | Manual guarded workflow |
 
-- Reuses 2C-2F `buildSeasonConferencePreview` candidates (same canonicalization)
-- Production target expected: **138 NULL** conferences before first COMMIT
-- Provider budget: **1** CFBD `/teams/fbs?year=2026`
-- Atomic Serializable transaction; update only where `conference IS NULL`; require affected count=1 per row
-- No `Team.conference` mutation; no ratings; no Prisma Migrate; no Odds
+- **Production COMMIT succeeded:** 138 FBS / 138 populated / 0 NULL / `verificationExact=true`
+- Distribution verified (ACC 17 … Sun Belt 14); NDSU=Mountain West; Sac State=Mid-American
+- Do **not** rerun the initializer
+
+### 2C-2G-4 Wire Core V1 to season-aware conferences (in preparation)
+
+| Artifact | Role |
+|----------|------|
+| `apps/jobs/src/ratings/v1-conference-loader.ts` | Season policy loader (reuses `resolveSeasonAwareConferenceMap`) |
+| `apps/jobs/src/ratings/conference-adjustments.ts` | Unchanged adjustment constants |
+| `apps/jobs/audit-v1-conference-source.ts` | Read-only production audit CLI |
+| `.github/workflows/audit-v1-conference-source.yml` | Manual read-only audit |
+
+- **2026+:** `TeamMembership.conference` only; fail closed; no `Team.conference` fallback
+- **&lt;2026:** legacy `Team.conference` (historical Unknown/Independent behavior preserved)
+- No formula/weight changes; no ratings compute/persist; talent still blocks ratings
+- Static `Team.conference` remains unchanged
 
 #### Operator procedure (after this PR merges)
 
-1. Actions → **Preview 2026 Season Conferences** or initializer `mode=preview` — confirm 138/138 candidate + NULL target
-2. Actions → **Initialize 2026 Season Conferences** with `mode=commit` and `confirm=WRITE_2026_CONFERENCES`
-3. Inspect atomic-write verification (`writeCommitted=true`, `rowsUpdated=138`, `verificationExact=true`)
-4. **Stop** — do not compute ratings (`/talent` still empty)
+1. Actions → **Audit V1 Season Conference Source (Manual, Read Only)** for season 2026
+2. Verify expectedFbsCount=138, loadedConferenceCount=138, missing=0, unrecognized=0, legacyFallback=false
+3. Verify NDSU=Mountain West; Sacramento State=Mid-American
+4. **Stop** — do **not** run ratings yet (`/talent` still empty)
 
-**Still out of scope / unapproved:** Team.conference mutation; talent/commits; ratings; odds; bets; nightly reactivation; Prisma Migrate (history divergence unresolved).
+**Still out of scope / unapproved:** ratings compute/persist; Team.conference mutation; talent/commits; Odds; bets; nightly reactivation; Prisma Migrate (history divergence unresolved).
 
 ---
 
@@ -330,8 +343,8 @@ Repository search (current tree, docs, pickaxe history) found **no** SQL directo
 | **Ratings readiness** | **Structural OK** | Membership fixed; talent/commits/unit-grades/conference still block write auth |
 | **2026 FBS membership** | **PASSED** | Phase 2C-2B — **138/138** |
 | **Talent / recruiting preview** | **Executed** | 2C-2C: `/talent` empty; recruiting schema unsafe |
-| **Team.conference / V1 adj** | **Open** | Provider map safe; static still unsafe (~92 semantic diffs) |
-| **Season conference persistence** | **Initializer in prep (2C-2G-3)** | Column live; 138/138 still NULL until guarded COMMIT |
+| **Team.conference / V1 adj** | **Source wiring in prep (2C-2G-4)** | 2026+ membership; static Team.conference still unsafe & untouched |
+| **Season conference persistence** | **PASSED (2C-2G-3)** | 138/138 populated; 0 NULL; do not rerun initializer |
 | **Prisma migrate auto-deploy** | **PASSED (2C-2G-1)** | Manual `MIGRATE_PRODUCTION` only |
 | **Prisma Schema Guardrails** | **PASSED (2C-2G-1B / PR #47)** | Live base-SHA fail-closed comparison |
 | **Prisma migrate history divergence** | **PASSED (2C-2G-2B / PR #49)** | Fail closed; DB-only names unresolved (no auto-repair) |
@@ -367,8 +380,8 @@ Repository search (current tree, docs, pickaxe history) found **no** SQL directo
 
 ## Next phases
 
-1. **Phase 2C-2G-3** — merge guarded initializer; operator preview then COMMIT with `WRITE_2026_CONFERENCES`
-2. Wire Core V1 to `TeamMembership.conference` for 2026+ (fail-closed; separate phase); talent still blocks ratings
+1. **Phase 2C-2G-4** — merge V1 season-aware conference loader; run read-only audit for 2026
+2. Reassess talent blocker separately; do not run ratings until talent authorized
 3. **Phase 2D** — `TARGET_SEASON` in scheduled YAML before bulk UI enables
 
 See [Preseason Reactivation Checklist](docs/preseason-reactivation-checklist.md).

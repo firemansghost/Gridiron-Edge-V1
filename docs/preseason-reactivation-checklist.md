@@ -134,17 +134,19 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 * 2C-2F production: conference candidate **138/138** `writeEligible=true` (classification); **92** static semantic diffs; no schema write
 * 2C-2G-1: Prisma Migrate hardened and **merged** (PR #46) — manual-only; no production migrate from Run 31219442075 (that run was Schema Guardrails)
 * 2C-2G-1B: Schema Guardrails repaired and **merged** (PR #47) — live base-SHA comparison verified
-* 2C-2G-2: **PASSED** — PR #48 + production migrate; `TeamMembership.conference` text/nullable; **138/138 still NULL**; no writer
+* 2C-2G-2: **PASSED** — PR #48 + production migrate; `TeamMembership.conference` text/nullable
 * 2C-2G-2 discovery: production migration table lists `20251009001406_init` and `20250101_add_game_snapshots` not found in repo — do not auto-repair
 * 2C-2G-2B: history-divergence fail-closed **merged** (PR #49)
-* 2C-2G-3: guarded 138-row conference initializer (in prep) — default READ_ONLY; COMMIT needs `WRITE_2026_CONFERENCES`
+* 2C-2G-3: **PASSED** — production COMMIT 138/138 populated, 0 NULL, verificationExact=true; do not rerun
+* 2C-2G-4: wire Core V1 to `TeamMembership.conference` for 2026+ (fail closed); &lt;2026 legacy `Team.conference` (in prep)
 * `ratingsWriteAuthorized=false` / `ratingsComputeAuthorized=false` (`/talent?year=2026` still empty)
-* **Do not mutate Team.conference; do not compute ratings until talent + season conference persistence are approved**
+* **Do not mutate Team.conference; do not compute ratings until talent authorized**
 
-##### After 2C-2G-3 merges — operator procedure
-1. Rerun read-only preview (or initializer `mode=preview`) — confirm 138/138 candidate + all NULL
-2. Run **Initialize 2026 Season Conferences** with `mode=commit` + `confirm=WRITE_2026_CONFERENCES`
-3. Inspect atomic verification; stop — do not compute ratings
+##### After 2C-2G-4 merges — operator procedure
+1. Run **Audit V1 Season Conference Source (Manual, Read Only)** for season 2026
+2. Verify expected=138, loaded=138, missing=0, unrecognized=0, legacyFallback=false
+3. Verify NDSU=Mountain West; Sacramento State=Mid-American
+4. Stop — do **not** run ratings yet
 
 - [x] Preview week 0–2 reviewed
 - [x] Week 1–13 + 15 production writes
@@ -159,7 +161,8 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 - [x] 2C-2G-1B Prisma Schema Guardrails repair PASSED
 - [x] 2C-2G-2 TeamMembership.conference schema + production migrate PASSED
 - [x] 2C-2G-2B migrate history-divergence fail-closed PASSED
-- [ ] 2C-2G-3 guarded 138-row conference population
+- [x] 2C-2G-3 guarded 138-row conference population PASSED
+- [ ] 2C-2G-4 Core V1 season-aware conference source
 - [ ] Odds / ratings compute / bets remain **out of scope** until separately approved
 
 ---
