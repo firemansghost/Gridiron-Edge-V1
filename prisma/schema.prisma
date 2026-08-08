@@ -480,10 +480,11 @@ enum BetSource {
 }
 
 model TeamMembership {
-  season Int
-  teamId String @map("team_id")
-  level  String // 'fbs', 'fcs', etc.
-  team   Team   @relation(fields: [teamId], references: [id], onDelete: Restrict)
+  season     Int
+  teamId     String  @map("team_id")
+  level      String // 'fbs', 'fcs', etc.
+  conference String? // season-aware conference; nullable until guarded backfill
+  team       Team    @relation(fields: [teamId], references: [id], onDelete: Restrict)
 
   @@id([season, teamId])
   @@index([season, level])

@@ -133,9 +133,17 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 * 2C-2D/2E: provider FBS+conference **138/138 safe**; recruitingResolverSafe=true; static Team.conference still unsafe
 * 2C-2F production: conference candidate **138/138** `writeEligible=true` (classification); **92** static semantic diffs; no schema write
 * 2C-2G-1: Prisma Migrate hardened and **merged** (PR #46) — manual-only; no production migrate from Run 31219442075 (that run was Schema Guardrails)
-* 2C-2G-1B: repair Schema Guardrails false-green (`origin/main` missing; `if git diff` swallowed failure) before TeamMembership.conference schema
-* `ratingsWriteAuthorized=false` / `ratingsComputeAuthorized=false`
+* 2C-2G-1B: Schema Guardrails repaired and **merged** (PR #47) — live base-SHA comparison verified
+* 2C-2G-2: nullable `TeamMembership.conference` schema + migration (no value writes; no production migrate until operator Actions run)
+* `ratingsWriteAuthorized=false` / `ratingsComputeAuthorized=false` (`/talent?year=2026` still empty)
 * **Do not mutate Team.conference; do not compute ratings until talent + season conference persistence are approved**
+
+##### After 2C-2G-2 merges — operator Prisma Migrate
+1. Actions → **Prisma Migrate** on `main`
+2. `confirm=MIGRATE_PRODUCTION`
+3. Reason: `Add nullable TeamMembership.conference for 2026 season-aware conference data`
+4. Confirm intended migration pending → deploy succeeds → post-deploy up to date
+5. Do **not** run conference writer until separate verification
 
 - [x] Preview week 0–2 reviewed
 - [x] Week 1–13 + 15 production writes
@@ -147,7 +155,9 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 - [x] 2C-2E CFBD resolver hardening + diagnostic rerun PASSED
 - [x] 2C-2F season conference design + read-only preview PASSED
 - [x] 2C-2G-1 Prisma migrate workflow hardening PASSED
-- [ ] 2C-2G-1B Prisma Schema Guardrails repair
+- [x] 2C-2G-1B Prisma Schema Guardrails repair PASSED
+- [ ] 2C-2G-2 TeamMembership.conference schema + migration
+- [ ] Operator production migrate (after 2C-2G-2 merge)
 - [ ] Odds / ratings compute / bets remain **out of scope** until separately approved
 
 ---
