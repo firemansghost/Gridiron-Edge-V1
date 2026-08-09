@@ -243,6 +243,17 @@ describe('season mismatch, membership authority, readiness classification', () =
     expect(result.dbFbsCount).toBe(100);
   });
 
+  it('shortened FBS set with valid conferences is not conference-ready', () => {
+    const short = fbs.slice(0, 137);
+    const result = buildRatingsInputPreview(previewOpts(short));
+    expect(result.structuralOk).toBe(false);
+    expect(result.conferenceReadyForRatings).toBe(false);
+    expect(result.conference.expectedCount).toBe(137);
+    expect(result.conference.loadedCount).toBe(137);
+    expect(result.conference.missingCount).toBe(0);
+    expect(result.conference.unrecognizedCount).toBe(0);
+  });
+
   it('provider response cannot redefine FBS membership', () => {
     const map = nameMapForFbs(fbs);
     map['Extra FCS'] = 'extra-fcs-team';

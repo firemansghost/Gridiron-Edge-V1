@@ -6,6 +6,7 @@
  */
 
 import {
+  EXPECTED_FBS_COUNT,
   canonicalizeConferenceForPersistence,
   isRecognizedV1Conference,
   resolveSeasonAwareConferenceMap,
@@ -891,11 +892,11 @@ export function auditRatingsReadiness(
   }
 
   if (season >= AUDIT_SEASON) {
-    if (fbsIds.length !== 138) {
-      dataCoverageFindings.push({
+    if (fbsIds.length !== EXPECTED_FBS_COUNT) {
+      structuralIssues.push({
         code: 'fbs_membership_count_not_138',
-        severity: 'review',
-        message: `2026 FBS membership count ${fbsIds.length} != 138 (production denominator expects 138)`,
+        severity: 'structural',
+        message: `2026 FBS membership count ${fbsIds.length} != ${EXPECTED_FBS_COUNT} (authoritative denominator requires ${EXPECTED_FBS_COUNT})`,
       });
     }
     if (membershipMissingConference > 0 || conferenceUnrecognized > 0) {

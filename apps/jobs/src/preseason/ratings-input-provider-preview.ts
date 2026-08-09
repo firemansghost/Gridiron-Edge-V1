@@ -637,12 +637,12 @@ export function investigateConferenceAlignment(options: {
   const unrecognizedCount = resolved.unrecognizedTeamIds.length;
   const conferenceReadyForRatings =
     options.season >= TARGET_SEASON &&
+    expectedCount === EXPECTED_FBS_COUNT &&
     resolved.ok &&
     !resolved.usedLegacyFallback &&
     loadedCount === expectedCount &&
     missingCount === 0 &&
-    unrecognizedCount === 0 &&
-    expectedCount > 0;
+    unrecognizedCount === 0;
 
   findings.push({
     code: 'conference_source_season_membership',
@@ -668,8 +668,10 @@ export function investigateConferenceAlignment(options: {
       code: 'conference_coverage_incomplete',
       severity: 'structural',
       message:
-        resolved.error ??
-        `Season-aware conference incomplete (loaded=${loadedCount}, missing=${missingCount}, unrecognized=${unrecognizedCount})`,
+        expectedCount !== EXPECTED_FBS_COUNT
+          ? `Season-aware conference denominator mismatch: expectedCount=${expectedCount} requires ${EXPECTED_FBS_COUNT}`
+          : resolved.error ??
+            `Season-aware conference incomplete (loaded=${loadedCount}, missing=${missingCount}, unrecognized=${unrecognizedCount})`,
     });
   }
 
