@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 /**
- * Phase 2C-2C — Read-only 2026 ratings-input / provider preview.
+ * Phase 2C-2C / 2C-2H-1 — Read-only 2026 ratings-input / provider preview.
  *
  * Usage:
  *   npx tsx apps/jobs/preview-2026-ratings-inputs.ts --season 2026 --preview
  *
  * Calls CFBD once per data family (talent + recruiting/teams). Never mutates DB.
  * Never calls Odds. Never computes/persists ratings.
+ *
+ * Conference readiness uses TeamMembership.conference (season-aware Core V1 path).
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -23,6 +25,10 @@ import {
 
 export interface RatingsInputReadStore {
   loadFbsTeamIds(season: number): Promise<string[]>;
+  loadMembershipConferences(
+    season: number,
+    teamIds: string[]
+  ): Promise<Array<{ teamId: string; conference: string | null }>>;
   loadTeamConferences(
     teamIds: string[]
   ): Promise<Array<{ id: string; conference: string | null }>>;
@@ -52,6 +58,16 @@ export function createPrismaRatingsInputReadStore(
         .filter((r) => r.level.toLowerCase() === 'fbs')
         .map((r) => r.teamId)
         .sort();
+    },
+    async loadMembershipConferences(season, teamIds) {
+      const rows = await prisma.teamMembership.findMany({
+        where: { season, teamId: { in: teamIds } },
+        select: { teamId: true, conference: true },
+      });
+      return rows.map((r) => ({
+        teamId: r.teamId,
+        conference: r.conference,
+      }));
     },
     async loadTeamConferences(teamIds) {
       return prisma.team.findMany({
@@ -155,21 +171,32 @@ export async function runRatingsInputPreview(options: {
     return { exitCode: 1 };
   }
 
+  // Reuse one TeamResolver for the whole run (avoid per-row alias reload noise).
+  const sharedResolver = options.resolveTeamId
+    ? null
+    : new TeamResolver();
   const resolver =
     options.resolveTeamId ??
-    ((name: string) => {
-      const teamResolver = new TeamResolver();
-      return teamResolver.resolveTeam(name, 'college-football', {
+    ((name: string) =>
+      sharedResolver!.resolveTeam(name, 'college-football', {
         provider: 'cfbd',
-      });
-    });
+      }));
 
   try {
     const fbsIds = await store.loadFbsTeamIds(TARGET_SEASON);
+    const membershipRows = await store.loadMembershipConferences(
+      TARGET_SEASON,
+      fbsIds
+    );
+    const membershipConferenceByTeamId: Record<string, string | null> = {};
+    for (const r of membershipRows) {
+      membershipConferenceByTeamId[r.teamId] = r.conference;
+    }
+
     const teams = await store.loadTeamConferences(fbsIds);
-    const conferenceByTeamId: Record<string, string | null> = {};
+    const staticTeamConferenceByTeamId: Record<string, string | null> = {};
     for (const t of teams) {
-      conferenceByTeamId[t.id] = t.conference;
+      staticTeamConferenceByTeamId[t.id] = t.conference;
     }
 
     let providerRequestCount = 0;
@@ -195,7 +222,8 @@ export async function runRatingsInputPreview(options: {
       talentRaw: talentResp.rows,
       commitsRaw: commitsResp.rows,
       resolveTeamId: resolver,
-      conferenceByTeamId,
+      membershipConferenceByTeamId,
+      staticTeamConferenceByTeamId,
       providerRequestCount,
       providerEndpoints: endpoints,
       requestedSeason: TARGET_SEASON,

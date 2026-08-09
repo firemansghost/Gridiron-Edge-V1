@@ -7,6 +7,10 @@
  * Provider responses never redefine membership.
  */
 
+import {
+  resolveSeasonAwareConferenceMap,
+} from './season-conference-preview';
+
 export const TARGET_SEASON = 2026 as const;
 export const EXPECTED_FBS_COUNT = 138 as const;
 
@@ -140,6 +144,13 @@ export interface ConferenceInvestigation {
   sourceField: string;
   seasonSpecific: boolean;
   teamMembershipHasConference: boolean;
+  expectedCount: number;
+  loadedCount: number;
+  missingCount: number;
+  unrecognizedCount: number;
+  legacyFallback: boolean;
+  conferenceReadyForRatings: boolean;
+  staticTeamConferenceIgnoredFor2026: boolean;
   independentAdjustment: number;
   unknownAdjustment: number;
   fbsCount: number;
@@ -573,101 +584,120 @@ export function investigateUnitGrades(): UnitGradesInvestigation {
 }
 
 /**
- * Conference investigation for Core V1 adjustment path.
- * Source is static Team.conference — not season-aware.
+ * Conference investigation aligned with Core V1 (Phase 2C-2H-1).
+ * For 2026+: TeamMembership.conference via resolveSeasonAwareConferenceMap.
+ * Static Team.conference is info-only and never a compute blocker.
  */
 export function investigateConferenceAlignment(options: {
+  season: number;
   fbsIds: string[];
-  conferenceByTeamId: Record<string, string | null | undefined>;
+  membershipConferenceByTeamId: Record<string, string | null | undefined>;
+  staticTeamConferenceByTeamId?: Record<string, string | null | undefined>;
 }): ConferenceInvestigation {
   const findings: AuditFinding[] = [];
-  const counts: Record<string, number> = {};
+  const fbsIds = sortedUnique(options.fbsIds);
+  const expectedCount = fbsIds.length;
+
+  const resolved = resolveSeasonAwareConferenceMap({
+    targetSeason: options.season,
+    expectedFbsIds: fbsIds,
+    seasonConferenceByTeamId: options.membershipConferenceByTeamId,
+    allowLegacyTeamConferenceFallback: false,
+  });
+
+  const conferenceCounts: Record<string, number> = {};
   let independentOrMissing = 0;
-  let wouldReceiveDefaultAdj = 0;
-
-  const knownKeys = new Set([
-    'SEC',
-    'Big Ten',
-    'B1G',
-    'ACC',
-    'Big 12',
-    'Pac-12',
-    'Pac-10',
-    'American Athletic',
-    'AAC',
-    'Mountain West',
-    'MWC',
-    'Sun Belt',
-    'Mid-American',
-    'MAC',
-    'Conference USA',
-    'C-USA',
-    'C-USA (FCS)',
-    'Independent',
-    'Unknown',
-    'Big Sky',
-    'Big Sky (FCS)',
-    'FCS',
-  ]);
-
-  for (const id of options.fbsIds) {
-    const conf = options.conferenceByTeamId[id];
-    const label =
-      conf === null || conf === undefined || String(conf).trim() === ''
-        ? '(missing)'
-        : String(conf).trim();
-    counts[label] = (counts[label] ?? 0) + 1;
-    if (label === 'Independent' || label === '(missing)' || label === 'Unknown') {
-      independentOrMissing += 1;
-      wouldReceiveDefaultAdj += 1;
-    } else if (!knownKeys.has(label)) {
-      // getConferenceAdjustment falls through to Independent (−5)
-      wouldReceiveDefaultAdj += 1;
+  if (resolved.ok) {
+    for (const conf of Object.values(resolved.conferenceByTeamId)) {
+      conferenceCounts[conf] = (conferenceCounts[conf] ?? 0) + 1;
+      if (conf === 'Independent' || conf === 'Unknown') {
+        independentOrMissing += 1;
+      }
+    }
+  } else {
+    for (const id of fbsIds) {
+      const raw = options.membershipConferenceByTeamId[id];
+      const label =
+        raw === null || raw === undefined || String(raw).trim() === ''
+          ? '(missing)'
+          : String(raw).trim();
+      conferenceCounts[label] = (conferenceCounts[label] ?? 0) + 1;
+      if (
+        label === '(missing)' ||
+        label === 'Independent' ||
+        label === 'Unknown'
+      ) {
+        independentOrMissing += 1;
+      }
     }
   }
 
+  const loadedCount = Object.keys(resolved.conferenceByTeamId).length;
+  const missingCount = resolved.missingTeamIds.length;
+  const unrecognizedCount = resolved.unrecognizedTeamIds.length;
+  const conferenceReadyForRatings =
+    options.season >= TARGET_SEASON &&
+    expectedCount === EXPECTED_FBS_COUNT &&
+    resolved.ok &&
+    !resolved.usedLegacyFallback &&
+    loadedCount === expectedCount &&
+    missingCount === 0 &&
+    unrecognizedCount === 0;
+
   findings.push({
-    code: 'conference_source_team_table',
-    severity: 'review',
-    message:
-      'Core V1 conference adjustment reads Team.conference only (compute_ratings_v1.ts) — not season-specific',
-  });
-  findings.push({
-    code: 'conference_independent_adjustment',
-    severity: 'review',
-    message:
-      'Independent / Unknown / unrecognized conference strings receive −5.0 via getConferenceAdjustment',
-  });
-  findings.push({
-    code: 'conference_membership_no_field',
+    code: 'conference_source_season_membership',
     severity: 'info',
     message:
-      'TeamMembership has no conference column; Game.conferenceGame is a boolean only',
+      'Core V1 2026+ conference adjustment uses TeamMembership.conference (fail closed; no Team.conference fallback)',
+  });
+  findings.push({
+    code: 'conference_legacy_fallback_prohibited',
+    severity: 'info',
+    message:
+      'Static Team.conference is ignored for 2026+ Core V1 conference readiness',
   });
 
-  if (independentOrMissing >= 50) {
+  if (conferenceReadyForRatings) {
     findings.push({
-      code: 'conference_distribution_suspicious',
-      severity: 'review',
-      message: `${independentOrMissing}/${options.fbsIds.length} FBS teams are Independent/missing — unreliable for 2026 V1 conference adjustment`,
+      code: 'conference_coverage_complete',
+      severity: 'info',
+      message: `Season-aware conference coverage complete: ${loadedCount}/${expectedCount}`,
+    });
+  } else if (options.season >= TARGET_SEASON) {
+    findings.push({
+      code: 'conference_coverage_incomplete',
+      severity: 'structural',
+      message:
+        expectedCount !== EXPECTED_FBS_COUNT
+          ? `Season-aware conference denominator mismatch: expectedCount=${expectedCount} requires ${EXPECTED_FBS_COUNT}`
+          : resolved.error ??
+            `Season-aware conference incomplete (loaded=${loadedCount}, missing=${missingCount}, unrecognized=${unrecognizedCount})`,
     });
   }
 
   return {
-    sourceField: 'Team.conference',
-    seasonSpecific: false,
-    teamMembershipHasConference: false,
+    sourceField: 'TeamMembership.conference',
+    seasonSpecific: true,
+    teamMembershipHasConference: true,
+    expectedCount,
+    loadedCount,
+    missingCount,
+    unrecognizedCount,
+    legacyFallback: resolved.usedLegacyFallback,
+    conferenceReadyForRatings,
+    staticTeamConferenceIgnoredFor2026: true,
     independentAdjustment: -5.0,
     unknownAdjustment: -5.0,
-    fbsCount: options.fbsIds.length,
-    conferenceCounts: counts,
+    fbsCount: expectedCount,
+    conferenceCounts,
     independentOrMissingCount: independentOrMissing,
-    wouldReceiveIndependentOrUnknownAdj: wouldReceiveDefaultAdj,
+    wouldReceiveIndependentOrUnknownAdj: independentOrMissing,
     affectsCoreV1: true,
     affectsHybridV2ViaV1: true,
     affectsRatingsV2Directly: false,
-    recommendedNextStep:
-      'Do not mutate Team.conference in this phase. Prefer a future season-aware conference source (e.g. CFBD team/season conference or schedule-derived mapping) before any 2026 V1 ratings compute; Hybrid V2 inherits V1 power ratings that already bake this adjustment.',
+    recommendedNextStep: conferenceReadyForRatings
+      ? 'Conference source ready for Core V1; talent coverage remains the ratings compute blocker'
+      : 'Repair TeamMembership.conference coverage before any 2026 Core V1 ratings compute',
     findings,
   };
 }
@@ -743,7 +773,10 @@ export function buildRatingsInputPreview(options: {
   talentRaw: RawTalentRow[];
   commitsRaw: RawCommitsRow[];
   resolveTeamId: ResolveTeamId;
-  conferenceByTeamId: Record<string, string | null | undefined>;
+  /** Season-aware TeamMembership.conference (authoritative for 2026+) */
+  membershipConferenceByTeamId: Record<string, string | null | undefined>;
+  /** Optional static Team.conference — info only; never a compute blocker */
+  staticTeamConferenceByTeamId?: Record<string, string | null | undefined>;
   providerRequestCount: number;
   providerEndpoints: string[];
   requestedSeason?: number;
@@ -776,8 +809,10 @@ export function buildRatingsInputPreview(options: {
   });
   const unitGrades = investigateUnitGrades();
   const conference = investigateConferenceAlignment({
+    season: requestedSeason,
     fbsIds,
-    conferenceByTeamId: options.conferenceByTeamId,
+    membershipConferenceByTeamId: options.membershipConferenceByTeamId,
+    staticTeamConferenceByTeamId: options.staticTeamConferenceByTeamId,
   });
 
   findings.push(...unitGrades.findings, ...conference.findings);
@@ -803,7 +838,7 @@ export function buildRatingsInputPreview(options: {
       code: 'commits_schema_anomaly',
       severity: 'review',
       message:
-        'Current cfbd_team_class_commits mapper would repeat the 2025 zero-commit / null avgRating anomaly against /recruiting/teams (points present; commits/averageRating absent)',
+        'Current cfbd_team_class_commits mapper would repeat the 2025 zero-commit / null avgRating anomaly against /recruiting/teams (points present; commits/averageRating absent). This does not alone prevent Core V1 computation if a valid talent composite becomes available.',
     });
   }
   if (talent.matchedFbsCount < EXPECTED_FBS_COUNT) {
@@ -847,15 +882,13 @@ export function buildRatingsInputPreview(options: {
       .map((r) => r.teamId)
   ).size;
 
-  const conferenceReadyForRatings =
-    conference.independentOrMissingCount < 50 &&
-    conference.wouldReceiveIndependentOrUnknownAdj < 50;
+  const conferenceReadyForRatings = conference.conferenceReadyForRatings;
   const commitPersistenceSafe = !commits.wouldRepeat2025ZeroCommitAnomaly;
 
   const ratingsComputeBlockReasons: string[] = [];
   if (!conferenceReadyForRatings) {
     ratingsComputeBlockReasons.push(
-      `Team.conference unsafe for 2026 V1 adjustment (${conference.independentOrMissingCount}/${conference.fbsCount} Independent/missing)`
+      `Season-aware TeamMembership.conference incomplete for 2026 V1 (loaded=${conference.loadedCount}/${conference.expectedCount}, missing=${conference.missingCount}, unrecognized=${conference.unrecognizedCount})`
     );
   }
   if (talent.matchedFbsCount < EXPECTED_FBS_COUNT) {
@@ -870,12 +903,12 @@ export function buildRatingsInputPreview(options: {
   }
   if (!commitPersistenceSafe) {
     ratingsComputeBlockReasons.push(
-      'Recruiting /recruiting/teams schema mismatch blocks safe TeamClassCommits persistence (does not alone block Core V1 if talent exists)'
+      '/recruiting/teams does not supply commits/averageRating expected by current TeamClassCommits writer (does not alone prevent Core V1 if talent composite is valid)'
     );
   }
-  // Phase 2C-2C never authorizes compute regardless of coverage
+  // Preview never authorizes compute regardless of coverage
   ratingsComputeBlockReasons.push(
-    'Phase 2C-2C is read-only preview — ratings computation not authorized'
+    'Preview is read-only; ratings computation not authorized'
   );
 
   const ratingsComputeBlocked = true;
@@ -1006,9 +1039,19 @@ export function formatRatingsInputPreviewReport(
   push(`  coreV1Requires: ${result.unitGrades.coreV1Requires}`);
   push(`  producers: ${result.unitGrades.producers.join('; ')}`);
   push('');
-  push('--- Conference (Team.conference → V1 adjustment) ---');
+  push('--- Conference (TeamMembership.conference → V1 adjustment) ---');
   push(`  sourceField: ${result.conference.sourceField}`);
   push(`  seasonSpecific: ${result.conference.seasonSpecific}`);
+  push(`  conferenceSource: ${result.conference.sourceField}`);
+  push(`  conferenceReadyForRatings: ${result.conference.conferenceReadyForRatings}`);
+  push(`  conferenceExpected: ${result.conference.expectedCount}`);
+  push(`  conferenceLoaded: ${result.conference.loadedCount}`);
+  push(`  conferenceMissing: ${result.conference.missingCount}`);
+  push(`  conferenceUnrecognized: ${result.conference.unrecognizedCount}`);
+  push(`  legacyFallback: ${result.conference.legacyFallback}`);
+  push(
+    `  staticTeamConferenceIgnoredFor2026: ${result.conference.staticTeamConferenceIgnoredFor2026}`
+  );
   push(
     `  independentOrMissing: ${result.conference.independentOrMissingCount}/${result.conference.fbsCount}`
   );

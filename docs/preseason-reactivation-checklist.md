@@ -84,9 +84,10 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | **2C-1C inventory audit** | **PASSED** (PR #39) — **761** rows / **138** teams verified |
 | **2C-2A ratings readiness** | **Rerun structural OK** after 2C-2B — talent/commits still 0/138; `ratingsWriteAuthorized=false` |
 | **2C-2B FBS membership** | **PASSED** (PR #41) — **138/138** membership ↔ schedule |
-| **2C-2C ratings-input preview** | **Executed** (PR #42) — `/talent` 0 rows; recruiting 221/136; schema mismatch; conference unsafe |
-| **2C-2D conference/recruiting diagnostic** | **In preparation** — `/teams/fbs` + recruiting resolver buckets |
-| **Ratings computation** | **Not yet approved** |
+| **2C-2C ratings-input preview** | **Executed** (PR #42) — `/talent` 0 rows; recruiting schema mismatch; conference diagnostics corrected in 2C-2H-1 |
+| **2C-2G-4 Core V1 conferences** | **PASSED** (PR #51) — production audit 138/138; legacyFallback=false |
+| **2C-2H-1 readiness diagnostics** | **In preparation** — season-aware conference diagnostics + talent-only probe |
+| **Ratings computation** | **Not yet approved** (`/talent?year=2026` still 0 rows) |
 | **Odds ingestion** | **Not yet approved** |
 | **Nightly reactivation** | **Not yet approved** |
 
@@ -118,6 +119,8 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | `Preview 2026 FBS Membership (Manual, Read Only)` | Membership preview workflow |
 | `Initialize 2026 FBS Membership (Manual, Guarded)` | Membership write workflow |
 | `apps/jobs/preview-2026-ratings-inputs.ts` | Read-only CFBD talent + recruiting preview |
+| `apps/jobs/probe-2026-talent-availability.ts` | One-call CFBD `/talent` availability probe |
+| `Probe 2026 Talent Availability (Manual, Read Only)` | `workflow_dispatch` only; season `2026`; budget 1 |
 | `Preview 2026 Ratings Inputs (Manual, Read Only)` | Provider preview workflow (`season=2026`) |
 | `apps/jobs/diagnose-2026-conference-recruiting.ts` | Read-only `/teams/fbs` + recruiting resolver diagnostic (`providerFbsSetExact` / `recruitingResolverSafe`) |
 | `Diagnose 2026 Conference & Recruiting Mapping (Manual, Read Only)` | Diagnostic workflow (`season=2026`) |
@@ -138,15 +141,17 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 * 2C-2G-2 discovery: production migration table lists `20251009001406_init` and `20250101_add_game_snapshots` not found in repo — do not auto-repair
 * 2C-2G-2B: history-divergence fail-closed **merged** (PR #49)
 * 2C-2G-3: **PASSED** — production COMMIT 138/138 populated, 0 NULL, verificationExact=true; do not rerun
-* 2C-2G-4: wire Core V1 to `TeamMembership.conference` for 2026+ (fail closed); &lt;2026 legacy `Team.conference` (in prep)
-* `ratingsWriteAuthorized=false` / `ratingsComputeAuthorized=false` (`/talent?year=2026` still empty)
+* 2C-2G-4: **PASSED** (PR #51) — production Core V1 audit 138/138; missing=0; unrecognized=0; legacyFallback=false
+* 2C-2H-1: align ratings-input preview + readiness audit to `TeamMembership.conference`; add talent-only probe (in prep)
+* Latest talent observation: `/talent?year=2026` → **0** rows → `conferenceReadyForRatings=true` (after 2C-2H-1); `talentReadyForRatings=false`; `ratingsComputeAuthorized=false`
+* Recruiting schema mismatch remains separate
 * **Do not mutate Team.conference; do not compute ratings until talent authorized**
 
-##### After 2C-2G-4 merges — operator procedure
-1. Run **Audit V1 Season Conference Source (Manual, Read Only)** for season 2026
-2. Verify expected=138, loaded=138, missing=0, unrecognized=0, legacyFallback=false
-3. Verify NDSU=Mountain West; Sacramento State=Mid-American
-4. Stop — do **not** run ratings yet
+##### After 2C-2H-1 merges — operator procedure
+1. Run **Preview 2026 Ratings Inputs (Manual, Read Only)** once for 2026
+2. Verify `conferenceReadyForRatings=true`; only Core V1 data blocker is talent
+3. Run **Probe 2026 Talent Availability (Manual, Read Only)** (exactly 1 CFBD `/talent` call)
+4. If talent remains 0 rows, stop; if talent appears, review payload before persistence
 
 - [x] Preview week 0–2 reviewed
 - [x] Week 1–13 + 15 production writes
@@ -162,7 +167,8 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 - [x] 2C-2G-2 TeamMembership.conference schema + production migrate PASSED
 - [x] 2C-2G-2B migrate history-divergence fail-closed PASSED
 - [x] 2C-2G-3 guarded 138-row conference population PASSED
-- [ ] 2C-2G-4 Core V1 season-aware conference source
+- [x] 2C-2G-4 Core V1 season-aware conference source PASSED
+- [ ] 2C-2H-1 ratings readiness diagnostic alignment + talent probe
 - [ ] Odds / ratings compute / bets remain **out of scope** until separately approved
 
 ---

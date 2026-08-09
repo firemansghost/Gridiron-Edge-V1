@@ -5,6 +5,13 @@
  * ratingsWriteAuthorized is always false.
  */
 
+import {
+  EXPECTED_FBS_COUNT,
+  canonicalizeConferenceForPersistence,
+  isRecognizedV1Conference,
+  resolveSeasonAwareConferenceMap,
+} from './season-conference-preview';
+
 export const AUDIT_SEASON = 2026 as const;
 export const COMPARISON_SEASON = 2025 as const;
 export const SAMPLE_MISSING_CAP = 20 as const;
@@ -27,6 +34,8 @@ export interface MembershipRow {
   season: number;
   teamId: string;
   level: string;
+  /** Present for 2026+ season-aware path; may be null historically */
+  conference?: string | null;
 }
 
 export interface ScheduleGameRow {
@@ -245,6 +254,10 @@ export interface RatingsReadinessAuditResult {
     fbsTeamsAbsentFromSchedule: string[];
     conferenceBreakdown: Record<string, number>;
     membershipMissingConference: number;
+    /** Authoritative source used for target-season conference breakdown */
+    conferenceSource: string;
+    conferenceUnrecognized: number;
+    conferenceLegacyFallback: boolean;
   };
   talentBySeason: TalentSeasonSummary[];
   commitsBySeason: CommitsSeasonSummary[];
@@ -820,16 +833,78 @@ export function auditRatingsReadiness(
     });
   }
 
+  const membershipByTeamId: Record<string, string | null | undefined> = {};
+  for (const m of fbsMembership) {
+    membershipByTeamId[m.teamId] = m.conference ?? null;
+  }
+
   const conferenceBreakdown: Record<string, number> = {};
   let membershipMissingConference = 0;
-  for (const id of fbsIds) {
-    const conf = teamById.get(id)?.conference?.trim() ?? '';
-    if (!conf || conf.toLowerCase() === 'unknown') {
-      membershipMissingConference += 1;
-      const key = conf || '(blank)';
-      conferenceBreakdown[key] = (conferenceBreakdown[key] ?? 0) + 1;
+  let conferenceUnrecognized = 0;
+  let conferenceLegacyFallback = false;
+  let conferenceSource = 'TeamMembership.conference';
+
+  if (season >= AUDIT_SEASON) {
+    const resolved = resolveSeasonAwareConferenceMap({
+      targetSeason: season,
+      expectedFbsIds: fbsIds,
+      seasonConferenceByTeamId: membershipByTeamId,
+      allowLegacyTeamConferenceFallback: false,
+    });
+    conferenceLegacyFallback = resolved.usedLegacyFallback;
+    membershipMissingConference = resolved.missingTeamIds.length;
+    conferenceUnrecognized = resolved.unrecognizedTeamIds.length;
+    if (resolved.ok) {
+      for (const conf of Object.values(resolved.conferenceByTeamId)) {
+        conferenceBreakdown[conf] = (conferenceBreakdown[conf] ?? 0) + 1;
+      }
     } else {
-      conferenceBreakdown[conf] = (conferenceBreakdown[conf] ?? 0) + 1;
+      for (const id of fbsIds) {
+        const raw = membershipByTeamId[id];
+        const canonical = canonicalizeConferenceForPersistence(
+          raw === null || raw === undefined ? null : String(raw)
+        );
+        if (!canonical) {
+          conferenceBreakdown['(blank)'] =
+            (conferenceBreakdown['(blank)'] ?? 0) + 1;
+        } else if (!isRecognizedV1Conference(canonical)) {
+          conferenceBreakdown[canonical] =
+            (conferenceBreakdown[canonical] ?? 0) + 1;
+        } else {
+          conferenceBreakdown[canonical] =
+            (conferenceBreakdown[canonical] ?? 0) + 1;
+        }
+      }
+    }
+  } else {
+    // Historical / comparison seasons: static Team.conference (membership conference not required)
+    conferenceSource = 'Team.conference (historical/static)';
+    for (const id of fbsIds) {
+      const conf = teamById.get(id)?.conference?.trim() ?? '';
+      if (!conf || conf.toLowerCase() === 'unknown') {
+        membershipMissingConference += 1;
+        const key = conf || '(blank)';
+        conferenceBreakdown[key] = (conferenceBreakdown[key] ?? 0) + 1;
+      } else {
+        conferenceBreakdown[conf] = (conferenceBreakdown[conf] ?? 0) + 1;
+      }
+    }
+  }
+
+  if (season >= AUDIT_SEASON) {
+    if (fbsIds.length !== EXPECTED_FBS_COUNT) {
+      structuralIssues.push({
+        code: 'fbs_membership_count_not_138',
+        severity: 'structural',
+        message: `2026 FBS membership count ${fbsIds.length} != ${EXPECTED_FBS_COUNT} (authoritative denominator requires ${EXPECTED_FBS_COUNT})`,
+      });
+    }
+    if (membershipMissingConference > 0 || conferenceUnrecognized > 0) {
+      structuralIssues.push({
+        code: 'membership_conference_incomplete',
+        severity: 'structural',
+        message: `TeamMembership.conference incomplete for ${season}: missing=${membershipMissingConference} unrecognized=${conferenceUnrecognized} (static Team.conference fallback prohibited)`,
+      });
     }
   }
 
@@ -1181,6 +1256,9 @@ export function auditRatingsReadiness(
       fbsTeamsAbsentFromSchedule,
       conferenceBreakdown,
       membershipMissingConference,
+      conferenceSource,
+      conferenceUnrecognized,
+      conferenceLegacyFallback,
     },
     talentBySeason,
     commitsBySeason,
@@ -1262,6 +1340,9 @@ export function formatRatingsReadinessReport(
     `  duplicateMembershipKeys: ${f.duplicateMembershipKeys.length}${sample(f.duplicateMembershipKeys)}`
   );
   push(`  membershipMissingConference: ${f.membershipMissingConference}`);
+  push(`  conferenceSource: ${f.conferenceSource}`);
+  push(`  conferenceUnrecognized: ${f.conferenceUnrecognized}`);
+  push(`  conferenceLegacyFallback: ${f.conferenceLegacyFallback}`);
   push(`  conferenceBreakdown: ${JSON.stringify(f.conferenceBreakdown)}`);
   push('');
 
@@ -1453,9 +1534,10 @@ export function buildFixtureTeam(id: string, conference = 'SEC'): TeamRow {
 export function buildFixtureMembership(
   season: number,
   teamId: string,
-  level = 'fbs'
+  level = 'fbs',
+  conference: string | null = season >= AUDIT_SEASON ? 'SEC' : null
 ): MembershipRow {
-  return { season, teamId, level };
+  return { season, teamId, level, conference };
 }
 
 export function buildFixtureGame(

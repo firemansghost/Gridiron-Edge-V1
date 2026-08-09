@@ -37,15 +37,23 @@ const EARLIEST_KICKOFF = new Date('2026-08-29T16:00:00.000Z');
 function healthyInput(
   overrides: Partial<RatingsReadinessAuditInput> = {}
 ): RatingsReadinessAuditInput {
-  const teams = [
+  const named = [
     buildFixtureTeam('alabama', 'SEC'),
     buildFixtureTeam('georgia', 'SEC'),
     buildFixtureTeam('clemson', 'ACC'),
     buildFixtureTeam('ohio-state', 'Big Ten'),
   ];
+  const namedIds = new Set(named.map((t) => t.id));
+  const pad: ReturnType<typeof buildFixtureTeam>[] = [];
+  for (let i = 1; pad.length + named.length < 138; i++) {
+    const id = `team-${String(i).padStart(3, '0')}`;
+    if (namedIds.has(id)) continue;
+    pad.push(buildFixtureTeam(id, 'SEC'));
+  }
+  const teams = [...named, ...pad];
   const memberships = teams.flatMap((t) => [
-    buildFixtureMembership(2026, t.id),
-    buildFixtureMembership(2025, t.id),
+    buildFixtureMembership(2026, t.id, 'fbs', t.conference),
+    buildFixtureMembership(2025, t.id, 'fbs', null),
   ]);
   const games = [
     buildFixtureGame({
@@ -204,7 +212,7 @@ describe('auditRatingsReadiness', () => {
     expect(result.structuralOk).toBe(true);
     expect(result.ratingsWriteAuthorized).toBe(false);
     expect(result.preseason).toBe(true);
-    expect(result.fbsPopulation.fbsMembershipCount).toBe(4);
+    expect(result.fbsPopulation.fbsMembershipCount).toBe(138);
     expect(result.scheduleContext.totalGames).toBe(2);
   });
 
@@ -258,13 +266,11 @@ describe('auditRatingsReadiness', () => {
 
   it('FBS team absent from schedule is reported but does not automatically fail', () => {
     const input = healthyInput();
-    input.teams.push(buildFixtureTeam('bye-team', 'SEC'));
-    input.memberships.push(buildFixtureMembership(2026, 'bye-team'));
-    input.memberships.push(buildFixtureMembership(2025, 'bye-team'));
     const result = auditRatingsReadiness(input);
     expect(result.structuralOk).toBe(true);
-    expect(result.fbsPopulation.fbsTeamsAbsentFromSchedule).toContain(
-      'bye-team'
+    expect(result.fbsPopulation.fbsMembershipCount).toBe(138);
+    expect(result.fbsPopulation.fbsTeamsAbsentFromSchedule.length).toBeGreaterThan(
+      0
     );
     expect(
       result.dataCoverageFindings.some(
@@ -282,10 +288,10 @@ describe('auditRatingsReadiness', () => {
     });
     const result = auditRatingsReadiness(input);
     const t2026 = result.talentBySeason.find((t) => t.season === 2026)!;
-    expect(t2026.fbsCovered).toBe(3);
+    expect(t2026.fbsCovered).toBe(137);
     expect(t2026.fbsMissing).toBe(1);
     expect(t2026.sampleMissingFbsIds).toContain('clemson');
-    expect(t2026.coveragePct).toBe(75);
+    expect(t2026.coveragePct).toBe(99.3);
   });
 
   it('commit coverage calculation', () => {
@@ -304,8 +310,8 @@ describe('auditRatingsReadiness', () => {
     const result = auditRatingsReadiness(healthyInput());
     const s2025 = result.seasonStatsBySeason.find((s) => s.season === 2025)!;
     const s2026 = result.seasonStatsBySeason.find((s) => s.season === 2026)!;
-    expect(s2025.fbsCovered).toBe(4);
-    expect(s2025.withEpa).toBe(4);
+    expect(s2025.fbsCovered).toBe(138);
+    expect(s2025.withEpa).toBe(138);
     expect(s2026.totalRows).toBe(0);
   });
 
@@ -726,7 +732,7 @@ describe('auditRatingsReadiness', () => {
     const result = auditRatingsReadiness(input);
     const u2026 = result.unitGradesBySeason.find((u) => u.season === 2026)!;
     expect(u2026.fbsCovered).toBe(1);
-    expect(u2026.fbsMissing).toBe(3);
+    expect(u2026.fbsMissing).toBe(137);
   });
 
   it('missing data coverage requires operator review', () => {
@@ -934,5 +940,96 @@ describe('CLI / workflow isolation', () => {
     const testSrc = fs.readFileSync(__filename, 'utf8');
     expect(testSrc).not.toMatch(/PrismaClient\(/);
     expect(testSrc).not.toMatch(/\bfetch\s*\(/);
+  });
+});
+
+describe('season-aware conference source (2C-2H-1)', () => {
+  it('16. readiness audit uses membership conference for 2026', () => {
+    const input = healthyInput();
+    // Stale static Team.conference vs membership
+    input.teams = input.teams.map((t) => ({ ...t, conference: 'Independent' }));
+    for (const m of input.memberships) {
+      if (m.season === 2026 && m.teamId === 'alabama') {
+        m.conference = 'SEC';
+      }
+      if (m.season === 2026 && m.teamId === 'clemson') {
+        m.conference = 'ACC';
+      }
+    }
+    const result = auditRatingsReadiness(input);
+    expect(result.fbsPopulation.conferenceSource).toBe(
+      'TeamMembership.conference'
+    );
+    expect(result.fbsPopulation.conferenceLegacyFallback).toBe(false);
+    expect(result.fbsPopulation.membershipMissingConference).toBe(0);
+    expect(result.fbsPopulation.conferenceUnrecognized).toBe(0);
+    expect(result.fbsPopulation.conferenceBreakdown['Independent']).toBeUndefined();
+    expect(result.fbsPopulation.conferenceBreakdown['SEC']).toBeGreaterThan(0);
+    expect(result.fbsPopulation.conferenceBreakdown['ACC']).toBe(1);
+    expect(result.structuralOk).toBe(true);
+  });
+
+  it('membership NULL conference is structural for 2026', () => {
+    const input = healthyInput();
+    const row = input.memberships.find(
+      (m) => m.season === 2026 && m.teamId === 'alabama'
+    )!;
+    row.conference = null;
+    const result = auditRatingsReadiness(input);
+    expect(result.structuralOk).toBe(false);
+    expect(
+      result.structuralIssues.some(
+        (i) => i.code === 'membership_conference_incomplete'
+      )
+    ).toBe(true);
+    expect(result.fbsPopulation.membershipMissingConference).toBe(1);
+  });
+
+  it('17. historical comparison season does not require membership conference backfill', () => {
+    const input = healthyInput();
+    for (const m of input.memberships) {
+      if (m.season === 2025) m.conference = null;
+    }
+    const result = auditRatingsReadiness(input);
+    // Target season still uses membership; comparison season talent/etc. still loads
+    expect(result.fbsPopulation.conferenceSource).toBe(
+      'TeamMembership.conference'
+    );
+    expect(result.structuralOk).toBe(true);
+    expect(
+      result.talentBySeason.some((t) => t.season === COMPARISON_SEASON)
+    ).toBe(true);
+  });
+
+  it('2026 FBS membership count 137 is structural (denominator mismatch)', () => {
+    const input = healthyInput();
+    const dropId = 'team-001';
+    input.memberships = input.memberships.filter(
+      (m) => !(m.season === 2026 && m.teamId === dropId)
+    );
+    const result = auditRatingsReadiness(input);
+    expect(result.fbsPopulation.fbsMembershipCount).toBe(137);
+    expect(result.structuralOk).toBe(false);
+    expect(
+      result.structuralIssues.some(
+        (i) => i.code === 'fbs_membership_count_not_138'
+      )
+    ).toBe(true);
+  });
+
+  it('2026 FBS membership count 139 is structural (denominator mismatch)', () => {
+    const input = healthyInput();
+    input.teams.push(buildFixtureTeam('extra-fbs', 'SEC'));
+    input.memberships.push(
+      buildFixtureMembership(2026, 'extra-fbs', 'fbs', 'SEC')
+    );
+    const result = auditRatingsReadiness(input);
+    expect(result.fbsPopulation.fbsMembershipCount).toBe(139);
+    expect(result.structuralOk).toBe(false);
+    expect(
+      result.structuralIssues.some(
+        (i) => i.code === 'fbs_membership_count_not_138'
+      )
+    ).toBe(true);
   });
 });
