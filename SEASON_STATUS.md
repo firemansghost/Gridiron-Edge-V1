@@ -1,7 +1,7 @@
 # Season Status — Gridiron Edge
 
 **Status:** Offseason / paused for regular-season automation  
-**Updated:** 2026-08-08 (Phase 2C-2G-4 — wire Core V1 to TeamMembership.conference; no ratings run)
+**Updated:** 2026-08-08 (Phase 2C-2H-1 — align ratings readiness diagnostics with season-aware conferences; talent probe)
 
 Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISABLE_REPORT.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -29,7 +29,7 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **Phase 2C-1C inventory audit** | **PASSED** (PR #39) — **761** verified rows |
 | **Phase 2C-2A ratings readiness audit** | **Rerun PASSED structural** after 2C-2B — talent/commits still 0/138; `ratingsWriteAuthorized=false` |
 | **Phase 2C-2B FBS membership init** | **PASSED** (PR #41) — **138/138** membership ↔ schedule |
-| **Phase 2C-2C ratings-input provider preview** | **Executed** (PR #42) — `/talent` **0** rows; recruiting 221 raw / 136 unique FBS; schema mismatch; conference unsafe |
+| **Phase 2C-2C ratings-input provider preview** | **Executed** (PR #42) — `/talent` **0** rows; recruiting schema mismatch; conference diagnostics later corrected in 2C-2H-1 |
 | **Phase 2C-2D conference + recruiting diagnostic** | **PASSED** (PR #43) — initial run found resolver gaps; post-2C-2E rerun exact |
 | **Phase 2C-2E CFBD resolver hardening** | **PASSED** (PR #44) — 138/138 provider FBS + conference map safe; recruitingResolverSafe=true |
 | **Phase 2C-2F season conference design** | **PASSED** (PR #45) — production preview writeEligible=true (classification); no schema write |
@@ -38,7 +38,8 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **Phase 2C-2G-2 TeamMembership.conference schema** | **PASSED** (PR #48) — production migrate applied; column text/nullable; 138/138 still NULL |
 | **Phase 2C-2G-2B migrate history-divergence guard** | **PASSED** (PR #49) — future migrate fails closed on DB/repo history divergence |
 | **Phase 2C-2G-3 season conference initializer** | **PASSED** — production COMMIT: 138/138 populated, 0 NULL, verificationExact=true |
-| **Phase 2C-2G-4 Core V1 season-aware conferences** | **In preparation** — 2026+ TeamMembership.conference fail-closed; &lt;2026 legacy Team.conference |
+| **Phase 2C-2G-4 Core V1 season-aware conferences** | **PASSED** (PR #51) — production audit 138/138; legacyFallback=false |
+| **Phase 2C-2H-1 ratings readiness / talent probe** | **In preparation** — diagnostics use TeamMembership.conference; talent 0/138 remains blocker |
 | **Expected 2026 schedule baseline** | **761** games / **138** distinct teams — **verified** |
 | **Ratings computation / persistence** | **Not yet approved** (`ratingsWriteAuthorized=false`) |
 | **Odds ingestion** | **Not yet approved** |
@@ -307,7 +308,7 @@ Repository search (current tree, docs, pickaxe history) found **no** SQL directo
 - Distribution verified (ACC 17 … Sun Belt 14); NDSU=Mountain West; Sac State=Mid-American
 - Do **not** rerun the initializer
 
-### 2C-2G-4 Wire Core V1 to season-aware conferences (in preparation)
+### 2C-2G-4 Wire Core V1 to season-aware conferences — PASSED (PR #51)
 
 | Artifact | Role |
 |----------|------|
@@ -316,19 +317,55 @@ Repository search (current tree, docs, pickaxe history) found **no** SQL directo
 | `apps/jobs/audit-v1-conference-source.ts` | Read-only production audit CLI |
 | `.github/workflows/audit-v1-conference-source.yml` | Manual read-only audit |
 
+**Production Core V1 conference audit:**
+```text
+138 expected
+138 loaded
+0 missing
+0 unrecognized
+legacyFallback=false
+```
+
 - **2026+:** `TeamMembership.conference` only; fail closed; no `Team.conference` fallback
 - **&lt;2026:** legacy `Team.conference` (historical Unknown/Independent behavior preserved)
-- No formula/weight changes; no ratings compute/persist; talent still blocks ratings
 - Static `Team.conference` remains unchanged
+- No ratings compute/persist
+
+### 2C-2H-1 Align ratings readiness diagnostics + talent probe (in preparation)
+
+| Artifact | Role |
+|----------|------|
+| `apps/jobs/src/preseason/ratings-input-provider-preview.ts` | Season-aware conference readiness (reuses `resolveSeasonAwareConferenceMap`) |
+| `apps/jobs/src/preseason/ratings-readiness-audit.ts` | 2026 breakdown from `TeamMembership.conference` |
+| `apps/jobs/probe-2026-talent-availability.ts` | One-call talent probe CLI |
+| `.github/workflows/probe-2026-talent-availability.yml` | Manual read-only talent probe |
+
+**Latest documented provider talent state:**
+```text
+/talent?year=2026 → 0 rows
+0/138 matched
+0 finite talent composites
+```
+
+Therefore:
+```text
+conferenceReadyForRatings=true
+talentReadyForRatings=false
+ratingsComputeAuthorized=false
+```
+
+Recruiting schema mismatch remains separate (does not alone prevent Core V1 if talent becomes valid).
+Do not claim why CFBD 2026 talent is absent; only record observed API behavior.
 
 #### Operator procedure (after this PR merges)
 
-1. Actions → **Audit V1 Season Conference Source (Manual, Read Only)** for season 2026
-2. Verify expectedFbsCount=138, loadedConferenceCount=138, missing=0, unrecognized=0, legacyFallback=false
-3. Verify NDSU=Mountain West; Sacramento State=Mid-American
-4. **Stop** — do **not** run ratings yet (`/talent` still empty)
+1. Run **Preview 2026 Ratings Inputs (Manual, Read Only)** once for 2026
+2. Verify `conferenceReadyForRatings=true`; only Core V1 data blocker is talent coverage/composite
+3. Run **Probe 2026 Talent Availability (Manual, Read Only)** for 2026 (exactly 1 CFBD call)
+4. If talent remains 0 rows, stop
+5. If talent appears, stop and review the payload before any persistence work
 
-**Still out of scope / unapproved:** ratings compute/persist; Team.conference mutation; talent/commits; Odds; bets; nightly reactivation; Prisma Migrate (history divergence unresolved).
+**Still out of scope / unapproved:** ratings compute/persist; Team.conference mutation; talent/commits writes; Odds; bets; nightly reactivation; Prisma Migrate (history divergence unresolved).
 
 ---
 
@@ -340,10 +377,11 @@ Repository search (current tree, docs, pickaxe history) found **no** SQL directo
 | **Week Zero mapping** | **Resolved** | No CFBD week 0; first bucket = provider week **1** |
 | **Production write** | **Complete** | Weeks 1–13 + 15; **761** rows verified by 2C-1C |
 | **Inventory audit** | **PASSED** | Production workflow SUCCESS after PR #39 |
-| **Ratings readiness** | **Structural OK** | Membership fixed; talent/commits/unit-grades/conference still block write auth |
+| **Ratings readiness** | **Structural OK** | Membership + season conferences ready; talent/commits still block write auth |
+| **Talent / recruiting preview** | **Executed** | `/talent` empty (0/138); recruiting schema unsafe for commits writer |
+| **Team.conference / V1 adj** | **PASSED (2C-2G-4)** | 2026+ membership; static Team.conference untouched |
+| **Ratings readiness diagnostics** | **In prep (2C-2H-1)** | Align preview/audit to membership; talent-only probe |
 | **2026 FBS membership** | **PASSED** | Phase 2C-2B — **138/138** |
-| **Talent / recruiting preview** | **Executed** | 2C-2C: `/talent` empty; recruiting schema unsafe |
-| **Team.conference / V1 adj** | **Source wiring in prep (2C-2G-4)** | 2026+ membership; static Team.conference still unsafe & untouched |
 | **Season conference persistence** | **PASSED (2C-2G-3)** | 138/138 populated; 0 NULL; do not rerun initializer |
 | **Prisma migrate auto-deploy** | **PASSED (2C-2G-1)** | Manual `MIGRATE_PRODUCTION` only |
 | **Prisma Schema Guardrails** | **PASSED (2C-2G-1B / PR #47)** | Live base-SHA fail-closed comparison |
@@ -380,8 +418,8 @@ Repository search (current tree, docs, pickaxe history) found **no** SQL directo
 
 ## Next phases
 
-1. **Phase 2C-2G-4** — merge V1 season-aware conference loader; run read-only audit for 2026
-2. Reassess talent blocker separately; do not run ratings until talent authorized
+1. **Phase 2C-2H-1** — merge ratings readiness diagnostic alignment + talent probe; operator rerun preview + talent-only probe
+2. If `/talent?year=2026` remains empty, stop; if data appears, review payload before any persistence
 3. **Phase 2D** — `TARGET_SEASON` in scheduled YAML before bulk UI enables
 
 See [Preseason Reactivation Checklist](docs/preseason-reactivation-checklist.md).

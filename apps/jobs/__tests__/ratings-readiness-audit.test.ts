@@ -936,3 +936,62 @@ describe('CLI / workflow isolation', () => {
     expect(testSrc).not.toMatch(/\bfetch\s*\(/);
   });
 });
+
+describe('season-aware conference source (2C-2H-1)', () => {
+  it('16. readiness audit uses membership conference for 2026', () => {
+    const input = healthyInput();
+    // Stale static Team.conference vs membership
+    input.teams = input.teams.map((t) => ({ ...t, conference: 'Independent' }));
+    for (const m of input.memberships) {
+      if (m.season === 2026 && m.teamId === 'alabama') {
+        m.conference = 'SEC';
+      }
+      if (m.season === 2026 && m.teamId === 'clemson') {
+        m.conference = 'ACC';
+      }
+    }
+    const result = auditRatingsReadiness(input);
+    expect(result.fbsPopulation.conferenceSource).toBe(
+      'TeamMembership.conference'
+    );
+    expect(result.fbsPopulation.conferenceLegacyFallback).toBe(false);
+    expect(result.fbsPopulation.membershipMissingConference).toBe(0);
+    expect(result.fbsPopulation.conferenceUnrecognized).toBe(0);
+    expect(result.fbsPopulation.conferenceBreakdown['Independent']).toBeUndefined();
+    expect(result.fbsPopulation.conferenceBreakdown['SEC']).toBeGreaterThan(0);
+    expect(result.fbsPopulation.conferenceBreakdown['ACC']).toBe(1);
+    expect(result.structuralOk).toBe(true);
+  });
+
+  it('membership NULL conference is structural for 2026', () => {
+    const input = healthyInput();
+    const row = input.memberships.find(
+      (m) => m.season === 2026 && m.teamId === 'alabama'
+    )!;
+    row.conference = null;
+    const result = auditRatingsReadiness(input);
+    expect(result.structuralOk).toBe(false);
+    expect(
+      result.structuralIssues.some(
+        (i) => i.code === 'membership_conference_incomplete'
+      )
+    ).toBe(true);
+    expect(result.fbsPopulation.membershipMissingConference).toBe(1);
+  });
+
+  it('17. historical comparison season does not require membership conference backfill', () => {
+    const input = healthyInput();
+    for (const m of input.memberships) {
+      if (m.season === 2025) m.conference = null;
+    }
+    const result = auditRatingsReadiness(input);
+    // Target season still uses membership; comparison season talent/etc. still loads
+    expect(result.fbsPopulation.conferenceSource).toBe(
+      'TeamMembership.conference'
+    );
+    expect(result.structuralOk).toBe(true);
+    expect(
+      result.talentBySeason.some((t) => t.season === COMPARISON_SEASON)
+    ).toBe(true);
+  });
+});

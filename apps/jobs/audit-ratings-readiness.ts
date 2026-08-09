@@ -51,7 +51,7 @@ function createPrismaRatingsReadinessStore(
     async loadMemberships(seasons) {
       return prisma.teamMembership.findMany({
         where: { season: { in: [...seasons] } },
-        select: { season: true, teamId: true, level: true },
+        select: { season: true, teamId: true, level: true, conference: true },
         orderBy: [{ season: 'asc' }, { teamId: 'asc' }],
       });
     },
