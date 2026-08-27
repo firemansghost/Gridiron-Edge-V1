@@ -1,13 +1,18 @@
 /**
- * CFBD Team Roster Talent Job
- * 
+ * CFBD Team Roster Talent Job (LEGACY / HISTORICAL — ≤2025 only)
+ *
  * Fetches roster talent composite (Team Talent Composite) from CollegeFootballData API.
  * This is the whole-roster strength for a season (prior signal for ratings).
- * 
- * Endpoint: CFBD /talent/teams?year={season}
+ *
+ * Endpoint: CFBD /talent?year={season}
  * Stores in: team_season_talent table
- * 
- * Usage:
+ *
+ * ⚠️  NOT the approved 2026 write path.
+ * For season >= 2026 use the guarded initializer:
+ *   apps/jobs/initialize-2026-team-talent.ts
+ *   workflow: Initialize 2026 Team Talent (Guarded)
+ *
+ * Usage (historical only):
  *   ts-node apps/jobs/src/talent/cfbd_team_roster_talent.ts --season 2025
  */
 
@@ -16,6 +21,9 @@ import { TeamResolver } from '../../adapters/TeamResolver';
 
 const prisma = new PrismaClient();
 const teamResolver = new TeamResolver();
+
+/** Seasons at or above this value must use the guarded 2026 initializer. */
+export const LEGACY_TALENT_WRITER_MAX_SEASON = 2025 as const;
 
 interface CFBDTeamTalent {
   team: string;
@@ -42,6 +50,22 @@ interface TalentData {
   fourStar?: number;
   threeStar?: number;
   unrated?: number;
+}
+
+/**
+ * Fail-closed guard: refuse 2026+ before any provider call or mutation.
+ * Exported for unit tests.
+ */
+export function assertLegacyTalentWriterSeasonAllowed(season: number): void {
+  if (!Number.isInteger(season) || season >= 2026) {
+    throw new Error(
+      `Legacy cfbd_team_roster_talent refuses season ${season}. ` +
+        `For 2026+ use the guarded initializer: ` +
+        `npx tsx apps/jobs/initialize-2026-team-talent.ts --season 2026 --mode PREVIEW ` +
+        `(workflow: Initialize 2026 Team Talent (Guarded)). ` +
+        `Do not use this legacy writer for current /talent school/year/talent payloads.`
+    );
+  }
 }
 
 /**
@@ -283,8 +307,11 @@ async function upsertTalentData(
 async function main() {
   try {
     const args = parseArgs();
+
+    // Fail closed for 2026+ before any provider request or mutation.
+    assertLegacyTalentWriterSeasonAllowed(args.season);
     
-    console.log('🏈 CFBD Team Roster Talent Job');
+    console.log('🏈 CFBD Team Roster Talent Job (LEGACY ≤2025)');
     console.log(`   Season: ${args.season}`);
     console.log(`   Table: team_season_talent`);
     console.log(`   Filter: FBS teams only\n`);

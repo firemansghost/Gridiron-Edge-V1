@@ -1,13 +1,16 @@
-name: CFBD Team Talent Sync
+# LEGACY / HISTORICAL — CFBD Team Talent Sync (≤2025 only)
+# NOT the approved 2026 write path.
+# For 2026 use: Initialize 2026 Team Talent (Guarded)
+# workflow_dispatch ONLY — schedule removed (Phase 2C-2H-2).
+# Legacy writer refuses season >= 2026 before provider/mutation.
+
+name: "[LEGACY] CFBD Team Talent Sync (≤2025)"
 
 on:
-  schedule:
-    # Run yearly in February (recruiting season)
-    - cron: '0 2 1 2 *'
   workflow_dispatch:
     inputs:
       season:
-        description: 'Season to sync (e.g., 2025)'
+        description: 'Historical season to sync (must be ≤2025; 2026+ refused by writer)'
         required: true
         default: '2025'
         type: string
@@ -53,30 +56,30 @@ jobs:
             echo "DIRECT_URL=${{ secrets.DATABASE_URL }}" >> $GITHUB_ENV
           fi
 
-      - name: Run CFBD Team Roster Talent Sync
+      - name: Run CFBD Team Roster Talent Sync (legacy)
         env:
           CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
           CFBD_BASE_URL: ${{ vars.CFBD_BASE_URL }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          LEGACY_TALENT_SEASON: ${{ github.event.inputs.season }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            SEASON="${{ github.event.inputs.season }}"
-          else
-            SEASON=$(date +%Y)
+          set -euo pipefail
+          SEASON="${LEGACY_TALENT_SEASON}"
+          echo "LEGACY roster talent sync for season $SEASON (≤2025 only)"
+          if [ "$SEASON" -ge 2026 ]; then
+            echo "::error::Legacy talent workflow refuses season >= 2026. Use Initialize 2026 Team Talent (Guarded)."
+            exit 1
           fi
-          echo "🏈 Syncing roster talent for season $SEASON"
-          node apps/jobs/dist/src/talent/cfbd_team_roster_talent.js --season $SEASON
+          node apps/jobs/dist/src/talent/cfbd_team_roster_talent.js --season "$SEASON"
 
       - name: Verify talent data was inserted
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          LEGACY_TALENT_SEASON: ${{ github.event.inputs.season }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            SEASON="${{ github.event.inputs.season }}"
-          else
-            SEASON=$(date +%Y)
-          fi
+          set -euo pipefail
+          SEASON="${LEGACY_TALENT_SEASON}"
           echo "Checking team_season_talent table..."
           npx prisma db execute --schema=prisma/schema.prisma --stdin <<< "SELECT COUNT(*) as total_records, COUNT(DISTINCT season) as seasons, COUNT(DISTINCT team_id) as teams FROM team_season_talent WHERE season = $SEASON;"

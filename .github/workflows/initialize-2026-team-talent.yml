@@ -1,0 +1,139 @@
+# Manual GUARDED one-time initialization of 2026 TeamSeasonTalent (talentComposite).
+# workflow_dispatch ONLY — no schedule, push, or pull_request.
+# Preview by default. COMMIT requires mode=COMMIT and confirm=WRITE_2026_TALENT.
+# Exactly 1 CFBD call: GET /talent?year=2026. No Odds. No ratings. No Prisma Migrate.
+# Does not use the legacy cfbd_team_roster_talent writer.
+
+name: Initialize 2026 Team Talent (Guarded)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (must be 2026)'
+        required: true
+        type: string
+        default: '2026'
+      mode:
+        description: 'PREVIEW (read-only) or COMMIT (atomic write)'
+        required: true
+        type: choice
+        options:
+          - PREVIEW
+          - COMMIT
+        default: PREVIEW
+      confirmation:
+        description: 'For COMMIT, type WRITE_2026_TALENT exactly'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: init-2026-team-talent-${{ inputs.season }}
+  cancel-in-progress: false
+
+jobs:
+  initialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+      TARGET_SEASON: ${{ inputs.season }}
+      RUN_MODE: ${{ inputs.mode }}
+      WRITE_CONFIRM: ${{ inputs.confirmation }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight (names/presence only)
+        run: |
+          set -euo pipefail
+          echo "targetSeason=${TARGET_SEASON}"
+          echo "mode=${RUN_MODE}"
+          echo "table=team_season_talent"
+          echo "expectedRows=138"
+          echo "ratingsCompute=false"
+          echo "recruitingWrite=false"
+          echo "Odds=false"
+          echo "provider=/talent?year=2026"
+          echo "providerBudget=1"
+          echo "legacyWriter=not invoked"
+
+          if [ "$TARGET_SEASON" != "2026" ]; then
+            echo "::error::season must equal 2026 (got ${TARGET_SEASON})"
+            exit 1
+          fi
+
+          if [ "$RUN_MODE" != "PREVIEW" ] && [ "$RUN_MODE" != "COMMIT" ]; then
+            echo "::error::mode must be PREVIEW or COMMIT"
+            exit 1
+          fi
+
+          if [ "$RUN_MODE" = "COMMIT" ] && [ "$WRITE_CONFIRM" != "WRITE_2026_TALENT" ]; then
+            echo "::error::COMMIT requires confirmation=WRITE_2026_TALENT"
+            exit 1
+          fi
+
+          if [ -z "${DIRECT_URL:-}" ] && [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::DIRECT_URL / DATABASE_URL secret is missing"
+            exit 1
+          fi
+          if [ -z "${CFBD_API_KEY:-}" ]; then
+            echo "::error::CFBD_API_KEY secret is missing"
+            exit 1
+          fi
+
+          echo "CFBD_API_KEY: present (value not printed)"
+          echo "ODDS_API_KEY: not provided"
+          echo "DIRECT_URL: present (value not printed)"
+          echo "prisma migrate: not invoked"
+          echo "ratings: not invoked"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: Run 2026 team talent initializer
+        run: |
+          set -euo pipefail
+          if [ "$RUN_MODE" = "COMMIT" ]; then
+            npx tsx apps/jobs/initialize-2026-team-talent.ts \
+              --season "${TARGET_SEASON}" \
+              --mode COMMIT \
+              --confirm "${WRITE_CONFIRM}"
+          else
+            npx tsx apps/jobs/initialize-2026-team-talent.ts \
+              --season "${TARGET_SEASON}" \
+              --mode PREVIEW
+          fi
+
+      - name: Summary
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "============================================"
+          echo "INITIALIZE 2026 TEAM TALENT (GUARDED)"
+          echo "============================================"
+          printf 'targetSeason: %s\n' "$TARGET_SEASON"
+          printf 'mode: %s\n' "$RUN_MODE"
+          printf 'status: %s\n' "$JOB_STATUS"
+          echo "table: team_season_talent"
+          echo "prisma migrate: not invoked"
+          echo "ratings: not invoked"
+          echo "secrets used (names only): DIRECT_URL, CFBD_API_KEY"
+          echo "============================================"
