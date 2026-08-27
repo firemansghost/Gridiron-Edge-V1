@@ -28,8 +28,10 @@ import {
   CANDIDATE_A_TALENT_SCALE,
   EXPECTED_2025_FBS_COUNT,
   EXPECTED_2026_FBS_COUNT,
+  HIGHLIGHT_TEAM_IDS,
   HISTORICAL_BALANCED_SNAPSHOT_CUTOFF_ISO,
   TARGET_SEASON,
+  analyzeTalentCoverage,
   computeParityMetrics,
   computeTalentOnlyBridgeRatings,
   numericSummary,
@@ -83,9 +85,22 @@ export interface BalancedV1TransitionTimingInput {
   cutoffWeeks?: readonly number[];
   /** 2026 confirmation (read-only). */
   fbsIds2026: string[];
-  talentFinite2026: number;
+  talent2026: BalancedTalentRow[];
   finalFbsVsFbsGames2026: number;
   existingV1FbsRows2026: number;
+}
+
+export interface ChronologyViolationSample {
+  week: number;
+  maxDate: string;
+  laterWeek: number;
+  laterMinDate: string;
+}
+
+export interface WeekDateChronologyAssessment {
+  weekDateChronologySafe: boolean;
+  chronologyViolationCount: number;
+  chronologyViolationSample: ChronologyViolationSample[];
 }
 
 export interface CoverageMilestone {
@@ -174,13 +189,25 @@ export interface BalancedV1TransitionTimingResult {
   week3MedianTransitionAbs: number | null;
   firstWeek95PctHaveOneGame: number | null;
   firstWeek95PctHaveTwoGames: number | null;
-  hardSwitchWeekCandidate: HardSwitchWeekCandidate;
+  /** Always INCONCLUSIVE in 2C-2H-7 — no coverage/MAE threshold is authorized. */
+  hardSwitchWeekCandidate: 'INCONCLUSIVE';
+  switchThresholdDefined: false;
+  weekDateChronologySafe: boolean;
+  chronologyViolationCount: number;
+  chronologyViolationSample: ChronologyViolationSample[];
   confirm2026: {
     fbsCount: number;
+    distinctFbs: number;
     expectedFbs: typeof EXPECTED_2026_FBS_COUNT;
-    talentFinite: number;
+    talentRows2026Fbs: number;
+    talentDistinctFbs2026: number;
+    finiteTalent2026: number;
+    talentSetExact2026: boolean;
+    duplicateTalentTeamIds2026: number;
+    highlightTeamsPresent: boolean;
     finalFbsVsFbsGames: number;
     existingV1FbsRows: number;
+    purePreseason2026: boolean;
   };
   canonicalWeights: {
     talent: typeof BALANCED_WEIGHT_TALENT;
@@ -308,18 +335,73 @@ export function buildTransitionStats(
   };
 }
 
-export function recommendHardSwitchWeek(options: {
-  snapshots: TransitionSnapshotResult[];
-  firstWeek95PctHaveOneGame: number | null;
-}): HardSwitchWeekCandidate {
-  const w = options.firstWeek95PctHaveOneGame;
-  if (w === null) return 'INCONCLUSIVE';
-  if (w === 1) return 'WEEK_1';
-  if (w === 2) return 'WEEK_2';
-  if (w === 3) return 'WEEK_3';
-  if (w === 4) return 'WEEK_4';
-  if (w > 4) return 'LATER';
+/**
+ * Phase 2C-2H-7 does not authorize a transition threshold.
+ * Coverage milestones remain factual decision inputs only — never auto-map to a switch week.
+ */
+export function recommendHardSwitchWeek(_options?: {
+  snapshots?: TransitionSnapshotResult[];
+  firstWeek95PctHaveOneGame?: number | null;
+}): 'INCONCLUSIVE' {
   return 'INCONCLUSIVE';
+}
+
+/**
+ * Fail-closed chronology gate: for each evaluated numbered week N, no final game
+ * assigned to week N may have a date on/after the earliest final-game date of any
+ * later evaluated week. Equivalent: maxDate(week N) < minDate(any week > N).
+ * Does not reassign weeks or invent rescheduling rules.
+ */
+export function assessWeekDateChronology(
+  games: TransitionGameRow[],
+  evaluatedWeeks: readonly number[]
+): WeekDateChronologyAssessment {
+  const numbered = [...new Set(evaluatedWeeks.filter((w) => w >= 1))].sort(
+    (a, b) => a - b
+  );
+  const numberedSet = new Set(numbered);
+  const byWeek = new Map<number, string[]>();
+  for (const g of games) {
+    if (String(g.status).toLowerCase() !== 'final') continue;
+    if (!numberedSet.has(g.week)) continue;
+    if (!g.date) continue;
+    const list = byWeek.get(g.week) ?? [];
+    list.push(g.date);
+    byWeek.set(g.week, list);
+  }
+
+  const weekStats = new Map<number, { min: string; max: string }>();
+  for (const week of numbered) {
+    const dates = (byWeek.get(week) ?? []).slice().sort();
+    if (dates.length === 0) continue;
+    weekStats.set(week, { min: dates[0], max: dates[dates.length - 1] });
+  }
+
+  const sample: ChronologyViolationSample[] = [];
+  for (let i = 0; i < numbered.length; i++) {
+    const week = numbered[i];
+    const cur = weekStats.get(week);
+    if (!cur) continue;
+    for (let j = i + 1; j < numbered.length; j++) {
+      const later = numbered[j];
+      const laterStats = weekStats.get(later);
+      if (!laterStats) continue;
+      if (cur.max >= laterStats.min) {
+        sample.push({
+          week,
+          maxDate: cur.max,
+          laterWeek: later,
+          laterMinDate: laterStats.min,
+        });
+      }
+    }
+  }
+
+  return {
+    weekDateChronologySafe: sample.length === 0,
+    chronologyViolationCount: sample.length,
+    chronologyViolationSample: sample.slice(0, 10),
+  };
 }
 
 function firstWeekMeeting(
@@ -340,8 +422,18 @@ export function assessTransitionTimingGates(input: {
   persistedTargetCount2025: number;
   persistedTargetSetExact2025: boolean;
   historicalCutoffExact: boolean;
-  fbsCount2026: number;
-  talentFinite2026: number;
+  fbsIds2026: string[];
+  talentRows2026Fbs: number;
+  talentDistinctFbs2026: number;
+  finiteTalent2026: number;
+  talentSetExact2026: boolean;
+  duplicateTalentTeamIds2026: number;
+  highlightTeamsPresent: boolean;
+  finalFbsVsFbsGames2026: number;
+  existingV1FbsRows2026: number;
+  purePreseason2026: boolean;
+  weekDateChronologySafe: boolean;
+  chronologyViolationCount: number;
 }): { ok: boolean; findings: string[] } {
   const findings: string[] = [];
   const fbs = sortedUnique(input.fbsIds2025);
@@ -371,14 +463,60 @@ export function assessTransitionTimingGates(input: {
       `historicalCutoffIso must equal ${HISTORICAL_BALANCED_SNAPSHOT_CUTOFF_ISO}`
     );
   }
-  if (input.fbsCount2026 !== EXPECTED_2026_FBS_COUNT) {
+
+  const fbs26 = sortedUnique(input.fbsIds2026);
+  if (fbs26.length !== input.fbsIds2026.length) {
+    findings.push('2026 FBS IDs contain duplicates');
+  }
+  if (fbs26.length !== EXPECTED_2026_FBS_COUNT) {
     findings.push(
-      `2026 FBS ${input.fbsCount2026} != ${EXPECTED_2026_FBS_COUNT}`
+      `2026 FBS count ${fbs26.length} != ${EXPECTED_2026_FBS_COUNT}`
     );
   }
-  if (input.talentFinite2026 !== EXPECTED_2026_FBS_COUNT) {
+  if (!input.highlightTeamsPresent) {
     findings.push(
-      `2026 finite talent ${input.talentFinite2026} != ${EXPECTED_2026_FBS_COUNT}`
+      `authoritative 2026 FBS must include ${HIGHLIGHT_TEAM_IDS.join(' and ')}`
+    );
+  }
+  if (input.talentRows2026Fbs !== EXPECTED_2026_FBS_COUNT) {
+    findings.push(
+      `talentRows2026Fbs ${input.talentRows2026Fbs} != ${EXPECTED_2026_FBS_COUNT}`
+    );
+  }
+  if (input.talentDistinctFbs2026 !== EXPECTED_2026_FBS_COUNT) {
+    findings.push(
+      `talentDistinctFbs2026 ${input.talentDistinctFbs2026} != ${EXPECTED_2026_FBS_COUNT}`
+    );
+  }
+  if (input.finiteTalent2026 !== EXPECTED_2026_FBS_COUNT) {
+    findings.push(
+      `finiteTalent2026 ${input.finiteTalent2026} != ${EXPECTED_2026_FBS_COUNT}`
+    );
+  }
+  if (!input.talentSetExact2026) {
+    findings.push('2026 talent set not exact FBS');
+  }
+  if (input.duplicateTalentTeamIds2026 !== 0) {
+    findings.push(
+      `duplicateTalentTeamIds2026=${input.duplicateTalentTeamIds2026} (must be 0)`
+    );
+  }
+  if (input.finalFbsVsFbsGames2026 !== 0) {
+    findings.push(
+      `finalFbsVsFbsGames2026=${input.finalFbsVsFbsGames2026} (must be 0 for pure preseason)`
+    );
+  }
+  if (input.existingV1FbsRows2026 !== 0) {
+    findings.push(
+      `existingV1FbsRows2026=${input.existingV1FbsRows2026} (must be 0 for pure preseason)`
+    );
+  }
+  if (!input.purePreseason2026) {
+    findings.push('purePreseason2026=false (2026 must remain zero finals and zero V1 rows)');
+  }
+  if (!input.weekDateChronologySafe) {
+    findings.push(
+      `weekDateChronologySafe=false chronologyViolationCount=${input.chronologyViolationCount}`
     );
   }
   return { ok: findings.length === 0, findings };
@@ -586,12 +724,19 @@ export function buildBalancedV1TransitionTimingEvaluation(
     },
   ];
 
-  const hardSwitchWeekCandidate = recommendHardSwitchWeek({
-    snapshots,
-    firstWeek95PctHaveOneGame,
-  });
+  const hardSwitchWeekCandidate = recommendHardSwitchWeek();
+  const switchThresholdDefined = false as const;
+
+  const chronology = assessWeekDateChronology(input.games2025, cutoffWeeks);
 
   const fbs26 = sortedUnique(input.fbsIds2026);
+  const talent26 = analyzeTalentCoverage(fbs26, input.talent2026);
+  const highlightTeamsPresent = HIGHLIGHT_TEAM_IDS.every((id) =>
+    fbs26.includes(id)
+  );
+  const purePreseason2026 =
+    input.finalFbsVsFbsGames2026 === 0 && input.existingV1FbsRows2026 === 0;
+
   const gates = assessTransitionTimingGates({
     fbsIds2025: input.fbsIds2025,
     talentFinite2025: talentFiniteRows.length,
@@ -599,8 +744,18 @@ export function buildBalancedV1TransitionTimingEvaluation(
     persistedTargetCount2025: targetIds.length,
     persistedTargetSetExact2025,
     historicalCutoffExact,
-    fbsCount2026: fbs26.length,
-    talentFinite2026: input.talentFinite2026,
+    fbsIds2026: input.fbsIds2026,
+    talentRows2026Fbs: talent26.talentRowsFbs,
+    talentDistinctFbs2026: talent26.talentDistinctFbs,
+    finiteTalent2026: talent26.finiteTalent,
+    talentSetExact2026: talent26.talentSetExact,
+    duplicateTalentTeamIds2026: talent26.duplicateTalentTeamIds,
+    highlightTeamsPresent,
+    finalFbsVsFbsGames2026: input.finalFbsVsFbsGames2026,
+    existingV1FbsRows2026: input.existingV1FbsRows2026,
+    purePreseason2026,
+    weekDateChronologySafe: chronology.weekDateChronologySafe,
+    chronologyViolationCount: chronology.chronologyViolationCount,
   });
 
   return {
@@ -634,12 +789,23 @@ export function buildBalancedV1TransitionTimingEvaluation(
     firstWeek95PctHaveOneGame,
     firstWeek95PctHaveTwoGames,
     hardSwitchWeekCandidate,
+    switchThresholdDefined,
+    weekDateChronologySafe: chronology.weekDateChronologySafe,
+    chronologyViolationCount: chronology.chronologyViolationCount,
+    chronologyViolationSample: chronology.chronologyViolationSample,
     confirm2026: {
       fbsCount: fbs26.length,
+      distinctFbs: fbs26.length,
       expectedFbs: EXPECTED_2026_FBS_COUNT,
-      talentFinite: input.talentFinite2026,
+      talentRows2026Fbs: talent26.talentRowsFbs,
+      talentDistinctFbs2026: talent26.talentDistinctFbs,
+      finiteTalent2026: talent26.finiteTalent,
+      talentSetExact2026: talent26.talentSetExact,
+      duplicateTalentTeamIds2026: talent26.duplicateTalentTeamIds,
+      highlightTeamsPresent,
       finalFbsVsFbsGames: input.finalFbsVsFbsGames2026,
       existingV1FbsRows: input.existingV1FbsRows2026,
+      purePreseason2026,
     },
     canonicalWeights: {
       talent: BALANCED_WEIGHT_TALENT,
@@ -677,7 +843,10 @@ export function formatBalancedV1TransitionTimingReport(
     `candidateA=${result.candidateALabel} scale=${result.candidateAScale}`
   );
   lines.push(
-    `2026 confirm FBS=${result.confirm2026.fbsCount} talentFinite=${result.confirm2026.talentFinite} finalFbsVsFbsGames=${result.confirm2026.finalFbsVsFbsGames} existingV1=${result.confirm2026.existingV1FbsRows}`
+    `2026 confirm FBS=${result.confirm2026.fbsCount} distinct=${result.confirm2026.distinctFbs} talentRows=${result.confirm2026.talentRows2026Fbs} talentDistinct=${result.confirm2026.talentDistinctFbs2026} finite=${result.confirm2026.finiteTalent2026} setExact=${result.confirm2026.talentSetExact2026} duplicates=${result.confirm2026.duplicateTalentTeamIds2026} highlights=${result.confirm2026.highlightTeamsPresent} finalFbsVsFbsGames=${result.confirm2026.finalFbsVsFbsGames} existingV1=${result.confirm2026.existingV1FbsRows} purePreseason2026=${result.confirm2026.purePreseason2026}`
+  );
+  lines.push(
+    `weekDateChronologySafe=${result.weekDateChronologySafe} chronologyViolationCount=${result.chronologyViolationCount}`
   );
   lines.push('milestones:');
   for (const m of result.milestones) {
@@ -714,7 +883,7 @@ export function formatBalancedV1TransitionTimingReport(
     `firstWeek95PctHaveOneGame=${result.firstWeek95PctHaveOneGame ?? 'n/a'} firstWeek95PctHaveTwoGames=${result.firstWeek95PctHaveTwoGames ?? 'n/a'}`
   );
   lines.push(
-    `hardSwitchWeekCandidate=${result.hardSwitchWeekCandidate} (diagnostic only)`
+    `hardSwitchWeekCandidate=${result.hardSwitchWeekCandidate} switchThresholdDefined=${result.switchThresholdDefined} (no threshold authorized in 2C-2H-7)`
   );
   lines.push(
     `transitionPolicyAuthorized=${result.transitionPolicyAuthorized} preseasonBridgeAuthorized=${result.preseasonBridgeAuthorized} ratingsWriteAuthorized=${result.ratingsWriteAuthorized} modelChangeAuthorized=${result.modelChangeAuthorized} mixedPolicyAuthorized=${result.mixedPolicyAuthorized}`

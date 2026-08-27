@@ -439,6 +439,9 @@ Provider-availability blocker removed. Persistence and ratings remain unauthoriz
 
 - Cumulative cutoffs: preseason + Weeks 1–8; FBS-vs-FBS finals + EPA through cutoff only
 - Candidate A vs canonical Balanced transition deltas; coverage milestones; P1/P2/P3 diagnostic notes only
+- `hardSwitchWeekCandidate=INCONCLUSIVE` always; `switchThresholdDefined=false` (no coverage/MAE threshold authorized)
+- Fail-closed: 2026 `finalFbsVsFbsGames===0` + `existingV1FbsRows===0` → `purePreseason2026`; exact 138 FBS/talent + NDSU/Sac
+- Fail-closed: `weekDateChronologySafe` (maxDate(week N) < minDate(later weeks)) for evaluated 2025 weeks
 - `transitionPolicyAuthorized=false`; `preseasonBridgeAuthorized=false`; **2026 ratings persistence NOT AUTHORIZED**
 - Do **not** run production evaluation until draft PR independently reviewed
 - Canonical Balanced formula / Candidate A scale **unchanged**

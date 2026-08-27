@@ -19,7 +19,6 @@ import {
   parseBalancedV1TransitionTimingArgs,
   sanitizeBalancedV1TransitionTimingError,
 } from './src/preseason/balanced-v1-transition-timing-eval';
-import { aggregateBalancedGameStats } from './src/ratings/compute_balanced_v1';
 
 function decimalToNumber(value: unknown): number | null {
   if (value === null || value === undefined) return null;
@@ -234,20 +233,7 @@ export async function runBalancedV1TransitionTimingEvaluation(options: {
       CONFIRM_SEASON_2026,
       fbsLower2026
     );
-    const talentFinite2026 = talent2026.filter(
-      (t) =>
-        t.talentComposite !== null && Number.isFinite(Number(t.talentComposite))
-    ).length;
     const games2026 = await options.store.loadFinalGames(CONFIRM_SEASON_2026);
-    const agg2026 = aggregateBalancedGameStats(
-      games2026.map((g) => ({
-        homeTeamId: g.homeTeamId,
-        awayTeamId: g.awayTeamId,
-        homeScore: g.homeScore,
-        awayScore: g.awayScore,
-      })),
-      new Set(fbsLower2026)
-    );
     let finalFbsVsFbsGames2026 = 0;
     for (const g of games2026) {
       if (
@@ -257,7 +243,6 @@ export async function runBalancedV1TransitionTimingEvaluation(options: {
         finalFbsVsFbsGames2026++;
       }
     }
-    void agg2026;
     const existingV1FbsRows2026 = await options.store.countExistingV1FbsRows(
       CONFIRM_SEASON_2026,
       fbsLower2026
@@ -271,7 +256,7 @@ export async function runBalancedV1TransitionTimingEvaluation(options: {
       persistedV1Targets2025,
       historicalCutoffIso: HISTORICAL_BALANCED_SNAPSHOT_CUTOFF_ISO,
       fbsIds2026,
-      talentFinite2026,
+      talent2026,
       finalFbsVsFbsGames2026,
       existingV1FbsRows2026,
     });
@@ -284,7 +269,7 @@ export async function runBalancedV1TransitionTimingEvaluation(options: {
       return { exitCode: 1 };
     }
     console.log(
-      '[balanced-transition] COMPLETE — diagnostic only; transitionPolicyAuthorized=false; no writes'
+      '[balanced-transition] COMPLETE — diagnostic only; transitionPolicyAuthorized=false; hardSwitchWeekCandidate=INCONCLUSIVE; no writes'
     );
     return { exitCode: 0 };
   } catch (err) {

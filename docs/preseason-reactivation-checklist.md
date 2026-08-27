@@ -168,7 +168,7 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 * 2C-2H-4: **PASSED structurally (PR #55)** — forensic valid; legacy `compute_ratings_v1` did **not** reproduce persisted 2025 (`exact=0/136`, MAE≈32.2124)
 * 2C-2H-5: **PASSED — EXACT (PR #56)** — unrestricted MAE≈0.972 was snapshot drift; cutoff Nov 24 2025 Balanced replay matched **136/136** (MAE≈2.3e-15); **production Core V1 = Balanced V1**; legacy `compute_ratings_v1` not canonical
 * 2C-2H-6: **PASSED (PR #57)** — Candidate A provisional preferred (2025 MAE=7.8831; 2026 range=20.8895; p95=10.1282); Candidate B rejected (2026 range=83.5581; p95=40.5127); `preseasonBridgeAuthorized=false`
-* 2C-2H-7: **IN PREPARATION / draft PR** — read-only 2025 transition timing (weekly coverage + Candidate A→canonical deltas); `transitionPolicyAuthorized=false`
+* 2C-2H-7: **IN PREPARATION / draft PR** — read-only 2025 transition timing (weekly coverage + Candidate A→canonical deltas); `hardSwitchWeekCandidate=INCONCLUSIVE`; chronology + pure-preseason fail-closed; `transitionPolicyAuthorized=false`
 * Recruiting schema mismatch remains separate
 * **Do not persist ratings until separately authorized**
 * **Do not run the production transition timing workflow until the draft PR is independently reviewed**
@@ -177,7 +177,7 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 ##### After 2C-2H-7 merges — operator procedure
 1. Independently review draft PR (coverage milestones + transition deltas; no buried policy authorization)
 2. Only then run **Evaluate Balanced V1 Transition Timing (Manual, Read Only)**
-3. Treat `hardSwitchWeekCandidate` as diagnostic only — do not authorize P1/P2/P3 from this phase alone
+3. Treat all weekly metrics as manual evidence only — `hardSwitchWeekCandidate` is always `INCONCLUSIVE` in this phase; do not authorize P1/P2/P3 from coverage alone
 4. Ratings persistence and bridge/transition authorization remain unauthorized
 
 - [x] Preview week 0–2 reviewed
