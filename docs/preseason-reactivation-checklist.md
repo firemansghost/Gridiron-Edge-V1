@@ -86,8 +86,9 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | **2C-2B FBS membership** | **PASSED** (PR #41) — **138/138** membership ↔ schedule |
 | **2C-2C ratings-input preview** | **Executed** (PR #42) — `/talent` 0 rows; recruiting schema mismatch; conference diagnostics corrected in 2C-2H-1 |
 | **2C-2G-4 Core V1 conferences** | **PASSED** (PR #51) — production audit 138/138; legacyFallback=false |
-| **2C-2H-1 readiness diagnostics** | **In preparation** — season-aware conference diagnostics + talent-only probe |
-| **Ratings computation** | **Not yet approved** (`/talent?year=2026` still 0 rows) |
+| **2C-2H-1 readiness diagnostics** | **PASSED** (PR #52) — Aug 27 talent probe structurally complete |
+| **2C-2H-2 guarded talent init** | **In preparation (draft)** — one-time `talentComposite` only; ratings still unauthorized |
+| **Ratings computation** | **Not yet approved** |
 | **Odds ingestion** | **Not yet approved** |
 | **Nightly reactivation** | **Not yet approved** |
 
@@ -121,6 +122,8 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | `apps/jobs/preview-2026-ratings-inputs.ts` | Read-only CFBD talent + recruiting preview |
 | `apps/jobs/probe-2026-talent-availability.ts` | One-call CFBD `/talent` availability probe |
 | `Probe 2026 Talent Availability (Manual, Read Only)` | `workflow_dispatch` only; season `2026`; budget 1 |
+| `apps/jobs/initialize-2026-team-talent.ts` | Guarded one-time 2026 talentComposite initializer |
+| `Initialize 2026 Team Talent (Guarded)` | Manual PREVIEW/COMMIT; confirm `WRITE_2026_TALENT` |
 | `Preview 2026 Ratings Inputs (Manual, Read Only)` | Provider preview workflow (`season=2026`) |
 | `apps/jobs/diagnose-2026-conference-recruiting.ts` | Read-only `/teams/fbs` + recruiting resolver diagnostic (`providerFbsSetExact` / `recruitingResolverSafe`) |
 | `Diagnose 2026 Conference & Recruiting Mapping (Manual, Read Only)` | Diagnostic workflow (`season=2026`) |
@@ -142,16 +145,16 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 * 2C-2G-2B: history-divergence fail-closed **merged** (PR #49)
 * 2C-2G-3: **PASSED** — production COMMIT 138/138 populated, 0 NULL, verificationExact=true; do not rerun
 * 2C-2G-4: **PASSED** (PR #51) — production Core V1 audit 138/138; missing=0; unrecognized=0; legacyFallback=false
-* 2C-2H-1: align ratings-input preview + readiness audit to `TeamMembership.conference`; add talent-only probe (in prep)
-* Latest talent observation: `/talent?year=2026` → **0** rows → `conferenceReadyForRatings=true` (after 2C-2H-1); `talentReadyForRatings=false`; `ratingsComputeAuthorized=false`
+* 2C-2H-1: **PASSED** (PR #52) — season-aware diagnostics; Aug 27 probe: `/talent` 138/138 structurally complete; persistence still unauthorized
+* 2C-2H-2: guarded one-time talentComposite initializer (draft) — legacy writer unsafe for `school/year/talent`; star zeros = schema placeholders
 * Recruiting schema mismatch remains separate
-* **Do not mutate Team.conference; do not compute ratings until talent authorized**
+* **Do not compute ratings until separately authorized after talent persistence review**
 
-##### After 2C-2H-1 merges — operator procedure
-1. Run **Preview 2026 Ratings Inputs (Manual, Read Only)** once for 2026
-2. Verify `conferenceReadyForRatings=true`; only Core V1 data blocker is talent
-3. Run **Probe 2026 Talent Availability (Manual, Read Only)** (exactly 1 CFBD `/talent` call)
-4. If talent remains 0 rows, stop; if talent appears, review payload before persistence
+##### After 2C-2H-2 merges — operator procedure
+1. Run **Initialize 2026 Team Talent (Guarded)** in **PREVIEW** only
+2. Verify writeEligible=true and targetExistingRows=0
+3. Stop for review — do **not** COMMIT unless separately approved
+4. Ratings remain unauthorized even after a successful COMMIT
 
 - [x] Preview week 0–2 reviewed
 - [x] Week 1–13 + 15 production writes
@@ -168,7 +171,8 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 - [x] 2C-2G-2B migrate history-divergence fail-closed PASSED
 - [x] 2C-2G-3 guarded 138-row conference population PASSED
 - [x] 2C-2G-4 Core V1 season-aware conference source PASSED
-- [ ] 2C-2H-1 ratings readiness diagnostic alignment + talent probe
+- [x] 2C-2H-1 ratings readiness diagnostic alignment + talent probe PASSED
+- [ ] 2C-2H-2 guarded 2026 team talent initializer
 - [ ] Odds / ratings compute / bets remain **out of scope** until separately approved
 
 ---

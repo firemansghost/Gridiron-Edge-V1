@@ -1,7 +1,7 @@
 # Season Status — Gridiron Edge
 
 **Status:** Offseason / paused for regular-season automation  
-**Updated:** 2026-08-08 (Phase 2C-2H-1 — align ratings readiness diagnostics with season-aware conferences; talent probe)
+**Updated:** 2026-08-27 (Phase 2C-2H-2 — guarded 2026 TeamSeasonTalent initializer; draft PR)
 
 Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISABLE_REPORT.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -39,7 +39,8 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **Phase 2C-2G-2B migrate history-divergence guard** | **PASSED** (PR #49) — future migrate fails closed on DB/repo history divergence |
 | **Phase 2C-2G-3 season conference initializer** | **PASSED** — production COMMIT: 138/138 populated, 0 NULL, verificationExact=true |
 | **Phase 2C-2G-4 Core V1 season-aware conferences** | **PASSED** (PR #51) — production audit 138/138; legacyFallback=false |
-| **Phase 2C-2H-1 ratings readiness / talent probe** | **In preparation** — diagnostics use TeamMembership.conference; talent 0/138 remains blocker |
+| **Phase 2C-2H-1 ratings readiness / talent probe** | **PASSED** (PR #52) — season-aware diagnostics; Aug 27 probe: talent structurally complete |
+| **Phase 2C-2H-2 guarded 2026 talent initializer** | **In preparation (draft)** — one-time talentComposite write; ratings still unauthorized |
 | **Expected 2026 schedule baseline** | **761** games / **138** distinct teams — **verified** |
 | **Ratings computation / persistence** | **Not yet approved** (`ratingsWriteAuthorized=false`) |
 | **Odds ingestion** | **Not yet approved** |
@@ -331,41 +332,50 @@ legacyFallback=false
 - Static `Team.conference` remains unchanged
 - No ratings compute/persist
 
-### 2C-2H-1 Align ratings readiness diagnostics + talent probe (in preparation)
+### 2C-2H-1 Align ratings readiness diagnostics + talent probe — PASSED (PR #52)
 
 | Artifact | Role |
 |----------|------|
-| `apps/jobs/src/preseason/ratings-input-provider-preview.ts` | Season-aware conference readiness (reuses `resolveSeasonAwareConferenceMap`) |
+| `apps/jobs/src/preseason/ratings-input-provider-preview.ts` | Season-aware conference readiness |
 | `apps/jobs/src/preseason/ratings-readiness-audit.ts` | 2026 breakdown from `TeamMembership.conference` |
 | `apps/jobs/probe-2026-talent-availability.ts` | One-call talent probe CLI |
 | `.github/workflows/probe-2026-talent-availability.yml` | Manual read-only talent probe |
 
-**Latest documented provider talent state:**
+**August 27, 2026 live talent availability** (Actions run `33092434262`):
 ```text
-/talent?year=2026 → 0 rows
-0/138 matched
-0 finite talent composites
-```
-
-Therefore:
-```text
-conferenceReadyForRatings=true
-talentReadyForRatings=false
+/talent?year=2026
+raw=138
+matched=138/138
+missing=0
+unresolved=0
+duplicates=0
+providerSeason=[2026]
+finiteComposite=138
+talentAvailable=true
+structurallyComplete=true
+persistenceAuthorized=false
 ratingsComputeAuthorized=false
 ```
 
-Recruiting schema mismatch remains separate (does not alone prevent Core V1 if talent becomes valid).
-Do not claim why CFBD 2026 talent is absent; only record observed API behavior.
+Provider-availability blocker removed. Persistence and ratings remain unauthorized until separately reviewed.
 
-#### Operator procedure (after this PR merges)
+### 2C-2H-2 Guarded one-time 2026 TeamSeasonTalent initializer (in preparation / draft)
 
-1. Run **Preview 2026 Ratings Inputs (Manual, Read Only)** once for 2026
-2. Verify `conferenceReadyForRatings=true`; only Core V1 data blocker is talent coverage/composite
-3. Run **Probe 2026 Talent Availability (Manual, Read Only)** for 2026 (exactly 1 CFBD call)
-4. If talent remains 0 rows, stop
-5. If talent appears, stop and review the payload before any persistence work
+| Artifact | Role |
+|----------|------|
+| `apps/jobs/src/preseason/initialize-2026-team-talent.ts` | Pure eligibility + atomic write logic |
+| `apps/jobs/initialize-2026-team-talent.ts` | CLI (PREVIEW default; COMMIT + `WRITE_2026_TALENT`) |
+| `.github/workflows/initialize-2026-team-talent.yml` | Manual guarded workflow |
+| Legacy `talent-cfbd.yml` / `talent-roster-sync.yml` | Schedules removed; manual ≤2025 only |
+| `cfbd_team_roster_talent.ts` | Refuses season ≥ 2026 |
 
-**Still out of scope / unapproved:** ratings compute/persist; Team.conference mutation; talent/commits writes; Odds; bets; nightly reactivation; Prisma Migrate (history divergence unresolved).
+- Reuses 2C-2H-1 `school/year/talent` normalization; does **not** use the legacy roster writer
+- Writes `talentComposite` only; `blueChipsPct`/`sourceUpdatedAt` = NULL
+- Legacy star-count zeros = **unsourced schema defaults**, not CFBD observations
+- No schema migration; no ratings; no recruiting commits; no Odds
+- Target must be empty (`targetExistingRows=0`); no overwrite/update/partial fill
+
+**Still out of scope / unapproved until review:** production PREVIEW/COMMIT of this initializer from development; ratings compute/persist; recruiting persistence; Odds; Prisma Migrate history repair.
 
 ---
 
@@ -380,7 +390,8 @@ Do not claim why CFBD 2026 talent is absent; only record observed API behavior.
 | **Ratings readiness** | **Structural OK** | Membership + season conferences ready; talent/commits still block write auth |
 | **Talent / recruiting preview** | **Executed** | `/talent` empty (0/138); recruiting schema unsafe for commits writer |
 | **Team.conference / V1 adj** | **PASSED (2C-2G-4)** | 2026+ membership; static Team.conference untouched |
-| **Ratings readiness diagnostics** | **In prep (2C-2H-1)** | Align preview/audit to membership; talent-only probe |
+| **Ratings readiness diagnostics** | **PASSED (2C-2H-1 / PR #52)** | Membership conferences; talent probe live-complete Aug 27 |
+| **2026 talent persistence** | **In prep (2C-2H-2)** | Guarded initializer; legacy writer blocked for 2026 |
 | **2026 FBS membership** | **PASSED** | Phase 2C-2B — **138/138** |
 | **Season conference persistence** | **PASSED (2C-2G-3)** | 138/138 populated; 0 NULL; do not rerun initializer |
 | **Prisma migrate auto-deploy** | **PASSED (2C-2G-1)** | Manual `MIGRATE_PRODUCTION` only |
@@ -418,8 +429,8 @@ Do not claim why CFBD 2026 talent is absent; only record observed API behavior.
 
 ## Next phases
 
-1. **Phase 2C-2H-1** — merge ratings readiness diagnostic alignment + talent probe; operator rerun preview + talent-only probe
-2. If `/talent?year=2026` remains empty, stop; if data appears, review payload before any persistence
+1. **Phase 2C-2H-2** — review/merge guarded talent initializer; operator PREVIEW then (only if approved) COMMIT
+2. Do **not** compute ratings until separately authorized after talent persistence review
 3. **Phase 2D** — `TARGET_SEASON` in scheduled YAML before bulk UI enables
 
 See [Preseason Reactivation Checklist](docs/preseason-reactivation-checklist.md).
