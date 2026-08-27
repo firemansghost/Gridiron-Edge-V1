@@ -1,7 +1,7 @@
 # Season Status — Gridiron Edge
 
 **Status:** Offseason / paused for regular-season automation  
-**Updated:** 2026-08-27 (Phase 2C-2H-8 — Balanced V1 transition blend evaluation; draft PR)
+**Updated:** 2026-08-27 (Phase 2C-2H-9 — Core V1 lifecycle writer; draft PR)
 
 Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISABLE_REPORT.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -46,7 +46,8 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **Phase 2C-2H-5 Balanced V1 historical parity** | **PASSED — EXACT** (PR #56) — cutoff Balanced replay matched persisted 2025 V1 136/136 (machine MAE≈2.3e-15) |
 | **Phase 2C-2H-6 Balanced V1 preseason bridge eval** | **PASSED** (PR #57) — Candidate A provisional preferred; Candidate B rejected (scale too wide); persistence unauthorized |
 | **Phase 2C-2H-7 Balanced V1 transition timing** | **PASSED** (PR #58) — timing-only hard switch rejected; blend eval required |
-| **Phase 2C-2H-8 Balanced V1 transition blends** | **In preparation (draft)** — global B1/B2/B3 blend schedules; no policy authorized |
+| **Phase 2C-2H-8 Balanced V1 transition blends** | **PASSED** (PR #59) — B1 AUTHORIZED as model policy; B2/B3/hard/per-team REJECTED; write still unauthorized |
+| **Phase 2C-2H-9 Core V1 lifecycle writer** | **In preparation (draft)** — guarded PREVIEW/COMMIT; production write NOT AUTHORIZED until PREVIEW review |
 | **Expected 2026 schedule baseline** | **761** games / **138** distinct teams — **verified** |
 | **Ratings computation / persistence** | **Not yet approved** (`ratingsWriteAuthorized=false`) |
 | **Odds ingestion** | **Not yet approved** |
@@ -451,7 +452,7 @@ Provider-availability blocker removed. Persistence and ratings remain unauthoriz
 - Canonical Balanced formula / Candidate A scale **unchanged**
 - **2026 ratings persistence NOT AUTHORIZED**
 
-### 2C-2H-8 Balanced V1 transition blend evaluation (in preparation / draft)
+### 2C-2H-8 Balanced V1 transition blend evaluation — PASSED (PR #59)
 
 | Artifact | Role |
 |----------|------|
@@ -459,14 +460,36 @@ Provider-availability blocker removed. Persistence and ratings remain unauthoriz
 | `apps/jobs/evaluate-balanced-v1-transition-blends.ts` | SELECT-only CLI (`study_season=2025`) |
 | `.github/workflows/evaluate-balanced-v1-transition-blends.yml` | Manual read-only workflow (`DIRECT_URL` only) |
 
-- Global blends only after 100% canonical coverage; no per-team mixed scales
-- B1 `GLOBAL_BLEND_W3_W6`; B2 `GLOBAL_BLEND_W4_W7`; B3 `GLOBAL_BLEND_W3_W5`; hard switches = rejected controls
-- `blendPolicyCandidate=INCONCLUSIVE`; `selectionThresholdDefined=false`; all auth flags false
-- Fail-closed: incomplete coverage with weight>0; 2026 pure-preseason + chronology
-- Do **not** run production evaluation until draft PR independently reviewed
-- Canonical Balanced / Candidate A **unchanged**; **2026 persistence NOT AUTHORIZED**
+**Production structural:** ok; FBS=136; targets rows/distinct/finite=136 exact; firstFullCanonicalWeek=3; chronology + pure-preseason; no writes
 
-**Still out of scope / unapproved:** ratings persistence; blend/transition authorization; smoothing/decay; Candidate B; Odds; formula changes.
+| Policy | avgMAE | avgRMSE | avgMedianMove | maxP95 | maxSingle |
+|--------|--------|---------|---------------|--------|-----------|
+| **B1 GLOBAL_BLEND_W3_W6** | 4.6842 | 5.7643 | 2.0468 | 6.2755 | 9.3712 |
+| B2 GLOBAL_BLEND_W4_W7 | 5.1163 | 6.2929 | 1.6610 | 6.0089 | 8.2363 |
+| B3 GLOBAL_BLEND_W3_W5 | 4.6145 | 5.6668 | 2.2175 | 8.0222 | 10.6712 |
+| Hard Week3 (control) | ≈4.6564 | — | — | ≈17.3144 | ≈28.4163 |
+
+**Human decision:** Candidate A AUTHORIZED as preseason bridge; **B1 AUTHORIZED** as transition model policy (preserves near-B3 accuracy with lower shocks). B2/B3 REJECTED. Hard/per-team switches REJECTED.
+
+**But:** production ratings WRITE remained NOT AUTHORIZED until lifecycle implementation + production PREVIEW.
+
+### 2C-2H-9 Core V1 lifecycle writer (in preparation / draft)
+
+| Artifact | Role |
+|----------|------|
+| `apps/jobs/src/ratings/core-v1-lifecycle.ts` | Pure B1 policy + Candidate A + temporal gates |
+| `apps/jobs/write-core-v1-lifecycle.ts` | Guarded PREVIEW/COMMIT CLI |
+| `.github/workflows/write-core-v1-lifecycle-ratings.yml` | Manual guarded workflow (`DIRECT_URL` only) |
+
+- Policy: `GLOBAL_BLEND_W3_W6` keyed to **`completedThroughWeek`** (not prediction week)
+- Weights: ≤2→0; 3→0.25; 4→0.50; 5→0.75; ≥6→1.00
+- PREVIEW default; COMMIT requires `WRITE_2026_CORE_V1`
+- Fail-closed: exact 138 FBS/talent; future finals beyond cutoff; weight>0 needs exact canonical 138
+- Target: `TeamSeasonRating` season=2026 `modelVersion=v1` only; UPDATE powerRating/rating/games
+- Canonical Balanced / Candidate A formulas **unchanged**
+- **Do not run production workflow / COMMIT until draft PR independently reviewed and production PREVIEW passes**
+
+**Still out of scope / unapproved until PREVIEW review:** production DB ratings write; Odds; formula changes.
 
 ---
 
@@ -488,7 +511,8 @@ Provider-availability blocker removed. Persistence and ratings remain unauthoriz
 | **2025 Balanced V1 parity forensic** | **PASSED EXACT (2C-2H-5 / PR #56)** | Cutoff replay 136/136; Core V1 = Balanced V1 |
 | **2026 Balanced V1 preseason bridge eval** | **PASSED (2C-2H-6 / PR #57)** | Candidate A provisional; B rejected; persist unauthorized |
 | **2025 Balanced V1 transition timing** | **PASSED (2C-2H-7 / PR #58)** | Timing-only hard switch rejected; blend eval required |
-| **2025 Balanced V1 transition blends** | **In prep (2C-2H-8)** | Global B1/B2/B3 blend schedules; no policy authorized |
+| **2025 Balanced V1 transition blends** | **PASSED (2C-2H-8 / PR #59)** | B1 authorized model policy; write still unauthorized |
+| **2026 Core V1 lifecycle writer** | **In prep (2C-2H-9)** | Guarded PREVIEW/COMMIT; production write blocked |
 | **2026 FBS membership** | **PASSED** | Phase 2C-2B — **138/138** |
 | **Season conference persistence** | **PASSED (2C-2G-3)** | 138/138 populated; 0 NULL; do not rerun initializer |
 | **Prisma migrate auto-deploy** | **PASSED (2C-2G-1)** | Manual `MIGRATE_PRODUCTION` only |
@@ -526,9 +550,9 @@ Provider-availability blocker removed. Persistence and ratings remain unauthoriz
 
 ## Next phases
 
-1. **Phase 2C-2H-8** — review/merge global blend evaluation; do **not** authorize a blend/transition from this diagnostic alone
-2. Do **not** persist 2026 ratings — still NOT AUTHORIZED
-3. Candidate A remains provisional only; do **not** run Balanced writer or legacy `compute_ratings_v1` for 2026
+1. **Phase 2C-2H-9** — review/merge lifecycle writer; run production PREVIEW only after merge; do **not** COMMIT until PREVIEW reviewed
+2. Do **not** persist 2026 ratings until that PREVIEW passes and COMMIT is separately authorized
+3. Candidate A + B1 are the authorized **model** policy; do not revive B2/B3/hard/per-team switches
 4. **Phase 2D** — `TARGET_SEASON` in scheduled YAML before bulk UI enables
 
 See [Preseason Reactivation Checklist](docs/preseason-reactivation-checklist.md).
