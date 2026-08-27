@@ -144,20 +144,35 @@ export interface BalancedV1PreseasonBridgeResult {
   expected2026FbsCount: typeof EXPECTED_2026_FBS_COUNT;
   fbsCount2026: number;
   distinctFbs2026: number;
+  /** Raw FBS-scoped talent row count (must equal 138; duplicates fail closed). */
+  talentRows2026Fbs: number;
+  talentDistinctFbs2026: number;
   talentRows2026: number;
   finiteTalent2026: number;
   talentSetExact2026: boolean;
+  duplicateTalentTeamIds2026: number;
+  purePreseasonState: boolean;
   finalFbsVsFbsGames2026: number;
   usableEpaTeams2026: number;
   netPointsTeams2026: number;
   winPctTeams2026: number;
   existingV1FbsRows2026: number;
+  highlightTeamsPresent: boolean;
   historicalCutoffIso: string;
+  historicalCutoffExact: boolean;
   benchmarkSeason: typeof BENCHMARK_SEASON;
   fbsCount2025: number;
   expected2025FbsCount: typeof EXPECTED_2025_FBS_COUNT;
+  talentRows2025Fbs: number;
+  talentDistinctFbs2025: number;
+  finiteTalent2025: number;
+  talentSetExact2025: boolean;
+  duplicateTalentTeamIds2025: number;
   persistedTargetCount2025: number;
   persistedTargetSetExact2025: boolean;
+  benchmarkComparedCount: number;
+  benchmarkComparedSetExact: boolean;
+  benchmarkValid: boolean;
   candidateA: CandidateBenchmarkResult;
   candidateB: CandidateBenchmarkResult;
   preview2026: {
@@ -420,31 +435,106 @@ export const TRANSITION_DISCONTINUITY_NOTE: TransitionDiscontinuityNote = {
   ],
 };
 
-function finiteTalentMap(
+export function emptyParityMetrics(comparedCount = 0): ParityMetrics {
+  return {
+    mae: null,
+    rmse: null,
+    meanBias: null,
+    medianAbsDelta: null,
+    maxAbsDelta: null,
+    pearson: null,
+    spearman: null,
+    comparedCount,
+  };
+}
+
+export function emptyOrderingOverlap(): OrderingOverlap {
+  return { top15: 0, bottom15: 0, top25: 0 };
+}
+
+/**
+ * Analyze FBS-scoped talent rows without silently collapsing duplicates.
+ * Duplicate team IDs fail closed even if a Map would still hold one value per ID.
+ */
+export function analyzeTalentCoverage(
   fbsIds: string[],
   talentRows: Array<{ teamId: string; talentComposite: number | null }>
-): Map<string, number> {
+): {
+  talentRowsFbs: number;
+  talentDistinctFbs: number;
+  finiteTalent: number;
+  talentSetExact: boolean;
+  duplicateTalentTeamIds: number;
+  duplicateTeamIdSample: string[];
+  finiteByTeam: Map<string, number>;
+} {
   const fbs = new Set(sortedUnique(fbsIds));
-  const map = new Map<string, number>();
+  const seenCounts = new Map<string, number>();
+  const finiteByTeam = new Map<string, number>();
+  let talentRowsFbs = 0;
+
   for (const t of talentRows) {
     const id = t.teamId.toLowerCase();
     if (!fbs.has(id)) continue;
-    if (t.talentComposite === null || !Number.isFinite(Number(t.talentComposite))) {
-      continue;
+    talentRowsFbs++;
+    seenCounts.set(id, (seenCounts.get(id) ?? 0) + 1);
+    if (
+      t.talentComposite !== null &&
+      Number.isFinite(Number(t.talentComposite))
+    ) {
+      // Last write wins for diagnostic map only; duplicate count gates validity.
+      finiteByTeam.set(id, Number(t.talentComposite));
     }
-    map.set(id, Number(t.talentComposite));
   }
-  return map;
+
+  const duplicateTeamIdSample = [...seenCounts.entries()]
+    .filter(([, c]) => c > 1)
+    .map(([id]) => id)
+    .sort();
+  const talentDistinctFbs = seenCounts.size;
+  const finiteTalent = finiteByTeam.size;
+  const talentSetExact =
+    duplicateTeamIdSample.length === 0 &&
+    setsEqual([...finiteByTeam.keys()], [...fbs]);
+
+  return {
+    talentRowsFbs,
+    talentDistinctFbs,
+    finiteTalent,
+    talentSetExact,
+    duplicateTalentTeamIds: duplicateTeamIdSample.length,
+    duplicateTeamIdSample,
+    finiteByTeam,
+  };
 }
 
 export function assessPreseasonBridgeGates(input: {
   season: number;
   fbsIds2026: string[];
+  talentRows2026Fbs: number;
+  talentDistinctFbs2026: number;
   finiteTalent2026: number;
   talentSetExact2026: boolean;
+  duplicateTalentTeamIds2026: number;
+  purePreseasonState: boolean;
+  finalFbsVsFbsGames2026: number;
+  usableEpaTeams2026: number;
+  netPointsTeams2026: number;
+  winPctTeams2026: number;
+  existingV1FbsRows2026: number;
+  highlightTeamsPresent: boolean;
+  historicalCutoffExact: boolean;
   fbsIds2025: string[];
+  talentRows2025Fbs: number;
+  talentDistinctFbs2025: number;
+  finiteTalent2025: number;
+  talentSetExact2025: boolean;
+  duplicateTalentTeamIds2025: number;
   persistedTargetCount2025: number;
   persistedTargetSetExact2025: boolean;
+  benchmarkComparedCount: number;
+  benchmarkComparedSetExact: boolean;
+  benchmarkValid: boolean;
   previewFinite: number;
 }): { ok: boolean; findings: string[] } {
   const findings: string[] = [];
@@ -460,6 +550,21 @@ export function assessPreseasonBridgeGates(input: {
       `2026 FBS count ${fbs26.length} != ${EXPECTED_2026_FBS_COUNT}`
     );
   }
+  if (!input.highlightTeamsPresent) {
+    findings.push(
+      `authoritative 2026 FBS must include ${HIGHLIGHT_TEAM_IDS.join(' and ')}`
+    );
+  }
+  if (input.talentRows2026Fbs !== EXPECTED_2026_FBS_COUNT) {
+    findings.push(
+      `talentRows2026Fbs ${input.talentRows2026Fbs} != ${EXPECTED_2026_FBS_COUNT}`
+    );
+  }
+  if (input.talentDistinctFbs2026 !== EXPECTED_2026_FBS_COUNT) {
+    findings.push(
+      `talentDistinctFbs2026 ${input.talentDistinctFbs2026} != ${EXPECTED_2026_FBS_COUNT}`
+    );
+  }
   if (input.finiteTalent2026 !== EXPECTED_2026_FBS_COUNT) {
     findings.push(
       `2026 finite talent ${input.finiteTalent2026} != ${EXPECTED_2026_FBS_COUNT}`
@@ -468,10 +573,68 @@ export function assessPreseasonBridgeGates(input: {
   if (!input.talentSetExact2026) {
     findings.push('2026 talent set does not exactly match FBS');
   }
+  if (input.duplicateTalentTeamIds2026 !== 0) {
+    findings.push(
+      `duplicateTalentTeamIds2026=${input.duplicateTalentTeamIds2026} (must be 0)`
+    );
+  }
+  if (!input.purePreseasonState) {
+    findings.push(
+      `purePreseasonState=false (require finalFbsVsFbsGames=${input.finalFbsVsFbsGames2026}, usableEpa=${input.usableEpaTeams2026}, netPts=${input.netPointsTeams2026}, winPct=${input.winPctTeams2026}, existingV1=${input.existingV1FbsRows2026} all = 0)`
+    );
+  }
+  if (input.finalFbsVsFbsGames2026 !== 0) {
+    findings.push(
+      `finalFbsVsFbsGames2026 ${input.finalFbsVsFbsGames2026} != 0`
+    );
+  }
+  if (input.usableEpaTeams2026 !== 0) {
+    findings.push(`usableEpaTeams2026 ${input.usableEpaTeams2026} != 0`);
+  }
+  if (input.netPointsTeams2026 !== 0) {
+    findings.push(`netPointsTeams2026 ${input.netPointsTeams2026} != 0`);
+  }
+  if (input.winPctTeams2026 !== 0) {
+    findings.push(`winPctTeams2026 ${input.winPctTeams2026} != 0`);
+  }
+  if (input.existingV1FbsRows2026 !== 0) {
+    findings.push(
+      `existingV1FbsRows2026 ${input.existingV1FbsRows2026} != 0`
+    );
+  }
+  if (!input.historicalCutoffExact) {
+    findings.push(
+      `historicalCutoffIso must equal ${HISTORICAL_BALANCED_SNAPSHOT_CUTOFF_ISO}`
+    );
+  }
+
   const fbs25 = sortedUnique(input.fbsIds2025);
   if (fbs25.length !== EXPECTED_2025_FBS_COUNT) {
     findings.push(
       `2025 FBS count ${fbs25.length} != ${EXPECTED_2025_FBS_COUNT}`
+    );
+  }
+  if (input.talentRows2025Fbs !== EXPECTED_2025_FBS_COUNT) {
+    findings.push(
+      `talentRows2025Fbs ${input.talentRows2025Fbs} != ${EXPECTED_2025_FBS_COUNT}`
+    );
+  }
+  if (input.talentDistinctFbs2025 !== EXPECTED_2025_FBS_COUNT) {
+    findings.push(
+      `talentDistinctFbs2025 ${input.talentDistinctFbs2025} != ${EXPECTED_2025_FBS_COUNT}`
+    );
+  }
+  if (input.finiteTalent2025 !== EXPECTED_2025_FBS_COUNT) {
+    findings.push(
+      `finiteTalent2025 ${input.finiteTalent2025} != ${EXPECTED_2025_FBS_COUNT}`
+    );
+  }
+  if (!input.talentSetExact2025) {
+    findings.push('2025 talent set does not exactly match FBS');
+  }
+  if (input.duplicateTalentTeamIds2025 !== 0) {
+    findings.push(
+      `duplicateTalentTeamIds2025=${input.duplicateTalentTeamIds2025} (must be 0)`
     );
   }
   if (input.persistedTargetCount2025 !== EXPECTED_2025_FBS_COUNT) {
@@ -481,6 +644,17 @@ export function assessPreseasonBridgeGates(input: {
   }
   if (!input.persistedTargetSetExact2025) {
     findings.push('2025 persisted V1 target set does not exactly match FBS');
+  }
+  if (input.benchmarkComparedCount !== EXPECTED_2025_FBS_COUNT) {
+    findings.push(
+      `benchmarkComparedCount ${input.benchmarkComparedCount} != ${EXPECTED_2025_FBS_COUNT}`
+    );
+  }
+  if (!input.benchmarkComparedSetExact) {
+    findings.push('benchmark compared set does not exactly match 2025 FBS');
+  }
+  if (!input.benchmarkValid) {
+    findings.push('benchmarkValid=false — candidate-vs-canonical not a valid 136-team benchmark');
   }
   if (input.previewFinite !== EXPECTED_2026_FBS_COUNT) {
     findings.push(
@@ -494,14 +668,24 @@ export function buildBalancedV1PreseasonBridgeEvaluation(
   input: BalancedV1PreseasonBridgeInput
 ): BalancedV1PreseasonBridgeResult {
   const fbs26 = sortedUnique(input.fbsIds2026);
-  const talentMap26 = finiteTalentMap(fbs26, input.talent2026);
-  const talentSetExact2026 = setsEqual([...talentMap26.keys()], fbs26);
+  const talent26 = analyzeTalentCoverage(fbs26, input.talent2026);
+  const highlightTeamsPresent = HIGHLIGHT_TEAM_IDS.every((id) =>
+    fbs26.includes(id)
+  );
+  const purePreseasonState =
+    input.finalFbsVsFbsGames2026 === 0 &&
+    input.usableEpaTeams2026 === 0 &&
+    input.netPointsTeams2026 === 0 &&
+    input.winPctTeams2026 === 0 &&
+    input.existingV1FbsRows2026 === 0;
+  const historicalCutoffExact =
+    input.historicalCutoffIso === HISTORICAL_BALANCED_SNAPSHOT_CUTOFF_ISO;
 
   const rows26 = fbs26
-    .filter((id) => talentMap26.has(id))
+    .filter((id) => talent26.finiteByTeam.has(id))
     .map((id) => ({
       teamId: id,
-      talentComposite: talentMap26.get(id)!,
+      talentComposite: talent26.finiteByTeam.get(id)!,
     }));
   const previewTeams = computeTalentOnlyBridgeRatings(rows26);
   const finitePreview = previewTeams.filter(
@@ -509,7 +693,7 @@ export function buildBalancedV1PreseasonBridgeEvaluation(
   ).length;
 
   const fbs25 = sortedUnique(input.fbsIds2025);
-  const talentMap25 = finiteTalentMap(fbs25, input.talent2025);
+  const talent25 = analyzeTalentCoverage(fbs25, input.talent2025);
   const targetById = new Map(
     input.persistedV1Targets2025.map((r) => [
       r.teamId.toLowerCase(),
@@ -524,10 +708,10 @@ export function buildBalancedV1PreseasonBridgeEvaluation(
   const persistedTargetSetExact2025 = setsEqual(targetIds, fbs25);
 
   const benchRows = fbs25
-    .filter((id) => talentMap25.has(id) && targetById.has(id))
+    .filter((id) => talent25.finiteByTeam.has(id) && targetById.has(id))
     .map((id) => ({
       teamId: id,
-      talentComposite: talentMap25.get(id)!,
+      talentComposite: talent25.finiteByTeam.get(id)!,
     }));
   const benchRatings = computeTalentOnlyBridgeRatings(benchRows);
   const aligned = benchRatings
@@ -539,29 +723,53 @@ export function buildBalancedV1PreseasonBridgeEvaluation(
     }))
     .filter((r) => Number.isFinite(r.target));
 
+  const benchmarkComparedCount = aligned.length;
+  const benchmarkComparedSetExact = setsEqual(
+    aligned.map((r) => r.teamId),
+    fbs25
+  );
+  const benchmarkValid =
+    talent25.talentRowsFbs === EXPECTED_2025_FBS_COUNT &&
+    talent25.talentDistinctFbs === EXPECTED_2025_FBS_COUNT &&
+    talent25.finiteTalent === EXPECTED_2025_FBS_COUNT &&
+    talent25.talentSetExact &&
+    talent25.duplicateTalentTeamIds === 0 &&
+    persistedTargetSetExact2025 &&
+    targetIds.length === EXPECTED_2025_FBS_COUNT &&
+    benchmarkComparedCount === EXPECTED_2025_FBS_COUNT &&
+    benchmarkComparedSetExact;
+
   const candidateA: CandidateBenchmarkResult = {
     kind: CANDIDATE_A_LABEL,
     ratings: numericSummary(aligned.map((r) => r.candidateA)),
-    vsCanonical: computeParityMetrics(
-      aligned.map((r) => r.candidateA),
-      aligned.map((r) => r.target)
-    ),
-    orderingOverlap: orderingOverlap(
-      aligned.map((r) => ({ teamId: r.teamId, value: r.candidateA })),
-      aligned.map((r) => ({ teamId: r.teamId, value: r.target }))
-    ),
+    vsCanonical: benchmarkValid
+      ? computeParityMetrics(
+          aligned.map((r) => r.candidateA),
+          aligned.map((r) => r.target)
+        )
+      : emptyParityMetrics(benchmarkComparedCount),
+    orderingOverlap: benchmarkValid
+      ? orderingOverlap(
+          aligned.map((r) => ({ teamId: r.teamId, value: r.candidateA })),
+          aligned.map((r) => ({ teamId: r.teamId, value: r.target }))
+        )
+      : emptyOrderingOverlap(),
   };
   const candidateB: CandidateBenchmarkResult = {
     kind: CANDIDATE_B_LABEL,
     ratings: numericSummary(aligned.map((r) => r.candidateB)),
-    vsCanonical: computeParityMetrics(
-      aligned.map((r) => r.candidateB),
-      aligned.map((r) => r.target)
-    ),
-    orderingOverlap: orderingOverlap(
-      aligned.map((r) => ({ teamId: r.teamId, value: r.candidateB })),
-      aligned.map((r) => ({ teamId: r.teamId, value: r.target }))
-    ),
+    vsCanonical: benchmarkValid
+      ? computeParityMetrics(
+          aligned.map((r) => r.candidateB),
+          aligned.map((r) => r.target)
+        )
+      : emptyParityMetrics(benchmarkComparedCount),
+    orderingOverlap: benchmarkValid
+      ? orderingOverlap(
+          aligned.map((r) => ({ teamId: r.teamId, value: r.candidateB })),
+          aligned.map((r) => ({ teamId: r.teamId, value: r.target }))
+        )
+      : emptyOrderingOverlap(),
   };
 
   const sortedA = [...previewTeams].sort(
@@ -577,11 +785,30 @@ export function buildBalancedV1PreseasonBridgeEvaluation(
   const gates = assessPreseasonBridgeGates({
     season: input.season,
     fbsIds2026: input.fbsIds2026,
-    finiteTalent2026: talentMap26.size,
-    talentSetExact2026,
+    talentRows2026Fbs: talent26.talentRowsFbs,
+    talentDistinctFbs2026: talent26.talentDistinctFbs,
+    finiteTalent2026: talent26.finiteTalent,
+    talentSetExact2026: talent26.talentSetExact,
+    duplicateTalentTeamIds2026: talent26.duplicateTalentTeamIds,
+    purePreseasonState,
+    finalFbsVsFbsGames2026: input.finalFbsVsFbsGames2026,
+    usableEpaTeams2026: input.usableEpaTeams2026,
+    netPointsTeams2026: input.netPointsTeams2026,
+    winPctTeams2026: input.winPctTeams2026,
+    existingV1FbsRows2026: input.existingV1FbsRows2026,
+    highlightTeamsPresent,
+    historicalCutoffExact,
     fbsIds2025: input.fbsIds2025,
+    talentRows2025Fbs: talent25.talentRowsFbs,
+    talentDistinctFbs2025: talent25.talentDistinctFbs,
+    finiteTalent2025: talent25.finiteTalent,
+    talentSetExact2025: talent25.talentSetExact,
+    duplicateTalentTeamIds2025: talent25.duplicateTalentTeamIds,
     persistedTargetCount2025: targetIds.length,
     persistedTargetSetExact2025,
+    benchmarkComparedCount,
+    benchmarkComparedSetExact,
+    benchmarkValid,
     previewFinite: finitePreview,
   });
 
@@ -592,22 +819,34 @@ export function buildBalancedV1PreseasonBridgeEvaluation(
     expected2026FbsCount: EXPECTED_2026_FBS_COUNT,
     fbsCount2026: fbs26.length,
     distinctFbs2026: fbs26.length,
-    talentRows2026: input.talent2026.filter((t) =>
-      fbs26.includes(t.teamId.toLowerCase())
-    ).length,
-    finiteTalent2026: talentMap26.size,
-    talentSetExact2026,
+    talentRows2026Fbs: talent26.talentRowsFbs,
+    talentDistinctFbs2026: talent26.talentDistinctFbs,
+    talentRows2026: talent26.talentRowsFbs,
+    finiteTalent2026: talent26.finiteTalent,
+    talentSetExact2026: talent26.talentSetExact,
+    duplicateTalentTeamIds2026: talent26.duplicateTalentTeamIds,
+    purePreseasonState,
     finalFbsVsFbsGames2026: input.finalFbsVsFbsGames2026,
     usableEpaTeams2026: input.usableEpaTeams2026,
     netPointsTeams2026: input.netPointsTeams2026,
     winPctTeams2026: input.winPctTeams2026,
     existingV1FbsRows2026: input.existingV1FbsRows2026,
+    highlightTeamsPresent,
     historicalCutoffIso: input.historicalCutoffIso,
+    historicalCutoffExact,
     benchmarkSeason: BENCHMARK_SEASON,
     fbsCount2025: fbs25.length,
     expected2025FbsCount: EXPECTED_2025_FBS_COUNT,
+    talentRows2025Fbs: talent25.talentRowsFbs,
+    talentDistinctFbs2025: talent25.talentDistinctFbs,
+    finiteTalent2025: talent25.finiteTalent,
+    talentSetExact2025: talent25.talentSetExact,
+    duplicateTalentTeamIds2025: talent25.duplicateTalentTeamIds,
     persistedTargetCount2025: targetIds.length,
     persistedTargetSetExact2025,
+    benchmarkComparedCount,
+    benchmarkComparedSetExact,
+    benchmarkValid,
     candidateA,
     candidateB,
     preview2026: {
@@ -671,16 +910,22 @@ export function formatBalancedV1PreseasonBridgeReport(
     `2026 FBS=${result.fbsCount2026} distinct=${result.distinctFbs2026} expected=${result.expected2026FbsCount}`
   );
   lines.push(
-    `2026 talent rows=${result.talentRows2026} finite=${result.finiteTalent2026} setExact=${result.talentSetExact2026}`
+    `2026 talent rowsFbs=${result.talentRows2026Fbs} distinctFbs=${result.talentDistinctFbs2026} finite=${result.finiteTalent2026} setExact=${result.talentSetExact2026} duplicates=${result.duplicateTalentTeamIds2026}`
   );
   lines.push(
-    `2026 coverage finalFbsVsFbsGames=${result.finalFbsVsFbsGames2026} usableEpa=${result.usableEpaTeams2026} netPtsTeams=${result.netPointsTeams2026} winPctTeams=${result.winPctTeams2026} existingV1Fbs=${result.existingV1FbsRows2026}`
+    `purePreseasonState=${result.purePreseasonState} finalFbsVsFbsGames=${result.finalFbsVsFbsGames2026} usableEpa=${result.usableEpaTeams2026} netPtsTeams=${result.netPointsTeams2026} winPctTeams=${result.winPctTeams2026} existingV1Fbs=${result.existingV1FbsRows2026}`
+  );
+  lines.push(
+    `highlightTeamsPresent=${result.highlightTeamsPresent} historicalCutoffExact=${result.historicalCutoffExact}`
   );
   lines.push(
     `historicalCutoff=${result.historicalCutoffIso} benchmarkSeason=${result.benchmarkSeason}`
   );
   lines.push(
-    `2025 FBS=${result.fbsCount2025} expected=${result.expected2025FbsCount} persistedTargets=${result.persistedTargetCount2025} setExact=${result.persistedTargetSetExact2025}`
+    `2025 FBS=${result.fbsCount2025} expected=${result.expected2025FbsCount} talentRowsFbs=${result.talentRows2025Fbs} distinct=${result.talentDistinctFbs2025} finite=${result.finiteTalent2025} setExact=${result.talentSetExact2025} duplicates=${result.duplicateTalentTeamIds2025}`
+  );
+  lines.push(
+    `persistedTargets=${result.persistedTargetCount2025} setExact=${result.persistedTargetSetExact2025} benchmarkCompared=${result.benchmarkComparedCount} comparedSetExact=${result.benchmarkComparedSetExact} benchmarkValid=${result.benchmarkValid}`
   );
   lines.push(`canonicalWeights=${JSON.stringify(result.canonicalWeights)}`);
   lines.push(

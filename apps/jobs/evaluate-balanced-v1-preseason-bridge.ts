@@ -199,6 +199,7 @@ export async function runBalancedV1PreseasonBridgeEvaluation(options: {
   console.log('ratingsWriteAuthorized=false');
   console.log('modelChangeAuthorized=false');
   console.log('transitionPolicyDefined=false');
+  console.log('purePreseasonState=required-zero-coverage');
   console.log('writerInvoked=false');
   console.log('compute_ratings_balanced=not run');
   console.log('compute_ratings_v1=not run');

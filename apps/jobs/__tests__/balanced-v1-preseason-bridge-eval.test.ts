@@ -45,7 +45,7 @@ function fbs2025(): string[] {
 
 function talentFor(fbs: string[], scale = 400): Array<{
   teamId: string;
-  talentComposite: number;
+  talentComposite: number | null;
 }> {
   return fbs.map((teamId, i) => ({
     teamId,
@@ -59,7 +59,12 @@ function targetsFromTalentA(fbs: string[]): Array<{
   powerRating: number;
 }> {
   const talent = talentFor(fbs);
-  return computeTalentOnlyBridgeRatings(talent).map((r) => ({
+  return computeTalentOnlyBridgeRatings(
+    talent.map((t) => ({
+      teamId: t.teamId,
+      talentComposite: t.talentComposite as number,
+    }))
+  ).map((r) => ({
     teamId: r.teamId,
     powerRating: r.candidateA,
   }));
@@ -109,12 +114,170 @@ describe('Balanced V1 preseason bridge evaluation', () => {
     expect(result.finiteTalent2026).toBe(137);
   });
 
-  it('does not require game/EPA inputs for the diagnostic', () => {
+  it('formulas do not consume game/EPA, but valid pure-preseason requires coverage counts = 0', () => {
+    const healthy = buildBalancedV1PreseasonBridgeEvaluation(healthyInput());
+    expect(healthy.ok).toBe(true);
+    expect(healthy.purePreseasonState).toBe(true);
+    expect(healthy.finalFbsVsFbsGames2026).toBe(0);
+    expect(healthy.usableEpaTeams2026).toBe(0);
+    expect(healthy.netPointsTeams2026).toBe(0);
+    expect(healthy.winPctTeams2026).toBe(0);
+    expect(healthy.existingV1FbsRows2026).toBe(0);
+    expect(healthy.preview2026.finite).toBe(138);
+
+    const evalSrc = fs.readFileSync(
+      path.join(
+        __dirname,
+        '../src/preseason/balanced-v1-preseason-bridge-eval.ts'
+      ),
+      'utf8'
+    );
+    expect(evalSrc).not.toMatch(/computeBalancedV1Ratings\(/);
+  });
+
+  it.each([
+    ['finalFbsVsFbsGames2026', { finalFbsVsFbsGames2026: 1 }],
+    ['usableEpaTeams2026', { usableEpaTeams2026: 1 }],
+    ['netPointsTeams2026', { netPointsTeams2026: 1 }],
+    ['winPctTeams2026', { winPctTeams2026: 1 }],
+    ['existingV1FbsRows2026', { existingV1FbsRows2026: 1 }],
+  ] as const)('%s=1 fails closed', (_label, override) => {
+    const result = buildBalancedV1PreseasonBridgeEvaluation(
+      healthyInput(override)
+    );
+    expect(result.ok).toBe(false);
+    expect(result.purePreseasonState).toBe(false);
+    expect(result.preseasonBridgeAuthorized).toBe(false);
+    expect(result.ratingsWriteAuthorized).toBe(false);
+    expect(result.modelChangeAuthorized).toBe(false);
+  });
+
+  it('healthy zero/zero/zero/zero/zero state passes', () => {
     const result = buildBalancedV1PreseasonBridgeEvaluation(healthyInput());
     expect(result.ok).toBe(true);
-    expect(result.finalFbsVsFbsGames2026).toBe(0);
-    expect(result.usableEpaTeams2026).toBe(0);
-    expect(result.preview2026.finite).toBe(138);
+    expect(result.purePreseasonState).toBe(true);
+    expect(result.benchmarkValid).toBe(true);
+    expect(result.benchmarkComparedCount).toBe(136);
+    expect(result.benchmarkComparedSetExact).toBe(true);
+  });
+
+  it('2025 talent missing one FBS team fails closed', () => {
+    const ids = fbs2025();
+    const talent = talentFor(ids, 400);
+    talent.pop();
+    const result = buildBalancedV1PreseasonBridgeEvaluation(
+      healthyInput({ talent2025: talent })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.finiteTalent2025).toBe(135);
+    expect(result.benchmarkValid).toBe(false);
+    expect(result.candidateA.vsCanonical.mae).toBeNull();
+    expect(result.candidateB.vsCanonical.mae).toBeNull();
+  });
+
+  it('2025 talent non-finite for one FBS team fails closed', () => {
+    const ids = fbs2025();
+    const talent = talentFor(ids, 400);
+    talent[0] = { teamId: talent[0].teamId, talentComposite: null };
+    const result = buildBalancedV1PreseasonBridgeEvaluation(
+      healthyInput({ talent2025: talent })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.finiteTalent2025).toBe(135);
+    expect(result.benchmarkValid).toBe(false);
+  });
+
+  it('2025 benchmarkComparedCount=135 cannot produce a valid benchmark', () => {
+    const ids = fbs2025();
+    const targets = targetsFromTalentA(ids);
+    targets.pop();
+    const result = buildBalancedV1PreseasonBridgeEvaluation(
+      healthyInput({ persistedV1Targets2025: targets })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.benchmarkComparedCount).toBe(135);
+    expect(result.benchmarkComparedSetExact).toBe(false);
+    expect(result.benchmarkValid).toBe(false);
+    expect(result.candidateA.vsCanonical.mae).toBeNull();
+  });
+
+  it('2025 benchmark compared set must equal all 136 FBS IDs', () => {
+    const result = buildBalancedV1PreseasonBridgeEvaluation(healthyInput());
+    expect(result.benchmarkComparedSetExact).toBe(true);
+    expect(result.benchmarkComparedCount).toBe(136);
+  });
+
+  it('duplicate 2026 talent team ID fails closed even if Map would hold 138', () => {
+    const ids = fbs2026();
+    const talent = talentFor(ids, 500);
+    // Extra row for same team — raw count 139, distinct still 138 if we collapse
+    talent.push({
+      teamId: ids[0],
+      talentComposite: 9999,
+    });
+    const result = buildBalancedV1PreseasonBridgeEvaluation(
+      healthyInput({ talent2026: talent })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.talentRows2026Fbs).toBe(139);
+    expect(result.talentDistinctFbs2026).toBe(138);
+    expect(result.duplicateTalentTeamIds2026).toBe(1);
+    expect(result.finiteTalent2026).toBe(138);
+  });
+
+  it('duplicate 2025 talent team ID fails closed', () => {
+    const ids = fbs2025();
+    const talent = talentFor(ids, 400);
+    talent.push({ teamId: ids[0], talentComposite: 1 });
+    const result = buildBalancedV1PreseasonBridgeEvaluation(
+      healthyInput({ talent2025: talent })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.duplicateTalentTeamIds2025).toBe(1);
+    expect(result.benchmarkValid).toBe(false);
+  });
+
+  it('2026 talent raw/distinct/finite counts all equal 138 on healthy fixture', () => {
+    const result = buildBalancedV1PreseasonBridgeEvaluation(healthyInput());
+    expect(result.talentRows2026Fbs).toBe(138);
+    expect(result.talentDistinctFbs2026).toBe(138);
+    expect(result.finiteTalent2026).toBe(138);
+    expect(result.talentSetExact2026).toBe(true);
+    expect(result.duplicateTalentTeamIds2026).toBe(0);
+  });
+
+  it('NDSU missing from 138-team FBS fixture fails closed', () => {
+    const ids = fbs2026().filter((id) => id !== 'north-dakota-state');
+    ids.push('team-extra-001');
+    const result = buildBalancedV1PreseasonBridgeEvaluation(
+      healthyInput({
+        fbsIds2026: ids,
+        talent2026: talentFor(ids, 500),
+      })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.highlightTeamsPresent).toBe(false);
+  });
+
+  it('Sacramento State missing fails closed', () => {
+    const ids = fbs2026().filter((id) => id !== 'sacramento-state');
+    ids.push('team-extra-002');
+    const result = buildBalancedV1PreseasonBridgeEvaluation(
+      healthyInput({
+        fbsIds2026: ids,
+        talent2026: talentFor(ids, 500),
+      })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.highlightTeamsPresent).toBe(false);
+  });
+
+  it('historical cutoff mismatch fails closed', () => {
+    const result = buildBalancedV1PreseasonBridgeEvaluation(
+      healthyInput({ historicalCutoffIso: '2025-11-24T00:00:00.000Z' })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.historicalCutoffExact).toBe(false);
   });
 
   it('Candidate A = talentZ * 3.5 exactly; Candidate B = talentZ * 14 exactly', () => {
@@ -216,6 +379,10 @@ describe('Balanced V1 preseason bridge evaluation', () => {
     const result = buildBalancedV1PreseasonBridgeEvaluation(healthyInput());
     expect(result.fbsCount2025).toBe(136);
     expect(result.expected2025FbsCount).toBe(136);
+    expect(result.talentRows2025Fbs).toBe(136);
+    expect(result.talentDistinctFbs2025).toBe(136);
+    expect(result.finiteTalent2025).toBe(136);
+    expect(result.talentSetExact2025).toBe(true);
     expect(result.persistedTargetCount2025).toBe(136);
     expect(result.persistedTargetSetExact2025).toBe(true);
     expect(result.benchmarkSeason).toBe(BENCHMARK_SEASON);
@@ -229,7 +396,6 @@ describe('Balanced V1 preseason bridge evaluation', () => {
     expect(result.candidateA.vsCanonical.comparedCount).toBe(136);
     expect(result.candidateA.vsCanonical.mae).toBeCloseTo(0, 9);
     expect(result.candidateA.orderingOverlap.top15).toBe(15);
-    // B is 4× A scale → not exact vs A-targets
     expect(result.candidateB.vsCanonical.mae!).toBeGreaterThan(0);
 
     const metrics = computeParityMetrics([1, 2, 3], [1, 2, 4]);
@@ -241,6 +407,7 @@ describe('Balanced V1 preseason bridge evaluation', () => {
     const result = buildBalancedV1PreseasonBridgeEvaluation(healthyInput());
     expect(result.preview2026.ratingCount).toBe(138);
     expect(result.preview2026.finite).toBe(138);
+    expect(result.highlightTeamsPresent).toBe(true);
     const ids = new Set(result.preview2026.teams.map((t) => t.teamId));
     for (const h of HIGHLIGHT_TEAM_IDS) {
       expect(ids.has(h)).toBe(true);
@@ -315,7 +482,6 @@ describe('Balanced V1 preseason bridge evaluation', () => {
       path.join(__dirname, '../src/ratings/compute_ratings_v1.ts'),
       'utf8'
     );
-    // Still classified LEGACY from 2C-2H-5; formula body not changed by this phase
     expect(v1).toContain('LEGACY');
     const wf = fs.readFileSync(
       path.join(
@@ -339,7 +505,6 @@ describe('Balanced V1 preseason bridge evaluation', () => {
     expect(result.matchupScaleA.p50).not.toBeNull();
     expect(result.matchupScaleA.max).not.toBeNull();
     expect(result.matchupScaleB.pairCount).toBe((138 * 137) / 2);
-    // B scale is 4× A → max abs diffs should be larger
     expect(result.matchupScaleB.max!).toBeGreaterThan(
       result.matchupScaleA.max!
     );
