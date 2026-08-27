@@ -29,7 +29,11 @@ export interface CoreV1PreviewGatesInput {
   conferenceMissingCount: number;
   conferenceUnrecognizedCount: number;
   legacyConferenceFallback: boolean;
-  talentRows: Array<{ teamId: string; talentComposite: number | null }>;
+  talentRows: Array<{
+    teamId: string;
+    talentComposite: number | null;
+    blueChipsPct?: number | null;
+  }>;
   existingTeamSeasonRatingCount: number;
   existingPowerRatingCount: number;
 }
@@ -128,6 +132,15 @@ export interface CoreV1RatingsPreviewResult {
   top15: V1ComputedTeamRating[];
   bottom15: V1ComputedTeamRating[];
   byConference: ConferenceSummaryRow[];
+  featureVectorCount: number;
+  featureVectorUniqueTeams: number;
+  featureVectorExactFbsSet: boolean;
+  featureSeasonMismatchCount: number;
+  featureTalentCompositeFinite: number;
+  featureTalentCompositeMatchesPersisted: string;
+  featureBlueChipsPctMatchesPersisted: string;
+  featureCommitsSignalNonNull: number;
+  featureIntegrityOk: boolean;
   providersInvoked: false;
   mutationsInvoked: false;
   ratingsPersistenceInvoked: false;
@@ -266,6 +279,209 @@ export function assessCoreV1PreviewGates(
   return { ok: findings.length === 0, findings };
 }
 
+/** Same hasBaseFeatures rule as computeV1SeasonRatings (pre-compute). */
+export function featureHasBaseFeatures(features: TeamFeatures): boolean {
+  return (
+    features.dataSource !== 'missing' &&
+    (features.yppOff !== null ||
+      features.yppDef !== null ||
+      features.successOff !== null ||
+      features.successDef !== null)
+  );
+}
+
+const TALENT_FLOAT_TOLERANCE = 1e-9;
+
+function nullableScalarsMatch(
+  a: number | null | undefined,
+  b: number | null | undefined
+): boolean {
+  const aa = a === undefined ? null : a;
+  const bb = b === undefined ? null : b;
+  if (aa === null && bb === null) return true;
+  if (aa === null || bb === null) return false;
+  if (aa === bb) return true;
+  return Math.abs(aa - bb) < TALENT_FLOAT_TOLERANCE;
+}
+
+export interface FeatureVectorIntegrityAssessment {
+  featureVectorCount: number;
+  featureVectorUniqueTeams: number;
+  featureVectorExactFbsSet: boolean;
+  featureSeasonMismatchCount: number;
+  featureTalentCompositeFinite: number;
+  featureTalentCompositeMatchesPersisted: number;
+  featureBlueChipsPctMatchesPersisted: number;
+  featureCommitsSignalNonNull: number;
+  featureBaseFeatureTeams: number;
+  featureTalentOnlyFallbackTeams: number;
+  featureIntegrityOk: boolean;
+  findings: string[];
+}
+
+/**
+ * Cross-check the actual compute feature vector against structural gates /
+ * persisted TeamSeasonTalent before calling computeV1SeasonRatings.
+ */
+export function assessFeatureVectorIntegrity(options: {
+  fbsIds: string[];
+  season: number;
+  allFeatures: TeamFeatures[];
+  persistedTalent: Array<{
+    teamId: string;
+    talentComposite: number | null;
+    blueChipsPct?: number | null;
+  }>;
+  commitsNonNullCount: number;
+  seasonStatsTeamCount: number;
+  gameStatsTeamCount: number;
+  existingTeamSeasonRatingCount: number;
+}): FeatureVectorIntegrityAssessment {
+  const findings: string[] = [];
+  const fbsIds = sortedUnique(options.fbsIds);
+  const features = options.allFeatures;
+  const featureIds = features.map((f) => f.teamId);
+  const uniqueFeatureIds = sortedUnique(featureIds);
+  const featureVectorCount = features.length;
+  const featureVectorUniqueTeams = uniqueFeatureIds.length;
+  const featureVectorExactFbsSet =
+    featureVectorCount === fbsIds.length &&
+    featureVectorUniqueTeams === fbsIds.length &&
+    setsEqual(featureIds, fbsIds);
+
+  if (featureVectorCount !== EXPECTED_FBS_COUNT) {
+    findings.push(
+      `featureVectorCount ${featureVectorCount} != ${EXPECTED_FBS_COUNT}`
+    );
+  }
+  if (featureVectorUniqueTeams !== EXPECTED_FBS_COUNT) {
+    findings.push(
+      `featureVectorUniqueTeams ${featureVectorUniqueTeams} != ${EXPECTED_FBS_COUNT}`
+    );
+  }
+  if (!featureVectorExactFbsSet) {
+    findings.push('featureVectorExactFbsSet=false');
+  }
+  if (featureIds.length !== uniqueFeatureIds.length) {
+    findings.push('feature vector contains duplicate teamId');
+  }
+
+  const persistedById = new Map(
+    options.persistedTalent.map((r) => [r.teamId, r])
+  );
+
+  let featureSeasonMismatchCount = 0;
+  let featureTalentCompositeFinite = 0;
+  let featureTalentCompositeMatchesPersisted = 0;
+  let featureBlueChipsPctMatchesPersisted = 0;
+  let featureCommitsSignalNonNull = 0;
+
+  for (const id of fbsIds) {
+    const matches = features.filter((f) => f.teamId === id);
+    if (matches.length !== 1) {
+      if (matches.length === 0) {
+        findings.push(`feature missing for teamId=${id}`);
+      }
+      continue;
+    }
+    const f = matches[0];
+    if (f.season !== options.season) {
+      featureSeasonMismatchCount += 1;
+    }
+    const persisted = persistedById.get(id);
+    const talent = f.talentComposite ?? null;
+    if (talent !== null && Number.isFinite(talent)) {
+      featureTalentCompositeFinite += 1;
+    }
+    if (
+      persisted &&
+      talent !== null &&
+      Number.isFinite(talent) &&
+      persisted.talentComposite !== null &&
+      Number.isFinite(persisted.talentComposite) &&
+      nullableScalarsMatch(talent, persisted.talentComposite)
+    ) {
+      featureTalentCompositeMatchesPersisted += 1;
+    }
+    if (
+      persisted &&
+      nullableScalarsMatch(f.blueChipsPct, persisted.blueChipsPct ?? null)
+    ) {
+      featureBlueChipsPctMatchesPersisted += 1;
+    }
+    if (f.commitsSignal !== null && f.commitsSignal !== undefined) {
+      featureCommitsSignalNonNull += 1;
+    }
+  }
+
+  const featureBaseFeatureTeams = features.filter((f) =>
+    featureHasBaseFeatures(f)
+  ).length;
+  const featureTalentOnlyFallbackTeams = features.filter(
+    (f) => !featureHasBaseFeatures(f)
+  ).length;
+
+  if (featureSeasonMismatchCount !== 0) {
+    findings.push(
+      `featureSeasonMismatchCount ${featureSeasonMismatchCount} != 0`
+    );
+  }
+  if (featureTalentCompositeFinite !== EXPECTED_FBS_COUNT) {
+    findings.push(
+      `featureTalentCompositeFinite ${featureTalentCompositeFinite} != ${EXPECTED_FBS_COUNT}`
+    );
+  }
+  if (featureTalentCompositeMatchesPersisted !== EXPECTED_FBS_COUNT) {
+    findings.push(
+      `featureTalentCompositeMatchesPersisted ${featureTalentCompositeMatchesPersisted}/${EXPECTED_FBS_COUNT} != ${EXPECTED_FBS_COUNT}/${EXPECTED_FBS_COUNT}`
+    );
+  }
+  if (featureBlueChipsPctMatchesPersisted !== EXPECTED_FBS_COUNT) {
+    findings.push(
+      `featureBlueChipsPctMatchesPersisted ${featureBlueChipsPctMatchesPersisted}/${EXPECTED_FBS_COUNT} != ${EXPECTED_FBS_COUNT}/${EXPECTED_FBS_COUNT}`
+    );
+  }
+  if (
+    options.commitsNonNullCount === 0 &&
+    featureCommitsSignalNonNull !== 0
+  ) {
+    findings.push(
+      `featureCommitsSignalNonNull ${featureCommitsSignalNonNull} != 0 while commits row count=0`
+    );
+  }
+  if (
+    options.seasonStatsTeamCount === 0 &&
+    options.gameStatsTeamCount === 0 &&
+    options.existingTeamSeasonRatingCount === 0
+  ) {
+    if (featureBaseFeatureTeams !== 0) {
+      findings.push(
+        `preseason fallback: baseFeatureTeams ${featureBaseFeatureTeams} != 0`
+      );
+    }
+    if (featureTalentOnlyFallbackTeams !== EXPECTED_FBS_COUNT) {
+      findings.push(
+        `preseason fallback: talentOnlyFallbackTeams ${featureTalentOnlyFallbackTeams} != ${EXPECTED_FBS_COUNT}`
+      );
+    }
+  }
+
+  return {
+    featureVectorCount,
+    featureVectorUniqueTeams,
+    featureVectorExactFbsSet,
+    featureSeasonMismatchCount,
+    featureTalentCompositeFinite,
+    featureTalentCompositeMatchesPersisted,
+    featureBlueChipsPctMatchesPersisted,
+    featureCommitsSignalNonNull,
+    featureBaseFeatureTeams,
+    featureTalentOnlyFallbackTeams,
+    featureIntegrityOk: findings.length === 0,
+    findings,
+  };
+}
+
 export function buildCoreV1RatingsPreview(options: {
   gates: CoreV1PreviewGatesInput;
   auxiliary: CoreV1PreviewAuxiliaryInput;
@@ -285,6 +501,21 @@ export function buildCoreV1RatingsPreview(options: {
   const talentMissing = fbsIds.filter(
     (id) => !talentFinite.some((r) => r.teamId === id)
   );
+
+  const integrity = assessFeatureVectorIntegrity({
+    fbsIds,
+    season: options.gates.season,
+    allFeatures: options.allFeatures,
+    persistedTalent: options.gates.talentRows,
+    commitsNonNullCount: options.auxiliary.commitsNonNullCount,
+    seasonStatsTeamCount: options.auxiliary.seasonStatsTeamCount,
+    gameStatsTeamCount: options.auxiliary.gameStatsTeamCount,
+    existingTeamSeasonRatingCount:
+      options.gates.existingTeamSeasonRatingCount,
+  });
+
+  const findings = [...gate.findings, ...integrity.findings];
+  const ok = gate.ok && integrity.featureIntegrityOk;
 
   const tw = options.modelConfig.talent_weights || {
     w_talent: 1.0,
@@ -318,7 +549,7 @@ export function buildCoreV1RatingsPreview(options: {
   });
 
   let ratings: V1ComputedTeamRating[] = [];
-  if (gate.ok) {
+  if (ok) {
     ratings = computeV1SeasonRatings({
       season: TARGET_SEASON,
       allFeatures: options.allFeatures,
@@ -398,10 +629,12 @@ export function buildCoreV1RatingsPreview(options: {
       };
     });
 
-  const baseFeatureTeams = ratings.filter((r) => r.hasBaseFeatures).length;
-  const talentOnlyFallbackTeams = ratings.filter(
-    (r) => !r.hasBaseFeatures
-  ).length;
+  const baseFeatureTeams = ok
+    ? ratings.filter((r) => r.hasBaseFeatures).length
+    : integrity.featureBaseFeatureTeams;
+  const talentOnlyFallbackTeams = ok
+    ? ratings.filter((r) => !r.hasBaseFeatures).length
+    : integrity.featureTalentOnlyFallbackTeams;
 
   const scaledAdj = conferenceAdjustmentsReport.map(
     (c) => c.effectiveAfterCalibration
@@ -415,10 +648,10 @@ export function buildCoreV1RatingsPreview(options: {
   const n = EXPECTED_FBS_COUNT;
 
   return {
-    ok: gate.ok,
+    ok,
     mode: 'READ_ONLY',
     structuralOk: gate.ok,
-    findings: gate.findings,
+    findings,
     targetSeason: options.gates.season,
     dbFbsCount: fbsIds.length,
     distinctFbsIds: fbsIds.length,
@@ -444,8 +677,8 @@ export function buildCoreV1RatingsPreview(options: {
     commitsTreatment: 'NEUTRAL_ZSCORE_ZERO',
     seasonStatsAvailable: `${aux.seasonStatsTeamCount}/${n}`,
     gameStatsAvailable: `${aux.gameStatsTeamCount}/${n}`,
-    baseFeatureTeams: gate.ok ? baseFeatureTeams : 0,
-    talentOnlyFallbackTeams: gate.ok ? talentOnlyFallbackTeams : 0,
+    baseFeatureTeams,
+    talentOnlyFallbackTeams,
     unitGradesAvailable: `${aux.unitGradesTeamCount}/${n}`,
     unitGradesRequiredByCoreV1: false,
     modelVersion: 'v1',
@@ -493,6 +726,15 @@ export function buildCoreV1RatingsPreview(options: {
     top15,
     bottom15,
     byConference,
+    featureVectorCount: integrity.featureVectorCount,
+    featureVectorUniqueTeams: integrity.featureVectorUniqueTeams,
+    featureVectorExactFbsSet: integrity.featureVectorExactFbsSet,
+    featureSeasonMismatchCount: integrity.featureSeasonMismatchCount,
+    featureTalentCompositeFinite: integrity.featureTalentCompositeFinite,
+    featureTalentCompositeMatchesPersisted: `${integrity.featureTalentCompositeMatchesPersisted}/${n}`,
+    featureBlueChipsPctMatchesPersisted: `${integrity.featureBlueChipsPctMatchesPersisted}/${n}`,
+    featureCommitsSignalNonNull: integrity.featureCommitsSignalNonNull,
+    featureIntegrityOk: integrity.featureIntegrityOk,
     providersInvoked: false,
     mutationsInvoked: false,
     ratingsPersistenceInvoked: false,
@@ -627,6 +869,23 @@ export function formatCoreV1RatingsPreviewReport(
   push(
     `existingWeeklyPowerRatings2026=${result.existingWeeklyPowerRatings2026}`
   );
+  push(`featureVectorCount=${result.featureVectorCount}`);
+  push(`featureVectorUniqueTeams=${result.featureVectorUniqueTeams}`);
+  push(`featureVectorExactFbsSet=${result.featureVectorExactFbsSet}`);
+  push(`featureSeasonMismatchCount=${result.featureSeasonMismatchCount}`);
+  push(
+    `featureTalentCompositeFinite=${result.featureTalentCompositeFinite}`
+  );
+  push(
+    `featureTalentCompositeMatchesPersisted=${result.featureTalentCompositeMatchesPersisted}`
+  );
+  push(
+    `featureBlueChipsPctMatchesPersisted=${result.featureBlueChipsPctMatchesPersisted}`
+  );
+  push(
+    `featureCommitsSignalNonNull=${result.featureCommitsSignalNonNull}`
+  );
+  push(`featureIntegrityOk=${result.featureIntegrityOk}`);
   push(`blueChipsPctAvailable=${result.blueChipsPctAvailable}`);
   push(`blueChipsPctTreatment=${result.blueChipsPctTreatment}`);
   push(`commitsAvailable=${result.commitsAvailable}`);

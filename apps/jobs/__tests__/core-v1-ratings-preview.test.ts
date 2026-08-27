@@ -18,14 +18,20 @@ import {
   EXPECTED_FBS_COUNT,
   TARGET_SEASON,
   assessCoreV1PreviewGates,
+  assessFeatureVectorIntegrity,
   buildCoreV1RatingsPreview,
   buildMissingStatsFeatures,
   formatCoreV1RatingsPreviewReport,
   parseCoreV1RatingsPreviewArgs,
+  sanitizeCoreV1RatingsPreviewError,
   type CoreV1PreviewAuxiliaryInput,
   type CoreV1PreviewGatesInput,
 } from '../src/preseason/core-v1-ratings-preview';
 import { buildFbsFixture } from '../src/preseason/season-conference-preview';
+import {
+  FEATURE_LOADER_STRICT_READ_ERROR,
+  FeatureLoader,
+} from '../src/ratings/feature-loader';
 import {
   createPrismaCoreV1RatingsPreviewReadStore,
   type CoreV1RatingsPreviewReadStore,
@@ -64,6 +70,7 @@ function healthyGates(
     talentRows: fbs.map((teamId, i) => ({
       teamId,
       talentComposite: 500 + i * 0.5,
+      blueChipsPct: null as number | null,
     })),
     existingTeamSeasonRatingCount: 0,
     existingPowerRatingCount: 0,
@@ -94,7 +101,7 @@ function healthyFeaturesAndMap(gates: CoreV1PreviewGatesInput) {
       teamId,
       season: TARGET_SEASON,
       talentComposite: talent?.talentComposite ?? 500 + i,
-      blueChipsPct: null,
+      blueChipsPct: talent?.blueChipsPct ?? null,
       commitsSignal: null,
       weeksPlayed: 0,
     });
@@ -244,6 +251,10 @@ describe('Core V1 ratings preview build', () => {
     expect(result.nonFiniteRatingCount).toBe(0);
     expect(result.talentOnlyFallbackTeams).toBe(EXPECTED_FBS_COUNT);
     expect(result.baseFeatureTeams).toBe(0);
+    expect(result.featureIntegrityOk).toBe(true);
+    expect(result.featureTalentCompositeMatchesPersisted).toBe('138/138');
+    expect(result.featureBlueChipsPctMatchesPersisted).toBe('138/138');
+    expect(result.featureCommitsSignalNonNull).toBe(0);
     expect(result.blueChipsPctTreatment).toBe('NEUTRAL_ZSCORE_ZERO');
     expect(result.commitsTreatment).toBe('NEUTRAL_ZSCORE_ZERO');
     expect(result.mode).toBe('READ_ONLY');
@@ -433,6 +444,7 @@ describe('read-only guarantees', () => {
     );
     expect(cliSrc).toMatch(/CFBD_API_KEY=not provided/);
     expect(cliSrc).toMatch(/ODDS_API_KEY=not provided/);
+    expect(cliSrc).toMatch(/failClosedOnReadError:\s*true/);
     expect(cliSrc).toMatch(/mode=READ_ONLY/);
     expect(workflowSrc).toMatch(/workflow_dispatch/);
     expect(workflowSrc).not.toMatch(/^\s*schedule:/m);
@@ -441,5 +453,220 @@ describe('read-only guarantees', () => {
     expect(workflowSrc).not.toMatch(/secrets\.ODDS_API_KEY/);
     expect(workflowSrc).toMatch(/CFBD_API_KEY: not provided/);
     expect(workflowSrc).toMatch(/ODDS_API_KEY: not provided/);
+  });
+});
+
+describe('feature vector integrity fail-closed', () => {
+  it('1. healthy 138 direct talent + healthy 138 features -> pass', () => {
+    const gates = healthyGates();
+    const { allFeatures, conferenceMap } = healthyFeaturesAndMap(gates);
+    const integrity = assessFeatureVectorIntegrity({
+      fbsIds: gates.fbsIds,
+      season: TARGET_SEASON,
+      allFeatures,
+      persistedTalent: gates.talentRows,
+      commitsNonNullCount: 0,
+      seasonStatsTeamCount: 0,
+      gameStatsTeamCount: 0,
+      existingTeamSeasonRatingCount: 0,
+    });
+    expect(integrity.featureIntegrityOk).toBe(true);
+    const result = buildCoreV1RatingsPreview({
+      gates,
+      auxiliary: healthyAuxiliary(),
+      allFeatures,
+      conferenceMap,
+      modelConfig: getModelConfig('v1'),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.ratingCount).toBe(EXPECTED_FBS_COUNT);
+    expect(result.featureIntegrityOk).toBe(true);
+  });
+
+  it('2. one loadTeamFeatures talentComposite=null -> fail closed ratingCount=0', () => {
+    const gates = healthyGates();
+    const { allFeatures, conferenceMap } = healthyFeaturesAndMap(gates);
+    allFeatures[0].talentComposite = null;
+    const result = buildCoreV1RatingsPreview({
+      gates,
+      auxiliary: healthyAuxiliary(),
+      allFeatures,
+      conferenceMap,
+      modelConfig: getModelConfig('v1'),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.featureIntegrityOk).toBe(false);
+    expect(result.ratingCount).toBe(0);
+    expect(result.findings.join(' ')).toMatch(/featureTalentComposite/);
+  });
+
+  it('3. one feature talentComposite differs from persisted -> fail closed', () => {
+    const gates = healthyGates();
+    const { allFeatures, conferenceMap } = healthyFeaturesAndMap(gates);
+    allFeatures[0].talentComposite =
+      (allFeatures[0].talentComposite as number) + 1;
+    const result = buildCoreV1RatingsPreview({
+      gates,
+      auxiliary: healthyAuxiliary(),
+      allFeatures,
+      conferenceMap,
+      modelConfig: getModelConfig('v1'),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.ratingCount).toBe(0);
+    expect(result.findings.join(' ')).toMatch(
+      /featureTalentCompositeMatchesPersisted/
+    );
+  });
+
+  it('4. one feature wrong season -> fail closed', () => {
+    const gates = healthyGates();
+    const { allFeatures, conferenceMap } = healthyFeaturesAndMap(gates);
+    allFeatures[0].season = 2025;
+    const result = buildCoreV1RatingsPreview({
+      gates,
+      auxiliary: healthyAuxiliary(),
+      allFeatures,
+      conferenceMap,
+      modelConfig: getModelConfig('v1'),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.ratingCount).toBe(0);
+    expect(result.featureSeasonMismatchCount).toBe(1);
+  });
+
+  it('5. wrong/duplicate teamId -> fail closed', () => {
+    const gates = healthyGates();
+    const { allFeatures, conferenceMap } = healthyFeaturesAndMap(gates);
+    allFeatures[1].teamId = allFeatures[0].teamId;
+    const result = buildCoreV1RatingsPreview({
+      gates,
+      auxiliary: healthyAuxiliary(),
+      allFeatures,
+      conferenceMap,
+      modelConfig: getModelConfig('v1'),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.ratingCount).toBe(0);
+    expect(result.featureVectorExactFbsSet).toBe(false);
+  });
+
+  it('6. non-null blueChipsPct when persisted null -> fail closed', () => {
+    const gates = healthyGates();
+    const { allFeatures, conferenceMap } = healthyFeaturesAndMap(gates);
+    allFeatures[0].blueChipsPct = 0.42;
+    const result = buildCoreV1RatingsPreview({
+      gates,
+      auxiliary: healthyAuxiliary(),
+      allFeatures,
+      conferenceMap,
+      modelConfig: getModelConfig('v1'),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.ratingCount).toBe(0);
+    expect(result.findings.join(' ')).toMatch(
+      /featureBlueChipsPctMatchesPersisted/
+    );
+  });
+
+  it('7. commits count=0 but non-null commitsSignal -> fail closed', () => {
+    const gates = healthyGates();
+    const { allFeatures, conferenceMap } = healthyFeaturesAndMap(gates);
+    allFeatures[0].commitsSignal = 3.5;
+    const result = buildCoreV1RatingsPreview({
+      gates,
+      auxiliary: healthyAuxiliary({ commitsNonNullCount: 0 }),
+      allFeatures,
+      conferenceMap,
+      modelConfig: getModelConfig('v1'),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.ratingCount).toBe(0);
+    expect(result.featureCommitsSignalNonNull).toBe(1);
+  });
+});
+
+describe('FeatureLoader strict vs default', () => {
+  function mockPrismaThrowingTalent(err: Error) {
+    return {
+      teamSeasonTalent: {
+        findUnique: jest.fn().mockRejectedValue(err),
+      },
+      teamClassCommits: {
+        findUnique: jest.fn(),
+      },
+      game: {
+        count: jest.fn(),
+      },
+      teamGameStat: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      teamSeasonStat: {
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
+      teamSeasonRating: {
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
+    } as never;
+  }
+
+  it('8. strict mode throws on Prisma read failure and does not substitute null', async () => {
+    const sensitive = new Error(
+      'P1001: Can\'t reach database server at postgresql://user:s3cret@db.example:5432/prod'
+    );
+    const prisma = mockPrismaThrowingTalent(sensitive);
+    const loader = new FeatureLoader(prisma, { failClosedOnReadError: true });
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(loader.loadTeamFeatures('alabama', 2026)).rejects.toThrow(
+      FEATURE_LOADER_STRICT_READ_ERROR
+    );
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it('9. sensitive connection URL/password not emitted on strict preview path', async () => {
+    const secretUrl =
+      'postgresql://admin:SuperSecretPassword123@db.internal:5432/gridiron';
+    const sensitive = new Error(`Connection failed: ${secretUrl}`);
+    const prisma = mockPrismaThrowingTalent(sensitive);
+    const loader = new FeatureLoader(prisma, { failClosedOnReadError: true });
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    let thrown: unknown;
+    try {
+      await loader.loadTeamFeatures('alabama', 2026);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(String(thrown)).toBe(`Error: ${FEATURE_LOADER_STRICT_READ_ERROR}`);
+    expect(String(thrown)).not.toContain('SuperSecretPassword123');
+    expect(String(thrown)).not.toContain('postgresql://');
+    expect(sanitizeCoreV1RatingsPreviewError(thrown)).not.toContain(
+      'SuperSecretPassword123'
+    );
+    expect(sanitizeCoreV1RatingsPreviewError(thrown)).not.toContain(
+      'postgresql://'
+    );
+    const warnText = warnSpy.mock.calls.map((c) => String(c[0])).join(' ');
+    expect(warnText).not.toContain('SuperSecretPassword123');
+    expect(warnText).not.toContain(secretUrl);
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  it('10. default FeatureLoader still substitutes null on read failure', async () => {
+    const sensitive = new Error(
+      'postgresql://user:password@host/db read failed'
+    );
+    const prisma = mockPrismaThrowingTalent(sensitive);
+    const loader = new FeatureLoader(prisma);
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const features = await loader.loadTeamFeatures('alabama', 2026);
+    expect(features.talentComposite).toBeNull();
+    expect(features.blueChipsPct).toBeNull();
+    expect(features.commitsSignal).toBeNull();
+    expect(features.dataSource).toBe('missing');
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 });

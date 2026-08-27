@@ -54,7 +54,8 @@ export interface CoreV1RatingsPreviewReadStore {
 export function createPrismaCoreV1RatingsPreviewReadStore(
   prisma: PrismaClient
 ): CoreV1RatingsPreviewReadStore {
-  const loader = new FeatureLoader(prisma);
+  // Strict mode: Prisma read failures must not silently substitute null features.
+  const loader = new FeatureLoader(prisma, { failClosedOnReadError: true });
   return {
     async loadFbsTeamIds(season) {
       const rows = await prisma.teamMembership.findMany({
@@ -195,6 +196,7 @@ export async function runCoreV1RatingsPreview(options: {
       talentRows: talentRowsRaw.map((r) => ({
         teamId: r.teamId,
         talentComposite: r.talentComposite,
+        blueChipsPct: r.blueChipsPct,
       })),
       existingTeamSeasonRatingCount,
       existingPowerRatingCount,

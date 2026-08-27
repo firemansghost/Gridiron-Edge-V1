@@ -54,8 +54,27 @@ export interface DataSourceSummary {
   total: number;
 }
 
+export interface FeatureLoaderOptions {
+  /**
+   * When true, Prisma read failures throw a fixed safe error instead of
+   * substituting null features. Default false preserves historical behavior.
+   */
+  failClosedOnReadError?: boolean;
+}
+
+/** Fixed message for strict-mode read failures — never includes err details. */
+export const FEATURE_LOADER_STRICT_READ_ERROR =
+  'FeatureLoader strict read failed; details suppressed';
+
 export class FeatureLoader {
-  constructor(private prisma: PrismaClient) {}
+  private readonly failClosedOnReadError: boolean;
+
+  constructor(
+    private prisma: PrismaClient,
+    options?: FeatureLoaderOptions
+  ) {
+    this.failClosedOnReadError = options?.failClosedOnReadError === true;
+  }
 
   /**
    * Convert Prisma Decimal to number
@@ -66,6 +85,12 @@ export class FeatureLoader {
     if (typeof value === 'string') return parseFloat(value);
     if (value && typeof value.toNumber === 'function') return value.toNumber();
     return null;
+  }
+
+  private throwStrictReadFailure(
+    _source: 'game' | 'season' | 'baseline' | 'talent'
+  ): never {
+    throw new Error(FEATURE_LOADER_STRICT_READ_ERROR);
   }
 
   /**
@@ -156,6 +181,9 @@ export class FeatureLoader {
         weeksPlayed: gamesPlayed,
       };
     } catch (error) {
+      if (this.failClosedOnReadError) {
+        this.throwStrictReadFailure('talent');
+      }
       console.warn(`Failed to load talent features for ${teamId} ${season}:`, error);
       return {
         talentComposite: null,
@@ -204,6 +232,9 @@ export class FeatureLoader {
         lastUpdated: gameStats[0]?.updatedAt || null,
       };
     } catch (error) {
+      if (this.failClosedOnReadError) {
+        this.throwStrictReadFailure('game');
+      }
       console.warn(`Failed to load game features for ${teamId} ${season}:`, error);
       return null;
     }
@@ -248,6 +279,9 @@ export class FeatureLoader {
         lastUpdated: seasonStats.createdAt, // Use createdAt since updatedAt might not exist
       };
     } catch (error) {
+      if (this.failClosedOnReadError) {
+        this.throwStrictReadFailure('season');
+      }
       console.warn(`Failed to load season features for ${teamId} ${season}:`, error);
       return null;
     }
@@ -298,6 +332,9 @@ export class FeatureLoader {
         lastUpdated: baselineRating.createdAt, // Use createdAt since updatedAt might not exist
       };
     } catch (error) {
+      if (this.failClosedOnReadError) {
+        this.throwStrictReadFailure('baseline');
+      }
       console.warn(`Failed to load baseline features for ${teamId} ${season}:`, error);
       return null;
     }
