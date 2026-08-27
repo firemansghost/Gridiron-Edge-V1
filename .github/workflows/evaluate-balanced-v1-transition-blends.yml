@@ -1,0 +1,94 @@
+# Manual READ-ONLY Balanced V1 transition blend evaluation (2025 study).
+# workflow_dispatch ONLY — no schedule, push, or pull_request.
+# SELECT-only DB. Does not write ratings.
+# Does not call CFBD, Odds, or any provider.
+# Does not authorize transition/bridge/persistence/model changes.
+
+name: Evaluate Balanced V1 Transition Blends (Manual, Read Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      study_season:
+        description: 'Study season (must be 2025)'
+        required: true
+        type: string
+        default: '2025'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evaluate-balanced-v1-transition-blends-${{ inputs.study_season }}
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DATABASE_URL: ${{ secrets.DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight (names/presence only)
+        run: |
+          set -euo pipefail
+          SEASON="${{ inputs.study_season }}"
+          echo "study_season_input=${SEASON}"
+          echo "mode=READ_ONLY"
+          if [ "$SEASON" != "2025" ]; then
+            echo "::error::study_season must equal 2025 (got ${SEASON})"
+            exit 1
+          fi
+          if [ -z "${DIRECT_URL:-}" ] && [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::DIRECT_URL secret is missing"
+            exit 1
+          fi
+          echo "DIRECT_URL: present (value not printed)"
+          echo "CFBD_API_KEY: not provided"
+          echo "ODDS_API_KEY: not provided"
+          echo "providersInvoked=false"
+          echo "mutationsInvoked=false"
+          echo "ratingsPersistenceInvoked=false"
+          echo "blendPolicyAuthorized=false"
+          echo "transitionPolicyAuthorized=false"
+          echo "preseasonBridgeAuthorized=false"
+          echo "ratingsWriteAuthorized=false"
+          echo "modelChangeAuthorized=false"
+          echo "Odds=false"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: Evaluate Balanced V1 transition blend (read-only)
+        run: |
+          npx tsx apps/jobs/evaluate-balanced-v1-transition-blends.ts --study-season "${{ inputs.study_season }}"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "============================================"
+          echo "EVALUATE BALANCED V1 TRANSITION BLENDS (READ ONLY)"
+          echo "============================================"
+          echo "study_season: ${{ inputs.study_season }}"
+          echo "status: ${{ job.status }}"
+          echo "mode: diagnostic only — no policy authorized"
+          echo "secrets used (names only): DIRECT_URL"
+          echo "providers: none"
+          echo "Odds: false"
+          echo "blendPolicyAuthorized: false"
+          echo "transitionPolicyAuthorized: false"
+          echo "============================================"
