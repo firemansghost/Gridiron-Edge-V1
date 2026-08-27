@@ -93,7 +93,8 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | **2C-2H-5 Balanced V1 historical parity** | **PASSED — EXACT (PR #56)** — cutoff Balanced replay matched persisted 2025 V1 136/136 |
 | **2C-2H-6 Balanced V1 preseason bridge eval** | **PASSED (PR #57)** — Candidate A provisional preferred; Candidate B rejected; persistence unauthorized |
 | **2C-2H-7 Balanced V1 transition timing** | **PASSED (PR #58)** — timing-only hard switch rejected; blend eval required |
-| **2C-2H-8 Balanced V1 transition blends** | **In preparation (draft)** — global B1/B2/B3 blend schedules; no policy authorized |
+| **2C-2H-8 Balanced V1 transition blends** | **PASSED (PR #59)** — B1 AUTHORIZED as model policy; B2/B3/hard/per-team REJECTED; write still unauthorized |
+| **2C-2H-9 Core V1 lifecycle writer** | **In preparation (draft)** — guarded PREVIEW/COMMIT; production write NOT AUTHORIZED until PREVIEW review |
 | **Ratings computation / persistence** | **Not yet approved** — **2026 ratings persistence remains NOT AUTHORIZED** |
 | **Odds ingestion** | **Not yet approved** |
 | **Nightly reactivation** | **Not yet approved** |
@@ -142,6 +143,8 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | `apps/jobs/evaluate-balanced-v1-transition-blends.ts` | Read-only 2025 Balanced V1 global blend study |
 | `Evaluate Balanced V1 Transition Timing (Manual, Read Only)` | `workflow_dispatch` only; `study_season=2025`; `DIRECT_URL` only |
 | `Evaluate Balanced V1 Transition Blends (Manual, Read Only)` | `workflow_dispatch` only; `study_season=2025`; `DIRECT_URL` only |
+| `apps/jobs/write-core-v1-lifecycle.ts` | Guarded 2026 Core V1 lifecycle PREVIEW/COMMIT (`completedThroughWeek`) |
+| `Write 2026 Core V1 Lifecycle Ratings (Manual, Guarded)` | `workflow_dispatch` only; PREVIEW default; COMMIT=`WRITE_2026_CORE_V1` |
 | `Preview 2026 Ratings Inputs (Manual, Read Only)` | Provider preview workflow (`season=2026`) |
 | `apps/jobs/diagnose-2026-conference-recruiting.ts` | Read-only `/teams/fbs` + recruiting resolver diagnostic (`providerFbsSetExact` / `recruitingResolverSafe`) |
 | `Diagnose 2026 Conference & Recruiting Mapping (Manual, Read Only)` | Diagnostic workflow (`season=2026`) |
@@ -172,22 +175,25 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 * 2C-2H-5: **PASSED — EXACT (PR #56)** — unrestricted MAE≈0.972 was snapshot drift; cutoff Nov 24 2025 Balanced replay matched **136/136** (MAE≈2.3e-15); **production Core V1 = Balanced V1**; legacy `compute_ratings_v1` not canonical
 * 2C-2H-6: **PASSED (PR #57)** — Candidate A provisional preferred (2025 MAE=7.8831; 2026 range=20.8895; p95=10.1282); Candidate B rejected (2026 range=83.5581; p95=40.5127); `preseasonBridgeAuthorized=false`
 * 2C-2H-7: **PASSED (PR #58)** — W1 68.4% / W2 99.3% / W3 100%; Pearson W3–W8 .7340→.9399; hard-switch median jump ≈6.6–7.3 / p95 ≈17–19; timing-only hard/per-team switches **REJECTED**; `transitionPolicyAuthorized=false`
-* 2C-2H-8: **IN PREPARATION / draft PR** — read-only 2025 global blend evaluation (B1/B2/B3 + rejected hard-switch controls); `blendPolicyCandidate=INCONCLUSIVE`; `blendPolicyAuthorized=false`
+* 2C-2H-8: **PASSED (PR #59)** — B1 avgMAE=4.6842 maxP95=6.2755; B2/B3/hard switches rejected; Candidate A + B1 AUTHORIZED as **model** policy only; write still unauthorized
+* 2C-2H-9: **IN PREPARATION / draft PR** — guarded Core V1 lifecycle writer (`completedThroughWeek` + B1); PREVIEW default; COMMIT=`WRITE_2026_CORE_V1`; production write NOT AUTHORIZED until PREVIEW reviewed
 * Recruiting schema mismatch remains separate
-* **Do not persist ratings until separately authorized**
-* **Do not run the production transition blend workflow until the draft PR is independently reviewed**
+* **Do not persist ratings until production PREVIEW passes and COMMIT is separately authorized**
+* **Do not run the production lifecycle workflow until the draft PR is independently reviewed**
 * **Do not run `compute_ratings_balanced.ts` or legacy `compute_ratings_v1` for 2026**
 
-##### After 2C-2H-7 (complete) — recorded conclusion
-1. Timing alone does not solve Candidate A → canonical discontinuity
-2. Hard global / per-team first-game / per-team two-game switches rejected from serious consideration
-3. Proceed to global blend evaluation (2C-2H-8)
+##### After 2C-2H-8 (complete) — recorded decision
+1. Candidate A AUTHORIZED as preseason bridge policy
+2. B1 GLOBAL_BLEND_W3_W6 AUTHORIZED as transition model policy
+3. B2/B3 and hard/per-team switches REJECTED
+4. Production write still blocked pending lifecycle implementation
 
-##### After 2C-2H-8 merges — operator procedure
-1. Independently review draft PR (blend schedules + weekly stability; no buried policy authorization)
-2. Only then run **Evaluate Balanced V1 Transition Blends (Manual, Read Only)**
-3. Treat comparison table as manual evidence — `blendPolicyCandidate` is `INCONCLUSIVE`; do not authorize a blend from this phase alone
-4. Ratings persistence and blend/transition authorization remain unauthorized
+##### After 2C-2H-9 merges — operator procedure
+1. Independently review draft PR (completedThroughWeek semantics + B1 weights + fail-closed gates)
+2. Only then run **Write 2026 Core V1 Lifecycle Ratings** in **PREVIEW** (`completed_through_week=0`)
+3. Independently review production PREVIEW (expect Candidate A for all 138; zero finals; zero existing V1)
+4. Do **not** COMMIT until that PREVIEW is approved
+5. COMMIT requires `confirmation=WRITE_2026_CORE_V1`
 
 - [x] Preview week 0–2 reviewed
 - [x] Week 1–13 + 15 production writes
@@ -211,8 +217,9 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 - [x] 2C-2H-5 Balanced V1 historical parity PASSED EXACT (PR #56)
 - [x] 2C-2H-6 Balanced V1 preseason bridge evaluation PASSED (Candidate A provisional; B rejected)
 - [x] 2C-2H-7 Balanced V1 transition timing PASSED (PR #58; hard switches rejected)
-- [ ] 2C-2H-8 Balanced V1 transition blend evaluation (draft)
-- [ ] Odds / ratings persist / bets remain **out of scope** until separately approved
+- [x] 2C-2H-8 Balanced V1 transition blend evaluation PASSED (PR #59; B1 authorized model policy)
+- [ ] 2C-2H-9 Core V1 lifecycle writer (draft)
+- [ ] Odds / ratings persist COMMIT / bets remain **out of scope** until separately approved
 
 ---
 
