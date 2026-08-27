@@ -16,6 +16,8 @@ import type { getModelConfig } from '../config/model-weights';
 
 export const COMPARISON_SEASON = 2025 as const;
 export const MODEL_VERSION = 'v1' as const;
+/** Authoritative 2025 FBS population size (TeamMembership). Do not infer from ratings. */
+export const EXPECTED_2025_FBS_COUNT = 136 as const;
 
 /** Informational: 2026 production preview found 138 talent-only / missing-source rows. */
 export const DOCUMENTED_2026_TALENT_ONLY_PREVIEW_COUNT = 138;
@@ -169,10 +171,18 @@ export interface V1HistoricalParityResult {
   legacyConferenceMode: boolean;
   featureLoaderStrict: boolean;
   fbsCount: number;
+  distinctFbsTeamIds: number;
+  expected2025FbsCount: typeof EXPECTED_2025_FBS_COUNT;
   persistedV1TotalCount: number;
   persistedV1NonFbsCount: number;
   persistedV1FbsCount: number;
+  persistedV1DistinctFbsTeams: number;
+  persistedV1FbsSetExact: boolean;
   persistedPowerFinite: number;
+  persistedPowerFiniteSetExact: boolean;
+  persistedFbsMissingCount: number;
+  persistedFbsMissingSample: string[];
+  persistedFbsNonFinitePowerCount: number;
   persistedPower: NumericSummary;
   persistedConfidence: NumericSummary;
   persistedDataSourceBreakdown: Record<string, number>;
@@ -190,6 +200,7 @@ export interface V1HistoricalParityResult {
   featureVectorUniqueTeams: number;
   featureVectorExactFbsSet: boolean;
   featureDuplicateTeamCount: number;
+  featureSeasonMismatchCount: number;
   exactMatchCount: number;
   within0_01: number;
   within0_1: number;
@@ -199,6 +210,7 @@ export interface V1HistoricalParityResult {
   within5: number;
   over5: number;
   comparedCount: number;
+  comparedTeamSetExact: boolean;
   maxAbsDelta: number | null;
   meanAbsDelta: number | null;
   medianAbsDelta: number | null;
@@ -391,40 +403,111 @@ export function assessV1HistoricalParityGates(input: {
   allFeatures: TeamFeatures[];
   conferenceLoadOk: boolean;
   legacyConferenceMode: boolean;
+  conferenceSource: string;
   featureLoaderStrict: boolean;
   replay: V1ComputedTeamRating[];
+  persistedV1FbsCount: number;
+  persistedV1DistinctFbsTeams: number;
+  persistedV1FbsSetExact: boolean;
+  persistedPowerFinite: number;
+  persistedPowerFiniteSetExact: boolean;
+  persistedFbsMissingCount: number;
+  persistedFbsNonFinitePowerCount: number;
+  comparedCount: number;
+  comparedTeamSetExact: boolean;
 }): { ok: boolean; findings: string[] } {
   const findings: string[] = [];
   if (input.comparisonSeason !== COMPARISON_SEASON) {
     findings.push(`comparisonSeason must be ${COMPARISON_SEASON}`);
   }
   const fbs = sortedUnique(input.fbsIds);
-  if (fbs.length === 0) {
-    findings.push('authoritative 2025 FBS set empty');
+  const distinctFbsTeamIds = fbs.length;
+  if (fbs.length !== input.fbsIds.length) {
+    findings.push('authoritative FBS IDs contain duplicates');
+  }
+  if (distinctFbsTeamIds !== EXPECTED_2025_FBS_COUNT) {
+    findings.push(
+      `fbsCount/distinctFbsTeamIds ${distinctFbsTeamIds} != ${EXPECTED_2025_FBS_COUNT}`
+    );
   }
   if (!input.conferenceLoadOk) {
     findings.push('conference load not ok');
   }
-  if (
-    input.comparisonSeason === COMPARISON_SEASON &&
-    !input.legacyConferenceMode
-  ) {
+  if (!input.legacyConferenceMode) {
     findings.push('legacyConferenceMode must be true for 2025');
+  }
+  if (input.conferenceSource !== 'Team.conference') {
+    findings.push(
+      `conferenceSource must be Team.conference (got ${input.conferenceSource})`
+    );
   }
   if (!input.featureLoaderStrict) {
     findings.push('featureLoaderStrict must be true');
   }
+
   const featureIds = input.allFeatures.map((f) => f.teamId);
   const unique = sortedUnique(featureIds);
+  const featureSeasonMismatchCount = input.allFeatures.filter(
+    (f) => f.season !== COMPARISON_SEASON
+  ).length;
+
+  if (input.allFeatures.length !== EXPECTED_2025_FBS_COUNT) {
+    findings.push(
+      `featureVectorCount ${input.allFeatures.length} != ${EXPECTED_2025_FBS_COUNT}`
+    );
+  }
+  if (unique.length !== EXPECTED_2025_FBS_COUNT) {
+    findings.push(
+      `featureVectorUniqueTeams ${unique.length} != ${EXPECTED_2025_FBS_COUNT}`
+    );
+  }
   if (featureIds.length !== unique.length) {
     findings.push('feature vector contains duplicate teamId');
   }
   if (!setsEqual(featureIds, fbs)) {
     findings.push('featureVectorExactFbsSet=false');
   }
-  if (input.replay.length !== fbs.length) {
+  if (featureSeasonMismatchCount !== 0) {
     findings.push(
-      `replayRatingCount ${input.replay.length} != fbsCount ${fbs.length}`
+      `featureSeasonMismatchCount ${featureSeasonMismatchCount} != 0`
+    );
+  }
+
+  if (input.persistedV1FbsCount !== EXPECTED_2025_FBS_COUNT) {
+    findings.push(
+      `persistedV1FbsCount ${input.persistedV1FbsCount} != ${EXPECTED_2025_FBS_COUNT}`
+    );
+  }
+  if (input.persistedV1DistinctFbsTeams !== EXPECTED_2025_FBS_COUNT) {
+    findings.push(
+      `persistedV1DistinctFbsTeams ${input.persistedV1DistinctFbsTeams} != ${EXPECTED_2025_FBS_COUNT}`
+    );
+  }
+  if (!input.persistedV1FbsSetExact) {
+    findings.push('persistedV1FbsSetExact=false');
+  }
+  if (input.persistedPowerFinite !== EXPECTED_2025_FBS_COUNT) {
+    findings.push(
+      `persistedPowerFinite ${input.persistedPowerFinite} != ${EXPECTED_2025_FBS_COUNT}`
+    );
+  }
+  if (!input.persistedPowerFiniteSetExact) {
+    findings.push('persistedPowerFiniteSetExact=false');
+  }
+  if (input.persistedFbsMissingCount !== 0) {
+    findings.push(
+      `persistedFbsMissingCount ${input.persistedFbsMissingCount} != 0`
+    );
+  }
+  if (input.persistedFbsNonFinitePowerCount !== 0) {
+    findings.push(
+      `persistedFbsNonFinitePowerCount ${input.persistedFbsNonFinitePowerCount} != 0`
+    );
+  }
+
+  if (input.replay.length !== EXPECTED_2025_FBS_COUNT) {
+    findings.push(
+      `replayRatingCount ${input.replay.length} != ${EXPECTED_2025_FBS_COUNT}`
     );
   }
   const nonFinite = input.replay.filter(
@@ -437,15 +520,25 @@ export function assessV1HistoricalParityGates(input: {
   if (nonFinite.length > 0) {
     findings.push(`nonFiniteReplayValues=${nonFinite.length}`);
   }
+
+  if (input.comparedCount !== EXPECTED_2025_FBS_COUNT) {
+    findings.push(
+      `comparedCount ${input.comparedCount} != ${EXPECTED_2025_FBS_COUNT}`
+    );
+  }
+  if (!input.comparedTeamSetExact) {
+    findings.push('comparedTeamSetExact=false');
+  }
+
   return { ok: findings.length === 0, findings };
 }
 
 export function buildV1HistoricalParityAudit(
   input: V1HistoricalParityInput
 ): V1HistoricalParityResult {
-  const findings: string[] = [];
   const fbsIds = sortedUnique(input.fbsIds);
   const fbsSet = new Set(fbsIds);
+  const distinctFbsTeamIds = fbsIds.length;
 
   const seasonV1Rows = input.persistedV1Rows.filter(
     (r) =>
@@ -457,10 +550,33 @@ export function buildV1HistoricalParityAudit(
     0,
     persistedV1TotalCount - persistedFbsRows.length
   );
+  const persistedFbsTeamIds = sortedUnique(
+    persistedFbsRows.map((r) => r.teamId)
+  );
+  const persistedV1DistinctFbsTeams = persistedFbsTeamIds.length;
+  const persistedV1FbsSetExact = setsEqual(persistedFbsTeamIds, fbsIds);
 
-  const persistedPowers = persistedFbsRows
-    .map((r) => r.powerRating)
-    .filter((v): v is number => v !== null && Number.isFinite(v));
+  const finitePersistedFbsRows = persistedFbsRows.filter(
+    (r) => r.powerRating !== null && Number.isFinite(r.powerRating)
+  );
+  const finitePersistedIds = sortedUnique(
+    finitePersistedFbsRows.map((r) => r.teamId)
+  );
+  const persistedPowerFinite = finitePersistedIds.length;
+  const persistedPowerFiniteSetExact = setsEqual(finitePersistedIds, fbsIds);
+
+  const persistedFbsMissing = fbsIds.filter(
+    (id) => !persistedFbsTeamIds.includes(id)
+  );
+  const persistedFbsMissingCount = persistedFbsMissing.length;
+  const persistedFbsMissingSample = persistedFbsMissing.slice(0, 20);
+  const persistedFbsNonFinitePowerCount = persistedFbsRows.filter(
+    (r) => r.powerRating === null || !Number.isFinite(r.powerRating as number)
+  ).length;
+
+  const persistedPowers = finitePersistedFbsRows.map(
+    (r) => r.powerRating as number
+  );
   const persistedConfs = persistedFbsRows
     .map((r) => r.confidence)
     .filter((v): v is number => v !== null && Number.isFinite(v));
@@ -478,6 +594,9 @@ export function buildV1HistoricalParityAudit(
   const featureVectorUniqueTeams = sortedUnique(featureIds).length;
   const featureDuplicateTeamCount = featureIds.length - featureVectorUniqueTeams;
   const featureVectorExactFbsSet = setsEqual(featureIds, fbsIds);
+  const featureSeasonMismatchCount = input.allFeatures.filter(
+    (f) => f.season !== COMPARISON_SEASON
+  ).length;
 
   const missingUnderlyingFeatureCount = input.allFeatures.filter(
     (f) => f.dataSource === 'missing'
@@ -497,9 +616,12 @@ export function buildV1HistoricalParityAudit(
   let replay: V1ComputedTeamRating[] = [];
   const canReplay =
     input.conferenceLoadOk &&
+    input.conferenceSource === 'Team.conference' &&
     featureVectorExactFbsSet &&
     featureDuplicateTeamCount === 0 &&
-    fbsIds.length > 0 &&
+    featureSeasonMismatchCount === 0 &&
+    fbsIds.length === EXPECTED_2025_FBS_COUNT &&
+    input.allFeatures.length === EXPECTED_2025_FBS_COUNT &&
     input.comparisonSeason === COMPARISON_SEASON &&
     input.featureLoaderStrict &&
     input.legacyConferenceMode;
@@ -513,20 +635,38 @@ export function buildV1HistoricalParityAudit(
     });
   }
 
+  const persistedById = new Map(
+    finitePersistedFbsRows.map((r) => [r.teamId, r])
+  );
+  const replayById = new Map(replay.map((r) => [r.teamId, r]));
+
+  const comparedTeamIds = sortedUnique(
+    [...persistedById.keys()].filter((id) => replayById.has(id))
+  );
+  const comparedCount = comparedTeamIds.length;
+  const comparedTeamSetExact = setsEqual(comparedTeamIds, fbsIds);
+
   const gate = assessV1HistoricalParityGates({
     comparisonSeason: input.comparisonSeason,
     fbsIds,
     allFeatures: input.allFeatures,
     conferenceLoadOk: input.conferenceLoadOk,
     legacyConferenceMode: input.legacyConferenceMode,
+    conferenceSource: input.conferenceSource,
     featureLoaderStrict: input.featureLoaderStrict,
     replay,
+    persistedV1FbsCount: persistedFbsRows.length,
+    persistedV1DistinctFbsTeams,
+    persistedV1FbsSetExact,
+    persistedPowerFinite,
+    persistedPowerFiniteSetExact,
+    persistedFbsMissingCount,
+    persistedFbsNonFinitePowerCount,
+    comparedCount,
+    comparedTeamSetExact,
   });
-  findings.push(...gate.findings);
-
-  if (persistedFbsRows.length === 0) {
-    findings.push('persisted V1 FBS population empty / not understood');
-  }
+  const findings = [...gate.findings];
+  const structuralOk = findings.length === 0;
 
   const replayPowers = replay
     .map((r) => r.powerRating)
@@ -546,27 +686,14 @@ export function buildV1HistoricalParityAudit(
       (replayDataSourceBreakdown[r.dataSource] ?? 0) + 1;
   }
 
-  const persistedById = new Map(
-    persistedFbsRows
-      .filter((r) => r.powerRating !== null && Number.isFinite(r.powerRating))
-      .map((r) => [r.teamId, r])
-  );
-  const replayById = new Map(replay.map((r) => [r.teamId, r]));
-
-  const comparedTeamIds = [...persistedById.keys()].filter((id) =>
-    replayById.has(id)
-  );
-  if (gate.ok && comparedTeamIds.length === 0) {
-    findings.push('no overlapping persisted/replay FBS teams to compare');
-  }
-
   const persistedPair: number[] = [];
-  const replayPair: number[] = [];
   const currentPair: number[] = [];
   const postCalPair: number[] = [];
   const noConfPair: number[] = [];
   const mismatchSamples: ParityMismatchSample[] = [];
 
+  // Diagnostic compare pairs may still be built when incomplete, but must not
+  // be presented as valid parity/counterfactual results.
   for (const id of comparedTeamIds) {
     const p = persistedById.get(id)!;
     const r = replayById.get(id)!;
@@ -574,7 +701,6 @@ export function buildV1HistoricalParityAudit(
     const replayed = r.powerRating;
     const delta = replayed - persisted;
     persistedPair.push(persisted);
-    replayPair.push(replayed);
     currentPair.push(
       counterfactualPower(
         'CURRENT',
@@ -616,15 +742,19 @@ export function buildV1HistoricalParityAudit(
     });
   }
 
-  for (let i = 0; i < comparedTeamIds.length; i++) {
-    const id = comparedTeamIds[i];
-    const r = replayById.get(id)!;
-    if (Math.abs(currentPair[i] - r.powerRating) > 1e-9) {
-      findings.push(
-        `CURRENT counterfactual diverged from computeV1SeasonRatings for ${id}`
-      );
+  if (structuralOk) {
+    for (let i = 0; i < comparedTeamIds.length; i++) {
+      const id = comparedTeamIds[i];
+      const r = replayById.get(id)!;
+      if (Math.abs(currentPair[i] - r.powerRating) > 1e-9) {
+        findings.push(
+          `CURRENT counterfactual diverged from computeV1SeasonRatings for ${id}`
+        );
+      }
     }
   }
+
+  const finalOk = findings.length === 0;
 
   const buckets = absBuckets(mismatchSamples.map((m) => m.delta));
   const absDeltas = mismatchSamples.map((m) => Math.abs(m.delta));
@@ -648,32 +778,34 @@ export function buildV1HistoricalParityAudit(
   ];
 
   let bestDiagnosticCounterfactual: CounterfactualKind = 'INCONCLUSIVE';
-  const ranked = [...counterfactuals]
-    .filter((c) => c.mae !== null)
-    .sort((a, b) => (a.mae as number) - (b.mae as number));
-  if (ranked.length >= 1) {
-    const best = ranked[0];
-    const second = ranked[1];
-    if (
-      !second ||
-      second.mae === null ||
-      Math.abs((best.mae as number) - (second.mae as number)) > 1e-12
-    ) {
-      bestDiagnosticCounterfactual = best.kind;
-    } else {
-      bestDiagnosticCounterfactual = 'INCONCLUSIVE';
+  if (finalOk) {
+    const ranked = [...counterfactuals]
+      .filter((c) => c.mae !== null)
+      .sort((a, b) => (a.mae as number) - (b.mae as number));
+    if (ranked.length >= 1) {
+      const best = ranked[0];
+      const second = ranked[1];
+      if (
+        !second ||
+        second.mae === null ||
+        Math.abs((best.mae as number) - (second.mae as number)) > 1e-12
+      ) {
+        bestDiagnosticCounterfactual = best.kind;
+      } else {
+        bestDiagnosticCounterfactual = 'INCONCLUSIVE';
+      }
     }
   }
 
-  const structuralOk = findings.length === 0;
   const historicalParity =
-    structuralOk &&
-    comparedTeamIds.length > 0 &&
-    buckets.exactMatchCount === comparedTeamIds.length;
+    finalOk &&
+    comparedCount === EXPECTED_2025_FBS_COUNT &&
+    comparedTeamSetExact &&
+    buckets.exactMatchCount === EXPECTED_2025_FBS_COUNT;
   const currentFormulaReproducesPersisted2025 = historicalParity;
 
   return {
-    ok: structuralOk,
+    ok: finalOk,
     findings,
     comparisonSeason: input.comparisonSeason,
     modelVersion: MODEL_VERSION,
@@ -681,10 +813,18 @@ export function buildV1HistoricalParityAudit(
     legacyConferenceMode: input.legacyConferenceMode,
     featureLoaderStrict: input.featureLoaderStrict,
     fbsCount: fbsIds.length,
+    distinctFbsTeamIds,
+    expected2025FbsCount: EXPECTED_2025_FBS_COUNT,
     persistedV1TotalCount,
     persistedV1NonFbsCount,
     persistedV1FbsCount: persistedFbsRows.length,
-    persistedPowerFinite: persistedPowers.length,
+    persistedV1DistinctFbsTeams,
+    persistedV1FbsSetExact,
+    persistedPowerFinite,
+    persistedPowerFiniteSetExact,
+    persistedFbsMissingCount,
+    persistedFbsMissingSample,
+    persistedFbsNonFinitePowerCount,
     persistedPower: numericSummary(persistedPowers),
     persistedConfidence: numericSummary(persistedConfs),
     persistedDataSourceBreakdown,
@@ -702,6 +842,7 @@ export function buildV1HistoricalParityAudit(
     featureVectorUniqueTeams,
     featureVectorExactFbsSet,
     featureDuplicateTeamCount,
+    featureSeasonMismatchCount,
     exactMatchCount: buckets.exactMatchCount,
     within0_01: buckets.within0_01,
     within0_1: buckets.within0_1,
@@ -710,14 +851,15 @@ export function buildV1HistoricalParityAudit(
     within3: buckets.within3,
     within5: buckets.within5,
     over5: buckets.over5,
-    comparedCount: comparedTeamIds.length,
+    comparedCount,
+    comparedTeamSetExact,
     maxAbsDelta: absSummary.max,
     meanAbsDelta: absSummary.avg,
     medianAbsDelta: absSummary.median,
     rmse,
-    top20AbsMismatches: structuralOk ? top20AbsMismatches : [],
-    counterfactuals: structuralOk ? counterfactuals : [],
-    bestDiagnosticCounterfactual: structuralOk
+    top20AbsMismatches: finalOk ? top20AbsMismatches : [],
+    counterfactuals: finalOk ? counterfactuals : [],
+    bestDiagnosticCounterfactual: finalOk
       ? bestDiagnosticCounterfactual
       : 'INCONCLUSIVE',
     missingSourceLabelWouldBeSeasonOnly,
@@ -808,11 +950,23 @@ export function formatV1HistoricalParityReport(
   push(`legacyConferenceMode=${result.legacyConferenceMode}`);
   push(`featureLoaderStrict=${result.featureLoaderStrict}`);
   push('--- A. Persisted 2025 V1 FBS population ---');
+  push(`expected2025FbsCount=${result.expected2025FbsCount}`);
   push(`fbsCount=${result.fbsCount}`);
+  push(`distinctFbsTeamIds=${result.distinctFbsTeamIds}`);
   push(`persistedV1TotalCount=${result.persistedV1TotalCount}`);
   push(`persistedV1NonFbsCount=${result.persistedV1NonFbsCount}`);
   push(`persistedV1FbsCount=${result.persistedV1FbsCount}`);
+  push(`persistedV1DistinctFbsTeams=${result.persistedV1DistinctFbsTeams}`);
+  push(`persistedV1FbsSetExact=${result.persistedV1FbsSetExact}`);
   push(`persistedPowerFinite=${result.persistedPowerFinite}`);
+  push(`persistedPowerFiniteSetExact=${result.persistedPowerFiniteSetExact}`);
+  push(`persistedFbsMissingCount=${result.persistedFbsMissingCount}`);
+  push(
+    `persistedFbsMissingSample=${JSON.stringify(result.persistedFbsMissingSample)}`
+  );
+  push(
+    `persistedFbsNonFinitePowerCount=${result.persistedFbsNonFinitePowerCount}`
+  );
   push(
     `persistedPower min/avg/median/max/stddev=${fmtSum(result.persistedPower)}`
   );
@@ -830,6 +984,7 @@ export function formatV1HistoricalParityReport(
   push(`featureVectorUniqueTeams=${result.featureVectorUniqueTeams}`);
   push(`featureVectorExactFbsSet=${result.featureVectorExactFbsSet}`);
   push(`featureDuplicateTeamCount=${result.featureDuplicateTeamCount}`);
+  push(`featureSeasonMismatchCount=${result.featureSeasonMismatchCount}`);
   push(`replayRatingCount=${result.replayRatingCount}`);
   push(`replayFinite=${result.replayFinite}`);
   push(`replayPower min/avg/median/max/stddev=${fmtSum(result.replayPower)}`);
@@ -849,6 +1004,7 @@ export function formatV1HistoricalParityReport(
   push(`talentOnlyFallbackTeams=${result.talentOnlyFallbackTeams}`);
   push('--- C. Team-by-team parity ---');
   push(`comparedCount=${result.comparedCount}`);
+  push(`comparedTeamSetExact=${result.comparedTeamSetExact}`);
   push(`exactMatchCount=${result.exactMatchCount}`);
   push(`within0.01=${result.within0_01}`);
   push(`within0.1=${result.within0_1}`);
