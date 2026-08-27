@@ -1,7 +1,7 @@
 # Season Status — Gridiron Edge
 
 **Status:** Offseason / paused for regular-season automation  
-**Updated:** 2026-08-27 (Phase 2C-2H-6 — Balanced V1 preseason bridge evaluation; draft PR)
+**Updated:** 2026-08-27 (Phase 2C-2H-7 — Balanced V1 transition timing evaluation; draft PR)
 
 Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISABLE_REPORT.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -44,7 +44,8 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **Phase 2C-2H-3 Core V1 ratings preview** | **PASSED** (PR #54) — production read-only preview; 138 finite in-memory ratings; **zero writes**; ratings persistence still NOT AUTHORIZED |
 | **Phase 2C-2H-4 V1 historical parity forensic** | **PASSED structurally (PR #55)** — legacy `compute_ratings_v1` did **not** reproduce persisted 2025 (`exact=0/136`, MAE≈32.21) |
 | **Phase 2C-2H-5 Balanced V1 historical parity** | **PASSED — EXACT** (PR #56) — cutoff Balanced replay matched persisted 2025 V1 136/136 (machine MAE≈2.3e-15) |
-| **Phase 2C-2H-6 Balanced V1 preseason bridge eval** | **In preparation (draft)** — read-only Candidates A/B diagnostic; no policy authorized |
+| **Phase 2C-2H-6 Balanced V1 preseason bridge eval** | **PASSED** (PR #57) — Candidate A provisional preferred; Candidate B rejected (scale too wide); persistence unauthorized |
+| **Phase 2C-2H-7 Balanced V1 transition timing** | **In preparation (draft)** — read-only 2025 weekly coverage/transition study; no policy authorized |
 | **Expected 2026 schedule baseline** | **761** games / **138** distinct teams — **verified** |
 | **Ratings computation / persistence** | **Not yet approved** (`ratingsWriteAuthorized=false`) |
 | **Odds ingestion** | **Not yet approved** |
@@ -418,23 +419,34 @@ Provider-availability blocker removed. Persistence and ratings remain unauthoriz
 - **Production Core V1 = Balanced V1** (25/25/25/25 × 14.0)
 - `compute_ratings_v1.ts` = **LEGACY / historical alternate** — do **not** use for 2026
 
-### 2C-2H-6 Balanced V1 preseason bridge evaluation (in preparation / draft)
+### 2C-2H-6 Balanced V1 preseason bridge evaluation — PASSED (PR #57)
+
+- Structural: ok; FBS=138; talent=138 finite; duplicates=0; `purePreseasonState=true`; games/EPA/net/win/existing V1 all 0
+- **Candidate A** `WEIGHT_PRESERVED_NEUTRAL` (`talentZ * 3.5`): 2025 MAE=7.8831 RMSE=9.7008 Pearson=0.6021 Spearman=0.5784; 2026 range=20.8895; pair p95=10.1282; pair max=20.8895
+- **Candidate B** `TALENT_RENORMALIZED` (`talentZ * 14`): 2025 MAE=9.0511 RMSE=11.5652; 2026 range=83.5581; pair p95=40.5127; pair max=83.5581
+- **Candidate B rejected** from serious production consideration (matchup scale excessively wide)
+- **Candidate A = provisional preferred preseason bridge**
+- Persistence remains **NOT AUTHORIZED** pending transition evaluation
+- Canonical production Core V1 remains Balanced V1 (25/25/25/25 × 14)
+
+### 2C-2H-7 Balanced V1 transition timing evaluation (in preparation / draft)
 
 | Artifact | Role |
 |----------|------|
-| `apps/jobs/src/preseason/balanced-v1-preseason-bridge-eval.ts` | Pure Candidates A/B diagnostic |
-| `apps/jobs/evaluate-balanced-v1-preseason-bridge.ts` | SELECT-only CLI (`season=2026`) |
-| `.github/workflows/evaluate-balanced-v1-preseason-bridge.yml` | Manual read-only workflow (`DIRECT_URL` only) |
+| `apps/jobs/src/preseason/balanced-v1-transition-timing-eval.ts` | Pure 2025 cumulative weekly snapshots + transition deltas |
+| `apps/jobs/evaluate-balanced-v1-transition-timing.ts` | SELECT-only CLI (`study_season=2025`) |
+| `.github/workflows/evaluate-balanced-v1-transition-timing.yml` | Manual read-only workflow (`DIRECT_URL` only) |
 
-- Candidate A `WEIGHT_PRESERVED_NEUTRAL`: `talentZ * 3.5` (weights not renormalized; missing Z=0)
-- Candidate B `TALENT_RENORMALIZED`: `talentZ * 14` (diagnostic counterfactual only — not authorized)
-- 2025 benchmark vs Nov 24 persisted canonical Balanced targets (diagnostic; no coefficient fit)
-- 2026 in-memory preview for both candidates; matchup-diff percentiles; transition discontinuity documented only
-- `preseasonBridgeAuthorized=false`; `transitionPolicyDefined=false`; **2026 ratings persistence NOT AUTHORIZED**
-- Do **not** run production evaluation workflow until draft PR independently reviewed
-- Canonical `computeBalancedV1Ratings` / weights / factor 14 **unchanged**
+- Cumulative cutoffs: preseason + Weeks 1–8; FBS-vs-FBS finals + EPA through cutoff only
+- Candidate A vs canonical Balanced transition deltas; coverage milestones; P1/P2/P3 diagnostic notes only
+- `hardSwitchWeekCandidate=INCONCLUSIVE` always; `switchThresholdDefined=false` (no coverage/MAE threshold authorized)
+- Fail-closed: 2026 `finalFbsVsFbsGames===0` + `existingV1FbsRows===0` → `purePreseason2026`; exact 138 FBS/talent + NDSU/Sac
+- Fail-closed: `weekDateChronologySafe` (maxDate(week N) < minDate(later weeks)) for evaluated 2025 weeks
+- `transitionPolicyAuthorized=false`; `preseasonBridgeAuthorized=false`; **2026 ratings persistence NOT AUTHORIZED**
+- Do **not** run production evaluation until draft PR independently reviewed
+- Canonical Balanced formula / Candidate A scale **unchanged**
 
-**Still out of scope / unapproved:** ratings persistence; bridge policy selection; smoothing/decay; recruiting; Odds; formula changes.
+**Still out of scope / unapproved:** ratings persistence; bridge/transition authorization; smoothing/decay; Candidate B; Odds; formula changes.
 
 ---
 
@@ -454,7 +466,8 @@ Provider-availability blocker removed. Persistence and ratings remain unauthoriz
 | **2026 Core V1 ratings preview** | **PASSED (2C-2H-3 / PR #54)** | Production read-only; 138 finite; zero writes; persist NOT AUTHORIZED |
 | **2025 V1 historical parity forensic** | **PASSED structurally (2C-2H-4 / PR #55)** | Legacy Core V1 did not reproduce; MAE≈32.21 |
 | **2025 Balanced V1 parity forensic** | **PASSED EXACT (2C-2H-5 / PR #56)** | Cutoff replay 136/136; Core V1 = Balanced V1 |
-| **2026 Balanced V1 preseason bridge eval** | **In prep (2C-2H-6)** | Candidates A/B diagnostic; no policy authorized |
+| **2026 Balanced V1 preseason bridge eval** | **PASSED (2C-2H-6 / PR #57)** | Candidate A provisional; B rejected; persist unauthorized |
+| **2025 Balanced V1 transition timing** | **In prep (2C-2H-7)** | Weekly coverage + Candidate A→canonical deltas |
 | **2026 FBS membership** | **PASSED** | Phase 2C-2B — **138/138** |
 | **Season conference persistence** | **PASSED (2C-2G-3)** | 138/138 populated; 0 NULL; do not rerun initializer |
 | **Prisma migrate auto-deploy** | **PASSED (2C-2G-1)** | Manual `MIGRATE_PRODUCTION` only |
@@ -492,9 +505,9 @@ Provider-availability blocker removed. Persistence and ratings remain unauthoriz
 
 ## Next phases
 
-1. **Phase 2C-2H-6** — review/merge preseason bridge evaluation; do **not** authorize a bridge policy from this diagnostic alone
-2. Do **not** persist 2026 ratings (`ratings-v1.yml`) — still NOT AUTHORIZED
-3. Do **not** run Balanced writer or legacy `compute_ratings_v1` for 2026
+1. **Phase 2C-2H-7** — review/merge transition timing evaluation; do **not** authorize a hard/per-team switch from this diagnostic alone
+2. Do **not** persist 2026 ratings — still NOT AUTHORIZED
+3. Candidate A remains provisional only; do **not** run Balanced writer or legacy `compute_ratings_v1` for 2026
 4. **Phase 2D** — `TARGET_SEASON` in scheduled YAML before bulk UI enables
 
 See [Preseason Reactivation Checklist](docs/preseason-reactivation-checklist.md).
