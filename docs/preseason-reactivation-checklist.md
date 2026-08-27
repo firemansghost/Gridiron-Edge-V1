@@ -88,8 +88,9 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | **2C-2G-4 Core V1 conferences** | **PASSED** (PR #51) — production audit 138/138; legacyFallback=false |
 | **2C-2H-1 readiness diagnostics** | **PASSED** (PR #52) — Aug 27 talent probe structurally complete |
 | **2C-2H-2 guarded talent init** | **PASSED** (PR #53) — production COMMIT 138/138; ratings still unauthorized |
-| **2C-2H-3 Core V1 ratings preview** | **In preparation (draft)** — read-only in-memory numerical preview; no persistence |
-| **Ratings computation / persistence** | **Not yet approved** |
+| **2C-2H-3 Core V1 ratings preview** | **PASSED** (PR #54) — production read-only; 138 finite; zero writes; persist NOT AUTHORIZED |
+| **2C-2H-4 V1 historical parity forensic** | **In preparation (draft)** — 2025 replay vs persisted; diagnostic only |
+| **Ratings computation / persistence** | **Not yet approved** — **2026 ratings persistence remains NOT AUTHORIZED** |
 | **Odds ingestion** | **Not yet approved** |
 | **Nightly reactivation** | **Not yet approved** |
 
@@ -127,6 +128,8 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | `Initialize 2026 Team Talent (Guarded)` | Manual PREVIEW/COMMIT; confirm `WRITE_2026_TALENT` |
 | `apps/jobs/preview-2026-core-v1-ratings.ts` | Read-only in-memory Core V1 ratings preview (no persist) |
 | `Preview 2026 Core V1 Ratings (Manual, Read Only)` | `workflow_dispatch` only; season `2026`; `DIRECT_URL` only |
+| `apps/jobs/audit-v1-historical-parity.ts` | Read-only 2025 Core V1 replay vs persisted parity forensic |
+| `Audit Core V1 Historical Parity (Manual, Read Only)` | `workflow_dispatch` only; `comparison_season=2025`; `DIRECT_URL` only |
 | `Preview 2026 Ratings Inputs (Manual, Read Only)` | Provider preview workflow (`season=2026`) |
 | `apps/jobs/diagnose-2026-conference-recruiting.ts` | Read-only `/teams/fbs` + recruiting resolver diagnostic (`providerFbsSetExact` / `recruitingResolverSafe`) |
 | `Diagnose 2026 Conference & Recruiting Mapping (Manual, Read Only)` | Diagnostic workflow (`season=2026`) |
@@ -151,16 +154,18 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 * 2C-2H-1: **PASSED** (PR #52) — season-aware diagnostics; Aug 27 probe: `/talent` 138/138 structurally complete; persistence still unauthorized
 * 2C-2H-2: **PASSED** (PR #53) — production COMMIT 138 rows; `transactionVerificationExact=true`; `postCommitExactTeamSet=true`; `talentCompositeMatchesCandidate=138/138`; no ratings/Odds
 * Latest readiness audit: `structuralOk=true`; preseason; talent 138/138; commits 0/138; stats empty expected; unit grades 0/138; no output collisions; ratings still unauthorized
-* 2C-2H-3: **IN PREPARATION / draft PR** — read-only Core V1 numerical preview only (no persistence)
+* 2C-2H-3: **PASSED** (PR #54) — production read-only preview: 138 finite in-memory ratings; talent-only 138; powerRating ≈ -44.15…59.60; `zeroConfidenceCount=138`; **zero writes/providers/Odds**
+* **2026 ratings persistence remains NOT AUTHORIZED**
+* 2C-2H-4: **IN PREPARATION / draft PR** — SELECT-only 2025 historical parity forensic; diagnostic counterfactuals only; `modelChangeAuthorized=false`
 * Recruiting schema mismatch remains separate
-* **Do not persist ratings until separately authorized after preview review**
-* **Do not run the production Core V1 preview workflow until the draft PR is independently reviewed**
+* **Do not persist ratings until separately authorized**
+* **Do not run the production historical parity workflow until the draft PR is independently reviewed**
 
-##### After 2C-2H-3 merges — operator procedure
-1. Independently review draft PR and formula-parity confirmation
-2. Only then run **Preview 2026 Core V1 Ratings (Manual, Read Only)**
-3. Inspect distribution / top-bottom / conference summary — do not “fix” surprising values
-4. Ratings persistence (`ratings-v1.yml`) remains unauthorized until a separate authorization
+##### After 2C-2H-4 merges — operator procedure
+1. Independently review draft PR (parity metrics + git-history evidence)
+2. Only then run **Audit Core V1 Historical Parity (Manual, Read Only)**
+3. Treat counterfactuals as diagnosis only — do not authorize formula changes from this phase alone
+4. Ratings persistence (`ratings-v1.yml`) remains unauthorized
 
 - [x] Preview week 0–2 reviewed
 - [x] Week 1–13 + 15 production writes
@@ -179,7 +184,8 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 - [x] 2C-2G-4 Core V1 season-aware conference source PASSED
 - [x] 2C-2H-1 ratings readiness diagnostic alignment + talent probe PASSED
 - [x] 2C-2H-2 guarded 2026 team talent initializer PASSED (production COMMIT)
-- [ ] 2C-2H-3 read-only Core V1 ratings preview (draft)
+- [x] 2C-2H-3 read-only Core V1 ratings preview PASSED (production; zero writes)
+- [ ] 2C-2H-4 Core V1 historical parity forensic (draft)
 - [ ] Odds / ratings persist / bets remain **out of scope** until separately approved
 
 ---
