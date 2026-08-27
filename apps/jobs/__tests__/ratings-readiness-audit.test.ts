@@ -554,6 +554,16 @@ describe('auditRatingsReadiness', () => {
     )!;
     expect(roster.message).toMatch(/Node 20/);
     expect(roster.message).toMatch(/checkout@v4/);
+    expect(roster.message).toMatch(/schedule removed|workflow_dispatch ONLY/);
+    const cfbdTalent = DEFAULT_WORKFLOW_RISK_FINDINGS.find(
+      (f) => f.code === 'talent_cfbd_yml'
+    )!;
+    expect(cfbdTalent.message).toMatch(/schedule removed|workflow_dispatch ONLY/);
+    expect(cfbdTalent.message).not.toMatch(/yearly schedule present/);
+    const commits = DEFAULT_WORKFLOW_RISK_FINDINGS.find(
+      (f) => f.code === 'talent_commits_sync_yml'
+    )!;
+    expect(commits.message).toMatch(/yearly schedule present/);
     const statsCfbd = DEFAULT_WORKFLOW_RISK_FINDINGS.find(
       (f) => f.code === 'stats_cfbd_yml'
     )!;

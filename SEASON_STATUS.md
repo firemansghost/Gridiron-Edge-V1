@@ -1,7 +1,7 @@
 # Season Status — Gridiron Edge
 
 **Status:** Offseason / paused for regular-season automation  
-**Updated:** 2026-08-27 (Phase 2C-2H-2 — guarded 2026 TeamSeasonTalent initializer; draft PR)
+**Updated:** 2026-08-27 (Phase 2C-2H-3 — read-only 2026 Core V1 ratings preview; draft PR)
 
 Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISABLE_REPORT.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -12,7 +12,7 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | Item | Status |
 |------|--------|
 | **Calendar context** | **2026-08-04** — Week Zero begins **2026-08-27**; public 2026 schedules exist |
-| **Production Supabase** | **761** schedule + **138** 2026 FBS membership verified; talent/commits still **0/138** |
+| **Production Supabase** | **761** schedule + **138** 2026 FBS membership; talent **138/138** (`talentComposite`); commits still **0/138**; ratings **0** |
 | **2025 regular season** | Complete |
 | **Production app** | Deployed; Season Update banner (Dec 22, 2025) is stale — update before public preseason |
 | **Dual-model** | **Merged to `main`** (PR #34); Phase H verification passed |
@@ -40,7 +40,8 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **Phase 2C-2G-3 season conference initializer** | **PASSED** — production COMMIT: 138/138 populated, 0 NULL, verificationExact=true |
 | **Phase 2C-2G-4 Core V1 season-aware conferences** | **PASSED** (PR #51) — production audit 138/138; legacyFallback=false |
 | **Phase 2C-2H-1 ratings readiness / talent probe** | **PASSED** (PR #52) — season-aware diagnostics; Aug 27 probe: talent structurally complete |
-| **Phase 2C-2H-2 guarded 2026 talent initializer** | **In preparation (draft)** — one-time talentComposite write; ratings still unauthorized |
+| **Phase 2C-2H-2 guarded 2026 talent initializer** | **PASSED** (PR #53) — production COMMIT 138/138; `blueChipsPct` NULL by design; ratings still unauthorized |
+| **Phase 2C-2H-3 Core V1 ratings preview** | **In preparation (draft)** — read-only in-memory Core V1 numerical preview; no persistence |
 | **Expected 2026 schedule baseline** | **761** games / **138** distinct teams — **verified** |
 | **Ratings computation / persistence** | **Not yet approved** (`ratingsWriteAuthorized=false`) |
 | **Odds ingestion** | **Not yet approved** |
@@ -359,7 +360,7 @@ ratingsComputeAuthorized=false
 
 Provider-availability blocker removed. Persistence and ratings remain unauthorized until separately reviewed.
 
-### 2C-2H-2 Guarded one-time 2026 TeamSeasonTalent initializer (in preparation / draft)
+### 2C-2H-2 Guarded one-time 2026 TeamSeasonTalent initializer — PASSED
 
 | Artifact | Role |
 |----------|------|
@@ -369,13 +370,27 @@ Provider-availability blocker removed. Persistence and ratings remain unauthoriz
 | Legacy `talent-cfbd.yml` / `talent-roster-sync.yml` | Schedules removed; manual ≤2025 only |
 | `cfbd_team_roster_talent.ts` | Refuses season ≥ 2026 |
 
-- Reuses 2C-2H-1 `school/year/talent` normalization; does **not** use the legacy roster writer
-- Writes `talentComposite` only; `blueChipsPct`/`sourceUpdatedAt` = NULL
-- Legacy star-count zeros = **unsourced schema defaults**, not CFBD observations
-- No schema migration; no ratings; no recruiting commits; no Odds
-- Target must be empty (`targetExistingRows=0`); no overwrite/update/partial fill
+**Production COMMIT (Aug 27 2026):**
+- `COMMIT` 138 rows; `transactionVerificationExact=true`; `postCommitExactTeamSet=true`
+- `talentCompositeMatchesCandidate=138/138`
+- `blueChipsPct` NULL 138/138 by design; no ratings; no Odds
 
-**Still out of scope / unapproved until review:** production PREVIEW/COMMIT of this initializer from development; ratings compute/persist; recruiting persistence; Odds; Prisma Migrate history repair.
+### 2C-2H-3 Read-only 2026 Core V1 ratings preview (in preparation / draft)
+
+| Artifact | Role |
+|----------|------|
+| `apps/jobs/src/preseason/core-v1-ratings-preview.ts` | Gates + report; reuses `computeV1SeasonRatings` |
+| `apps/jobs/preview-2026-core-v1-ratings.ts` | SELECT-only CLI |
+| `.github/workflows/preview-2026-core-v1-ratings.yml` | Manual read-only workflow (`DIRECT_URL` only) |
+
+- In-memory Core V1 preseason ratings for authoritative 138 FBS teams
+- No `TeamSeasonRating` / `PowerRating` writes; no providers; no Odds
+- Formula/weights/conference adjustments/calibration unchanged
+- Do **not** run the production preview workflow until draft PR is independently reviewed
+
+**Latest readiness audit context (post 2C-2H-2):** `structuralOk=true`; preseason; talent 138/138; commits 0/138; stats empty expected; unit grades 0/138; no output collisions; ratings still unauthorized.
+
+**Still out of scope / unapproved:** ratings persistence (`ratings-v1.yml`); recruiting persistence; Odds; Prisma Migrate history repair.
 
 ---
 
@@ -387,11 +402,12 @@ Provider-availability blocker removed. Persistence and ratings remain unauthoriz
 | **Week Zero mapping** | **Resolved** | No CFBD week 0; first bucket = provider week **1** |
 | **Production write** | **Complete** | Weeks 1–13 + 15; **761** rows verified by 2C-1C |
 | **Inventory audit** | **PASSED** | Production workflow SUCCESS after PR #39 |
-| **Ratings readiness** | **Structural OK** | Membership + season conferences ready; talent/commits still block write auth |
-| **Talent / recruiting preview** | **Executed** | `/talent` empty (0/138); recruiting schema unsafe for commits writer |
+| **Ratings readiness** | **Structural OK** | Membership + season conferences + talent ready; commits/stats still empty; write auth false |
+| **Talent / recruiting preview** | **Executed** | Aug 27 probe `/talent` 138/138; recruiting schema still unsafe for commits writer |
 | **Team.conference / V1 adj** | **PASSED (2C-2G-4)** | 2026+ membership; static Team.conference untouched |
 | **Ratings readiness diagnostics** | **PASSED (2C-2H-1 / PR #52)** | Membership conferences; talent probe live-complete Aug 27 |
-| **2026 talent persistence** | **In prep (2C-2H-2)** | Guarded initializer; legacy writer blocked for 2026 |
+| **2026 talent persistence** | **PASSED (2C-2H-2 / PR #53)** | Production COMMIT 138/138; legacy writer blocked for 2026 |
+| **2026 Core V1 ratings preview** | **In prep (2C-2H-3)** | Read-only in-memory numerical preview; no persistence |
 | **2026 FBS membership** | **PASSED** | Phase 2C-2B — **138/138** |
 | **Season conference persistence** | **PASSED (2C-2G-3)** | 138/138 populated; 0 NULL; do not rerun initializer |
 | **Prisma migrate auto-deploy** | **PASSED (2C-2G-1)** | Manual `MIGRATE_PRODUCTION` only |
@@ -399,7 +415,7 @@ Provider-availability blocker removed. Persistence and ratings remain unauthoriz
 | **Prisma migrate history divergence** | **PASSED (2C-2G-2B / PR #49)** | Fail closed; DB-only names unresolved (no auto-repair) |
 | **CFBD resolver hardening** | **PASSED (2C-2E)** | 138/138 FBS + recruitingResolverSafe |
 | **Season 2025 hardcoding** | Open | Scheduled paths still 2025 — Phase 2D before UI re-enable |
-| **Empty 2026 DB** | **Partial** | Schedule + membership verified; talent/ratings still empty |
+| **Empty 2026 DB** | **Partial** | Schedule + membership + talent verified; ratings/commits/stats still empty |
 | **Provider secrets** | **Validated** | GitHub secrets worked 2026-08-04 |
 | **Weekly bet sync** | Manual workflow ready | `sync-weekly-bets.yml` — dispatch only |
 | **V3 totals** | **Blocked** | Missing `sync-v3-bets.ts` — leave disabled |
@@ -429,8 +445,8 @@ Provider-availability blocker removed. Persistence and ratings remain unauthoriz
 
 ## Next phases
 
-1. **Phase 2C-2H-2** — review/merge guarded talent initializer; operator PREVIEW then (only if approved) COMMIT
-2. Do **not** compute ratings until separately authorized after talent persistence review
+1. **Phase 2C-2H-3** — review/merge read-only Core V1 ratings preview; do **not** run production preview until independently reviewed
+2. Do **not** persist ratings (`ratings-v1.yml`) until separately authorized after preview review
 3. **Phase 2D** — `TARGET_SEASON` in scheduled YAML before bulk UI enables
 
 See [Preseason Reactivation Checklist](docs/preseason-reactivation-checklist.md).
