@@ -112,8 +112,24 @@ export interface CoreV1LifecycleResult {
   duplicateTalentTeamIds: number;
   highlightTeamsPresent: boolean;
   latestFinalFbsWeekPresent: number | null;
+  /** FBS-vs-FBS finals through cutoff (wins / net / persisted games semantics). */
   finalFbsGamesThroughCompletedWeek: number;
+  /** Diagnostic alias of finalFbsGamesThroughCompletedWeek. */
+  fbsVsFbsFinalsThroughCutoff: number;
+  /**
+   * Final games through cutoff with ≥1 authoritative FBS participant.
+   * Defines EPA-eligible game IDs (includes FBS-vs-FCS).
+   */
+  finalGamesWithFbsParticipantThroughCutoff: number;
+  /** Game IDs eligible for EPA (= finalGamesWithFbsParticipantThroughCutoff). */
+  epaEligibleGameCount: number;
+  /** Diagnostic: future final FBS-vs-FBS beyond cutoff. */
   futureFinalFbsGamesBeyondCompletedWeek: number;
+  /**
+   * Fail-closed gate: future finals with ≥1 FBS participant beyond cutoff
+   * (includes FBS-vs-FCS EPA-relevant games).
+   */
+  futureFinalGamesWithFbsParticipantBeyondCutoff: number;
   canonicalCount: number;
   canonicalExactFbsSet: boolean;
   canonicalFinite: number;
@@ -157,6 +173,17 @@ function setsEqual(a: string[], b: string[]): boolean {
 function isFbsVsFbs(g: TransitionGameRow, fbsSet: Set<string>): boolean {
   return (
     fbsSet.has(g.homeTeamId.toLowerCase()) &&
+    fbsSet.has(g.awayTeamId.toLowerCase())
+  );
+}
+
+/** At least one participant is an authoritative FBS team (EPA-eligible game set). */
+function hasFbsParticipant(
+  g: TransitionGameRow,
+  fbsSet: Set<string>
+): boolean {
+  return (
+    fbsSet.has(g.homeTeamId.toLowerCase()) ||
     fbsSet.has(g.awayTeamId.toLowerCase())
   );
 }
@@ -295,13 +322,17 @@ export function buildCoreV1LifecycleEvaluation(
     findings.push('talent set not exact FBS');
   }
 
-  const finals = input.games.filter(
+  const finalFbsVsFbs = input.games.filter(
     (g) => String(g.status).toLowerCase() === 'final' && isFbsVsFbs(g, fbsSet)
+  );
+  const finalWithFbsParticipant = input.games.filter(
+    (g) =>
+      String(g.status).toLowerCase() === 'final' && hasFbsParticipant(g, fbsSet)
   );
   let latestFinalFbsWeekPresent: number | null = null;
   let finalFbsGamesThroughCompletedWeek = 0;
   let futureFinalFbsGamesBeyondCompletedWeek = 0;
-  for (const g of finals) {
+  for (const g of finalFbsVsFbs) {
     if (
       latestFinalFbsWeekPresent === null ||
       g.week > latestFinalFbsWeekPresent
@@ -312,9 +343,26 @@ export function buildCoreV1LifecycleEvaluation(
     else futureFinalFbsGamesBeyondCompletedWeek++;
   }
 
-  if (completedThroughWeek === 0 && finals.length !== 0) {
+  let finalGamesWithFbsParticipantThroughCutoff = 0;
+  let futureFinalGamesWithFbsParticipantBeyondCutoff = 0;
+  for (const g of finalWithFbsParticipant) {
+    if (g.week <= completedThroughWeek) {
+      finalGamesWithFbsParticipantThroughCutoff++;
+    } else {
+      futureFinalGamesWithFbsParticipantBeyondCutoff++;
+    }
+  }
+
+  if (completedThroughWeek === 0 && finalWithFbsParticipant.length !== 0) {
     findings.push(
-      `completedThroughWeek=0 requires zero FBS-vs-FBS finals (found ${finals.length})`
+      `completedThroughWeek=0 requires zero final games with FBS participant (found ${finalWithFbsParticipant.length})`
+    );
+  }
+  // Fail-closed: completedThroughWeek must include all finalized FBS-relevant football
+  // (FBS-vs-FBS wins/net AND FBS-vs-FCS EPA). Broader than FBS-vs-FBS alone.
+  if (futureFinalGamesWithFbsParticipantBeyondCutoff !== 0) {
+    findings.push(
+      `futureFinalGamesWithFbsParticipantBeyondCutoff=${futureFinalGamesWithFbsParticipantBeyondCutoff} (must be 0; completedThroughWeek=${completedThroughWeek})`
     );
   }
   if (futureFinalFbsGamesBeyondCompletedWeek !== 0) {
@@ -323,20 +371,36 @@ export function buildCoreV1LifecycleEvaluation(
     );
   }
 
-  const gamesThrough = filterGamesThroughCutoff(
+  // Broader set: finals through cutoff with ≥1 FBS participant (EPA-eligible IDs).
+  // aggregateBalancedGameStats still counts only games where BOTH sides are FBS.
+  const finalsWithFbsParticipantThroughCutoff = filterGamesThroughCutoff(
     input.games,
     completedThroughWeek
-  ).filter((g) => isFbsVsFbs(g, fbsSet));
-  if (gamesThrough.some((g) => g.week > completedThroughWeek)) {
+  ).filter((g) => hasFbsParticipant(g, fbsSet));
+  if (
+    finalsWithFbsParticipantThroughCutoff.some(
+      (g) => g.week > completedThroughWeek
+    )
+  ) {
     findings.push('included games violate week <= completedThroughWeek');
   }
+  // Recount through-cutoff from the filtered set (authoritative for diagnostics).
+  finalGamesWithFbsParticipantThroughCutoff =
+    finalsWithFbsParticipantThroughCutoff.length;
+  const fbsVsFbsFinalsThroughCutoff = finalsWithFbsParticipantThroughCutoff.filter(
+    (g) => isFbsVsFbs(g, fbsSet)
+  ).length;
+  finalFbsGamesThroughCompletedWeek = fbsVsFbsFinalsThroughCutoff;
+  const epaEligibleGameCount = finalGamesWithFbsParticipantThroughCutoff;
 
   const epaThrough = filterEpaThroughCutoff(
     input.epaRows,
-    gamesThrough,
+    finalsWithFbsParticipantThroughCutoff,
     completedThroughWeek
+  ).filter((e) => fbsSet.has(e.teamId.toLowerCase()));
+  const includedGameIds = new Set(
+    finalsWithFbsParticipantThroughCutoff.map((g) => g.gameId)
   );
-  const includedGameIds = new Set(gamesThrough.map((g) => g.gameId));
   if (epaThrough.some((e) => !includedGameIds.has(e.gameId))) {
     findings.push(
       'included EPA references games outside completedThroughWeek cutoff'
@@ -353,7 +417,10 @@ export function buildCoreV1LifecycleEvaluation(
     candidateARows.map((r) => [r.teamId.toLowerCase(), r.candidateA] as const)
   );
 
-  const aggregates = aggregateBalancedGameStats(gamesThrough, fbsSet);
+  const aggregates = aggregateBalancedGameStats(
+    finalsWithFbsParticipantThroughCutoff,
+    fbsSet
+  );
   let canonicalById = new Map<string, { powerRating: number; games: number }>();
   let canonicalCount = 0;
   let canonicalExactFbsSet = false;
@@ -496,7 +563,11 @@ export function buildCoreV1LifecycleEvaluation(
     highlightTeamsPresent,
     latestFinalFbsWeekPresent,
     finalFbsGamesThroughCompletedWeek,
+    fbsVsFbsFinalsThroughCutoff,
+    finalGamesWithFbsParticipantThroughCutoff,
+    epaEligibleGameCount,
     futureFinalFbsGamesBeyondCompletedWeek,
+    futureFinalGamesWithFbsParticipantBeyondCutoff,
     canonicalCount,
     canonicalExactFbsSet,
     canonicalFinite,
@@ -550,7 +621,7 @@ export function formatCoreV1LifecycleReport(
     `canonicalCount=${result.canonicalCount} canonicalExact=${result.canonicalExactFbsSet} outputCount=${result.outputCount}`
   );
   lines.push(
-    `finalGamesThroughCutoff=${result.finalFbsGamesThroughCompletedWeek} futureFinalGamesBeyondCutoff=${result.futureFinalFbsGamesBeyondCompletedWeek} latestFinalFbsWeekPresent=${result.latestFinalFbsWeekPresent ?? 'n/a'}`
+    `finalFbsVsFbsThroughCutoff=${result.finalFbsGamesThroughCompletedWeek} finalWithFbsParticipantThroughCutoff=${result.finalGamesWithFbsParticipantThroughCutoff} epaEligibleGameCount=${result.epaEligibleGameCount} futureFinalWithFbsParticipantBeyondCutoff=${result.futureFinalGamesWithFbsParticipantBeyondCutoff} futureFinalFbsVsFbsBeyondCutoff=${result.futureFinalFbsGamesBeyondCompletedWeek} latestFinalFbsWeekPresent=${result.latestFinalFbsWeekPresent ?? 'n/a'}`
   );
   lines.push(
     `existingV1Count=${result.existingV1Count} proposedCreate=${result.proposedCreateCount} proposedUpdate=${result.proposedUpdateCount}`

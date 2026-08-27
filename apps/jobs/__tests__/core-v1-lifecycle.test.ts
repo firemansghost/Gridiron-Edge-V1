@@ -9,6 +9,9 @@ import { buildBaseFbsFixture } from '../src/preseason/fbs-membership-init';
 import {
   BALANCED_V1_CALIBRATION_FACTOR,
   BALANCED_WEIGHT_TALENT,
+  aggregateBalancedEpa,
+  aggregateBalancedGameStats,
+  buildBalancedTeamMetrics,
   computeBalancedV1Ratings,
 } from '../src/ratings/compute_balanced_v1';
 import {
@@ -360,7 +363,7 @@ describe('Core V1 lifecycle — weight / canonical coverage', () => {
     expect(weights.has(0.5)).toBe(true);
   });
 
-  it('future final game beyond completedThroughWeek → fail closed', () => {
+  it('future final FBS-vs-FBS beyond completedThroughWeek → fail closed', () => {
     const ids = fbs2026();
     const games = buildWeeklyGames(ids, 4); // includes week 4 finals
     const result = buildCoreV1LifecycleEvaluation(
@@ -372,8 +375,11 @@ describe('Core V1 lifecycle — weight / canonical coverage', () => {
     expect(result.ok).toBe(false);
     expect(result.futureFinalFbsGamesBeyondCompletedWeek).toBeGreaterThan(0);
     expect(
+      result.futureFinalGamesWithFbsParticipantBeyondCutoff
+    ).toBeGreaterThan(0);
+    expect(
       result.findings.some((f) =>
-        f.includes('futureFinalFbsGamesBeyondCompletedWeek')
+        f.includes('futureFinalGamesWithFbsParticipantBeyondCutoff')
       )
     ).toBe(true);
   });
@@ -410,10 +416,11 @@ describe('Core V1 lifecycle — weight / canonical coverage', () => {
       },
     ];
 
+    const fbsSet = new Set(ids.map((id) => id.toLowerCase()));
     const gamesThrough = filterGamesThroughCutoff(allGames, 3).filter(
       (g) =>
-        ids.includes(g.homeTeamId.toLowerCase()) &&
-        ids.includes(g.awayTeamId.toLowerCase())
+        fbsSet.has(g.homeTeamId.toLowerCase()) ||
+        fbsSet.has(g.awayTeamId.toLowerCase())
     );
     const epaThrough = filterEpaThroughCutoff(epa, gamesThrough, 3);
     expect(epaThrough.every((e) => e.gameId !== 'future-scheduled')).toBe(true);
@@ -445,6 +452,433 @@ describe('Core V1 lifecycle — weight / canonical coverage', () => {
       expect(row.canonicalRating).not.toBeNull();
       expect(row.finalPowerRating).toBe(row.canonicalRating);
     }
+  });
+});
+
+describe('Core V1 lifecycle — canonical FBS-vs-FCS EPA asymmetry', () => {
+  const FCS = 'fcs-northwestern-state';
+
+  function fbsVsFcsFinal(
+    fbsTeamId: string,
+    week: number,
+    gameId: string,
+    status: string = 'final'
+  ): TransitionGameRow {
+    return {
+      gameId,
+      week,
+      date: `2026-09-${String(Math.min(28, 10 + week)).padStart(2, '0')}T19:00:00.000Z`,
+      status,
+      homeTeamId: fbsTeamId,
+      awayTeamId: FCS,
+      homeScore: status === 'final' ? 42 : null,
+      awayScore: status === 'final' ? 7 : null,
+    };
+  }
+
+  function fcsVsFcsFinal(week: number, gameId: string): TransitionGameRow {
+    return {
+      gameId,
+      week,
+      date: `2026-09-${String(Math.min(28, 10 + week)).padStart(2, '0')}T17:00:00.000Z`,
+      status: 'final',
+      homeTeamId: 'fcs-a',
+      awayTeamId: 'fcs-b',
+      homeScore: 21,
+      awayScore: 14,
+    };
+  }
+
+  /** Historical-writer reconstruction: participant finals → stats helper + EPA filter. */
+  function reconstructCanonicalBalanced(input: {
+    fbsIds: string[];
+    talentRows: { teamId: string; talentComposite: number }[];
+    games: TransitionGameRow[];
+    epaRows: TransitionEpaRow[];
+    completedThroughWeek: number;
+  }) {
+    const fbs = [...new Set(input.fbsIds.map((id) => id.toLowerCase()))].sort();
+    const fbsSet = new Set(fbs);
+    const finalsWithFbsParticipantThroughCutoff = filterGamesThroughCutoff(
+      input.games,
+      input.completedThroughWeek
+    ).filter(
+      (g) =>
+        fbsSet.has(g.homeTeamId.toLowerCase()) ||
+        fbsSet.has(g.awayTeamId.toLowerCase())
+    );
+    const aggregates = aggregateBalancedGameStats(
+      finalsWithFbsParticipantThroughCutoff,
+      fbsSet
+    );
+    const epaThrough = filterEpaThroughCutoff(
+      input.epaRows,
+      finalsWithFbsParticipantThroughCutoff,
+      input.completedThroughWeek
+    ).filter((e) => fbsSet.has(e.teamId.toLowerCase()));
+    const epaByTeam = aggregateBalancedEpa(epaThrough);
+    const built = buildBalancedTeamMetrics({
+      fbsTeamIds: fbs,
+      talentRows: input.talentRows,
+      gameAggregates: aggregates,
+      epaByTeam,
+    });
+    return {
+      ratings: computeBalancedV1Ratings(built.metrics),
+      aggregates,
+      epaThrough,
+      finalsWithFbsParticipantThroughCutoff,
+      metrics: built.metrics,
+    };
+  }
+
+  it('FBS-vs-FBS final affects gamesPlayed / winPct / netPoints and includes EPA', () => {
+    const base = healthyThroughWeek(6);
+    const team = base.fbsIds[0];
+    const partner = base.fbsIds[1];
+    const extra: TransitionGameRow = {
+      gameId: 'extra-fbs-fbs',
+      week: 6,
+      date: '2026-10-01T19:00:00.000Z',
+      status: 'final',
+      homeTeamId: team,
+      awayTeamId: partner,
+      homeScore: 35,
+      awayScore: 10,
+    };
+    const without = reconstructCanonicalBalanced({
+      fbsIds: base.fbsIds,
+      talentRows: base.talentRows as { teamId: string; talentComposite: number }[],
+      games: base.games,
+      epaRows: base.epaRows,
+      completedThroughWeek: 6,
+    });
+    const withExtra = reconstructCanonicalBalanced({
+      fbsIds: base.fbsIds,
+      talentRows: base.talentRows as { teamId: string; talentComposite: number }[],
+      games: [...base.games, extra],
+      epaRows: [
+        ...base.epaRows,
+        {
+          gameId: extra.gameId,
+          week: 6,
+          teamId: team,
+          epaOff: 0.4,
+          epaDef: -0.2,
+        },
+        {
+          gameId: extra.gameId,
+          week: 6,
+          teamId: partner,
+          epaOff: -0.1,
+          epaDef: 0.1,
+        },
+      ],
+      completedThroughWeek: 6,
+    });
+    const a0 = without.aggregates.get(team)!;
+    const a1 = withExtra.aggregates.get(team)!;
+    expect(a1.games).toBe(a0.games + 1);
+    expect(a1.wins).toBe(a0.wins + 1);
+    expect(a1.pointsFor - a1.pointsAgainst).toBe(
+      a0.pointsFor - a0.pointsAgainst + 25
+    );
+    expect(withExtra.epaThrough.some((e) => e.gameId === extra.gameId)).toBe(
+      true
+    );
+  });
+
+  it('FBS-vs-FCS final through cutoff: no games/win/net; FBS EPA included', () => {
+    const base = healthyThroughWeek(6);
+    const team = base.fbsIds[0];
+    const fcsGame = fbsVsFcsFinal(team, 6, 'fbs-fcs-through');
+    const fcsEpa: TransitionEpaRow = {
+      gameId: fcsGame.gameId,
+      week: 6,
+      teamId: team,
+      epaOff: 0.9,
+      epaDef: -0.4,
+    };
+    const without = reconstructCanonicalBalanced({
+      fbsIds: base.fbsIds,
+      talentRows: base.talentRows as { teamId: string; talentComposite: number }[],
+      games: base.games,
+      epaRows: base.epaRows,
+      completedThroughWeek: 6,
+    });
+    const withFcs = reconstructCanonicalBalanced({
+      fbsIds: base.fbsIds,
+      talentRows: base.talentRows as { teamId: string; talentComposite: number }[],
+      games: [...base.games, fcsGame],
+      epaRows: [...base.epaRows, fcsEpa],
+      completedThroughWeek: 6,
+    });
+    const a0 = without.aggregates.get(team)!;
+    const a1 = withFcs.aggregates.get(team)!;
+    expect(a1.games).toBe(a0.games);
+    expect(a1.wins).toBe(a0.wins);
+    expect(a1.losses).toBe(a0.losses);
+    expect(a1.pointsFor).toBe(a0.pointsFor);
+    expect(a1.pointsAgainst).toBe(a0.pointsAgainst);
+    expect(withFcs.epaThrough.some((e) => e.gameId === fcsGame.gameId)).toBe(
+      true
+    );
+
+    const lifeWithout = buildCoreV1LifecycleEvaluation(base);
+    const lifeWith = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(6, {
+        games: [...base.games, fcsGame],
+        epaRows: [...base.epaRows, fcsEpa],
+      })
+    );
+    expect(lifeWith.ok).toBe(true);
+    expect(lifeWith.rows.find((r) => r.teamId === team)!.games).toBe(
+      lifeWithout.rows.find((r) => r.teamId === team)!.games
+    );
+    expect(
+      lifeWith.finalGamesWithFbsParticipantThroughCutoff
+    ).toBeGreaterThan(lifeWith.finalFbsGamesThroughCompletedWeek);
+    expect(lifeWith.epaEligibleGameCount).toBe(
+      lifeWith.finalGamesWithFbsParticipantThroughCutoff
+    );
+    // Distinct EPA changes canonical / weight=1 final vs FBS-only EPA
+    expect(
+      lifeWith.rows.find((r) => r.teamId === team)!.finalPowerRating
+    ).not.toBe(
+      lifeWithout.rows.find((r) => r.teamId === team)!.finalPowerRating
+    );
+  });
+
+  it('FBS-vs-FCS after cutoff: EPA excluded', () => {
+    const base = healthyThroughWeek(3);
+    const team = base.fbsIds[0];
+    const fcsGame = fbsVsFcsFinal(team, 4, 'fbs-fcs-after');
+    const fcsEpa: TransitionEpaRow = {
+      gameId: fcsGame.gameId,
+      week: 4,
+      teamId: team,
+      epaOff: 0.9,
+      epaDef: -0.4,
+    };
+    // Include the future final so we can inspect filter in isolation via reconstruct
+    // at cutoff 3 (without running lifecycle fail-closed).
+    const recon = reconstructCanonicalBalanced({
+      fbsIds: base.fbsIds,
+      talentRows: base.talentRows as { teamId: string; talentComposite: number }[],
+      games: [...base.games, fcsGame],
+      epaRows: [...base.epaRows, fcsEpa],
+      completedThroughWeek: 3,
+    });
+    expect(recon.epaThrough.every((e) => e.gameId !== fcsGame.gameId)).toBe(
+      true
+    );
+    expect(
+      recon.finalsWithFbsParticipantThroughCutoff.every(
+        (g) => g.gameId !== fcsGame.gameId
+      )
+    ).toBe(true);
+  });
+
+  it('FBS-vs-FCS scheduled/non-final: EPA excluded', () => {
+    const base = healthyThroughWeek(6);
+    const team = base.fbsIds[0];
+    const scheduled = fbsVsFcsFinal(team, 6, 'fbs-fcs-scheduled', 'scheduled');
+    const fcsEpa: TransitionEpaRow = {
+      gameId: scheduled.gameId,
+      week: 6,
+      teamId: team,
+      epaOff: 0.9,
+      epaDef: -0.4,
+    };
+    const recon = reconstructCanonicalBalanced({
+      fbsIds: base.fbsIds,
+      talentRows: base.talentRows as { teamId: string; talentComposite: number }[],
+      games: [...base.games, scheduled],
+      epaRows: [...base.epaRows, fcsEpa],
+      completedThroughWeek: 6,
+    });
+    expect(recon.epaThrough.every((e) => e.gameId !== scheduled.gameId)).toBe(
+      true
+    );
+    const life = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(6, {
+        games: [...base.games, scheduled],
+        epaRows: [...base.epaRows, fcsEpa],
+      })
+    );
+    expect(life.ok).toBe(true);
+    const lifeBase = buildCoreV1LifecycleEvaluation(base);
+    expect(life.rows.map((r) => r.finalPowerRating)).toEqual(
+      lifeBase.rows.map((r) => r.finalPowerRating)
+    );
+  });
+
+  it('future final FBS-vs-FCS beyond cutoff → fail closed (no write auth)', () => {
+    const base = healthyThroughWeek(3);
+    const team = base.fbsIds[0];
+    const futureFcs = fbsVsFcsFinal(team, 4, 'fbs-fcs-future-final');
+    const result = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(3, {
+        games: [...base.games, futureFcs],
+        epaRows: [
+          ...base.epaRows,
+          {
+            gameId: futureFcs.gameId,
+            week: 4,
+            teamId: team,
+            epaOff: 0.5,
+            epaDef: -0.1,
+          },
+        ],
+      })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.futureFinalFbsGamesBeyondCompletedWeek).toBe(0);
+    expect(
+      result.futureFinalGamesWithFbsParticipantBeyondCutoff
+    ).toBeGreaterThan(0);
+    expect(result.ratingsWriteAuthorized).toBe(false);
+    expect(result.commitEligible).toBe(false);
+    expect(
+      result.findings.some((f) =>
+        f.includes('futureFinalGamesWithFbsParticipantBeyondCutoff')
+      )
+    ).toBe(true);
+  });
+
+  it('pure FCS-vs-FCS final ignored for aggregates, EPA eligibility, and ratings', () => {
+    const base = healthyThroughWeek(6);
+    const pure = fcsVsFcsFinal(6, 'pure-fcs-fcs');
+    const lifeBase = buildCoreV1LifecycleEvaluation(base);
+    const life = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(6, {
+        games: [...base.games, pure],
+        epaRows: [
+          ...base.epaRows,
+          {
+            gameId: pure.gameId,
+            week: 6,
+            teamId: 'fcs-a',
+            epaOff: 1,
+            epaDef: 1,
+          },
+        ],
+      })
+    );
+    expect(life.ok).toBe(true);
+    expect(life.finalGamesWithFbsParticipantThroughCutoff).toBe(
+      lifeBase.finalGamesWithFbsParticipantThroughCutoff
+    );
+    expect(life.finalFbsGamesThroughCompletedWeek).toBe(
+      lifeBase.finalFbsGamesThroughCompletedWeek
+    );
+    expect(life.rows.map((r) => r.finalPowerRating)).toEqual(
+      lifeBase.rows.map((r) => r.finalPowerRating)
+    );
+  });
+
+  it('lifecycle matches historical Balanced reconstruction with FBS-vs-FCS EPA', () => {
+    const base = healthyThroughWeek(6);
+    const team = base.fbsIds[0];
+    const fcsGame = fbsVsFcsFinal(team, 5, 'parity-fbs-fcs');
+    const games = [...base.games, fcsGame];
+    const epaRows = [
+      ...base.epaRows,
+      {
+        gameId: fcsGame.gameId,
+        week: 5,
+        teamId: team,
+        epaOff: 0.55,
+        epaDef: -0.22,
+      },
+    ];
+    const recon = reconstructCanonicalBalanced({
+      fbsIds: base.fbsIds,
+      talentRows: base.talentRows as { teamId: string; talentComposite: number }[],
+      games,
+      epaRows,
+      completedThroughWeek: 6,
+    });
+    const life = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(6, { games, epaRows })
+    );
+    expect(life.ok).toBe(true);
+    expect(life.canonicalWeight).toBe(1);
+    const reconById = new Map(
+      recon.ratings.map((r) => [r.teamId.toLowerCase(), r.powerRating] as const)
+    );
+    for (const row of life.rows) {
+      expect(row.finalPowerRating).toBeCloseTo(reconById.get(row.teamId)!, 10);
+      expect(row.games).toBe(recon.aggregates.get(row.teamId)?.games ?? 0);
+    }
+  });
+
+  it('weight=1 equals canonical Balanced exactly when FBS-vs-FCS EPA present', () => {
+    const base = healthyThroughWeek(6);
+    const team = base.fbsIds[2];
+    const fcsGame = fbsVsFcsFinal(team, 6, 'w1-fcs-epa');
+    const games = [...base.games, fcsGame];
+    const epaRows = [
+      ...base.epaRows,
+      {
+        gameId: fcsGame.gameId,
+        week: 6,
+        teamId: team,
+        epaOff: 0.7,
+        epaDef: -0.3,
+      },
+    ];
+    const life = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(6, { games, epaRows })
+    );
+    const recon = reconstructCanonicalBalanced({
+      fbsIds: base.fbsIds,
+      talentRows: base.talentRows as { teamId: string; talentComposite: number }[],
+      games,
+      epaRows,
+      completedThroughWeek: 6,
+    });
+    expect(life.ok).toBe(true);
+    expect(life.canonicalWeight).toBe(1);
+    for (const row of life.rows) {
+      expect(row.finalPowerRating).toBe(row.canonicalRating);
+      const c = recon.ratings.find((r) => r.teamId === row.teamId)!;
+      expect(row.finalPowerRating).toBeCloseTo(c.powerRating, 10);
+    }
+  });
+
+  it('persisted games remain FBS-vs-FBS games only (FCS does not inflate)', () => {
+    const base = healthyThroughWeek(6);
+    const team = base.fbsIds[0];
+    const fcsGame = fbsVsFcsFinal(team, 6, 'persist-fcs');
+    const without = buildCoreV1LifecycleEvaluation(base);
+    const withFcs = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(6, {
+        games: [...base.games, fcsGame],
+        epaRows: [
+          ...base.epaRows,
+          {
+            gameId: fcsGame.gameId,
+            week: 6,
+            teamId: team,
+            epaOff: 0.2,
+            epaDef: -0.1,
+          },
+        ],
+      })
+    );
+    const g0 = without.rows.find((r) => r.teamId === team)!.games;
+    const g1 = withFcs.rows.find((r) => r.teamId === team)!.games;
+    expect(g1).toBe(g0);
+    expect(toPersistRows(withFcs).find((r) => r.teamId === team)!.games).toBe(
+      g0
+    );
+    expect(withFcs.fbsVsFbsFinalsThroughCutoff).toBe(
+      withFcs.finalFbsGamesThroughCompletedWeek
+    );
+    expect(withFcs.finalGamesWithFbsParticipantThroughCutoff).toBe(
+      without.finalGamesWithFbsParticipantThroughCutoff + 1
+    );
   });
 });
 
