@@ -271,8 +271,14 @@ export interface BalancedV1TransitionBlendResult {
   fbsCount2025: number;
   talentFinite2025: number;
   talentSetExact2025: boolean;
-  persistedTargetCount2025: number;
+  /** Raw FBS-scoped persisted target row count (before Map collapse). */
+  persistedTargetRows2025Fbs: number;
+  persistedTargetDistinctFbs2025: number;
+  persistedTargetFinite2025: number;
+  duplicatePersistedTargetTeamIds2025: number;
   persistedTargetSetExact2025: boolean;
+  /** Alias of persistedTargetRows2025Fbs for report headers. */
+  persistedTargetCount2025: number;
   historicalCutoffIso: string;
   historicalCutoffExact: boolean;
   candidateALabel: typeof CANDIDATE_A_LABEL;
@@ -528,11 +534,67 @@ function firstWeekPearsonAtLeast(
   return null;
 }
 
+/**
+ * Analyze FBS-scoped persisted V1 targets without silently collapsing duplicates.
+ * Duplicate / nonfinite rows fail closed even if a Map would still hold one value per ID.
+ */
+export function analyzePersistedTargetCoverage(
+  fbsIds: string[],
+  targets: Array<{ teamId: string; powerRating: number | null }>
+): {
+  persistedTargetRows2025Fbs: number;
+  persistedTargetDistinctFbs2025: number;
+  persistedTargetFinite2025: number;
+  persistedTargetSetExact2025: boolean;
+  duplicatePersistedTargetTeamIds2025: number;
+  duplicateTeamIdSample: string[];
+  finiteByTeam: Map<string, number>;
+} {
+  const fbs = new Set(sortedUnique(fbsIds));
+  const seenCounts = new Map<string, number>();
+  const finiteByTeam = new Map<string, number>();
+  let persistedTargetRows2025Fbs = 0;
+
+  for (const t of targets) {
+    const id = t.teamId.toLowerCase();
+    if (!fbs.has(id)) continue;
+    persistedTargetRows2025Fbs++;
+    seenCounts.set(id, (seenCounts.get(id) ?? 0) + 1);
+    if (t.powerRating !== null && Number.isFinite(Number(t.powerRating))) {
+      // Last write wins for diagnostic map only; duplicate count gates validity.
+      finiteByTeam.set(id, Number(t.powerRating));
+    }
+  }
+
+  const duplicateTeamIdSample = [...seenCounts.entries()]
+    .filter(([, c]) => c > 1)
+    .map(([id]) => id)
+    .sort();
+  const persistedTargetDistinctFbs2025 = seenCounts.size;
+  const persistedTargetFinite2025 = finiteByTeam.size;
+  const persistedTargetSetExact2025 =
+    duplicateTeamIdSample.length === 0 &&
+    setsEqual([...finiteByTeam.keys()], [...fbs]);
+
+  return {
+    persistedTargetRows2025Fbs,
+    persistedTargetDistinctFbs2025,
+    persistedTargetFinite2025,
+    persistedTargetSetExact2025,
+    duplicatePersistedTargetTeamIds2025: duplicateTeamIdSample.length,
+    duplicateTeamIdSample,
+    finiteByTeam,
+  };
+}
+
 export function assessTransitionBlendGates(input: {
   fbsIds2025: string[];
   talentFinite2025: number;
   talentSetExact2025: boolean;
-  persistedTargetCount2025: number;
+  persistedTargetRows2025Fbs: number;
+  persistedTargetDistinctFbs2025: number;
+  persistedTargetFinite2025: number;
+  duplicatePersistedTargetTeamIds2025: number;
   persistedTargetSetExact2025: boolean;
   historicalCutoffExact: boolean;
   fbsIds2026: string[];
@@ -560,9 +622,24 @@ export function assessTransitionBlendGates(input: {
     );
   }
   if (!input.talentSetExact2025) findings.push('2025 talent set not exact FBS');
-  if (input.persistedTargetCount2025 !== EXPECTED_2025_FBS_COUNT) {
+  if (input.persistedTargetRows2025Fbs !== EXPECTED_2025_FBS_COUNT) {
     findings.push(
-      `persisted V1 targets ${input.persistedTargetCount2025} != ${EXPECTED_2025_FBS_COUNT}`
+      `persistedTargetRows2025Fbs ${input.persistedTargetRows2025Fbs} != ${EXPECTED_2025_FBS_COUNT}`
+    );
+  }
+  if (input.persistedTargetDistinctFbs2025 !== EXPECTED_2025_FBS_COUNT) {
+    findings.push(
+      `persistedTargetDistinctFbs2025 ${input.persistedTargetDistinctFbs2025} != ${EXPECTED_2025_FBS_COUNT}`
+    );
+  }
+  if (input.persistedTargetFinite2025 !== EXPECTED_2025_FBS_COUNT) {
+    findings.push(
+      `persistedTargetFinite2025 ${input.persistedTargetFinite2025} != ${EXPECTED_2025_FBS_COUNT}`
+    );
+  }
+  if (input.duplicatePersistedTargetTeamIds2025 !== 0) {
+    findings.push(
+      `duplicatePersistedTargetTeamIds2025=${input.duplicatePersistedTargetTeamIds2025} (must be 0)`
     );
   }
   if (!input.persistedTargetSetExact2025) {
@@ -650,13 +727,12 @@ export function buildBalancedV1TransitionBlendEvaluation(
   const talentIds = sortedUnique(talentFiniteRows.map((t) => t.teamId));
   const talentSetExact2025 = setsEqual(talentIds, fbs25);
 
-  const targetById = new Map(
+  const targets = analyzePersistedTargetCoverage(
+    fbs25,
     input.persistedV1Targets2025
-      .filter((t) => fbsSet.has(t.teamId.toLowerCase()))
-      .map((t) => [t.teamId.toLowerCase(), t.powerRating] as const)
   );
-  const targetIds = sortedUnique([...targetById.keys()]);
-  const persistedTargetSetExact2025 = setsEqual(targetIds, fbs25);
+  // Construct lookup only from coverage-analyzed finite rows (no silent repair).
+  const targetById = targets.finiteByTeam;
 
   // Frozen Candidate A from preseason talent (fixed for entire study).
   const candidateARows = computeTalentOnlyBridgeRatings(
@@ -825,8 +901,12 @@ export function buildBalancedV1TransitionBlendEvaluation(
     fbsIds2025: input.fbsIds2025,
     talentFinite2025: talentFiniteRows.length,
     talentSetExact2025,
-    persistedTargetCount2025: targetIds.length,
-    persistedTargetSetExact2025,
+    persistedTargetRows2025Fbs: targets.persistedTargetRows2025Fbs,
+    persistedTargetDistinctFbs2025: targets.persistedTargetDistinctFbs2025,
+    persistedTargetFinite2025: targets.persistedTargetFinite2025,
+    duplicatePersistedTargetTeamIds2025:
+      targets.duplicatePersistedTargetTeamIds2025,
+    persistedTargetSetExact2025: targets.persistedTargetSetExact2025,
     historicalCutoffExact,
     fbsIds2026: input.fbsIds2026,
     talentRows2026Fbs: talent26.talentRowsFbs,
@@ -851,8 +931,13 @@ export function buildBalancedV1TransitionBlendEvaluation(
     fbsCount2025: fbs25.length,
     talentFinite2025: talentFiniteRows.length,
     talentSetExact2025,
-    persistedTargetCount2025: targetIds.length,
-    persistedTargetSetExact2025,
+    persistedTargetRows2025Fbs: targets.persistedTargetRows2025Fbs,
+    persistedTargetDistinctFbs2025: targets.persistedTargetDistinctFbs2025,
+    persistedTargetFinite2025: targets.persistedTargetFinite2025,
+    duplicatePersistedTargetTeamIds2025:
+      targets.duplicatePersistedTargetTeamIds2025,
+    persistedTargetSetExact2025: targets.persistedTargetSetExact2025,
+    persistedTargetCount2025: targets.persistedTargetRows2025Fbs,
     historicalCutoffIso: input.historicalCutoffIso,
     historicalCutoffExact,
     candidateALabel: CANDIDATE_A_LABEL,
@@ -920,7 +1005,7 @@ export function formatBalancedV1TransitionBlendReport(
   lines.push('=== Balanced V1 Transition Blend Evaluation (READ ONLY) ===');
   lines.push(`ok=${result.ok}`);
   lines.push(
-    `studySeason=${result.studySeason} FBS=${result.fbsCount2025} talentFinite=${result.talentFinite2025} targets=${result.persistedTargetCount2025}`
+    `studySeason=${result.studySeason} FBS=${result.fbsCount2025} talentFinite=${result.talentFinite2025} targetsRows=${result.persistedTargetRows2025Fbs} targetsDistinct=${result.persistedTargetDistinctFbs2025} targetsFinite=${result.persistedTargetFinite2025} targetsDuplicates=${result.duplicatePersistedTargetTeamIds2025} targetsExact=${result.persistedTargetSetExact2025}`
   );
   lines.push(
     `candidateA=${result.candidateALabel} scale=${result.candidateAScale}`
@@ -950,20 +1035,25 @@ export function formatBalancedV1TransitionBlendReport(
         lines.push(
           `    weeklyMove meanAbs=${fmt(st.meanAbsDelta)} medianAbs=${fmt(st.medianAbsDelta)} p75=${fmt(st.p75)} p90=${fmt(st.p90)} p95=${fmt(st.p95)} max=${fmt(st.maxAbsDelta)} >2=${st.over2} >3=${st.over3} >5=${st.over5} >7=${st.over7} >10=${st.over10}`
         );
+        for (const m of st.top20Movers) {
+          lines.push(
+            `    mover team=${m.teamId} prior=${fmt(m.prior)} current=${fmt(m.current)} delta=${fmt(m.weeklyDelta)} abs=${fmt(m.absDelta)}`
+          );
+        }
       }
     }
     const path = p.path;
     lines.push(
-      `  path avgMAE=${fmt(path.avgMAE)} avgRMSE=${fmt(path.avgRMSE)} avgMedianMove=${fmt(path.avgMedianWeeklyMove)} maxP95Move=${fmt(path.maxP95WeeklyMove)} maxSingleMove=${fmt(path.maxSingleWeeklyMove)} pearson80@${path.weekPearson80 ?? 'n/a'} pearson85@${path.weekPearson85 ?? 'n/a'} pearson90@${path.weekPearson90 ?? 'n/a'} W8vsCanonMAE=${fmt(path.week8EndpointMaeVsCanonicalW8)}`
+      `  path avgMAE=${fmt(path.avgMAE)} avgRMSE=${fmt(path.avgRMSE)} avgMedianMove=${fmt(path.avgMedianWeeklyMove)} maxP95Move=${fmt(path.maxP95WeeklyMove)} maxSingleMove=${fmt(path.maxSingleWeeklyMove)} pearson80@${path.weekPearson80 ?? 'n/a'} pearson85@${path.weekPearson85 ?? 'n/a'} pearson90@${path.weekPearson90 ?? 'n/a'} week8EndpointMaeVsCanonicalW8=${fmt(path.week8EndpointMaeVsCanonicalW8)} week8EndpointMaxAbsVsCanonicalW8=${fmt(path.week8EndpointMaxAbsVsCanonicalW8)}`
     );
   }
   lines.push('comparisonTable:');
   lines.push(
-    'policy\tstartWeek\tfullCanonicalWeek\tavgMAE\tavgRMSE\tavgMedianWeeklyMove\tmaxP95WeeklyMove\tmaxSingleWeeklyMove\tweekPearson80\tweekPearson85\tweekPearson90'
+    'policy\tstartWeek\tfullCanonicalWeek\tavgMAE\tavgRMSE\tavgMedianWeeklyMove\tmaxP95WeeklyMove\tmaxSingleWeeklyMove\tweekPearson80\tweekPearson85\tweekPearson90\tweek8EndpointMaeVsCanonicalW8\tweek8EndpointMaxAbsVsCanonicalW8'
   );
   for (const row of result.comparisonTable) {
     lines.push(
-      `${row.policyId}/${row.label}\t${row.startWeek ?? 'n/a'}\t${row.fullCanonicalWeek}\t${fmt(row.avgMAE)}\t${fmt(row.avgRMSE)}\t${fmt(row.avgMedianWeeklyMove)}\t${fmt(row.maxP95WeeklyMove)}\t${fmt(row.maxSingleWeeklyMove)}\t${row.weekPearson80 ?? 'n/a'}\t${row.weekPearson85 ?? 'n/a'}\t${row.weekPearson90 ?? 'n/a'}`
+      `${row.policyId}/${row.label}\t${row.startWeek ?? 'n/a'}\t${row.fullCanonicalWeek}\t${fmt(row.avgMAE)}\t${fmt(row.avgRMSE)}\t${fmt(row.avgMedianWeeklyMove)}\t${fmt(row.maxP95WeeklyMove)}\t${fmt(row.maxSingleWeeklyMove)}\t${row.weekPearson80 ?? 'n/a'}\t${row.weekPearson85 ?? 'n/a'}\t${row.weekPearson90 ?? 'n/a'}\t${fmt(row.week8EndpointMaeVsCanonicalW8)}\t${fmt(row.week8EndpointMaxAbsVsCanonicalW8)}`
     );
   }
   lines.push(

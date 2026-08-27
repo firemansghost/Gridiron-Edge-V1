@@ -26,6 +26,7 @@ import {
   buildBalancedV1TransitionBlendEvaluation,
   buildBlendedWeekRatings,
   buildWeeklyStabilityStats,
+  formatBalancedV1TransitionBlendReport,
   hardSwitchWeight,
   parseBalancedV1TransitionBlendArgs,
   sanitizeBalancedV1TransitionBlendError,
@@ -443,5 +444,118 @@ describe('Balanced V1 transition blend evaluation', () => {
     expect(b1.weeks.find((w) => w.week === 6)!.canonicalWeight).toBe(1);
     // Endpoint converges to canonical once weight=1
     expect(b1.path.week8EndpointMaeVsCanonicalW8).toBeCloseTo(0, 10);
+    expect(b1.path.week8EndpointMaxAbsVsCanonicalW8).toBeCloseTo(0, 10);
+  });
+
+  it('all 136 finite unique persisted targets -> pass with exact coverage counts', () => {
+    const result = buildBalancedV1TransitionBlendEvaluation(healthyInput());
+    expect(result.ok).toBe(true);
+    expect(result.persistedTargetRows2025Fbs).toBe(136);
+    expect(result.persistedTargetDistinctFbs2025).toBe(136);
+    expect(result.persistedTargetFinite2025).toBe(136);
+    expect(result.duplicatePersistedTargetTeamIds2025).toBe(0);
+    expect(result.persistedTargetSetExact2025).toBe(true);
+  });
+
+  it('one persisted target NaN -> fail closed', () => {
+    const ids = fbs2025();
+    const targets = targetsFromCandidateA(ids);
+    targets[0] = { ...targets[0], powerRating: Number.NaN };
+    const result = buildBalancedV1TransitionBlendEvaluation(
+      healthyInput({ persistedV1Targets2025: targets })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.persistedTargetFinite2025).toBe(135);
+    expect(result.persistedTargetSetExact2025).toBe(false);
+  });
+
+  it('one persisted target Infinity -> fail closed', () => {
+    const ids = fbs2025();
+    const targets = targetsFromCandidateA(ids);
+    targets[0] = { ...targets[0], powerRating: Number.POSITIVE_INFINITY };
+    const result = buildBalancedV1TransitionBlendEvaluation(
+      healthyInput({ persistedV1Targets2025: targets })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.persistedTargetFinite2025).toBe(135);
+  });
+
+  it('one persisted FBS target missing -> fail closed', () => {
+    const ids = fbs2025();
+    const targets = targetsFromCandidateA(ids).slice(1);
+    const result = buildBalancedV1TransitionBlendEvaluation(
+      healthyInput({ persistedV1Targets2025: targets })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.persistedTargetRows2025Fbs).toBe(135);
+    expect(result.persistedTargetSetExact2025).toBe(false);
+  });
+
+  it('duplicate persisted target team ID -> fail closed', () => {
+    const ids = fbs2025();
+    const targets = targetsFromCandidateA(ids);
+    targets.push({ ...targets[0], powerRating: targets[0].powerRating + 1 });
+    const result = buildBalancedV1TransitionBlendEvaluation(
+      healthyInput({ persistedV1Targets2025: targets })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.persistedTargetRows2025Fbs).toBe(137);
+    expect(result.persistedTargetDistinctFbs2025).toBe(136);
+    expect(result.duplicatePersistedTargetTeamIds2025).toBe(1);
+    expect(result.persistedTargetSetExact2025).toBe(false);
+  });
+
+  it('136 unique targets plus extra duplicate fails even though Map would hold 136 keys', () => {
+    const ids = fbs2025();
+    const targets = targetsFromCandidateA(ids);
+    expect(targets.length).toBe(136);
+    targets.push({ teamId: targets[5].teamId, powerRating: 99.9 });
+    const result = buildBalancedV1TransitionBlendEvaluation(
+      healthyInput({ persistedV1Targets2025: targets })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.persistedTargetDistinctFbs2025).toBe(136);
+    expect(result.duplicatePersistedTargetTeamIds2025).toBe(1);
+    expect(result.persistedTargetRows2025Fbs).toBe(137);
+  });
+
+  it('formatter emits top weekly movers descending absDelta and Week8 endpoints', () => {
+    const result = buildBalancedV1TransitionBlendEvaluation(healthyInput());
+    const report = formatBalancedV1TransitionBlendReport(result);
+    expect(report).toContain('mover team=');
+    expect(report).toContain('week8EndpointMaeVsCanonicalW8=');
+    expect(report).toContain('week8EndpointMaxAbsVsCanonicalW8=');
+
+    const absValues: number[] = [];
+    let collecting = false;
+    for (const line of report.split('\n')) {
+      if (line.includes('weeklyMove meanAbs=')) {
+        collecting = true;
+        absValues.length = 0;
+        continue;
+      }
+      if (collecting && line.includes('mover team=')) {
+        const m = line.match(/abs=([-\d.eE+]+|n\/a)/);
+        if (m && m[1] !== 'n/a') absValues.push(Number(m[1]));
+        continue;
+      }
+      if (collecting && absValues.length > 0) {
+        for (let i = 1; i < absValues.length; i++) {
+          expect(absValues[i]).toBeLessThanOrEqual(absValues[i - 1] + 1e-12);
+        }
+        break;
+      }
+    }
+    expect(absValues.length).toBeGreaterThan(0);
+
+    // Also verify in-memory top20Movers order (source of formatter rows)
+    const b1 = result.policies.find((p) => p.policy.id === 'B1')!;
+    const withMovers = b1.weeks.find(
+      (w) => w.weeklyStability && w.weeklyStability.top20Movers.length > 0
+    )!;
+    const movers = withMovers.weeklyStability!.top20Movers;
+    for (let i = 1; i < movers.length; i++) {
+      expect(movers[i].absDelta).toBeLessThanOrEqual(movers[i - 1].absDelta);
+    }
   });
 });
