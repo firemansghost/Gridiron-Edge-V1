@@ -1,0 +1,96 @@
+# Manual READ-ONLY Balanced V1 preseason bridge evaluation (2026).
+# workflow_dispatch ONLY — no schedule, push, or pull_request.
+# SELECT-only DB. Does not write ratings.
+# Does not call CFBD, Odds, or any provider.
+# Does not run compute_ratings_balanced.ts or compute_ratings_v1.ts.
+# Does not authorize a preseason bridge policy or model change.
+
+name: Evaluate 2026 Balanced V1 Preseason Bridge (Manual, Read Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season (must be 2026)'
+        required: true
+        type: string
+        default: '2026'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evaluate-balanced-v1-preseason-bridge-${{ inputs.season }}
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight (names/presence only)
+        run: |
+          set -euo pipefail
+          SEASON="${{ inputs.season }}"
+          echo "season_input=${SEASON}"
+          echo "mode=READ_ONLY"
+          if [ "$SEASON" != "2026" ]; then
+            echo "::error::season must equal 2026 (got ${SEASON})"
+            exit 1
+          fi
+          if [ -z "${DIRECT_URL:-}" ] && [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::DIRECT_URL secret is missing"
+            exit 1
+          fi
+          echo "DIRECT_URL: present (value not printed)"
+          echo "CFBD_API_KEY: not provided"
+          echo "ODDS_API_KEY: not provided"
+          echo "providersInvoked=false"
+          echo "mutationsInvoked=false"
+          echo "ratingsPersistenceInvoked=false"
+          echo "preseasonBridgeAuthorized=false"
+          echo "ratingsWriteAuthorized=false"
+          echo "modelChangeAuthorized=false"
+          echo "transitionPolicyDefined=false"
+          echo "Odds=false"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: Evaluate Balanced V1 preseason bridge (read-only)
+        run: |
+          npx tsx apps/jobs/evaluate-balanced-v1-preseason-bridge.ts --season "${{ inputs.season }}"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "============================================"
+          echo "EVALUATE BALANCED V1 PRESEASON BRIDGE (READ ONLY)"
+          echo "============================================"
+          echo "season: ${{ inputs.season }}"
+          echo "status: ${{ job.status }}"
+          echo "mode: diagnostic only — no policy authorized"
+          echo "writer: compute_ratings_balanced NOT invoked"
+          echo "legacy: compute_ratings_v1 NOT invoked"
+          echo "secrets used (names only): DIRECT_URL"
+          echo "providers: none"
+          echo "Odds: false"
+          echo "preseasonBridgeAuthorized: false"
+          echo "modelChangeAuthorized: false"
+          echo "============================================"
