@@ -87,8 +87,9 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | **2C-2C ratings-input preview** | **Executed** (PR #42) — `/talent` 0 rows; recruiting schema mismatch; conference diagnostics corrected in 2C-2H-1 |
 | **2C-2G-4 Core V1 conferences** | **PASSED** (PR #51) — production audit 138/138; legacyFallback=false |
 | **2C-2H-1 readiness diagnostics** | **PASSED** (PR #52) — Aug 27 talent probe structurally complete |
-| **2C-2H-2 guarded talent init** | **In preparation (draft)** — one-time `talentComposite` only; ratings still unauthorized |
-| **Ratings computation** | **Not yet approved** |
+| **2C-2H-2 guarded talent init** | **PASSED** (PR #53) — production COMMIT 138/138; ratings still unauthorized |
+| **2C-2H-3 Core V1 ratings preview** | **In preparation (draft)** — read-only in-memory numerical preview; no persistence |
+| **Ratings computation / persistence** | **Not yet approved** |
 | **Odds ingestion** | **Not yet approved** |
 | **Nightly reactivation** | **Not yet approved** |
 
@@ -124,6 +125,8 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | `Probe 2026 Talent Availability (Manual, Read Only)` | `workflow_dispatch` only; season `2026`; budget 1 |
 | `apps/jobs/initialize-2026-team-talent.ts` | Guarded one-time 2026 talentComposite initializer |
 | `Initialize 2026 Team Talent (Guarded)` | Manual PREVIEW/COMMIT; confirm `WRITE_2026_TALENT` |
+| `apps/jobs/preview-2026-core-v1-ratings.ts` | Read-only in-memory Core V1 ratings preview (no persist) |
+| `Preview 2026 Core V1 Ratings (Manual, Read Only)` | `workflow_dispatch` only; season `2026`; `DIRECT_URL` only |
 | `Preview 2026 Ratings Inputs (Manual, Read Only)` | Provider preview workflow (`season=2026`) |
 | `apps/jobs/diagnose-2026-conference-recruiting.ts` | Read-only `/teams/fbs` + recruiting resolver diagnostic (`providerFbsSetExact` / `recruitingResolverSafe`) |
 | `Diagnose 2026 Conference & Recruiting Mapping (Manual, Read Only)` | Diagnostic workflow (`season=2026`) |
@@ -146,15 +149,18 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 * 2C-2G-3: **PASSED** — production COMMIT 138/138 populated, 0 NULL, verificationExact=true; do not rerun
 * 2C-2G-4: **PASSED** (PR #51) — production Core V1 audit 138/138; missing=0; unrecognized=0; legacyFallback=false
 * 2C-2H-1: **PASSED** (PR #52) — season-aware diagnostics; Aug 27 probe: `/talent` 138/138 structurally complete; persistence still unauthorized
-* 2C-2H-2: guarded one-time talentComposite initializer (draft) — legacy writer unsafe for `school/year/talent`; star zeros = schema placeholders
+* 2C-2H-2: **PASSED** (PR #53) — production COMMIT 138 rows; `transactionVerificationExact=true`; `postCommitExactTeamSet=true`; `talentCompositeMatchesCandidate=138/138`; no ratings/Odds
+* Latest readiness audit: `structuralOk=true`; preseason; talent 138/138; commits 0/138; stats empty expected; unit grades 0/138; no output collisions; ratings still unauthorized
+* 2C-2H-3: **IN PREPARATION / draft PR** — read-only Core V1 numerical preview only (no persistence)
 * Recruiting schema mismatch remains separate
-* **Do not compute ratings until separately authorized after talent persistence review**
+* **Do not persist ratings until separately authorized after preview review**
+* **Do not run the production Core V1 preview workflow until the draft PR is independently reviewed**
 
-##### After 2C-2H-2 merges — operator procedure
-1. Run **Initialize 2026 Team Talent (Guarded)** in **PREVIEW** only
-2. Verify writeEligible=true and targetExistingRows=0
-3. Stop for review — do **not** COMMIT unless separately approved
-4. Ratings remain unauthorized even after a successful COMMIT
+##### After 2C-2H-3 merges — operator procedure
+1. Independently review draft PR and formula-parity confirmation
+2. Only then run **Preview 2026 Core V1 Ratings (Manual, Read Only)**
+3. Inspect distribution / top-bottom / conference summary — do not “fix” surprising values
+4. Ratings persistence (`ratings-v1.yml`) remains unauthorized until a separate authorization
 
 - [x] Preview week 0–2 reviewed
 - [x] Week 1–13 + 15 production writes
@@ -172,8 +178,9 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 - [x] 2C-2G-3 guarded 138-row conference population PASSED
 - [x] 2C-2G-4 Core V1 season-aware conference source PASSED
 - [x] 2C-2H-1 ratings readiness diagnostic alignment + talent probe PASSED
-- [ ] 2C-2H-2 guarded 2026 team talent initializer
-- [ ] Odds / ratings compute / bets remain **out of scope** until separately approved
+- [x] 2C-2H-2 guarded 2026 team talent initializer PASSED (production COMMIT)
+- [ ] 2C-2H-3 read-only Core V1 ratings preview (draft)
+- [ ] Odds / ratings persist / bets remain **out of scope** until separately approved
 
 ---
 

@@ -1,0 +1,88 @@
+# Manual READ-ONLY in-memory Core V1 ratings preview for 2026.
+# workflow_dispatch ONLY — no schedule, push, or pull_request.
+# SELECT-only DB. Does not write TeamSeasonRating or PowerRating.
+# Does not call CFBD, Odds, or any provider. Does not run ratings-v1.yml.
+
+name: Preview 2026 Core V1 Ratings (Manual, Read Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (must be 2026)'
+        required: true
+        type: string
+        default: '2026'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-2026-core-v1-ratings-${{ inputs.season }}
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight (names/presence only)
+        run: |
+          set -euo pipefail
+          SEASON="${{ inputs.season }}"
+          echo "season_input=${SEASON}"
+          echo "mode=READ_ONLY"
+          if [ "$SEASON" != "2026" ]; then
+            echo "::error::season must equal 2026 (got ${SEASON})"
+            exit 1
+          fi
+          if [ -z "${DIRECT_URL:-}" ] && [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::DIRECT_URL secret is missing"
+            exit 1
+          fi
+          echo "DIRECT_URL: present (value not printed)"
+          echo "CFBD_API_KEY: not provided"
+          echo "ODDS_API_KEY: not provided"
+          echo "providersInvoked=false"
+          echo "mutationsInvoked=false"
+          echo "ratingsPersistenceInvoked=false"
+          echo "teamSeasonRatingWrites=false"
+          echo "powerRatingWrites=false"
+          echo "Odds=false"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: Preview 2026 Core V1 ratings (read-only, in-memory)
+        run: |
+          npx tsx apps/jobs/preview-2026-core-v1-ratings.ts --season "${{ inputs.season }}" --preview
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "============================================"
+          echo "PREVIEW 2026 CORE V1 RATINGS (READ ONLY)"
+          echo "============================================"
+          echo "season: ${{ inputs.season }}"
+          echo "status: ${{ job.status }}"
+          echo "mode: in-memory preview only — no TeamSeasonRating/PowerRating writes"
+          echo "secrets used (names only): DIRECT_URL"
+          echo "providers: none"
+          echo "Odds: false"
+          echo "============================================"

@@ -254,6 +254,161 @@ export function getDataSourceString(features: TeamFeatures): string {
   return features.dataSource === 'baseline' ? 'baseline' : 'season_only';
 }
 
+/** Detailed per-team Core V1 result (shared by writer + read-only preview). */
+export interface V1ComputedTeamRating {
+  season: number;
+  teamId: string;
+  offenseRating: number;
+  defenseRating: number;
+  powerRating: number;
+  confidence: number;
+  dataSource: string;
+  games: number;
+  conference: string | null;
+  talentComposite: number | null;
+  talentZ: number;
+  blueChipZ: number;
+  commitsZ: number;
+  talentPrior: number;
+  decay: number;
+  talentComponent: number;
+  hasBaseFeatures: boolean;
+  conferenceAdjustment: number;
+  rawScore: number;
+  adjustedScore: number;
+  calibrationFactor: number;
+}
+
+/**
+ * Pure Core V1 season ratings computation.
+ * Formula order matches historical main(): offense/defense → talent → rawScore
+ * → conferenceAdjustment → * calibrationFactor.
+ * Does not load DB or persist.
+ */
+export function computeV1SeasonRatings(options: {
+  season: number;
+  allFeatures: TeamFeatures[];
+  conferenceMap: Map<string, string | null>;
+  modelConfig: ReturnType<typeof getModelConfig>;
+}): V1ComputedTeamRating[] {
+  const { season, allFeatures, conferenceMap, modelConfig } = options;
+  const calibrationFactor = modelConfig.calibration_factor || 1.0;
+
+  const zStats = {
+    yppOff: calculateZScores(allFeatures, (f) => f.yppOff ?? null),
+    passYpaOff: calculateZScores(allFeatures, (f) => f.passYpaOff ?? null),
+    rushYpcOff: calculateZScores(allFeatures, (f) => f.rushYpcOff ?? null),
+    successOff: calculateZScores(allFeatures, (f) => f.successOff ?? null),
+    epaOff: calculateZScores(allFeatures, (f) => f.epaOff ?? null),
+    yppDef: calculateZScores(allFeatures, (f) => f.yppDef ?? null),
+    passYpaDef: calculateZScores(allFeatures, (f) => f.passYpaDef ?? null),
+    rushYpcDef: calculateZScores(allFeatures, (f) => f.rushYpcDef ?? null),
+    successDef: calculateZScores(allFeatures, (f) => f.successDef ?? null),
+    epaDef: calculateZScores(allFeatures, (f) => f.epaDef ?? null),
+    talentComposite: calculateZScores(
+      allFeatures,
+      (f) => f.talentComposite ?? null
+    ),
+    blueChipsPct: calculateZScores(allFeatures, (f) => f.blueChipsPct ?? null),
+    commitsSignal: calculateZScores(
+      allFeatures,
+      (f) => f.commitsSignal ?? null
+    ),
+  };
+
+  return allFeatures.map((features) => {
+    const offenseRating = computeOffensiveIndex(
+      features,
+      {
+        yppOff: zStats.yppOff,
+        passYpaOff: zStats.passYpaOff,
+        rushYpcOff: zStats.rushYpcOff,
+        successOff: zStats.successOff,
+        epaOff: zStats.epaOff,
+      },
+      modelConfig
+    );
+
+    const defenseRating = computeDefensiveIndex(
+      features,
+      {
+        yppDef: zStats.yppDef,
+        passYpaDef: zStats.passYpaDef,
+        rushYpcDef: zStats.rushYpcDef,
+        successDef: zStats.successDef,
+        epaDef: zStats.epaDef,
+      },
+      modelConfig
+    );
+
+    const talentZ = getZScore(
+      features.talentComposite ?? null,
+      zStats.talentComposite
+    );
+    const blueChipZ = getZScore(
+      features.blueChipsPct ?? null,
+      zStats.blueChipsPct
+    );
+    const commitsZ = getZScore(
+      features.commitsSignal ?? null,
+      zStats.commitsSignal
+    );
+    const talentPrior = calculateTalentPrior(
+      features,
+      {
+        talentComposite: zStats.talentComposite,
+        blueChipsPct: zStats.blueChipsPct,
+        commitsSignal: zStats.commitsSignal,
+      },
+      modelConfig
+    );
+    const decay = calculateDecayFactor(features.weeksPlayed || 0);
+    const talentComponent = decay * talentPrior;
+
+    const base = offenseRating + defenseRating;
+    const hasBaseFeatures =
+      features.dataSource !== 'missing' &&
+      (features.yppOff !== null ||
+        features.yppDef !== null ||
+        features.successOff !== null ||
+        features.successDef !== null);
+
+    const rawScore = hasBaseFeatures
+      ? base + talentComponent
+      : talentComponent;
+
+    const conference =
+      conferenceMap.get(features.teamId.toLowerCase()) ?? null;
+    const conferenceAdjustment = getConferenceAdjustment(conference);
+    const adjustedScore = rawScore + conferenceAdjustment;
+    const powerRating = adjustedScore * calibrationFactor;
+
+    return {
+      season,
+      teamId: features.teamId,
+      offenseRating,
+      defenseRating,
+      powerRating,
+      confidence: calculateConfidence(features),
+      dataSource: getDataSourceString(features),
+      games: features.weeksPlayed || 0,
+      conference,
+      talentComposite: features.talentComposite ?? null,
+      talentZ,
+      blueChipZ,
+      commitsZ,
+      talentPrior,
+      decay,
+      talentComponent,
+      hasBaseFeatures,
+      conferenceAdjustment,
+      rawScore,
+      adjustedScore,
+      calibrationFactor,
+    };
+  });
+}
+
 async function main() {
   try {
     const yargs = require('yargs/yargs');
@@ -322,87 +477,23 @@ async function main() {
 
     console.log(`\n✅ Loaded features for ${allFeatures.length} teams`);
 
-    // Calculate z-score statistics across all teams
-    console.log(`\n📈 Calculating z-score statistics...`);
-    const zStats = {
-      yppOff: calculateZScores(allFeatures, f => f.yppOff),
-      passYpaOff: calculateZScores(allFeatures, f => f.passYpaOff),
-      rushYpcOff: calculateZScores(allFeatures, f => f.rushYpcOff),
-      successOff: calculateZScores(allFeatures, f => f.successOff),
-      epaOff: calculateZScores(allFeatures, f => f.epaOff),
-      yppDef: calculateZScores(allFeatures, f => f.yppDef),
-      passYpaDef: calculateZScores(allFeatures, f => f.passYpaDef),
-      rushYpcDef: calculateZScores(allFeatures, f => f.rushYpcDef),
-      successDef: calculateZScores(allFeatures, f => f.successDef),
-      epaDef: calculateZScores(allFeatures, f => f.epaDef),
-      // Talent z-scores (Phase 3)
-      talentComposite: calculateZScores(allFeatures, f => f.talentComposite),
-      blueChipsPct: calculateZScores(allFeatures, f => f.blueChipsPct),
-      commitsSignal: calculateZScores(allFeatures, f => f.commitsSignal),
-    };
-
-    // Compute ratings for each team
     console.log(`\n🧮 Computing ratings...`);
-    const ratings = allFeatures.map(features => {
-      // Calculate base offensive/defensive ratings
-      const offenseRating = computeOffensiveIndex(features, {
-        yppOff: zStats.yppOff,
-        passYpaOff: zStats.passYpaOff,
-        rushYpcOff: zStats.rushYpcOff,
-        successOff: zStats.successOff,
-        epaOff: zStats.epaOff,
-      }, modelConfig);
-
-      const defenseRating = computeDefensiveIndex(features, {
-        yppDef: zStats.yppDef,
-        passYpaDef: zStats.passYpaDef,
-        rushYpcDef: zStats.rushYpcDef,
-        successDef: zStats.successDef,
-        epaDef: zStats.epaDef,
-      }, modelConfig);
-
-      // Calculate talent component (Phase 3)
-      const talentComponent = calculateTalentComponent(features, {
-        talentComposite: zStats.talentComposite,
-        blueChipsPct: zStats.blueChipsPct,
-        commitsSignal: zStats.commitsSignal,
-      }, modelConfig);
-
-      // Base = Offense + Defense composite
-      const base = offenseRating + defenseRating;
-
-      // Early-season fallback: If base features are missing, use talent + HFA only
-      const hasBaseFeatures = features.dataSource !== 'missing' && 
-                               (features.yppOff !== null || features.yppDef !== null ||
-                                features.successOff !== null || features.successDef !== null);
-      
-      // Score = Base + TalentComponent + HFA
-      // If base is missing, Score = TalentComponent + HFA (fallback)
-      const calibrationFactor = modelConfig.calibration_factor || 1.0; // Default 1.0 for backward compat
-      const rawScore = hasBaseFeatures 
-        ? base + talentComponent 
-        : talentComponent; // Early-season: talent-only fallback
-      
-      // Apply conference strength adjustment (SRS-like adjustment)
-      const teamConference = conferenceMap.get(features.teamId.toLowerCase());
-      const conferenceAdjustment = getConferenceAdjustment(teamConference || null);
-      const adjustedScore = rawScore + conferenceAdjustment;
-      const powerRating = adjustedScore * calibrationFactor;
-
-      const confidence = calculateConfidence(features);
-      const dataSource = getDataSourceString(features);
-
-      return {
-        season,
-        teamId: features.teamId,
-        offenseRating,
-        defenseRating,
-        powerRating,
-        confidence,
-        dataSource,
-        games: features.weeksPlayed || 0, // Count of final games played
-      };
+    const computed = computeV1SeasonRatings({
+      season,
+      allFeatures,
+      conferenceMap,
+      modelConfig,
     });
+    const ratings = computed.map((r) => ({
+      season: r.season,
+      teamId: r.teamId,
+      offenseRating: r.offenseRating,
+      defenseRating: r.defenseRating,
+      powerRating: r.powerRating,
+      confidence: r.confidence,
+      dataSource: r.dataSource,
+      games: r.games,
+    }));
 
     // Upsert ratings to database
     console.log(`\n💾 Persisting ratings to database...`);

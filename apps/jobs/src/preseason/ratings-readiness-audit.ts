@@ -381,13 +381,13 @@ export const DEFAULT_WORKFLOW_RISK_FINDINGS: AuditFinding[] = [
     code: 'talent_cfbd_yml',
     severity: 'review',
     message:
-      'talent-cfbd.yml: yearly schedule present in YAML; season default 2025; arbitrary season input; checkout@v4 + setup-node@v4 + Node 18; calls CFBD and writes talent tables; NOT safe for direct 2026 execution. GitHub UI enable/disable cannot be proven from source alone',
+      'talent-cfbd.yml: workflow_dispatch ONLY (schedule removed Phase 2C-2H-2); legacy ≤2025 manual sync; season default 2025; writer refuses 2026+; checkout@v4 + setup-node@v4 + Node 18; still calls CFBD and writes talent for ≤2025 — not the 2026 write path. GitHub UI enable/disable cannot be proven from source alone',
   },
   {
     code: 'talent_roster_sync_yml',
     severity: 'review',
     message:
-      'talent-roster-sync.yml: yearly schedule present in YAML; season default 2025; arbitrary season input; checkout@v4 + setup-node@v4 + Node 20; calls CFBD and writes; NOT safe for direct 2026 execution. UI enable/disable not proven from source',
+      'talent-roster-sync.yml: workflow_dispatch ONLY (schedule removed Phase 2C-2H-2); legacy ≤2025 manual sync; season default 2025; writer refuses 2026+; checkout@v4 + setup-node@v4 + Node 20; still calls CFBD and writes for ≤2025 — not the 2026 write path. UI enable/disable not proven from source',
   },
   {
     code: 'talent_commits_sync_yml',
