@@ -469,6 +469,65 @@ export function verifyStoredTalentRows(options: {
 }
 
 /**
+ * Fail-closed candidate integrity: season/composite/null policies + exact set.
+ * Safe to call before any transaction/mutation. Throws a fixed whitelist message.
+ */
+export function assertTalentCandidatesIntegrity(options: {
+  candidates: TalentCandidateRow[];
+  expectedFbsIds: string[];
+}): void {
+  const expectedFbsIds = sortedUnique(options.expectedFbsIds);
+  const candidates = options.candidates;
+
+  if (candidates.length !== EXPECTED_FBS_COUNT) {
+    throw new Error(
+      `COMMIT refused: candidateRows ${candidates.length} != ${EXPECTED_FBS_COUNT}`
+    );
+  }
+  if (expectedFbsIds.length !== EXPECTED_FBS_COUNT) {
+    throw new Error(
+      `COMMIT refused: expectedFbsIds ${expectedFbsIds.length} != ${EXPECTED_FBS_COUNT}`
+    );
+  }
+
+  const teamIds = candidates.map((c) => c.teamId);
+  const uniqueTeamIds = sortedUnique(teamIds);
+  if (uniqueTeamIds.length !== EXPECTED_FBS_COUNT) {
+    throw new Error(
+      `COMMIT refused: unique candidate team IDs ${uniqueTeamIds.length} != ${EXPECTED_FBS_COUNT}`
+    );
+  }
+  if (!setsEqual(uniqueTeamIds, expectedFbsIds)) {
+    throw new Error(
+      'COMMIT refused: candidate team set must exactly equal authoritative FBS membership IDs'
+    );
+  }
+
+  for (const c of candidates) {
+    if (c.season !== TARGET_SEASON) {
+      throw new Error(
+        `COMMIT refused: candidate season must be ${TARGET_SEASON}`
+      );
+    }
+    if (!Number.isFinite(c.talentComposite)) {
+      throw new Error(
+        'COMMIT refused: candidate talentComposite must be finite'
+      );
+    }
+    if (c.blueChipsPct !== null) {
+      throw new Error(
+        'COMMIT refused: candidate blueChipsPct must be null'
+      );
+    }
+    if (c.sourceUpdatedAt !== null) {
+      throw new Error(
+        'COMMIT refused: candidate sourceUpdatedAt must be null'
+      );
+    }
+  }
+}
+
+/**
  * Atomic COMMIT write. Fail-closed: any mismatch throws and rolls back.
  */
 export async function writeTeamTalent(
@@ -483,18 +542,12 @@ export async function writeTeamTalent(
   postCommit: TalentWriteVerification;
 }> {
   const expectedFbsIds = sortedUnique(options.expectedFbsIds);
-  if (
-    options.candidates.length !== EXPECTED_FBS_COUNT ||
-    expectedFbsIds.length !== EXPECTED_FBS_COUNT ||
-    !setsEqual(
-      options.candidates.map((c) => c.teamId),
-      expectedFbsIds
-    )
-  ) {
-    throw new Error(
-      'COMMIT refused: candidate set must exactly equal 138 FBS membership IDs'
-    );
-  }
+
+  // Pre-mutation integrity: reject bad candidates before any mutation API.
+  assertTalentCandidatesIntegrity({
+    candidates: options.candidates,
+    expectedFbsIds,
+  });
 
   const verification = await options.deps.transaction(async (tx) => {
     const membership = await tx.loadFbsTeamIds(TARGET_SEASON);
@@ -525,6 +578,12 @@ export async function writeTeamTalent(
         'In-transaction candidate set does not equal membership set'
       );
     }
+
+    // Re-check immediately before the first insert.
+    assertTalentCandidatesIntegrity({
+      candidates: options.candidates,
+      expectedFbsIds: membershipIds,
+    });
 
     let rowsInserted = 0;
     for (const row of options.candidates) {

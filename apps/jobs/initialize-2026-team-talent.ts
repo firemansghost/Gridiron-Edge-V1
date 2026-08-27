@@ -405,9 +405,6 @@ export async function runTalentInitializer(options: {
     return { exitCode: 0 };
   } catch (err) {
     console.error(`[talent-init] ${sanitizeTalentInitError(err)}`);
-    if (err instanceof Error && err.message) {
-      console.error(`[talent-init] detail=${err.message}`);
-    }
     return { exitCode: 1 };
   } finally {
     if (ownsPrisma && prisma) await prisma.$disconnect();

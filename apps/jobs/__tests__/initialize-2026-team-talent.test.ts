@@ -8,8 +8,10 @@ import * as path from 'path';
 import {
   EXPECTED_FBS_COUNT,
   WRITE_CONFIRM_PHRASE,
+  assertTalentCandidatesIntegrity,
   assessTalentInitialization,
   parseTalentInitArgs,
+  sanitizeTalentInitError,
   verifyStoredTalentRows,
   writeTeamTalent,
   type ExistingTalentRow,
@@ -22,6 +24,7 @@ import {
   buildIdentityResolver,
 } from '../src/preseason/ratings-input-provider-preview';
 import { assertLegacyTalentWriterSeasonAllowed } from '../src/talent/cfbd_team_roster_talent';
+import { runTalentInitializer } from '../initialize-2026-team-talent';
 
 function nameMapForFbs(fbs: string[]): Record<string, string> {
   const map: Record<string, string> = {};
@@ -476,6 +479,154 @@ describe('mutation safety', () => {
         deps,
       })
     ).rejects.toThrow(/membership mismatch/i);
+  });
+
+  it('pre-mutation: bad candidate season/value/null-policy rejected with zero inserts', async () => {
+    const { assessment, fbs } = assessHealthy({
+      commitRequested: true,
+      confirmationValid: true,
+    });
+    const base = assessment.candidates.map((c) => ({ ...c }));
+
+    const cases: Array<{
+      label: string;
+      mutate: (rows: TalentCandidateRow[]) => void;
+      match: RegExp;
+    }> = [
+      {
+        label: 'season=2025',
+        mutate: (rows) => {
+          rows[0] = { ...rows[0], season: 2025 };
+        },
+        match: /candidate season must be 2026/,
+      },
+      {
+        label: 'season=2027',
+        mutate: (rows) => {
+          rows[0] = { ...rows[0], season: 2027 };
+        },
+        match: /candidate season must be 2026/,
+      },
+      {
+        label: 'talentComposite=NaN',
+        mutate: (rows) => {
+          rows[0] = { ...rows[0], talentComposite: Number.NaN };
+        },
+        match: /talentComposite must be finite/,
+      },
+      {
+        label: 'talentComposite=Infinity',
+        mutate: (rows) => {
+          rows[0] = { ...rows[0], talentComposite: Number.POSITIVE_INFINITY };
+        },
+        match: /talentComposite must be finite/,
+      },
+      {
+        label: 'blueChipsPct non-null',
+        mutate: (rows) => {
+          rows[0] = { ...rows[0], blueChipsPct: 0.5 as unknown as null };
+        },
+        match: /blueChipsPct must be null/,
+      },
+      {
+        label: 'sourceUpdatedAt non-null',
+        mutate: (rows) => {
+          rows[0] = {
+            ...rows[0],
+            sourceUpdatedAt: new Date() as unknown as null,
+          };
+        },
+        match: /sourceUpdatedAt must be null/,
+      },
+    ];
+
+    for (const c of cases) {
+      const candidates = base.map((r) => ({ ...r }));
+      c.mutate(candidates);
+      let insertCalls = 0;
+      let txCalls = 0;
+      const deps: TalentInitWriteDeps = {
+        async transaction(fn) {
+          txCalls += 1;
+          return fn({
+            async loadFbsTeamIds() {
+              return [...fbs];
+            },
+            async loadExistingTalent() {
+              return [];
+            },
+            async insertTalentRow() {
+              insertCalls += 1;
+              return 1;
+            },
+          });
+        },
+        async loadExistingTalent() {
+          return [];
+        },
+        async loadFbsTeamIds() {
+          return [...fbs];
+        },
+      };
+      await expect(
+        writeTeamTalent({ candidates, expectedFbsIds: fbs, deps })
+      ).rejects.toThrow(c.match);
+      expect(insertCalls).toBe(0);
+      expect(txCalls).toBe(0);
+      expect(() =>
+        assertTalentCandidatesIntegrity({
+          candidates,
+          expectedFbsIds: fbs,
+        })
+      ).toThrow(c.match);
+    }
+  });
+
+  it('sanitizer: sensitive connection string never printed on initializer failure', async () => {
+    const fbs = buildFbsFixture();
+    const sensitive =
+      'postgresql://audit_user:SuperSecretPassw0rd@db.example/gridiron CFBD_API_KEY=sk-live-secret';
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { exitCode } = await runTalentInitializer({
+        season: 2026,
+        mode: 'PREVIEW',
+        store: {
+          async loadFbsTeamIds() {
+            return fbs;
+          },
+          async loadExistingTalent() {
+            return [];
+          },
+        },
+        provider: {
+          async fetchTalent() {
+            throw new Error(sensitive);
+          },
+        },
+        resolveTeamId: buildIdentityResolver(nameMapForFbs(fbs)),
+      });
+      expect(exitCode).toBe(1);
+      const output = errorSpy.mock.calls.map((c) => c.map(String).join(' ')).join('\n');
+      expect(output).toContain(sanitizeTalentInitError());
+      expect(output).not.toContain('postgresql://');
+      expect(output).not.toContain('SuperSecretPassw0rd');
+      expect(output).not.toContain('audit_user');
+      expect(output).not.toContain('sk-live-secret');
+      expect(output).not.toContain('detail=');
+      expect(output).not.toContain(sensitive);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('CLI source no longer prints raw err.message detail', () => {
+    const cli = fs.readFileSync(
+      path.join(__dirname, '../initialize-2026-team-talent.ts'),
+      'utf8'
+    );
+    expect(cli).not.toMatch(/detail=\$\{err\.message\}/);
+    expect(cli).not.toMatch(/detail=\$\{.*\.message/);
   });
 
   it('32-34. no ratings/Odds; provider budget exactly 1', () => {
