@@ -92,7 +92,8 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | **2C-2H-4 V1 historical parity forensic** | **PASSED structurally (PR #55)** — legacy Core V1 did not reproduce persisted 2025 (`exact=0/136`, MAE≈32.21) |
 | **2C-2H-5 Balanced V1 historical parity** | **PASSED — EXACT (PR #56)** — cutoff Balanced replay matched persisted 2025 V1 136/136 |
 | **2C-2H-6 Balanced V1 preseason bridge eval** | **PASSED (PR #57)** — Candidate A provisional preferred; Candidate B rejected; persistence unauthorized |
-| **2C-2H-7 Balanced V1 transition timing** | **In preparation (draft)** — 2025 weekly coverage/transition study; no policy authorized |
+| **2C-2H-7 Balanced V1 transition timing** | **PASSED (PR #58)** — timing-only hard switch rejected; blend eval required |
+| **2C-2H-8 Balanced V1 transition blends** | **In preparation (draft)** — global B1/B2/B3 blend schedules; no policy authorized |
 | **Ratings computation / persistence** | **Not yet approved** — **2026 ratings persistence remains NOT AUTHORIZED** |
 | **Odds ingestion** | **Not yet approved** |
 | **Nightly reactivation** | **Not yet approved** |
@@ -138,7 +139,9 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | `apps/jobs/evaluate-balanced-v1-preseason-bridge.ts` | Read-only 2026 Balanced V1 preseason Candidates A/B diagnostic |
 | `Evaluate 2026 Balanced V1 Preseason Bridge (Manual, Read Only)` | `workflow_dispatch` only; `season=2026`; `DIRECT_URL` only |
 | `apps/jobs/evaluate-balanced-v1-transition-timing.ts` | Read-only 2025 Balanced V1 transition timing study |
+| `apps/jobs/evaluate-balanced-v1-transition-blends.ts` | Read-only 2025 Balanced V1 global blend study |
 | `Evaluate Balanced V1 Transition Timing (Manual, Read Only)` | `workflow_dispatch` only; `study_season=2025`; `DIRECT_URL` only |
+| `Evaluate Balanced V1 Transition Blends (Manual, Read Only)` | `workflow_dispatch` only; `study_season=2025`; `DIRECT_URL` only |
 | `Preview 2026 Ratings Inputs (Manual, Read Only)` | Provider preview workflow (`season=2026`) |
 | `apps/jobs/diagnose-2026-conference-recruiting.ts` | Read-only `/teams/fbs` + recruiting resolver diagnostic (`providerFbsSetExact` / `recruitingResolverSafe`) |
 | `Diagnose 2026 Conference & Recruiting Mapping (Manual, Read Only)` | Diagnostic workflow (`season=2026`) |
@@ -168,17 +171,23 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 * 2C-2H-4: **PASSED structurally (PR #55)** — forensic valid; legacy `compute_ratings_v1` did **not** reproduce persisted 2025 (`exact=0/136`, MAE≈32.2124)
 * 2C-2H-5: **PASSED — EXACT (PR #56)** — unrestricted MAE≈0.972 was snapshot drift; cutoff Nov 24 2025 Balanced replay matched **136/136** (MAE≈2.3e-15); **production Core V1 = Balanced V1**; legacy `compute_ratings_v1` not canonical
 * 2C-2H-6: **PASSED (PR #57)** — Candidate A provisional preferred (2025 MAE=7.8831; 2026 range=20.8895; p95=10.1282); Candidate B rejected (2026 range=83.5581; p95=40.5127); `preseasonBridgeAuthorized=false`
-* 2C-2H-7: **IN PREPARATION / draft PR** — read-only 2025 transition timing (weekly coverage + Candidate A→canonical deltas); `hardSwitchWeekCandidate=INCONCLUSIVE`; chronology + pure-preseason fail-closed; `transitionPolicyAuthorized=false`
+* 2C-2H-7: **PASSED (PR #58)** — W1 68.4% / W2 99.3% / W3 100%; Pearson W3–W8 .7340→.9399; hard-switch median jump ≈6.6–7.3 / p95 ≈17–19; timing-only hard/per-team switches **REJECTED**; `transitionPolicyAuthorized=false`
+* 2C-2H-8: **IN PREPARATION / draft PR** — read-only 2025 global blend evaluation (B1/B2/B3 + rejected hard-switch controls); `blendPolicyCandidate=INCONCLUSIVE`; `blendPolicyAuthorized=false`
 * Recruiting schema mismatch remains separate
 * **Do not persist ratings until separately authorized**
-* **Do not run the production transition timing workflow until the draft PR is independently reviewed**
+* **Do not run the production transition blend workflow until the draft PR is independently reviewed**
 * **Do not run `compute_ratings_balanced.ts` or legacy `compute_ratings_v1` for 2026**
 
-##### After 2C-2H-7 merges — operator procedure
-1. Independently review draft PR (coverage milestones + transition deltas; no buried policy authorization)
-2. Only then run **Evaluate Balanced V1 Transition Timing (Manual, Read Only)**
-3. Treat all weekly metrics as manual evidence only — `hardSwitchWeekCandidate` is always `INCONCLUSIVE` in this phase; do not authorize P1/P2/P3 from coverage alone
-4. Ratings persistence and bridge/transition authorization remain unauthorized
+##### After 2C-2H-7 (complete) — recorded conclusion
+1. Timing alone does not solve Candidate A → canonical discontinuity
+2. Hard global / per-team first-game / per-team two-game switches rejected from serious consideration
+3. Proceed to global blend evaluation (2C-2H-8)
+
+##### After 2C-2H-8 merges — operator procedure
+1. Independently review draft PR (blend schedules + weekly stability; no buried policy authorization)
+2. Only then run **Evaluate Balanced V1 Transition Blends (Manual, Read Only)**
+3. Treat comparison table as manual evidence — `blendPolicyCandidate` is `INCONCLUSIVE`; do not authorize a blend from this phase alone
+4. Ratings persistence and blend/transition authorization remain unauthorized
 
 - [x] Preview week 0–2 reviewed
 - [x] Week 1–13 + 15 production writes
@@ -201,7 +210,8 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 - [x] 2C-2H-4 Core V1 historical parity forensic PASSED structurally (legacy did not reproduce)
 - [x] 2C-2H-5 Balanced V1 historical parity PASSED EXACT (PR #56)
 - [x] 2C-2H-6 Balanced V1 preseason bridge evaluation PASSED (Candidate A provisional; B rejected)
-- [ ] 2C-2H-7 Balanced V1 transition timing evaluation (draft)
+- [x] 2C-2H-7 Balanced V1 transition timing PASSED (PR #58; hard switches rejected)
+- [ ] 2C-2H-8 Balanced V1 transition blend evaluation (draft)
 - [ ] Odds / ratings persist / bets remain **out of scope** until separately approved
 
 ---
