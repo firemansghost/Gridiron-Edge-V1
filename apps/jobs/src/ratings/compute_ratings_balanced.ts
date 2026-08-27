@@ -1,84 +1,97 @@
 /**
- * Compute Balanced Ratings for CFB teams
- * 
- * Formula: 25% Talent + 25% EPA + 25% Net Points/Game + 25% Win Percentage
- * Then apply calibration factor to convert z-scores to spread points
- * 
- * Formula calculation is extracted to compute_balanced_v1.ts (pure, shared with forensic).
- * Persistence behavior is intentionally unchanged:
- * - UPSERT modelVersion='v1'
- * - On UPDATE: only powerRating, rating, games
- * - offenseRating, defenseRating, confidence, dataSource are NOT updated on existing rows
+ * Balanced Ratings Computation
+ *
+ * Implements the optimized 25/25/25/25 formula:
+ * - 25% Talent
+ * - 25% EPA (Efficiency)
+ * - 25% Net Points per Game
+ * - 25% Win Percentage
+ *
+ * Scaled by 14.0 to convert z-scores to spread points.
+ *
+ * Formula calculation uses shared pure helper compute_balanced_v1.ts.
+ * Data loading, CLI, and persistence semantics match historical main behavior.
+ *
+ * Usage:
+ *   npm run build:jobs
+ *   node apps/jobs/dist/src/ratings/compute_ratings_balanced.js --season 2025
  */
 
 import { PrismaClient } from '@prisma/client';
+import { TeamResolver } from '../../adapters/TeamResolver';
 import {
-  BALANCED_MODEL_VERSION,
   BALANCED_V1_CALIBRATION_FACTOR,
-  aggregateBalancedEpa,
-  aggregateBalancedGameStats,
-  buildBalancedTeamMetrics,
+  calculateBalancedZScores,
   computeBalancedV1Ratings,
 } from './compute_balanced_v1';
 
 const prisma = new PrismaClient();
 
-const CALIBRATION_FACTOR = BALANCED_V1_CALIBRATION_FACTOR; // ~14 points stddev for CFB
+const CALIBRATION_FACTOR = BALANCED_V1_CALIBRATION_FACTOR; // Convert z-scores to spread points
 
 interface TeamMetrics {
   teamId: string;
   teamName: string;
   talentScore: number;
-  epaOverall: number; // EPA_Off - EPA_Def
+  epaOverall: number;
   netPointsPerGame: number;
   winPct: number;
   gamesPlayed: number;
 }
 
-interface ComputedRating {
-  teamId: string;
-  teamName: string;
-  powerRating: number;
-  games: number;
-  components: {
-    talentZ: number;
-    epaZ: number;
-    netPointsZ: number;
-    winPctZ: number;
-    zComposite: number;
-  };
-}
-
-async function computeBalancedRatings(season: number): Promise<{
-  ratings: ComputedRating[];
-  metrics: TeamMetrics[];
-}> {
-  console.log(`\n=== Computing Balanced Ratings for ${season} ===\n`);
-  console.log(`Calibration Factor: ${CALIBRATION_FACTOR}`);
-  console.log(`Formula: 25% Talent + 25% EPA + 25% Net Pts/G + 25% Win%\n`);
+/**
+ * Load team metrics from database
+ * (Historical writer query semantics — do not "improve" in this phase.)
+ */
+async function loadTeamMetrics(season: number): Promise<TeamMetrics[]> {
+  console.log(`\n📊 Loading team metrics for season ${season}...`);
 
   // Get all FBS teams
-  const fbsTeams = await prisma.team.findMany({
-    where: { classification: 'fbs' },
-    select: { id: true, name: true },
+  const fbsMemberships = await prisma.teamMembership.findMany({
+    where: { season, level: 'fbs' },
+    select: { teamId: true },
   });
-  const fbsTeamIds = new Set(fbsTeams.map(t => t.id.toLowerCase()));
-  console.log(`FBS Teams: ${fbsTeams.length}`);
+  const fbsTeamIds = new Set(fbsMemberships.map((m) => m.teamId.toLowerCase()));
 
-  // Get talent scores
-  const talents = await prisma.teamSeasonTalent.findMany({
-    where: { season },
-    select: { teamId: true, talentComposite: true },
+  // Get team names
+  const teams = await prisma.team.findMany({
+    where: {
+      id: { in: Array.from(fbsTeamIds) },
+    },
+    select: {
+      id: true,
+      name: true,
+    },
   });
-  console.log(`Talent scores: ${talents.length}`);
+  const teamNameMap = new Map(teams.map((t) => [t.id.toLowerCase(), t.name]));
 
-  // Get all FINAL games for the season (completed games only)
+  // Get talent scores from TeamSeasonTalent
+  const talentData = await prisma.teamSeasonTalent.findMany({
+    where: {
+      season,
+      teamId: { in: Array.from(fbsTeamIds) },
+    },
+    select: {
+      teamId: true,
+      talentComposite: true,
+    },
+  });
+
+  const talentMap = new Map<string, number>();
+  for (const talent of talentData) {
+    const teamId = talent.teamId.toLowerCase();
+    talentMap.set(teamId, Number(talent.talentComposite || 0));
+  }
+
+  // Get game results to calculate win percentage and net points
   const games = await prisma.game.findMany({
     where: {
       season,
       status: 'final',
-      homeScore: { not: null },
-      awayScore: { not: null },
+      OR: [
+        { homeTeamId: { in: Array.from(fbsTeamIds) } },
+        { awayTeamId: { in: Array.from(fbsTeamIds) } },
+      ],
     },
     select: {
       homeTeamId: true,
@@ -87,15 +100,71 @@ async function computeBalancedRatings(season: number): Promise<{
       awayScore: true,
     },
   });
-  console.log(`Final games: ${games.length}`);
 
-  // Calculate team stats from games (only FBS vs FBS)
-  const teamStats = aggregateBalancedGameStats(games, fbsTeamIds);
+  // Calculate win percentage and net points per game for each team
+  const teamStats = new Map<
+    string,
+    {
+      wins: number;
+      losses: number;
+      pointsFor: number;
+      pointsAgainst: number;
+      games: number;
+    }
+  >();
 
-  // Get EPA data from TeamGameStat
-  const gameStats = await prisma.teamGameStat.findMany({
+  for (const game of games) {
+    const homeId = game.homeTeamId.toLowerCase();
+    const awayId = game.awayTeamId.toLowerCase();
+
+    if (!fbsTeamIds.has(homeId) || !fbsTeamIds.has(awayId)) continue;
+
+    const homeScore = game.homeScore || 0;
+    const awayScore = game.awayScore || 0;
+
+    // Home team
+    if (!teamStats.has(homeId)) {
+      teamStats.set(homeId, {
+        wins: 0,
+        losses: 0,
+        pointsFor: 0,
+        pointsAgainst: 0,
+        games: 0,
+      });
+    }
+    const homeStat = teamStats.get(homeId)!;
+    homeStat.pointsFor += homeScore;
+    homeStat.pointsAgainst += awayScore;
+    homeStat.games++;
+    if (homeScore > awayScore) homeStat.wins++;
+    else if (awayScore > homeScore) homeStat.losses++;
+
+    // Away team
+    if (!teamStats.has(awayId)) {
+      teamStats.set(awayId, {
+        wins: 0,
+        losses: 0,
+        pointsFor: 0,
+        pointsAgainst: 0,
+        games: 0,
+      });
+    }
+    const awayStat = teamStats.get(awayId)!;
+    awayStat.pointsFor += awayScore;
+    awayStat.pointsAgainst += homeScore;
+    awayStat.games++;
+    if (awayScore > homeScore) awayStat.wins++;
+    else if (homeScore > awayScore) awayStat.losses++;
+  }
+
+  // Get team game stats for EPA
+  const teamGameStats = await prisma.teamGameStat.findMany({
     where: {
-      game: { season },
+      season,
+      teamId: { in: Array.from(fbsTeamIds) },
+      game: {
+        status: 'final',
+      },
     },
     select: {
       teamId: true,
@@ -103,193 +172,288 @@ async function computeBalancedRatings(season: number): Promise<{
       epaDef: true,
     },
   });
-  console.log(`Team game stats (EPA): ${gameStats.length}`);
 
-  // Aggregate EPA by team
-  const epaByTeam = aggregateBalancedEpa(gameStats);
+  // Calculate average EPA per team
+  const epaMap = new Map<string, { epaOff: number[]; epaDef: number[] }>();
+  for (const stat of teamGameStats) {
+    const teamId = stat.teamId.toLowerCase();
+    if (!epaMap.has(teamId)) {
+      epaMap.set(teamId, { epaOff: [], epaDef: [] });
+    }
+    const epa = epaMap.get(teamId)!;
+    if (stat.epaOff !== null) epa.epaOff.push(stat.epaOff);
+    if (stat.epaDef !== null) epa.epaDef.push(stat.epaDef);
+  }
 
-  // Build metrics for each FBS team (shared pure path)
-  const nameById = new Map(
-    fbsTeams.map((t) => [t.id.toLowerCase(), t.name] as const)
-  );
-  const built = buildBalancedTeamMetrics({
-    fbsTeamIds: [...fbsTeamIds],
-    teamNameById: nameById,
-    talentRows: talents,
-    gameAggregates: teamStats,
-    epaByTeam,
-  });
-  const metrics: TeamMetrics[] = built.metrics.map((m) => ({
-    teamId: m.teamId,
-    teamName: m.teamName,
-    talentScore: m.talentScore,
-    epaOverall: m.epaOverall,
-    netPointsPerGame: m.netPointsPerGame,
-    winPct: m.winPct,
-    gamesPlayed: m.gamesPlayed,
-  }));
+  // Build metrics array
+  const metrics: TeamMetrics[] = [];
+  for (const teamId of fbsTeamIds) {
+    const stat = teamStats.get(teamId);
+    if (!stat || stat.games === 0) continue;
 
-  console.log(`Teams with metrics: ${metrics.length}`);
+    const epa = epaMap.get(teamId);
+    const avgEpaOff =
+      epa && epa.epaOff.length > 0
+        ? epa.epaOff.reduce((sum, v) => sum + v, 0) / epa.epaOff.length
+        : 0;
+    const avgEpaDef =
+      epa && epa.epaDef.length > 0
+        ? epa.epaDef.reduce((sum, v) => sum + v, 0) / epa.epaDef.length
+        : 0;
+    const epaOverall = avgEpaOff - avgEpaDef; // Net EPA
 
-  // Calculate ratings using shared pure Balanced V1 formula
-  const computed = computeBalancedV1Ratings(built.metrics);
-  const ratings: ComputedRating[] = computed.map((r) => ({
-    teamId: r.teamId,
-    teamName: r.teamName,
-    powerRating: r.powerRating,
-    games: r.games,
-    components: {
+    const winPct = stat.games > 0 ? stat.wins / stat.games : 0;
+    const netPointsPerGame =
+      stat.games > 0
+        ? (stat.pointsFor - stat.pointsAgainst) / stat.games
+        : 0;
+
+    const talentScore = talentMap.get(teamId) || 0;
+
+    metrics.push({
+      teamId,
+      teamName: teamNameMap.get(teamId) || teamId,
+      talentScore,
+      epaOverall,
+      netPointsPerGame,
+      winPct,
+      gamesPlayed: stat.games,
+    });
+  }
+
+  console.log(`   Loaded metrics for ${metrics.length} teams`);
+  return metrics;
+}
+
+/**
+ * Yargs season parsing — historical contract:
+ * accepts --season 2025 and --season=2025; defaults to 2025; no --persist/--dry-run.
+ */
+export function parseBalancedRatingsSeason(args: string[]): number {
+  const yargs = require('yargs/yargs');
+  const argv = yargs(args)
+    .option('season', {
+      type: 'number',
+      description: 'Season year',
+      default: 2025,
+    })
+    .parseSync();
+  return argv.season as number;
+}
+
+export interface BalancedPersistRatingRow {
+  season: number;
+  teamId: string;
+  powerRating: number;
+  games: number;
+}
+
+/**
+ * Historical per-row upsert persistence. One failure must not stop remaining rows.
+ */
+export async function persistBalancedRatings(
+  client: {
+    teamSeasonRating: {
+      upsert: (args: unknown) => Promise<unknown>;
+    };
+  },
+  ratings: BalancedPersistRatingRow[]
+): Promise<{ upserted: number; errors: number }> {
+  let upserted = 0;
+  let errors = 0;
+
+  for (const rating of ratings) {
+    try {
+      await client.teamSeasonRating.upsert({
+        where: {
+          season_teamId_modelVersion: {
+            season: rating.season,
+            teamId: rating.teamId,
+            modelVersion: 'v1',
+          },
+        },
+        update: {
+          powerRating: rating.powerRating,
+          rating: rating.powerRating, // Also update rating field for compatibility
+          games: rating.games,
+          // Keep existing offenseRating and defenseRating for now
+          // They're not used in the balanced model but may be referenced elsewhere
+        },
+        create: {
+          season: rating.season,
+          teamId: rating.teamId,
+          modelVersion: 'v1',
+          powerRating: rating.powerRating,
+          rating: rating.powerRating,
+          games: rating.games,
+          offenseRating: 0, // Not used in balanced model
+          defenseRating: 0, // Not used in balanced model
+          confidence: 0.5, // Default confidence
+          dataSource: 'balanced', // Mark as balanced model
+        },
+      });
+      upserted++;
+    } catch (error) {
+      console.error(`   Error upserting rating for ${rating.teamId}:`, error);
+      errors++;
+    }
+  }
+
+  return { upserted, errors };
+}
+
+/**
+ * Main function
+ */
+async function main() {
+  try {
+    const yargs = require('yargs/yargs');
+    const { hideBin } = require('yargs/helpers');
+    const argv = yargs(hideBin(process.argv))
+      .option('season', {
+        type: 'number',
+        description: 'Season year',
+        default: 2025,
+      })
+      .parseSync();
+
+    const season = argv.season;
+
+    console.log(
+      `\n🚀 Starting Balanced Ratings computation for season=${season}...`
+    );
+    console.log(
+      `   Formula: 25% Talent + 25% EPA + 25% Net Points + 25% Win %`
+    );
+    console.log(`   Calibration Factor: ${CALIBRATION_FACTOR}`);
+
+    // Load team metrics
+    const metrics = await loadTeamMetrics(season);
+
+    if (metrics.length === 0) {
+      console.error('❌ No team metrics found');
+      return;
+    }
+
+    // Calculate z-score statistics (logging; same math as shared pure path)
+    console.log(`\n📐 Calculating z-score statistics...`);
+    const talentValues = metrics.map((m) => m.talentScore);
+    const epaValues = metrics.map((m) => m.epaOverall);
+    const netPointsValues = metrics.map((m) => m.netPointsPerGame);
+    const winPctValues = metrics.map((m) => m.winPct);
+
+    const zStats = {
+      talent: calculateBalancedZScores(talentValues),
+      epa: calculateBalancedZScores(epaValues),
+      netPoints: calculateBalancedZScores(netPointsValues),
+      winPct: calculateBalancedZScores(winPctValues),
+    };
+
+    console.log(
+      `   Talent: mean=${zStats.talent.mean.toFixed(3)}, std=${zStats.talent.stdDev.toFixed(3)}`
+    );
+    console.log(
+      `   EPA: mean=${zStats.epa.mean.toFixed(3)}, std=${zStats.epa.stdDev.toFixed(3)}`
+    );
+    console.log(
+      `   Net Points: mean=${zStats.netPoints.mean.toFixed(3)}, std=${zStats.netPoints.stdDev.toFixed(3)}`
+    );
+    console.log(
+      `   Win %: mean=${zStats.winPct.mean.toFixed(3)}, std=${zStats.winPct.stdDev.toFixed(3)}`
+    );
+
+    // Compute balanced ratings via shared pure formula (25/25/25/25 × 14.0)
+    console.log(`\n🧮 Computing balanced ratings...`);
+    const computed = computeBalancedV1Ratings(metrics);
+    const ratings = computed.map((r) => ({
+      season,
+      teamId: r.teamId,
+      powerRating: r.powerRating,
+      games: r.games,
       talentZ: r.talentZ,
       epaZ: r.epaZ,
       netPointsZ: r.netPointsZ,
       winPctZ: r.winPctZ,
-      zComposite: r.zComposite,
-    },
-  }));
+      teamName: r.teamName,
+    }));
 
-  return { ratings, metrics };
-}
-
-async function persistRatings(
-  season: number,
-  ratings: ComputedRating[]
-): Promise<void> {
-  console.log(`\n=== Persisting ${ratings.length} ratings for ${season} ===\n`);
-
-  let created = 0;
-  let updated = 0;
-
-  for (const rating of ratings) {
-    // Check if rating exists
-    const existing = await prisma.teamSeasonRating.findUnique({
-      where: {
-        teamId_season_modelVersion: {
-          teamId: rating.teamId,
-          season,
-          modelVersion: BALANCED_MODEL_VERSION,
-        },
-      },
-    });
-
-    if (existing) {
-      // Update — intentionally only powerRating, rating, games
-      // (offenseRating, defenseRating, confidence, dataSource left unchanged)
-      await prisma.teamSeasonRating.update({
-        where: { id: existing.id },
-        data: {
-          powerRating: rating.powerRating,
-          rating: rating.powerRating, // Same as powerRating for V1
-          games: rating.games,
-        },
-      });
-      updated++;
-    } else {
-      // Create
-      await prisma.teamSeasonRating.create({
-        data: {
-          teamId: rating.teamId,
-          season,
-          modelVersion: BALANCED_MODEL_VERSION,
-          powerRating: rating.powerRating,
-          rating: rating.powerRating,
-          offenseRating: 0, // Not computed separately in balanced model
-          defenseRating: 0,
-          games: rating.games,
-          confidence: 0.5, // Medium confidence
-          dataSource: 'balanced',
-        },
-      });
-      created++;
-    }
-  }
-
-  console.log(`Created: ${created}, Updated: ${updated}`);
-}
-
-async function printTopBottom(
-  ratings: ComputedRating[],
-  metrics: TeamMetrics[],
-  n: number = 10
-): Promise<void> {
-  const sorted = [...ratings].sort((a, b) => b.powerRating - a.powerRating);
-  const metricsMap = new Map(metrics.map(m => [m.teamId, m]));
-
-  console.log(`\n=== TOP ${n} TEAMS ===\n`);
-  console.log('Rank | Team                  | Rating  | Talent | EPA    | NetPts | Win%');
-  console.log('-----|-----------------------|---------|--------|--------|--------|------');
-  
-  for (let i = 0; i < Math.min(n, sorted.length); i++) {
-    const r = sorted[i];
-    const m = metricsMap.get(r.teamId);
-    console.log(
-      `${String(i + 1).padStart(4)} | ${r.teamName.padEnd(21)} | ${r.powerRating.toFixed(2).padStart(7)} | ` +
-      `${(m?.talentScore || 0).toFixed(0).padStart(6)} | ${(m?.epaOverall || 0).toFixed(3).padStart(6)} | ` +
-      `${(m?.netPointsPerGame || 0).toFixed(1).padStart(6)} | ${((m?.winPct || 0) * 100).toFixed(0).padStart(4)}%`
+    // Sort by rating for display
+    const sortedRatings = [...ratings].sort(
+      (a, b) => b.powerRating - a.powerRating
     );
-  }
 
-  console.log(`\n=== BOTTOM ${n} TEAMS ===\n`);
-  console.log('Rank | Team                  | Rating  | Talent | EPA    | NetPts | Win%');
-  console.log('-----|-----------------------|---------|--------|--------|--------|------');
-  
-  for (let i = sorted.length - 1; i >= Math.max(0, sorted.length - n); i--) {
-    const r = sorted[i];
-    const m = metricsMap.get(r.teamId);
-    const rank = i + 1;
-    console.log(
-      `${String(rank).padStart(4)} | ${r.teamName.padEnd(21)} | ${r.powerRating.toFixed(2).padStart(7)} | ` +
-      `${(m?.talentScore || 0).toFixed(0).padStart(6)} | ${(m?.epaOverall || 0).toFixed(3).padStart(6)} | ` +
-      `${(m?.netPointsPerGame || 0).toFixed(1).padStart(6)} | ${((m?.winPct || 0) * 100).toFixed(0).padStart(4)}%`
-    );
-  }
-
-  // Print stats
-  const values = ratings.map(r => r.powerRating);
-  const mean = values.reduce((a, b) => a + b, 0) / values.length;
-  const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length;
-  const stdDev = Math.sqrt(variance);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-
-  console.log(`\n=== DISTRIBUTION ===`);
-  console.log(`Count: ${values.length}`);
-  console.log(`Mean: ${mean.toFixed(2)}`);
-  console.log(`StdDev: ${stdDev.toFixed(2)}`);
-  console.log(`Min: ${min.toFixed(2)}`);
-  console.log(`Max: ${max.toFixed(2)}`);
-  console.log(`Range: ${(max - min).toFixed(2)}`);
-}
-
-async function main() {
-  const args = process.argv.slice(2);
-  const seasonArg = args.find(a => a.startsWith('--season='));
-  const season = seasonArg ? parseInt(seasonArg.split('=')[1], 10) : 2025;
-  const dryRun = args.includes('--dry-run');
-  const persist = args.includes('--persist');
-
-  console.log(`Season: ${season}`);
-  console.log(`Dry Run: ${dryRun}`);
-  console.log(`Persist: ${persist}`);
-
-  try {
-    const { ratings, metrics } = await computeBalancedRatings(season);
-    
-    await printTopBottom(ratings, metrics, 15);
-
-    if (persist && !dryRun) {
-      await persistRatings(season, ratings);
-      console.log('\n✅ Ratings persisted successfully');
-    } else if (dryRun) {
-      console.log('\n🔍 DRY RUN - No changes made');
-    } else {
-      console.log('\n⚠️  Use --persist to save ratings to database');
+    console.log(`\n📊 Top 10 Balanced Ratings:`);
+    for (let i = 0; i < Math.min(10, sortedRatings.length); i++) {
+      const r = sortedRatings[i];
+      console.log(
+        `   ${(i + 1).toString().padStart(2)}. ${r.teamName.padEnd(35)} ${r.powerRating.toFixed(2)}`
+      );
     }
+
+    // Show Missouri and Oklahoma
+    const missouri = sortedRatings.find(
+      (r) =>
+        r.teamName.toLowerCase().includes('missouri') &&
+        !r.teamName.toLowerCase().includes('southeast') &&
+        !r.teamName.toLowerCase().includes('state')
+    );
+    const oklahoma = sortedRatings.find(
+      (r) =>
+        r.teamName.toLowerCase().includes('oklahoma') &&
+        !r.teamName.toLowerCase().includes('state')
+    );
+
+    if (missouri) {
+      const rank =
+        sortedRatings.findIndex((r) => r.teamId === missouri.teamId) + 1;
+      console.log(`\n📊 Missouri:`);
+      console.log(`   Rating: ${missouri.powerRating.toFixed(2)}`);
+      console.log(`   Rank: #${rank} of ${sortedRatings.length}`);
+    }
+
+    if (oklahoma) {
+      const rank =
+        sortedRatings.findIndex((r) => r.teamId === oklahoma.teamId) + 1;
+      console.log(`\n📊 Oklahoma:`);
+      console.log(`   Rating: ${oklahoma.powerRating.toFixed(2)}`);
+      console.log(`   Rank: #${rank} of ${sortedRatings.length}`);
+    }
+
+    if (missouri && oklahoma) {
+      const predictedSpread =
+        oklahoma.powerRating - missouri.powerRating + 2.5; // HFA
+      console.log(`\n🎯 Predicted Spread (Missouri @ Oklahoma):`);
+      console.log(`   Oklahoma Rating: ${oklahoma.powerRating.toFixed(2)}`);
+      console.log(`   Missouri Rating: ${missouri.powerRating.toFixed(2)}`);
+      console.log(`   HFA: 2.5`);
+      console.log(`   Predicted Margin: ${predictedSpread.toFixed(2)}`);
+      console.log(
+        `   Betting Line: Oklahoma ${predictedSpread > 0 ? '-' : '+'}${Math.abs(predictedSpread).toFixed(1)}`
+      );
+    }
+
+    // Save to database (update TeamSeasonRating with modelVersion='v1')
+    console.log(`\n💾 Persisting balanced ratings to database...`);
+    const { upserted, errors } = await persistBalancedRatings(prisma, ratings);
+
+    console.log(`\n✅ Balanced ratings computation complete!`);
+    console.log(`   Upserted: ${upserted}`);
+    console.log(`   Errors: ${errors}`);
+    console.log(
+      `   Average power rating: ${(ratings.reduce((sum, r) => sum + r.powerRating, 0) / ratings.length).toFixed(2)}`
+    );
   } catch (error) {
-    console.error('Error:', error);
+    console.error('❌ Fatal error:', error);
+    if (error instanceof Error) {
+      console.error('   Message:', error.message);
+      console.error('   Stack:', error.stack);
+    }
     process.exit(1);
   } finally {
     await prisma.$disconnect();
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}

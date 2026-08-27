@@ -774,10 +774,6 @@ export function parseBalancedV1HistoricalParityArgs(argv: string[]):
   return { ok: true, comparisonSeason: comparisonSeason! };
 }
 
-export function sanitizeBalancedV1HistoricalParityError(err: unknown): string {
-  const msg = err instanceof Error ? err.message : String(err);
-  return msg
-    .replace(/postgres(ql)?:\/\/[^\s]+/gi, '[redacted-db-url]')
-    .replace(/DIRECT_URL=[^\s]+/gi, 'DIRECT_URL=[redacted]')
-    .replace(/DATABASE_URL=[^\s]+/gi, 'DATABASE_URL=[redacted]');
+export function sanitizeBalancedV1HistoricalParityError(_err?: unknown): string {
+  return 'Balanced V1 historical parity audit failed; connection and secret details suppressed';
 }

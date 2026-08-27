@@ -7,6 +7,8 @@
  *
  * SELECT-only DB. No CFBD. No Odds. No ratings writes.
  * Does not run compute_ratings_balanced.ts (writer).
+ *
+ * Input SELECTs mirror historical writer loadTeamMetrics semantics.
  */
 
 import { PrismaClient } from '@prisma/client';
@@ -42,9 +44,18 @@ function decimalToNumber(value: unknown): number | null {
 export interface BalancedV1HistoricalParityReadStore {
   loadFbsTeamIds(season: number): Promise<string[]>;
   loadPersistedV1Ratings(season: number): Promise<PersistedV1RatingRow[]>;
-  loadTalentRows(season: number): Promise<BalancedTalentRow[]>;
-  loadFinalGames(season: number): Promise<BalancedGameRow[]>;
-  loadEpaStatRows(season: number): Promise<BalancedEpaStatRow[]>;
+  loadTalentRows(
+    season: number,
+    fbsTeamIds: string[]
+  ): Promise<BalancedTalentRow[]>;
+  loadFinalGames(
+    season: number,
+    fbsTeamIds: string[]
+  ): Promise<BalancedGameRow[]>;
+  loadEpaStatRows(
+    season: number,
+    fbsTeamIds: string[]
+  ): Promise<BalancedEpaStatRow[]>;
 }
 
 export function createPrismaBalancedV1HistoricalParityReadStore(
@@ -52,14 +63,12 @@ export function createPrismaBalancedV1HistoricalParityReadStore(
 ): BalancedV1HistoricalParityReadStore {
   return {
     async loadFbsTeamIds(season) {
+      // Mirror writer: TeamMembership season + level='fbs'
       const rows = await prisma.teamMembership.findMany({
-        where: { season },
-        select: { teamId: true, level: true },
+        where: { season, level: 'fbs' },
+        select: { teamId: true },
       });
-      return rows
-        .filter((r) => r.level.toLowerCase() === 'fbs')
-        .map((r) => r.teamId)
-        .sort();
+      return rows.map((r) => r.teamId).sort();
     },
     async loadPersistedV1Ratings(season) {
       const rows = await prisma.teamSeasonRating.findMany({
@@ -88,9 +97,13 @@ export function createPrismaBalancedV1HistoricalParityReadStore(
         defenseRating: decimalToNumber(r.defenseRating),
       }));
     },
-    async loadTalentRows(season) {
+    async loadTalentRows(season, fbsTeamIds) {
+      // Mirror writer: season + teamId in FBS IDs
       const rows = await prisma.teamSeasonTalent.findMany({
-        where: { season },
+        where: {
+          season,
+          teamId: { in: fbsTeamIds },
+        },
         select: { teamId: true, talentComposite: true },
       });
       return rows.map((r) => ({
@@ -98,13 +111,17 @@ export function createPrismaBalancedV1HistoricalParityReadStore(
         talentComposite: decimalToNumber(r.talentComposite),
       }));
     },
-    async loadFinalGames(season) {
+    async loadFinalGames(season, fbsTeamIds) {
+      // Mirror writer: season + status=final + OR FBS participant
+      // Do NOT require non-null scores (historical || 0 in aggregation)
       const rows = await prisma.game.findMany({
         where: {
           season,
           status: 'final',
-          homeScore: { not: null },
-          awayScore: { not: null },
+          OR: [
+            { homeTeamId: { in: fbsTeamIds } },
+            { awayTeamId: { in: fbsTeamIds } },
+          ],
         },
         select: {
           homeTeamId: true,
@@ -120,9 +137,16 @@ export function createPrismaBalancedV1HistoricalParityReadStore(
         awayScore: r.awayScore,
       }));
     },
-    async loadEpaStatRows(season) {
+    async loadEpaStatRows(season, fbsTeamIds) {
+      // Mirror writer: season + teamId in FBS + game.status=final
       const rows = await prisma.teamGameStat.findMany({
-        where: { game: { season } },
+        where: {
+          season,
+          teamId: { in: fbsTeamIds },
+          game: {
+            status: 'final',
+          },
+        },
         select: {
           teamId: true,
           epaOff: true,
@@ -164,12 +188,22 @@ export async function runBalancedV1HistoricalParityAudit(options: {
 
   try {
     const fbsIds = await options.store.loadFbsTeamIds(COMPARISON_SEASON);
+    const fbsIdsLower = fbsIds.map((id) => id.toLowerCase());
     const persistedV1Rows = await options.store.loadPersistedV1Ratings(
       COMPARISON_SEASON
     );
-    const talentRows = await options.store.loadTalentRows(COMPARISON_SEASON);
-    const finalGames = await options.store.loadFinalGames(COMPARISON_SEASON);
-    const epaStatRows = await options.store.loadEpaStatRows(COMPARISON_SEASON);
+    const talentRows = await options.store.loadTalentRows(
+      COMPARISON_SEASON,
+      fbsIdsLower
+    );
+    const finalGames = await options.store.loadFinalGames(
+      COMPARISON_SEASON,
+      fbsIdsLower
+    );
+    const epaStatRows = await options.store.loadEpaStatRows(
+      COMPARISON_SEASON,
+      fbsIdsLower
+    );
 
     const result = buildBalancedV1HistoricalParityAudit({
       comparisonSeason: COMPARISON_SEASON,

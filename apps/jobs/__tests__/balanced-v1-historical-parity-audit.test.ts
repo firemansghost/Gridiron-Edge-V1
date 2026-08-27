@@ -332,13 +332,13 @@ describe('Balanced V1 historical parity forensic', () => {
       async loadPersistedV1Ratings() {
         return [];
       },
-      async loadTalentRows() {
+      async loadTalentRows(_season, _fbsTeamIds) {
         return [];
       },
-      async loadFinalGames() {
+      async loadFinalGames(_season, _fbsTeamIds) {
         return [];
       },
-      async loadEpaStatRows() {
+      async loadEpaStatRows(_season, _fbsTeamIds) {
         return [];
       },
     };
@@ -364,7 +364,7 @@ describe('Balanced V1 historical parity forensic', () => {
     );
   });
 
-  it('documents writer UPDATE leaves legacy metadata', () => {
+  it('documents writer UPDATE leaves legacy metadata via upsert', () => {
     expect([...BALANCED_V1_UPSERT_UPDATE_FIELDS]).toEqual([
       'powerRating',
       'rating',
@@ -382,19 +382,20 @@ describe('Balanced V1 historical parity forensic', () => {
       path.join(__dirname, '../src/ratings/compute_ratings_balanced.ts'),
       'utf8'
     );
-    expect(writerSrc).toContain("modelVersion: BALANCED_MODEL_VERSION");
-    expect(writerSrc).toMatch(/powerRating:\s*rating\.powerRating/);
-    expect(writerSrc).toMatch(/games:\s*rating\.games/);
-    // UPDATE block must not set offense/defense/confidence/dataSource
+    expect(writerSrc).toMatch(/teamSeasonRating\.upsert/);
+    expect(writerSrc).toMatch(/season_teamId_modelVersion/);
     const updateMatch = writerSrc.match(
-      /if \(existing\) \{[\s\S]*?await prisma\.teamSeasonRating\.update\([\s\S]*?\}\);/
+      /update:\s*\{([\s\S]*?)\},[\s\n]*create:/
     );
     expect(updateMatch).toBeTruthy();
-    const updateBlock = updateMatch![0];
-    expect(updateBlock).not.toMatch(/offenseRating:/);
-    expect(updateBlock).not.toMatch(/defenseRating:/);
-    expect(updateBlock).not.toMatch(/confidence:/);
-    expect(updateBlock).not.toMatch(/dataSource:/);
+    const updateFields = [...updateMatch![1].matchAll(/^\s*(\w+)\s*:/gm)].map(
+      (m) => m[1]
+    );
+    expect(updateFields.sort()).toEqual(['games', 'powerRating', 'rating']);
+    expect(updateFields).not.toContain('offenseRating');
+    expect(updateFields).not.toContain('defenseRating');
+    expect(updateFields).not.toContain('confidence');
+    expect(updateFields).not.toContain('dataSource');
   });
 
   it('documents core-v1-spread Balanced semantics', () => {
@@ -438,7 +439,7 @@ describe('Balanced V1 historical parity forensic', () => {
     expect(src).toContain('LEGACY');
   });
 
-  it('cli rejects non-2025; sanitizes secrets', () => {
+  it('cli rejects non-2025; sanitizer never exposes DB secrets', () => {
     expect(parseBalancedV1HistoricalParityArgs([]).ok).toBe(false);
     expect(
       parseBalancedV1HistoricalParityArgs(['--comparison-season', '2026']).ok
@@ -446,11 +447,49 @@ describe('Balanced V1 historical parity forensic', () => {
     expect(
       parseBalancedV1HistoricalParityArgs(['--comparison-season', '2025'])
     ).toEqual({ ok: true, comparisonSeason: 2025 });
-    expect(
-      sanitizeBalancedV1HistoricalParityError(
-        new Error('postgres://user:pass@host/db failed')
+    const safe = sanitizeBalancedV1HistoricalParityError(
+      new Error(
+        'postgres://user:s3cret@db.example.com:5432/gridiron failed with metadata'
       )
-    ).toContain('[redacted-db-url]');
+    );
+    expect(safe).toBe(
+      'Balanced V1 historical parity audit failed; connection and secret details suppressed'
+    );
+    expect(safe).not.toMatch(/postgres/i);
+    expect(safe).not.toMatch(/s3cret|user@|example\.com|5432/);
+  });
+
+  it('forensic SELECT store mirrors historical writer input queries', () => {
+    const cliSrc = fs.readFileSync(
+      path.join(__dirname, '../audit-balanced-v1-historical-parity.ts'),
+      'utf8'
+    );
+    expect(cliSrc).toMatch(
+      /teamMembership\.findMany\(\s*\{\s*where:\s*\{\s*season,\s*level:\s*'fbs'\s*\}/
+    );
+    expect(cliSrc).toMatch(
+      /teamSeasonTalent\.findMany\(\s*\{\s*where:\s*\{\s*season,\s*teamId:\s*\{\s*in:\s*fbsTeamIds\s*\}/
+    );
+    expect(cliSrc).toMatch(/status:\s*'final'/);
+    expect(cliSrc).toMatch(
+      /OR:\s*\[\s*\{\s*homeTeamId:\s*\{\s*in:\s*fbsTeamIds\s*\}\s*\},\s*\{\s*awayTeamId:\s*\{\s*in:\s*fbsTeamIds\s*\}\s*\}/
+    );
+    expect(cliSrc).not.toMatch(/homeScore:\s*\{\s*not:\s*null\s*\}/);
+    expect(cliSrc).not.toMatch(/awayScore:\s*\{\s*not:\s*null\s*\}/);
+    expect(cliSrc).toMatch(/teamGameStat\.findMany\(/);
+    expect(cliSrc).toMatch(
+      /season,\s*teamId:\s*\{\s*in:\s*fbsTeamIds\s*\},\s*game:\s*\{\s*status:\s*'final'\s*,?\s*\}/
+    );
+    expect(cliSrc).not.toMatch(/game:\s*\{\s*season\s*\}/);
+    expect(cliSrc).toMatch(
+      /loadTalentRows\(\s*COMPARISON_SEASON,\s*fbsIdsLower\s*\)/
+    );
+    expect(cliSrc).toMatch(
+      /loadFinalGames\(\s*COMPARISON_SEASON,\s*fbsIdsLower\s*\)/
+    );
+    expect(cliSrc).toMatch(
+      /loadEpaStatRows\(\s*COMPARISON_SEASON,\s*fbsIdsLower\s*\)/
+    );
   });
 
   it('no providers / Odds / ratings persistence in forensic artifacts', () => {
