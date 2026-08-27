@@ -678,8 +678,167 @@ describe('Core V1 lifecycle — persist targeting / safety', () => {
     expect(wf).not.toMatch(/^\s*push:/m);
     expect(wf).not.toMatch(/^\s*pull_request:/m);
     expect(wf).toContain('CFBD_API_KEY: not provided');
+    expect(wf).toContain('ODDS_API_KEY: not provided');
     expect(wf).toContain('WRITE_2026_CORE_V1');
     expect(wf).toContain('GLOBAL_BLEND_W3_W6');
+    expect(wf).toMatch(/default:\s*PREVIEW/);
     expect(wf).not.toMatch(/CFBD_API_KEY:\s*\$\{\{\s*secrets/);
+    expect(wf).not.toMatch(/ODDS_API_KEY:\s*\$\{\{\s*secrets/);
+  });
+
+  it('workflow security: no job-wide production DB secret; inputs via step env only', () => {
+    const wf = fs
+      .readFileSync(
+        path.join(
+          __dirname,
+          '../../../.github/workflows/write-core-v1-lifecycle-ratings.yml'
+        ),
+        'utf8'
+      )
+      .replace(/\r\n/g, '\n');
+
+    // No job-level production DB secrets under jobs.write
+    const jobsWriteIdx = wf.indexOf('jobs:\n  write:');
+    expect(jobsWriteIdx).toBeGreaterThanOrEqual(0);
+    const stepsIdx = wf.indexOf('\n    steps:', jobsWriteIdx);
+    expect(stepsIdx).toBeGreaterThan(jobsWriteIdx);
+    const jobPreamble = wf.slice(jobsWriteIdx, stepsIdx);
+    expect(jobPreamble).not.toMatch(
+      /DATABASE_URL:\s*\$\{\{\s*secrets\.DIRECT_URL\s*\}\}/
+    );
+    expect(jobPreamble).not.toMatch(
+      /DIRECT_URL:\s*\$\{\{\s*secrets\.DIRECT_URL\s*\}\}/
+    );
+
+    // No direct ${{ inputs.* }} interpolation inside run-script shell assignments
+    expect(wf).not.toMatch(/SEASON="\$\{\{\s*inputs\.season\s*\}\}"/);
+    expect(wf).not.toMatch(
+      /WEEK="\$\{\{\s*inputs\.completed_through_week\s*\}\}"/
+    );
+    expect(wf).not.toMatch(/MODE="\$\{\{\s*inputs\.mode\s*\}\}"/);
+    expect(wf).not.toMatch(
+      /CONFIRM="\$\{\{\s*inputs\.confirmation\s*\}\}"/
+    );
+    expect(wf).not.toMatch(
+      /--season\s+"\$\{\{\s*inputs\.season\s*\}\}"/
+    );
+    expect(wf).not.toMatch(
+      /--completed-through-week\s+"\$\{\{\s*inputs\.completed_through_week\s*\}\}"/
+    );
+    expect(wf).not.toMatch(
+      /--confirm\s+"\$\{\{\s*inputs\.confirmation\s*\}\}"/
+    );
+    expect(wf).not.toMatch(
+      /echo "season:\s*\$\{\{\s*inputs\.season\s*\}\}"/
+    );
+    expect(wf).not.toMatch(
+      /echo "mode:\s*\$\{\{\s*inputs\.mode\s*\}\}"/
+    );
+
+    // Lifecycle CLI and Summary consume normal shell env variables
+    expect(wf).toContain('SEASON="$INPUT_SEASON"');
+    expect(wf).toContain('WEEK="$INPUT_COMPLETED_THROUGH_WEEK"');
+    expect(wf).toContain('MODE="$INPUT_MODE"');
+    expect(wf).toContain('CONFIRM="$INPUT_CONFIRMATION"');
+    expect(wf).toContain('--season "$INPUT_SEASON"');
+    expect(wf).toContain(
+      '--completed-through-week "$INPUT_COMPLETED_THROUGH_WEEK"'
+    );
+    expect(wf).toContain('--mode "$INPUT_MODE"');
+    expect(wf).toContain('--confirm "$INPUT_CONFIRMATION"');
+    expect(wf).toContain('echo "season: ${INPUT_SEASON}"');
+    expect(wf).toContain('echo "mode: ${INPUT_MODE}"');
+    expect(wf).toContain(
+      'echo "completedThroughWeek: ${INPUT_COMPLETED_THROUGH_WEEK}"'
+    );
+
+    // Confirmation value never echoed (error text may mention the required phrase)
+    expect(wf).not.toMatch(/echo\s+"\$\{?CONFIRM/);
+    expect(wf).not.toMatch(/echo\s+"\$INPUT_CONFIRMATION/);
+    expect(wf).not.toMatch(/echo\s+"confirmation=/);
+    expect(wf).not.toMatch(/echo\s+confirmation:/);
+
+    // Production DIRECT_URL appears only for Preflight + lifecycle execution steps
+    const secretDirectMatches = [
+      ...wf.matchAll(
+        /DIRECT_URL:\s*\$\{\{\s*secrets\.DIRECT_URL\s*\}\}/g
+      ),
+    ];
+    expect(secretDirectMatches.length).toBe(2);
+    const dbSecretMatches = [
+      ...wf.matchAll(
+        /DATABASE_URL:\s*\$\{\{\s*secrets\.DIRECT_URL\s*\}\}/g
+      ),
+    ];
+    expect(dbSecretMatches.length).toBe(1);
+
+    // Install / Prisma generate use inert placeholders, not production secret
+    const installIdx = wf.indexOf('- name: Install dependencies');
+    const prismaIdx = wf.indexOf('- name: Generate Prisma client');
+    const lifecycleIdx = wf.indexOf(
+      '- name: Run Core V1 lifecycle (guarded)'
+    );
+    const summaryIdx = wf.indexOf('- name: Summary');
+    expect(installIdx).toBeGreaterThan(-1);
+    expect(prismaIdx).toBeGreaterThan(-1);
+    expect(lifecycleIdx).toBeGreaterThan(-1);
+    expect(summaryIdx).toBeGreaterThan(-1);
+
+    const installBlock = wf.slice(installIdx, prismaIdx);
+    const prismaBlock = wf.slice(prismaIdx, lifecycleIdx);
+    const lifecycleBlock = wf.slice(lifecycleIdx, summaryIdx);
+    const summaryBlock = wf.slice(summaryIdx);
+
+    expect(installBlock).not.toMatch(/secrets\.DIRECT_URL/);
+    expect(prismaBlock).not.toMatch(/secrets\.DIRECT_URL/);
+    expect(summaryBlock).not.toMatch(/secrets\.DIRECT_URL/);
+    expect(installBlock).toContain('prisma_generate_placeholder');
+    expect(prismaBlock).toContain('prisma_generate_placeholder');
+    expect(lifecycleBlock).toMatch(
+      /DIRECT_URL:\s*\$\{\{\s*secrets\.DIRECT_URL\s*\}\}/
+    );
+    expect(lifecycleBlock).toMatch(
+      /DATABASE_URL:\s*\$\{\{\s*secrets\.DIRECT_URL\s*\}\}/
+    );
+  });
+
+  it('workflow treats shell-metacharacter dispatch values only as env (never shell source)', () => {
+    // Static proof: dangerous tokens must not appear as interpolated ${{ inputs.* }}
+    // inside run: script bodies. Env assignment of INPUT_* is the only input path.
+    const wf = fs
+      .readFileSync(
+        path.join(
+          __dirname,
+          '../../../.github/workflows/write-core-v1-lifecycle-ratings.yml'
+        ),
+        'utf8'
+      )
+      .replace(/\r\n/g, '\n');
+    const runBlocks = [
+      ...wf.matchAll(/run:\s*\|\n((?:[ \t]+.*\n)*)/g),
+    ].map((m) => m[1]);
+    expect(runBlocks.length).toBeGreaterThanOrEqual(3);
+    for (const block of runBlocks) {
+      expect(block).not.toMatch(/\$\{\{\s*inputs\./);
+      // Metacharacter injection payload must not be baked into shell source
+      expect(block).not.toContain('echo INJECTED');
+      expect(block).not.toMatch(/foo"; echo INJECTED/);
+    }
+    // Env wiring still present so values (including metacharacters) stay data-only
+    expect(wf).toContain('INPUT_SEASON: ${{ inputs.season }}');
+    expect(wf).toContain(
+      'INPUT_COMPLETED_THROUGH_WEEK: ${{ inputs.completed_through_week }}'
+    );
+    expect(wf).toContain('INPUT_MODE: ${{ inputs.mode }}');
+    expect(wf).toContain('INPUT_CONFIRMATION: ${{ inputs.confirmation }}');
+
+    // CLI/parser rejects metacharacter season (treated as value, not shell)
+    const parsed = parseCoreV1LifecycleArgs([
+      '--season',
+      'foo"; echo INJECTED; #',
+      '--mode',
+      'PREVIEW',
+    ]);
+    expect(parsed.ok).toBe(false);
   });
 });

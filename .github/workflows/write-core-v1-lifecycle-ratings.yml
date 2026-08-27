@@ -4,6 +4,10 @@
 # completed_through_week = last week of FINAL results allowed into ratings (not prediction week).
 # DIRECT_URL only. No CFBD. No Odds. No schedule ingest.
 # First production COMMIT remains NOT AUTHORIZED until PREVIEW independently reviewed.
+#
+# Security:
+# - Dispatch inputs reach shell only via step-level env (never ${{ inputs.* }} inside run:).
+# - Production DIRECT_URL is NOT job-wide; scoped only to Preflight presence check + lifecycle execution.
 
 name: Write 2026 Core V1 Lifecycle Ratings (Manual, Guarded)
 
@@ -45,9 +49,6 @@ jobs:
   write:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    env:
-      DATABASE_URL: ${{ secrets.DIRECT_URL }}
-      DIRECT_URL: ${{ secrets.DIRECT_URL }}
 
     steps:
       - name: Checkout repository
@@ -60,12 +61,18 @@ jobs:
           cache: 'npm'
 
       - name: Preflight (names/presence only)
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_COMPLETED_THROUGH_WEEK: ${{ inputs.completed_through_week }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
         run: |
           set -euo pipefail
-          SEASON="${{ inputs.season }}"
-          WEEK="${{ inputs.completed_through_week }}"
-          MODE="${{ inputs.mode }}"
-          CONFIRM="${{ inputs.confirmation }}"
+          SEASON="$INPUT_SEASON"
+          WEEK="$INPUT_COMPLETED_THROUGH_WEEK"
+          MODE="$INPUT_MODE"
+          CONFIRM="$INPUT_CONFIRMATION"
           echo "season=${SEASON}"
           echo "completedThroughWeek=${WEEK}"
           echo "mode=${MODE}"
@@ -92,44 +99,64 @@ jobs:
             echo "::error::COMMIT requires confirmation=WRITE_2026_CORE_V1"
             exit 1
           fi
-          if [ -z "${DIRECT_URL:-}" ] && [ -z "${DATABASE_URL:-}" ]; then
+          if [ -z "${DIRECT_URL:-}" ]; then
             echo "::error::DIRECT_URL secret is missing"
             exit 1
           fi
           echo "DIRECT_URL: present (value not printed)"
 
       - name: Install dependencies
+        env:
+          # Inert placeholders only — no production DB secret.
+          DATABASE_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+          DIRECT_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
         run: npm ci
 
       - name: Generate Prisma client
+        env:
+          # Inert placeholders only — no production DB secret; generate does not connect.
+          DATABASE_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+          DIRECT_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
         run: npm run prisma:generate
 
       - name: Run Core V1 lifecycle (guarded)
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_COMPLETED_THROUGH_WEEK: ${{ inputs.completed_through_week }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          DATABASE_URL: ${{ secrets.DIRECT_URL }}
         run: |
           set -euo pipefail
-          if [ "${{ inputs.mode }}" = "COMMIT" ]; then
+          if [ "$INPUT_MODE" = "COMMIT" ]; then
             npx tsx apps/jobs/write-core-v1-lifecycle.ts \
-              --season "${{ inputs.season }}" \
-              --completed-through-week "${{ inputs.completed_through_week }}" \
-              --mode COMMIT \
-              --confirm "${{ inputs.confirmation }}"
+              --season "$INPUT_SEASON" \
+              --completed-through-week "$INPUT_COMPLETED_THROUGH_WEEK" \
+              --mode "$INPUT_MODE" \
+              --confirm "$INPUT_CONFIRMATION"
           else
             npx tsx apps/jobs/write-core-v1-lifecycle.ts \
-              --season "${{ inputs.season }}" \
-              --completed-through-week "${{ inputs.completed_through_week }}" \
-              --mode PREVIEW
+              --season "$INPUT_SEASON" \
+              --completed-through-week "$INPUT_COMPLETED_THROUGH_WEEK" \
+              --mode "$INPUT_MODE"
           fi
 
       - name: Summary
         if: always()
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_COMPLETED_THROUGH_WEEK: ${{ inputs.completed_through_week }}
+          INPUT_MODE: ${{ inputs.mode }}
+          JOB_STATUS: ${{ job.status }}
         run: |
           echo "============================================"
           echo "WRITE 2026 CORE V1 LIFECYCLE RATINGS (GUARDED)"
           echo "============================================"
-          echo "season: ${{ inputs.season }}"
-          echo "completedThroughWeek: ${{ inputs.completed_through_week }}"
-          echo "mode: ${{ inputs.mode }}"
-          echo "status: ${{ job.status }}"
+          echo "season: ${INPUT_SEASON}"
+          echo "completedThroughWeek: ${INPUT_COMPLETED_THROUGH_WEEK}"
+          echo "mode: ${INPUT_MODE}"
+          echo "status: ${JOB_STATUS}"
           echo "selectedPolicy: GLOBAL_BLEND_W3_W6"
           echo "secrets used (names only): DIRECT_URL"
           echo "providers: none"
