@@ -1,0 +1,93 @@
+# Manual READ-ONLY Balanced V1 historical parity forensic (2025).
+# workflow_dispatch ONLY — no schedule, push, or pull_request.
+# SELECT-only DB. Does not write ratings.
+# Does not call CFBD, Odds, or any provider.
+# Does not run compute_ratings_balanced.ts (writer).
+# Does not authorize model formula changes.
+
+name: Audit Balanced V1 Historical Parity (Manual, Read Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      comparison_season:
+        description: 'Comparison season (must be 2025)'
+        required: true
+        type: string
+        default: '2025'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-balanced-v1-historical-parity-${{ inputs.comparison_season }}
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight (names/presence only)
+        run: |
+          set -euo pipefail
+          SEASON="${{ inputs.comparison_season }}"
+          echo "comparison_season_input=${SEASON}"
+          echo "mode=READ_ONLY"
+          if [ "$SEASON" != "2025" ]; then
+            echo "::error::comparison_season must equal 2025 (got ${SEASON})"
+            exit 1
+          fi
+          if [ -z "${DIRECT_URL:-}" ] && [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::DIRECT_URL secret is missing"
+            exit 1
+          fi
+          echo "DIRECT_URL: present (value not printed)"
+          echo "CFBD_API_KEY: not provided"
+          echo "ODDS_API_KEY: not provided"
+          echo "providersInvoked=false"
+          echo "mutationsInvoked=false"
+          echo "ratingsPersistenceInvoked=false"
+          echo "writerInvoked=false"
+          echo "ratingsWriteAuthorized=false"
+          echo "modelChangeAuthorized=false"
+          echo "Odds=false"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: Audit Balanced V1 historical parity (read-only)
+        run: |
+          npx tsx apps/jobs/audit-balanced-v1-historical-parity.ts --comparison-season "${{ inputs.comparison_season }}"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "============================================"
+          echo "AUDIT BALANCED V1 HISTORICAL PARITY (READ ONLY)"
+          echo "============================================"
+          echo "comparison_season: ${{ inputs.comparison_season }}"
+          echo "status: ${{ job.status }}"
+          echo "mode: forensic only — no TeamSeasonRating writes"
+          echo "writer: compute_ratings_balanced NOT invoked"
+          echo "secrets used (names only): DIRECT_URL"
+          echo "providers: none"
+          echo "Odds: false"
+          echo "modelChangeAuthorized: false"
+          echo "============================================"

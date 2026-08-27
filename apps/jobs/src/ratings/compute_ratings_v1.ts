@@ -1,8 +1,14 @@
 /**
  * Ratings v1 Computation Job
- * 
+ *
+ * CLASSIFICATION (Phase 2C-2H-5 identification only):
+ * LEGACY / historical alternate V1 computation pending final architecture label.
+ * Production modelVersion='v1' power ratings appear to come from Balanced V1
+ * (compute_ratings_balanced / compute_balanced_v1). Do NOT delete this file,
+ * rename modelVersion, change formulas, or run this job for 2026 in this phase.
+ *
  * Computes team power ratings from season/advanced stats using z-scores and weighted indices.
- * 
+ *
  * Usage:
  *   node apps/jobs/dist/src/ratings/compute_ratings_v1.js --season 2025
  */
