@@ -13,8 +13,10 @@ import { getCoreV1SpreadFromTeams, getATSPick, computeATSEdgeHma } from '@/lib/c
 import { getOUPick } from '@/lib/core-v1-total';
 import { americanToProb } from '@/lib/market-line-helpers';
 import {
+  buildHybridActivationOverrideMeta,
   buildSlateResponseMeta,
   resolveSlateModelParam,
+  shouldLoadCoreHybridComparisonMetadata,
 } from '@/lib/config/slate-model';
 import {
   deriveHybridConflictType,
@@ -109,8 +111,12 @@ export async function GET(request: NextRequest) {
     const includeAdvanced = url.searchParams.get('includeAdvanced') === 'true';
     const debug = url.searchParams.get('debug') === '1' || url.searchParams.get('debug') === 'true';
     const requestedModel = url.searchParams.get('model');
-    const { activeModel, invalidRequest: invalidModelFallback } =
-      resolveSlateModelParam(requestedModel);
+    const {
+      activeModel,
+      preferredModel,
+      invalidRequest: invalidModelFallback,
+      activationHold,
+    } = resolveSlateModelParam(requestedModel, season, week);
 
     if (!season || !week) {
       return NextResponse.json(
@@ -120,7 +126,7 @@ export async function GET(request: NextRequest) {
     }
 
     console.log(
-      `📅 Fetching slate for ${season} Week ${week} (model=${activeModel})${limitDates > 0 ? ` (limitDates: ${limitDates})` : ''}${afterDate ? ` (afterDate: ${afterDate})` : ''}`
+      `📅 Fetching slate for ${season} Week ${week} (model=${activeModel}${activationHold ? `; preferred=${preferredModel}; activationHold` : ''})${limitDates > 0 ? ` (limitDates: ${limitDates})` : ''}${afterDate ? ` (afterDate: ${afterDate})` : ''}`
     );
 
     // Build where clause with date filtering
@@ -310,32 +316,34 @@ export async function GET(request: NextRequest) {
 
     console.log(`   Processed ${slateGames.length} games with closing lines`);
 
-    // Core V1 path: persisted Hybrid V2 bets for conflict/tier lookup (pre-Phase-D behavior)
-    const hybridBets =
-      activeModel === 'core_v1'
-        ? await prisma.bet.findMany({
-            where: {
-              season,
-              week,
-              strategyTag: 'hybrid_v2',
-              marketType: 'spread',
-            },
-            select: {
-              gameId: true,
-              hybridConflictType: true,
-              modelPrice: true,
-              closePrice: true,
-              clv: true,
-            },
-          })
-        : [];
+    // Explicit Core V1 only: persisted Hybrid V2 bets for comparison metadata.
+    // Authorization-held Hybrid requests must NOT load/attach Hybrid comparison fields.
+    const allowCoreHybridComparisonMetadata =
+      shouldLoadCoreHybridComparisonMetadata(activeModel, activationHold);
+    const hybridBets = allowCoreHybridComparisonMetadata
+      ? await prisma.bet.findMany({
+          where: {
+            season,
+            week,
+            strategyTag: 'hybrid_v2',
+            marketType: 'spread',
+          },
+          select: {
+            gameId: true,
+            hybridConflictType: true,
+            modelPrice: true,
+            closePrice: true,
+            clv: true,
+          },
+        })
+      : [];
 
     const hybridBetMap = new Map<string, (typeof hybridBets)[0]>();
     for (const bet of hybridBets) {
       hybridBetMap.set(bet.gameId, bet);
     }
 
-    if (activeModel === 'core_v1') {
+    if (allowCoreHybridComparisonMetadata) {
       console.log(`   Found ${hybridBets.length} Hybrid V2 spread bets for conflict/tier lookup`);
     }
 
@@ -779,7 +787,8 @@ export async function GET(request: NextRequest) {
             tierBucket = tierFields.tierBucket;
             isSuperTierA = tierFields.isSuperTierA;
             isDog = tierFields.isDog;
-          } else {
+          } else if (!activationHold) {
+            // Explicit Core V1: optional persisted Hybrid comparison metadata
             const hybridBet = hybridBetMap.get(game.gameId);
 
             if (hybridBet) {
@@ -818,6 +827,7 @@ export async function GET(request: NextRequest) {
               }
             }
           }
+          // activationHold: leave Hybrid conflict/tier/clv fields neutral (null/'none'/false)
 
           if (betTeamContinuity !== null && isDog === true && betTeamContinuity < 0.60) {
             isLowContinuityDog = true;
@@ -893,6 +903,9 @@ export async function GET(request: NextRequest) {
       activeModel,
       requestedModel,
       invalidModelFallback,
+      activationOverride: activationHold
+        ? buildHybridActivationOverrideMeta()
+        : undefined,
       fallback:
         activeModel === 'hybrid_v2' && hybridFallbackGames > 0
           ? {

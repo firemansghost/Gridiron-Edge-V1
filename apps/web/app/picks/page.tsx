@@ -18,9 +18,12 @@ import { ErrorState } from '@/components/ErrorState';
 import { downloadAsCsv } from '@/lib/csv-export';
 import {
   buildSlateApiUrl,
+  getProductionModelDisplayLabel,
   normalizeSlateApiResponse,
+  shouldShowHybridPlaybookFilters,
   type SlateResponseMeta,
 } from '@/lib/config/slate-model';
+import type { ProductionModelId } from '@/lib/config/production-models';
 
 interface GamePick {
   label: string | null;
@@ -76,7 +79,8 @@ interface SlateGame {
 }
 
 export default function PicksPage() {
-  const { model, modelLabel } = useProductionModel();
+  const { model } = useProductionModel();
+  // modelLabel retained via selector context; official display uses effectiveModelLabel
   const [games, setGames] = useState<SlateGame[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -87,9 +91,24 @@ export default function PicksPage() {
   const [showOnlySuperTierA, setShowOnlySuperTierA] = useState(false);
   const [showOnlyHybridStrong, setShowOnlyHybridStrong] = useState(false);
 
+  const effectiveModel: ProductionModelId =
+    slateMeta?.activeModel ?? model;
+  const effectiveModelLabel = getProductionModelDisplayLabel(effectiveModel);
+  const hybridRuntimeActive = shouldShowHybridPlaybookFilters(effectiveModel);
+  const showHybridHoldNote =
+    Boolean(slateMeta?.activationOverride?.used) ||
+    (model === 'hybrid_v2' && effectiveModel === 'core_v1');
+
   useEffect(() => {
     fetchCurrentWeekAndSlate();
   }, [model]);
+
+  useEffect(() => {
+    if (!hybridRuntimeActive) {
+      setShowOnlySuperTierA(false);
+      setShowOnlyHybridStrong(false);
+    }
+  }, [hybridRuntimeActive]);
 
   const fetchCurrentWeekAndSlate = async () => {
     try {
@@ -138,8 +157,9 @@ export default function PicksPage() {
     }
   };
 
-  // Apply 2026 playbook filters
+  // Apply 2026 playbook filters only when Hybrid is the effective model
   const filteredGames = games.filter(game => {
+    if (!hybridRuntimeActive) return true;
     const spreadPick = game.picks?.spread;
     
     if (showOnlySuperTierA) {
@@ -217,6 +237,7 @@ export default function PicksPage() {
   };
 
   const getConflictBadge = (conflictType: string | null | undefined) => {
+    if (!hybridRuntimeActive) return null;
     if (!conflictType) return null;
     
     const configs: Record<string, { text: string; className: string }> = {
@@ -236,6 +257,7 @@ export default function PicksPage() {
   };
 
   const getTierLabel = (tierBucket: string | undefined, conflictType: string | null | undefined) => {
+    if (!hybridRuntimeActive) return null;
     if (!tierBucket || tierBucket === 'none') return null;
     if (conflictType !== 'hybrid_strong') return null; // Only show tier labels for hybrid_strong
     
@@ -473,26 +495,26 @@ export default function PicksPage() {
               Official Picks{week !== null ? ` - Week ${week}` : ''}
             </h1>
             <p className="text-sm text-gray-600">
-              Spread model: <span className="font-medium">{modelLabel}</span>
+              Spread model: <span className="font-medium">{effectiveModelLabel}</span>
               {slateMeta?.modelScope.total === 'current' && (
                 <span className="text-gray-500"> • Totals/ML use current logic</span>
               )}
             </p>
+            {showHybridHoldNote && (
+              <p className="text-sm text-gray-600 mt-1">
+                Hybrid V2 is not active for 2026 yet; Core V1 is being used.
+              </p>
+            )}
             <p className="text-sm text-gray-600 mt-1">
               {hasAnyBets 
                 ? `${totalGames} ${totalGames === 1 ? 'game' : 'games'} with active bets${season !== null && week !== null ? ` for ${season} Week ${week}` : ''}`
                 : `No active bets found${season !== null && week !== null ? ` for ${season} Week ${week}` : ''}. All edges are below the 0.1 pt threshold.`
               }
             </p>
-            {model === 'core_v1' && (showOnlySuperTierA || showOnlyHybridStrong) && (
-              <p className="text-xs text-amber-700 mt-2">
-                Hybrid Strong / Super Tier A filters apply to Hybrid V2 spread metadata. Switch to Hybrid V2 for live hybrid-tier picks.
-              </p>
-            )}
           </div>
 
-          {/* 2026 Playbook Filters */}
-          {hasAnyBets && (
+          {/* 2026 Playbook Filters — only when Hybrid is the effective spread model */}
+          {hasAnyBets && hybridRuntimeActive && (
             <div className="mb-4 flex items-center gap-4 p-3 bg-white border border-gray-200 rounded-lg">
               <span className="text-sm font-medium text-gray-700">Filters:</span>
               <label className="flex items-center gap-2 cursor-pointer">

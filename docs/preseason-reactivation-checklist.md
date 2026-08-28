@@ -95,9 +95,10 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | **2C-2H-7 Balanced V1 transition timing** | **PASSED (PR #58)** — timing-only hard switch rejected; blend eval required |
 | **2C-2H-8 Balanced V1 transition blends** | **PASSED (PR #59)** — B1 AUTHORIZED as model policy; B2/B3/hard/per-team REJECTED; write still unauthorized |
 | **2C-2H-9 Core V1 lifecycle writer** | **COMPLETE** — Candidate A 138/138 persisted; `GLOBAL_BLEND_W3_W6` active |
-| **2C-2I-1 Hybrid V2 preseason readiness** | **In preparation (draft)** — Core V1 consumer + Hybrid input readiness; bridge NOT authorized |
+| **2C-2I-1 Hybrid V2 preseason readiness** | **COMPLETE** — audit 33134809476; Week1 official = Core V1; bridge NOT authorized |
+| **2C-2I-2 Hybrid activation hold** | **In preparation (draft)** — 2026 effective Core V1; truthful API/UI metadata |
 | **Ratings computation / persistence** | **2026 Core V1 initialized** — do not rerun; further COMMITs via guarded lifecycle only |
-| **Odds ingestion** | **Not yet approved** |
+| **Odds ingestion** | **Not yet approved** (blocked until 2C-2I-2 truthfulness passes) |
 | **Nightly reactivation** | **Not yet approved** |
 
 **Do not** use `node apps/jobs/dist/ingest.js cfbd ...` for 2026 schedule-only work.
@@ -180,10 +181,11 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 * 2C-2H-7: **PASSED (PR #58)** — W1 68.4% / W2 99.3% / W3 100%; Pearson W3–W8 .7340→.9399; hard-switch median jump ≈6.6–7.3 / p95 ≈17–19; timing-only hard/per-team switches **REJECTED**; `transitionPolicyAuthorized=false`
 * 2C-2H-8: **PASSED (PR #59)** — B1 avgMAE=4.6842 maxP95=6.2755; B2/B3/hard switches rejected; Candidate A + B1 AUTHORIZED as **model** policy only; write still unauthorized
 * 2C-2H-9: **COMPLETE** — production COMMIT run 33126432213 (`upserted=138`); post-write verification run 33127893613 (`existingV1Count=138`, create=0, update=138); Candidate A @ completedThroughWeek=0; `GLOBAL_BLEND_W3_W6` lifecycle active; **do not rerun ratings initialization**
-* 2C-2I-1: **IN PREPARATION / draft PR** — Hybrid V2 preseason readiness (Core V1 consumer + current Hybrid inputs + 2025 prior-grade diagnostic); Hybrid configured default but 2026 TeamUnitGrades=0 ⇒ slate falls back to Core V1; prior-year bridge **NOT authorized**; Odds **NOT AUTHORIZED**
+* 2C-2I-1: **COMPLETE** — production audit run 33134809476 `auditOk=true`; Core V1 Week1 ready; Hybrid inputs 0; prior bridge structurally available but **NOT AUTHORIZED for Week1**; human decision: official Week1 spread = **Core V1**
+* 2C-2I-2: **IN PREPARATION / draft PR** — Hybrid production authorization held for 2026; effective model Core V1; API/UI truthfulness for activationOverride; Odds still NOT AUTHORIZED
 * Recruiting schema mismatch remains separate
 * **Do not copy 2025 TeamUnitGrades into 2026 or run `compute_unit_grades.ts` until separately authorized**
-* **Do not run the production Hybrid readiness audit workflow until the draft PR is independently reviewed**
+* **Do not activate Hybrid or ingest Odds until 2C-2I-2 passes independent review**
 * **Do not run `compute_ratings_balanced.ts` or legacy `compute_ratings_v1` for 2026**
 
 ##### After 2C-2H-8 (complete) — recorded decision
@@ -197,11 +199,16 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 2. Lifecycle policy active (`GLOBAL_BLEND_W3_W6`)
 3. Do not rerun ratings initialization
 
-##### After 2C-2I-1 merges — operator procedure
-1. Independently review draft PR (fallback facts + prior-grade diagnostic + auth flags)
-2. Only then run **Audit Hybrid V2 Preseason Readiness** (read-only) for season=2026 week=1
-3. Human decides Week1 spread model: stay on Core V1 fallback vs authorize a prior-year Hybrid bridge (separate phase)
-4. Do **not** write TeamUnitGrades / activate bridge from this audit alone
+##### After 2C-2I-1 (complete) — recorded Week1 decision
+1. Official Week1 spread model = **Core V1**
+2. 2025 TeamUnitGrades bridge NOT AUTHORIZED for Week1
+3. Hybrid remains future target pending same-season readiness + activation
+
+##### After 2C-2I-2 merges — operator procedure
+1. Independently review draft PR (activation hold + meta + UI truthfulness)
+2. Confirm `/api/weeks/slate?season=2026&week=1` returns `activeModel=core_v1` even when `model=hybrid_v2`
+3. Confirm Picks/Homepage show Core V1 effective + hold note; Hybrid filters hidden
+4. Do **not** ingest Odds or activate Hybrid from this phase alone
 
 - [x] Preview week 0–2 reviewed
 - [x] Week 1–13 + 15 production writes
@@ -227,7 +234,8 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 - [x] 2C-2H-7 Balanced V1 transition timing PASSED (PR #58; hard switches rejected)
 - [x] 2C-2H-8 Balanced V1 transition blend evaluation PASSED (PR #59; B1 authorized model policy)
 - [x] 2C-2H-9 Core V1 lifecycle writer COMPLETE (production COMMIT + verification)
-- [ ] 2C-2I-1 Hybrid V2 preseason readiness audit (draft)
+- [x] 2C-2I-1 Hybrid V2 preseason readiness audit COMPLETE (production audit + Week1 Core V1 decision)
+- [ ] 2C-2I-2 Hybrid activation hold + effective model truthfulness (draft)
 - [ ] Odds / unit-grade bridge / Hybrid activation / bets remain **out of scope** until separately approved
 
 ---
@@ -236,14 +244,13 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 
 With dev server or deployed preview (read-only API calls):
 
-- [ ] `GET /api/weeks/slate?season=2026&week=N&model=hybrid_v2` returns `{ games, meta }`
-- [ ] `meta.activeModel` is `hybrid_v2`
-- [ ] Confirm fallback metadata when 2026 TeamUnitGrades are absent (expected until Hybrid inputs exist)
+- [ ] `GET /api/weeks/slate?season=2026&week=N&model=hybrid_v2` returns `{ games, meta }` with **effective** `meta.activeModel=core_v1` while Hybrid authorization is held
+- [ ] `meta.activationOverride.used=true` when Hybrid was requested under the 2026 hold
 - [ ] `GET /api/weeks/slate?season=2026&week=N&model=core_v1` returns Core V1 spread scope
-- [ ] Homepage and `/picks` load with Hybrid V2 default; Core V1 selector works
+- [ ] Homepage and `/picks` show effective Core V1 label + hold note; Hybrid-only filters hidden
 - [ ] Confirm homepage does **not** call `/api/seed-slate`
 
-**Note:** Until 2C-2I-1 is resolved, treat Hybrid as **configured default with Core V1 fallback**, not as operationally active Week1 Hybrid.
+**Note:** Until Hybrid is separately activated for 2026, treat Hybrid as a catalog/future model with Core V1 as the official effective Week1 spread model.
 
 Local verification scripts (after Phase 2A) use `normalizeSlateApiResponse()` for both legacy array and wrapped responses.
 
