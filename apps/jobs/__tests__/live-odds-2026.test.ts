@@ -12,6 +12,7 @@ import {
   LIVE_ODDS_SEASON,
   LIVE_ODDS_SOURCE,
   MAX_EXPECTED_REQUEST_CREDITS,
+  MAX_ABS_SPREAD,
   WEEK1_GAME_COUNT,
   assertCreateManyCountMatches,
   buildCommittedVerificationFailureExecution,
@@ -284,7 +285,7 @@ describe('2C-2J-2 live-odds-2026 guards (repaired)', () => {
       resolveTeam: resolve,
     });
     expect(diag.classification).toBe('out_of_scope_fbs_fcs');
-    expect(diag.detail).toMatch(/no authoritative requested-week FBS opponent/i);
+    expect(diag.detail).toMatch(/no authoritative FBS-vs-FBS Game/i);
 
     const plan = buildLiveOddsPlan({
       season: 2026,
@@ -315,7 +316,7 @@ describe('2C-2J-2 live-odds-2026 guards (repaired)', () => {
     expect(plan.writeSafe).toBe(true);
   });
 
-  it('FBS with Week1 opponent + unresolved provider opponent blocks; later week does not', () => {
+  it('FBS with Week1 opponent + unresolved provider opponent blocks; later week with other-week FBS game is nonblocking', () => {
     const resolve = resolveMap({
       Alabama: { teamId: games[0].homeTeamId, method: 'alias' },
     });
@@ -333,7 +334,8 @@ describe('2C-2J-2 live-odds-2026 guards (repaired)', () => {
     });
     expect(aligned.classification).toBe('unresolved_expected_fbs');
 
-    const later = classifyProviderEvent({
+    // No near FBS game at later kickoff → out_of_scope (nonblocking)
+    const laterNoGame = classifyProviderEvent({
       event: {
         home_team: 'Alabama',
         away_team: 'Missing Alias Opponent',
@@ -345,7 +347,30 @@ describe('2C-2J-2 live-odds-2026 guards (repaired)', () => {
       seasonGames: games,
       resolveTeam: resolve,
     });
-    expect(later.classification).toBe('out_of_requested_week');
+    expect(laterNoGame.classification).toBe('out_of_scope_fbs_fcs');
+
+    // Near FBS game in another week → out_of_requested_week (nonblocking)
+    const week5Game: ScheduledGameRow = {
+      gameId: '2026-wk5-alabama',
+      season: 2026,
+      week: 5,
+      homeTeamId: games[0].homeTeamId,
+      awayTeamId: ids[120],
+      date: WK5_DATE,
+    };
+    const laterOtherWeek = classifyProviderEvent({
+      event: {
+        home_team: 'Alabama',
+        away_team: 'Missing Alias Opponent',
+        commence_time: WK5_DATE,
+      },
+      week: 1,
+      fbsTeamIds: new Set(ids),
+      requestedWeekGames: games,
+      seasonGames: [...games, week5Game],
+      resolveTeam: resolve,
+    });
+    expect(laterOtherWeek.classification).toBe('out_of_requested_week');
 
     const planLater = buildLiveOddsPlan({
       season: 2026,
@@ -353,7 +378,7 @@ describe('2C-2J-2 live-odds-2026 guards (repaired)', () => {
       mode: 'PREVIEW',
       fbsTeamIds: ids,
       requestedWeekGames: games,
-      seasonGames: games,
+      seasonGames: [...games, week5Game],
       providerEvents: [
         {
           home_team: 'Alabama',
@@ -561,8 +586,8 @@ describe('2C-2J-2 live-odds-2026 guards (repaired)', () => {
     expect(
       normalizeSpreadPair(
         [
-          { name: 'Home', point: -60 },
-          { name: 'Away', point: 60 },
+          { name: 'Home', point: -100.5 },
+          { name: 'Away', point: 100.5 },
         ],
         game,
         'DraftKings',
@@ -571,6 +596,47 @@ describe('2C-2J-2 live-odds-2026 guards (repaired)', () => {
         resolve
       ).candidates
     ).toHaveLength(0);
+
+    // Production-observed large favorites (Ball State @ Ohio State)
+    expect(
+      normalizeSpreadPair(
+        [
+          { name: 'Home', point: -51 },
+          { name: 'Away', point: 51 },
+        ],
+        game,
+        'DraftKings',
+        ts,
+        'e1',
+        resolve
+      ).candidates
+    ).toHaveLength(2);
+    expect(
+      normalizeSpreadPair(
+        [
+          { name: 'Home', point: -50.5 },
+          { name: 'Away', point: 50.5 },
+        ],
+        game,
+        'FanDuel',
+        ts,
+        'e1',
+        resolve
+      ).candidates
+    ).toHaveLength(2);
+    expect(
+      normalizeSpreadPair(
+        [
+          { name: 'Home', point: -100 },
+          { name: 'Away', point: 100 },
+        ],
+        game,
+        'Bovada',
+        ts,
+        'e1',
+        resolve
+      ).candidates
+    ).toHaveLength(2);
 
     expect(
       normalizeSpreadPair(
@@ -1284,5 +1350,316 @@ print('true' if mod.has_direct_inputs_in_run(text) else 'false')
       candidates: [],
     });
     expect(cov.gamesWithoutAnyOdds).toHaveLength(51);
+  });
+
+  it('MAX_ABS_SPREAD is 100 (production 50.5–51 accepted)', () => {
+    expect(MAX_ABS_SPREAD).toBe(100);
+  });
+
+  it('production PREVIEW 33186871080 replay classifications', () => {
+    // Deterministic IDs matching production alias targets
+    const ndsu = 'north-dakota-state';
+    const jax = 'jacksonville-state';
+    const sac = 'sacramento-state';
+    const nmsu = 'new-mexico-state';
+    const alabama = 'alabama';
+    const ecu = 'east-carolina';
+    const cal = 'california';
+    const ucla = 'ucla';
+    const fbs = new Set([
+      ...ids,
+      ndsu,
+      jax,
+      sac,
+      nmsu,
+      alabama,
+      ecu,
+      cal,
+      ucla,
+    ]);
+
+    const resolve = resolveMap({
+      'North Dakota State Bison': { teamId: ndsu, method: 'alias' },
+      'Jacksonville State Gamecocks': { teamId: jax, method: 'alias' },
+      'Sacramento State Hornets': { teamId: sac, method: 'alias' },
+      'New Mexico State Aggies': { teamId: nmsu, method: 'alias' },
+      'Alabama Crimson Tide': { teamId: alabama, method: 'alias' },
+      'East Carolina Pirates': { teamId: ecu, method: 'alias' },
+      'California Golden Bears': { teamId: cal, method: 'alias' },
+      'UCLA Bruins': { teamId: ucla, method: 'alias' },
+    });
+
+    const wk1Games: ScheduledGameRow[] = [
+      {
+        gameId: '2026-wk1-ndsu-jax',
+        season: 2026,
+        week: 1,
+        homeTeamId: ndsu,
+        awayTeamId: jax,
+        date: '2026-08-29T21:30:00.000Z',
+      },
+      {
+        gameId: '2026-wk1-alabama-ecu',
+        season: 2026,
+        week: 1,
+        homeTeamId: alabama,
+        awayTeamId: ecu,
+        date: '2026-09-05T16:00:00.000Z',
+      },
+      {
+        gameId: '2026-wk1-cal-ucla',
+        season: 2026,
+        week: 1,
+        homeTeamId: cal,
+        awayTeamId: ucla,
+        date: '2026-09-06T02:30:00.000Z',
+      },
+      // Pad to 51 with synthetic FBS-vs-FBS so schedule gate can pass in plan tests if needed
+      ...games.slice(0, 48).map((g, i) => ({
+        ...g,
+        gameId: `pad-${i}`,
+        homeTeamId: ids[i * 2],
+        awayTeamId: ids[i * 2 + 1],
+      })),
+    ];
+
+    // 1. NDSU vs Jax State Week1 tracked
+    expect(
+      classifyProviderEvent({
+        event: {
+          home_team: 'North Dakota State Bison',
+          away_team: 'Jacksonville State Gamecocks',
+          commence_time: '2026-08-29T21:30:00.000Z',
+        },
+        week: 1,
+        fbsTeamIds: fbs,
+        requestedWeekGames: wk1Games,
+        seasonGames: wk1Games,
+        resolveTeam: resolve,
+      }).classification
+    ).toBe('matched_requested_week');
+
+    // 2. NDSU vs Fordham — no near FBS game
+    expect(
+      classifyProviderEvent({
+        event: {
+          home_team: 'North Dakota State Bison',
+          away_team: 'Fordham Rams',
+          commence_time: '2026-09-05T19:30:00.000Z',
+        },
+        week: 1,
+        fbsTeamIds: fbs,
+        requestedWeekGames: wk1Games,
+        seasonGames: wk1Games,
+        resolveTeam: resolve,
+      }).classification
+    ).toBe('out_of_scope_fbs_fcs');
+
+    // 3. Sac State vs MVSU
+    expect(
+      classifyProviderEvent({
+        event: {
+          home_team: 'Sacramento State Hornets',
+          away_team: 'Mississippi Valley State Delta Devils',
+          commence_time: '2026-09-06T02:00:00.000Z',
+        },
+        week: 1,
+        fbsTeamIds: fbs,
+        requestedWeekGames: wk1Games,
+        seasonGames: wk1Games,
+        resolveTeam: resolve,
+      }).classification
+    ).toBe('out_of_scope_fbs_fcs');
+
+    // 4. Jax State vs EKU
+    expect(
+      classifyProviderEvent({
+        event: {
+          home_team: 'Jacksonville State Gamecocks',
+          away_team: 'Eastern Kentucky Colonels',
+          commence_time: '2026-09-05T23:00:00.000Z',
+        },
+        week: 1,
+        fbsTeamIds: fbs,
+        requestedWeekGames: wk1Games,
+        seasonGames: wk1Games,
+        resolveTeam: resolve,
+      }).classification
+    ).toBe('out_of_scope_fbs_fcs');
+
+    // 5. NMSU vs Mercyhurst
+    expect(
+      classifyProviderEvent({
+        event: {
+          home_team: 'New Mexico State Aggies',
+          away_team: 'Mercyhurst Lakers',
+          commence_time: '2026-09-06T01:00:00.000Z',
+        },
+        week: 1,
+        fbsTeamIds: fbs,
+        requestedWeekGames: wk1Games,
+        seasonGames: wk1Games,
+        resolveTeam: resolve,
+      }).classification
+    ).toBe('out_of_scope_fbs_fcs');
+
+    // 6. Alabama vs ECU
+    expect(
+      classifyProviderEvent({
+        event: {
+          home_team: 'Alabama Crimson Tide',
+          away_team: 'East Carolina Pirates',
+          commence_time: '2026-09-05T16:00:00.000Z',
+        },
+        week: 1,
+        fbsTeamIds: fbs,
+        requestedWeekGames: wk1Games,
+        seasonGames: wk1Games,
+        resolveTeam: resolve,
+      }).classification
+    ).toBe('matched_requested_week');
+
+    // 7. Cal vs UCLA — alias (not fuzzy) path in classification
+    const calUcla = classifyProviderEvent({
+      event: {
+        home_team: 'California Golden Bears',
+        away_team: 'UCLA Bruins',
+        commence_time: '2026-09-06T02:30:00.000Z',
+      },
+      week: 1,
+      fbsTeamIds: fbs,
+      requestedWeekGames: wk1Games,
+      seasonGames: wk1Games,
+      resolveTeam: resolve,
+    });
+    expect(calUcla.classification).toBe('matched_requested_week');
+    expect(calUcla.homeMethod).toBe('alias');
+    expect(calUcla.awayMethod).toBe('alias');
+
+    // 8. expected FBS opponent genuinely missing — block
+    const missingOpp = classifyProviderEvent({
+      event: {
+        home_team: 'Alabama Crimson Tide',
+        away_team: 'Still Missing Alias Opponent',
+        commence_time: '2026-09-05T16:00:00.000Z',
+      },
+      week: 1,
+      fbsTeamIds: fbs,
+      requestedWeekGames: wk1Games,
+      seasonGames: wk1Games,
+      resolveTeam: resolve,
+    });
+    expect(missingOpp.classification).toBe('unresolved_expected_fbs');
+
+    const planFbsIds = [
+      ...ids.slice(0, AUTHORITATIVE_FBS_COUNT - 4),
+      ndsu,
+      jax,
+      sac,
+      nmsu,
+    ];
+    const planFcs = buildLiveOddsPlan({
+      season: 2026,
+      week: 1,
+      mode: 'PREVIEW',
+      fbsTeamIds: planFbsIds,
+      requestedWeekGames: games,
+      seasonGames: [...games, ...wk1Games],
+      providerEvents: [
+        {
+          home_team: 'North Dakota State Bison',
+          away_team: 'Fordham Rams',
+          commence_time: '2026-09-05T19:30:00.000Z',
+          bookmakers: [],
+        },
+        {
+          home_team: 'Jacksonville State Gamecocks',
+          away_team: 'Eastern Kentucky Colonels',
+          commence_time: '2026-09-05T23:00:00.000Z',
+          bookmakers: [],
+        },
+      ],
+      providerCalls: 1,
+      providerUsage: {
+        requestsLast: '1',
+        requestsUsed: null,
+        requestsRemaining: null,
+      },
+      existingRows: [],
+      resolveTeam: resolve,
+    });
+    expect(planFcs.eventCounts.out_of_scope_fbs_fcs).toBe(2);
+    expect(planFcs.eventCounts.unresolved_expected_fbs).toBe(0);
+    expect(planFcs.writeSafe).toBe(true);
+  });
+});
+
+describe('2C-2J-2A production Odds aliases from team_aliases.yml', () => {
+  const OBSERVED: Array<{ name: string; teamId: string }> = [
+    { name: 'Jacksonville State Gamecocks', teamId: 'jacksonville-state' },
+    { name: 'Florida State Seminoles', teamId: 'florida-state' },
+    { name: 'New Mexico State Aggies', teamId: 'new-mexico-state' },
+    { name: 'Hawaii Rainbow Warriors', teamId: 'hawai-i' },
+    { name: 'Akron Zips', teamId: 'akron' },
+    { name: 'Georgia State Panthers', teamId: 'georgia-state' },
+    { name: 'East Carolina Pirates', teamId: 'east-carolina' },
+    { name: 'Army Black Knights', teamId: 'army' },
+    { name: 'Coastal Carolina Chanticleers', teamId: 'coastal-carolina' },
+    { name: 'Oregon State Beavers', teamId: 'oregon-state' },
+    { name: 'Indiana Hoosiers', teamId: 'indiana' },
+    { name: 'Liberty Flames', teamId: 'liberty' },
+    { name: 'Marshall Thundering Herd', teamId: 'marshall' },
+    { name: 'Florida International Panthers', teamId: 'florida-international' },
+    { name: 'New Mexico Lobos', teamId: 'new-mexico' },
+    { name: 'Western Kentucky Hilltoppers', teamId: 'western-kentucky' },
+    { name: 'California Golden Bears', teamId: 'california' },
+  ];
+
+  it('every observed production FBS provider name resolves via exact alias (not fuzzy)', () => {
+    const yaml = require('js-yaml') as typeof import('js-yaml');
+    const aliasDoc = yaml.load(
+      fs.readFileSync(
+        path.join(ROOT, 'apps/jobs/config/team_aliases.yml'),
+        'utf8'
+      )
+    ) as { aliases: Record<string, string> };
+
+    const fbsSlugs = new Set(
+      JSON.parse(
+        fs.readFileSync(
+          path.join(ROOT, 'apps/jobs/config/fbs_slugs.json'),
+          'utf8'
+        )
+      ) as string[]
+    );
+    const hfa = JSON.parse(
+      fs.readFileSync(
+        path.join(ROOT, 'apps/web/lib/data/core_v1_hfa_config.json'),
+        'utf8'
+      )
+    ) as { teamAdjustments?: Record<string, unknown> };
+    const authoritative = new Set<string>([
+      ...fbsSlugs,
+      ...Object.keys(hfa.teamAdjustments || {}),
+    ]);
+
+    for (const { name, teamId } of OBSERVED) {
+      expect(aliasDoc.aliases[name]).toBe(teamId);
+      expect(authoritative.has(teamId)).toBe(true);
+    }
+
+    const { TeamResolver } = require('../adapters/TeamResolver') as typeof import('../adapters/TeamResolver');
+    const resolver = new TeamResolver();
+
+    for (const { name, teamId } of OBSERVED) {
+      const r = resolver.resolveTeamDetailed(name, 'NCAAF');
+      expect(r.teamId).toBe(teamId);
+      expect(r.method).toBe('alias');
+      expect(r.method).not.toBe('fuzzy');
+    }
+
+    const cal = resolver.resolveTeamDetailed('California Golden Bears', 'NCAAF');
+    expect(cal.teamId).toBe('california');
+    expect(cal.method).toBe('alias');
   });
 });
