@@ -530,7 +530,7 @@ Provider-availability blocker removed. Persistence and ratings remain unauthoriz
 | `docs/data/2026-workflow-classifications.json` | Machine-readable classifications (45 workflows) |
 | `scripts/inventory-workflows-2026.py` | Pure static YAML inventory (no network/DB) |
 
-- **45** workflows inventoried; **11** with active YAML schedules; **0** schedule reactivation recommended
+- **45** workflows inventoried; **10** with active YAML schedules; **0** schedule reactivation recommended
 - REPLACE: `nightly-ingest`, `ratings-v1`, `ratings-v2`, `sync-weekly-bets`
 - Live Odds path: do **not** reuse ingest-minimal wipe or ingest.ts+ratings; propose guarded 2C-2J-2 PREVIEW/COMMIT
 - Odds / bet sync / grading / score sync remain **NOT AUTHORIZED / not reactivated**

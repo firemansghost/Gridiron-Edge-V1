@@ -22,7 +22,7 @@ Static inventory script: `scripts/inventory-workflows-2026.py`
 | Metric | Value |
 |--------|------:|
 | Workflow files inventoried | **45** |
-| YAML files with active `schedule:` triggers | **11** |
+| YAML files with active `schedule:` triggers | **10** |
 | `scheduleReactivationRecommended=true` | **0** |
 | Odds ingestion authorized | **NO** |
 | Bet sync authorized | **NO** |
@@ -84,7 +84,7 @@ Phase 2C-2I-2 (PR #62) established:
 
 ## B. Scheduled workflows (active YAML `schedule:`)
 
-All **11** remain **operator-stopped**. Recommendation: keep stopped. `scheduleReactivationRecommended=false` for each.
+All **10** remain **operator-stopped**. Recommendation: keep stopped. `scheduleReactivationRecommended=false` for each.
 
 | File | Cron(s) | If enabled would… | Season | Provider | Prod writes | 2026 recommendation |
 |------|---------|-------------------|--------|----------|-------------|---------------------|
@@ -92,13 +92,14 @@ All **11** remain **operator-stopped**. Recommendation: keep stopped. `scheduleR
 | `v3-totals-nightly.yml` | `0 8 * * *` | Attempt V3 totals bet sync | 2025 default | CFBD | Would fail / blocked | **BLOCKED** |
 | `cfbd-scores-sync.yml` | Fri–Sun every 2h + daily `0 2 * * *` | Finalize Game scores | **defaults 2025** on schedule | CFBD | Game scores/status | **REPAIR** season→2026 then new guarded path |
 | `grade-bets.yml` | Hourly Sat/Sun; `0 3 * * 1-5` | Grade ungraded `strategy_run` bets | empty = **all seasons** risk | none | Bet result/pnl | **FUTURE_AFTER_GAMES** + repair blast radius |
-| `stats-cfbd.yml` | `0 2 * * *` | Team game stats | 2025 | CFBD | stats tables | REPAIR season; post-game |
 | `stats-season-cfbd.yml` | `0 2 * * *` | Season stats | 2024/2025 | CFBD | stats | REPAIR |
 | `stats-advanced-cfbd.yml` | `0 3 * * *` | Advanced / EPA features | 2024/2025 | CFBD | feature tables | REPAIR; prefer feature-ingest review |
 | `cfbd-rankings-sync.yml` | `0 9 * * 1` | Rankings | 2025 | CFBD | rankings | REPAIR; optional |
 | `roster-churn-cfbd.yml` | `0 3 15 2 *` | Roster churn | 2025 | CFBD | roster | REPAIR; offseason periodic |
 | `talent-commits-sync.yml` | `0 3 1 2 *` | Commits | 2025 | CFBD | commits | REPAIR; schema risk |
 | `sgo-team-stats.yml` | `0 4 20 2 *` | SGO team stats (**not MarketLine**) | 2024 | SGO | team stats | REPAIR; optional |
+
+Note: `stats-cfbd.yml` has a **commented-out** historical schedule only — it is **not** actively scheduled (dispatch-only).
 
 ---
 
@@ -144,7 +145,7 @@ Legend: **Class** = classification; **Sched?** = YAML schedule present; **SchedO
 | roster-churn-cfbd.yml | Roster Churn CFBD | dispatch+schedule | REPAIR_BEFORE_USE | Y | N |
 | sgo-team-stats.yml | SGO Team Stats | dispatch+schedule | REPAIR_BEFORE_USE | Y | N |
 | stats-advanced-cfbd.yml | Stats Advanced CFBD | dispatch+schedule | REPAIR_BEFORE_USE | Y | N |
-| stats-cfbd.yml | Stats CFBD | dispatch+schedule | REPAIR_BEFORE_USE | Y | N |
+| stats-cfbd.yml | Stats CFBD | dispatch | REPAIR_BEFORE_USE | N | N |
 | stats-season-cfbd.yml | Stats Season CFBD | dispatch+schedule | REPAIR_BEFORE_USE | Y | N |
 | sync-weekly-bets.yml | Sync Weekly Bets | dispatch | REPLACE | N | N |
 | talent-cfbd.yml | Talent CFBD | dispatch | MANUAL_REVIEW_REQUIRED | N | N |

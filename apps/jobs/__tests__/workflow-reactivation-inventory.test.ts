@@ -6,6 +6,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
+import * as os from 'os';
 
 const ROOT = path.resolve(__dirname, '../../..');
 const CLASSIFICATIONS = path.join(
@@ -26,6 +27,46 @@ const ALLOWED = new Set([
   'BLOCKED',
   'CI_ONLY',
 ]);
+
+const EXPECTED_SCHEDULED = [
+  'cfbd-rankings-sync.yml',
+  'cfbd-scores-sync.yml',
+  'grade-bets.yml',
+  'nightly-ingest.yml',
+  'roster-churn-cfbd.yml',
+  'sgo-team-stats.yml',
+  'stats-advanced-cfbd.yml',
+  'stats-season-cfbd.yml',
+  'talent-commits-sync.yml',
+  'v3-totals-nightly.yml',
+].sort();
+
+function runPythonSnippet(snippet: string): unknown {
+  const tmp = path.join(
+    os.tmpdir(),
+    `wf-inv-snippet-${Date.now()}-${Math.random().toString(16).slice(2)}.py`
+  );
+  const script = `
+import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location("inv", r"${INVENTORY_SCRIPT.replace(/\\/g, '\\\\')}")
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+${snippet}
+`;
+  fs.writeFileSync(tmp, script, 'utf8');
+  try {
+    const result = spawnSync('python', [tmp], { encoding: 'utf8', cwd: ROOT });
+    expect(result.status).toBe(0);
+    expect(result.stderr || '').toBe('');
+    return JSON.parse(result.stdout.trim() || 'null');
+  } finally {
+    try {
+      fs.unlinkSync(tmp);
+    } catch {
+      /* ignore */
+    }
+  }
+}
 
 describe('2C-2J-1 workflow reactivation inventory', () => {
   const raw = JSON.parse(fs.readFileSync(CLASSIFICATIONS, 'utf8'));
@@ -73,10 +114,11 @@ describe('2C-2J-1 workflow reactivation inventory', () => {
     expect(byFile['sync-weekly-bets.yml']).toBe('REPLACE');
     expect(byFile['v3-totals-nightly.yml']).toBe('BLOCKED');
     expect(byFile['cfbd-scores-sync.yml']).toBe('REPAIR_BEFORE_USE');
+    expect(byFile['stats-cfbd.yml']).toBe('REPAIR_BEFORE_USE');
     expect(byFile['write-core-v1-lifecycle-ratings.yml']).toBe('MANUAL_SAFE');
   });
 
-  it('static inventory script reports 45 workflows and 11 scheduled', () => {
+  it('static inventory script reports 45 workflows and 10 scheduled', () => {
     const result = spawnSync('python', [INVENTORY_SCRIPT], {
       encoding: 'utf8',
       cwd: ROOT,
@@ -84,26 +126,79 @@ describe('2C-2J-1 workflow reactivation inventory', () => {
     expect(result.status).toBe(0);
     const inv = JSON.parse(result.stdout);
     expect(inv.count).toBe(45);
-    expect(inv.scheduled_count).toBe(11);
+    expect(inv.scheduled_count).toBe(10);
     const scheduled = inv.workflows
       .filter((w: { has_active_schedule_yaml: boolean }) => w.has_active_schedule_yaml)
       .map((w: { file: string }) => w.file)
       .sort();
-    expect(scheduled).toEqual(
-      [
-        'cfbd-rankings-sync.yml',
-        'cfbd-scores-sync.yml',
-        'grade-bets.yml',
-        'nightly-ingest.yml',
-        'roster-churn-cfbd.yml',
-        'sgo-team-stats.yml',
-        'stats-advanced-cfbd.yml',
-        'stats-cfbd.yml',
-        'stats-season-cfbd.yml',
-        'talent-commits-sync.yml',
-        'v3-totals-nightly.yml',
-      ].sort()
+    expect(scheduled).toEqual(EXPECTED_SCHEDULED);
+    expect(scheduled).not.toContain('stats-cfbd.yml');
+
+    const statsCfbd = inv.workflows.find(
+      (w: { file: string }) => w.file === 'stats-cfbd.yml'
     );
+    expect(statsCfbd.triggers).toEqual(['workflow_dispatch']);
+    expect(statsCfbd.crons).toEqual([]);
+    expect(statsCfbd.has_active_schedule_yaml).toBe(false);
+  });
+
+  it('commented schedule/cron does not count as active schedule', () => {
+    const sample = `
+on:
+  # schedule:
+  #   - cron: '0 2 * * *'
+  workflow_dispatch:
+`;
+    const out = runPythonSnippet(`
+text = ${JSON.stringify(sample)}
+triggers, crons = mod.extract_triggers(text)
+print(json.dumps({"triggers": triggers, "crons": crons}))
+`);
+    expect(out).toEqual({ triggers: ['workflow_dispatch'], crons: [] });
+  });
+
+  it('direct_inputs_in_run distinguishes env-safe vs run-unsafe input interpolation', () => {
+    const safe = `
+jobs:
+  x:
+    steps:
+      - name: ok
+        env:
+          INPUT_WEEK: \${{ inputs.week }}
+        run: |
+          echo "$INPUT_WEEK"
+`;
+    const unsafe = `
+jobs:
+  x:
+    steps:
+      - name: bad
+        run: |
+          echo "\${{ inputs.week }}"
+`;
+    const out = runPythonSnippet(`
+safe = ${JSON.stringify(safe)}
+unsafe = ${JSON.stringify(unsafe)}
+print(json.dumps({
+  "safe": mod.has_direct_inputs_in_run(safe),
+  "unsafe": mod.has_direct_inputs_in_run(unsafe),
+}))
+`);
+    expect(out).toEqual({ safe: false, unsafe: true });
+  });
+
+  it('hardened lifecycle workflow is not flagged for direct inputs in run', () => {
+    const result = spawnSync('python', [INVENTORY_SCRIPT], {
+      encoding: 'utf8',
+      cwd: ROOT,
+    });
+    expect(result.status).toBe(0);
+    const inv = JSON.parse(result.stdout);
+    const lifecycle = inv.workflows.find(
+      (w: { file: string }) => w.file === 'write-core-v1-lifecycle-ratings.yml'
+    );
+    expect(lifecycle).toBeTruthy();
+    expect(lifecycle.direct_inputs_in_run).toBe(false);
   });
 
   it('matrix doc records phase posture and Odds not authorized', () => {
@@ -114,7 +209,14 @@ describe('2C-2J-1 workflow reactivation inventory', () => {
     expect(md).toContain('WRITE_2026_WEEK_');
     expect(md).toContain('Core-only guarded weekly-card writer');
     expect(md).toContain('`scheduleReactivationRecommended=true` | **0**');
+    expect(md).toContain('| YAML files with active `schedule:` triggers | **10** |');
     expect(md).toContain('This phase does NOT:');
+    expect(md).toContain(
+      '| stats-cfbd.yml | Stats CFBD | dispatch | REPAIR_BEFORE_USE | N | N |'
+    );
+    expect(md).toContain(
+      'stats-cfbd.yml` has a **commented-out** historical schedule only'
+    );
   });
 
   it('Hybrid and Core formula sources unchanged', () => {

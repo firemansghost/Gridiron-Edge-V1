@@ -238,7 +238,7 @@
       "file": "stats-cfbd.yml",
       "classification": "REPAIR_BEFORE_USE",
       "scheduleReactivationRecommended": false,
-      "purpose2026": "Team stats schedule; season 2025"
+      "purpose2026": "Manual per-game stats workflow; schedule currently commented out; 2025-era defaults/verification require repair before 2026 use."
     },
     {
       "file": "stats-season-cfbd.yml",
