@@ -11,7 +11,10 @@ import {
   indexGameMarketSelections,
   type MarketLineObservation,
 } from '../web/lib/market-line-snapshot';
-import { evaluateMarketlineConsumerReadiness } from '../web/lib/marketline-consumer-readiness';
+import {
+  evaluateMarketlineConsumerReadiness,
+  evaluateWeek1AppendOnlyInventory,
+} from '../web/lib/marketline-consumer-readiness';
 
 function parseArgs(argv: string[]): { season: number; week: number } {
   let season = 2026;
@@ -174,14 +177,26 @@ async function main() {
       pass: readiness.pass,
       week1Expected:
         season === 2026 && week === 1
-          ? {
-              expectedGames: 51,
-              expectedRows: 2281,
-              expectedBooks: 11,
-              matchGames: games.length === 51,
-              matchRows: lines.length === 2281,
-              matchBooks: books.size === 11,
-            }
+          ? (() => {
+              const inv = evaluateWeek1AppendOnlyInventory({
+                games: games.length,
+                rows: lines.length,
+                books: books.size,
+              });
+              return {
+                baselineGames: inv.baselineGames,
+                baselineRows: inv.baselineRows,
+                baselineBooks: inv.baselineBooks,
+                currentGames: inv.games,
+                currentRows: inv.rows,
+                currentBooks: inv.books,
+                rowsAtOrAboveBaseline: inv.rowsAtOrAboveBaseline,
+                booksAtOrAboveBaseline: inv.booksAtOrAboveBaseline,
+                gamesExact: inv.gamesExact,
+                inventoryPass: inv.pass,
+                inventoryReason: inv.reason,
+              };
+            })()
           : null,
     };
 
@@ -198,9 +213,16 @@ async function main() {
     }
 
     if (season === 2026 && week === 1) {
-      if (games.length !== 51 || lines.length !== 2281 || books.size !== 11) {
+      const inv = evaluateWeek1AppendOnlyInventory({
+        games: games.length,
+        rows: lines.length,
+        books: books.size,
+      });
+      if (!inv.pass) {
         console.error(
-          `Week1 inventory mismatch: games=${games.length} rows=${lines.length} books=${books.size} (expected 51/2281/11)`
+          `Week1 append-only inventory FAIL: ${inv.reason} ` +
+            `(games=${inv.games} rows=${inv.rows} books=${inv.books}; ` +
+            `baseline games=${inv.baselineGames} rows>=${inv.baselineRows} books>=${inv.baselineBooks})`
         );
         process.exitCode = 2;
       }

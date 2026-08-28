@@ -91,3 +91,59 @@ export function evaluateMarketlineConsumerReadiness(
     gameResults,
   };
 }
+
+export const WEEK1_BASELINE_GAMES = 51;
+export const WEEK1_BASELINE_ROWS = 2281;
+export const WEEK1_BASELINE_BOOKS = 11;
+
+export interface Week1AppendOnlyInventory {
+  games: number;
+  rows: number;
+  books: number;
+  baselineGames: number;
+  baselineRows: number;
+  baselineBooks: number;
+  rowsAtOrAboveBaseline: boolean;
+  booksAtOrAboveBaseline: boolean;
+  gamesExact: boolean;
+  pass: boolean;
+  reason: string | null;
+}
+
+/**
+ * Append-only Week1 inventory gate.
+ * Growth above verified baseline is OK; loss below baseline fails.
+ */
+export function evaluateWeek1AppendOnlyInventory(options: {
+  games: number;
+  rows: number;
+  books: number;
+}): Week1AppendOnlyInventory {
+  const { games, rows, books } = options;
+  const gamesExact = games === WEEK1_BASELINE_GAMES;
+  const rowsAtOrAboveBaseline = rows >= WEEK1_BASELINE_ROWS;
+  const booksAtOrAboveBaseline = books >= WEEK1_BASELINE_BOOKS;
+  const pass =
+    gamesExact && rowsAtOrAboveBaseline && booksAtOrAboveBaseline;
+
+  let reason: string | null = null;
+  if (!gamesExact) reason = `games_expected_${WEEK1_BASELINE_GAMES}_got_${games}`;
+  else if (!rowsAtOrAboveBaseline)
+    reason = `rows_below_baseline_${WEEK1_BASELINE_ROWS}_got_${rows}`;
+  else if (!booksAtOrAboveBaseline)
+    reason = `books_below_baseline_${WEEK1_BASELINE_BOOKS}_got_${books}`;
+
+  return {
+    games,
+    rows,
+    books,
+    baselineGames: WEEK1_BASELINE_GAMES,
+    baselineRows: WEEK1_BASELINE_ROWS,
+    baselineBooks: WEEK1_BASELINE_BOOKS,
+    rowsAtOrAboveBaseline,
+    booksAtOrAboveBaseline,
+    gamesExact,
+    pass,
+    reason,
+  };
+}

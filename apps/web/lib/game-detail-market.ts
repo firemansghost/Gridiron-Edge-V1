@@ -70,7 +70,7 @@ export function deriveGameDetailMarketFromSelection(options: {
   if (spreadHma !== null && Number.isFinite(spreadHma)) {
     const abs = Math.abs(spreadHma);
     if (abs < 1e-9) {
-      // Pick'em: no favorite; both sides even.
+      // Pick'em: no favorite; both sides even. Normalize -0 → 0.
       isPickEm = true;
       homePrice = 0;
       awayPrice = 0;
@@ -134,7 +134,11 @@ export function deriveGameDetailMarketFromSelection(options: {
 
   return {
     spreadHma:
-      spreadHma !== null && Number.isFinite(spreadHma) ? spreadHma : null,
+      spreadHma !== null && Number.isFinite(spreadHma)
+        ? Object.is(spreadHma, -0) || Math.abs(spreadHma) < 1e-9
+          ? 0
+          : spreadHma
+        : null,
     marketSpread,
     homePrice,
     awayPrice,
@@ -154,6 +158,165 @@ export function deriveGameDetailMarketFromSelection(options: {
     displayMoneyline: marketSelection.displayMoneyline,
     source: 'marketSelection',
   };
+}
+
+export interface MarketFavoriteInvariantResult {
+  ok: boolean;
+  isPickEm: boolean;
+  favoriteLineValid: boolean;
+  pricesCorrectlySigned: boolean;
+  favoriteMatchesPrices: boolean;
+  reason: string | null;
+}
+
+/** Validate favorite mapping; pick'em is a first-class valid state. */
+export function validateMarketFavoriteInvariant(options: {
+  isPickEm: boolean;
+  marketSpread: number | null;
+  homePrice: number | null;
+  awayPrice: number | null;
+  favoriteTeamId: string | null;
+  homeTeamId: string;
+  awayTeamId: string;
+}): MarketFavoriteInvariantResult {
+  const {
+    isPickEm,
+    marketSpread,
+    homePrice,
+    awayPrice,
+    favoriteTeamId,
+    homeTeamId,
+    awayTeamId,
+  } = options;
+
+  if (isPickEm) {
+    const pickEmOk =
+      marketSpread === 0 &&
+      homePrice === 0 &&
+      awayPrice === 0 &&
+      favoriteTeamId == null;
+    return {
+      ok: pickEmOk,
+      isPickEm: true,
+      favoriteLineValid: true,
+      pricesCorrectlySigned: true,
+      favoriteMatchesPrices: true,
+      reason: pickEmOk
+        ? null
+        : 'pickem_requires_zero_prices_and_no_favorite',
+    };
+  }
+
+  if (
+    marketSpread === null ||
+    homePrice === null ||
+    awayPrice === null ||
+    favoriteTeamId == null
+  ) {
+    return {
+      ok: false,
+      isPickEm: false,
+      favoriteLineValid: false,
+      pricesCorrectlySigned: false,
+      favoriteMatchesPrices: false,
+      reason: 'missing_market_spread_or_favorite',
+    };
+  }
+
+  const favoriteLineValid = marketSpread < 0;
+  const pricesCorrectlySigned =
+    (homePrice < 0 && awayPrice > 0) || (homePrice > 0 && awayPrice < 0);
+  const favoriteMatchesPrices =
+    (homePrice < awayPrice && favoriteTeamId === homeTeamId) ||
+    (awayPrice < homePrice && favoriteTeamId === awayTeamId);
+
+  const ok =
+    favoriteLineValid && pricesCorrectlySigned && favoriteMatchesPrices;
+  return {
+    ok,
+    isPickEm: false,
+    favoriteLineValid,
+    pricesCorrectlySigned,
+    favoriteMatchesPrices,
+    reason: ok ? null : 'favorite_mismatch',
+  };
+}
+
+export interface AuthoritativeMarketProvenance {
+  spread: {
+    bookName: string;
+    timestamp: string;
+    homeLine: number;
+    awayLine: number;
+    marketSpreadHma: number;
+    source: 'marketSelection.displaySpread';
+  } | null;
+  total: {
+    bookName: string;
+    timestamp: string;
+    total: number;
+    source: 'marketSelection.displayTotal';
+  } | null;
+  moneyline: {
+    bookName: string;
+    timestamp: string;
+    homePrice: number;
+    awayPrice: number;
+    source: 'marketSelection.displayMoneyline';
+  } | null;
+  bookSource: string;
+  snapshotId: string;
+  updatedAt: string;
+}
+
+/** Provenance from display snapshots only — never legacy group rows. */
+export function buildAuthoritativeMarketProvenance(
+  selection: GameMarketSelection
+): AuthoritativeMarketProvenance {
+  const spread = selection.displaySpread
+    ? {
+        bookName: selection.displaySpread.bookName,
+        timestamp: selection.displaySpread.timestamp,
+        homeLine: selection.displaySpread.homeLine,
+        awayLine: selection.displaySpread.awayLine,
+        marketSpreadHma: selection.displaySpread.marketSpreadHma,
+        source: 'marketSelection.displaySpread' as const,
+      }
+    : null;
+  const total = selection.displayTotal
+    ? {
+        bookName: selection.displayTotal.bookName,
+        timestamp: selection.displayTotal.timestamp,
+        total: selection.displayTotal.total,
+        source: 'marketSelection.displayTotal' as const,
+      }
+    : null;
+  const moneyline = selection.displayMoneyline
+    ? {
+        bookName: selection.displayMoneyline.bookName,
+        timestamp: selection.displayMoneyline.timestamp,
+        homePrice: selection.displayMoneyline.homePrice,
+        awayPrice: selection.displayMoneyline.awayPrice,
+        source: 'marketSelection.displayMoneyline' as const,
+      }
+    : null;
+
+  const bookSource =
+    spread?.bookName || total?.bookName || moneyline?.bookName || 'Unknown';
+  const tsCandidates = [
+    spread?.timestamp,
+    total?.timestamp,
+    moneyline?.timestamp,
+  ].filter((t): t is string => !!t);
+  const updatedAt =
+    tsCandidates.length > 0
+      ? new Date(
+          Math.max(...tsCandidates.map((t) => new Date(t).getTime()))
+        ).toISOString()
+      : new Date(0).toISOString();
+  const snapshotId = `${bookSource}::${updatedAt}`;
+
+  return { spread, total, moneyline, bookSource, snapshotId, updatedAt };
 }
 
 /** Hybrid tier closePrice: the selected BET SIDE's team line. */

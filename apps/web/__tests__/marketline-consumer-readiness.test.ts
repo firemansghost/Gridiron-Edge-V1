@@ -2,7 +2,10 @@
  * Audit structural gate tests — require spread + total + coherent ML.
  */
 
-import { evaluateMarketlineConsumerReadiness } from '../lib/marketline-consumer-readiness';
+import {
+  evaluateMarketlineConsumerReadiness,
+  evaluateWeek1AppendOnlyInventory,
+} from '../lib/marketline-consumer-readiness';
 import type { GameMarketSelection } from '../lib/market-line-snapshot';
 
 function emptySel(
@@ -185,5 +188,43 @@ describe('marketline consumer readiness gate', () => {
     expect(summary.allGamesHaveTotal).toBe(true);
     expect(summary.allGamesHaveCoherentMoneyline).toBe(true);
     expect(summary.allGamesStructurallySelectable).toBe(true);
+  });
+});
+
+describe('Week1 append-only inventory baseline', () => {
+  it('passes at exact baseline 2281/11 and at growth', () => {
+    expect(
+      evaluateWeek1AppendOnlyInventory({ games: 51, rows: 2281, books: 11 }).pass
+    ).toBe(true);
+    expect(
+      evaluateWeek1AppendOnlyInventory({ games: 51, rows: 2282, books: 11 }).pass
+    ).toBe(true);
+    expect(
+      evaluateWeek1AppendOnlyInventory({ games: 51, rows: 5000, books: 12 }).pass
+    ).toBe(true);
+  });
+
+  it('fails on row or book loss below verified baseline', () => {
+    const rowLoss = evaluateWeek1AppendOnlyInventory({
+      games: 51,
+      rows: 2280,
+      books: 11,
+    });
+    expect(rowLoss.pass).toBe(false);
+    expect(rowLoss.rowsAtOrAboveBaseline).toBe(false);
+
+    const bookLoss = evaluateWeek1AppendOnlyInventory({
+      games: 51,
+      rows: 2281,
+      books: 10,
+    });
+    expect(bookLoss.pass).toBe(false);
+    expect(bookLoss.booksAtOrAboveBaseline).toBe(false);
+  });
+
+  it('fails when game count is not 51', () => {
+    expect(
+      evaluateWeek1AppendOnlyInventory({ games: 50, rows: 2281, books: 11 }).pass
+    ).toBe(false);
   });
 });
