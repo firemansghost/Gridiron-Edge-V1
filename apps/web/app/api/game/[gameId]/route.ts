@@ -10,6 +10,10 @@ import { pickMarketLine, getLineValue, getPointValue, looksLikePriceLeak, pickMo
 import { getCoreV1SpreadFromTeams, getATSPick, computeATSEdgeHma } from '@/lib/core-v1-spread';
 import { getOUPick } from '@/lib/core-v1-total';
 import { calculateHybridSpread } from '@/lib/core-v2-spread';
+import {
+  selectGameMarketSnapshots,
+  type MarketLineObservation,
+} from '@/lib/market-line-snapshot';
 import { NextResponse } from 'next/server';
 
 // === V1 MODE CONFIGURATION ===
@@ -128,41 +132,66 @@ export async function GET(
     const matchupOutput = game.matchupOutputs[0];
     
     // ============================================
-    // COMPLETED GAMES: Use Pre-Kick Lines Only
+    // APPEND-ONLY MARKET SNAPSHOTS (current vs closing)
     // ============================================
-    // For completed games, filter market lines to only those from before/around kickoff
-    // This preserves the betting ticket state for backtesting
+    // Scheduled/upcoming: latest coherent observation per book (current).
+    // Final: latest coherent observation per book at/before kickoff (closing).
+    // Fallback when no pre-kick rows: latest overall (documented).
     const isCompletedGame = game.status === 'final';
+    const kickoffDate = new Date(game.date);
+    const observationRows: MarketLineObservation[] = game.marketLines.map((line) => ({
+      id: line.id,
+      gameId: line.gameId,
+      lineType: line.lineType,
+      lineValue: Number(line.lineValue),
+      closingLine:
+        line.closingLine !== null && line.closingLine !== undefined
+          ? Number(line.closingLine)
+          : null,
+      bookName: line.bookName,
+      timestamp: line.timestamp,
+      teamId: (line as { teamId?: string | null }).teamId ?? null,
+      source: line.source ?? null,
+    }));
+
+    const marketSelection = selectGameMarketSnapshots({
+      rows: observationRows,
+      homeTeamId: game.homeTeamId,
+      awayTeamId: game.awayTeamId,
+      kickoff: game.date,
+      mode: isCompletedGame ? 'closing' : 'current',
+    });
+
     let marketLinesToUse = game.marketLines;
     let usingPreKickLines = false;
     let consensusWindow: { start: string; end: string } | null = null;
-    
+
     if (isCompletedGame) {
-      const kickoffTime = new Date(game.date);
-      const preKickWindowStart = new Date(kickoffTime.getTime() - 60 * 60 * 1000); // 60 min before
-      const preKickWindowEnd = new Date(kickoffTime.getTime() + 5 * 60 * 1000); // 5 min after
-      
-      const preKickLines = game.marketLines.filter(line => {
-        const lineTime = new Date(line.timestamp);
-        return lineTime >= preKickWindowStart && lineTime <= preKickWindowEnd;
-      });
-      
+      const preKickLines = game.marketLines.filter(
+        (line) => new Date(line.timestamp).getTime() <= kickoffDate.getTime()
+      );
       if (preKickLines.length > 0) {
         marketLinesToUse = preKickLines;
-        usingPreKickLines = true;
+        usingPreKickLines = !marketSelection.usedPreKickFallback;
         consensusWindow = {
-          start: preKickWindowStart.toISOString(),
-          end: preKickWindowEnd.toISOString()
+          start: new Date(0).toISOString(),
+          end: kickoffDate.toISOString(),
         };
-        console.log(`[Game ${gameId}] 🔒 COMPLETED GAME - Using pre-kick lines:`, {
+        console.log(`[Game ${gameId}] 🔒 COMPLETED GAME - Closing selection (timestamp <= kickoff):`, {
           totalLines: game.marketLines.length,
           preKickLines: preKickLines.length,
-          kickoffTime: kickoffTime.toISOString(),
-          windowStart: preKickWindowStart.toISOString(),
-          windowEnd: preKickWindowEnd.toISOString()
+          kickoffTime: kickoffDate.toISOString(),
+          usedPreKickFallback: marketSelection.usedPreKickFallback,
+          currentBooks: {
+            spread: marketSelection.spreadByBook.length,
+            total: marketSelection.totalByBook.length,
+            moneyline: marketSelection.moneylineByBook.length,
+          },
         });
       } else {
-        console.warn(`[Game ${gameId}] ⚠️ COMPLETED GAME - No pre-kick lines found in window, using all available lines`);
+        console.warn(
+          `[Game ${gameId}] ⚠️ COMPLETED GAME - No pre-kick lines; fallback to latest overall observations`
+        );
       }
     }
     
@@ -555,130 +584,79 @@ export async function GET(
     const mlLine = selectedMoneylineLine;
     
     // ============================================
-    // COMPUTE CONSENSUS WITH PRICE-LEAK FILTERING
+    // CONSENSUS FROM APPEND-ONLY SNAPSHOTS (one latest coherent row-set per book)
     // ============================================
-    // Use median consensus within the selected window (pre-kick for completed games)
-    const spreadConsensus = computeMedianConsensus(marketLinesToUse, 'spread', 'spread');
-    const totalConsensus = computeMedianConsensus(marketLinesToUse, 'total', 'total');
-    
-    // ============================================
-    // MONEYLINE CONSENSUS (dedupe per book, separate favorite/dog)
-    // ============================================
-    const computeMoneylineConsensus = (
-      lines: typeof marketLinesToUse
-    ): { 
-      favoritePrice: number | null; 
-      dogPrice: number | null;
-      favoriteCount: number;
-      dogCount: number;
-      books: string[];
-      excluded: number;
-      rawCount: number;
-      perBookCount: number;
-      deduped: boolean;
-    } => {
-      const favoritePrices: { value: number; book: string }[] = [];
-      const dogPrices: { value: number; book: string }[] = [];
-      let excludedCount = 0;
-      
-      for (const line of lines) {
-        if (line.lineType !== 'moneyline') continue;
-        
-        const value = getLineValue(line); // Uses closingLine (prices are expected for ML)
-        if (value === null || value === undefined) {
-          excludedCount++;
-          continue;
-        }
-        
-        // Guardrail: Reject if abs(price) < 100 (not American odds format)
-        if (Math.abs(value) < 100) {
-          excludedCount++;
-          continue;
-        }
-        
-        // Guardrail: Reject if not multiple of 5 (American odds are typically -110, -115, +120, etc.)
-        if (Math.abs(value) % 5 !== 0) {
-          excludedCount++;
-          continue;
-        }
-        
-        const book = line.bookName || line.source || 'unknown';
-        
-        // Separate favorite (negative) and dog (positive) prices
-        if (value < 0) {
-          favoritePrices.push({ value, book });
-        } else {
-          dogPrices.push({ value, book });
-        }
-      }
-      
-      const rawCount = favoritePrices.length + dogPrices.length;
-      
-      // Dedupe per book (keep one favorite price and one dog price per book)
-      const favoritePerBook = new Map<string, number>();
-      const dogPerBook = new Map<string, number>();
-      
-      for (const { value, book } of favoritePrices) {
-        // Round to nearest 5 (American odds are multiples of 5)
-        const rounded = Math.round(value / 5) * 5;
-        if (!favoritePerBook.has(book)) {
-          favoritePerBook.set(book, rounded);
-        }
-      }
-      
-      for (const { value, book } of dogPrices) {
-        // Round to nearest 5
-        const rounded = Math.round(value / 5) * 5;
-        if (!dogPerBook.has(book)) {
-          dogPerBook.set(book, rounded);
-        }
-      }
-      
-      const dedupedFavoritePrices = Array.from(favoritePerBook.values());
-      const dedupedDogPrices = Array.from(dogPerBook.values());
-      const perBookCount = Math.max(favoritePerBook.size, dogPerBook.size);
-      
-      // Compute medians
-      const favoriteMedian = dedupedFavoritePrices.length > 0
-        ? (() => {
-            const sorted = dedupedFavoritePrices.sort((a, b) => a - b);
-            const mid = Math.floor(sorted.length / 2);
-            return sorted.length % 2 === 0
-              ? (sorted[mid - 1] + sorted[mid]) / 2
-              : sorted[mid];
-          })()
-        : null;
-      
-      const dogMedian = dedupedDogPrices.length > 0
-        ? (() => {
-            const sorted = dedupedDogPrices.sort((a, b) => a - b);
-            const mid = Math.floor(sorted.length / 2);
-            return sorted.length % 2 === 0
-              ? (sorted[mid - 1] + sorted[mid]) / 2
-              : sorted[mid];
-          })()
-        : null;
-      
-      // Get unique books (union of favorite and dog books)
-      const allBooks = Array.from(new Set([
-        ...Array.from(favoritePerBook.keys()),
-        ...Array.from(dogPerBook.keys())
-      ]));
-      
-      return {
-        favoritePrice: favoriteMedian,
-        dogPrice: dogMedian,
-        favoriteCount: dedupedFavoritePrices.length,
-        dogCount: dedupedDogPrices.length,
-        books: allBooks,
-        excluded: excludedCount,
-        rawCount,
-        perBookCount,
-        deduped: true
-      };
+    // Spread API contract remains favorite-centric (always <= 0) for existing guards.
+    const spreadHmaConsensus = marketSelection.spreadConsensus.value;
+    let spreadConsensus = {
+      value:
+        spreadHmaConsensus !== null && Number.isFinite(spreadHmaConsensus)
+          ? -Math.abs(spreadHmaConsensus)
+          : null,
+      count: marketSelection.spreadByBook.length,
+      books: marketSelection.spreadConsensus.books,
+      excluded: marketSelection.incoherentSpreads.length,
+      usedFrom: 'lineValue',
+      rawCount: marketSelection.spreadConsensus.rawHistoricalRows,
+      perBookCount: marketSelection.spreadConsensus.perBookCount,
+      deduped: true,
     };
-    
-    const moneylineConsensus = computeMoneylineConsensus(marketLinesToUse);
+
+    const totalConsensus = {
+      value: marketSelection.totalConsensus.value,
+      count: marketSelection.totalByBook.length,
+      books: marketSelection.totalConsensus.books,
+      excluded: 0,
+      usedFrom: 'lineValue',
+      rawCount: marketSelection.totalConsensus.rawHistoricalRows,
+      perBookCount: marketSelection.totalConsensus.perBookCount,
+      deduped: true,
+    };
+
+    const favoritePerBook = new Map<string, number>();
+    const dogPerBook = new Map<string, number>();
+    let mlExcluded = 0;
+    for (const snap of marketSelection.moneylineByBook) {
+      const pair = [snap.homePrice, snap.awayPrice];
+      let fav: number | null = null;
+      let dog: number | null = null;
+      for (const value of pair) {
+        if (Math.abs(value) < 100 || Math.abs(value) % 5 !== 0) {
+          mlExcluded++;
+          continue;
+        }
+        if (value < 0) fav = value;
+        else dog = value;
+      }
+      if (fav !== null) favoritePerBook.set(snap.bookName, Math.round(fav / 5) * 5);
+      if (dog !== null) dogPerBook.set(snap.bookName, Math.round(dog / 5) * 5);
+    }
+    const dedupedFavoritePrices = Array.from(favoritePerBook.values());
+    const dedupedDogPrices = Array.from(dogPerBook.values());
+    const medianOf = (vals: number[]): number | null => {
+      if (vals.length === 0) return null;
+      const sorted = [...vals].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 === 0
+        ? (sorted[mid - 1] + sorted[mid]) / 2
+        : sorted[mid];
+    };
+    const moneylineConsensus = {
+      favoritePrice: medianOf(dedupedFavoritePrices),
+      dogPrice: medianOf(dedupedDogPrices),
+      favoriteCount: dedupedFavoritePrices.length,
+      dogCount: dedupedDogPrices.length,
+      books: Array.from(
+        new Set([
+          ...Array.from(favoritePerBook.keys()),
+          ...Array.from(dogPerBook.keys()),
+        ])
+      ),
+      excluded: mlExcluded + marketSelection.incoherentMoneylines.length,
+      rawCount: marketSelection.rawCounts.moneyline,
+      perBookCount: Math.max(favoritePerBook.size, dogPerBook.size),
+      deduped: true,
+    };
     
     // ============================================
     // CONSENSUS RESULTS LOGGING (one-line summary)
