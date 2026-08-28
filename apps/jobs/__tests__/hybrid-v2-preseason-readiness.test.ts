@@ -21,10 +21,12 @@ import {
   TARGET_SEASON,
   TARGET_WEEK,
   buildHybridPreseasonReadinessEvaluation,
+  evaluateSameSeasonUnitGradeSourceCoverage,
   parseHybridPreseasonReadinessArgs,
   sanitizeHybridPreseasonReadinessError,
   type HybridPreseasonGameRow,
   type HybridPreseasonReadinessInput,
+  type SameSeasonTeamSourceSignals,
   type UnitGradeRow,
   type V1RatingRow,
 } from '../src/preseason/hybrid-v2-preseason-readiness';
@@ -133,6 +135,52 @@ function gradesFor(
   return rows;
 }
 
+function fullSourceSignals(
+  fbs: string[],
+  opts?: { omitExplosivenessFor?: string; onlyTeam?: string }
+): SameSeasonTeamSourceSignals[] {
+  return fbs.map((teamId) => {
+    const omitExplo =
+      opts?.omitExplosivenessFor &&
+      teamId.toLowerCase() === opts.omitExplosivenessFor.toLowerCase();
+    const only =
+      !opts?.onlyTeam ||
+      teamId.toLowerCase() === opts.onlyTeam.toLowerCase();
+    if (!only) {
+      return {
+        teamId,
+        hasLineYardsOff: false,
+        hasRunEpa: false,
+        hasPpaOffense: false,
+        hasStuffRate: false,
+        hasPpaDefense: false,
+        hasPassEpa: false,
+        hasPassSr: false,
+        hasDefSr: false,
+        hasIsoPppOff: false,
+        hasIsoPppDef: false,
+        hasHavocOff: false,
+        hasHavocDef: false,
+      };
+    }
+    return {
+      teamId,
+      hasLineYardsOff: true,
+      hasRunEpa: true,
+      hasPpaOffense: true,
+      hasStuffRate: true,
+      hasPpaDefense: true,
+      hasPassEpa: true,
+      hasPassSr: true,
+      hasDefSr: true,
+      hasIsoPppOff: !omitExplo,
+      hasIsoPppDef: !omitExplo,
+      hasHavocOff: true,
+      hasHavocDef: true,
+    };
+  });
+}
+
 function healthyInput(
   overrides: Partial<HybridPreseasonReadinessInput> = {}
 ): HybridPreseasonReadinessInput {
@@ -141,7 +189,8 @@ function healthyInput(
   return {
     season: TARGET_SEASON,
     week: TARGET_WEEK,
-    nowIso: '2026-08-27T12:00:00.000Z',
+    detectedSeason: TARGET_SEASON,
+    detectedWeek: TARGET_WEEK,
     fbsIds: fbs,
     games,
     v1Ratings2026: v1For(fbs),
@@ -150,6 +199,7 @@ function healthyInput(
       allZeroIds: [...HIGHLIGHT_ALL_ZERO_TEAM_IDS],
     }),
     cfbdSourceCounts2026: emptyCfbd(),
+    sameSeasonTeamSources: [],
     unitGradeRows2024: 0,
     cfbdSourceCounts2024: emptyCfbd(),
     ...overrides,
@@ -181,6 +231,32 @@ describe('Hybrid V2 preseason readiness — args / gates', () => {
     const r = buildHybridPreseasonReadinessEvaluation(healthyInput());
     expect(r.week1GameCount).toBe(EXPECTED_WEEK1_GAME_COUNT);
     expect(EXPECTED_WEEK1_GAME_COUNT).toBe(51);
+  });
+
+  it('uses injected detectedSeason/Week (production getCurrentSeasonWeek input)', () => {
+    const ok = buildHybridPreseasonReadinessEvaluation(healthyInput());
+    expect(ok.currentWeekResolutionOk).toBe(true);
+    expect(ok.detectedSeason).toBe(2026);
+    expect(ok.detectedWeek).toBe(1);
+
+    const bad = buildHybridPreseasonReadinessEvaluation(
+      healthyInput({ detectedSeason: 2025, detectedWeek: 8 })
+    );
+    expect(bad.currentWeekResolutionOk).toBe(false);
+    expect(bad.auditOk).toBe(false);
+    expect(
+      bad.findings.some((f) => f.includes('current week resolution expected'))
+    ).toBe(true);
+
+    const cli = fs.readFileSync(
+      path.join(__dirname, '../audit-hybrid-v2-preseason-readiness.ts'),
+      'utf8'
+    );
+    expect(cli).toContain(
+      "import { getCurrentSeasonWeek } from '../web/lib/current-week'"
+    );
+    expect(cli).toContain('return getCurrentSeasonWeek(prisma)');
+    expect(cli).not.toContain('resolveCurrentSeasonWeekFromGames');
   });
 
   it('exact FBS-vs-FBS coverage required', () => {
@@ -218,6 +294,76 @@ describe('Hybrid V2 preseason readiness — args / gates', () => {
   });
 });
 
+describe('Hybrid V2 preseason readiness — same-season source coverage', () => {
+  it('zero rows => sameSeasonUnitGradeSourceReady=false', () => {
+    const fbs = fbs2026();
+    const cov = evaluateSameSeasonUnitGradeSourceCoverage(fbs, []);
+    expect(cov.sameSeasonUnitGradeSourceReady).toBe(false);
+    expect(cov.teamsWithOffRunSource).toBe(0);
+    const r = buildHybridPreseasonReadinessEvaluation(
+      healthyInput({ sameSeasonTeamSources: [] })
+    );
+    expect(r.sameSeasonUnitGradeSourceReady).toBe(false);
+    expect(r.auditOk).toBe(true); // expected inventory finding, not fail-closed
+  });
+
+  it('a single/partial source row => false', () => {
+    const fbs = fbs2026();
+    const partial = fullSourceSignals(fbs, { onlyTeam: fbs[0] });
+    const cov = evaluateSameSeasonUnitGradeSourceCoverage(fbs, partial);
+    expect(cov.teamsWithOffRunSource).toBe(1);
+    expect(cov.sameSeasonUnitGradeSourceReady).toBe(false);
+  });
+
+  it('137/138 coverage => false', () => {
+    const fbs = fbs2026();
+    const almost = fullSourceSignals(fbs).filter(
+      (s) => s.teamId !== fbs[fbs.length - 1]
+    );
+    const cov = evaluateSameSeasonUnitGradeSourceCoverage(fbs, almost);
+    expect(cov.teamsWithOffRunSource).toBe(137);
+    expect(cov.sameSeasonUnitGradeSourceReady).toBe(false);
+  });
+
+  it('exact meaningful 138/138 six-category coverage => true', () => {
+    const fbs = fbs2026();
+    const full = fullSourceSignals(fbs);
+    const cov = evaluateSameSeasonUnitGradeSourceCoverage(fbs, full);
+    expect(cov.sameSeasonUnitGradeSourceReady).toBe(true);
+    expect(cov.teamsWithOffRunSource).toBe(138);
+    expect(cov.teamsWithDefRunSource).toBe(138);
+    expect(cov.teamsWithOffPassSource).toBe(138);
+    expect(cov.teamsWithDefPassSource).toBe(138);
+    expect(cov.teamsWithOffExplosivenessSource).toBe(138);
+    expect(cov.teamsWithDefExplosivenessSource).toBe(138);
+    const r = buildHybridPreseasonReadinessEvaluation(
+      healthyInput({
+        sameSeasonTeamSources: full,
+        cfbdSourceCounts2026: {
+          cfbdGames: 10,
+          cfbdEffTeamGame: 10,
+          cfbdPpaTeamGame: 10,
+          cfbdEffTeamSeason: 10,
+          cfbdPriorsTeamSeason: 0,
+        },
+      })
+    );
+    expect(r.sameSeasonUnitGradeSourceReady).toBe(true);
+  });
+
+  it('missing explosiveness prevents ready=true even if other categories exist', () => {
+    const fbs = fbs2026();
+    const missingExplo = fullSourceSignals(fbs, {
+      omitExplosivenessFor: fbs[3],
+    });
+    const cov = evaluateSameSeasonUnitGradeSourceCoverage(fbs, missingExplo);
+    expect(cov.teamsWithOffRunSource).toBe(138);
+    expect(cov.teamsWithOffExplosivenessSource).toBe(137);
+    expect(cov.sameSeasonUnitGradeSourceReady).toBe(false);
+    expect(cov.missingOffExplosivenessTeamIds).toContain(fbs[3]);
+  });
+});
+
 describe('Hybrid V2 preseason readiness — current Hybrid inputs', () => {
   it('0 current TeamUnitGrades → currentHybridOperationalReady=false', () => {
     const r = buildHybridPreseasonReadinessEvaluation(healthyInput());
@@ -225,34 +371,42 @@ describe('Hybrid V2 preseason readiness — current Hybrid inputs', () => {
     expect(r.gamesWithCurrentHybridInputs).toBe(0);
     expect(r.gamesThatWouldFallbackToCoreV1).toBe(51);
     expect(r.currentHybridOperationalReady).toBe(false);
-    expect(r.auditOk).toBe(true); // expected finding, not fail-closed
+    expect(r.auditOk).toBe(true);
   });
 
-  it("missing one side's current grade marks that game fallback", () => {
+  it('removing one team grade falls back only for games involving that team', () => {
     const fbs = fbs2026();
     const games = buildWeek1Games(fbs);
-    const home = games[0].homeTeamId;
-    const away = games[0].awayTeamId;
-    // Only home has 2026 grades among the pair; both teams need grades for hybrid.
-    const grades = gradesFor([home], 2026);
+    const removed = fbs[0];
+    const grades = gradesFor(fbs, 2026, { missingIds: [removed] });
+    const affected = games.filter(
+      (g) =>
+        g.homeTeamId.toLowerCase() === removed ||
+        g.awayTeamId.toLowerCase() === removed
+    ).length;
+    expect(affected).toBeGreaterThan(0);
+    expect(affected).toBeLessThan(51);
+
     const r = buildHybridPreseasonReadinessEvaluation(
       healthyInput({ unitGrades2026: grades, games })
     );
-    expect(r.gamesWithCurrentHybridInputs).toBe(0);
-    expect(r.gamesMissingCurrentHybridInputs).toBe(51);
-    expect(r.gamesThatWouldFallbackToCoreV1).toBe(51);
-    // Ensure specific game would fallback
-    const both =
-      grades.some((g) => g.teamId === home) &&
-      grades.some((g) => g.teamId === away);
-    expect(both).toBe(false);
+    expect(r.gamesMissingCurrentHybridInputs).toBe(affected);
+    expect(r.gamesThatWouldFallbackToCoreV1).toBe(affected);
+    expect(r.gamesWithCurrentHybridInputs).toBe(51 - affected);
+    expect(r.currentHybridOperationalReady).toBe(false);
   });
 
-  it('51/51 missing grades → 51 fallback', () => {
+  it('duplicate required current grade → auditOk=false', () => {
+    const fbs = fbs2026();
+    const grades = gradesFor(fbs, 2026);
+    grades.push({ ...grades[0] });
     const r = buildHybridPreseasonReadinessEvaluation(
-      healthyInput({ unitGrades2026: [] })
+      healthyInput({ unitGrades2026: grades })
     );
-    expect(r.gamesThatWouldFallbackToCoreV1).toBe(51);
+    expect(r.auditOk).toBe(false);
+    expect(
+      r.findings.some((f) => f.includes('duplicate 2026 TeamUnitGrades'))
+    ).toBe(true);
   });
 });
 
@@ -270,7 +424,7 @@ describe('Hybrid V2 preseason readiness — prior grades', () => {
     expect(r.priorYearGradeBridgeStructurallyAvailable).toBe(true);
   });
 
-  it('duplicate prior-grade team fails structural availability', () => {
+  it('duplicate prior-grade team fails structural availability and auditOk', () => {
     const fbs = fbs2026();
     const prior = gradesFor(fbs, 2025, {
       allZeroIds: [...HIGHLIGHT_ALL_ZERO_TEAM_IDS],
@@ -281,6 +435,10 @@ describe('Hybrid V2 preseason readiness — prior grades', () => {
     );
     expect(r.priorGradeCoverage.duplicateTeamIds).toBeGreaterThan(0);
     expect(r.priorYearGradeBridgeStructurallyAvailable).toBe(false);
+    expect(r.auditOk).toBe(false);
+    expect(
+      r.findings.some((f) => f.includes('duplicate prior-year TeamUnitGrades'))
+    ).toBe(true);
   });
 
   it('missing prior-grade team fails structural availability', () => {
@@ -326,6 +484,23 @@ describe('Hybrid V2 preseason readiness — prior grades', () => {
     expect(r.priorGradeCoverage.allZeroHybridTeamIds).toContain(
       'sacramento-state'
     );
+  });
+
+  it('partial synthetic 2024 evidence does NOT make historical validation available', () => {
+    const r = buildHybridPreseasonReadinessEvaluation(
+      healthyInput({
+        unitGradeRows2024: 50,
+        cfbdSourceCounts2024: {
+          cfbdGames: 10,
+          cfbdEffTeamGame: 10,
+          cfbdPpaTeamGame: 10,
+          cfbdEffTeamSeason: 10,
+          cfbdPriorsTeamSeason: 5,
+        },
+      })
+    );
+    expect(r.historicalPriorYearBridgeValidationAvailable).toBe(false);
+    expect(r.priorYearGradeBridgeHistoricallyValidated).toBe(false);
   });
 });
 
@@ -401,7 +576,6 @@ describe('Hybrid V2 preseason readiness — Hybrid math reuse', () => {
       r.week1Diagnostics.filter((d) => d.favoriteFlipped).length
     );
     expect(r.top20AbsDeltas).toHaveLength(20);
-    // Deterministic sort: non-increasing abs delta
     for (let i = 1; i < r.top20AbsDeltas.length; i++) {
       expect(r.top20AbsDeltas[i - 1].absHybridMinusV1).toBeGreaterThanOrEqual(
         r.top20AbsDeltas[i].absHybridMinusV1

@@ -70,20 +70,64 @@ export interface CfbdSourceCounts {
   cfbdPriorsTeamSeason: number;
 }
 
+/**
+ * Per-team finite source signals aligned to compute_unit_grades.ts inputs/fallbacks.
+ * Presence = at least one finite observation for that metric for the team/season.
+ */
+export interface SameSeasonTeamSourceSignals {
+  teamId: string;
+  hasLineYardsOff: boolean;
+  hasRunEpa: boolean;
+  hasPpaOffense: boolean;
+  hasStuffRate: boolean;
+  hasPpaDefense: boolean;
+  hasPassEpa: boolean;
+  hasPassSr: boolean;
+  hasDefSr: boolean;
+  hasIsoPppOff: boolean;
+  hasIsoPppDef: boolean;
+  /** Reported separately; not required for Hybrid spread readiness. */
+  hasHavocOff: boolean;
+  hasHavocDef: boolean;
+}
+
+export interface SameSeasonUnitGradeSourceCoverage {
+  teamsWithOffRunSource: number;
+  teamsWithDefRunSource: number;
+  teamsWithOffPassSource: number;
+  teamsWithDefPassSource: number;
+  teamsWithOffExplosivenessSource: number;
+  teamsWithDefExplosivenessSource: number;
+  teamsWithHavocSource: number;
+  missingOffRunTeamIds: string[];
+  missingDefRunTeamIds: string[];
+  missingOffPassTeamIds: string[];
+  missingDefPassTeamIds: string[];
+  missingOffExplosivenessTeamIds: string[];
+  missingDefExplosivenessTeamIds: string[];
+  sameSeasonUnitGradeSourceReady: boolean;
+}
+
 export interface HybridPreseasonReadinessInput {
   season: number;
   week: number;
-  /** ISO timestamp used for getCurrentSeasonWeek-equivalent resolution. */
-  nowIso: string;
+  /**
+   * Production current-week resolution from getCurrentSeasonWeek(prisma).
+   * Pure evaluator compares these to TARGET_SEASON / TARGET_WEEK only.
+   */
+  detectedSeason: number;
+  detectedWeek: number;
   fbsIds: string[];
-  /** All season Game rows (for current-week detection + Week1 slate). */
+  /** Season Game rows scoped to the audit season (Week1 slate). */
   games: HybridPreseasonGameRow[];
   v1Ratings2026: V1RatingRow[];
   unitGrades2026: UnitGradeRow[];
   /** Prior-year grades loaded for authoritative 2026 FBS IDs. */
   unitGradesPrior: UnitGradeRow[];
   cfbdSourceCounts2026: CfbdSourceCounts;
-  /** Retained 2024 TeamUnitGrades count (historical bridge validation). */
+  /** Per-FBS same-season CFBD feature presence for unit-grade categories. */
+  sameSeasonTeamSources: SameSeasonTeamSourceSignals[];
+  /** Retained 2024 TeamUnitGrades count (inventory only; not a validation gate). */
   unitGradeRows2024: number;
   cfbdSourceCounts2024: CfbdSourceCounts;
 }
@@ -166,10 +210,11 @@ export interface HybridPreseasonReadinessResult {
   gamesThatWouldFallbackToCoreV1: number;
   currentHybridOperationalReady: boolean;
   cfbdSourceCounts2026: CfbdSourceCounts;
+  sameSeasonUnitGradeSourceCoverage: SameSeasonUnitGradeSourceCoverage;
   sameSeasonUnitGradeSourceReady: boolean;
   priorGradeCoverage: PriorGradeCoverage;
   priorYearGradeBridgeStructurallyAvailable: boolean;
-  historicalPriorYearBridgeValidationAvailable: boolean;
+  historicalPriorYearBridgeValidationAvailable: false;
   priorYearGradeBridgeHistoricallyValidated: false;
   week1Diagnostics: Week1DiagnosticGame[];
   hybridSpreadSummary: NumericSummary;
@@ -286,59 +331,95 @@ function favoriteFromHma(
 }
 
 /**
- * Pure reconstruction of apps/web/lib/current-week.ts getCurrentSeasonWeek
- * semantics (DB-backed algorithm; no Prisma).
+ * Conservative FBS team-level same-season unit-grade source coverage.
+ * Matches compute_unit_grades.ts input/fallback semantics for Hybrid-used categories.
+ *
+ * OFF RUN: lineYardsOff OR runEpa OR ppaOffense
+ * DEF RUN: stuffRate OR ppaDefense
+ * OFF PASS: passEpa OR passSr OR ppaOffense
+ * DEF PASS: defSr OR ppaDefense
+ * OFF EXPLOSIVENESS: isoPppOff
+ * DEF EXPLOSIVENESS: isoPppDef
+ *
+ * Ready only when all six categories have meaningful source for all 138 FBS teams.
  */
-export function resolveCurrentSeasonWeekFromGames(
-  games: HybridPreseasonGameRow[],
-  now: Date
-): { season: number; week: number } {
-  let season = now.getFullYear();
-  for (const g of games) {
-    if (g.season > season) season = g.season;
-  }
-  const seasonGames = games.filter((g) => g.season === season);
-  if (seasonGames.length === 0) {
-    return { season, week: 1 };
+export function evaluateSameSeasonUnitGradeSourceCoverage(
+  fbsIds: string[],
+  teamSources: SameSeasonTeamSourceSignals[]
+): SameSeasonUnitGradeSourceCoverage {
+  const fbs = sortedUnique(fbsIds);
+  const byTeam = new Map<string, SameSeasonTeamSourceSignals>();
+  for (const row of teamSources) {
+    const id = row.teamId.toLowerCase();
+    if (!byTeam.has(id)) byTeam.set(id, { ...row, teamId: id });
   }
 
-  const weekDateMap = new Map<number, Date[]>();
-  for (const g of seasonGames) {
-    const wk = g.week ?? 1;
-    const d = new Date(g.date);
-    if (isNaN(d.getTime())) continue;
-    if (!weekDateMap.has(wk)) weekDateMap.set(wk, []);
-    weekDateMap.get(wk)!.push(d);
+  const missingOffRunTeamIds: string[] = [];
+  const missingDefRunTeamIds: string[] = [];
+  const missingOffPassTeamIds: string[] = [];
+  const missingDefPassTeamIds: string[] = [];
+  const missingOffExplosivenessTeamIds: string[] = [];
+  const missingDefExplosivenessTeamIds: string[] = [];
+  let teamsWithOffRunSource = 0;
+  let teamsWithDefRunSource = 0;
+  let teamsWithOffPassSource = 0;
+  let teamsWithDefPassSource = 0;
+  let teamsWithOffExplosivenessSource = 0;
+  let teamsWithDefExplosivenessSource = 0;
+  let teamsWithHavocSource = 0;
+
+  for (const id of fbs) {
+    const s = byTeam.get(id);
+    const offRun =
+      !!s && (s.hasLineYardsOff || s.hasRunEpa || s.hasPpaOffense);
+    const defRun = !!s && (s.hasStuffRate || s.hasPpaDefense);
+    const offPass =
+      !!s && (s.hasPassEpa || s.hasPassSr || s.hasPpaOffense);
+    const defPass = !!s && (s.hasDefSr || s.hasPpaDefense);
+    const offExplo = !!s && s.hasIsoPppOff;
+    const defExplo = !!s && s.hasIsoPppDef;
+    const havoc = !!s && (s.hasHavocOff || s.hasHavocDef);
+
+    if (offRun) teamsWithOffRunSource++;
+    else missingOffRunTeamIds.push(id);
+    if (defRun) teamsWithDefRunSource++;
+    else missingDefRunTeamIds.push(id);
+    if (offPass) teamsWithOffPassSource++;
+    else missingOffPassTeamIds.push(id);
+    if (defPass) teamsWithDefPassSource++;
+    else missingDefPassTeamIds.push(id);
+    if (offExplo) teamsWithOffExplosivenessSource++;
+    else missingOffExplosivenessTeamIds.push(id);
+    if (defExplo) teamsWithDefExplosivenessSource++;
+    else missingDefExplosivenessTeamIds.push(id);
+    if (havoc) teamsWithHavocSource++;
   }
 
-  const weekRanges: Array<{ week: number; firstDate: Date; lastDate: Date }> =
-    [];
-  for (const [week, dates] of weekDateMap) {
-    if (dates.length === 0) continue;
-    weekRanges.push({
-      week,
-      firstDate: new Date(Math.min(...dates.map((d) => d.getTime()))),
-      lastDate: new Date(Math.max(...dates.map((d) => d.getTime()))),
-    });
-  }
-  if (weekRanges.length === 0) return { season, week: 1 };
+  const sameSeasonUnitGradeSourceReady =
+    fbs.length === EXPECTED_FBS_COUNT &&
+    teamsWithOffRunSource === EXPECTED_FBS_COUNT &&
+    teamsWithDefRunSource === EXPECTED_FBS_COUNT &&
+    teamsWithOffPassSource === EXPECTED_FBS_COUNT &&
+    teamsWithDefPassSource === EXPECTED_FBS_COUNT &&
+    teamsWithOffExplosivenessSource === EXPECTED_FBS_COUNT &&
+    teamsWithDefExplosivenessSource === EXPECTED_FBS_COUNT;
 
-  const today = now;
-  for (const range of weekRanges) {
-    if (
-      range.firstDate.getTime() <= today.getTime() &&
-      today.getTime() <= range.lastDate.getTime()
-    ) {
-      return { season, week: range.week };
-    }
-  }
-  const future = weekRanges
-    .filter((r) => r.firstDate.getTime() > today.getTime())
-    .sort((a, b) => a.firstDate.getTime() - b.firstDate.getTime());
-  if (future.length > 0) return { season, week: future[0].week };
-
-  weekRanges.sort((a, b) => b.lastDate.getTime() - a.lastDate.getTime());
-  return { season, week: weekRanges[0].week };
+  return {
+    teamsWithOffRunSource,
+    teamsWithDefRunSource,
+    teamsWithOffPassSource,
+    teamsWithDefPassSource,
+    teamsWithOffExplosivenessSource,
+    teamsWithDefExplosivenessSource,
+    teamsWithHavocSource,
+    missingOffRunTeamIds,
+    missingDefRunTeamIds,
+    missingOffPassTeamIds,
+    missingDefPassTeamIds,
+    missingOffExplosivenessTeamIds,
+    missingDefExplosivenessTeamIds,
+    sameSeasonUnitGradeSourceReady,
+  };
 }
 
 export function parseHybridPreseasonReadinessArgs(argv: string[]):
@@ -385,7 +466,6 @@ export function buildHybridPreseasonReadinessEvaluation(
   const findings: string[] = [];
   const fbs = sortedUnique(input.fbsIds);
   const fbsSet = new Set(fbs);
-  const now = new Date(input.nowIso);
 
   if (input.season !== TARGET_SEASON) {
     findings.push(`season must be ${TARGET_SEASON}`);
@@ -400,9 +480,8 @@ export function buildHybridPreseasonReadinessEvaluation(
     findings.push(`FBS count ${fbs.length} != ${EXPECTED_FBS_COUNT}`);
   }
 
-  const resolved = resolveCurrentSeasonWeekFromGames(input.games, now);
-  const detectedSeason = resolved.season;
-  const detectedWeek = resolved.week;
+  const detectedSeason = input.detectedSeason;
+  const detectedWeek = input.detectedWeek;
   const currentWeekResolutionOk =
     detectedSeason === TARGET_SEASON && detectedWeek === TARGET_WEEK;
   if (!currentWeekResolutionOk) {
@@ -552,14 +631,13 @@ export function buildHybridPreseasonReadinessEvaluation(
     gamesWithCurrentHybridInputs === EXPECTED_WEEK1_GAME_COUNT &&
     gamesMissingCurrentHybridInputs === 0;
 
-  // Same-season CFBD source readiness (inventory only — do not run writer)
+  // Same-season CFBD source readiness (inventory + conservative team coverage).
+  // Do NOT run compute_unit_grades.ts.
   const src = input.cfbdSourceCounts2026;
+  const sameSeasonUnitGradeSourceCoverage =
+    evaluateSameSeasonUnitGradeSourceCoverage(fbs, input.sameSeasonTeamSources);
   const sameSeasonUnitGradeSourceReady =
-    src.cfbdGames > 0 &&
-    src.cfbdEffTeamGame > 0 &&
-    src.cfbdPpaTeamGame > 0 &&
-    src.cfbdEffTeamSeason > 0;
-  // Explicit expected-false path remains a finding note only (not auditOk fail)
+    sameSeasonUnitGradeSourceCoverage.sameSeasonUnitGradeSourceReady;
 
   // Prior-year grades for 2026 FBS
   const priorRows = input.unitGradesPrior.filter((r) =>
@@ -571,6 +649,11 @@ export function buildHybridPreseasonReadinessEvaluation(
     const id = r.teamId.toLowerCase();
     if (priorByTeam.has(id)) priorDup++;
     else priorByTeam.set(id, r);
+  }
+  if (priorDup > 0) {
+    findings.push(
+      `duplicate prior-year TeamUnitGrades rows for 2026 FBS teams=${priorDup} (coverage ambiguous)`
+    );
   }
 
   let finiteOffRun = 0;
@@ -631,10 +714,9 @@ export function buildHybridPreseasonReadinessEvaluation(
   // Do not fail audit merely because NDSU/Sac are all-zero — report only.
   // Structural availability still true when zeros are finite.
 
-  const historicalPriorYearBridgeValidationAvailable =
-    input.unitGradeRows2024 > 0 &&
-    (input.cfbdSourceCounts2024.cfbdGames > 0 ||
-      input.cfbdSourceCounts2024.cfbdEffTeamGame > 0);
+  // Phase 2C-2I-1 does not implement a complete 2024→2025 Week1 historical
+  // bridge study. Partial inventory must NOT claim validation availability.
+  const historicalPriorYearBridgeValidationAvailable = false as const;
 
   // Week1 prior-grade Hybrid diagnostic
   const week1Diagnostics: Week1DiagnosticGame[] = [];
@@ -765,6 +847,7 @@ export function buildHybridPreseasonReadinessEvaluation(
   );
 
   // Fail-closed for auditOk — missing 2026 grades / unauthorized bridge do NOT fail.
+  // Duplicate required rows DO fail.
   const auditOk =
     findings.length === 0 &&
     input.season === TARGET_SEASON &&
@@ -777,6 +860,7 @@ export function buildHybridPreseasonReadinessEvaluation(
     missingTeamMembership === 0 &&
     v1Dup === 0 &&
     g2026Dup === 0 &&
+    priorDup === 0 &&
     diagnosticNonfinite === 0 &&
     week1Diagnostics.length === EXPECTED_WEEK1_GAME_COUNT &&
     week1Diagnostics.every(
@@ -813,6 +897,7 @@ export function buildHybridPreseasonReadinessEvaluation(
     gamesThatWouldFallbackToCoreV1,
     currentHybridOperationalReady,
     cfbdSourceCounts2026: { ...src },
+    sameSeasonUnitGradeSourceCoverage,
     sameSeasonUnitGradeSourceReady,
     priorGradeCoverage,
     priorYearGradeBridgeStructurallyAvailable,
@@ -864,6 +949,13 @@ export function formatHybridPreseasonReadinessReport(
   const s = result.cfbdSourceCounts2026;
   lines.push(
     `sameSeasonUnitGradeSourceReady=${result.sameSeasonUnitGradeSourceReady} cfbd_games=${s.cfbdGames} cfbd_eff_team_game=${s.cfbdEffTeamGame} cfbd_ppa_team_game=${s.cfbdPpaTeamGame} cfbd_eff_team_season=${s.cfbdEffTeamSeason} cfbd_priors_team_season=${s.cfbdPriorsTeamSeason}`
+  );
+  const sc = result.sameSeasonUnitGradeSourceCoverage;
+  lines.push(
+    `sameSeasonCoverage offRun=${sc.teamsWithOffRunSource} defRun=${sc.teamsWithDefRunSource} offPass=${sc.teamsWithOffPassSource} defPass=${sc.teamsWithDefPassSource} offExplo=${sc.teamsWithOffExplosivenessSource} defExplo=${sc.teamsWithDefExplosivenessSource} havoc=${sc.teamsWithHavocSource}`
+  );
+  lines.push(
+    `sameSeasonMissing offRun=${sc.missingOffRunTeamIds.length} defRun=${sc.missingDefRunTeamIds.length} offPass=${sc.missingOffPassTeamIds.length} defPass=${sc.missingDefPassTeamIds.length} offExplo=${sc.missingOffExplosivenessTeamIds.length} defExplo=${sc.missingDefExplosivenessTeamIds.length}`
   );
   const p = result.priorGradeCoverage;
   lines.push(

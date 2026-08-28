@@ -145,10 +145,9 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | `Evaluate Balanced V1 Transition Timing (Manual, Read Only)` | `workflow_dispatch` only; `study_season=2025`; `DIRECT_URL` only |
 | `Evaluate Balanced V1 Transition Blends (Manual, Read Only)` | `workflow_dispatch` only; `study_season=2025`; `DIRECT_URL` only |
 | `apps/jobs/write-core-v1-lifecycle.ts` | Guarded 2026 Core V1 lifecycle PREVIEW/COMMIT (`completedThroughWeek`) |
-| `Write 2026 Core V1 Lifecycle Ratings (Manual, Guarded)` | Manual PREVIEW/COMMIT; confirm `WRITE_2026_CORE_V1` |
+| `Write 2026 Core V1 Lifecycle Ratings (Manual, Guarded)` | `workflow_dispatch` only; PREVIEW default; COMMIT=`WRITE_2026_CORE_V1` |
 | `apps/jobs/audit-hybrid-v2-preseason-readiness.ts` | SELECT-only Hybrid V2 Week1 readiness + prior-grade diagnostic |
 | `Audit Hybrid V2 Preseason Readiness (Manual, Read Only)` | `workflow_dispatch` only; season `2026` week `1`; `DIRECT_URL` only |
-| `Write 2026 Core V1 Lifecycle Ratings (Manual, Guarded)` | `workflow_dispatch` only; PREVIEW default; COMMIT=`WRITE_2026_CORE_V1` |
 | `Preview 2026 Ratings Inputs (Manual, Read Only)` | Provider preview workflow (`season=2026`) |
 | `apps/jobs/diagnose-2026-conference-recruiting.ts` | Read-only `/teams/fbs` + recruiting resolver diagnostic (`providerFbsSetExact` / `recruitingResolverSafe`) |
 | `Diagnose 2026 Conference & Recruiting Mapping (Manual, Read Only)` | Diagnostic workflow (`season=2026`) |
@@ -173,8 +172,8 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 * 2C-2H-1: **PASSED** (PR #52) — season-aware diagnostics; Aug 27 probe: `/talent` 138/138 structurally complete; persistence still unauthorized
 * 2C-2H-2: **PASSED** (PR #53) — production COMMIT 138 rows; `transactionVerificationExact=true`; `postCommitExactTeamSet=true`; `talentCompositeMatchesCandidate=138/138`; no ratings/Odds
 * Latest readiness context: talent 138/138; Core V1 ratings 138/138 (Candidate A); unit grades **0/138** (Hybrid falls back to Core V1); commits 0/138
-* 2C-2H-3: **PASSED** (PR #54) — production read-only preview: 138 finite in-memory ratings; talent-only 138; powerRating ≈ -44.15…59.60; `zeroConfidenceCount=138`; **zero writes/providers/Odds**
-* **2026 ratings persistence remains NOT AUTHORIZED**
+* 2C-2H-3: **PASSED** (PR #54) — production read-only preview: 138 finite in-memory ratings; talent-only 138; powerRating ≈ -44.15…59.60; `zeroConfidenceCount=138`; **zero writes/providers/Odds** (persistence was unauthorized at that phase)
+* Current operator state: **Core V1 initialized 138/138** (Candidate A); do not rerun initialization; future lifecycle COMMITs guarded separately
 * 2C-2H-4: **PASSED structurally (PR #55)** — forensic valid; legacy `compute_ratings_v1` did **not** reproduce persisted 2025 (`exact=0/136`, MAE≈32.2124)
 * 2C-2H-5: **PASSED — EXACT (PR #56)** — unrestricted MAE≈0.972 was snapshot drift; cutoff Nov 24 2025 Balanced replay matched **136/136** (MAE≈2.3e-15); **production Core V1 = Balanced V1**; legacy `compute_ratings_v1` not canonical
 * 2C-2H-6: **PASSED (PR #57)** — Candidate A provisional preferred (2025 MAE=7.8831; 2026 range=20.8895; p95=10.1282); Candidate B rejected (2026 range=83.5581; p95=40.5127); `preseasonBridgeAuthorized=false`
