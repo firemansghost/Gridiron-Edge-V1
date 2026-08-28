@@ -1,38 +1,73 @@
 /**
- * Closing Line Selection Helpers
- * 
- * Provides deterministic selection of closing lines for games.
- * Rule: Pick the last line at or before kickoff; if none exist, pick the latest available.
+ * Closing / primary display MarketLine selection.
+ *
+ * Uses the shared append-only snapshot layer (timestamp DESC, id DESC).
+ * CLOSING: latest coherent per-book observation at/before kickoff
+ *   (fallback to latest overall only when no pre-kick rows exist).
+ * Spread `value` is canonical HMA (positive = home favored).
  */
 
 import { prisma } from './prisma';
+import {
+  selectGameMarketSnapshots,
+  type MarketLineObservation,
+} from './market-line-snapshot';
 
 export interface ClosingLine {
   value: number;
   book: string;
   timestamp: string;
+  /** Present for spreads — team-specific provenance. */
+  homeLine?: number;
+  awayLine?: number;
+  marketSpreadHma?: number;
+  usedPreKickFallback?: boolean;
+}
+
+function toObservation(line: {
+  id: string;
+  gameId: string;
+  lineType: string;
+  lineValue: unknown;
+  closingLine?: unknown;
+  bookName: string;
+  timestamp: Date;
+  teamId?: string | null;
+  source?: string | null;
+}): MarketLineObservation {
+  return {
+    id: line.id,
+    gameId: line.gameId,
+    lineType: line.lineType,
+    lineValue: Number(line.lineValue),
+    closingLine:
+      line.closingLine !== null && line.closingLine !== undefined
+        ? Number(line.closingLine)
+        : null,
+    bookName: line.bookName,
+    timestamp: line.timestamp,
+    teamId: line.teamId ?? null,
+    source: line.source ?? null,
+  };
 }
 
 /**
- * Selects the closing line for a specific game and line type.
- * 
- * Rule:
- * 1. Pick market_lines row with max(timestamp) where timestamp ≤ game.kickoff
- * 2. If none exist, pick market_lines row with max(timestamp) (any time)
- * 
- * @param gameId - The game ID to get closing line for
- * @param lineType - The line type ('spread' or 'total')
- * @returns Closing line data or null if no lines exist
+ * Selects the closing (or best-available) line for a game and line type.
+ *
+ * Deterministic: timestamp DESC, id DESC; coherent home/away pairs for spreads.
  */
 export async function selectClosingLine(
-  gameId: string, 
+  gameId: string,
   lineType: 'spread' | 'total'
 ): Promise<ClosingLine | null> {
   try {
-    // First, get the game's kickoff time
     const game = await prisma.game.findUnique({
       where: { id: gameId },
-      select: { date: true }
+      select: {
+        date: true,
+        homeTeamId: true,
+        awayTeamId: true,
+      },
     });
 
     if (!game?.date) {
@@ -40,104 +75,104 @@ export async function selectClosingLine(
       return null;
     }
 
-    const kickoff = new Date(game.date);
-    console.log(`[CLOSING_LINE] Game ${gameId} kickoff: ${kickoff.toISOString()}`);
-
-    // Try to find the latest line before or at kickoff
-    const preKickoffLine = await prisma.marketLine.findFirst({
-      where: {
-        gameId,
-        lineType,
-        timestamp: { lte: kickoff }
-      },
-      orderBy: { timestamp: 'desc' },
+    const lines = await prisma.marketLine.findMany({
+      where: { gameId, lineType },
       select: {
+        id: true,
+        gameId: true,
+        lineType: true,
         lineValue: true,
+        closingLine: true,
         bookName: true,
-        timestamp: true
-      }
+        timestamp: true,
+        teamId: true,
+        source: true,
+      },
     });
 
-    if (preKickoffLine) {
-      console.log(`[CLOSING_LINE] Found pre-kickoff line for ${gameId} ${lineType}: ${preKickoffLine.lineValue} @ ${preKickoffLine.timestamp.toISOString()}`);
+    if (lines.length === 0) {
+      console.log(`[CLOSING_LINE] No lines found for ${gameId} ${lineType}`);
+      return null;
+    }
+
+    const sel = selectGameMarketSnapshots({
+      rows: lines.map(toObservation),
+      homeTeamId: game.homeTeamId,
+      awayTeamId: game.awayTeamId,
+      kickoff: game.date,
+      mode: 'closing',
+    });
+
+    if (lineType === 'spread') {
+      const snap = sel.displaySpread;
+      if (!snap) {
+        console.log(`[CLOSING_LINE] No coherent closing spread for ${gameId}`);
+        return null;
+      }
+      console.log(
+        `[CLOSING_LINE] Closing spread for ${gameId}: HMA ${snap.marketSpreadHma} @ ${snap.bookName} ${snap.timestamp}` +
+          (sel.usedPreKickFallback ? ' (fallback: no pre-kick)' : '')
+      );
       return {
-        value: Number(preKickoffLine.lineValue),
-        book: preKickoffLine.bookName,
-        timestamp: preKickoffLine.timestamp.toISOString()
+        value: snap.marketSpreadHma,
+        book: snap.bookName,
+        timestamp: snap.timestamp,
+        homeLine: snap.homeLine,
+        awayLine: snap.awayLine,
+        marketSpreadHma: snap.marketSpreadHma,
+        usedPreKickFallback: sel.usedPreKickFallback,
       };
     }
 
-    // Fallback: get the latest line regardless of time
-    const latestLine = await prisma.marketLine.findFirst({
-      where: {
-        gameId,
-        lineType
-      },
-      orderBy: { timestamp: 'desc' },
-      select: {
-        lineValue: true,
-        bookName: true,
-        timestamp: true
-      }
-    });
-
-    if (latestLine) {
-      console.log(`[CLOSING_LINE] Using fallback latest line for ${gameId} ${lineType}: ${latestLine.lineValue} @ ${latestLine.timestamp.toISOString()}`);
-      return {
-        value: Number(latestLine.lineValue),
-        book: latestLine.bookName,
-        timestamp: latestLine.timestamp.toISOString()
-      };
+    const snap = sel.displayTotal;
+    if (!snap) {
+      console.log(`[CLOSING_LINE] No closing total for ${gameId}`);
+      return null;
     }
-
-    console.log(`[CLOSING_LINE] No lines found for ${gameId} ${lineType}`);
-    return null;
-
+    console.log(
+      `[CLOSING_LINE] Closing total for ${gameId}: ${snap.total} @ ${snap.bookName} ${snap.timestamp}` +
+        (sel.usedPreKickFallback ? ' (fallback: no pre-kick)' : '')
+    );
+    return {
+      value: snap.total,
+      book: snap.bookName,
+      timestamp: snap.timestamp,
+      usedPreKickFallback: sel.usedPreKickFallback,
+    };
   } catch (error) {
-    console.error(`[CLOSING_LINE] Error selecting closing line for ${gameId} ${lineType}:`, error);
+    console.error(
+      `[CLOSING_LINE] Error selecting closing line for ${gameId} ${lineType}:`,
+      error
+    );
     return null;
   }
 }
 
-/**
- * Gets closing lines for both spread and total for a game.
- * 
- * @param gameId - The game ID to get closing lines for
- * @returns Object with spread and total closing lines
- */
 export async function getClosingLines(gameId: string): Promise<{
   spread: ClosingLine | null;
   total: ClosingLine | null;
 }> {
   const [spread, total] = await Promise.all([
     selectClosingLine(gameId, 'spread'),
-    selectClosingLine(gameId, 'total')
+    selectClosingLine(gameId, 'total'),
   ]);
 
   return { spread, total };
 }
 
-/**
- * Batch gets closing lines for multiple games.
- * 
- * @param gameIds - Array of game IDs
- * @param lineType - The line type to get for all games
- * @returns Map of gameId to closing line
- */
 export async function getBatchClosingLines(
-  gameIds: string[], 
+  gameIds: string[],
   lineType: 'spread' | 'total'
 ): Promise<Map<string, ClosingLine | null>> {
   const results = new Map<string, ClosingLine | null>();
-  
-  // Process in parallel for better performance
+
   const promises = gameIds.map(async (gameId) => {
     const closingLine = await selectClosingLine(gameId, lineType);
     return { gameId, closingLine };
   });
 
   const resolved = await Promise.all(promises);
-  
+
   for (const { gameId, closingLine } of resolved) {
     results.set(gameId, closingLine);
   }

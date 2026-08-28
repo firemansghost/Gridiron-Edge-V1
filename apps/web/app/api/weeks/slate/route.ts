@@ -8,8 +8,11 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { selectClosingLine } from '@/lib/closing-line-helpers';
 import { getCoreV1SpreadFromTeams, getATSPick, computeATSEdgeHma } from '@/lib/core-v1-spread';
+import {
+  indexGameMarketSelections,
+  type MarketLineObservation,
+} from '@/lib/market-line-snapshot';
 import { getOUPick } from '@/lib/core-v1-total';
 import { americanToProb } from '@/lib/market-line-helpers';
 import {
@@ -27,6 +30,7 @@ import {
   type HybridSpreadInputs,
   type TeamUnitGradesRow,
 } from '@/lib/slate-hybrid-spread';
+import { resolveBetSideClosePrice } from '@/lib/game-detail-market';
 
 interface SlateGame {
   gameId: string;
@@ -39,10 +43,14 @@ interface SlateGame {
   homeTeamName: string;
   awayScore: number | null;
   homeScore: number | null;
+  /** Primary display market: current (scheduled) or closing (final). value = HMA for spreads. */
   closingSpread: {
     value: number;
     book: string;
     timestamp: string;
+    homeLine?: number;
+    awayLine?: number;
+    marketSpreadHma?: number;
   } | null;
   closingTotal: {
     value: number;
@@ -229,28 +237,35 @@ export async function GET(request: NextRequest) {
       console.log(`   After date limiting: ${finalGamesToInclude.length} games`);
     }
 
-    // Create lookup maps for closing lines
-    const spreadMap = new Map<string, any>();
-    const totalMap = new Map<string, any>();
-    const moneylineMap = new Map<string, any[]>();
-    
-    spreadLines.forEach(line => {
-      if (!spreadMap.has(line.gameId)) {
-        spreadMap.set(line.gameId, line);
-      }
-    });
-    
-    totalLines.forEach(line => {
-      if (!totalMap.has(line.gameId)) {
-        totalMap.set(line.gameId, line);
-      }
-    });
-    
-    moneylineLines.forEach(line => {
-      if (!moneylineMap.has(line.gameId)) {
-        moneylineMap.set(line.gameId, []);
-      }
-      moneylineMap.get(line.gameId)!.push(line);
+    // Append-only snapshot selection: latest coherent per book (current or closing)
+    const allMarketRows: MarketLineObservation[] = [
+      ...spreadLines,
+      ...totalLines,
+      ...moneylineLines,
+    ].map((line) => ({
+      id: line.id,
+      gameId: line.gameId,
+      lineType: line.lineType,
+      lineValue: Number(line.lineValue),
+      closingLine:
+        line.closingLine !== null && line.closingLine !== undefined
+          ? Number(line.closingLine)
+          : null,
+      bookName: line.bookName,
+      timestamp: line.timestamp,
+      teamId: (line as { teamId?: string | null }).teamId ?? null,
+      source: line.source ?? null,
+    }));
+
+    const marketByGame = indexGameMarketSelections({
+      rows: allMarketRows,
+      games: finalGamesToInclude.map((g) => ({
+        gameId: g.id,
+        homeTeamId: g.homeTeam.id,
+        awayTeamId: g.awayTeam.id,
+        kickoff: g.date,
+        status: g.status,
+      })),
     });
 
     // Process each game
@@ -265,21 +280,29 @@ export async function GET(request: NextRequest) {
         status = 'in_progress';
       }
 
-      // Get closing lines from batch data (may be null if game doesn't have odds yet)
-      const spreadLine = spreadMap.get(game.id);
-      const totalLine = totalMap.get(game.id);
-      
-      const closingSpread = spreadLine ? {
-        value: Number(spreadLine.lineValue),
-        book: spreadLine.bookName,
-        timestamp: spreadLine.timestamp.toISOString()
-      } : null;
-      
-      const closingTotal = totalLine ? {
-        value: Number(totalLine.lineValue),
-        book: totalLine.bookName,
-        timestamp: totalLine.timestamp.toISOString()
-      } : null;
+      const marketSel = marketByGame.get(game.id);
+      const displaySpread = marketSel?.displaySpread ?? null;
+      const displayTotal = marketSel?.displayTotal ?? null;
+
+      // value = canonical HMA (positive = home favored). Provenance via home/away lines.
+      const closingSpread = displaySpread
+        ? {
+            value: displaySpread.marketSpreadHma,
+            book: displaySpread.bookName,
+            timestamp: displaySpread.timestamp,
+            homeLine: displaySpread.homeLine,
+            awayLine: displaySpread.awayLine,
+            marketSpreadHma: displaySpread.marketSpreadHma,
+          }
+        : null;
+
+      const closingTotal = displayTotal
+        ? {
+            value: displayTotal.total,
+            book: displayTotal.bookName,
+            timestamp: displayTotal.timestamp,
+          }
+        : null;
       
       // Track if this game has odds (for UI indication)
       const hasOdds = gamesWithOdds.has(game.id);
@@ -550,40 +573,13 @@ export async function GET(request: NextRequest) {
 
         const modelSpread = Math.round(spreadModelHma * 10) / 10;
 
-        // Get market spread and convert to HMA frame
-        // CRITICAL FIX: closingSpread.value is in favorite-centric format (negative for favorite)
-        // We need to convert it to HMA format (positive = home favored, negative = away favored)
+        // Get market spread — already canonical HMA from append-only snapshot selection
         const marketSpreadRaw = game.closingSpread?.value ?? null;
-        let marketSpreadHma: number | null = null;
-        
-        if (marketSpreadRaw !== null && Number.isFinite(marketSpreadRaw)) {
-          // Find the spread line to check which team it's for
-          const spreadLine = spreadMap.get(game.gameId);
-          if (spreadLine && spreadLine.teamId) {
-            // Spread is team-specific - convert from favorite-centric to HMA format
-            const isHomeTeam = spreadLine.teamId === game.homeTeamId;
-            // lineValue is in favorite-centric format (negative = favorite)
-            // If home team is the favorite: lineValue is negative, HMA should be positive (home favored)
-            // If away team is the favorite: lineValue is negative, HMA should be negative (away favored)
-            // So: if home team, flip sign; if away team, keep negative (or flip if positive)
-            // Actually: if home team and lineValue is negative, HMA = -lineValue (positive)
-            //          if away team and lineValue is negative, HMA = lineValue (negative, but we want to keep it negative)
-            // Wait, let me think: if lineValue is -31.5 and it's for home team, that means home is favored by 31.5
-            // In HMA format: +31.5 (home wins by 31.5)
-            // So: HMA = -lineValue when home team
-            // If lineValue is -31.5 and it's for away team, that means away is favored by 31.5
-            // In HMA format: -31.5 (away wins by 31.5, so home loses by 31.5)
-            // So: HMA = lineValue when away team (already negative)
-            marketSpreadHma = isHomeTeam ? -marketSpreadRaw : marketSpreadRaw;
-          } else {
-            // No teamId - use heuristic: assume negative means favorite-centric
-            // If model says home is favorite (positive HMA) and market is negative, likely home is market favorite
-            // So convert: HMA = -marketSpreadRaw
-            const isModelHomeFavorite = spreadModelHma > 0;
-            marketSpreadHma = isModelHomeFavorite ? -marketSpreadRaw : marketSpreadRaw;
-            console.warn(`[Slate API] Game ${game.gameId}: No teamId for spread line, using heuristic conversion`);
-          }
-        }
+        const marketSpreadHma =
+          game.closingSpread?.marketSpreadHma ??
+          (marketSpreadRaw !== null && Number.isFinite(marketSpreadRaw)
+            ? marketSpreadRaw
+            : null);
 
         // Compute favoritesDisagree: Check if model and market favor different teams
         // Model favorite: positive HMA = home favorite, negative = away favorite
@@ -650,10 +646,10 @@ export async function GET(request: NextRequest) {
         let moneylineValue: number | null = null;
         let moneylineGrade: string | null = null;
         
-        // Get moneyline prices from market
-        const gameMoneylineLines = moneylineMap.get(game.gameId) || [];
-        const homeMLPrice = gameMoneylineLines.find((ml: any) => ml.teamId === game.homeTeamId)?.lineValue ?? null;
-        const awayMLPrice = gameMoneylineLines.find((ml: any) => ml.teamId === game.awayTeamId)?.lineValue ?? null;
+        // Get moneyline prices from coherent latest (or closing) book snapshot
+        const mlSnap = marketByGame.get(game.gameId)?.displayMoneyline ?? null;
+        const homeMLPrice = mlSnap?.homePrice ?? null;
+        const awayMLPrice = mlSnap?.awayPrice ?? null;
         
         if (coreSpreadHma !== null && Number.isFinite(coreSpreadHma) && Math.abs(coreSpreadHma) <= 24.0) {
           // Calculate win probabilities from spread using sigmoid (Core V1 / current logic)
@@ -773,11 +769,14 @@ export async function GET(request: NextRequest) {
               v4BetSideByGame.get(game.gameId)
             );
 
-            const spreadLine = spreadMap.get(game.gameId);
-            const closePrice =
-              spreadLine && spreadLine.lineValue !== null && spreadLine.lineValue !== undefined
-                ? Number(spreadLine.lineValue)
-                : null;
+            const closePrice = resolveBetSideClosePrice({
+              betTeamId,
+              homeTeamId: game.homeTeamId,
+              awayTeamId: game.awayTeamId,
+              homeLine: game.closingSpread?.homeLine ?? null,
+              awayLine: game.closingSpread?.awayLine ?? null,
+              fallbackHma: game.closingSpread?.marketSpreadHma ?? game.closingSpread?.value ?? null,
+            });
 
             const tierFields = deriveHybridTierFields(
               spreadEdgePts,

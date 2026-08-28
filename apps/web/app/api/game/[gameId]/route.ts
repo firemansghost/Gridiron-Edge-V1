@@ -10,6 +10,17 @@ import { pickMarketLine, getLineValue, getPointValue, looksLikePriceLeak, pickMo
 import { getCoreV1SpreadFromTeams, getATSPick, computeATSEdgeHma } from '@/lib/core-v1-spread';
 import { getOUPick } from '@/lib/core-v1-total';
 import { calculateHybridSpread } from '@/lib/core-v2-spread';
+import {
+  selectGameMarketSnapshots,
+  type MarketLineObservation,
+} from '@/lib/market-line-snapshot';
+import {
+  buildAuthoritativeMarketProvenance,
+  deriveGameDetailMarketFromSelection,
+  MAX_ABS_MARKET_SPREAD,
+  recommendPickEmSpreadSide,
+  validateMarketFavoriteInvariant,
+} from '@/lib/game-detail-market';
 import { NextResponse } from 'next/server';
 
 // === V1 MODE CONFIGURATION ===
@@ -128,41 +139,66 @@ export async function GET(
     const matchupOutput = game.matchupOutputs[0];
     
     // ============================================
-    // COMPLETED GAMES: Use Pre-Kick Lines Only
+    // APPEND-ONLY MARKET SNAPSHOTS (current vs closing)
     // ============================================
-    // For completed games, filter market lines to only those from before/around kickoff
-    // This preserves the betting ticket state for backtesting
+    // Scheduled/upcoming: latest coherent observation per book (current).
+    // Final: latest coherent observation per book at/before kickoff (closing).
+    // Fallback when no pre-kick rows: latest overall (documented).
     const isCompletedGame = game.status === 'final';
+    const kickoffDate = new Date(game.date);
+    const observationRows: MarketLineObservation[] = game.marketLines.map((line) => ({
+      id: line.id,
+      gameId: line.gameId,
+      lineType: line.lineType,
+      lineValue: Number(line.lineValue),
+      closingLine:
+        line.closingLine !== null && line.closingLine !== undefined
+          ? Number(line.closingLine)
+          : null,
+      bookName: line.bookName,
+      timestamp: line.timestamp,
+      teamId: (line as { teamId?: string | null }).teamId ?? null,
+      source: line.source ?? null,
+    }));
+
+    const marketSelection = selectGameMarketSnapshots({
+      rows: observationRows,
+      homeTeamId: game.homeTeamId,
+      awayTeamId: game.awayTeamId,
+      kickoff: game.date,
+      mode: isCompletedGame ? 'closing' : 'current',
+    });
+
     let marketLinesToUse = game.marketLines;
     let usingPreKickLines = false;
     let consensusWindow: { start: string; end: string } | null = null;
-    
+
     if (isCompletedGame) {
-      const kickoffTime = new Date(game.date);
-      const preKickWindowStart = new Date(kickoffTime.getTime() - 60 * 60 * 1000); // 60 min before
-      const preKickWindowEnd = new Date(kickoffTime.getTime() + 5 * 60 * 1000); // 5 min after
-      
-      const preKickLines = game.marketLines.filter(line => {
-        const lineTime = new Date(line.timestamp);
-        return lineTime >= preKickWindowStart && lineTime <= preKickWindowEnd;
-      });
-      
+      const preKickLines = game.marketLines.filter(
+        (line) => new Date(line.timestamp).getTime() <= kickoffDate.getTime()
+      );
       if (preKickLines.length > 0) {
         marketLinesToUse = preKickLines;
-        usingPreKickLines = true;
+        usingPreKickLines = !marketSelection.usedPreKickFallback;
         consensusWindow = {
-          start: preKickWindowStart.toISOString(),
-          end: preKickWindowEnd.toISOString()
+          start: new Date(0).toISOString(),
+          end: kickoffDate.toISOString(),
         };
-        console.log(`[Game ${gameId}] 🔒 COMPLETED GAME - Using pre-kick lines:`, {
+        console.log(`[Game ${gameId}] 🔒 COMPLETED GAME - Closing selection (timestamp <= kickoff):`, {
           totalLines: game.marketLines.length,
           preKickLines: preKickLines.length,
-          kickoffTime: kickoffTime.toISOString(),
-          windowStart: preKickWindowStart.toISOString(),
-          windowEnd: preKickWindowEnd.toISOString()
+          kickoffTime: kickoffDate.toISOString(),
+          usedPreKickFallback: marketSelection.usedPreKickFallback,
+          currentBooks: {
+            spread: marketSelection.spreadByBook.length,
+            total: marketSelection.totalByBook.length,
+            moneyline: marketSelection.moneylineByBook.length,
+          },
         });
       } else {
-        console.warn(`[Game ${gameId}] ⚠️ COMPLETED GAME - No pre-kick lines found in window, using all available lines`);
+        console.warn(
+          `[Game ${gameId}] ⚠️ COMPLETED GAME - No pre-kick lines; fallback to latest overall observations`
+        );
       }
     }
     
@@ -518,25 +554,22 @@ export async function GET(
     let totalSourceMismatch = false;
     let moneylineSourceMismatch = false;
 
-    // Fallbacks if any market is missing from the primary group
+    // Fallbacks for legacy diagnostic grouping only — NOT used for calculations/provenance.
     const fallbackSpreadLine = pickMarketLine(marketLinesToUse, 'spread');
     if (!selectedSpreadLine && fallbackSpreadLine) {
       selectedSpreadLine = fallbackSpreadLine;
-      selectedGroupSource = fallbackSpreadLine.source || null;
-      selectedGroupBook = fallbackSpreadLine.bookName || null;
-      selectedGroupTimestamp = new Date(fallbackSpreadLine.timestamp).getTime();
-      diagnosticsMessages.push('Primary odds source missing spread — using fallback snapshot.');
-    }
-
-    if (!selectedSpreadLine) {
-      throw new Error(`No spread market available for game ${gameId}`);
+      diagnosticsMessages.push(
+        '[diagnostic-only] Primary odds group missing spread — legacy fallback recorded.'
+      );
     }
 
     if (!selectedTotalLine) {
       const fallbackTotalLine = pickMarketLine(marketLinesToUse, 'total');
       if (fallbackTotalLine) {
         selectedTotalLine = fallbackTotalLine;
-        diagnosticsMessages.push(`Odds source mismatch: total line sourced from ${fallbackTotalLine.bookName || 'Unknown book'}.`);
+        diagnosticsMessages.push(
+          `[diagnostic-only] Odds source mismatch: legacy total from ${fallbackTotalLine.bookName || 'Unknown book'}.`
+        );
         totalSourceMismatch = true;
       }
     }
@@ -545,140 +578,156 @@ export async function GET(
       const fallbackMoneylineLine = pickMoneyline(marketLinesToUse);
       if (fallbackMoneylineLine) {
         selectedMoneylineLine = fallbackMoneylineLine;
-        diagnosticsMessages.push(`Odds source mismatch: moneyline sourced from ${fallbackMoneylineLine.bookName || 'Unknown book'}.`);
+        diagnosticsMessages.push(
+          `[diagnostic-only] Odds source mismatch: legacy moneyline from ${fallbackMoneylineLine.bookName || 'Unknown book'}.`
+        );
         moneylineSourceMismatch = true;
       }
     }
 
-    const spreadLine = selectedSpreadLine;
-    const totalLine = selectedTotalLine;
-    const mlLine = selectedMoneylineLine;
+    // Authoritative provenance from marketSelection display snapshots ONLY.
+    if (!marketSelection.displaySpread) {
+      throw new Error(
+        `No coherent spread market available for game ${gameId} (marketSelection)`
+      );
+    }
+
+    const marketProvenance = buildAuthoritativeMarketProvenance(marketSelection);
+    const bookSource = marketProvenance.bookSource;
+    const snapshotId = marketProvenance.snapshotId;
+    const updatedAtDate = new Date(marketProvenance.updatedAt);
+
+    // Compatibility shims for downstream code that still reads row-like fields.
+    // These are synthesized from marketSelection — never from legacy selected* lines.
+    const spreadLine = {
+      id: marketSelection.displaySpread.homeRowId,
+      gameId,
+      lineType: 'spread' as const,
+      lineValue: marketSelection.displaySpread.homeLine,
+      closingLine: 0,
+      bookName: marketSelection.displaySpread.bookName,
+      timestamp: new Date(marketSelection.displaySpread.timestamp),
+      teamId: game.homeTeamId,
+      source: 'marketSelection.displaySpread',
+    } as unknown as (typeof marketLinesToUse)[number];
+    const totalLine = marketSelection.displayTotal
+      ? ({
+          id: marketSelection.displayTotal.rowId,
+          gameId,
+          lineType: 'total' as const,
+          lineValue: marketSelection.displayTotal.total,
+          closingLine: 0,
+          bookName: marketSelection.displayTotal.bookName,
+          timestamp: new Date(marketSelection.displayTotal.timestamp),
+          teamId: null,
+          source: 'marketSelection.displayTotal',
+        } as unknown as (typeof marketLinesToUse)[number])
+      : null;
+    const mlLine = marketSelection.displayMoneyline
+      ? ({
+          id: marketSelection.displayMoneyline.homeRowId,
+          gameId,
+          lineType: 'moneyline' as const,
+          lineValue: marketSelection.displayMoneyline.homePrice,
+          closingLine: marketSelection.displayMoneyline.homePrice,
+          bookName: marketSelection.displayMoneyline.bookName,
+          timestamp: new Date(marketSelection.displayMoneyline.timestamp),
+          teamId: game.homeTeamId,
+          source: 'marketSelection.displayMoneyline',
+        } as unknown as (typeof marketLinesToUse)[number])
+      : null;
     
     // ============================================
-    // COMPUTE CONSENSUS WITH PRICE-LEAK FILTERING
+    // CONSENSUS FROM APPEND-ONLY SNAPSHOTS (one latest coherent row-set per book)
     // ============================================
-    // Use median consensus within the selected window (pre-kick for completed games)
-    const spreadConsensus = computeMedianConsensus(marketLinesToUse, 'spread', 'spread');
-    const totalConsensus = computeMedianConsensus(marketLinesToUse, 'total', 'total');
-    
-    // ============================================
-    // MONEYLINE CONSENSUS (dedupe per book, separate favorite/dog)
-    // ============================================
-    const computeMoneylineConsensus = (
-      lines: typeof marketLinesToUse
-    ): { 
-      favoritePrice: number | null; 
-      dogPrice: number | null;
-      favoriteCount: number;
-      dogCount: number;
-      books: string[];
-      excluded: number;
-      rawCount: number;
-      perBookCount: number;
-      deduped: boolean;
-    } => {
-      const favoritePrices: { value: number; book: string }[] = [];
-      const dogPrices: { value: number; book: string }[] = [];
-      let excludedCount = 0;
-      
-      for (const line of lines) {
-        if (line.lineType !== 'moneyline') continue;
-        
-        const value = getLineValue(line); // Uses closingLine (prices are expected for ML)
-        if (value === null || value === undefined) {
-          excludedCount++;
-          continue;
-        }
-        
-        // Guardrail: Reject if abs(price) < 100 (not American odds format)
-        if (Math.abs(value) < 100) {
-          excludedCount++;
-          continue;
-        }
-        
-        // Guardrail: Reject if not multiple of 5 (American odds are typically -110, -115, +120, etc.)
-        if (Math.abs(value) % 5 !== 0) {
-          excludedCount++;
-          continue;
-        }
-        
-        const book = line.bookName || line.source || 'unknown';
-        
-        // Separate favorite (negative) and dog (positive) prices
-        if (value < 0) {
-          favoritePrices.push({ value, book });
-        } else {
-          dogPrices.push({ value, book });
-        }
-      }
-      
-      const rawCount = favoritePrices.length + dogPrices.length;
-      
-      // Dedupe per book (keep one favorite price and one dog price per book)
-      const favoritePerBook = new Map<string, number>();
-      const dogPerBook = new Map<string, number>();
-      
-      for (const { value, book } of favoritePrices) {
-        // Round to nearest 5 (American odds are multiples of 5)
-        const rounded = Math.round(value / 5) * 5;
-        if (!favoritePerBook.has(book)) {
-          favoritePerBook.set(book, rounded);
-        }
-      }
-      
-      for (const { value, book } of dogPrices) {
-        // Round to nearest 5
-        const rounded = Math.round(value / 5) * 5;
-        if (!dogPerBook.has(book)) {
-          dogPerBook.set(book, rounded);
-        }
-      }
-      
-      const dedupedFavoritePrices = Array.from(favoritePerBook.values());
-      const dedupedDogPrices = Array.from(dogPerBook.values());
-      const perBookCount = Math.max(favoritePerBook.size, dogPerBook.size);
-      
-      // Compute medians
-      const favoriteMedian = dedupedFavoritePrices.length > 0
-        ? (() => {
-            const sorted = dedupedFavoritePrices.sort((a, b) => a - b);
-            const mid = Math.floor(sorted.length / 2);
-            return sorted.length % 2 === 0
-              ? (sorted[mid - 1] + sorted[mid]) / 2
-              : sorted[mid];
-          })()
-        : null;
-      
-      const dogMedian = dedupedDogPrices.length > 0
-        ? (() => {
-            const sorted = dedupedDogPrices.sort((a, b) => a - b);
-            const mid = Math.floor(sorted.length / 2);
-            return sorted.length % 2 === 0
-              ? (sorted[mid - 1] + sorted[mid]) / 2
-              : sorted[mid];
-          })()
-        : null;
-      
-      // Get unique books (union of favorite and dog books)
-      const allBooks = Array.from(new Set([
-        ...Array.from(favoritePerBook.keys()),
-        ...Array.from(dogPerBook.keys())
-      ]));
-      
-      return {
-        favoritePrice: favoriteMedian,
-        dogPrice: dogMedian,
-        favoriteCount: dedupedFavoritePrices.length,
-        dogCount: dedupedDogPrices.length,
-        books: allBooks,
-        excluded: excludedCount,
-        rawCount,
-        perBookCount,
-        deduped: true
-      };
+    // Spread API contract remains favorite-centric (always <= 0) for existing guards.
+    const spreadHmaConsensus = marketSelection.spreadConsensus.value;
+    let spreadConsensus = {
+      value:
+        spreadHmaConsensus !== null && Number.isFinite(spreadHmaConsensus)
+          ? -Math.abs(spreadHmaConsensus)
+          : null,
+      count: marketSelection.spreadByBook.length,
+      books: marketSelection.spreadConsensus.books,
+      excluded: marketSelection.incoherentSpreads.length,
+      usedFrom: 'lineValue',
+      rawCount: marketSelection.spreadConsensus.rawHistoricalRows,
+      perBookCount: marketSelection.spreadConsensus.perBookCount,
+      deduped: true,
     };
-    
-    const moneylineConsensus = computeMoneylineConsensus(marketLinesToUse);
+
+    const totalConsensus = {
+      value: marketSelection.totalConsensus.value,
+      count: marketSelection.totalByBook.length,
+      books: marketSelection.totalConsensus.books,
+      excluded: 0,
+      usedFrom: 'lineValue',
+      rawCount: marketSelection.totalConsensus.rawHistoricalRows,
+      perBookCount: marketSelection.totalConsensus.perBookCount,
+      deduped: true,
+    };
+
+    const favoritePerBook = new Map<string, number>();
+    const dogPerBook = new Map<string, number>();
+    let mlExcluded = 0;
+    for (const snap of marketSelection.moneylineByBook) {
+      const pair = [snap.homePrice, snap.awayPrice];
+      let fav: number | null = null;
+      let dog: number | null = null;
+      for (const value of pair) {
+        if (Math.abs(value) < 100 || Math.abs(value) % 5 !== 0) {
+          mlExcluded++;
+          continue;
+        }
+        if (value < 0) fav = value;
+        else dog = value;
+      }
+      if (fav !== null) favoritePerBook.set(snap.bookName, Math.round(fav / 5) * 5);
+      if (dog !== null) dogPerBook.set(snap.bookName, Math.round(dog / 5) * 5);
+    }
+    const dedupedFavoritePrices = Array.from(favoritePerBook.values());
+    const dedupedDogPrices = Array.from(dogPerBook.values());
+    const medianOf = (vals: number[]): number | null => {
+      if (vals.length === 0) return null;
+      const sorted = [...vals].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 === 0
+        ? (sorted[mid - 1] + sorted[mid]) / 2
+        : sorted[mid];
+    };
+    const moneylineConsensus = {
+      favoritePrice: medianOf(dedupedFavoritePrices),
+      dogPrice: medianOf(dedupedDogPrices),
+      favoriteCount: dedupedFavoritePrices.length,
+      dogCount: dedupedDogPrices.length,
+      books: Array.from(
+        new Set([
+          ...Array.from(favoritePerBook.keys()),
+          ...Array.from(dogPerBook.keys()),
+        ])
+      ),
+      excluded: mlExcluded + marketSelection.incoherentMoneylines.length,
+      rawCount: marketSelection.rawCounts.moneyline,
+      perBookCount: Math.max(favoritePerBook.size, dogPerBook.size),
+      deduped: true,
+    };
+
+    // Authoritative current/closing market orientation from shared selector only.
+    // Legacy groupedByBook / pickPreferredLine paths below are non-authoritative diagnostics.
+    const derivedMarket = deriveGameDetailMarketFromSelection({
+      marketSelection,
+      homeTeamId: game.homeTeamId,
+      awayTeamId: game.awayTeamId,
+      homeTeamName: game.homeTeam.name,
+      awayTeamName: game.awayTeam.name,
+    });
+
+    // Align API consensus shape with signed-HMA derivation (favorite-centric for guards).
+    if (derivedMarket.marketSpread !== null) {
+      spreadConsensus.value = derivedMarket.marketSpread;
+      spreadConsensus.count = marketSelection.spreadByBook.length;
+      spreadConsensus.perBookCount = marketSelection.spreadByBook.length;
+    }
     
     // ============================================
     // CONSENSUS RESULTS LOGGING (one-line summary)
@@ -722,85 +771,41 @@ export async function GET(
     // Type assertion to access teamId field (needed for both spreads and moneylines)
     const marketLinesWithTeamId = marketLinesToUse as MarketLineWithTeamId[];
 
-    // Get both moneyline lines - NEW APPROACH: Don't rely on teamId
-    // Moneylines come in pairs (one negative for favorite, one positive for dog)
-    // Search broadly for any negative and positive moneylines near the spread timestamp
-    const spreadTimestamp = new Date(spreadLine.timestamp).getTime();
+    // Get both moneyline lines — NON-AUTHORITATIVE historical diagnostic only.
+    // Authoritative ML prices come from marketSelection via derivedMarket below.
+    const spreadTimestamp = new Date(marketProvenance.spread!.timestamp).getTime();
     
-    // Strategy: Search ALL moneylines near the spread timestamp (don't filter by book first)
-    // This is more lenient and works even if books report moneylines at slightly different times
     const allMoneylinesNearSpread = marketLinesToUse.filter(
       (l) => l.lineType === 'moneyline' && 
-             Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 10000 // Within 10 seconds
+             Math.abs(new Date(l.timestamp).getTime() - spreadTimestamp) < 10000
     );
     
-    console.log(`[Game ${gameId}] 🔍 Searching for moneylines near spread timestamp:`, {
+    console.log(`[Game ${gameId}] 🔍 [diagnostic-only] Moneylines near display spread timestamp:`, {
       spreadTimestamp: new Date(spreadTimestamp).toISOString(),
-      spreadBook: spreadLine.bookName,
+      spreadBook: marketProvenance.spread?.bookName,
       foundMoneylines: allMoneylinesNearSpread.length,
-      totalMoneylines: marketLinesToUse.filter(l => l.lineType === 'moneyline').length
+      note: 'Not used for calculations',
     });
     
-    // Extract ALL positive and negative moneyline values
     const allMLValues = allMoneylinesNearSpread
       .map(l => ({value: getLineValue(l), line: l}))
       .filter(item => item.value !== null && item.value !== undefined);
     
-    // Group by positive and negative
     const negativeMLs = allMLValues.filter(item => item.value! < 0);
     const positiveMLs = allMLValues.filter(item => item.value! > 0);
     
-    console.log(`[Game ${gameId}] 🔍 Moneyline values found:`, {
-      negativeCount: negativeMLs.length,
-      positiveCount: positiveMLs.length,
-      negativeValues: negativeMLs.slice(0, 3).map(item => item.value),
-      positiveValues: positiveMLs.slice(0, 3).map(item => item.value)
-    });
-    
-    // Find the actual line objects - prefer most recent
     let homeMoneylineLine: MarketLineWithTeamId | undefined = undefined;
     let awayMoneylineLine: MarketLineWithTeamId | undefined = undefined;
     
     if (negativeMLs.length > 0 && positiveMLs.length > 0) {
-      // Sort by timestamp to get most recent
       negativeMLs.sort((a, b) => new Date(b.line.timestamp).getTime() - new Date(a.line.timestamp).getTime());
       positiveMLs.sort((a, b) => new Date(b.line.timestamp).getTime() - new Date(a.line.timestamp).getTime());
-      
-      const negativeML = negativeMLs[0].value!;
-      const positiveML = positiveMLs[0].value!;
-      const negativeMLLine = negativeMLs[0].line;
-      const positiveMLLine = positiveMLs[0].line;
-      
-      console.log(`[Game ${gameId}] 🎯 Found both moneylines:`, {
-        negativeML,
-        positiveML,
-        negativeBook: negativeMLLine.bookName,
-        positiveBook: positiveMLLine.bookName,
-        negativeTimestamp: negativeMLLine.timestamp,
-        positiveTimestamp: positiveMLLine.timestamp
-      });
-      
-      // Store both (we'll assign to favorite/dog later based on spread)
-      homeMoneylineLine = negativeMLLine as MarketLineWithTeamId;
-      awayMoneylineLine = positiveMLLine as MarketLineWithTeamId;
-    } else {
-      console.warn(`[Game ${gameId}] ❌ Could not find both positive and negative moneylines`, {
-        negativeCount: negativeMLs.length,
-        positiveCount: positiveMLs.length,
-        allMoneylinesNearSpread: allMoneylinesNearSpread.length
-      });
+      homeMoneylineLine = negativeMLs[0].line as MarketLineWithTeamId;
+      awayMoneylineLine = positiveMLs[0].line as MarketLineWithTeamId;
     }
     
-    // Fallback: if still no moneylines, use the selected mlLine (old behavior)
-    const mlVal = mlLine ? getLineValue(mlLine) : null;
-
-    const bookSource = [selectedGroupBook, selectedGroupSource].filter(Boolean).join(' • ') || spreadLine.bookName || 'Unknown';
-    const oddsTimestamps: number[] = [];
-    if (spreadLine?.timestamp) oddsTimestamps.push(new Date(spreadLine.timestamp).getTime());
-    if (totalLine?.timestamp) oddsTimestamps.push(new Date(totalLine.timestamp).getTime());
-    if (mlLine?.timestamp) oddsTimestamps.push(new Date(mlLine.timestamp).getTime());
-    const updatedAtDate = oddsTimestamps.length > 0 ? new Date(Math.max(...oddsTimestamps)) : new Date(selectedGroupTimestamp || Date.now());
-    const snapshotId = `${bookSource}::${updatedAtDate.toISOString()}`;
+    // mlVal suppressed — never use cross-book/raw history for calculations
+    const mlVal: number | null = null;
 
     // ============================================
     // PHASE 2.4: Recency-Weighted Stats Computation
@@ -1838,204 +1843,85 @@ export async function GET(
       }))
     });
     
-    // Determine home and away prices from the teamId-tagged lines
-    let homePrice: number;
-    let awayPrice: number;
-    let marketSpread: number | null; // Can be null if consensus failed or price leaks detected
-    let favoriteTeamId: string;
-    let favoriteTeamName: string;
-    
-    // ============================================
-    // USE CONSENSUS VALUES (with null handling)
-    // ============================================
-    // Prefer consensus over individual lines (filters out price leaks)
-    const useConsensusSpread = spreadConsensus.value !== null;
-    
-    if (homeSpreadLine && awaySpreadLine) {
-      // IDEAL CASE: We have both lines with teamId
-      // Use consensus values if available (filters out price leaks)
-      if (useConsensusSpread && spreadConsensus.value !== null) {
-        // Consensus available - determine which team should get the consensus value
-        const rawHomePrice = getPointValue(homeSpreadLine, 'spread')!;
-        const rawAwayPrice = getPointValue(awaySpreadLine, 'spread')!;
-        
-        // Determine favorite from raw prices, then assign consensus value
-        if (rawHomePrice < rawAwayPrice) {
-          favoriteTeamId = game.homeTeamId;
-          favoriteTeamName = game.homeTeam.name;
-          homePrice = spreadConsensus.value;  // Consensus spread (negative for favorite)
-          awayPrice = -spreadConsensus.value; // Opposite sign for dog
-        } else {
-          favoriteTeamId = game.awayTeamId;
-          favoriteTeamName = game.awayTeam.name;
-          awayPrice = spreadConsensus.value;  // Consensus spread (negative for favorite)
-          homePrice = -spreadConsensus.value; // Opposite sign for dog
-        }
-        marketSpread = spreadConsensus.value; // Always negative (favorite's line)
-      } else {
-        // No consensus - use raw line values (with price-leak filter)
-        homePrice = getPointValue(homeSpreadLine, 'spread')!;
-        awayPrice = getPointValue(awaySpreadLine, 'spread')!;
-        
-        // The favorite is the team with the negative line
-        if (homePrice < awayPrice) {
-          favoriteTeamId = game.homeTeamId;
-          favoriteTeamName = game.homeTeam.name;
-          marketSpread = homePrice; // Negative (favorite's line)
-        } else {
-          favoriteTeamId = game.awayTeamId;
-          favoriteTeamName = game.awayTeam.name;
-          marketSpread = awayPrice; // Negative (favorite's line)
-        }
-      }
-      
-      console.log(`[Game ${gameId}] ✅ DEFINITIVE FAVORITE (from teamId):`, {
+    // Determine home and away prices from AUTHORITATIVE marketSelection (signed HMA).
+    // Legacy lines must NOT feed calculations when marketSelection lacks coherent data.
+    let homePrice: number | null = null;
+    let awayPrice: number | null = null;
+    let marketSpread: number | null = null;
+    let favoriteTeamId: string | null = null;
+    let favoriteTeamName: string | null = null;
+    const isMarketPickEm = derivedMarket.isPickEm;
+
+    if (derivedMarket.spreadSuppressedOutOfRange) {
+      // abs(HMA) > MAX_ABS_MARKET_SPREAD — suppress; never rescue from history
+      diagnosticsMessages.push(
+        `Market spread abs exceeded consumer ceiling (${MAX_ABS_MARKET_SPREAD}) — suppressed without historical rescue`
+      );
+      console.warn(
+        `[Game ${gameId}] ⚠️ Market spread out of range (>${MAX_ABS_MARKET_SPREAD}) — suppressed (no historical rescue)`
+      );
+    } else if (derivedMarket.spreadHma !== null && !derivedMarket.isPickEm) {
+      homePrice = derivedMarket.homePrice;
+      awayPrice = derivedMarket.awayPrice;
+      marketSpread = derivedMarket.marketSpread;
+      favoriteTeamId = derivedMarket.favoriteTeamId;
+      favoriteTeamName = derivedMarket.favoriteTeamName;
+      console.log(`[Game ${gameId}] ✅ AUTHORITATIVE FAVORITE (signed HMA from marketSelection):`, {
+        spreadHma: derivedMarket.spreadHma,
         favoriteTeamId,
         favoriteTeamName,
-        favoriteLine: marketSpread,
         homePrice,
         awayPrice,
-        source: 'teamId field (definitive)'
+        marketSpread,
+        source: 'marketSelection.spreadConsensus',
+        provenanceBook: marketProvenance.spread?.bookName,
+        provenanceTimestamp: marketProvenance.spread?.timestamp,
       });
+    } else if (derivedMarket.isPickEm) {
+      homePrice = 0;
+      awayPrice = 0;
+      marketSpread = 0;
+      favoriteTeamId = null;
+      favoriteTeamName = null;
+      console.log(`[Game ${gameId}] ⚖️ PICK'EM from marketSelection HMA=0 (no market favorite)`);
     } else {
-      // FALLBACK: teamId not available for one or both lines
-      // Try to use the selected spreadLine's teamId if available
-      const spreadLineWithTeamId = spreadLine as MarketLineWithTeamId;
-      
-      if (spreadLineWithTeamId.teamId) {
-        // The selected spreadLine has a teamId - use it!
-        const spreadLineValue = getPointValue(spreadLine, 'spread');
-        if (spreadLineValue === null || spreadLineValue === undefined) {
-          throw new Error(`Selected snapshot missing spread value for game ${gameId} (or value is a price leak)`);
-        }
-        
-        // The spreadLine is the favorite's line (negative), and we know which team it belongs to
-        if (spreadLineWithTeamId.teamId === game.homeTeamId) {
-          // Home team is the favorite
-          homePrice = spreadLineValue; // Negative (favorite)
-          awayPrice = -spreadLineValue; // Positive (underdog)
-          favoriteTeamId = game.homeTeamId;
-          favoriteTeamName = game.homeTeam.name;
-        } else if (spreadLineWithTeamId.teamId === game.awayTeamId) {
-          // Away team is the favorite
-          homePrice = -spreadLineValue; // Positive (underdog)
-          awayPrice = spreadLineValue; // Negative (favorite)
-          favoriteTeamId = game.awayTeamId;
-          favoriteTeamName = game.awayTeam.name;
-        } else {
-          throw new Error(`Selected spreadLine teamId (${spreadLineWithTeamId.teamId}) doesn't match home (${game.homeTeamId}) or away (${game.awayTeamId}) for game ${gameId}`);
-        }
-        marketSpread = spreadLineValue; // Always negative (favorite's line)
-        
-        console.log(`[Game ${gameId}] ✅ FALLBACK USING SPREADLINE teamId:`, {
-          favoriteTeamId,
-          favoriteTeamName,
-          favoriteLine: marketSpread,
-          homePrice,
-          awayPrice,
-          source: 'spreadLine.teamId (partial fallback)'
-        });
-      } else {
-        // CRITICAL: No teamId available at all - this is old data
-        // Use power ratings to determine which team SHOULD be favored, then assign the line
-        console.error(`[Game ${gameId}] ❌ CRITICAL: No teamId available for spread lines. Using power ratings fallback.`);
-        console.error(`[Game ${gameId}] Spread lines found:`, allSpreadLinesForGame.map(l => ({
-          lineValue: getLineValue(l),
-          teamId: l.teamId || 'NULL',
-          bookName: l.bookName,
-          timestamp: l.timestamp
-        })));
-        
-        // Last resort: use power ratings to determine favorite, then assign the negative line to that team
-        const marketSpreadValue = getPointValue(spreadLine, 'spread');
-        if (marketSpreadValue === null || marketSpreadValue === undefined) {
-          throw new Error(`Selected snapshot missing spread value for game ${gameId} (or value is a price leak)`);
-        }
-        
-        // Use power ratings to determine which team should be favored
-        const homePower = homeRating ? Number(homeRating.powerRating || homeRating.rating || 0) : 0;
-        const awayPower = awayRating ? Number(awayRating.powerRating || awayRating.rating || 0) : 0;
-        const HFA = game.neutralSite ? 0 : 2.5;
-        const homeEffectivePower = homePower + HFA;
-        const awayEffectivePower = awayPower;
-        
-        // Determine favorite based on effective power
-        const favoriteIsHome = homeEffectivePower > awayEffectivePower;
-        const absValue = Math.abs(marketSpreadValue);
-        
-        if (favoriteIsHome) {
-          homePrice = -absValue; // Home is favorite (negative)
-          awayPrice = absValue; // Away is underdog (positive)
-          favoriteTeamId = game.homeTeamId;
-          favoriteTeamName = game.homeTeam.name;
-        } else {
-          homePrice = absValue; // Home is underdog (positive)
-          awayPrice = -absValue; // Away is favorite (negative)
-          favoriteTeamId = game.awayTeamId;
-          favoriteTeamName = game.awayTeam.name;
-        }
-        marketSpread = -absValue; // Always negative (favorite's line)
-        
-        console.warn(`[Game ${gameId}] ⚠️ FALLBACK FAVORITE DETERMINATION (using power ratings):`, {
-          favoriteTeamId,
-          favoriteTeamName,
-          favoriteLine: marketSpread,
-          homePrice,
-          awayPrice,
-          homePower,
-          awayPower,
-          homeEffectivePower,
-          awayEffectivePower,
-          source: 'fallback heuristic (power ratings - NO teamId)',
-          warning: 'This game needs re-ingestion to populate teamId field'
-        });
-      }
+      // No coherent HMA — suppress market-derived spread (do not resurrect legacy lines)
+      diagnosticsMessages.push(
+        'No coherent marketSelection spread consensus — suppressing market spread calculations'
+      );
+      console.warn(
+        `[Game ${gameId}] ⚠️ No coherent marketSelection spread — market spread suppressed (legacy not used)`
+      );
     }
     
     // ============================================
-    // USE CONSENSUS FOR TOTAL (mirror spread logic)
+    // TOTAL from marketSelection only
     // ============================================
-    // Prefer consensus over individual lines (filters out price leaks)
-    const useConsensusTotal = totalConsensus.value !== null;
-    let marketTotal: number | null = null;
-    
-    if (useConsensusTotal && totalConsensus.value !== null) {
-      // CRITICAL: Totals must always be positive (unsigned)
-      // If consensus is negative, it's a price leak - set to null
-      const rawTotal = totalConsensus.value;
-      if (rawTotal < 0) {
-        console.error(`[Game ${gameId}] ⚠️ NEGATIVE TOTAL from consensus: ${rawTotal} (likely price leak)`);
-        marketTotal = null; // Reject negative totals
-      } else {
-        marketTotal = Math.abs(rawTotal); // Ensure positive
-      }
-    } else if (totalLine) {
-      const totalValue = getPointValue(totalLine, 'total');
-      if (totalValue !== null) {
-        if (totalValue < 0) {
-          console.error(`[Game ${gameId}] ⚠️ NEGATIVE TOTAL from totalLine: ${totalValue} (likely price leak)`);
-          marketTotal = null; // Reject negative totals
-        } else {
-          marketTotal = Math.abs(totalValue);
-        }
-      }
+    let marketTotal: number | null = derivedMarket.marketTotal;
+    if (marketTotal === null) {
+      diagnosticsMessages.push(
+        'No coherent marketSelection total — suppressing market total'
+      );
     }
     
     // Add marketTotal to diagnostics now that it's declared
     totalDiag.marketTotal = marketTotal;
     
-    // Favorite selection: already determined above using teamId
-    const homeIsFavorite = favoriteTeamId === game.homeTeamId;
-    // Handle null marketSpread (data quality issue) - use 0 as fallback
+    // Favorite selection from marketSelection (null for pick'em)
+    const homeIsFavorite = favoriteTeamId !== null && favoriteTeamId === game.homeTeamId;
     const favoriteByRule = {
       teamId: favoriteTeamId,
       teamName: favoriteTeamName,
-      price: marketSpread ?? 0, // Negative (favorite's line), or 0 if invalid
-      line: marketSpread ?? 0 // Already negative (favorite-centric), or 0 if invalid
+      price: marketSpread ?? 0,
+      line: marketSpread ?? 0,
+      isPickEm: isMarketPickEm,
     };
     
     // Tolerance check: abs(homePrice + awayPrice) should be <= 0.5
-    const priceSum = Math.abs(homePrice + awayPrice);
+    const priceSum =
+      homePrice !== null && awayPrice !== null
+        ? Math.abs(homePrice + awayPrice)
+        : 0;
     if (priceSum > 0.5) {
       console.warn(`[Game ${gameId}] ⚠️ Price sum tolerance check failed: abs(${homePrice} + ${awayPrice}) = ${priceSum.toFixed(2)}`);
     }
@@ -2043,15 +1929,14 @@ export async function GET(
     // Comprehensive mapping audit log
     console.log(`[Game ${gameId}] Favorite Mapping Audit:`, {
       gameId,
+      isPickEm: isMarketPickEm,
       feedData: {
         homePrice: homePrice,
         awayPrice: awayPrice,
-        marketSpread: marketSpread, // home-minus-away
-        closingLine: spreadLine?.closingLine,
-        lineValue: spreadLine?.lineValue,
-        source: spreadLine?.source,
-        bookName: spreadLine?.bookName,
-        timestamp: spreadLine?.timestamp
+        marketSpread: marketSpread,
+        source: marketProvenance.spread?.source,
+        bookName: marketProvenance.spread?.bookName,
+        timestamp: marketProvenance.spread?.timestamp,
       },
       mappedTeams: {
         home: { id: game.homeTeamId, name: game.homeTeam.name },
@@ -2067,7 +1952,11 @@ export async function GET(
         priceSum: priceSum,
         priceSumWithinTolerance: priceSum <= 0.5,
         homeIsFavorite: homeIsFavorite,
-        interpretation: homeIsFavorite ? `${game.homeTeam.name} favored by ${Math.abs(homePrice)}` : `${game.awayTeam.name} favored by ${Math.abs(awayPrice)}`
+        interpretation: isMarketPickEm
+          ? 'pickem (no market favorite)'
+          : homeIsFavorite
+            ? `${game.homeTeam.name} favored by ${Math.abs(homePrice ?? 0)}`
+            : `${game.awayTeam.name} favored by ${Math.abs(awayPrice ?? 0)}`
       }
     });
 
@@ -2166,30 +2055,52 @@ export async function GET(
     }
 
     // Use favoriteByRule for market spread to ensure correct team mapping
-    // This ensures we use the "more negative price" rule consistently
-    const marketSpreadFC = {
-      favoriteTeamId: favoriteByRule.teamId,
-      favoriteTeamName: favoriteByRule.teamName,
-      favoriteSpread: favoriteByRule.line, // Already negative (favorite-centric)
-      underdogTeamId: favoriteByRule.teamId === game.homeTeamId ? game.awayTeamId : game.homeTeamId,
-      underdogTeamName: favoriteByRule.teamId === game.homeTeamId ? game.awayTeam.name : game.homeTeam.name,
-      underdogSpread: Math.abs(favoriteByRule.line) // Always positive (underdog getting points)
-    };
+    // Pick'em: no market favorite / dog
+    const marketSpreadFC = isMarketPickEm
+      ? {
+          favoriteTeamId: null as string | null,
+          favoriteTeamName: null as string | null,
+          favoriteSpread: 0,
+          underdogTeamId: null as string | null,
+          underdogTeamName: null as string | null,
+          underdogSpread: 0,
+          isPickEm: true,
+        }
+      : {
+          favoriteTeamId: favoriteByRule.teamId,
+          favoriteTeamName: favoriteByRule.teamName,
+          favoriteSpread: favoriteByRule.line,
+          underdogTeamId:
+            favoriteByRule.teamId === game.homeTeamId
+              ? game.awayTeamId
+              : game.homeTeamId,
+          underdogTeamName:
+            favoriteByRule.teamId === game.homeTeamId
+              ? game.awayTeam.name
+              : game.homeTeam.name,
+          underdogSpread: Math.abs(favoriteByRule.line),
+          isPickEm: false,
+        };
 
-    // Invariant guard: Verify favorite mapping is correct
-    // Assert 1: marketFavorite.line < 0 (favorite lines must be negative)
-    // Assert 2: The team with more negative price matches marketFavorite.teamId
-    // Assert 3: homePrice and awayPrice are correctly assigned (one negative, one positive)
-    const favoriteLineValid = favoriteByRule.line < 0;
-    const pricesCorrectlySigned = (homePrice < 0 && awayPrice > 0) || (homePrice > 0 && awayPrice < 0);
-    const favoriteMatchesPrices = (homePrice < awayPrice && favoriteByRule.teamId === game.homeTeamId) ||
-                                   (awayPrice < homePrice && favoriteByRule.teamId === game.awayTeamId);
+    // Invariant guard: pick'em is first-class; non-pick'em requires favorite < 0
+    const favoriteInvariant = validateMarketFavoriteInvariant({
+      isPickEm: isMarketPickEm,
+      marketSpread,
+      homePrice,
+      awayPrice,
+      favoriteTeamId,
+      homeTeamId: game.homeTeamId,
+      awayTeamId: game.awayTeamId,
+    });
+    const favoriteLineValid = favoriteInvariant.favoriteLineValid;
+    const pricesCorrectlySigned = favoriteInvariant.pricesCorrectlySigned;
+    const favoriteMatchesPrices = favoriteInvariant.favoriteMatchesPrices;
     
-    if (!favoriteLineValid || !pricesCorrectlySigned || !favoriteMatchesPrices) {
+    if (!favoriteInvariant.ok && !isMarketPickEm && marketSpread !== null) {
       const telemetryEvent = {
         event: 'FAVORITE_MISMATCH',
         gameId,
-        bookId: spreadLine?.bookName || 'Unknown',
+        bookId: marketProvenance.spread?.bookName || 'Unknown',
         homeTeamId: game.homeTeamId,
         homeTeamName: game.homeTeam.name,
         awayTeamId: game.awayTeamId,
@@ -2205,25 +2116,29 @@ export async function GET(
         validation: {
           favoriteLineValid,
           pricesCorrectlySigned,
-          favoriteMatchesPrices
+          favoriteMatchesPrices,
+          reason: favoriteInvariant.reason,
         }
       };
       console.error(`[Game ${gameId}] ⚠️ FAVORITE_MISMATCH:`, JSON.stringify(telemetryEvent, null, 2));
       
-      // In dev, fail loud; in prod, warn
       if (process.env.NODE_ENV !== 'production') {
         throw new Error(`FAVORITE_MISMATCH: Invalid favorite mapping for game ${gameId}`);
       }
+    } else if (isMarketPickEm) {
+      console.log(`[Game ${gameId}] ✅ Pick'em invariant OK (no FAVORITE_MISMATCH)`);
     }
     
     // Log validation of favorite mapping
     console.log(`[Game ${gameId}] Favorite Mapping Validation:`, {
+      isPickEm: isMarketPickEm,
       favoriteByRule: {
         teamId: favoriteByRule.teamId,
         teamName: favoriteByRule.teamName,
         line: favoriteByRule.line
       },
       validation: {
+        ok: favoriteInvariant.ok,
         favoriteLineValid,
         pricesCorrectlySigned,
         favoriteMatchesPrices
@@ -2233,10 +2148,17 @@ export async function GET(
     // ============================================
     // SINGLE SOURCE OF TRUTH: market_snapshot
     // ============================================
-    // Canonicalize market data: favorite always negative, dog always positive
-    const dogTeamId = favoriteByRule.teamId === game.homeTeamId ? game.awayTeamId : game.homeTeamId;
-    const dogTeamName = favoriteByRule.teamId === game.homeTeamId ? game.awayTeam.name : game.homeTeam.name;
-    const dogLine = Math.abs(favoriteByRule.line); // Always positive (underdog getting points)
+    const dogTeamId = isMarketPickEm
+      ? null
+      : favoriteByRule.teamId === game.homeTeamId
+        ? game.awayTeamId
+        : game.homeTeamId;
+    const dogTeamName = isMarketPickEm
+      ? null
+      : favoriteByRule.teamId === game.homeTeamId
+        ? game.awayTeam.name
+        : game.homeTeam.name;
+    const dogLine = isMarketPickEm ? 0 : Math.abs(favoriteByRule.line);
     
     // Get moneyline prices from both team-specific lines
     let moneylineFavoritePrice: number | null = null;
@@ -2296,69 +2218,39 @@ export async function GET(
     });
     
     // ============================================
-    // USE MONEYLINE CONSENSUS (deduped per book)
+    // USE MONEYLINE FROM marketSelection (team-specific, coherent snapshots)
     // ============================================
-    // Guardrail: Require at least 2 books for consensus
-    if (moneylineConsensus.perBookCount >= 2) {
-      // Use consensus values (deduped, median of per-book prices)
-      moneylineFavoritePrice = moneylineConsensus.favoritePrice;
-      moneylineDogPrice = moneylineConsensus.dogPrice;
-      
-      // Always assign teamIds based on the favorite from spread
-      moneylineFavoriteTeamId = favoriteTeamId;
-      moneylineDogTeamId = favoriteTeamId === game.homeTeamId ? game.awayTeamId : game.homeTeamId;
-      
-      console.log(`[Game ${gameId}] ✅ MONEYLINE FROM CONSENSUS:`, {
+    // Prefer team-identity prices from derivedMarket; never pair cross-book/cross-timestamp rows.
+    // Never invent ML favorite from an invented spread favorite (pick'em).
+    if (
+      derivedMarket.homeMoneylinePrice !== null &&
+      derivedMarket.awayMoneylinePrice !== null
+    ) {
+      moneylineFavoritePrice = derivedMarket.moneylineFavoritePrice;
+      moneylineDogPrice = derivedMarket.moneylineDogPrice;
+      moneylineFavoriteTeamId = derivedMarket.moneylineFavoriteTeamId;
+      moneylineDogTeamId = derivedMarket.moneylineDogTeamId;
+
+      // If ML favorite unset (equal prices), leave unset — do not invent from spread
+      console.log(`[Game ${gameId}] ✅ MONEYLINE FROM marketSelection (team-specific):`, {
+        homePrice: derivedMarket.homeMoneylinePrice,
+        awayPrice: derivedMarket.awayMoneylinePrice,
         favoriteTeamId: moneylineFavoriteTeamId,
         favoritePrice: moneylineFavoritePrice,
         dogTeamId: moneylineDogTeamId,
         dogPrice: moneylineDogPrice,
-        perBookCount: moneylineConsensus.perBookCount,
-        rawCount: moneylineConsensus.rawCount,
-        deduped: moneylineConsensus.deduped,
-        source: 'consensus (deduped per book)'
+        perBookCount: derivedMarket.moneylinePerBookCount,
+        source: 'marketSelection.moneylineByBook',
+        provenanceBook: marketProvenance.moneyline?.bookName,
+        provenanceTimestamp: marketProvenance.moneyline?.timestamp,
       });
-    } else if (moneylineConsensus.favoritePrice !== null || moneylineConsensus.dogPrice !== null) {
-      // FALLBACK: Use consensus even if perBookCount < 2 (single book, but still valid)
-      console.warn(`[Game ${gameId}] ⚠️ MONEYLINE CONSENSUS LOW LIQUIDITY (${moneylineConsensus.perBookCount} books), using consensus values anyway`);
-      
-      moneylineFavoritePrice = moneylineConsensus.favoritePrice;
-      moneylineDogPrice = moneylineConsensus.dogPrice;
-      
-      moneylineFavoriteTeamId = favoriteTeamId;
-      moneylineDogTeamId = favoriteTeamId === game.homeTeamId ? game.awayTeamId : game.homeTeamId;
-    } else if (homeMoneylineLine && awayMoneylineLine) {
-      // FALLBACK: Use individual lines if consensus insufficient (< 2 books)
-      console.warn(`[Game ${gameId}] ⚠️ MONEYLINE CONSENSUS LOW LIQUIDITY (${moneylineConsensus.perBookCount} books), using individual lines`);
-      
-      const line1Price = getLineValue(homeMoneylineLine);
-      const line2Price = getLineValue(awayMoneylineLine);
-      
-      if (line1Price !== null && line2Price !== null) {
-        if (line1Price < 0 && line2Price > 0) {
-          moneylineFavoritePrice = line1Price;
-          moneylineDogPrice = line2Price;
-        } else if (line2Price < 0 && line1Price > 0) {
-          moneylineFavoritePrice = line2Price;
-          moneylineDogPrice = line1Price;
-        }
-        
-        moneylineFavoriteTeamId = favoriteTeamId;
-        moneylineDogTeamId = favoriteTeamId === game.homeTeamId ? game.awayTeamId : game.homeTeamId;
-      }
-    } else if (mlVal !== null && mlVal !== undefined) {
-      // FALLBACK: Use mlVal if available (old behavior)
-      console.warn(`[Game ${gameId}] ⚠️ MONEYLINE FALLBACK to mlVal (consensus insufficient)`);
-      
-      if (mlVal < 0) {
-        moneylineFavoriteTeamId = favoriteTeamId;
-        moneylineDogTeamId = favoriteTeamId === game.homeTeamId ? game.awayTeamId : game.homeTeamId;
-        moneylineFavoritePrice = mlVal;
-      } else if (mlVal > 0) {
-        moneylineFavoriteTeamId = favoriteTeamId === game.homeTeamId ? game.awayTeamId : game.homeTeamId;
-        moneylineDogTeamId = favoriteTeamId;
-        moneylineDogPrice = mlVal;
-      }
+    } else {
+      diagnosticsMessages.push(
+        'No coherent marketSelection moneyline — suppressing ML prices'
+      );
+      console.warn(
+        `[Game ${gameId}] ❌ No coherent moneyline from marketSelection (legacy/mlVal not used)`
+      );
     }
 
     // NOW: Calculate moneyline value and grade (moneyline variables are now set)
@@ -2764,17 +2656,25 @@ export async function GET(
     // ============================================
     let invariantFailed = false;
     
-    // Guardrail 1: Reject spread consensus if magnitude > 60 (likely a price leak)
-    if (consensusFavoriteLine !== null && Math.abs(consensusFavoriteLine) > 60) {
-      console.error(`[Game ${gameId}] ⚠️ SPREAD CONSENSUS OUT OF RANGE: ${consensusFavoriteLine} (abs > 60, likely price leak)`, {
-        spreadConsensus,
-        looksLikeLeak: looksLikePriceLeak(consensusFavoriteLine),
-        books: spreadConsensus.books
-      });
+    // Guardrail 1: Reject spread consensus if magnitude > MAX_ABS_MARKET_SPREAD (matches writer)
+    if (
+      consensusFavoriteLine !== null &&
+      Math.abs(consensusFavoriteLine) > MAX_ABS_MARKET_SPREAD
+    ) {
+      console.error(
+        `[Game ${gameId}] ⚠️ SPREAD CONSENSUS OUT OF RANGE: ${consensusFavoriteLine} (abs > ${MAX_ABS_MARKET_SPREAD})`,
+        {
+          spreadConsensus,
+          looksLikeLeak: looksLikePriceLeak(consensusFavoriteLine),
+          books: spreadConsensus.books,
+        }
+      );
       spreadConsensus.value = null;
       spreadConsensus.count = 0;
       invariantFailed = true;
-      diagnosticsMessages.push('Spread consensus rejected: magnitude > 60 (likely price leak)');
+      diagnosticsMessages.push(
+        `Spread consensus rejected: magnitude > ${MAX_ABS_MARKET_SPREAD}`
+      );
     }
     
     // Guardrail 2: Reject if fewer than 2 books (insufficient liquidity)
@@ -2821,9 +2721,12 @@ export async function GET(
       favoriteTeamName: favoriteByRule.teamName,
       dogTeamId: dogTeamId,
       dogTeamName: dogTeamName,
-      favoriteLine: finalConsensusFavoriteLine ?? favoriteByRule.line, // Use consensus if available (after guardrails), else fallback
-      dogLine: finalConsensusDogLine ?? dogLine, // Use consensus if available (after guardrails), else fallback
-      marketTotal: marketTotal !== null ? marketTotal : null, // Already uses consensus
+      favoriteLine: isMarketPickEm
+        ? 0
+        : finalConsensusFavoriteLine ?? favoriteByRule.line,
+      dogLine: isMarketPickEm ? 0 : finalConsensusDogLine ?? dogLine,
+      isPickEm: isMarketPickEm,
+      marketTotal: marketTotal !== null ? marketTotal : null,
       moneylineFavorite: moneylineFavoritePrice,
       moneylineDog: moneylineDogPrice,
       moneylineFavoriteTeamId,
@@ -2831,6 +2734,11 @@ export async function GET(
       bookSource,
       updatedAt: updatedAtDate.toISOString(),
       snapshotId,
+      provenance: {
+        spread: marketProvenance.spread,
+        total: marketProvenance.total,
+        moneyline: marketProvenance.moneyline,
+      },
       // Consensus metadata
       consensusMethod: 'median',
       window: consensusWindow,
@@ -2840,7 +2748,7 @@ export async function GET(
       counts: {
         spread: spreadConsensus.count,
         total: totalConsensus.count,
-        moneyline: moneylineConsensus.perBookCount // Use per-book count (after dedupe)
+        moneyline: moneylineConsensus.perBookCount
       },
       leakFilter: {
         spread: { excluded: spreadConsensus.excluded },
@@ -3591,7 +3499,7 @@ export async function GET(
         flip: spreadFlip?.toFixed(1),
         reason: 'Overlay < edge floor, but range guidance still provided'
       });
-    } else if (blockDogHeadline) {
+    } else if (blockDogHeadline && !isMarketPickEm) {
       // Has edge BUT extreme favorite + dog direction → suppress dog headline, show range only
       ats_dog_headline_blocked = true;
       bettablePick = {
@@ -3608,15 +3516,59 @@ export async function GET(
         flip: spreadFlip
       };
       console.log(`[Game ${gameId}] 🚫 Dog headline blocked (extreme favorite):`, {
-        marketSpread: marketSpread.toFixed(2),
+        marketSpread: marketSpread !== null ? marketSpread.toFixed(2) : 'null',
         overlay: spreadOverlay.toFixed(2),
         edge: atsEdge.toFixed(2),
         betTo: spreadBetTo?.toFixed(1),
         flip: spreadFlip?.toFixed(1),
         reason: 'Overlay points to 20+ pt dog - suppressing headline but keeping range'
       });
+    } else if (isMarketPickEm && USE_CORE_V1 && coreV1SpreadInfo) {
+      // Pick'em: no market favorite/dog — recommend Home PK / Away PK from HMA edge.
+      const pk = recommendPickEmSpreadSide({
+        coreSpreadHma: coreV1SpreadInfo.coreSpreadHma,
+        homeTeamId: game.homeTeamId,
+        awayTeamId: game.awayTeamId,
+        homeTeamName: game.homeTeam.name,
+        awayTeamName: game.awayTeam.name,
+        edgeFloor: HARD_MIN_THRESHOLD,
+      });
+      if (!pk.recommendedTeamId || !pk.recommendedTeamName || !pk.label) {
+        bettablePick = {
+          teamId: null,
+          teamName: null,
+          line: null,
+          label: null,
+          edgePts: pk.edgePts,
+          reasoning: `No edge at pick'em. Model HMA edge is ${pk.edgePts.toFixed(1)} pts (below ${edgeFloor.toFixed(1)} pt threshold).`,
+          betTo: spreadBetTo,
+          flip: spreadFlip,
+          favoritesDisagree: false,
+          suppressHeadline: false,
+          extremeFavoriteBlocked: false,
+        };
+      } else {
+        bettablePick = {
+          teamId: pk.recommendedTeamId,
+          teamName: pk.recommendedTeamName,
+          line: 0,
+          label: pk.label,
+          edgePts: pk.edgePts,
+          betTo: spreadBetTo,
+          flip: spreadFlip,
+          favoritesDisagree: false,
+          reasoning: `Model edge: ${pk.edgePts.toFixed(1)} pts. Value on ${pk.label}.`,
+          suppressHeadline: false,
+          extremeFavoriteBlocked: false,
+        };
+        console.log(`[Game ${gameId}] ✅ Pick'em spread pick (HMA side):`, {
+          pick: bettablePick.label,
+          edgeHma: pk.edgeHma.toFixed(2),
+          coreSpreadHma: coreV1SpreadInfo.coreSpreadHma.toFixed(2),
+        });
+      }
     } else {
-      // CRITICAL FIX: Use edge sign as single source of truth for pick side (V1 mode uses atsEdge, legacy uses spreadOverlay)
+      // Non-pick'em: favorite-centric side from edge sign
       // In V1 mode: atsEdge < 0 means favorite side pick (model thinks favorite should lay more), > 0 means dog side pick
       // In legacy mode: spreadOverlay < 0 means favorite side pick, > 0 means dog side pick
       const edgeSign = USE_CORE_V1 ? Math.sign(atsEdge) : Math.sign(spreadOverlay);
@@ -3624,39 +3576,55 @@ export async function GET(
       const pickTeamId = pickSide === 'favorite' ? favoriteByRule.teamId : dogTeamId;
       const pickTeamName = pickSide === 'favorite' ? favoriteByRule.teamName : dogTeamName;
       const pickLine = pickSide === 'favorite' ? favoriteByRule.line : dogLine; // favoriteLine is negative, dogLine is positive
-      
-      // Create bettable pick object directly (don't use computeBettableSpreadPick which uses raw model)
-      bettablePick = {
-        teamId: pickTeamId,
-        teamName: pickTeamName,
-        line: pickLine,
-        label: pickSide === 'favorite' 
-          ? `${pickTeamName} ${pickLine.toFixed(1)}`
-          : `${pickTeamName} +${pickLine.toFixed(1)}`,
-        edgePts: atsEdgeAbs,
-        betTo: spreadBetTo,
-        flip: spreadFlip,
-        favoritesDisagree: false, // In V1 mode, we always use market favorite as reference
-        reasoning: `Model edge: ${atsEdgeAbs.toFixed(1)} pts. Value on ${pickTeamName} ${pickSide === 'favorite' ? pickLine.toFixed(1) : `+${pickLine.toFixed(1)}`}.`,
-        suppressHeadline: false,
-        extremeFavoriteBlocked: false
-      };
-      bettablePick.extremeFavoriteBlocked = false;
-      
-      console.log(`[Game ${gameId}] ✅ Spread pick generated:`, {
-        pick: bettablePick.label,
-        overlay: spreadOverlay.toFixed(2),
-        edge: atsEdge.toFixed(2),
-        betTo: spreadBetTo?.toFixed(1),
-        flip: spreadFlip?.toFixed(1)
-      });
+
+      // Guard: never emit null-team spread picks
+      if (!pickTeamId || !pickTeamName) {
+        bettablePick = {
+          teamId: null,
+          teamName: null,
+          line: null,
+          label: null,
+          edgePts: atsEdgeAbs,
+          reasoning: `Spread pick suppressed: missing team identity for ${pickSide} side.`,
+          betTo: spreadBetTo,
+          flip: spreadFlip,
+          favoritesDisagree: false,
+          suppressHeadline: false,
+          extremeFavoriteBlocked: false,
+        };
+      } else {
+        bettablePick = {
+          teamId: pickTeamId,
+          teamName: pickTeamName,
+          line: pickLine,
+          label: pickSide === 'favorite'
+            ? `${pickTeamName} ${pickLine.toFixed(1)}`
+            : `${pickTeamName} +${pickLine.toFixed(1)}`,
+          edgePts: atsEdgeAbs,
+          betTo: spreadBetTo,
+          flip: spreadFlip,
+          favoritesDisagree: false, // In V1 mode, we always use market favorite as reference
+          reasoning: `Model edge: ${atsEdgeAbs.toFixed(1)} pts. Value on ${pickTeamName} ${pickSide === 'favorite' ? pickLine.toFixed(1) : `+${pickLine.toFixed(1)}`}.`,
+          suppressHeadline: false,
+          extremeFavoriteBlocked: false
+        };
+        bettablePick.extremeFavoriteBlocked = false;
+
+        console.log(`[Game ${gameId}] ✅ Spread pick generated:`, {
+          pick: bettablePick.label,
+          overlay: spreadOverlay.toFixed(2),
+          edge: atsEdge.toFixed(2),
+          betTo: spreadBetTo?.toFixed(1),
+          flip: spreadFlip?.toFixed(1)
+        });
+      }
     }
     
     // Telemetry: Log when dog headline is blocked for extreme favorites
     if (ats_dog_headline_blocked) {
       console.log(`[Game ${gameId}] 📊 TELEMETRY: ats_dog_headline_blocked`, {
         gameId,
-        marketSpread: marketSpread.toFixed(2),
+        marketSpread: marketSpread !== null ? marketSpread.toFixed(2) : 'null',
         overlay: spreadOverlay.toFixed(2),
         homeTeam: game.homeTeam.name,
         awayTeam: game.awayTeam.name,
@@ -4438,58 +4406,29 @@ export async function GET(
       });
     }
     
-    // 4. CRITICAL: Validate Market Spread absolute value is not excessive (> 50)
-    // This catches price values that leaked into spread fields
-    // NOTE: For existing bad data, we handle gracefully instead of throwing
+    // 4. Market spread consumer ceiling (matches Odds writer MAX_ABS_SPREAD).
+    // Legitimate CFB lines include +/-50.5 / +/-51; only abs > MAX_ABS_MARKET_SPREAD fails.
+    // NEVER search historical MarketLine rows for a replacement / favorite mutation.
     let dataQualityWarning: string | null = null;
-    if (marketSpread !== null && Math.abs(marketSpread) > 50) {
-      console.error(`[Game ${gameId}] ⚠️ DATA QUALITY ISSUE: Market Spread absolute value exceeds 50 (likely price leak): ${marketSpread.toFixed(1)}`, {
-        modelSpread: finalImpliedSpread,
-        marketSpread,
-        gameId,
-        homeTeam: game.homeTeam.name,
-        awayTeam: game.awayTeam.name,
-        spreadLineValue: spreadLine?.lineValue,
-        spreadLineSource: spreadLine?.source,
-        spreadLineBook: spreadLine?.bookName,
-        warning: 'This spread value is likely a price (American odds) that was incorrectly mapped to a spread point. This game needs re-ingestion with corrected data.'
-      });
-      
-      // Try to find a better spread value from other lines or historical data
-      // Look for other spread lines that might be valid
-      const otherSpreadLines = marketLinesWithTeamId.filter(
-        (l) => l.lineType === 'spread' && 
-               l.id !== spreadLine?.id &&
-               l.lineValue !== null &&
-               Math.abs(l.lineValue) <= 50
-      );
-      
-      if (otherSpreadLines.length > 0) {
-        // Use the first valid spread line found
-        const validSpreadLine = otherSpreadLines[0];
-        const validSpreadValue = getLineValue(validSpreadLine);
-        if (validSpreadValue !== null && Math.abs(validSpreadValue) <= 50) {
-          console.log(`[Game ${gameId}] ✅ Using fallback spread from line ${validSpreadLine.id}: ${validSpreadValue}`);
-          marketSpread = validSpreadValue;
-          // Update favoriteByRule if needed
-          if (validSpreadValue < 0) {
-            favoriteTeamId = game.homeTeamId;
-            favoriteTeamName = game.homeTeam.name;
-          } else {
-            favoriteTeamId = game.awayTeamId;
-            favoriteTeamName = game.awayTeam.name;
-          }
-          dataQualityWarning = `Data quality issue detected: Original spread (${spreadLine?.lineValue}) was likely a price value. Using fallback spread (${validSpreadValue}).`;
-        } else {
-          // No valid spread found - mark as invalid but continue
-          dataQualityWarning = `Data quality issue: Market spread (${marketSpread.toFixed(1)}) exceeds 50, likely a price leak. Spread-based features may be unavailable.`;
-          marketSpread = null; // Mark as invalid
+    if (marketSpread !== null && Math.abs(marketSpread) > MAX_ABS_MARKET_SPREAD) {
+      console.error(
+        `[Game ${gameId}] ⚠️ DATA QUALITY: Market spread abs ${Math.abs(marketSpread).toFixed(1)} > ${MAX_ABS_MARKET_SPREAD} — suppressing (no historical rescue)`,
+        {
+          modelSpread: finalImpliedSpread,
+          marketSpread,
+          gameId,
+          homeTeam: game.homeTeam.name,
+          awayTeam: game.awayTeam.name,
         }
-      } else {
-        // No fallback available - mark as invalid but continue
-        dataQualityWarning = `Data quality issue: Market spread (${marketSpread.toFixed(1)}) exceeds 50, likely a price leak. Spread-based features may be unavailable.`;
-        marketSpread = null; // Mark as invalid
-      }
+      );
+      dataQualityWarning = `Data quality issue: Market spread (${marketSpread.toFixed(1)}) exceeds consumer ceiling ${MAX_ABS_MARKET_SPREAD}. Spread-based features suppressed (no historical rescue).`;
+      marketSpread = null;
+      homePrice = null;
+      awayPrice = null;
+      favoriteTeamId = null;
+      favoriteTeamName = null;
+    } else if (derivedMarket.spreadSuppressedOutOfRange) {
+      dataQualityWarning = `Data quality issue: Market spread abs exceeded consumer ceiling ${MAX_ABS_MARKET_SPREAD}. Suppressed without historical rescue.`;
     }
     
     // 5. Validate ATS Edge magnitude is not excessive (> 20)
