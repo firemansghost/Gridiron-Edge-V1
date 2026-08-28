@@ -179,9 +179,16 @@ export function canonicalSpreadHma(homeLine: number, awayLine: number): number |
 }
 
 function countSameTimestampTies(rows: MarketLineObservation[]): number {
+  // Logical stream key includes teamId so normal home+away pairs are NOT ties.
   const byKey = new Map<string, number>();
   for (const r of rows) {
-    const key = `${r.gameId}|${r.lineType}|${normalizeBook(r.bookName)}|${toIso(r.timestamp)}`;
+    const teamKey =
+      r.lineType === 'total'
+        ? '__market__'
+        : r.teamId != null && r.teamId !== ''
+          ? r.teamId
+          : '__null__';
+    const key = `${r.gameId}|${r.lineType}|${normalizeBook(r.bookName)}|${toIso(r.timestamp)}|${teamKey}`;
     byKey.set(key, (byKey.get(key) || 0) + 1);
   }
   let ties = 0;
@@ -189,6 +196,13 @@ function countSameTimestampTies(rows: MarketLineObservation[]): number {
     if (n > 1) ties += n - 1;
   }
   return ties;
+}
+
+/** Exported for unit tests. */
+export function countNondeterministicSameTimestampTies(
+  rows: MarketLineObservation[]
+): number {
+  return countSameTimestampTies(rows);
 }
 
 export function selectBookSpreadSnapshots(

@@ -53,7 +53,7 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **Phase 2C-2J-1 Workflow reactivation inventory** | **COMPLETE** (PR #63) — 45→46 workflows after 2C-2J-2; active schedules 10; schedule reactivation 0 |
 | **Phase 2C-2J-2 Guarded 2026 Live Odds** | **COMPLETE** (PR #64) — merged `1445cdb…`; writer live |
 | **Phase 2C-2J-2A Live Odds PREVIEW findings repair** | **COMPLETE** (PR #65) — aliases + FCS classify + `MAX_ABS_SPREAD=100` |
-| **Phase 2C-2J-3 Append-only Odds consumer readiness** | **In preparation (draft)** — shared snapshot selector; no second COMMIT |
+| **Phase 2C-2J-3 Append-only Odds consumer readiness** | **In preparation (draft PR #66)** — repair 2C-2J-3A review findings |
 | **Expected 2026 schedule baseline** | **761** games / **138** distinct teams — **verified** |
 | **Ratings computation / persistence** | **2026 Core V1 initialized** (do not rerun); further lifecycle COMMITs only via guarded workflow |
 | **Odds ingestion** | **Week1 COMMIT SUCCESS** (run **33192011833**); recurring polling NOT AUTHORIZED; second COMMIT NOT AUTHORIZED |

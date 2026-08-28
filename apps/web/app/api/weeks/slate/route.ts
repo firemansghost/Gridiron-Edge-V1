@@ -30,6 +30,7 @@ import {
   type HybridSpreadInputs,
   type TeamUnitGradesRow,
 } from '@/lib/slate-hybrid-spread';
+import { resolveBetSideClosePrice } from '@/lib/game-detail-market';
 
 interface SlateGame {
   gameId: string;
@@ -768,14 +769,14 @@ export async function GET(request: NextRequest) {
               v4BetSideByGame.get(game.gameId)
             );
 
-            const closePrice =
-              game.closingSpread?.homeLine !== undefined &&
-              game.closingSpread?.homeLine !== null
-                ? Number(game.closingSpread.homeLine)
-                : game.closingSpread?.value !== null &&
-                    game.closingSpread?.value !== undefined
-                  ? -Math.abs(Number(game.closingSpread.value))
-                  : null;
+            const closePrice = resolveBetSideClosePrice({
+              betTeamId,
+              homeTeamId: game.homeTeamId,
+              awayTeamId: game.awayTeamId,
+              homeLine: game.closingSpread?.homeLine ?? null,
+              awayLine: game.closingSpread?.awayLine ?? null,
+              fallbackHma: game.closingSpread?.marketSpreadHma ?? game.closingSpread?.value ?? null,
+            });
 
             const tierFields = deriveHybridTierFields(
               spreadEdgePts,

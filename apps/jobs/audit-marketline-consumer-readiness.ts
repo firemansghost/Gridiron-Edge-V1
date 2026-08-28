@@ -11,6 +11,7 @@ import {
   indexGameMarketSelections,
   type MarketLineObservation,
 } from '../web/lib/market-line-snapshot';
+import { evaluateMarketlineConsumerReadiness } from '../web/lib/marketline-consumer-readiness';
 
 function parseArgs(argv: string[]): { season: number; week: number } {
   let season = 2026;
@@ -27,9 +28,9 @@ function parseArgs(argv: string[]): { season: number; week: number } {
 
 async function main() {
   const { season, week } = parseArgs(process.argv.slice(2));
-  const url = process.env.DIRECT_URL || process.env.DATABASE_URL;
+  const url = process.env.DIRECT_URL;
   if (!url) {
-    console.error('DIRECT_URL or DATABASE_URL required (read-only SELECT)');
+    console.error('DIRECT_URL required (read-only SELECT)');
     process.exit(1);
   }
 
@@ -100,36 +101,30 @@ async function main() {
       })),
     });
 
-    let selectable = 0;
-    let missingSpread = 0;
-    let missingTotal = 0;
-    let missingMl = 0;
+    const readiness = evaluateMarketlineConsumerReadiness(
+      games.map((g) => ({
+        gameId: g.id,
+        selection: selections.get(g.id),
+      }))
+    );
+
     let incoherentPairs = 0;
     let sameTsTies = 0;
     const gameReports: Array<Record<string, unknown>> = [];
 
     for (const g of games) {
       const sel = selections.get(g.id);
-      if (!sel) {
-        missingSpread++;
-        missingTotal++;
-        missingMl++;
+      const gate = readiness.gameResults.find((r) => r.gameId === g.id);
+      if (!sel || !gate) {
         gameReports.push({
           gameId: g.id,
           matchup: `${g.awayTeam.name} @ ${g.homeTeam.name}`,
           error: 'no selection',
+          structurallySelectable: false,
         });
         continue;
       }
 
-      const hasAny =
-        sel.spreadByBook.length > 0 ||
-        sel.totalByBook.length > 0 ||
-        sel.moneylineByBook.length > 0;
-      if (hasAny) selectable++;
-      if (sel.spreadByBook.length === 0) missingSpread++;
-      if (sel.totalByBook.length === 0) missingTotal++;
-      if (sel.moneylineByBook.length === 0) missingMl++;
       incoherentPairs +=
         sel.incoherentSpreads.length + sel.incoherentMoneylines.length;
       sameTsTies += sel.sameTimestampTies;
@@ -150,7 +145,8 @@ async function main() {
         incoherentSpreads: sel.incoherentSpreads.length,
         incoherentMoneylines: sel.incoherentMoneylines.length,
         sameTimestampTies: sel.sameTimestampTies,
-        structurallySelectable: hasAny,
+        hasRequiredMarkets: gate.hasRequiredMarkets,
+        structurallySelectable: gate.structurallySelectable,
       });
     }
 
@@ -165,14 +161,17 @@ async function main() {
       rows: lines.length,
       books: books.size,
       byType,
-      selectableGames: selectable,
-      gamesMissingCoherentSpread: missingSpread,
-      gamesMissingCoherentTotal: missingTotal,
-      gamesMissingCoherentMl: missingMl,
+      selectableGames: readiness.selectableGames,
+      gamesMissingCoherentSpread: readiness.gamesMissingCoherentSpread,
+      gamesMissingCoherentTotal: readiness.gamesMissingCoherentTotal,
+      gamesMissingCoherentMl: readiness.gamesMissingCoherentMl,
+      allGamesHaveCoherentSpread: readiness.allGamesHaveCoherentSpread,
+      allGamesHaveTotal: readiness.allGamesHaveTotal,
+      allGamesHaveCoherentMoneyline: readiness.allGamesHaveCoherentMoneyline,
       incoherentPairs,
       sameTimestampTies: sameTsTies,
-      allGamesStructurallySelectable:
-        games.length > 0 && selectable === games.length,
+      allGamesStructurallySelectable: readiness.allGamesStructurallySelectable,
+      pass: readiness.pass,
       week1Expected:
         season === 2026 && week === 1
           ? {
@@ -188,16 +187,20 @@ async function main() {
 
     console.log(JSON.stringify({ summary, games: gameReports }, null, 2));
 
+    if (!readiness.pass) {
+      console.error(
+        `Consumer readiness FAIL: selectable=${readiness.selectableGames}/${games.length}; ` +
+          `missingSpread=${readiness.gamesMissingCoherentSpread} ` +
+          `missingTotal=${readiness.gamesMissingCoherentTotal} ` +
+          `missingMl=${readiness.gamesMissingCoherentMl}`
+      );
+      process.exitCode = 2;
+    }
+
     if (season === 2026 && week === 1) {
       if (games.length !== 51 || lines.length !== 2281 || books.size !== 11) {
         console.error(
           `Week1 inventory mismatch: games=${games.length} rows=${lines.length} books=${books.size} (expected 51/2281/11)`
-        );
-        process.exitCode = 2;
-      }
-      if (selectable !== games.length) {
-        console.error(
-          `Not all games structurally selectable: ${selectable}/${games.length}`
         );
         process.exitCode = 2;
       }

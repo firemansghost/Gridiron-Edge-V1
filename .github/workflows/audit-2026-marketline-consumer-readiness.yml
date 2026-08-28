@@ -5,7 +5,8 @@
 #
 # Security (PR #60 pattern):
 # - Dispatch inputs reach shell only via step-level env (never ${{ inputs.* }} inside run:).
-# - Production DIRECT_URL is NOT job-wide; scoped to preflight + execute.
+# - Production DIRECT_URL is NOT job-wide; scoped to the actual SELECT step only.
+# - Preflight validates non-secret inputs only (does not touch DIRECT_URL).
 
 name: Audit 2026 MarketLine Consumer Readiness (Manual, Read Only)
 
@@ -45,11 +46,10 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Preflight (names/presence only)
+      - name: Preflight (non-secret inputs only)
         env:
           INPUT_SEASON: ${{ inputs.season }}
           INPUT_WEEK: ${{ inputs.week }}
-          DIRECT_URL: ${{ secrets.DIRECT_URL }}
         run: |
           set -euo pipefail
           SEASON="$INPUT_SEASON"
@@ -60,14 +60,10 @@ jobs:
             echo "::error::season must equal 2026 (got ${SEASON})"
             exit 1
           fi
-          if [ -z "${DIRECT_URL:-}" ]; then
-            echo "::error::DIRECT_URL secret is missing"
-            exit 1
-          fi
-          echo "DIRECT_URL: present (value not printed)"
           echo "ODDS_API_KEY: not provided"
           echo "CFBD_API_KEY: not provided"
           echo "SGO_API_KEY: not provided"
+          echo "DIRECT_URL: not loaded in preflight"
           echo "database mutations: not invoked"
           echo "provider calls: none"
 
@@ -85,23 +81,32 @@ jobs:
           INPUT_SEASON: ${{ inputs.season }}
           INPUT_WEEK: ${{ inputs.week }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
-          DATABASE_URL: ${{ secrets.DIRECT_URL }}
         run: |
           set -euo pipefail
+          if [ -z "${DIRECT_URL:-}" ]; then
+            echo "::error::DIRECT_URL secret is missing"
+            exit 1
+          fi
+          echo "DIRECT_URL: present (value not printed)"
           npx tsx apps/jobs/audit-marketline-consumer-readiness.ts \
             --season "$INPUT_SEASON" \
             --week "$INPUT_WEEK"
 
       - name: Summary
         if: always()
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+          JOB_STATUS: ${{ job.status }}
         run: |
+          set -euo pipefail
           echo "============================================"
           echo "AUDIT 2026 MARKETLINE CONSUMER READINESS"
           echo "============================================"
-          echo "season: ${{ inputs.season }}"
-          echo "week: ${{ inputs.week }}"
-          echo "status: ${{ job.status }}"
+          echo "season: $INPUT_SEASON"
+          echo "week: $INPUT_WEEK"
+          echo "status: $JOB_STATUS"
           echo "mode: read-only SELECT — no Odds/CFBD/SGO keys"
-          echo "secrets used (names only): DIRECT_URL"
+          echo "secrets used (names only): DIRECT_URL (SELECT step only)"
           echo "prohibited: provider calls, MarketLine writes, bets, ratings, schedules"
           echo "============================================"

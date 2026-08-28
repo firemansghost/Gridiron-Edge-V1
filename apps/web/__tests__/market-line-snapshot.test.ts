@@ -6,6 +6,7 @@
 import {
   canonicalSpreadHma,
   compareMarketLineRecency,
+  countNondeterministicSameTimestampTies,
   selectBookMoneylineSnapshots,
   selectBookSpreadSnapshots,
   selectBookTotalSnapshots,
@@ -469,5 +470,94 @@ describe('market-line-snapshot (append-only)', () => {
     expect(closing.displayTotal?.total).toBe(46);
     expect(closing.usedPreKickFallback).toBe(false);
     expect(closing.totalByBook[0].total).toBe(46);
+  });
+
+  it('same-timestamp tie metric: normal home/away pairs are not ties', () => {
+    const spreadPair = [
+      row({
+        id: 's-h',
+        lineType: 'spread',
+        lineValue: -7,
+        bookName: 'DraftKings',
+        timestamp: t1,
+        teamId: home,
+      }),
+      row({
+        id: 's-a',
+        lineType: 'spread',
+        lineValue: 7,
+        bookName: 'DraftKings',
+        timestamp: t1,
+        teamId: away,
+      }),
+    ];
+    expect(countNondeterministicSameTimestampTies(spreadPair)).toBe(0);
+    expect(
+      countNondeterministicSameTimestampTies([...spreadPair].reverse())
+    ).toBe(0);
+
+    const mlPair = [
+      row({
+        id: 'ml-h',
+        lineType: 'moneyline',
+        lineValue: -150,
+        bookName: 'DraftKings',
+        timestamp: t1,
+        teamId: home,
+      }),
+      row({
+        id: 'ml-a',
+        lineType: 'moneyline',
+        lineValue: 130,
+        bookName: 'DraftKings',
+        timestamp: t1,
+        teamId: away,
+      }),
+    ];
+    expect(countNondeterministicSameTimestampTies(mlPair)).toBe(0);
+
+    const twoTotals = [
+      row({
+        id: 'aaa',
+        lineType: 'total',
+        lineValue: 48,
+        bookName: 'DraftKings',
+        timestamp: t1,
+      }),
+      row({
+        id: 'zzz',
+        lineType: 'total',
+        lineValue: 49,
+        bookName: 'DraftKings',
+        timestamp: t1,
+      }),
+    ];
+    expect(countNondeterministicSameTimestampTies(twoTotals)).toBe(1);
+    expect(
+      countNondeterministicSameTimestampTies([...twoTotals].reverse())
+    ).toBe(1);
+
+    const twoHomeSpreads = [
+      row({
+        id: 'aaa',
+        lineType: 'spread',
+        lineValue: -7,
+        bookName: 'DraftKings',
+        timestamp: t1,
+        teamId: home,
+      }),
+      row({
+        id: 'zzz',
+        lineType: 'spread',
+        lineValue: -7.5,
+        bookName: 'DraftKings',
+        timestamp: t1,
+        teamId: home,
+      }),
+    ];
+    expect(countNondeterministicSameTimestampTies(twoHomeSpreads)).toBe(1);
+    expect(
+      countNondeterministicSameTimestampTies([...twoHomeSpreads].reverse())
+    ).toBe(1);
   });
 });
