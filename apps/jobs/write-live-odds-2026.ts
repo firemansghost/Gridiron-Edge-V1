@@ -22,6 +22,8 @@ import {
   LIVE_ODDS_SEASON,
   LIVE_ODDS_SOURCE,
   MAX_EXPECTED_REQUEST_CREDITS,
+  assertCreateManyCountMatches,
+  buildCommittedVerificationFailureExecution,
   buildFailedCommitExecution,
   buildLiveOddsPlan,
   buildPreviewExecution,
@@ -356,6 +358,9 @@ async function main(): Promise<void> {
           skipDuplicates: true,
         });
 
+        // Count mismatch must abort INSIDE the transaction (rollback).
+        assertCreateManyCountMatches(toInsert.length, createResult.count);
+
         return {
           toInsert,
           createManyCount: createResult.count,
@@ -380,67 +385,85 @@ async function main(): Promise<void> {
       throw err;
     }
 
-    const after = await prisma.marketLine.findMany({
-      where: {
-        season: LIVE_ODDS_SEASON,
-        week: args.week,
-        source: LIVE_ODDS_SOURCE,
-        gameId: { in: gameIds },
-      },
-      select: {
-        gameId: true,
-        lineType: true,
-        bookName: true,
-        timestamp: true,
-        teamId: true,
-        lineValue: true,
-        closingLine: true,
-      },
-    });
-    const afterRows = after.map((r) => ({
-      gameId: r.gameId,
-      lineType: r.lineType,
-      bookName: r.bookName,
-      timestamp: r.timestamp,
-      teamId: r.teamId,
-      lineValue: Number(r.lineValue),
-      closingLine: Number(r.closingLine),
-    }));
+    // Transaction committed — persistence occurred. Verification failures must
+    // still produce a truthful artifact (do not imply rollback).
+    try {
+      const after = await prisma.marketLine.findMany({
+        where: {
+          season: LIVE_ODDS_SEASON,
+          week: args.week,
+          source: LIVE_ODDS_SOURCE,
+          gameId: { in: gameIds },
+        },
+        select: {
+          gameId: true,
+          lineType: true,
+          bookName: true,
+          timestamp: true,
+          teamId: true,
+          lineValue: true,
+          closingLine: true,
+        },
+      });
+      const afterRows = after.map((r) => ({
+        gameId: r.gameId,
+        lineType: r.lineType,
+        bookName: r.bookName,
+        timestamp: r.timestamp,
+        teamId: r.teamId,
+        lineValue: Number(r.lineValue),
+        closingLine: Number(r.closingLine),
+      }));
 
-    const verification = verifyInsertedFingerprints({
-      expectedInserts: stillNewAtTransaction,
-      createManyCount,
-      afterRows,
-    });
+      const verification = verifyInsertedFingerprints({
+        expectedInserts: stillNewAtTransaction,
+        createManyCount,
+        afterRows,
+      });
 
-    const execution = buildSuccessfulCommitExecution({
-      proposedBeforeTransaction,
-      stillNewAtTransaction: stillNewAtTransaction.length,
-      createManyCount,
-      postWriteVerificationSucceeded: verification.ok,
-      error: verification.ok
-        ? null
-        : `post-write verification failed: ${verification.reasons.join('; ')}`,
-    });
+      const execution = buildSuccessfulCommitExecution({
+        proposedBeforeTransaction,
+        stillNewAtTransaction: stillNewAtTransaction.length,
+        createManyCount,
+        postWriteVerificationSucceeded: verification.ok,
+        error: verification.ok
+          ? null
+          : `post-write verification failed: ${verification.reasons.join('; ')}`,
+      });
 
-    // Persistence already occurred — report must say so even if verification fails.
-    writeReport(reportPath, plan, execution, verification, meta);
-    console.log(JSON.stringify({ verification }, null));
+      writeReport(reportPath, plan, execution, verification, meta);
+      console.log(JSON.stringify({ verification }, null));
 
-    if (!verification.ok) {
+      if (!verification.ok) {
+        console.error(
+          'COMMIT persisted rows but post-write verification failed — see report'
+        );
+        process.exitCode = 1;
+        return;
+      }
+
+      if (!transactionPersisted) {
+        process.exitCode = 1;
+        return;
+      }
+
+      console.log(
+        'COMMIT complete — append-only MarketLine persistence verified'
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const execution = buildCommittedVerificationFailureExecution({
+        proposedBeforeTransaction,
+        stillNewAtTransaction: stillNewAtTransaction.length,
+        createManyCount,
+        error: `post-write verification read/error: ${message}`,
+      });
+      writeReport(reportPath, plan, execution, null, meta);
       console.error(
-        'COMMIT persisted rows but post-write verification failed — see report'
+        'COMMIT persisted rows but verification read failed — see report'
       );
       process.exitCode = 1;
-      return;
     }
-
-    if (!transactionPersisted) {
-      process.exitCode = 1;
-      return;
-    }
-
-    console.log('COMMIT complete — append-only MarketLine persistence verified');
   } finally {
     await prisma.$disconnect();
   }

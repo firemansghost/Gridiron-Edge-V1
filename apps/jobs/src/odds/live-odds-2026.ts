@@ -350,6 +350,7 @@ export function classifyProviderEvent(options: {
     const homeIn = home.teamId ? fbsTeamIds.has(home.teamId) : false;
     const awayIn = away.teamId ? fbsTeamIds.has(away.teamId) : false;
 
+    // B: resolved side is explicitly non-FBS
     if ((home.teamId && !homeIn) || (away.teamId && !awayIn)) {
       return {
         ...base,
@@ -358,7 +359,122 @@ export function classifyProviderEvent(options: {
       };
     }
 
-    // A: clearly outside requested-week kickoff window
+    const resolvedFbsId = homeIn
+      ? home.teamId!
+      : awayIn
+        ? away.teamId!
+        : null;
+
+    // A: one authoritative FBS side resolved; opponent unresolved
+    if (resolvedFbsId) {
+      const teamWeekGames = requestedWeekGames.filter(
+        (g) =>
+          g.homeTeamId === resolvedFbsId || g.awayTeamId === resolvedFbsId
+      );
+
+      // A1: no requested-week FBS-vs-FBS Game for this team → FCS/out-of-scope
+      if (teamWeekGames.length === 0) {
+        return {
+          ...base,
+          classification: 'out_of_scope_fbs_fcs',
+          detail:
+            'resolved FBS team has no authoritative requested-week FBS opponent',
+        };
+      }
+
+      const teamWeekNear = commence
+        ? teamWeekGames.filter((g) => withinKickoffTolerance(g.date, commence))
+        : [];
+
+      // A3: multiple possible requested-week games
+      if (teamWeekGames.length > 1) {
+        if (teamWeekNear.length > 1) {
+          return {
+            ...base,
+            classification: 'ambiguous',
+            candidateGameIds: teamWeekNear.map((g) => g.gameId),
+            detail: `resolved FBS ${resolvedFbsId} has ${teamWeekNear.length} requested-week games near commence_time`,
+          };
+        }
+        if (teamWeekNear.length === 0 && commence) {
+          return {
+            ...base,
+            classification: 'out_of_requested_week',
+            detail:
+              'resolved FBS has requested-week games, but commence_time is outside their kickoff tolerance',
+            candidateGameIds: teamWeekGames.map((g) => g.gameId),
+          };
+        }
+        if (teamWeekNear.length === 0 && !commence) {
+          return {
+            ...base,
+            classification: 'ambiguous',
+            candidateGameIds: teamWeekGames.map((g) => g.gameId),
+            detail: `resolved FBS ${resolvedFbsId} has ${teamWeekGames.length} requested-week games; commence_time missing/malformed`,
+          };
+        }
+        // exactly one temporally aligned among multiple → treat as A2 below
+      }
+
+      const focusGames =
+        teamWeekGames.length === 1
+          ? teamWeekGames
+          : teamWeekNear.length === 1
+            ? teamWeekNear
+            : [];
+
+      // A2: exactly one requested-week FBS-vs-FBS game (or one temporally selected)
+      if (focusGames.length === 1) {
+        const g = focusGames[0];
+        const expectedOpp =
+          g.homeTeamId === resolvedFbsId ? g.awayTeamId : g.homeTeamId;
+        const otherId = homeIn ? away.teamId : home.teamId;
+
+        if (!commence) {
+          return {
+            ...base,
+            classification: 'unresolved_expected_fbs',
+            gameId: g.gameId,
+            candidateGameIds: [g.gameId],
+            detail: `resolved FBS ${resolvedFbsId} has requested-week Game ${g.gameId}; commence_time missing/malformed; opponent unresolved (expected ${expectedOpp})`,
+          };
+        }
+
+        if (withinKickoffTolerance(g.date, commence)) {
+          if (otherId !== expectedOpp) {
+            return {
+              ...base,
+              classification: 'unresolved_expected_fbs',
+              gameId: g.gameId,
+              candidateGameIds: [g.gameId],
+              detail: `resolved FBS ${resolvedFbsId} maps to requested-week Game ${g.gameId}; other provider name did not resolve to expected opponent ${expectedOpp}`,
+            };
+          }
+        }
+
+        // commence present but not aligned with the team's requested-week game
+        if (requestedNear.length === 0) {
+          return {
+            ...base,
+            classification: 'out_of_requested_week',
+            gameId: g.gameId,
+            candidateGameIds: [g.gameId],
+            detail:
+              'resolved FBS has a requested-week Game, but provider commence_time is outside requested-week kickoff window',
+          };
+        }
+
+        return {
+          ...base,
+          classification: 'unresolved_expected_fbs',
+          gameId: g.gameId,
+          candidateGameIds: [g.gameId],
+          detail: `resolved FBS ${resolvedFbsId} has requested-week Game ${g.gameId}; commence_time not within kickoff tolerance of canonical Game.date`,
+        };
+      }
+    }
+
+    // C: both unresolved (or unresolved without usable FBS schedule context)
     if (commence && requestedNear.length === 0) {
       return {
         ...base,
@@ -368,43 +484,7 @@ export function classifyProviderEvent(options: {
       };
     }
 
-    // B: one resolved authoritative FBS with exactly one near requested-week Game
-    const resolvedFbsId = homeIn
-      ? home.teamId!
-      : awayIn
-        ? away.teamId!
-        : null;
-    if (resolvedFbsId && commence) {
-      const cand = requestedNear.filter(
-        (g) =>
-          g.homeTeamId === resolvedFbsId || g.awayTeamId === resolvedFbsId
-      );
-      if (cand.length > 1) {
-        return {
-          ...base,
-          classification: 'ambiguous',
-          candidateGameIds: cand.map((g) => g.gameId),
-          detail: `resolved FBS ${resolvedFbsId} has ${cand.length} requested-week games near commence_time`,
-        };
-      }
-      if (cand.length === 1) {
-        const g = cand[0];
-        const expectedOpp =
-          g.homeTeamId === resolvedFbsId ? g.awayTeamId : g.homeTeamId;
-        const otherId = homeIn ? away.teamId : home.teamId;
-        if (otherId !== expectedOpp) {
-          return {
-            ...base,
-            classification: 'unresolved_expected_fbs',
-            gameId: g.gameId,
-            candidateGameIds: [g.gameId],
-            detail: `resolved FBS ${resolvedFbsId} maps to requested-week Game ${g.gameId}; other provider name did not resolve to expected opponent ${expectedOpp}`,
-          };
-        }
-      }
-    }
-
-    // Cannot safely prove out-of-scope → fail closed
+    // Fail closed — cannot safely prove out-of-scope
     return {
       ...base,
       classification: 'unresolved_expected_fbs',
@@ -435,24 +515,44 @@ export function classifyProviderEvent(options: {
   );
   if (exactUnique.length === 1) {
     const g = exactUnique[0];
-    if (commence) {
-      const nearThis = withinKickoffTolerance(g.date, commence);
+    const gameDate = toDate(g.date);
+    const gameDateIso = gameDate ? gameDate.toISOString() : String(g.date);
+
+    // Exact pair still requires valid commence_time + kickoff tolerance.
+    if (!commence) {
+      return {
+        ...base,
+        classification: 'week_mismatch',
+        gameId: g.gameId,
+        candidateGameIds: [g.gameId],
+        detail:
+          'exact requested-week pair found, but provider commence_time is missing/malformed; temporal validation required',
+      };
+    }
+
+    const nearThis = withinKickoffTolerance(g.date, commence);
+    if (!nearThis) {
       const otherWeekNear = seasonNear.filter(
         (x) =>
           x.week !== week &&
           ((x.homeTeamId === home.teamId && x.awayTeamId === away.teamId) ||
             (x.homeTeamId === away.teamId && x.awayTeamId === home.teamId))
       );
-      if (!nearThis && otherWeekNear.length > 0) {
-        return {
-          ...base,
-          classification: 'week_mismatch',
-          gameId: otherWeekNear[0].gameId,
-          candidateGameIds: [g.gameId, ...otherWeekNear.map((x) => x.gameId)],
-          detail: `requested-week pair exists but commence_time aligns with other-week Game`,
-        };
-      }
+      const deltaMs = gameDate
+        ? Math.abs(gameDate.getTime() - commence.getTime())
+        : null;
+      return {
+        ...base,
+        classification: 'week_mismatch',
+        gameId: otherWeekNear[0]?.gameId ?? g.gameId,
+        candidateGameIds: [g.gameId, ...otherWeekNear.map((x) => x.gameId)],
+        detail:
+          otherWeekNear.length > 0
+            ? `exact requested-week pair found, but provider commence_time aligns with other-week Game; canonical=${gameDateIso}; commence=${commence.toISOString()}; toleranceMs=${KICKOFF_MATCH_TOLERANCE_MS}`
+            : `exact requested-week pair found, but provider commence_time differs from canonical Game.date by more than kickoff tolerance; canonical=${gameDateIso}; commence=${commence.toISOString()}; deltaMs=${deltaMs}; toleranceMs=${KICKOFF_MATCH_TOLERANCE_MS}`,
+      };
     }
+
     return {
       ...base,
       classification: 'matched_requested_week',
@@ -1079,7 +1179,15 @@ export interface LiveOddsPlan {
 export interface LiveOddsExecutionState {
   commitAttempted: boolean;
   transactionStarted: boolean;
+  /**
+   * True only when MarketLine persistence has committed (transaction resolved
+   * successfully). A rolled-back createMany attempt stays false.
+   */
   mutationsInvoked: boolean;
+  /**
+   * Same meaning as mutationsInvoked for this writer: append-only rows were
+   * committed. Not set for in-transaction attempts that rolled back.
+   */
   marketLinePersistenceInvoked: boolean;
   proposedBeforeTransaction: number;
   stillNewAtTransaction: number | null;
@@ -1333,6 +1441,46 @@ export function commitEligible(plan: LiveOddsPlan): boolean {
     plan.proposedInsert.length > 0 &&
     plan.providerCalls === 1
   );
+}
+
+/**
+ * Enforce createMany count equality inside the Prisma transaction.
+ * Throws so the transaction rolls back on mismatch.
+ */
+export function assertCreateManyCountMatches(
+  expectedCount: number,
+  createManyCount: number
+): void {
+  if (createManyCount !== expectedCount) {
+    throw new Error(
+      `COMMIT abort: createMany count ${createManyCount} != expected ${expectedCount}`
+    );
+  }
+}
+
+/**
+ * Build execution state when the transaction committed but the later
+ * verification read/check throws or fails closed.
+ */
+export function buildCommittedVerificationFailureExecution(options: {
+  proposedBeforeTransaction: number;
+  stillNewAtTransaction: number;
+  createManyCount: number;
+  error: string;
+}): LiveOddsExecutionState {
+  return {
+    commitAttempted: true,
+    transactionStarted: true,
+    mutationsInvoked: true,
+    marketLinePersistenceInvoked: true,
+    proposedBeforeTransaction: options.proposedBeforeTransaction,
+    stillNewAtTransaction: options.stillNewAtTransaction,
+    createManyCount: options.createManyCount,
+    insertedThisRun: options.createManyCount,
+    commitSucceeded: true,
+    postWriteVerificationSucceeded: false,
+    error: options.error,
+  };
 }
 
 export function buildPreviewExecution(

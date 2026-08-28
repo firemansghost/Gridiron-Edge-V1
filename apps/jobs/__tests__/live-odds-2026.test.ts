@@ -13,6 +13,8 @@ import {
   LIVE_ODDS_SOURCE,
   MAX_EXPECTED_REQUEST_CREDITS,
   WEEK1_GAME_COUNT,
+  assertCreateManyCountMatches,
+  buildCommittedVerificationFailureExecution,
   buildCoverage,
   buildFailedCommitExecution,
   buildLiveOddsPlan,
@@ -248,7 +250,7 @@ describe('2C-2J-2 live-odds-2026 guards (repaired)', () => {
     });
     expect(fuzzy.classification).toBe('fuzzy_required');
 
-    // One FBS resolved near Week1 kickoff; opponent unresolved → fail closed
+    // One FBS resolved near Week1 kickoff with a Week1 Game; opponent unresolved → fail closed
     const unresolvedExpected = classifyProviderEvent({
       event: {
         home_team: 'Alabama',
@@ -262,6 +264,180 @@ describe('2C-2J-2 live-odds-2026 guards (repaired)', () => {
       resolveTeam: resolve,
     });
     expect(unresolvedExpected.classification).toBe('unresolved_expected_fbs');
+  });
+
+  it('FBS with no requested-week FBS opponent + unresolved side is out_of_scope_fbs_fcs', () => {
+    // ids[134]/ids[135] are unused by week1Games (uses 0..101)
+    const resolve = resolveMap({
+      LoneFbs: { teamId: ids[134], method: 'alias' },
+    });
+    const diag = classifyProviderEvent({
+      event: {
+        home_team: 'LoneFbs',
+        away_team: 'Some FCS School',
+        commence_time: WK1_DATE,
+      },
+      week: 1,
+      fbsTeamIds: new Set(ids),
+      requestedWeekGames: games,
+      seasonGames: games,
+      resolveTeam: resolve,
+    });
+    expect(diag.classification).toBe('out_of_scope_fbs_fcs');
+    expect(diag.detail).toMatch(/no authoritative requested-week FBS opponent/i);
+
+    const plan = buildLiveOddsPlan({
+      season: 2026,
+      week: 1,
+      mode: 'PREVIEW',
+      fbsTeamIds: ids,
+      requestedWeekGames: games,
+      seasonGames: games,
+      providerEvents: [
+        {
+          home_team: 'LoneFbs',
+          away_team: 'Some FCS School',
+          commence_time: WK1_DATE,
+          bookmakers: [],
+        },
+      ],
+      providerCalls: 1,
+      providerUsage: {
+        requestsLast: '1',
+        requestsUsed: null,
+        requestsRemaining: null,
+      },
+      existingRows: [],
+      resolveTeam: resolve,
+    });
+    expect(plan.eventCounts.out_of_scope_fbs_fcs).toBe(1);
+    expect(plan.eventCounts.unresolved_expected_fbs).toBe(0);
+    expect(plan.writeSafe).toBe(true);
+  });
+
+  it('FBS with Week1 opponent + unresolved provider opponent blocks; later week does not', () => {
+    const resolve = resolveMap({
+      Alabama: { teamId: games[0].homeTeamId, method: 'alias' },
+    });
+    const aligned = classifyProviderEvent({
+      event: {
+        home_team: 'Alabama',
+        away_team: 'Missing Alias Opponent',
+        commence_time: WK1_DATE,
+      },
+      week: 1,
+      fbsTeamIds: new Set(ids),
+      requestedWeekGames: games,
+      seasonGames: games,
+      resolveTeam: resolve,
+    });
+    expect(aligned.classification).toBe('unresolved_expected_fbs');
+
+    const later = classifyProviderEvent({
+      event: {
+        home_team: 'Alabama',
+        away_team: 'Missing Alias Opponent',
+        commence_time: WK5_DATE,
+      },
+      week: 1,
+      fbsTeamIds: new Set(ids),
+      requestedWeekGames: games,
+      seasonGames: games,
+      resolveTeam: resolve,
+    });
+    expect(later.classification).toBe('out_of_requested_week');
+
+    const planLater = buildLiveOddsPlan({
+      season: 2026,
+      week: 1,
+      mode: 'PREVIEW',
+      fbsTeamIds: ids,
+      requestedWeekGames: games,
+      seasonGames: games,
+      providerEvents: [
+        {
+          home_team: 'Alabama',
+          away_team: 'Missing Alias Opponent',
+          commence_time: WK5_DATE,
+          bookmakers: [],
+        },
+      ],
+      providerCalls: 1,
+      providerUsage: {
+        requestsLast: '1',
+        requestsUsed: null,
+        requestsRemaining: null,
+      },
+      existingRows: [],
+      resolveTeam: resolve,
+    });
+    expect(planLater.writeSafe).toBe(true);
+  });
+
+  it('exact Week1 pair requires kickoff alignment; missing commence blocks', () => {
+    const resolve = resolveMap({
+      Alabama: { teamId: games[0].homeTeamId, method: 'alias' },
+      Georgia: { teamId: games[0].awayTeamId, method: 'alias' },
+    });
+    const fbs = new Set(ids);
+
+    const aligned = classifyProviderEvent({
+      event: {
+        home_team: 'Alabama',
+        away_team: 'Georgia',
+        commence_time: WK1_DATE,
+      },
+      week: 1,
+      fbsTeamIds: fbs,
+      requestedWeekGames: games,
+      seasonGames: games,
+      resolveTeam: resolve,
+    });
+    expect(aligned.classification).toBe('matched_requested_week');
+
+    const farKickoff = classifyProviderEvent({
+      event: {
+        home_team: 'Alabama',
+        away_team: 'Georgia',
+        // >36h from WK1_DATE
+        commence_time: '2026-09-05T19:00:00.000Z',
+      },
+      week: 1,
+      fbsTeamIds: fbs,
+      requestedWeekGames: games,
+      seasonGames: games,
+      resolveTeam: resolve,
+    });
+    expect(farKickoff.classification).toBe('week_mismatch');
+    expect(farKickoff.detail).toMatch(/more than kickoff tolerance/i);
+
+    const missing = classifyProviderEvent({
+      event: {
+        home_team: 'Alabama',
+        away_team: 'Georgia',
+      },
+      week: 1,
+      fbsTeamIds: fbs,
+      requestedWeekGames: games,
+      seasonGames: games,
+      resolveTeam: resolve,
+    });
+    expect(missing.classification).toBe('week_mismatch');
+    expect(missing.detail).toMatch(/missing\/malformed/i);
+
+    const malformed = classifyProviderEvent({
+      event: {
+        home_team: 'Alabama',
+        away_team: 'Georgia',
+        commence_time: 'not-a-date',
+      },
+      week: 1,
+      fbsTeamIds: fbs,
+      requestedWeekGames: games,
+      seasonGames: games,
+      resolveTeam: resolve,
+    });
+    expect(malformed.classification).toBe('week_mismatch');
   });
 
   it('week_mismatch when commence is in Week1 window but pair only stored under other week', () => {
@@ -897,6 +1073,24 @@ describe('2C-2J-2 live-odds-2026 guards (repaired)', () => {
     expect(pvReport.execution.commitSucceeded).toBe(true);
     expect(pvReport.execution.postWriteVerificationSucceeded).toBe(false);
 
+    // Verification-read exception after commit → persistence still true
+    const readFailExec = buildCommittedVerificationFailureExecution({
+      proposedBeforeTransaction: inserts.length,
+      stillNewAtTransaction: inserts.length,
+      createManyCount: inserts.length,
+      error: 'post-write verification read/error: connection reset',
+    });
+    const readFailReport = finalizeLiveOddsReport({
+      plan: { ...plan, mode: 'COMMIT' },
+      execution: readFailExec,
+      verification: null,
+    });
+    expect(readFailReport.execution.mutationsInvoked).toBe(true);
+    expect(readFailReport.execution.marketLinePersistenceInvoked).toBe(true);
+    expect(readFailReport.execution.commitSucceeded).toBe(true);
+    expect(readFailReport.execution.postWriteVerificationSucceeded).toBe(false);
+    expect(readFailReport.verification).toBeNull();
+
     // createManyCount mismatch is a failure
     const countMismatch = verifyInsertedFingerprints({
       expectedInserts: inserts,
@@ -907,6 +1101,12 @@ describe('2C-2J-2 live-odds-2026 guards (repaired)', () => {
     expect(countMismatch.reasons.some((r) => /createManyCount/.test(r))).toBe(
       true
     );
+
+    // In-transaction count assert throws (rollback path)
+    expect(() => assertCreateManyCountMatches(3, 2)).toThrow(
+      /createMany count 2 != expected 3/
+    );
+    expect(() => assertCreateManyCountMatches(2, 2)).not.toThrow();
   });
 
   it('CLI/workflow/source guards: live endpoint, truthful summary, no wipe', () => {
@@ -925,13 +1125,20 @@ describe('2C-2J-2 live-odds-2026 guards (repaired)', () => {
     );
     expect(cli).toContain('fetchLiveNcaafOddsSnapshot');
     expect(cli).toContain('createResult.count');
+    expect(cli).toContain('assertCreateManyCountMatches');
     expect(cli).toContain('verifyInsertedFingerprints');
+    expect(cli).toContain('buildCommittedVerificationFailureExecution');
     expect(cli).toContain('finalizeLiveOddsReport');
     expect(cli).toContain('date: true');
     expect(cli).not.toMatch(/\.deleteMany\s*\(/);
     expect(cli).not.toMatch(/seed-ratings\.js|seed-ratings\.ts|runRatings/);
     expect(cli).not.toMatch(/\.updateMany\s*\(/);
     expect(cli).not.toMatch(/\.upsert\s*\(/);
+    // Count check must occur before transaction return
+    const createIdx = cli.indexOf('assertCreateManyCountMatches');
+    const returnIdx = cli.indexOf('createManyCount: createResult.count');
+    expect(createIdx).toBeGreaterThan(-1);
+    expect(returnIdx).toBeGreaterThan(createIdx);
     expect(cli).toContain('PREVIEW IS DATABASE READ-ONLY BUT DOES CONSUME ODDS API CREDITS');
     expect(cli).not.toMatch(/CFBD_API_KEY/);
     expect(cli).not.toMatch(/SGO_API_KEY/);
