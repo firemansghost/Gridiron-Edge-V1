@@ -1,0 +1,292 @@
+{
+  "phase": "2C-2J-1",
+  "inventoryDate": "2026-08-28",
+  "mainSha": "afd59d68290fc8b8e8b4fcb562028becbf0d6017",
+  "notes": [
+    "Classification is operational authorization guidance only — not an enablement action.",
+    "scheduleReactivationRecommended is false for every workflow in this phase.",
+    "GitHub UI disablement is operator state; YAML schedules may still exist."
+  ],
+  "allowedClassifications": [
+    "COMPLETED_LEAVE_OFF",
+    "MANUAL_SAFE",
+    "MANUAL_REVIEW_REQUIRED",
+    "REPAIR_BEFORE_USE",
+    "REPLACE",
+    "FUTURE_AFTER_GAMES",
+    "BLOCKED",
+    "CI_ONLY"
+  ],
+  "workflows": [
+    {
+      "file": "audit-2026-ratings-readiness.yml",
+      "classification": "COMPLETED_LEAVE_OFF",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "One-time structural ratings readiness audit; completed"
+    },
+    {
+      "file": "audit-2026-schedule-inventory.yml",
+      "classification": "COMPLETED_LEAVE_OFF",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "One-time schedule inventory verification; completed"
+    },
+    {
+      "file": "audit-balanced-v1-historical-parity.yml",
+      "classification": "COMPLETED_LEAVE_OFF",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "2025 Balanced V1 forensic; completed"
+    },
+    {
+      "file": "audit-hybrid-v2-preseason-readiness.yml",
+      "classification": "MANUAL_SAFE",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "SELECT-only Hybrid readiness re-audit when inputs change"
+    },
+    {
+      "file": "audit-v1-conference-source.yml",
+      "classification": "COMPLETED_LEAVE_OFF",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Season-aware conference source audit; completed"
+    },
+    {
+      "file": "audit-v1-historical-parity.yml",
+      "classification": "COMPLETED_LEAVE_OFF",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Legacy V1 forensic; completed — do not use for 2026 writes"
+    },
+    {
+      "file": "backfill-drives.yml",
+      "classification": "MANUAL_REVIEW_REQUIRED",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Historical drive backfill; not Week1 critical"
+    },
+    {
+      "file": "backfill-odds-historical.yml",
+      "classification": "MANUAL_REVIEW_REQUIRED",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Historical odds via ingest-minimal wipe semantics; not live 2026 poller"
+    },
+    {
+      "file": "backfill-scores-2025.yml",
+      "classification": "COMPLETED_LEAVE_OFF",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Historical 2025 scores only"
+    },
+    {
+      "file": "bowl-week-bootstrap.yml",
+      "classification": "MANUAL_REVIEW_REQUIRED",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Bowl bootstrap; runs both Hybrid+Core bet sync — unsafe while Hybrid held"
+    },
+    {
+      "file": "cfbd-feature-ingest.yml",
+      "classification": "REPAIR_BEFORE_USE",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Post-game CFBD features; defaults 2025; GITHUB_ENV secret pattern; continue-on-error"
+    },
+    {
+      "file": "cfbd-rankings-sync.yml",
+      "classification": "REPAIR_BEFORE_USE",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Rankings sync; schedule present; season 2025 hard-coded"
+    },
+    {
+      "file": "cfbd-scores-sync.yml",
+      "classification": "REPAIR_BEFORE_USE",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Score finals; schedule defaults season 2025 — must repair before any 2026 use"
+    },
+    {
+      "file": "diagnose-2026-conference-recruiting.yml",
+      "classification": "COMPLETED_LEAVE_OFF",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "One-time resolver diagnostic; completed"
+    },
+    {
+      "file": "evaluate-balanced-v1-preseason-bridge.yml",
+      "classification": "COMPLETED_LEAVE_OFF",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Bridge candidate eval; decision recorded"
+    },
+    {
+      "file": "evaluate-balanced-v1-transition-blends.yml",
+      "classification": "COMPLETED_LEAVE_OFF",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Blend policy eval; B1 authorized as model policy"
+    },
+    {
+      "file": "evaluate-balanced-v1-transition-timing.yml",
+      "classification": "COMPLETED_LEAVE_OFF",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Timing study; hard-switch rejected"
+    },
+    {
+      "file": "grade-bets.yml",
+      "classification": "FUTURE_AFTER_GAMES",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Grade strategy_run bets; needs 2026 bets+scores; schedule unsafe until reviewed"
+    },
+    {
+      "file": "ingest-2026-schedules.yml",
+      "classification": "COMPLETED_LEAVE_OFF",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Guarded one-week schedule writer; baseline already written"
+    },
+    {
+      "file": "init-2026-fbs-membership.yml",
+      "classification": "COMPLETED_LEAVE_OFF",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Membership COMMIT done; do not rerun"
+    },
+    {
+      "file": "initialize-2026-season-conferences.yml",
+      "classification": "COMPLETED_LEAVE_OFF",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Season conference COMMIT done; do not rerun"
+    },
+    {
+      "file": "initialize-2026-team-talent.yml",
+      "classification": "COMPLETED_LEAVE_OFF",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Talent COMMIT done; do not rerun"
+    },
+    {
+      "file": "nightly-ingest.yml",
+      "classification": "REPLACE",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Monolithic 2025 schedules+odds wipe+weather+talent+seed-ratings — do not reactivate"
+    },
+    {
+      "file": "preview-2026-core-v1-ratings.yml",
+      "classification": "COMPLETED_LEAVE_OFF",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Pre-persist preview; superseded by lifecycle writer"
+    },
+    {
+      "file": "preview-2026-fbs-membership.yml",
+      "classification": "COMPLETED_LEAVE_OFF",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Membership preview; completed"
+    },
+    {
+      "file": "preview-2026-ratings-inputs.yml",
+      "classification": "COMPLETED_LEAVE_OFF",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Ratings-input provider preview; completed"
+    },
+    {
+      "file": "preview-2026-schedules.yml",
+      "classification": "MANUAL_SAFE",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Read-only schedule preview if schedule maintenance needed"
+    },
+    {
+      "file": "preview-2026-season-conferences.yml",
+      "classification": "COMPLETED_LEAVE_OFF",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Conference preview; completed"
+    },
+    {
+      "file": "prisma-guardrails.yml",
+      "classification": "CI_ONLY",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "PR schema guardrails — keep for CI"
+    },
+    {
+      "file": "prisma-migrate.yml",
+      "classification": "MANUAL_REVIEW_REQUIRED",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Manual production migrate with confirmation; keep rare/manual"
+    },
+    {
+      "file": "probe-2026-talent-availability.yml",
+      "classification": "MANUAL_SAFE",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Read-only talent availability probe"
+    },
+    {
+      "file": "ratings-v1.yml",
+      "classification": "REPLACE",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Legacy compute_ratings_v1 — NEVER for 2026 Core V1; use lifecycle writer"
+    },
+    {
+      "file": "ratings-v2.yml",
+      "classification": "REPLACE",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Old modelVersion=v2 ratings engine — NOT Hybrid V2 spreads"
+    },
+    {
+      "file": "roster-churn-cfbd.yml",
+      "classification": "REPAIR_BEFORE_USE",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Roster churn; season 2025; optional periodic"
+    },
+    {
+      "file": "sgo-team-stats.yml",
+      "classification": "REPAIR_BEFORE_USE",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "SGO team stats (not odds); season 2024 defaults; optional"
+    },
+    {
+      "file": "stats-advanced-cfbd.yml",
+      "classification": "REPAIR_BEFORE_USE",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Advanced stats schedule; season hard-coded; post-game features path"
+    },
+    {
+      "file": "stats-cfbd.yml",
+      "classification": "REPAIR_BEFORE_USE",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Manual per-game stats workflow; schedule currently commented out; 2025-era defaults/verification require repair before 2026 use."
+    },
+    {
+      "file": "stats-season-cfbd.yml",
+      "classification": "REPAIR_BEFORE_USE",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Season stats schedule; season hard-coded"
+    },
+    {
+      "file": "sync-weekly-bets.yml",
+      "classification": "REPLACE",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Always writes hybrid_v2 + official_flat_100 — invalid while Hybrid held"
+    },
+    {
+      "file": "talent-cfbd.yml",
+      "classification": "MANUAL_REVIEW_REQUIRED",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Legacy talent sync; superseded by guarded 2026 initializer for baseline"
+    },
+    {
+      "file": "talent-commits-sync.yml",
+      "classification": "REPAIR_BEFORE_USE",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Commits sync; schedule + 2025; recruiting schema still risky"
+    },
+    {
+      "file": "talent-roster-sync.yml",
+      "classification": "MANUAL_REVIEW_REQUIRED",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Roster talent sync; optional after Week1"
+    },
+    {
+      "file": "v3-totals-nightly.yml",
+      "classification": "BLOCKED",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Missing sync-v3-bets.ts; totals V3 remains disabled"
+    },
+    {
+      "file": "validate-preseason-providers.yml",
+      "classification": "MANUAL_SAFE",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Provider probe without DB writes; useful for Odds PREVIEW credit checks"
+    },
+    {
+      "file": "write-core-v1-lifecycle-ratings.yml",
+      "classification": "MANUAL_SAFE",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Guarded Core V1 lifecycle PREVIEW/COMMIT — preferred 2026 ratings path"
+    }
+  ]
+}

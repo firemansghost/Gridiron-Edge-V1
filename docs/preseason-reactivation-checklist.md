@@ -96,10 +96,12 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | **2C-2H-8 Balanced V1 transition blends** | **PASSED (PR #59)** — B1 AUTHORIZED as model policy; B2/B3/hard/per-team REJECTED; write still unauthorized |
 | **2C-2H-9 Core V1 lifecycle writer** | **COMPLETE** — Candidate A 138/138 persisted; `GLOBAL_BLEND_W3_W6` active |
 | **2C-2I-1 Hybrid V2 preseason readiness** | **COMPLETE** — audit 33134809476; Week1 official = Core V1; bridge NOT authorized |
-| **2C-2I-2 Hybrid activation hold** | **In preparation (draft)** — 2026 effective Core V1; truthful API/UI metadata |
+| **2C-2I-2 Hybrid activation hold** | **COMPLETE** (PR #62) — production smoke PASS; effective Week1 = Core V1 |
+| **2C-2J-1 Workflow reactivation inventory** | **In preparation (draft)** — 45 workflows; Odds/bet/score not authorized |
 | **Ratings computation / persistence** | **2026 Core V1 initialized** — do not rerun; further COMMITs via guarded lifecycle only |
-| **Odds ingestion** | **Not yet approved** (blocked until 2C-2I-2 truthfulness passes) |
-| **Nightly reactivation** | **Not yet approved** |
+| **Odds ingestion** | **Not yet approved** (live path must be purpose-built; see matrix) |
+| **Bet sync** | **Not yet approved** (dual Hybrid+Core sync invalid while Hybrid held) |
+| **Nightly reactivation** | **Not yet approved** — recurring workflows remain STOPPED |
 
 **Do not** use `node apps/jobs/dist/ingest.js cfbd ...` for 2026 schedule-only work.
 
@@ -182,10 +184,11 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 * 2C-2H-8: **PASSED (PR #59)** — B1 avgMAE=4.6842 maxP95=6.2755; B2/B3/hard switches rejected; Candidate A + B1 AUTHORIZED as **model** policy only; write still unauthorized
 * 2C-2H-9: **COMPLETE** — production COMMIT run 33126432213 (`upserted=138`); post-write verification run 33127893613 (`existingV1Count=138`, create=0, update=138); Candidate A @ completedThroughWeek=0; `GLOBAL_BLEND_W3_W6` lifecycle active; **do not rerun ratings initialization**
 * 2C-2I-1: **COMPLETE** — production audit run 33134809476 `auditOk=true`; Core V1 Week1 ready; Hybrid inputs 0; prior bridge structurally available but **NOT AUTHORIZED for Week1**; human decision: official Week1 spread = **Core V1**
-* 2C-2I-2: **IN PREPARATION / draft PR** — Hybrid production authorization held for 2026; effective model Core V1; API/UI truthfulness for activationOverride; Odds still NOT AUTHORIZED
+* 2C-2I-2: **COMPLETE** (PR #62) — production HTTP smoke PASS; effective Core V1; held Hybrid has no runtime / no persisted Hybrid comparison metadata
+* 2C-2J-1: **IN PREPARATION / draft PR** — workflow reactivation inventory + live Odds architecture; recurring workflows STOPPED; Odds/bet/grade/score **NOT AUTHORIZED**
 * Recruiting schema mismatch remains separate
 * **Do not copy 2025 TeamUnitGrades into 2026 or run `compute_unit_grades.ts` until separately authorized**
-* **Do not activate Hybrid or ingest Odds until 2C-2I-2 passes independent review**
+* **Do not enable workflows, reactivate crons, ingest Odds, or write bets from this inventory phase**
 * **Do not run `compute_ratings_balanced.ts` or legacy `compute_ratings_v1` for 2026**
 
 ##### After 2C-2H-8 (complete) — recorded decision
@@ -204,11 +207,16 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 2. 2025 TeamUnitGrades bridge NOT AUTHORIZED for Week1
 3. Hybrid remains future target pending same-season readiness + activation
 
-##### After 2C-2I-2 merges — operator procedure
-1. Independently review draft PR (activation hold + meta + UI truthfulness)
-2. Confirm `/api/weeks/slate?season=2026&week=1` returns `activeModel=core_v1` even when `model=hybrid_v2`
-3. Confirm Picks/Homepage show Core V1 effective + hold note; Hybrid filters hidden
-4. Do **not** ingest Odds or activate Hybrid from this phase alone
+##### After 2C-2I-2 (complete) — recorded production smoke
+1. Effective 2026 Week1 model = Core V1 (omitted / core_v1 / held hybrid_v2)
+2. Held Hybrid: `activationOverride.used=true`; conflict/tier fields neutral
+3. Odds / bet sync still NOT AUTHORIZED
+
+##### After 2C-2J-1 merges — operator procedure
+1. Independently review workflow matrix + Odds architecture recommendations
+2. Do **not** enable recurring workflows or schedules from this PR
+3. Proceed to **2C-2J-2** only after review: guarded Live Odds PREVIEW/COMMIT
+4. Do **not** run `sync-weekly-bets` until Core-only / effective-model gate exists
 
 - [x] Preview week 0–2 reviewed
 - [x] Week 1–13 + 15 production writes
@@ -235,7 +243,8 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 - [x] 2C-2H-8 Balanced V1 transition blend evaluation PASSED (PR #59; B1 authorized model policy)
 - [x] 2C-2H-9 Core V1 lifecycle writer COMPLETE (production COMMIT + verification)
 - [x] 2C-2I-1 Hybrid V2 preseason readiness audit COMPLETE (production audit + Week1 Core V1 decision)
-- [ ] 2C-2I-2 Hybrid activation hold + effective model truthfulness (draft)
+- [x] 2C-2I-2 Hybrid activation hold + effective model truthfulness COMPLETE (PR #62)
+- [ ] 2C-2J-1 Workflow reactivation inventory + Live Odds architecture (draft)
 - [ ] Odds / unit-grade bridge / Hybrid activation / bets remain **out of scope** until separately approved
 
 ---
@@ -258,35 +267,30 @@ Local verification scripts (after Phase 2A) use `normalizeSlateApiResponse()` fo
 
 ## F. Bet sync (manual dry run)
 
-Graded bet rows are **not** in `nightly-ingest`. Use the manual workflow or local scripts after ratings/lines exist:
+**Status (2C-2J-1):** Bet sync is **NOT AUTHORIZED** while Hybrid production is held.
 
-**GitHub Actions (recommended):** `Sync Weekly Bets (Manual)` — `.github/workflows/sync-weekly-bets.yml`
+Current `sync-weekly-bets.yml` always writes **both** `hybrid_v2` and `official_flat_100`. That is invalid for Week1 2026 (Core V1 official; Hybrid held).
 
-- Inputs: `season` (default `2026`), `week` (required)
-- Syncs `hybrid_v2` and `official_flat_100` only
-- **workflow_dispatch only** — workflow must stay disabled in UI until dry-run approval, then run manually via "Run workflow"
+Do **not** run the current dual sync until replaced/gated (prefer Core-only guarded writer). See [2026 Workflow Reactivation Matrix](./2026-workflow-reactivation-matrix.md).
 
-**Local alternative:**
-
-```bash
-npx tsx apps/web/scripts/sync-hybrid-bets.ts 2026 <week>
-npx tsx apps/web/scripts/sync-official-picks-to-bets.ts 2026 <week>
-```
-
-- [ ] Verify `bets` rows with `strategyTag = hybrid_v2`
-- [ ] Verify `bets` rows with `strategyTag = official_flat_100`
+- [ ] Core-only / effective-model-gated card writer reviewed
+- [ ] Verify `official_flat_100` only while Hybrid unauthorized
+- [ ] Do **not** require `hybrid_v2` rows for Week1 official card
 
 ---
 
 ## G. Scores and grading (manual dry run)
 
-After games are final for a test week:
+**Status (2C-2J-1):** Score sync **NOT YET REACTIVATED**; grading **NOT AUTHORIZED**.
 
-- [ ] Manual `cfbd-scores-sync` dispatch for 2026 week (do not enable schedule yet)
+`cfbd-scores-sync.yml` schedule defaults to season **2025** — repair before any 2026 use. Keep score → grade → feature → lifecycle **separate**.
+
+After a repaired 2026 score path exists and games are final:
+
+- [ ] Manual score sync for 2026 week (do not enable schedule yet)
 - [ ] Verify game scores/status in DB
-- [ ] Manual `grade-bets` dispatch **without** `--force` first
+- [ ] Manual `grade-bets` only after official 2026 bets exist
 - [ ] Verify bet results and PnL for sample rows
-- [ ] Conflict tags: run `sync-hybrid-conflict-tags.ts` manually if needed (automation deferred)
 
 ---
 
