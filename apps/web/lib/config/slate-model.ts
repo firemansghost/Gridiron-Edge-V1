@@ -156,6 +156,21 @@ export function shouldShowHybridPlaybookFilters(
   return effectiveModel === 'hybrid_v2';
 }
 
+/**
+ * Whether Core V1 slate path may load persisted hybrid_v2 bets for comparison
+ * conflict/tier metadata.
+ *
+ * Explicit Core V1 requests: yes (historical comparison preserved).
+ * Authorization-held Hybrid requests (active Core V1 + hold): no — pure Core V1.
+ * Effective Hybrid runtime: no (uses runtime Hybrid, not this lookup).
+ */
+export function shouldLoadCoreHybridComparisonMetadata(
+  activeModel: ProductionModelId,
+  activationHold: boolean
+): boolean {
+  return activeModel === 'core_v1' && !activationHold;
+}
+
 export function buildSlateApiUrl(
   season: number,
   week: number,

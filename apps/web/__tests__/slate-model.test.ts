@@ -5,6 +5,7 @@ import {
   getProductionModelDisplayLabel,
   normalizeSlateApiResponse,
   resolveSlateModelParam,
+  shouldLoadCoreHybridComparisonMetadata,
   shouldShowHybridPlaybookFilters,
 } from '@/lib/config/slate-model';
 
@@ -136,5 +137,11 @@ describe('slate-model helpers', () => {
   it('Hybrid playbook filters only when effective model is Hybrid', () => {
     expect(shouldShowHybridPlaybookFilters('hybrid_v2')).toBe(true);
     expect(shouldShowHybridPlaybookFilters('core_v1')).toBe(false);
+  });
+
+  it('Core Hybrid comparison metadata only when explicit Core V1 (not activation hold)', () => {
+    expect(shouldLoadCoreHybridComparisonMetadata('core_v1', false)).toBe(true);
+    expect(shouldLoadCoreHybridComparisonMetadata('core_v1', true)).toBe(false);
+    expect(shouldLoadCoreHybridComparisonMetadata('hybrid_v2', false)).toBe(false);
   });
 });

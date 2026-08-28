@@ -14,6 +14,7 @@ import {
   buildHybridActivationOverrideMeta,
   buildSlateResponseMeta,
   resolveSlateModelParam,
+  shouldLoadCoreHybridComparisonMetadata,
 } from '@/lib/config/slate-model';
 
 describe('Hybrid V2 production activation hold', () => {
@@ -89,6 +90,63 @@ describe('Hybrid V2 production activation hold', () => {
     expect(r.activationHold).toBe(false);
   });
 
+  it('persisted Hybrid comparison metadata only for explicit Core V1 (not hold)', () => {
+    expect(shouldLoadCoreHybridComparisonMetadata('core_v1', false)).toBe(true);
+    expect(shouldLoadCoreHybridComparisonMetadata('core_v1', true)).toBe(false);
+    expect(shouldLoadCoreHybridComparisonMetadata('hybrid_v2', false)).toBe(false);
+    expect(shouldLoadCoreHybridComparisonMetadata('hybrid_v2', true)).toBe(false);
+
+    const held = resolveSlateModelParam('hybrid_v2', 2026, 1);
+    expect(held.activationHold).toBe(true);
+    expect(held.activeModel).toBe('core_v1');
+    expect(
+      shouldLoadCoreHybridComparisonMetadata(held.activeModel, held.activationHold)
+    ).toBe(false);
+
+    const explicitCore = resolveSlateModelParam('core_v1', 2026, 1);
+    expect(explicitCore.activationHold).toBe(false);
+    expect(
+      shouldLoadCoreHybridComparisonMetadata(
+        explicitCore.activeModel,
+        explicitCore.activationHold
+      )
+    ).toBe(true);
+
+    const historicalHybrid = resolveSlateModelParam('hybrid_v2', 2025, 9);
+    expect(historicalHybrid.activeModel).toBe('hybrid_v2');
+    expect(historicalHybrid.activationHold).toBe(false);
+    expect(
+      shouldLoadCoreHybridComparisonMetadata(
+        historicalHybrid.activeModel,
+        historicalHybrid.activationHold
+      )
+    ).toBe(false);
+  });
+
+  it('authorization-held path leaves Hybrid conflict/tier fields neutral by contract', () => {
+    // Route initializes these defaults and skips enrichment when activationHold.
+    const heldNeutral = {
+      hybridConflictType: null as string | null,
+      tierBucket: 'none',
+      isSuperTierA: false,
+      clv: null as number | null,
+    };
+    expect(heldNeutral.hybridConflictType).toBeNull();
+    expect(heldNeutral.tierBucket).toBe('none');
+    expect(heldNeutral.isSuperTierA).toBe(false);
+    expect(heldNeutral.clv).toBeNull();
+
+    const held = resolveSlateModelParam('hybrid_v2', 2026, 1);
+    const meta = buildSlateResponseMeta({
+      activeModel: held.activeModel,
+      requestedModel: 'hybrid_v2',
+      activationOverride: buildHybridActivationOverrideMeta(),
+    });
+    expect(meta.activeModel).toBe('core_v1');
+    expect(meta.modelScope.spread).toBe('core_v1');
+    expect(meta.activationOverride?.used).toBe(true);
+  });
+
   it('missing-input fallback meta remains distinct from activation override', () => {
     const meta = buildSlateResponseMeta({
       activeModel: 'hybrid_v2',
@@ -127,10 +185,17 @@ describe('Hybrid V2 production activation hold', () => {
     expect(route).toContain('resolveSlateModelParam(requestedModel, season, week)');
     expect(route).toContain('activationHold');
     expect(route).toContain('buildHybridActivationOverrideMeta');
+    expect(route).toContain('shouldLoadCoreHybridComparisonMetadata(activeModel, activationHold)');
+    expect(route).toContain("strategyTag: 'hybrid_v2'");
+    expect(route).toContain('else if (!activationHold)');
     // Hybrid runtime only when effective activeModel is hybrid_v2
     expect(route).toMatch(/if \(activeModel === 'hybrid_v2'\)[\s\S]*tryComputeHybridSpreadHma/);
     expect(route).toMatch(/if \(activeModel === 'hybrid_v2'\)[\s\S]*deriveHybridConflictType/);
     expect(route).toMatch(/if \(activeModel === 'hybrid_v2'\)[\s\S]*deriveHybridTierFields/);
+    // Held path must gate the persisted Hybrid comparison query
+    expect(route).toMatch(
+      /allowCoreHybridComparisonMetadata[\s\S]*\? await prisma\.bet\.findMany[\s\S]*strategyTag: 'hybrid_v2'[\s\S]*: \[\];/
+    );
   });
 
   it('Picks and Homepage use effective activeModel and hide Hybrid filters under Core V1', () => {
