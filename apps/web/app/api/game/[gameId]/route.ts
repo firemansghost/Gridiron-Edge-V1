@@ -17,6 +17,8 @@ import {
 import {
   buildAuthoritativeMarketProvenance,
   deriveGameDetailMarketFromSelection,
+  MAX_ABS_MARKET_SPREAD,
+  recommendPickEmSpreadSide,
   validateMarketFavoriteInvariant,
 } from '@/lib/game-detail-market';
 import { NextResponse } from 'next/server';
@@ -1850,7 +1852,15 @@ export async function GET(
     let favoriteTeamName: string | null = null;
     const isMarketPickEm = derivedMarket.isPickEm;
 
-    if (derivedMarket.spreadHma !== null && !derivedMarket.isPickEm) {
+    if (derivedMarket.spreadSuppressedOutOfRange) {
+      // abs(HMA) > MAX_ABS_MARKET_SPREAD — suppress; never rescue from history
+      diagnosticsMessages.push(
+        `Market spread abs exceeded consumer ceiling (${MAX_ABS_MARKET_SPREAD}) — suppressed without historical rescue`
+      );
+      console.warn(
+        `[Game ${gameId}] ⚠️ Market spread out of range (>${MAX_ABS_MARKET_SPREAD}) — suppressed (no historical rescue)`
+      );
+    } else if (derivedMarket.spreadHma !== null && !derivedMarket.isPickEm) {
       homePrice = derivedMarket.homePrice;
       awayPrice = derivedMarket.awayPrice;
       marketSpread = derivedMarket.marketSpread;
@@ -2646,17 +2656,25 @@ export async function GET(
     // ============================================
     let invariantFailed = false;
     
-    // Guardrail 1: Reject spread consensus if magnitude > 60 (likely a price leak)
-    if (consensusFavoriteLine !== null && Math.abs(consensusFavoriteLine) > 60) {
-      console.error(`[Game ${gameId}] ⚠️ SPREAD CONSENSUS OUT OF RANGE: ${consensusFavoriteLine} (abs > 60, likely price leak)`, {
-        spreadConsensus,
-        looksLikeLeak: looksLikePriceLeak(consensusFavoriteLine),
-        books: spreadConsensus.books
-      });
+    // Guardrail 1: Reject spread consensus if magnitude > MAX_ABS_MARKET_SPREAD (matches writer)
+    if (
+      consensusFavoriteLine !== null &&
+      Math.abs(consensusFavoriteLine) > MAX_ABS_MARKET_SPREAD
+    ) {
+      console.error(
+        `[Game ${gameId}] ⚠️ SPREAD CONSENSUS OUT OF RANGE: ${consensusFavoriteLine} (abs > ${MAX_ABS_MARKET_SPREAD})`,
+        {
+          spreadConsensus,
+          looksLikeLeak: looksLikePriceLeak(consensusFavoriteLine),
+          books: spreadConsensus.books,
+        }
+      );
       spreadConsensus.value = null;
       spreadConsensus.count = 0;
       invariantFailed = true;
-      diagnosticsMessages.push('Spread consensus rejected: magnitude > 60 (likely price leak)');
+      diagnosticsMessages.push(
+        `Spread consensus rejected: magnitude > ${MAX_ABS_MARKET_SPREAD}`
+      );
     }
     
     // Guardrail 2: Reject if fewer than 2 books (insufficient liquidity)
@@ -3481,7 +3499,7 @@ export async function GET(
         flip: spreadFlip?.toFixed(1),
         reason: 'Overlay < edge floor, but range guidance still provided'
       });
-    } else if (blockDogHeadline) {
+    } else if (blockDogHeadline && !isMarketPickEm) {
       // Has edge BUT extreme favorite + dog direction → suppress dog headline, show range only
       ats_dog_headline_blocked = true;
       bettablePick = {
@@ -3505,8 +3523,52 @@ export async function GET(
         flip: spreadFlip?.toFixed(1),
         reason: 'Overlay points to 20+ pt dog - suppressing headline but keeping range'
       });
+    } else if (isMarketPickEm && USE_CORE_V1 && coreV1SpreadInfo) {
+      // Pick'em: no market favorite/dog — recommend Home PK / Away PK from HMA edge.
+      const pk = recommendPickEmSpreadSide({
+        coreSpreadHma: coreV1SpreadInfo.coreSpreadHma,
+        homeTeamId: game.homeTeamId,
+        awayTeamId: game.awayTeamId,
+        homeTeamName: game.homeTeam.name,
+        awayTeamName: game.awayTeam.name,
+        edgeFloor: HARD_MIN_THRESHOLD,
+      });
+      if (!pk.recommendedTeamId || !pk.recommendedTeamName || !pk.label) {
+        bettablePick = {
+          teamId: null,
+          teamName: null,
+          line: null,
+          label: null,
+          edgePts: pk.edgePts,
+          reasoning: `No edge at pick'em. Model HMA edge is ${pk.edgePts.toFixed(1)} pts (below ${edgeFloor.toFixed(1)} pt threshold).`,
+          betTo: spreadBetTo,
+          flip: spreadFlip,
+          favoritesDisagree: false,
+          suppressHeadline: false,
+          extremeFavoriteBlocked: false,
+        };
+      } else {
+        bettablePick = {
+          teamId: pk.recommendedTeamId,
+          teamName: pk.recommendedTeamName,
+          line: 0,
+          label: pk.label,
+          edgePts: pk.edgePts,
+          betTo: spreadBetTo,
+          flip: spreadFlip,
+          favoritesDisagree: false,
+          reasoning: `Model edge: ${pk.edgePts.toFixed(1)} pts. Value on ${pk.label}.`,
+          suppressHeadline: false,
+          extremeFavoriteBlocked: false,
+        };
+        console.log(`[Game ${gameId}] ✅ Pick'em spread pick (HMA side):`, {
+          pick: bettablePick.label,
+          edgeHma: pk.edgeHma.toFixed(2),
+          coreSpreadHma: coreV1SpreadInfo.coreSpreadHma.toFixed(2),
+        });
+      }
     } else {
-      // CRITICAL FIX: Use edge sign as single source of truth for pick side (V1 mode uses atsEdge, legacy uses spreadOverlay)
+      // Non-pick'em: favorite-centric side from edge sign
       // In V1 mode: atsEdge < 0 means favorite side pick (model thinks favorite should lay more), > 0 means dog side pick
       // In legacy mode: spreadOverlay < 0 means favorite side pick, > 0 means dog side pick
       const edgeSign = USE_CORE_V1 ? Math.sign(atsEdge) : Math.sign(spreadOverlay);
@@ -3514,32 +3576,48 @@ export async function GET(
       const pickTeamId = pickSide === 'favorite' ? favoriteByRule.teamId : dogTeamId;
       const pickTeamName = pickSide === 'favorite' ? favoriteByRule.teamName : dogTeamName;
       const pickLine = pickSide === 'favorite' ? favoriteByRule.line : dogLine; // favoriteLine is negative, dogLine is positive
-      
-      // Create bettable pick object directly (don't use computeBettableSpreadPick which uses raw model)
-      bettablePick = {
-        teamId: pickTeamId,
-        teamName: pickTeamName,
-        line: pickLine,
-        label: pickSide === 'favorite' 
-          ? `${pickTeamName} ${pickLine.toFixed(1)}`
-          : `${pickTeamName} +${pickLine.toFixed(1)}`,
-        edgePts: atsEdgeAbs,
-        betTo: spreadBetTo,
-        flip: spreadFlip,
-        favoritesDisagree: false, // In V1 mode, we always use market favorite as reference
-        reasoning: `Model edge: ${atsEdgeAbs.toFixed(1)} pts. Value on ${pickTeamName} ${pickSide === 'favorite' ? pickLine.toFixed(1) : `+${pickLine.toFixed(1)}`}.`,
-        suppressHeadline: false,
-        extremeFavoriteBlocked: false
-      };
-      bettablePick.extremeFavoriteBlocked = false;
-      
-      console.log(`[Game ${gameId}] ✅ Spread pick generated:`, {
-        pick: bettablePick.label,
-        overlay: spreadOverlay.toFixed(2),
-        edge: atsEdge.toFixed(2),
-        betTo: spreadBetTo?.toFixed(1),
-        flip: spreadFlip?.toFixed(1)
-      });
+
+      // Guard: never emit null-team spread picks
+      if (!pickTeamId || !pickTeamName) {
+        bettablePick = {
+          teamId: null,
+          teamName: null,
+          line: null,
+          label: null,
+          edgePts: atsEdgeAbs,
+          reasoning: `Spread pick suppressed: missing team identity for ${pickSide} side.`,
+          betTo: spreadBetTo,
+          flip: spreadFlip,
+          favoritesDisagree: false,
+          suppressHeadline: false,
+          extremeFavoriteBlocked: false,
+        };
+      } else {
+        bettablePick = {
+          teamId: pickTeamId,
+          teamName: pickTeamName,
+          line: pickLine,
+          label: pickSide === 'favorite'
+            ? `${pickTeamName} ${pickLine.toFixed(1)}`
+            : `${pickTeamName} +${pickLine.toFixed(1)}`,
+          edgePts: atsEdgeAbs,
+          betTo: spreadBetTo,
+          flip: spreadFlip,
+          favoritesDisagree: false, // In V1 mode, we always use market favorite as reference
+          reasoning: `Model edge: ${atsEdgeAbs.toFixed(1)} pts. Value on ${pickTeamName} ${pickSide === 'favorite' ? pickLine.toFixed(1) : `+${pickLine.toFixed(1)}`}.`,
+          suppressHeadline: false,
+          extremeFavoriteBlocked: false
+        };
+        bettablePick.extremeFavoriteBlocked = false;
+
+        console.log(`[Game ${gameId}] ✅ Spread pick generated:`, {
+          pick: bettablePick.label,
+          overlay: spreadOverlay.toFixed(2),
+          edge: atsEdge.toFixed(2),
+          betTo: spreadBetTo?.toFixed(1),
+          flip: spreadFlip?.toFixed(1)
+        });
+      }
     }
     
     // Telemetry: Log when dog headline is blocked for extreme favorites
@@ -4328,58 +4406,29 @@ export async function GET(
       });
     }
     
-    // 4. CRITICAL: Validate Market Spread absolute value is not excessive (> 50)
-    // This catches price values that leaked into spread fields
-    // NOTE: For existing bad data, we handle gracefully instead of throwing
+    // 4. Market spread consumer ceiling (matches Odds writer MAX_ABS_SPREAD).
+    // Legitimate CFB lines include +/-50.5 / +/-51; only abs > MAX_ABS_MARKET_SPREAD fails.
+    // NEVER search historical MarketLine rows for a replacement / favorite mutation.
     let dataQualityWarning: string | null = null;
-    if (marketSpread !== null && Math.abs(marketSpread) > 50) {
-      console.error(`[Game ${gameId}] ⚠️ DATA QUALITY ISSUE: Market Spread absolute value exceeds 50 (likely price leak): ${marketSpread.toFixed(1)}`, {
-        modelSpread: finalImpliedSpread,
-        marketSpread,
-        gameId,
-        homeTeam: game.homeTeam.name,
-        awayTeam: game.awayTeam.name,
-        spreadLineValue: spreadLine?.lineValue,
-        spreadLineSource: spreadLine?.source,
-        spreadLineBook: spreadLine?.bookName,
-        warning: 'This spread value is likely a price (American odds) that was incorrectly mapped to a spread point. This game needs re-ingestion with corrected data.'
-      });
-      
-      // Try to find a better spread value from other lines or historical data
-      // Look for other spread lines that might be valid
-      const otherSpreadLines = marketLinesWithTeamId.filter(
-        (l) => l.lineType === 'spread' && 
-               l.id !== spreadLine?.id &&
-               l.lineValue !== null &&
-               Math.abs(l.lineValue) <= 50
-      );
-      
-      if (otherSpreadLines.length > 0) {
-        // Use the first valid spread line found
-        const validSpreadLine = otherSpreadLines[0];
-        const validSpreadValue = getLineValue(validSpreadLine);
-        if (validSpreadValue !== null && Math.abs(validSpreadValue) <= 50) {
-          console.log(`[Game ${gameId}] ✅ Using fallback spread from line ${validSpreadLine.id}: ${validSpreadValue}`);
-          marketSpread = validSpreadValue;
-          // Update favoriteByRule if needed
-          if (validSpreadValue < 0) {
-            favoriteTeamId = game.homeTeamId;
-            favoriteTeamName = game.homeTeam.name;
-          } else {
-            favoriteTeamId = game.awayTeamId;
-            favoriteTeamName = game.awayTeam.name;
-          }
-          dataQualityWarning = `Data quality issue detected: Original spread (${spreadLine?.lineValue}) was likely a price value. Using fallback spread (${validSpreadValue}).`;
-        } else {
-          // No valid spread found - mark as invalid but continue
-          dataQualityWarning = `Data quality issue: Market spread (${marketSpread.toFixed(1)}) exceeds 50, likely a price leak. Spread-based features may be unavailable.`;
-          marketSpread = null; // Mark as invalid
+    if (marketSpread !== null && Math.abs(marketSpread) > MAX_ABS_MARKET_SPREAD) {
+      console.error(
+        `[Game ${gameId}] ⚠️ DATA QUALITY: Market spread abs ${Math.abs(marketSpread).toFixed(1)} > ${MAX_ABS_MARKET_SPREAD} — suppressing (no historical rescue)`,
+        {
+          modelSpread: finalImpliedSpread,
+          marketSpread,
+          gameId,
+          homeTeam: game.homeTeam.name,
+          awayTeam: game.awayTeam.name,
         }
-      } else {
-        // No fallback available - mark as invalid but continue
-        dataQualityWarning = `Data quality issue: Market spread (${marketSpread.toFixed(1)}) exceeds 50, likely a price leak. Spread-based features may be unavailable.`;
-        marketSpread = null; // Mark as invalid
-      }
+      );
+      dataQualityWarning = `Data quality issue: Market spread (${marketSpread.toFixed(1)}) exceeds consumer ceiling ${MAX_ABS_MARKET_SPREAD}. Spread-based features suppressed (no historical rescue).`;
+      marketSpread = null;
+      homePrice = null;
+      awayPrice = null;
+      favoriteTeamId = null;
+      favoriteTeamName = null;
+    } else if (derivedMarket.spreadSuppressedOutOfRange) {
+      dataQualityWarning = `Data quality issue: Market spread abs exceeded consumer ceiling ${MAX_ABS_MARKET_SPREAD}. Suppressed without historical rescue.`;
     }
     
     // 5. Validate ATS Edge magnitude is not excessive (> 20)

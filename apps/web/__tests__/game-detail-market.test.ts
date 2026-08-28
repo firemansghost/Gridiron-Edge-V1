@@ -9,6 +9,9 @@ import {
 import {
   buildAuthoritativeMarketProvenance,
   deriveGameDetailMarketFromSelection,
+  isWithinMaxAbsMarketSpread,
+  MAX_ABS_MARKET_SPREAD,
+  recommendPickEmSpreadSide,
   resolveBetSideClosePrice,
   validateMarketFavoriteInvariant,
 } from '../lib/game-detail-market';
@@ -401,6 +404,368 @@ describe('game-detail market from marketSelection', () => {
     expect(forward.prov.snapshotId).toContain(t2);
     expect(forward.prov).toEqual(reverse.prov);
     expect(forward.derived).toEqual(reverse.derived);
+  });
+});
+
+describe('MAX_ABS_MARKET_SPREAD consumer ceiling (2C-2J-3C)', () => {
+  const home = 'home-team';
+  const away = 'away-team';
+  const tCurrent = '2026-08-28T18:00:00.000Z';
+  const tOld = '2026-08-28T12:00:00.000Z';
+
+  function deriveFromRows(rows: MarketLineObservation[]) {
+    const sel = selectGameMarketSnapshots({
+      rows,
+      homeTeamId: home,
+      awayTeamId: away,
+      mode: 'current',
+    });
+    return deriveGameDetailMarketFromSelection({
+      marketSelection: sel,
+      homeTeamId: home,
+      awayTeamId: away,
+      homeTeamName: 'Home',
+      awayTeamName: 'Away',
+    });
+  }
+
+  function spreadPair(
+    abs: number,
+    ts: string,
+    book: string,
+    idPrefix: string,
+    homeFavored = true
+  ): MarketLineObservation[] {
+    const homeLine = homeFavored ? -abs : abs;
+    const awayLine = homeFavored ? abs : -abs;
+    return [
+      row({
+        id: `${idPrefix}-h`,
+        lineType: 'spread',
+        lineValue: homeLine,
+        bookName: book,
+        timestamp: ts,
+        teamId: home,
+      }),
+      row({
+        id: `${idPrefix}-a`,
+        lineType: 'spread',
+        lineValue: awayLine,
+        bookName: book,
+        timestamp: ts,
+        teamId: away,
+      }),
+    ];
+  }
+
+  it('accepts ceiling boundary helpers', () => {
+    expect(MAX_ABS_MARKET_SPREAD).toBe(100);
+    expect(isWithinMaxAbsMarketSpread(50)).toBe(true);
+    expect(isWithinMaxAbsMarketSpread(50.5)).toBe(true);
+    expect(isWithinMaxAbsMarketSpread(51)).toBe(true);
+    expect(isWithinMaxAbsMarketSpread(100)).toBe(true);
+    expect(isWithinMaxAbsMarketSpread(100.5)).toBe(false);
+    expect(isWithinMaxAbsMarketSpread(101)).toBe(false);
+  });
+
+  it.each([50.5, 51, 100])(
+    'authoritative current +/-%s survives unchanged',
+    (abs) => {
+      const rows = spreadPair(abs, tCurrent, 'DraftKings', `cur-${abs}`);
+      const forward = deriveFromRows(rows);
+      const reverse = deriveFromRows([...rows].reverse());
+      expect(forward.spreadHma).toBe(abs);
+      expect(forward.marketSpread).toBe(-abs);
+      expect(forward.homePrice).toBe(-abs);
+      expect(forward.awayPrice).toBe(abs);
+      expect(forward.favoriteTeamId).toBe(home);
+      expect(forward.spreadSuppressedOutOfRange).toBe(false);
+      expect(forward).toEqual(reverse);
+    }
+  );
+
+  it('+/-100.5 is suppressed without inventing values', () => {
+    const rows = spreadPair(100.5, tCurrent, 'DraftKings', 'oor');
+    const d = deriveFromRows(rows);
+    expect(d.spreadSuppressedOutOfRange).toBe(true);
+    expect(d.spreadHma).toBeNull();
+    expect(d.marketSpread).toBeNull();
+    expect(d.homePrice).toBeNull();
+    expect(d.awayPrice).toBeNull();
+    expect(d.favoriteTeamId).toBeNull();
+    expect(d.isPickEm).toBe(false);
+  });
+
+  it('historical +/-49 cannot replace current +/-51; reverse order identical', () => {
+    const rows = [
+      ...spreadPair(49, tOld, 'DraftKings', 'old-49'),
+      ...spreadPair(51, tCurrent, 'DraftKings', 'cur-51'),
+    ];
+    const forward = deriveFromRows(rows);
+    const reverse = deriveFromRows([...rows].reverse());
+    expect(forward.spreadHma).toBe(51);
+    expect(forward.marketSpread).toBe(-51);
+    expect(forward.favoriteTeamId).toBe(home);
+    expect(forward.spreadSuppressedOutOfRange).toBe(false);
+    expect(forward).toEqual(reverse);
+  });
+
+  it('out-of-range current is suppressed even when older in-range history exists', () => {
+    const rows = [
+      ...spreadPair(49, tOld, 'DraftKings', 'old-ok'),
+      ...spreadPair(100.5, tCurrent, 'DraftKings', 'cur-bad'),
+    ];
+    const forward = deriveFromRows(rows);
+    const reverse = deriveFromRows([...rows].reverse());
+    expect(forward.spreadSuppressedOutOfRange).toBe(true);
+    expect(forward.marketSpread).toBeNull();
+    expect(forward.favoriteTeamId).toBeNull();
+    // Must not resurrect old 49 as favorite
+    expect(forward).toEqual(reverse);
+  });
+});
+
+describe("pick'em HMA-side recommendation (2C-2J-3C)", () => {
+  const home = 'home-team';
+  const away = 'away-team';
+
+  it('A: market HMA=0, Core V1 HMA=+3 → Home PK at 0', () => {
+    const pk = recommendPickEmSpreadSide({
+      coreSpreadHma: 3,
+      homeTeamId: home,
+      awayTeamId: away,
+      homeTeamName: 'Home U',
+      awayTeamName: 'Away U',
+    });
+    expect(pk.recommendedTeamId).toBe(home);
+    expect(pk.recommendedTeamName).toBe('Home U');
+    expect(pk.line).toBe(0);
+    expect(pk.label).toBe('Home U PK');
+    expect(pk.edgeHma).toBe(3);
+    expect(pk.label).not.toMatch(/null/i);
+  });
+
+  it('B: market HMA=0, Core V1 HMA=-3 → Away PK at 0', () => {
+    const pk = recommendPickEmSpreadSide({
+      coreSpreadHma: -3,
+      homeTeamId: home,
+      awayTeamId: away,
+      homeTeamName: 'Home U',
+      awayTeamName: 'Away U',
+    });
+    expect(pk.recommendedTeamId).toBe(away);
+    expect(pk.recommendedTeamName).toBe('Away U');
+    expect(pk.line).toBe(0);
+    expect(pk.label).toBe('Away U PK');
+    expect(pk.edgeHma).toBe(-3);
+  });
+
+  it('C: edge within floor → no recommendation', () => {
+    const pk = recommendPickEmSpreadSide({
+      coreSpreadHma: 0.05,
+      homeTeamId: home,
+      awayTeamId: away,
+      homeTeamName: 'Home U',
+      awayTeamName: 'Away U',
+      edgeFloor: 0.1,
+    });
+    expect(pk.recommendedTeamId).toBeNull();
+    expect(pk.recommendedTeamName).toBeNull();
+    expect(pk.label).toBeNull();
+    expect(pk.line).toBe(0);
+  });
+
+  it('D: never produces null-team labels', () => {
+    for (const hma of [3, -3, 0.05, 0]) {
+      const pk = recommendPickEmSpreadSide({
+        coreSpreadHma: hma,
+        homeTeamId: home,
+        awayTeamId: away,
+        homeTeamName: 'Home U',
+        awayTeamName: 'Away U',
+      });
+      if (pk.label !== null) {
+        expect(pk.recommendedTeamId).not.toBeNull();
+        expect(pk.recommendedTeamName).not.toBeNull();
+        expect(pk.label).not.toMatch(/null/i);
+      }
+    }
+  });
+
+  it('E: pickem market derivation reverse-order stable', () => {
+    const t = '2026-08-28T18:00:00.000Z';
+    const rows: MarketLineObservation[] = [
+      row({
+        id: 'pk-h',
+        lineType: 'spread',
+        lineValue: 0,
+        bookName: 'DraftKings',
+        timestamp: t,
+        teamId: home,
+      }),
+      row({
+        id: 'pk-a',
+        lineType: 'spread',
+        lineValue: 0,
+        bookName: 'DraftKings',
+        timestamp: t,
+        teamId: away,
+      }),
+    ];
+    const run = (input: MarketLineObservation[]) =>
+      deriveGameDetailMarketFromSelection({
+        marketSelection: selectGameMarketSnapshots({
+          rows: input,
+          homeTeamId: home,
+          awayTeamId: away,
+          mode: 'current',
+        }),
+        homeTeamId: home,
+        awayTeamId: away,
+        homeTeamName: 'Home',
+        awayTeamName: 'Away',
+      });
+    const forward = run(rows);
+    const reverse = run([...rows].reverse());
+    expect(forward.isPickEm).toBe(true);
+    expect(forward.marketSpread).toBe(0);
+    expect(forward.favoriteTeamId).toBeNull();
+    expect(forward).toEqual(reverse);
+  });
+});
+
+describe('mixed-book provenance (2C-2J-3C)', () => {
+  const home = 'home-team';
+  const away = 'away-team';
+  const tSpread = '2026-08-28T12:00:00.000Z';
+  const tTotal = '2026-08-28T12:05:00.000Z';
+  const tMl = '2026-08-28T12:03:00.000Z';
+
+  it('same book/timestamp → single-book provenance', () => {
+    const t = tSpread;
+    const rows: MarketLineObservation[] = [
+      row({
+        id: 's-h',
+        lineType: 'spread',
+        lineValue: -3,
+        bookName: 'DraftKings',
+        timestamp: t,
+        teamId: home,
+      }),
+      row({
+        id: 's-a',
+        lineType: 'spread',
+        lineValue: 3,
+        bookName: 'DraftKings',
+        timestamp: t,
+        teamId: away,
+      }),
+      row({
+        id: 'tot',
+        lineType: 'total',
+        lineValue: 48,
+        bookName: 'DraftKings',
+        timestamp: t,
+      }),
+      row({
+        id: 'ml-h',
+        lineType: 'moneyline',
+        lineValue: -150,
+        bookName: 'DraftKings',
+        timestamp: t,
+        teamId: home,
+      }),
+      row({
+        id: 'ml-a',
+        lineType: 'moneyline',
+        lineValue: 130,
+        bookName: 'DraftKings',
+        timestamp: t,
+        teamId: away,
+      }),
+    ];
+    const sel = selectGameMarketSnapshots({
+      rows,
+      homeTeamId: home,
+      awayTeamId: away,
+      mode: 'current',
+    });
+    const prov = buildAuthoritativeMarketProvenance(sel);
+    expect(prov.bookSource).toBe('DraftKings');
+    expect(prov.snapshotId).toBe(
+      `spread:DraftKings@${t}|total:DraftKings@${t}|ml:DraftKings@${t}`
+    );
+    expect(prov.updatedAt).toBe(new Date(t).toISOString());
+  });
+
+  it('different books/timestamps → Mixed; snapshotId pairs each market truthfully', () => {
+    const rows: MarketLineObservation[] = [
+      row({
+        id: 's-h',
+        lineType: 'spread',
+        lineValue: -3,
+        bookName: 'DraftKings',
+        timestamp: tSpread,
+        teamId: home,
+      }),
+      row({
+        id: 's-a',
+        lineType: 'spread',
+        lineValue: 3,
+        bookName: 'DraftKings',
+        timestamp: tSpread,
+        teamId: away,
+      }),
+      row({
+        id: 'tot',
+        lineType: 'total',
+        lineValue: 48,
+        bookName: 'FanDuel',
+        timestamp: tTotal,
+      }),
+      row({
+        id: 'ml-h',
+        lineType: 'moneyline',
+        lineValue: -150,
+        bookName: 'Caesars',
+        timestamp: tMl,
+        teamId: home,
+      }),
+      row({
+        id: 'ml-a',
+        lineType: 'moneyline',
+        lineValue: 130,
+        bookName: 'Caesars',
+        timestamp: tMl,
+        teamId: away,
+      }),
+    ];
+    const run = (input: MarketLineObservation[]) => {
+      const sel = selectGameMarketSnapshots({
+        rows: input,
+        homeTeamId: home,
+        awayTeamId: away,
+        mode: 'current',
+      });
+      return buildAuthoritativeMarketProvenance(sel);
+    };
+    const forward = run(rows);
+    const reverse = run([...rows].reverse());
+
+    expect(forward.bookSource).toBe('Mixed');
+    expect(forward.snapshotId).toBe(
+      `spread:DraftKings@${tSpread}|total:FanDuel@${tTotal}|ml:Caesars@${tMl}`
+    );
+    // Must NOT fabricate DraftKings::12:05
+    expect(forward.snapshotId).not.toContain(`DraftKings@${tTotal}`);
+    expect(forward.spread?.bookName).toBe('DraftKings');
+    expect(forward.spread?.timestamp).toBe(tSpread);
+    expect(forward.total?.bookName).toBe('FanDuel');
+    expect(forward.total?.timestamp).toBe(tTotal);
+    expect(forward.moneyline?.bookName).toBe('Caesars');
+    expect(forward.moneyline?.timestamp).toBe(tMl);
+    expect(forward.updatedAt).toBe(new Date(tTotal).toISOString());
+    expect(forward).toEqual(reverse);
   });
 });
 

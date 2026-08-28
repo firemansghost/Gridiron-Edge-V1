@@ -9,7 +9,15 @@ import type {
   BookTotalSnapshot,
   GameMarketSelection,
 } from './market-line-snapshot';
+import { computeATSEdgeHma, getATSPick } from './core-v1-spread';
 
+/** Consumer ceiling — matches guarded Odds writer MAX_ABS_SPREAD. */
+export const MAX_ABS_MARKET_SPREAD = 100;
+
+export function isWithinMaxAbsMarketSpread(value: number | null | undefined): boolean {
+  if (value === null || value === undefined || !Number.isFinite(value)) return false;
+  return Math.abs(value) <= MAX_ABS_MARKET_SPREAD;
+}
 export interface GameDetailMarketDerivation {
   /** Signed HMA consensus (positive = home favored). */
   spreadHma: number | null;
@@ -33,6 +41,8 @@ export interface GameDetailMarketDerivation {
   displayTotal: BookTotalSnapshot | null;
   displayMoneyline: BookMoneylineSnapshot | null;
   source: 'marketSelection';
+  /** True when abs(HMA) exceeded MAX_ABS_MARKET_SPREAD and was suppressed. */
+  spreadSuppressedOutOfRange?: boolean;
 }
 
 function median(values: number[]): number | null {
@@ -59,36 +69,55 @@ export function deriveGameDetailMarketFromSelection(options: {
   const { marketSelection, homeTeamId, awayTeamId, homeTeamName, awayTeamName } =
     options;
 
-  const spreadHma = marketSelection.spreadConsensus.value;
+  const spreadHmaRaw = marketSelection.spreadConsensus.value;
   let homePrice: number | null = null;
   let awayPrice: number | null = null;
   let marketSpread: number | null = null;
   let favoriteTeamId: string | null = null;
   let favoriteTeamName: string | null = null;
   let isPickEm = false;
+  let spreadSuppressedOutOfRange = false;
+  let spreadHma: number | null = null;
 
-  if (spreadHma !== null && Number.isFinite(spreadHma)) {
-    const abs = Math.abs(spreadHma);
-    if (abs < 1e-9) {
-      // Pick'em: no favorite; both sides even. Normalize -0 → 0.
-      isPickEm = true;
-      homePrice = 0;
-      awayPrice = 0;
-      marketSpread = 0;
+  if (spreadHmaRaw !== null && Number.isFinite(spreadHmaRaw)) {
+    if (!isWithinMaxAbsMarketSpread(spreadHmaRaw)) {
+      // Outside consumer/writer contract — suppress; never rescue from history.
+      spreadSuppressedOutOfRange = true;
+      isPickEm = false;
+      homePrice = null;
+      awayPrice = null;
+      marketSpread = null;
       favoriteTeamId = null;
       favoriteTeamName = null;
-    } else if (spreadHma > 0) {
-      favoriteTeamId = homeTeamId;
-      favoriteTeamName = homeTeamName;
-      homePrice = -abs;
-      awayPrice = abs;
-      marketSpread = -abs;
+      spreadHma = null;
     } else {
-      favoriteTeamId = awayTeamId;
-      favoriteTeamName = awayTeamName;
-      awayPrice = -abs;
-      homePrice = abs;
-      marketSpread = -abs;
+      spreadHma =
+        Object.is(spreadHmaRaw, -0) || Math.abs(spreadHmaRaw) < 1e-9
+          ? 0
+          : spreadHmaRaw;
+      const abs = Math.abs(spreadHma);
+      if (abs < 1e-9) {
+        // Pick'em: no favorite; both sides even. Normalize -0 → 0.
+        isPickEm = true;
+        homePrice = 0;
+        awayPrice = 0;
+        marketSpread = 0;
+        favoriteTeamId = null;
+        favoriteTeamName = null;
+        spreadHma = 0;
+      } else if (spreadHma > 0) {
+        favoriteTeamId = homeTeamId;
+        favoriteTeamName = homeTeamName;
+        homePrice = -abs;
+        awayPrice = abs;
+        marketSpread = -abs;
+      } else {
+        favoriteTeamId = awayTeamId;
+        favoriteTeamName = awayTeamName;
+        awayPrice = -abs;
+        homePrice = abs;
+        marketSpread = -abs;
+      }
     }
   }
 
@@ -133,12 +162,7 @@ export function deriveGameDetailMarketFromSelection(options: {
   }
 
   return {
-    spreadHma:
-      spreadHma !== null && Number.isFinite(spreadHma)
-        ? Object.is(spreadHma, -0) || Math.abs(spreadHma) < 1e-9
-          ? 0
-          : spreadHma
-        : null,
+    spreadHma,
     marketSpread,
     homePrice,
     awayPrice,
@@ -157,6 +181,7 @@ export function deriveGameDetailMarketFromSelection(options: {
     displayTotal: marketSelection.displayTotal,
     displayMoneyline: marketSelection.displayMoneyline,
     source: 'marketSelection',
+    spreadSuppressedOutOfRange,
   };
 }
 
@@ -301,8 +326,17 @@ export function buildAuthoritativeMarketProvenance(
       }
     : null;
 
+  const bookNames = [spread?.bookName, total?.bookName, moneyline?.bookName].filter(
+    (b): b is string => !!b
+  );
+  const uniqueBooks = Array.from(new Set(bookNames));
   const bookSource =
-    spread?.bookName || total?.bookName || moneyline?.bookName || 'Unknown';
+    uniqueBooks.length === 0
+      ? 'Unknown'
+      : uniqueBooks.length === 1
+        ? uniqueBooks[0]
+        : 'Mixed';
+
   const tsCandidates = [
     spread?.timestamp,
     total?.timestamp,
@@ -314,9 +348,67 @@ export function buildAuthoritativeMarketProvenance(
           Math.max(...tsCandidates.map((t) => new Date(t).getTime()))
         ).toISOString()
       : new Date(0).toISOString();
-  const snapshotId = `${bookSource}::${updatedAt}`;
+
+  // Deterministic per-market pairing — never book A with timestamp from market B.
+  const parts: string[] = [];
+  if (spread) parts.push(`spread:${spread.bookName}@${spread.timestamp}`);
+  if (total) parts.push(`total:${total.bookName}@${total.timestamp}`);
+  if (moneyline) parts.push(`ml:${moneyline.bookName}@${moneyline.timestamp}`);
+  const snapshotId = parts.length > 0 ? parts.join('|') : `none@${updatedAt}`;
 
   return { spread, total, moneyline, bookSource, snapshotId, updatedAt };
+}
+
+/**
+ * Pick'em market recommendation via HMA edge (no invented market favorite/dog).
+ * marketSpreadHma is 0; recommendation is Home PK / Away PK or none.
+ */
+export function recommendPickEmSpreadSide(options: {
+  coreSpreadHma: number;
+  homeTeamId: string;
+  awayTeamId: string;
+  homeTeamName: string;
+  awayTeamName: string;
+  edgeFloor?: number;
+}): {
+  recommendedTeamId: string | null;
+  recommendedTeamName: string | null;
+  line: number;
+  label: string | null;
+  edgePts: number;
+  edgeHma: number;
+} {
+  const edgeFloor = options.edgeFloor ?? 0.1;
+  const edgeHma = computeATSEdgeHma(options.coreSpreadHma, 0);
+  const ats = getATSPick(
+    options.coreSpreadHma,
+    0,
+    options.homeTeamName,
+    options.awayTeamName,
+    options.homeTeamId,
+    options.awayTeamId,
+    edgeFloor
+  );
+
+  if (!ats.recommendedTeamId || !ats.recommendedTeamName) {
+    return {
+      recommendedTeamId: null,
+      recommendedTeamName: null,
+      line: 0,
+      label: null,
+      edgePts: Math.abs(edgeHma),
+      edgeHma,
+    };
+  }
+
+  return {
+    recommendedTeamId: ats.recommendedTeamId,
+    recommendedTeamName: ats.recommendedTeamName,
+    line: 0,
+    label: `${ats.recommendedTeamName} PK`,
+    edgePts: Math.abs(edgeHma),
+    edgeHma,
+  };
 }
 
 /** Hybrid tier closePrice: the selected BET SIDE's team line. */
