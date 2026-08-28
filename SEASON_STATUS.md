@@ -1,7 +1,7 @@
 # Season Status — Gridiron Edge
 
 **Status:** Offseason / paused for regular-season automation  
-**Updated:** 2026-08-28 (Phase 2C-2J-4 — guarded Core V1 weekly-card writer; draft PR)
+**Updated:** 2026-08-28 (Phase 2C-2J-4A — Core card writer review repairs; draft PR #67)
 
 Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISABLE_REPORT.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -54,7 +54,7 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **Phase 2C-2J-2 Guarded 2026 Live Odds** | **COMPLETE** (PR #64) — merged `1445cdb…`; writer live |
 | **Phase 2C-2J-2A Live Odds PREVIEW findings repair** | **COMPLETE** (PR #65) — aliases + FCS classify + `MAX_ABS_SPREAD=100` |
 | **Phase 2C-2J-3 Append-only Odds consumer readiness** | **COMPLETE** (PR #66) — merge `4a80a5b3…`; production audit run **33204634358** `pass=true` |
-| **Phase 2C-2J-4 Guarded Core V1 Weekly Card Writer** | **In preparation (draft)** — PREVIEW/COMMIT `official_flat_100` only; Core card COMMIT NOT AUTHORIZED |
+| **Phase 2C-2J-4 Guarded Core V1 Weekly Card Writer** | **In preparation (draft PR #67)** — 2C-2J-4A review repairs; Core card COMMIT NOT AUTHORIZED |
 | **Expected 2026 schedule baseline** | **761** games / **138** distinct teams — **verified** |
 | **Ratings computation / persistence** | **2026 Core V1 initialized** (do not rerun); further lifecycle COMMITs only via guarded workflow |
 | **Odds ingestion** | **Week1 COMMIT SUCCESS** (run **33192011833**); recurring polling NOT AUTHORIZED; second COMMIT NOT AUTHORIZED |
@@ -73,6 +73,10 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **Fade V4** | Labs only | `fade_v4_labs` | Fade V4 Labs (Flat $100) |
 
 **Scope notes:** Hybrid V2 = spreads only; totals/ML = current Core V1 logic; weekly `official_flat_100` sync for comparison.
+
+**Operational note (2C-2J-4A):** Review repairs for guarded Core card writer (unsafe PREVIEW fails workflow; committed-verification failure never implies rollback; DIRECT_URL scoped off Preflight). Core card PREVIEW/COMMIT still **NOT AUTHORIZED**.
+
+**Grading blocker (document only — do not fix in 2C-2J-4/4A):** 2026 grading remains **NOT AUTHORIZED**. Current grade-bets ML PnL uses `Bet.modelPrice` as payout price, but the 2026 card stores `modelPrice` = model fair American odds and `closePrice` = captured sportsbook American odds. ML payout-price contract must be repaired before grading activation. CLV semantics remain a separate grading-review item.
 
 **Operational note (2C-2J-4):** Start guarded Core V1 weekly-card writer (`official_flat_100` only). Legacy `sync-weekly-bets` is ≤2025 only (rejects season≥2026). New workflow MANUAL_SAFE after independent review; **no schedule**. Core card COMMIT **NOT AUTHORIZED**. Recurring Odds polling **NOT AUTHORIZED**. Second Odds COMMIT **NOT AUTHORIZED**. Grading **NOT AUTHORIZED**. Score sync repair pending. Hybrid remains **held**; official Week1 spread = **Core V1**. Production Week1 Bet baseline = **ZERO**.
 

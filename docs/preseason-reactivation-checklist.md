@@ -194,8 +194,9 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 * 2C-2J-2A: **COMPLETE** (PR #65) — aliases + FCS classify + `MAX_ABS_SPREAD=100`
 * Week1 Odds COMMIT **33192011833** SUCCESS — inserted=2281, games=51, books=11, verification.ok=true, remaining=19682
 * 2C-2J-3: **COMPLETE** (PR #66) — merge `4a80a5b3…`; production audit **33204634358** PASS
-* 2C-2J-4: **IN PREPARATION / draft PR** — Guarded Core V1 Weekly Card Writer (`official_flat_100` only; PREVIEW default; Core card COMMIT NOT AUTHORIZED)
-* Recurring Odds polling / second Odds COMMIT / grading / Hybrid: **NOT AUTHORIZED**
+* 2C-2J-4: **IN PREPARATION / draft PR #67** — Guarded Core V1 Weekly Card Writer; **2C-2J-4A** review repairs (unsafe PREVIEW fail / verification state machine / DIRECT_URL scope)
+* Recurring Odds polling / second Odds COMMIT / Core card COMMIT / grading / Hybrid: **NOT AUTHORIZED**
+* Grading activation blocked until ML payout uses captured sportsbook price (`closePrice`), not model fair (`modelPrice`)
 * Recruiting schema mismatch remains separate
 * **Do not copy 2025 TeamUnitGrades into 2026 or run `compute_unit_grades.ts` until separately authorized**
 * **Do not enable recurring Odds polling, run a second Odds COMMIT, or write bets from this consumer phase**
@@ -300,7 +301,9 @@ Do **not** run the current dual sync until replaced/gated (prefer Core-only guar
 
 ## G. Scores and grading (manual dry run)
 
-**Status (2C-2J-1):** Score sync **NOT YET REACTIVATED**; grading **NOT AUTHORIZED**.
+**Status (2C-2J-4A):** Score sync **NOT YET REACTIVATED**; grading **NOT AUTHORIZED**.
+
+**Before 2026 grading activation:** repair ML payout-price contract — grade-bets currently uses `Bet.modelPrice` for winning ML PnL, but 2026 official cards store model fair American odds in `modelPrice` and sportsbook American odds in `closePrice`. CLV semantics remain a separate review item. Do **not** couple grading repair to card creation.
 
 `cfbd-scores-sync.yml` schedule defaults to season **2025** — repair before any 2026 use. Keep score → grade → feature → lifecycle **separate**.
 

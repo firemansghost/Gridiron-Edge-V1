@@ -6,8 +6,10 @@ import type { GameMarketSelection } from '../lib/market-line-snapshot';
 import {
   assertCreateManyCountMatches,
   assertDisplaySpreadInvariant,
+  buildCommittedVerificationFailureExecution,
   buildCoreWeeklyCardPlan,
   buildPreviewExecution,
+  buildSuccessfulCommitExecution,
   commitEligible,
   evaluateExistingCardSafety,
   executeAtomicFirstCommit,
@@ -16,6 +18,7 @@ import {
   planMoneylineBet,
   planSpreadBet,
   planTotalBet,
+  resolvePreviewExitCode,
   verifyCoreCardPostWrite,
   type ExistingOfficialBetRow,
   type PlannedBet,
@@ -27,6 +30,7 @@ import {
   probToAmerican,
   selectCoreV1MoneylinePick,
 } from '../lib/core-v1-moneyline';
+import { computeCoreV1Total } from '../lib/core-v1-total';
 
 const TS = '2026-08-28T12:00:00.000Z';
 const HOME = 'home-id';
@@ -341,7 +345,19 @@ describe("pick'em side-specific prices", () => {
 });
 
 describe('totals Over / Under / no pick', () => {
-  it('plans Over and Under; suppresses no-edge', () => {
+  it('A: known Over fixture requires over + expected model total', () => {
+    // beta≈-0.003 → large negative spreadDiff yields positive overlay (Over).
+    const marketTotal = 50;
+    const marketSpreadHma = 0;
+    const coreSpreadHma = -900;
+    const expectedModel = computeCoreV1Total(
+      marketTotal,
+      marketSpreadHma,
+      coreSpreadHma
+    );
+    expect(expectedModel).not.toBeNull();
+    expect(expectedModel!).toBeGreaterThan(marketTotal + 2.5);
+
     const over = planTotalBet({
       season: 2026,
       week: 1,
@@ -349,33 +365,46 @@ describe('totals Over / Under / no pick', () => {
       homeTeamName: 'Home U',
       awayTeamName: 'Away U',
       kickoffIso: TS,
-      coreSpreadHma: 14,
-      marketSpreadHma: 3,
-      displayTotal: selection({ total: 45 }).displayTotal!,
+      coreSpreadHma,
+      marketSpreadHma,
+      displayTotal: selection({ total: marketTotal }).displayTotal!,
     });
-    // Large model-vs-market spread disagreement tends to raise model total → Over
-    if (over) {
-      expect(['over', 'under']).toContain(over.side);
-      expect(over.closePrice).toBe(45);
-      expect(over.modelPrice).not.toBe(over.closePrice);
-    }
+    expect(over).not.toBeNull();
+    expect(over!.side).toBe('over');
+    expect(over!.closePrice).toBe(marketTotal);
+    expect(over!.modelPrice).toBe(expectedModel);
+  });
 
-    const underOrOver = planTotalBet({
+  it('B: known Under fixture requires under + expected model total', () => {
+    const marketTotal = 50;
+    const marketSpreadHma = 0;
+    const coreSpreadHma = 900;
+    const expectedModel = computeCoreV1Total(
+      marketTotal,
+      marketSpreadHma,
+      coreSpreadHma
+    );
+    expect(expectedModel).not.toBeNull();
+    expect(expectedModel!).toBeLessThan(marketTotal - 2.5);
+
+    const under = planTotalBet({
       season: 2026,
       week: 1,
       gameId: 'g1',
       homeTeamName: 'Home U',
       awayTeamName: 'Away U',
       kickoffIso: TS,
-      coreSpreadHma: 0,
-      marketSpreadHma: 14,
-      displayTotal: selection({ total: 55 }).displayTotal!,
+      coreSpreadHma,
+      marketSpreadHma,
+      displayTotal: selection({ total: marketTotal }).displayTotal!,
     });
-    if (underOrOver) {
-      expect(underOrOver.closePrice).toBe(55);
-      expect(typeof underOrOver.modelPrice).toBe('number');
-    }
+    expect(under).not.toBeNull();
+    expect(under!.side).toBe('under');
+    expect(under!.closePrice).toBe(marketTotal);
+    expect(under!.modelPrice).toBe(expectedModel);
+  });
 
+  it('C: no-edge → null', () => {
     const noPick = planTotalBet({
       season: 2026,
       week: 1,
@@ -692,6 +721,43 @@ describe('plan writeSafe / PREVIEW / COMMIT gates', () => {
       true
     );
     expect(commitEligible(emptyPlan)).toBe(false);
+  });
+
+  it('safe PREVIEW exit success; unsafe PREVIEW nonzero — zero mutation flags', () => {
+    const safeExec = buildPreviewExecution('PREVIEW');
+    expect(resolvePreviewExitCode(true)).toBe(0);
+    expect(safeExec.mutationsInvoked).toBe(false);
+    expect(safeExec.betPersistenceInvoked).toBe(false);
+    expect(safeExec.commitAttempted).toBe(false);
+    expect(safeExec.providerCalls).toBe(0);
+
+    const unsafeExec = buildPreviewExecution('PREVIEW');
+    expect(resolvePreviewExitCode(false)).toBe(1);
+    expect(unsafeExec.mutationsInvoked).toBe(false);
+    expect(unsafeExec.betPersistenceInvoked).toBe(false);
+    expect(unsafeExec.commitAttempted).toBe(false);
+    expect(unsafeExec.providerCalls).toBe(0);
+  });
+
+  it('committed verification failure keeps commitSucceeded=true', () => {
+    const fail = buildCommittedVerificationFailureExecution({
+      createManyCount: 12,
+      error: 'verification read failed',
+    });
+    expect(fail.commitSucceeded).toBe(true);
+    expect(fail.postWriteVerificationSucceeded).toBe(false);
+    expect(fail.mutationsInvoked).toBe(true);
+    expect(fail.betPersistenceInvoked).toBe(true);
+    expect(fail.transactionStarted).toBe(true);
+    expect(fail.createManyCount).toBe(12);
+    expect(fail.providerCalls).toBe(0);
+
+    const ok = buildSuccessfulCommitExecution({
+      createManyCount: 12,
+      postWriteVerificationSucceeded: true,
+    });
+    expect(ok.commitSucceeded).toBe(true);
+    expect(ok.postWriteVerificationSucceeded).toBe(true);
   });
 
   it('only official_flat_100 in planned bets', () => {

@@ -1328,6 +1328,33 @@ export function buildSuccessfulCommitExecution(options: {
   };
 }
 
+/**
+ * Transaction committed; post-write verification mismatch or read/code failure.
+ * Never implies rollback — Bet rows may/do exist.
+ */
+export function buildCommittedVerificationFailureExecution(options: {
+  createManyCount: number;
+  error: string;
+}): CoreCardExecutionState {
+  return {
+    mode: 'COMMIT',
+    commitAttempted: true,
+    transactionStarted: true,
+    mutationsInvoked: true,
+    betPersistenceInvoked: true,
+    createManyCount: options.createManyCount,
+    commitSucceeded: true,
+    postWriteVerificationSucceeded: false,
+    error: options.error,
+    providerCalls: 0,
+  };
+}
+
+/** PREVIEW always writes artifact first; unsafe plans fail the workflow after. */
+export function resolvePreviewExitCode(writeSafe: boolean): 0 | 1 {
+  return writeSafe ? 0 : 1;
+}
+
 export function finalizeCoreCardReport(options: {
   plan: CoreWeeklyCardPlan;
   execution: CoreCardExecutionState;

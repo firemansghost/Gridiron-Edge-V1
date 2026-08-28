@@ -68,7 +68,6 @@ jobs:
           INPUT_WEEK: ${{ inputs.week }}
           INPUT_MODE: ${{ inputs.mode }}
           INPUT_CONFIRMATION: ${{ inputs.confirmation }}
-          DIRECT_URL: ${{ secrets.DIRECT_URL }}
         run: |
           set -euo pipefail
           SEASON="$INPUT_SEASON"
@@ -103,11 +102,7 @@ jobs:
             echo "::error::COMMIT requires confirmation=${EXPECTED}"
             exit 1
           fi
-          if [ -z "${DIRECT_URL:-}" ]; then
-            echo "::error::DIRECT_URL secret is missing"
-            exit 1
-          fi
-          echo "DIRECT_URL: present (value not printed)"
+          echo "Preflight OK (no production DB secret in this step)"
 
       - name: Install dependencies
         env:

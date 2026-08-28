@@ -28,11 +28,13 @@ import {
   buildIdempotentNoOpExecution,
   buildPreviewExecution,
   buildSuccessfulCommitExecution,
+  buildCommittedVerificationFailureExecution,
   commitEligible,
   executeAtomicFirstCommit,
   expectedWriteConfirmation,
   finalizeCoreCardReport,
   isIdempotentNoOp,
+  resolvePreviewExitCode,
   verifyCoreCardPostWrite,
   type CoreCardExecutionState,
   type CoreCardMode,
@@ -342,6 +344,11 @@ async function main(): Promise<void> {
         fbsMembershipCount: fbsCount,
         authoritativeFbs: AUTHORITATIVE_FBS_COUNT,
       });
+      console.log(
+        'PREVIEW complete — DB unchanged; providerCalls=0; see report for writeSafe'
+      );
+      // Artifact written first; unsafe PREVIEW must fail the workflow (Odds pattern).
+      process.exitCode = resolvePreviewExitCode(plan.writeSafe);
       return;
     }
 
@@ -384,8 +391,12 @@ async function main(): Promise<void> {
       return;
     }
 
+    let createManyCount = 0;
+    let transactionPersisted = false;
+
+    // --- A. TRANSACTION PHASE ---
     try {
-      const createManyCount = await prisma.$transaction(async (tx) => {
+      createManyCount = await prisma.$transaction(async (tx) => {
         const result = await executeAtomicFirstCommit({
           plannedBets: plan!.plannedBets,
           reReadOfficial: async () =>
@@ -421,7 +432,28 @@ async function main(): Promise<void> {
         });
         return result.count;
       });
+      transactionPersisted = true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Transaction failed / rolled back — no committed Bet persistence.
+      execution = buildFailedCommitExecution({
+        transactionStarted: true,
+        mutationsInvoked: false,
+        betPersistenceInvoked: false,
+        createManyCount: null,
+        commitSucceeded: false,
+        error: msg,
+      });
+      writeReport(reportPath, plan, execution, null, {
+        persistenceHappened: false,
+        rolledBack: true,
+      });
+      throw err;
+    }
 
+    // --- B. TRANSACTION SUCCESS: persistence happened. Never revert these flags. ---
+    // --- C. POST-WRITE VERIFICATION (separate from transaction) ---
+    try {
       const afterOfficial = mapExisting(
         await prisma.bet.findMany({
           where: {
@@ -449,14 +481,19 @@ async function main(): Promise<void> {
       });
 
       if (!verification.ok) {
-        execution = buildSuccessfulCommitExecution({
+        execution = buildCommittedVerificationFailureExecution({
           createManyCount,
-          postWriteVerificationSucceeded: false,
-          error: `persistence succeeded but verification failed: ${verification.reasons.join('; ')}`,
+          error: `BET ROWS MAY / DO EXIST — transaction committed; post-write verification failed: ${verification.reasons.join('; ')}`,
         });
         writeReport(reportPath, plan, execution, verification, {
           persistenceHappened: true,
+          transactionCommitted: true,
+          verificationFailed: true,
+          rolledBack: false,
         });
+        console.error(
+          'COMMIT persisted bets but post-write verification failed — see report (NOT a rollback)'
+        );
         process.exitCode = 1;
         return;
       }
@@ -467,17 +504,28 @@ async function main(): Promise<void> {
       });
       writeReport(reportPath, plan, execution, verification, {
         persistenceHappened: true,
+        transactionCommitted: true,
       });
+      if (!transactionPersisted) {
+        process.exitCode = 1;
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      execution = buildFailedCommitExecution({
-        transactionStarted: true,
-        mutationsInvoked: /createMany|mismatch/i.test(msg),
-        betPersistenceInvoked: /createMany|mismatch/i.test(msg),
-        error: msg,
+      execution = buildCommittedVerificationFailureExecution({
+        createManyCount,
+        error: `BET ROWS MAY / DO EXIST — transaction committed; verification read/error: ${msg}`,
       });
-      if (plan) writeReport(reportPath, plan, execution, null, {});
-      throw err;
+      writeReport(reportPath, plan, execution, null, {
+        persistenceHappened: true,
+        transactionCommitted: true,
+        verificationReadFailed: true,
+        rolledBack: false,
+      });
+      console.error(
+        'COMMIT persisted bets but verification read failed — see report (NOT a rollback)'
+      );
+      process.exitCode = 1;
+      return;
     }
   } finally {
     await prisma.$disconnect();
