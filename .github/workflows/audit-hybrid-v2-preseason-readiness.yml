@@ -1,0 +1,123 @@
+# Manual READ-ONLY Hybrid V2 preseason readiness audit (Phase 2C-2I-1).
+# workflow_dispatch ONLY — no schedule, push, or pull_request.
+# SELECT-only. No providers. No Odds. No unit-grade writes. No bet writes.
+# Does NOT run compute_unit_grades. Does NOT authorize prior-year Hybrid bridge.
+#
+# Security (PR #60 pattern):
+# - Dispatch inputs reach shell only via step-level env (never ${{ inputs.* }} inside run:).
+# - Production DIRECT_URL is NOT job-wide; scoped only to Preflight presence check + audit execution.
+
+name: Audit Hybrid V2 Preseason Readiness (Manual, Read Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (must be 2026)'
+        required: true
+        type: string
+        default: '2026'
+      week:
+        description: 'Week (must be 1 for this phase)'
+        required: true
+        type: string
+        default: '1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-hybrid-v2-preseason-readiness-${{ inputs.season }}-${{ inputs.week }}
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight (names/presence only)
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          SEASON="$INPUT_SEASON"
+          WEEK="$INPUT_WEEK"
+          echo "season=${SEASON}"
+          echo "week=${WEEK}"
+          echo "providersInvoked=false"
+          echo "Odds=false"
+          echo "CFBD_API_KEY: not provided"
+          echo "ODDS_API_KEY: not provided"
+          echo "unitGradeWriteAuthorized=false"
+          echo "priorYearGradeBridgeAuthorized=false"
+
+          if [ "$SEASON" != "2026" ]; then
+            echo "::error::season must equal 2026 (got ${SEASON})"
+            exit 1
+          fi
+          if [ "$WEEK" != "1" ]; then
+            echo "::error::week must equal 1 (got ${WEEK})"
+            exit 1
+          fi
+          if [ -z "${DIRECT_URL:-}" ]; then
+            echo "::error::DIRECT_URL secret is missing"
+            exit 1
+          fi
+          echo "DIRECT_URL: present (value not printed)"
+
+      - name: Install dependencies
+        env:
+          DATABASE_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+          DIRECT_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+        run: npm ci
+
+      - name: Generate Prisma client
+        env:
+          DATABASE_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+          DIRECT_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+        run: npm run prisma:generate
+
+      - name: Run Hybrid V2 preseason readiness audit
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          DATABASE_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          npx tsx apps/jobs/audit-hybrid-v2-preseason-readiness.ts \
+            --season "$INPUT_SEASON" \
+            --week "$INPUT_WEEK"
+
+      - name: Summary
+        if: always()
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "============================================"
+          echo "AUDIT HYBRID V2 PRESEASON READINESS (READ ONLY)"
+          echo "============================================"
+          echo "season: ${INPUT_SEASON}"
+          echo "week: ${INPUT_WEEK}"
+          echo "status: ${JOB_STATUS}"
+          echo "providersInvoked: false"
+          echo "Odds: false"
+          echo "unitGradeWriteAuthorized: false"
+          echo "priorYearGradeBridgeAuthorized: false"
+          echo "productionHybridActivationAuthorized: false"
+          echo "CFBD_API_KEY: not provided"
+          echo "ODDS_API_KEY: not provided"

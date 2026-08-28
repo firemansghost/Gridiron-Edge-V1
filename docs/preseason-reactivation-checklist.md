@@ -94,8 +94,9 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | **2C-2H-6 Balanced V1 preseason bridge eval** | **PASSED (PR #57)** — Candidate A provisional preferred; Candidate B rejected; persistence unauthorized |
 | **2C-2H-7 Balanced V1 transition timing** | **PASSED (PR #58)** — timing-only hard switch rejected; blend eval required |
 | **2C-2H-8 Balanced V1 transition blends** | **PASSED (PR #59)** — B1 AUTHORIZED as model policy; B2/B3/hard/per-team REJECTED; write still unauthorized |
-| **2C-2H-9 Core V1 lifecycle writer** | **In preparation (draft)** — guarded PREVIEW/COMMIT; production write NOT AUTHORIZED until PREVIEW review |
-| **Ratings computation / persistence** | **Not yet approved** — **2026 ratings persistence remains NOT AUTHORIZED** |
+| **2C-2H-9 Core V1 lifecycle writer** | **COMPLETE** — Candidate A 138/138 persisted; `GLOBAL_BLEND_W3_W6` active |
+| **2C-2I-1 Hybrid V2 preseason readiness** | **In preparation (draft)** — Core V1 consumer + Hybrid input readiness; bridge NOT authorized |
+| **Ratings computation / persistence** | **2026 Core V1 initialized** — do not rerun; further COMMITs via guarded lifecycle only |
 | **Odds ingestion** | **Not yet approved** |
 | **Nightly reactivation** | **Not yet approved** |
 
@@ -145,6 +146,8 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | `Evaluate Balanced V1 Transition Blends (Manual, Read Only)` | `workflow_dispatch` only; `study_season=2025`; `DIRECT_URL` only |
 | `apps/jobs/write-core-v1-lifecycle.ts` | Guarded 2026 Core V1 lifecycle PREVIEW/COMMIT (`completedThroughWeek`) |
 | `Write 2026 Core V1 Lifecycle Ratings (Manual, Guarded)` | `workflow_dispatch` only; PREVIEW default; COMMIT=`WRITE_2026_CORE_V1` |
+| `apps/jobs/audit-hybrid-v2-preseason-readiness.ts` | SELECT-only Hybrid V2 Week1 readiness + prior-grade diagnostic |
+| `Audit Hybrid V2 Preseason Readiness (Manual, Read Only)` | `workflow_dispatch` only; season `2026` week `1`; `DIRECT_URL` only |
 | `Preview 2026 Ratings Inputs (Manual, Read Only)` | Provider preview workflow (`season=2026`) |
 | `apps/jobs/diagnose-2026-conference-recruiting.ts` | Read-only `/teams/fbs` + recruiting resolver diagnostic (`providerFbsSetExact` / `recruitingResolverSafe`) |
 | `Diagnose 2026 Conference & Recruiting Mapping (Manual, Read Only)` | Diagnostic workflow (`season=2026`) |
@@ -168,18 +171,19 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 * 2C-2G-4: **PASSED** (PR #51) — production Core V1 audit 138/138; missing=0; unrecognized=0; legacyFallback=false
 * 2C-2H-1: **PASSED** (PR #52) — season-aware diagnostics; Aug 27 probe: `/talent` 138/138 structurally complete; persistence still unauthorized
 * 2C-2H-2: **PASSED** (PR #53) — production COMMIT 138 rows; `transactionVerificationExact=true`; `postCommitExactTeamSet=true`; `talentCompositeMatchesCandidate=138/138`; no ratings/Odds
-* Latest readiness audit: `structuralOk=true`; preseason; talent 138/138; commits 0/138; stats empty expected; unit grades 0/138; no output collisions; ratings still unauthorized
-* 2C-2H-3: **PASSED** (PR #54) — production read-only preview: 138 finite in-memory ratings; talent-only 138; powerRating ≈ -44.15…59.60; `zeroConfidenceCount=138`; **zero writes/providers/Odds**
-* **2026 ratings persistence remains NOT AUTHORIZED**
+* Latest readiness context: talent 138/138; Core V1 ratings 138/138 (Candidate A); unit grades **0/138** (Hybrid falls back to Core V1); commits 0/138
+* 2C-2H-3: **PASSED** (PR #54) — production read-only preview: 138 finite in-memory ratings; talent-only 138; powerRating ≈ -44.15…59.60; `zeroConfidenceCount=138`; **zero writes/providers/Odds** (persistence was unauthorized at that phase)
+* Current operator state: **Core V1 initialized 138/138** (Candidate A); do not rerun initialization; future lifecycle COMMITs guarded separately
 * 2C-2H-4: **PASSED structurally (PR #55)** — forensic valid; legacy `compute_ratings_v1` did **not** reproduce persisted 2025 (`exact=0/136`, MAE≈32.2124)
 * 2C-2H-5: **PASSED — EXACT (PR #56)** — unrestricted MAE≈0.972 was snapshot drift; cutoff Nov 24 2025 Balanced replay matched **136/136** (MAE≈2.3e-15); **production Core V1 = Balanced V1**; legacy `compute_ratings_v1` not canonical
 * 2C-2H-6: **PASSED (PR #57)** — Candidate A provisional preferred (2025 MAE=7.8831; 2026 range=20.8895; p95=10.1282); Candidate B rejected (2026 range=83.5581; p95=40.5127); `preseasonBridgeAuthorized=false`
 * 2C-2H-7: **PASSED (PR #58)** — W1 68.4% / W2 99.3% / W3 100%; Pearson W3–W8 .7340→.9399; hard-switch median jump ≈6.6–7.3 / p95 ≈17–19; timing-only hard/per-team switches **REJECTED**; `transitionPolicyAuthorized=false`
 * 2C-2H-8: **PASSED (PR #59)** — B1 avgMAE=4.6842 maxP95=6.2755; B2/B3/hard switches rejected; Candidate A + B1 AUTHORIZED as **model** policy only; write still unauthorized
-* 2C-2H-9: **IN PREPARATION / draft PR** — guarded Core V1 lifecycle writer (`completedThroughWeek` + B1); PREVIEW default; COMMIT=`WRITE_2026_CORE_V1`; production write NOT AUTHORIZED until PREVIEW reviewed
+* 2C-2H-9: **COMPLETE** — production COMMIT run 33126432213 (`upserted=138`); post-write verification run 33127893613 (`existingV1Count=138`, create=0, update=138); Candidate A @ completedThroughWeek=0; `GLOBAL_BLEND_W3_W6` lifecycle active; **do not rerun ratings initialization**
+* 2C-2I-1: **IN PREPARATION / draft PR** — Hybrid V2 preseason readiness (Core V1 consumer + current Hybrid inputs + 2025 prior-grade diagnostic); Hybrid configured default but 2026 TeamUnitGrades=0 ⇒ slate falls back to Core V1; prior-year bridge **NOT authorized**; Odds **NOT AUTHORIZED**
 * Recruiting schema mismatch remains separate
-* **Do not persist ratings until production PREVIEW passes and COMMIT is separately authorized**
-* **Do not run the production lifecycle workflow until the draft PR is independently reviewed**
+* **Do not copy 2025 TeamUnitGrades into 2026 or run `compute_unit_grades.ts` until separately authorized**
+* **Do not run the production Hybrid readiness audit workflow until the draft PR is independently reviewed**
 * **Do not run `compute_ratings_balanced.ts` or legacy `compute_ratings_v1` for 2026**
 
 ##### After 2C-2H-8 (complete) — recorded decision
@@ -188,12 +192,16 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 3. B2/B3 and hard/per-team switches REJECTED
 4. Production write still blocked pending lifecycle implementation
 
-##### After 2C-2H-9 merges — operator procedure
-1. Independently review draft PR (completedThroughWeek semantics + B1 weights + fail-closed gates)
-2. Only then run **Write 2026 Core V1 Lifecycle Ratings** in **PREVIEW** (`completed_through_week=0`)
-3. Independently review production PREVIEW (expect Candidate A for all 138; zero finals; zero existing V1)
-4. Do **not** COMMIT until that PREVIEW is approved
-5. COMMIT requires `confirmation=WRITE_2026_CORE_V1`
+##### After 2C-2H-9 (complete) — recorded production state
+1. 2026 Core V1 ratings persisted 138/138 (Candidate A)
+2. Lifecycle policy active (`GLOBAL_BLEND_W3_W6`)
+3. Do not rerun ratings initialization
+
+##### After 2C-2I-1 merges — operator procedure
+1. Independently review draft PR (fallback facts + prior-grade diagnostic + auth flags)
+2. Only then run **Audit Hybrid V2 Preseason Readiness** (read-only) for season=2026 week=1
+3. Human decides Week1 spread model: stay on Core V1 fallback vs authorize a prior-year Hybrid bridge (separate phase)
+4. Do **not** write TeamUnitGrades / activate bridge from this audit alone
 
 - [x] Preview week 0–2 reviewed
 - [x] Week 1–13 + 15 production writes
@@ -218,8 +226,9 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 - [x] 2C-2H-6 Balanced V1 preseason bridge evaluation PASSED (Candidate A provisional; B rejected)
 - [x] 2C-2H-7 Balanced V1 transition timing PASSED (PR #58; hard switches rejected)
 - [x] 2C-2H-8 Balanced V1 transition blend evaluation PASSED (PR #59; B1 authorized model policy)
-- [ ] 2C-2H-9 Core V1 lifecycle writer (draft)
-- [ ] Odds / ratings persist COMMIT / bets remain **out of scope** until separately approved
+- [x] 2C-2H-9 Core V1 lifecycle writer COMPLETE (production COMMIT + verification)
+- [ ] 2C-2I-1 Hybrid V2 preseason readiness audit (draft)
+- [ ] Odds / unit-grade bridge / Hybrid activation / bets remain **out of scope** until separately approved
 
 ---
 
@@ -229,9 +238,12 @@ With dev server or deployed preview (read-only API calls):
 
 - [ ] `GET /api/weeks/slate?season=2026&week=N&model=hybrid_v2` returns `{ games, meta }`
 - [ ] `meta.activeModel` is `hybrid_v2`
+- [ ] Confirm fallback metadata when 2026 TeamUnitGrades are absent (expected until Hybrid inputs exist)
 - [ ] `GET /api/weeks/slate?season=2026&week=N&model=core_v1` returns Core V1 spread scope
 - [ ] Homepage and `/picks` load with Hybrid V2 default; Core V1 selector works
 - [ ] Confirm homepage does **not** call `/api/seed-slate`
+
+**Note:** Until 2C-2I-1 is resolved, treat Hybrid as **configured default with Core V1 fallback**, not as operationally active Week1 Hybrid.
 
 Local verification scripts (after Phase 2A) use `normalizeSlateApiResponse()` for both legacy array and wrapped responses.
 
