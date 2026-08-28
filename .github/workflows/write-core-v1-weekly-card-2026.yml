@@ -41,7 +41,7 @@ on:
         type: string
         default: ''
       kickoff_before:
-        description: 'Optional exclusive ISO-8601 kickoff upper bound (UTC recommended). Blank = no tranche cutoff. Example Week-Zero tranche: 2026-09-01T00:00:00Z'
+        description: 'Optional exclusive ISO-8601 kickoff upper bound with explicit timezone (Z or ±HH:MM). Blank = no tranche cutoff. Example: 2026-09-01T00:00:00Z'
         required: false
         type: string
         default: ''

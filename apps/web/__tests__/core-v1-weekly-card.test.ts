@@ -11,9 +11,13 @@ import {
   buildPreviewExecution,
   buildRolledBackTransactionExecution,
   buildSuccessfulCommitExecution,
+  buildTransactionalIdempotentNoOpExecution,
+  buildTransactionalIdempotentVerificationFailureExecution,
   commitEligible,
+  commitMayEnterTransaction,
   evaluateExistingCardSafety,
   executeAtomicAppendCommit,
+  finalizeCoreCardReport,
   isBeforeKickoffCutoff,
   isIdempotentNoOp,
   isKickoffEligible,
@@ -895,6 +899,15 @@ describe('2C-2J-5 split-slate kickoff_before tranche', () => {
       true
     );
 
+    // Strict ISO-8601 with timezone
+    expect(parseKickoffBefore('2026-09-01T00:00:00Z').ok).toBe(true);
+    expect(parseKickoffBefore('2026-09-01T00:00:00.000Z').ok).toBe(true);
+    expect(parseKickoffBefore('2026-08-31T19:00:00-05:00').ok).toBe(true);
+    expect(parseKickoffBefore('2026-09-01').ok).toBe(false);
+    expect(parseKickoffBefore('09/01/2026').ok).toBe(false);
+    expect(parseKickoffBefore('September 1, 2026').ok).toBe(false);
+    expect(parseKickoffBefore('2026-09-01T00:00:00').ok).toBe(false);
+
     const early = mkGame('early', '2026-08-30T00:00:00.000Z');
     const late = mkGame('late', '2026-09-05T00:00:00.000Z');
     // Pad to Week-1 51 for universe invariant when week=1.
@@ -1042,6 +1055,93 @@ describe('2C-2J-5 split-slate kickoff_before tranche', () => {
     expect(commit.newPlannedBets).toHaveLength(0);
     expect(isIdempotentNoOp(commit)).toBe(true);
     expect(commitEligible(commit)).toBe(false);
+    // Apparently idempotent plans still may enter the authoritative transaction.
+    expect(commitMayEnterTransaction(commit)).toBe(true);
+  });
+});
+
+describe('2C-2J-5A transactional idempotent audit + phase', () => {
+  it('transactional idempotent no-op reports transactionStarted=true', () => {
+    const exec = buildTransactionalIdempotentNoOpExecution();
+    expect(exec.transactionStarted).toBe(true);
+    expect(exec.mutationsInvoked).toBe(false);
+    expect(exec.betPersistenceInvoked).toBe(false);
+    expect(exec.createManyCount).toBe(0);
+    expect(exec.commitSucceeded).toBe(true);
+    expect(exec.postWriteVerificationSucceeded).toBe(true);
+  });
+
+  it('transactional no-op verification failure is fail-closed with zero mutation flags', () => {
+    const exec = buildTransactionalIdempotentVerificationFailureExecution({
+      error: 'fresh verification failed',
+    });
+    expect(exec.transactionStarted).toBe(true);
+    expect(exec.mutationsInvoked).toBe(false);
+    expect(exec.betPersistenceInvoked).toBe(false);
+    expect(exec.createManyCount).toBe(0);
+    expect(exec.commitSucceeded).toBe(true);
+    expect(exec.postWriteVerificationSucceeded).toBe(false);
+  });
+
+  it('serialization/transaction rollback after mutation attempt preserves 4B flags', () => {
+    const exec = buildRolledBackTransactionExecution({
+      createManyInvoked: true,
+      createManyCount: 2,
+      error: 'could not serialize access due to concurrent update',
+    });
+    expect(exec.transactionStarted).toBe(true);
+    expect(exec.mutationsInvoked).toBe(true);
+    expect(exec.betPersistenceInvoked).toBe(true);
+    expect(exec.createManyCount).toBe(2);
+    expect(exec.commitSucceeded).toBe(false);
+  });
+
+  it('report phase === 2C-2J-5', () => {
+    const plan = buildCoreWeeklyCardPlan({
+      season: 2026,
+      week: 2,
+      mode: 'PREVIEW',
+      executionNow: new Date(),
+      fbsMembershipCount: 138,
+      games: [],
+      existingOfficial: [],
+      existingHybrid: [],
+    });
+    const report = finalizeCoreCardReport({
+      plan,
+      execution: buildPreviewExecution('PREVIEW'),
+      verification: null,
+    });
+    expect(report.phase).toBe('2C-2J-5');
+  });
+
+  it('authoritative transaction exact match → zero createMany invocation', async () => {
+    const planned = planSpreadBet({
+      season: 2026,
+      week: 1,
+      gameId: 'g1',
+      homeTeamId: HOME,
+      awayTeamId: AWAY,
+      homeTeamName: 'Home U',
+      awayTeamName: 'Away U',
+      kickoffIso: TS,
+      coreSpreadHma: 10,
+      displaySpread: selection({ spreadHma: 7 }).displaySpread!,
+    })!;
+    let createCalled = false;
+    const result = await executeAtomicAppendCommit({
+      plannedBets: [planned],
+      trackedGameIds: ['g1'],
+      reReadOfficial: async () => [asExisting(planned)],
+      reReadHybrid: async () => [],
+      createMany: async () => {
+        createCalled = true;
+        return { count: 1 };
+      },
+    });
+    expect(createCalled).toBe(false);
+    expect(result.count).toBe(0);
+    expect(result.newPlannedBets).toEqual([]);
   });
 });
 

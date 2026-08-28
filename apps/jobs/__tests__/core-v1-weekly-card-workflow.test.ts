@@ -110,6 +110,20 @@ describe('2C-2J-5 Core V1 weekly-card workflow security', () => {
     expect(runText).not.toMatch(/\$\{\{\s*inputs\./);
   });
 
+  it('CLI always enters Serializable transaction for COMMIT; no pre-tx idempotent shortcut', () => {
+    expect(cli).toContain('commitMayEnterTransaction');
+    expect(cli).toContain('Prisma.TransactionIsolationLevel.Serializable');
+    expect(cli).toContain('buildTransactionalIdempotentNoOpExecution');
+    expect(cli).toContain('buildTransactionalIdempotentVerificationFailureExecution');
+    expect(cli).toContain('executeAtomicAppendCommit');
+    // Must not short-circuit COMMIT on initial-plan isIdempotentNoOp alone.
+    expect(cli).not.toMatch(
+      /if\s*\(\s*isIdempotentNoOp\s*\(\s*plan\s*\)\s*&&\s*plan\.confirmationValid\s*\)/
+    );
+    // Fresh post-tx reads even for zero-insert path (not snapshot-vs-self).
+    expect(cli).toMatch(/transactionalIdempotentNoOp/);
+  });
+
   it('CLI separates transaction failure from committed verification failure', () => {
     expect(cli).toContain('resolvePreviewExitCode');
     expect(cli).toContain('buildCommittedVerificationFailureExecution');

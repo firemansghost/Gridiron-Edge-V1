@@ -11,7 +11,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import {
   getCoreV1SpreadFromTeams,
 } from '../web/lib/core-v1-spread';
@@ -26,16 +26,16 @@ import {
   LIVE_ODDS_SOURCE,
   buildCoreWeeklyCardPlan,
   buildFailedCommitExecution,
-  buildIdempotentNoOpExecution,
   buildPreviewExecution,
   buildSuccessfulCommitExecution,
   buildCommittedVerificationFailureExecution,
   buildRolledBackTransactionExecution,
-  commitEligible,
+  buildTransactionalIdempotentNoOpExecution,
+  buildTransactionalIdempotentVerificationFailureExecution,
+  commitMayEnterTransaction,
   executeAtomicAppendCommit,
   expectedWriteConfirmation,
   finalizeCoreCardReport,
-  isIdempotentNoOp,
   parseKickoffBefore,
   resolvePreviewExitCode,
   verifyCoreCardPostWrite,
@@ -368,25 +368,9 @@ async function main(): Promise<void> {
       return;
     }
 
-    // COMMIT
-    if (isIdempotentNoOp(plan) && plan.confirmationValid) {
-      execution = buildIdempotentNoOpExecution();
-      verification = verifyCoreCardPostWrite({
-        plannedBets: plan.plannedBets,
-        newPlannedBets: [],
-        createManyCount: 0,
-        beforeOfficial: mapExisting(officialRows),
-        afterOfficial: mapExisting(officialRows),
-        afterHybrid: mapExisting(hybridRows),
-      });
-      writeReport(reportPath, plan, execution, verification, {
-        idempotentNoOp: true,
-        safetyMode: plan.existingSafety.mode,
-      });
-      return;
-    }
-
-    if (!commitEligible(plan)) {
+    // COMMIT — always enter authoritative Serializable transaction when allowed.
+    // Initial plan may look idempotent; transaction re-read is authoritative.
+    if (!commitMayEnterTransaction(plan)) {
       execution = buildFailedCommitExecution({
         error: `COMMIT blocked: writeSafe=${plan.writeSafe} confirmationValid=${plan.confirmationValid} existingSafety=${plan.existingSafety.mode} planned=${plan.plannedBets.length} newPlanned=${plan.newPlannedBets.length}`,
       });
@@ -402,49 +386,54 @@ async function main(): Promise<void> {
     let txMutationInvoked = false;
     let txCreateManyCount: number | null = null;
 
-    // --- A. TRANSACTION PHASE ---
+    // --- A. TRANSACTION PHASE (Serializable; no skipDuplicates / no retry) ---
     try {
-      const txResult = await prisma.$transaction(async (tx) => {
-        const result = await executeAtomicAppendCommit({
-          plannedBets: plan!.plannedBets,
-          trackedGameIds: gameInputs.map((g) => g.gameId),
-          reReadOfficial: async () =>
-            mapExisting(
-              await tx.bet.findMany({
-                where: {
-                  season: args.season,
-                  week: args.week,
-                  strategyTag: CORE_CARD_STRATEGY_TAG,
-                },
-              })
-            ),
-          reReadHybrid: async () =>
-            mapExisting(
-              await tx.bet.findMany({
-                where: {
-                  season: args.season,
-                  week: args.week,
-                  strategyTag: 'hybrid_v2',
-                },
-              })
-            ),
-          createMany: async (rows) => {
-            // Track invocation even if later assert/rollback aborts the transaction.
-            txMutationInvoked = true;
-            const created = await tx.bet.createMany({
-              data: rows.map((r) => ({
-                ...r,
-                modelPrice: r.modelPrice,
-                closePrice: r.closePrice,
-                stake: r.stake,
-              })),
-            });
-            txCreateManyCount = created.count;
-            return created;
-          },
-        });
-        return result;
-      });
+      const txResult = await prisma.$transaction(
+        async (tx) => {
+          const result = await executeAtomicAppendCommit({
+            plannedBets: plan!.plannedBets,
+            trackedGameIds: gameInputs.map((g) => g.gameId),
+            reReadOfficial: async () =>
+              mapExisting(
+                await tx.bet.findMany({
+                  where: {
+                    season: args.season,
+                    week: args.week,
+                    strategyTag: CORE_CARD_STRATEGY_TAG,
+                  },
+                })
+              ),
+            reReadHybrid: async () =>
+              mapExisting(
+                await tx.bet.findMany({
+                  where: {
+                    season: args.season,
+                    week: args.week,
+                    strategyTag: 'hybrid_v2',
+                  },
+                })
+              ),
+            createMany: async (rows) => {
+              // Track invocation even if later assert/rollback aborts the transaction.
+              txMutationInvoked = true;
+              const created = await tx.bet.createMany({
+                data: rows.map((r) => ({
+                  ...r,
+                  modelPrice: r.modelPrice,
+                  closePrice: r.closePrice,
+                  stake: r.stake,
+                })),
+              });
+              txCreateManyCount = created.count;
+              return created;
+            },
+          });
+          return result;
+        },
+        {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        }
+      );
       createManyCount = txResult.count;
       beforeOfficialSnapshot = txResult.beforeOfficial;
       newPlannedAtCommit = txResult.newPlannedBets;
@@ -453,6 +442,7 @@ async function main(): Promise<void> {
       const msg = err instanceof Error ? err.message : String(err);
       // Transaction rolled back — ZERO Bet rows committed.
       // Truthfully report whether createMany was reached (mutation attempted != committed).
+      // Includes serialization failures after createMany was invoked.
       execution = buildRolledBackTransactionExecution({
         createManyInvoked: txMutationInvoked,
         createManyCount: txCreateManyCount,
@@ -463,30 +453,12 @@ async function main(): Promise<void> {
         rolledBack: true,
         mutationAttempted: txMutationInvoked,
         persistenceCommitted: false,
+        isolationLevel: 'Serializable',
       });
       throw err;
     }
 
-    // Idempotent race: transaction found nothing missing and skipped createMany.
-    if (createManyCount === 0 && !txMutationInvoked) {
-      execution = buildIdempotentNoOpExecution();
-      verification = verifyCoreCardPostWrite({
-        plannedBets: plan.plannedBets,
-        newPlannedBets: [],
-        createManyCount: 0,
-        beforeOfficial: beforeOfficialSnapshot,
-        afterOfficial: beforeOfficialSnapshot,
-        afterHybrid: mapExisting(hybridRows),
-      });
-      writeReport(reportPath, plan, execution, verification, {
-        idempotentNoOp: true,
-        raceSafeNoOp: true,
-      });
-      return;
-    }
-
-    // --- B. TRANSACTION SUCCESS: persistence happened. Never revert these flags. ---
-    // --- C. POST-WRITE VERIFICATION (separate from transaction) ---
+    // --- B. POST-TRANSACTION VERIFICATION (fresh reads; even for zero-insert no-op) ---
     try {
       const afterOfficial = mapExisting(
         await prisma.bet.findMany({
@@ -516,7 +488,28 @@ async function main(): Promise<void> {
         afterHybrid,
       });
 
+      const zeroMutationNoOp = createManyCount === 0 && !txMutationInvoked;
+
       if (!verification.ok) {
+        if (zeroMutationNoOp) {
+          execution = buildTransactionalIdempotentVerificationFailureExecution({
+            error: `transactional idempotent no-op completed; post-operation verification failed: ${verification.reasons.join('; ')}`,
+          });
+          writeReport(reportPath, plan, execution, verification, {
+            persistenceHappened: false,
+            transactionCommitted: true,
+            transactionalIdempotentNoOp: true,
+            verificationFailed: true,
+            rolledBack: false,
+            isolationLevel: 'Serializable',
+          });
+          console.error(
+            'COMMIT transactional no-op verification failed — see report (zero mutations; NOT a rollback)'
+          );
+          process.exitCode = 1;
+          return;
+        }
+
         execution = buildCommittedVerificationFailureExecution({
           createManyCount,
           error: `BET ROWS MAY / DO EXIST — transaction committed; post-write verification failed: ${verification.reasons.join('; ')}`,
@@ -526,11 +519,27 @@ async function main(): Promise<void> {
           transactionCommitted: true,
           verificationFailed: true,
           rolledBack: false,
+          isolationLevel: 'Serializable',
         });
         console.error(
           'COMMIT persisted bets but post-write verification failed — see report (NOT a rollback)'
         );
         process.exitCode = 1;
+        return;
+      }
+
+      if (zeroMutationNoOp) {
+        execution = buildTransactionalIdempotentNoOpExecution();
+        writeReport(reportPath, plan, execution, verification, {
+          persistenceHappened: false,
+          transactionCommitted: true,
+          transactionalIdempotentNoOp: true,
+          verificationFailed: false,
+          isolationLevel: 'Serializable',
+        });
+        console.log(
+          `COMMIT transactional idempotent no-op: inserted=0 existingBefore=${beforeOfficialSnapshot.length} rowsAfter=${verification.rowsAfter}`
+        );
         return;
       }
 
@@ -542,6 +551,7 @@ async function main(): Promise<void> {
         persistenceHappened: true,
         transactionCommitted: true,
         verificationFailed: false,
+        isolationLevel: 'Serializable',
       });
       console.log(
         `COMMIT succeeded: inserted=${createManyCount} existingBefore=${beforeOfficialSnapshot.length} rowsAfter=${verification.rowsAfter}`
@@ -551,6 +561,25 @@ async function main(): Promise<void> {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      const zeroMutationNoOp = createManyCount === 0 && !txMutationInvoked;
+      if (zeroMutationNoOp) {
+        execution = buildTransactionalIdempotentVerificationFailureExecution({
+          error: `transactional idempotent no-op completed; verification read/error: ${msg}`,
+        });
+        writeReport(reportPath, plan, execution, verification, {
+          persistenceHappened: false,
+          transactionCommitted: true,
+          transactionalIdempotentNoOp: true,
+          verificationReadFailed: true,
+          rolledBack: false,
+          isolationLevel: 'Serializable',
+        });
+        console.error(
+          'COMMIT transactional no-op verification read failed — see report (zero mutations)'
+        );
+        process.exitCode = 1;
+        return;
+      }
       execution = buildCommittedVerificationFailureExecution({
         createManyCount,
         error: `BET ROWS MAY / DO EXIST — transaction committed; verification read/error: ${msg}`,
@@ -560,6 +589,7 @@ async function main(): Promise<void> {
         transactionCommitted: true,
         verificationReadFailed: true,
         rolledBack: false,
+        isolationLevel: 'Serializable',
       });
       console.error(
         'COMMIT persisted bets but verification read failed — see report (NOT a rollback)'

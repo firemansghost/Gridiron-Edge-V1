@@ -193,6 +193,10 @@ export interface TrancheSelection {
   excludedAfterCutoffGameIds: string[];
 }
 
+/** Full ISO-8601 timestamp with explicit timezone (Z or ±HH:MM). Blank = no cutoff. */
+const KICKOFF_BEFORE_ISO_RE =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
+
 /** Parse optional exclusive kickoff_before (blank = no upper bound). */
 export function parseKickoffBefore(
   raw: string | null | undefined
@@ -200,7 +204,16 @@ export function parseKickoffBefore(
   if (raw == null || String(raw).trim() === '') {
     return { ok: true, value: null, reason: null };
   }
-  const d = new Date(String(raw).trim());
+  const trimmed = String(raw).trim();
+  if (!KICKOFF_BEFORE_ISO_RE.test(trimmed)) {
+    return {
+      ok: false,
+      value: null,
+      reason:
+        'kickoff_before must be a full ISO-8601 timestamp with explicit timezone (Z or ±HH:MM)',
+    };
+  }
+  const d = new Date(trimmed);
   if (!Number.isFinite(d.getTime())) {
     return { ok: false, value: null, reason: 'kickoff_before must be a valid ISO-8601 timestamp' };
   }
@@ -1179,6 +1192,24 @@ export function commitEligible(plan: CoreWeeklyCardPlan): boolean {
   );
 }
 
+/**
+ * Initial-plan gate for entering the authoritative COMMIT transaction.
+ * Includes apparently-idempotent plans — the transaction re-read is authoritative.
+ */
+export function commitMayEnterTransaction(plan: CoreWeeklyCardPlan): boolean {
+  return (
+    plan.mode === 'COMMIT' &&
+    plan.writeSafe &&
+    plan.confirmationValid &&
+    plan.plannedBets.length > 0 &&
+    plan.existingSafety.ok &&
+    (plan.existingSafety.mode === 'empty' ||
+      plan.existingSafety.mode === 'append_safe' ||
+      plan.existingSafety.mode === 'idempotent_exact' ||
+      plan.existingSafety.mode === 'idempotent_slice')
+  );
+}
+
 export function isIdempotentNoOp(plan: CoreWeeklyCardPlan): boolean {
   return (
     plan.writeSafe &&
@@ -1507,6 +1538,7 @@ export function buildPreviewExecution(mode: CoreCardMode = 'PREVIEW'): CoreCardE
 }
 
 export function buildIdempotentNoOpExecution(): CoreCardExecutionState {
+  // Legacy non-transactional builder — prefer buildTransactionalIdempotentNoOpExecution.
   return {
     mode: 'COMMIT',
     commitAttempted: true,
@@ -1517,6 +1549,43 @@ export function buildIdempotentNoOpExecution(): CoreCardExecutionState {
     commitSucceeded: true,
     postWriteVerificationSucceeded: true,
     error: null,
+    providerCalls: 0,
+  };
+}
+
+/** Authoritative tx found zero missing keys; createMany never invoked. */
+export function buildTransactionalIdempotentNoOpExecution(): CoreCardExecutionState {
+  return {
+    mode: 'COMMIT',
+    commitAttempted: true,
+    transactionStarted: true,
+    mutationsInvoked: false,
+    betPersistenceInvoked: false,
+    createManyCount: 0,
+    commitSucceeded: true,
+    postWriteVerificationSucceeded: true,
+    error: null,
+    providerCalls: 0,
+  };
+}
+
+/**
+ * Transactional idempotent no-op committed (zero mutations), but fresh
+ * post-operation verification failed. Distinct from committed-mutation failure.
+ */
+export function buildTransactionalIdempotentVerificationFailureExecution(options: {
+  error: string;
+}): CoreCardExecutionState {
+  return {
+    mode: 'COMMIT',
+    commitAttempted: true,
+    transactionStarted: true,
+    mutationsInvoked: false,
+    betPersistenceInvoked: false,
+    createManyCount: 0,
+    commitSucceeded: true,
+    postWriteVerificationSucceeded: false,
+    error: options.error,
     providerCalls: 0,
   };
 }
@@ -1621,7 +1690,7 @@ export function finalizeCoreCardReport(options: {
   meta?: Record<string, unknown>;
 }): Record<string, unknown> {
   return {
-    phase: '2C-2J-4',
+    phase: '2C-2J-5',
     artifact: `core-v1-weekly-card-2026-${options.plan.season}-week-${options.plan.week}-${options.plan.mode.toLowerCase()}`,
     plan: options.plan,
     execution: options.execution,
