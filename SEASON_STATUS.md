@@ -1,7 +1,7 @@
 # Season Status — Gridiron Edge
 
 **Status:** Offseason / paused for regular-season automation  
-**Updated:** 2026-08-28 (Phase 2C-2J-1 — workflow reactivation inventory + Odds architecture audit; draft PR)
+**Updated:** 2026-08-28 (Phase 2C-2J-2 — Guarded 2026 Live Odds PREVIEW/COMMIT; draft PR)
 
 Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISABLE_REPORT.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -50,10 +50,11 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **Phase 2C-2H-9 Core V1 lifecycle writer** | **COMPLETE** — Candidate A persisted 138/138; `GLOBAL_BLEND_W3_W6` lifecycle active; production COMMIT verified |
 | **Phase 2C-2I-1 Hybrid V2 preseason readiness** | **COMPLETE** — production audit run 33134809476 `auditOk=true`; Core V1 Week1 ready; Hybrid inputs 0/51 fallback |
 | **Phase 2C-2I-2 Hybrid activation hold** | **COMPLETE** (PR #62) — production smoke PASS; effective 2026 Week1 = Core V1; Hybrid held |
-| **Phase 2C-2J-1 Workflow reactivation inventory** | **In preparation (draft)** — 45 workflows classified; Odds/bet/score not authorized; no enables |
+| **Phase 2C-2J-1 Workflow reactivation inventory** | **COMPLETE** (PR #63) — 45→46 workflows after 2C-2J-2; active schedules 10; schedule reactivation 0 |
+| **Phase 2C-2J-2 Guarded 2026 Live Odds** | **In preparation (draft)** — PREVIEW/COMMIT append-only writer; production Odds run NOT YET AUTHORIZED |
 | **Expected 2026 schedule baseline** | **761** games / **138** distinct teams — **verified** |
 | **Ratings computation / persistence** | **2026 Core V1 initialized** (do not rerun); further lifecycle COMMITs only via guarded workflow |
-| **Odds ingestion** | **Not yet approved** (live Odds path REPLACE; awaiting 2C-2J-2 design implementation) |
+| **Odds ingestion** | **Not yet approved** (writer exists in draft; no production PREVIEW/COMMIT until review) |
 | **Bet sync** | **Not yet approved** (dual Hybrid+Core sync invalid while Hybrid held) |
 | **Nightly workflow reactivation** | **Not yet approved** — recurring workflows remain STOPPED |
 
@@ -70,7 +71,7 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 
 **Scope notes:** Hybrid V2 = spreads only; totals/ML = current Core V1 logic; weekly `official_flat_100` sync for comparison.
 
-**Operational note (2C-2J-1):** Core V1 remains the **official 2026 Week1 spread model**. Hybrid production authorization remains **held**. Recurring GitHub workflows remain **STOPPED** in the UI. Odds ingestion, bet sync, grading, and score sync are **NOT AUTHORIZED / not reactivated**. See [2026 Workflow Reactivation Matrix](docs/2026-workflow-reactivation-matrix.md).
+**Operational note (2C-2J-2):** Guarded Live Odds PREVIEW/COMMIT path is under draft review. Recurring workflows remain **STOPPED**. Odds PREVIEW production run and COMMIT remain **NOT AUTHORIZED** until independent review. Bet sync / grading / score sync remain unauthorized. Hybrid remains **held**; official Week1 spread = **Core V1**.
 
 ---
 
@@ -522,21 +523,36 @@ Provider-availability blocker removed. Persistence and ratings remain unauthoriz
 - Held path: no Hybrid runtime; no persisted `hybrid_v2` comparison metadata
 - Hybrid formula / Core V1 formula / strategy tags unchanged
 
-### 2C-2J-1 Workflow reactivation inventory + Live Odds architecture (in preparation / draft)
+### 2C-2J-1 Workflow reactivation inventory + Live Odds architecture — **COMPLETE** (PR #63)
+
+Merge SHA: `19117af8b17de45121e0187e5d7fcf69afdbf6b9`
 
 | Artifact | Role |
 |----------|------|
 | `docs/2026-workflow-reactivation-matrix.md` | Human-readable inventory, pipeline design, Odds/bet/score audits |
-| `docs/data/2026-workflow-classifications.json` | Machine-readable classifications (45 workflows) |
+| `docs/data/2026-workflow-classifications.json` | Machine-readable classifications |
 | `scripts/inventory-workflows-2026.py` | Pure static YAML inventory (no network/DB) |
 
-- **45** workflows inventoried; **10** with active YAML schedules; **0** schedule reactivation recommended
+- Inventoried at merge: **45** workflows; **10** active YAML schedules; **0** schedule reactivation recommended
 - REPLACE: `nightly-ingest`, `ratings-v1`, `ratings-v2`, `sync-weekly-bets`
-- Live Odds path: do **not** reuse ingest-minimal wipe or ingest.ts+ratings; propose guarded 2C-2J-2 PREVIEW/COMMIT
-- Odds / bet sync / grading / score sync remain **NOT AUTHORIZED / not reactivated**
-- No workflow enablement; no provider calls; no DB writes in this phase
+- Do **not** reuse ingest-minimal wipe or ingest.ts+ratings for live 2026 Odds
 
-**Still out of scope / unapproved:** Odds COMMIT, bet writes, Hybrid activation, unit-grade writes, cron reactivation.
+### 2C-2J-2 Guarded 2026 Live Odds PREVIEW/COMMIT — **in preparation (draft)**
+
+| Artifact | Role |
+|----------|------|
+| `apps/jobs/src/odds/live-odds-2026.ts` | Pure validation / normalization / reconciliation |
+| `apps/jobs/write-live-odds-2026.ts` | CLI + provider + Prisma orchestration |
+| `.github/workflows/write-live-odds-2026.yml` | Manual guarded workflow (dispatch only) |
+| `apps/jobs/__tests__/live-odds-2026.test.ts` | Pure/mocked guards |
+
+- Append-only MarketLine observations; no delete/update of history
+- Exactly one live Odds API call; fixed `h2h,spreads,totals` / `regions=us`
+- PREVIEW consumes Odds credits but cannot write DB; COMMIT requires `WRITE_2026_WEEK_<n>_ODDS`
+- **Production Odds PREVIEW run / COMMIT remain NOT AUTHORIZED** until independent review
+- No workflow enablement; no schedule added; recurring workflows remain STOPPED
+
+**Still out of scope / unapproved:** production Odds PREVIEW/COMMIT, bet writes, Hybrid activation, unit-grade writes, cron reactivation.
 
 ---
 
@@ -562,7 +578,8 @@ Provider-availability blocker removed. Persistence and ratings remain unauthoriz
 | **2026 Core V1 lifecycle writer** | **COMPLETE (2C-2H-9)** | Candidate A 138/138 persisted; B1 lifecycle active |
 | **Hybrid V2 preseason readiness** | **COMPLETE (2C-2I-1)** | Audit 33134809476; Week1 official = Core V1; bridge unauthorized |
 | **Hybrid V2 activation hold** | **COMPLETE (2C-2I-2 / PR #62)** | 2026 effective Core V1; production smoke PASS |
-| **Workflow reactivation inventory** | **In prep (2C-2J-1)** | 45 classified; Odds path REPLACE; no enables |
+| **Workflow reactivation inventory** | **COMPLETE (2C-2J-1 / PR #63)** | 45 at merge; 46 with 2C-2J-2 writer; schedules 10; reactivation 0 |
+| **Guarded 2026 Live Odds writer** | **Draft (2C-2J-2)** | PREVIEW/COMMIT code; production Odds run NOT AUTHORIZED |
 | **2026 FBS membership** | **PASSED** | Phase 2C-2B — **138/138** |
 | **Season conference persistence** | **PASSED (2C-2G-3)** | 138/138 populated; 0 NULL; do not rerun initializer |
 | **Prisma migrate auto-deploy** | **PASSED (2C-2G-1)** | Manual `MIGRATE_PRODUCTION` only |
@@ -601,12 +618,11 @@ Provider-availability blocker removed. Persistence and ratings remain unauthoriz
 
 ## Next phases
 
-1. **Phase 2C-2J-1** — review/merge workflow reactivation inventory + Odds architecture audit
-2. **Phase 2C-2J-2** — implement guarded 2026 Live Odds PREVIEW/COMMIT (manual only; no schedule)
-3. Core-only guarded weekly-card writer (or effective-model gate) before any bet sync
-4. Repair 2026 score sync before any post-game automation
-5. Do **not** copy 2025 TeamUnitGrades / activate Hybrid / enable crons from this phase
-6. Odds / bet sync / grading remain **NOT AUTHORIZED** until separately approved
+1. **Phase 2C-2J-2** — independent review of guarded Live Odds draft PR; do **not** run production PREVIEW/COMMIT until authorized
+2. Core-only guarded weekly-card writer (or effective-model gate) before any bet sync
+3. Repair 2026 score sync before any post-game automation
+4. Do **not** copy 2025 TeamUnitGrades / activate Hybrid / enable crons from this phase
+5. Odds / bet sync / grading remain **NOT AUTHORIZED** until separately approved
 
 See [Preseason Reactivation Checklist](docs/preseason-reactivation-checklist.md) and [2026 Workflow Reactivation Matrix](docs/2026-workflow-reactivation-matrix.md).
 

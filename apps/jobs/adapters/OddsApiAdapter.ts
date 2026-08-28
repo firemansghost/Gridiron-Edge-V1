@@ -1123,6 +1123,76 @@ export class OddsApiAdapter implements DataSourceAdapter {
   }
 
   /**
+   * Phase 2C-2J-2 — Force LIVE featured NCAAF odds only (never historical).
+   * Exactly one HTTP GET. Does not match games or write MarketLines.
+   * Existing getMarketLines() live/historical heuristics remain unchanged.
+   */
+  async fetchLiveNcaafOddsSnapshot(): Promise<{
+    events: OddsApiEvent[];
+    providerCalls: 1;
+    providerUsage: {
+      requestsLast: string | null;
+      requestsUsed: string | null;
+      requestsRemaining: string | null;
+    };
+    markets: string;
+    region: 'us';
+    endpoint: 'live';
+    urlRedacted: string;
+  }> {
+        // Guarded 2026 writer: force live endpoint + fixed markets/region (ignore config).
+        // No historical endpoint, no per-event fan-out, no automatic HTTP re-attempts.
+    const markets = 'h2h,spreads,totals';
+    const region = 'us';
+    const url = `${this.baseUrl}/sports/americanfootball_ncaaf/odds?apiKey=${this.apiKey}&regions=${region}&markets=${markets}&oddsFormat=american`;
+    const urlRedacted = url.replace(this.apiKey, 'REDACTED');
+
+    console.log(`   [ODDSAPI_LIVE_SNAPSHOT] URL: ${urlRedacted}`);
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(this.config.timeoutMs),
+    });
+
+    const providerUsage = {
+      requestsLast: response.headers.get('x-requests-last'),
+      requestsUsed: response.headers.get('x-requests-used'),
+      requestsRemaining: response.headers.get('x-requests-remaining'),
+    };
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error(
+        `   [ODDSAPI_LIVE_SNAPSHOT] ERROR ${response.status} ${response.statusText}`
+      );
+      console.error(errorBody.slice(0, 800));
+      throw new Error(
+        `Odds API live snapshot error: ${response.status} ${response.statusText}`
+      );
+    }
+
+    const events: OddsApiEvent[] = await response.json();
+    if (!Array.isArray(events)) {
+      throw new Error('Odds API live snapshot: malformed response (expected array)');
+    }
+
+    console.log(
+      `   [ODDSAPI_LIVE_SNAPSHOT] events=${events.length} last=${providerUsage.requestsLast} remaining=${providerUsage.requestsRemaining}`
+    );
+
+    return {
+      events,
+      providerCalls: 1,
+      providerUsage,
+      markets,
+      region,
+      endpoint: 'live',
+      urlRedacted,
+    };
+  }
+
+  /**
    * Fetch historical odds from The Odds API
    */
   private async fetchHistoricalOdds(season: number, week: number, startDate: string, endDate?: string, options?: any): Promise<{lines: any[], eventCount: number, matchedCount: number}> {

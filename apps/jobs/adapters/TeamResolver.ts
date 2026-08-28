@@ -13,6 +13,19 @@ interface UnmatchedTeam {
   reason: 'not_fbs' | 'no_alias' | 'denylisted';
 }
 
+export type TeamResolveMethod =
+  | 'guard'
+  | 'cfbd_alias'
+  | 'alias'
+  | 'normalized_alias'
+  | 'fuzzy'
+  | null;
+
+export interface TeamResolveResult {
+  teamId: string | null;
+  method: TeamResolveMethod;
+}
+
 export class TeamResolver {
   private aliases: Map<string, string> = new Map();
   private cfbdAliases: Map<string, string> = new Map();
@@ -341,8 +354,20 @@ export class TeamResolver {
    * @returns Canonical team ID or null if not found/denylisted
    */
   resolveTeam(providerName: string, providerSport: string, options?: { provider?: string }): string | null {
+    return this.resolveTeamDetailed(providerName, providerSport, options).teamId;
+  }
+
+  /**
+   * Same resolution as resolveTeam, with method provenance for guarded writers.
+   * Fuzzy matches are reported as method='fuzzy' so callers can fail closed.
+   */
+  resolveTeamDetailed(
+    providerName: string,
+    providerSport: string,
+    options?: { provider?: string }
+  ): TeamResolveResult {
     if (!providerName || !providerSport) {
-      return null;
+      return { teamId: null, method: null };
     }
 
     // Pre-normalize: strip diacritics and unify A&M forms
@@ -357,13 +382,13 @@ export class TeamResolver {
     // Check if the provider name itself is denylisted
     if (this.denylist.has(normalizedName)) {
       console.log(`[TEAM_RESOLVER] Denylisted team name: ${providerName}`);
-      return null;
+      return { teamId: null, method: null };
     }
 
     // Apply mis-map guards for common pitfalls
     const guardedResult = this.applyMisMapGuards(providerName);
     if (guardedResult) {
-      return guardedResult;
+      return { teamId: guardedResult, method: 'guard' };
     }
 
     // Step 1: Provider-specific alias match (CFBD first if provider is cfbd)
@@ -380,13 +405,13 @@ export class TeamResolver {
         // Check if it's denylisted
         if (this.denylist.has(cfbdMatch)) {
           console.log(`[TEAM_RESOLVER] Denylisted CFBD team: ${providerName} -> ${cfbdMatch}`);
-          return null;
+          return { teamId: null, method: null };
         }
         
         // Check if the resolved team ID exists in our database
         if (!this.teamExistsInDatabase(cfbdMatch)) {
           console.error(`[TEAM_RESOLVER] FK ERROR: Alias "${providerName}" -> "${cfbdMatch}" but team ID doesn't exist in database`);
-          return null;
+          return { teamId: null, method: null };
         }
         
         if (this.verboseLogging || !this.resolvedTeams.has(providerName) || needsDebug) {
@@ -396,7 +421,7 @@ export class TeamResolver {
           }
           this.resolvedTeams.add(providerName);
         }
-        return cfbdMatch;
+        return { teamId: cfbdMatch, method: 'cfbd_alias' };
       }
     }
 
@@ -413,16 +438,16 @@ export class TeamResolver {
       // Check if it's denylisted
       if (this.denylist.has(exactMatch)) {
         console.log(`[TEAM_RESOLVER] Denylisted team: ${providerName} -> ${exactMatch}`);
-        return null;
+        return { teamId: null, method: null };
       }
       
       // Check if the resolved team ID exists in our database
       if (!this.teamExistsInDatabase(exactMatch)) {
         console.error(`[TEAM_RESOLVER] FK ERROR: Alias "${providerName}" -> "${exactMatch}" but team ID doesn't exist in database`);
-        return null;
+        return { teamId: null, method: null };
       }
       
-      return exactMatch;
+      return { teamId: exactMatch, method: 'alias' };
     }
 
     // Step 2: Name normalization (strip mascots, punctuation, etc.)
@@ -431,27 +456,27 @@ export class TeamResolver {
     if (normalizedMatch) {
       if (this.denylist.has(normalizedMatch)) {
         console.log(`[TEAM_RESOLVER] Denylisted normalized team: ${providerName} -> ${normalizedMatch}`);
-        return null;
+        return { teamId: null, method: null };
       }
-      return normalizedMatch;
+      return { teamId: normalizedMatch, method: 'normalized_alias' };
     }
 
     // Step 3: Fallback fuzzy match — not used for CFBD (fail-closed).
     // CFBD school names are stable; provider-specific + general exact aliases are authoritative.
     if (options?.provider === 'cfbd') {
-      return null;
+      return { teamId: null, method: null };
     }
 
     const fuzzyMatch = this.fuzzyMatch(providerName);
     if (fuzzyMatch) {
       if (this.denylist.has(fuzzyMatch)) {
         console.log(`[TEAM_RESOLVER] Denylisted fuzzy team: ${providerName} -> ${fuzzyMatch}`);
-        return null;
+        return { teamId: null, method: null };
       }
-      return fuzzyMatch;
+      return { teamId: fuzzyMatch, method: 'fuzzy' };
     }
 
-    return null;
+    return { teamId: null, method: null };
   }
 
   private normalizeTeamName(name: string): string {

@@ -21,7 +21,7 @@ Static inventory script: `scripts/inventory-workflows-2026.py`
 
 | Metric | Value |
 |--------|------:|
-| Workflow files inventoried | **45** |
+| Workflow files inventoried | **46** |
 | YAML files with active `schedule:` triggers | **10** |
 | `scheduleReactivationRecommended=true` | **0** |
 | Odds ingestion authorized | **NO** |
@@ -37,14 +37,14 @@ Static inventory script: `scripts/inventory-workflows-2026.py`
 | Classification | Count |
 |----------------|------:|
 | COMPLETED_LEAVE_OFF | 18 |
-| MANUAL_SAFE | 5 |
+| MANUAL_SAFE | 6 |
 | MANUAL_REVIEW_REQUIRED | 6 |
 | REPAIR_BEFORE_USE | 9 |
 | REPLACE | 4 |
 | FUTURE_AFTER_GAMES | 1 |
 | BLOCKED | 1 |
 | CI_ONLY | 1 |
-| **Total** | **45** |
+| **Total** | **46** |
 
 ### REPLACE (do not reactivate as-is)
 
@@ -153,6 +153,7 @@ Legend: **Class** = classification; **Sched?** = YAML schedule present; **SchedO
 | talent-roster-sync.yml | Talent Roster Sync | dispatch | MANUAL_REVIEW_REQUIRED | N | N |
 | v3-totals-nightly.yml | V3 Totals Nightly | dispatch+schedule | BLOCKED | Y | N |
 | validate-preseason-providers.yml | Validate Preseason Providers | dispatch | MANUAL_SAFE | N | N |
+| write-live-odds-2026.yml | Preview/Write 2026 Live Odds | dispatch | MANUAL_SAFE | N | N |
 | write-core-v1-lifecycle-ratings.yml | Write Core V1 Lifecycle | dispatch | MANUAL_SAFE | N | N |
 
 Full static fields (secrets, scripts, hardcoded years, security flags) can be regenerated with:
