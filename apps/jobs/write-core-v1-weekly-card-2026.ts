@@ -1,11 +1,12 @@
 /**
- * CLI — Guarded 2026 Core V1 Weekly Card PREVIEW/COMMIT (Phase 2C-2J-4).
+ * CLI — Guarded 2026 Core V1 Weekly Card PREVIEW/COMMIT (Phase 2C-2J-5).
  *
  * PREVIEW: DB reads only; zero mutations; providerCalls=0.
- * COMMIT: atomic createMany of official_flat_100 only (or idempotent NO-OP).
+ * COMMIT: atomic append-safe createMany of official_flat_100 only (or idempotent NO-OP).
+ * Optional --kickoff-before (exclusive ISO-8601 upper bound) for split-slate tranches.
  *
  * Does NOT call Odds/CFBD/SGO/weather. No ratings/Game/MarketLine/score writes.
- * Does NOT write hybrid_v2 / v4 / Fade.
+ * Does NOT write hybrid_v2 / v4 / Fade. Does NOT update/delete prior Bet rows.
  */
 
 import * as fs from 'fs';
@@ -31,10 +32,11 @@ import {
   buildCommittedVerificationFailureExecution,
   buildRolledBackTransactionExecution,
   commitEligible,
-  executeAtomicFirstCommit,
+  executeAtomicAppendCommit,
   expectedWriteConfirmation,
   finalizeCoreCardReport,
   isIdempotentNoOp,
+  parseKickoffBefore,
   resolvePreviewExitCode,
   verifyCoreCardPostWrite,
   type CoreCardExecutionState,
@@ -50,12 +52,14 @@ function parseArgs(argv: string[]): {
   week: number;
   mode: CoreCardMode;
   confirmation: string;
+  kickoffBefore: string;
   reportPath?: string;
 } {
   let season = CORE_CARD_SEASON;
   let week = 1;
   let mode: CoreCardMode = 'PREVIEW';
   let confirmation = '';
+  let kickoffBefore = '';
   let reportPath: string | undefined;
 
   for (let i = 0; i < argv.length; i++) {
@@ -65,10 +69,11 @@ function parseArgs(argv: string[]): {
     else if (a === '--mode') mode = String(argv[++i]).toUpperCase() as CoreCardMode;
     else if (a === '--confirm' || a === '--confirmation')
       confirmation = String(argv[++i] ?? '');
+    else if (a === '--kickoff-before') kickoffBefore = String(argv[++i] ?? '');
     else if (a === '--report') reportPath = String(argv[++i]);
   }
 
-  return { season, week, mode, confirmation, reportPath };
+  return { season, week, mode, confirmation, kickoffBefore, reportPath };
 }
 
 function defaultReportPath(season: number, week: number, mode: CoreCardMode): string {
@@ -147,6 +152,11 @@ async function main(): Promise<void> {
   console.log(
     `strategyTag=${CORE_CARD_STRATEGY_TAG} only; hybrid/v4/fade forbidden`
   );
+  if (args.kickoffBefore.trim()) {
+    console.log(`kickoff_before=${args.kickoffBefore.trim()} (exclusive upper bound)`);
+  } else {
+    console.log('kickoff_before=(none)');
+  }
 
   if (args.season !== CORE_CARD_SEASON) {
     throw new Error(`season must be ${CORE_CARD_SEASON}`);
@@ -156,6 +166,10 @@ async function main(): Promise<void> {
   }
   if (args.mode !== 'PREVIEW' && args.mode !== 'COMMIT') {
     throw new Error('mode must be PREVIEW or COMMIT');
+  }
+  const kickoffParsed = parseKickoffBefore(args.kickoffBefore);
+  if (!kickoffParsed.ok) {
+    throw new Error(kickoffParsed.reason ?? 'invalid kickoff_before');
   }
 
   const url = process.env.DIRECT_URL;
@@ -324,6 +338,7 @@ async function main(): Promise<void> {
       mode: args.mode,
       confirmation: args.confirmation,
       executionNow,
+      kickoffBefore: kickoffParsed.value,
       fbsMembershipCount: fbsCount,
       games: gameInputs,
       existingOfficial: mapExisting(officialRows),
@@ -333,7 +348,7 @@ async function main(): Promise<void> {
     });
 
     console.log(
-      `writeSafe=${plan.writeSafe} planned=${plan.counts.totalPlannedBets} eligible=${plan.counts.eligibleGames} existingOfficial=${plan.counts.existingOfficial} existingHybrid=${plan.counts.existingHybrid}`
+      `writeSafe=${plan.writeSafe} planned=${plan.counts.totalPlannedBets} newPlanned=${plan.counts.newPlannedBets} selected=${plan.counts.selectedGames} eligible=${plan.counts.eligibleGames} tracked=${plan.counts.games} existingOfficial=${plan.counts.existingOfficial} existingHybrid=${plan.counts.existingHybrid} safety=${plan.existingSafety.mode}`
     );
     if (plan.writeBlockers.length) {
       console.log(`writeBlockers=${plan.writeBlockers.join(' | ')}`);
@@ -358,34 +373,22 @@ async function main(): Promise<void> {
       execution = buildIdempotentNoOpExecution();
       verification = verifyCoreCardPostWrite({
         plannedBets: plan.plannedBets,
+        newPlannedBets: [],
         createManyCount: 0,
+        beforeOfficial: mapExisting(officialRows),
         afterOfficial: mapExisting(officialRows),
         afterHybrid: mapExisting(hybridRows),
       });
-      // Idempotent: createManyCount 0 but rows already match — adjust verification ok path
-      if (
-        plan.existingSafety.mode === 'idempotent_exact' &&
-        verification.missingKeys.length === 0 &&
-        verification.conflictingRows.length === 0 &&
-        verification.extraKeys.length === 0 &&
-        verification.duplicateKeys.length === 0 &&
-        verification.hybridRowsAfter === 0
-      ) {
-        verification = {
-          ...verification,
-          insertedRows: 0,
-          ok: true,
-          reasons: [],
-        };
-        execution.postWriteVerificationSucceeded = true;
-      }
-      writeReport(reportPath, plan, execution, verification, { idempotentNoOp: true });
+      writeReport(reportPath, plan, execution, verification, {
+        idempotentNoOp: true,
+        safetyMode: plan.existingSafety.mode,
+      });
       return;
     }
 
     if (!commitEligible(plan)) {
       execution = buildFailedCommitExecution({
-        error: `COMMIT blocked: writeSafe=${plan.writeSafe} confirmationValid=${plan.confirmationValid} existingSafety=${plan.existingSafety.mode} planned=${plan.plannedBets.length}`,
+        error: `COMMIT blocked: writeSafe=${plan.writeSafe} confirmationValid=${plan.confirmationValid} existingSafety=${plan.existingSafety.mode} planned=${plan.plannedBets.length} newPlanned=${plan.newPlannedBets.length}`,
       });
       writeReport(reportPath, plan, execution, null, {});
       process.exitCode = 1;
@@ -393,15 +396,18 @@ async function main(): Promise<void> {
     }
 
     let createManyCount = 0;
+    let beforeOfficialSnapshot: ExistingOfficialBetRow[] = mapExisting(officialRows);
+    let newPlannedAtCommit = plan.newPlannedBets;
     let transactionPersisted = false;
     let txMutationInvoked = false;
     let txCreateManyCount: number | null = null;
 
     // --- A. TRANSACTION PHASE ---
     try {
-      createManyCount = await prisma.$transaction(async (tx) => {
-        const result = await executeAtomicFirstCommit({
+      const txResult = await prisma.$transaction(async (tx) => {
+        const result = await executeAtomicAppendCommit({
           plannedBets: plan!.plannedBets,
+          trackedGameIds: gameInputs.map((g) => g.gameId),
           reReadOfficial: async () =>
             mapExisting(
               await tx.bet.findMany({
@@ -437,8 +443,11 @@ async function main(): Promise<void> {
             return created;
           },
         });
-        return result.count;
+        return result;
       });
+      createManyCount = txResult.count;
+      beforeOfficialSnapshot = txResult.beforeOfficial;
+      newPlannedAtCommit = txResult.newPlannedBets;
       transactionPersisted = true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -456,6 +465,24 @@ async function main(): Promise<void> {
         persistenceCommitted: false,
       });
       throw err;
+    }
+
+    // Idempotent race: transaction found nothing missing and skipped createMany.
+    if (createManyCount === 0 && !txMutationInvoked) {
+      execution = buildIdempotentNoOpExecution();
+      verification = verifyCoreCardPostWrite({
+        plannedBets: plan.plannedBets,
+        newPlannedBets: [],
+        createManyCount: 0,
+        beforeOfficial: beforeOfficialSnapshot,
+        afterOfficial: beforeOfficialSnapshot,
+        afterHybrid: mapExisting(hybridRows),
+      });
+      writeReport(reportPath, plan, execution, verification, {
+        idempotentNoOp: true,
+        raceSafeNoOp: true,
+      });
+      return;
     }
 
     // --- B. TRANSACTION SUCCESS: persistence happened. Never revert these flags. ---
@@ -482,7 +509,9 @@ async function main(): Promise<void> {
 
       verification = verifyCoreCardPostWrite({
         plannedBets: plan.plannedBets,
+        newPlannedBets: newPlannedAtCommit,
         createManyCount,
+        beforeOfficial: beforeOfficialSnapshot,
         afterOfficial,
         afterHybrid,
       });
@@ -512,7 +541,11 @@ async function main(): Promise<void> {
       writeReport(reportPath, plan, execution, verification, {
         persistenceHappened: true,
         transactionCommitted: true,
+        verificationFailed: false,
       });
+      console.log(
+        `COMMIT succeeded: inserted=${createManyCount} existingBefore=${beforeOfficialSnapshot.length} rowsAfter=${verification.rowsAfter}`
+      );
       if (!transactionPersisted) {
         process.exitCode = 1;
       }

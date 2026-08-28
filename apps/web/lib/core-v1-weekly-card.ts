@@ -186,6 +186,38 @@ export interface MarketGameIssue {
   incoherentMoneyline: boolean;
 }
 
+export interface TrancheSelection {
+  kickoffBefore: string | null;
+  selectedGameIds: string[];
+  selectedGameCount: number;
+  excludedAfterCutoffGameIds: string[];
+}
+
+/** Parse optional exclusive kickoff_before (blank = no upper bound). */
+export function parseKickoffBefore(
+  raw: string | null | undefined
+): { ok: boolean; value: Date | null; reason: string | null } {
+  if (raw == null || String(raw).trim() === '') {
+    return { ok: true, value: null, reason: null };
+  }
+  const d = new Date(String(raw).trim());
+  if (!Number.isFinite(d.getTime())) {
+    return { ok: false, value: null, reason: 'kickoff_before must be a valid ISO-8601 timestamp' };
+  }
+  return { ok: true, value: d, reason: null };
+}
+
+/** Exclusive upper bound: kickoff < cutoff (or no cutoff). */
+export function isBeforeKickoffCutoff(
+  kickoff: Date | string,
+  cutoff: Date | null
+): boolean {
+  if (!cutoff) return true;
+  const k = toDate(kickoff);
+  if (!k) return false;
+  return k.getTime() < cutoff.getTime();
+}
+
 function buildNotes(parts: Record<string, string | number | null | undefined>): string {
   // Deterministic key order for idempotent comparison friendliness.
   const keys = Object.keys(parts).sort();
@@ -458,19 +490,24 @@ export interface CoreWeeklyCardPlan {
     issues: MarketGameIssue[];
   };
   plannedBets: PlannedBet[];
+  /** Planned bets whose natural keys are not already exactly present (append insert set). */
+  newPlannedBets: PlannedBet[];
   counts: {
     games: number;
     eligibleGames: number;
+    selectedGames: number;
     spreadPicks: number;
     totalPicks: number;
     moneylinePicks: number;
     totalPlannedBets: number;
+    newPlannedBets: number;
     existingOfficial: number;
     existingHybrid: number;
   };
   existingOfficialKeys: string[];
   existingHybridKeys: string[];
   existingSafety: ExistingCardSafety;
+  tranche: TrancheSelection;
   consensusComparisons?: Array<{
     gameId: string;
     displaySpreadHma: number | null;
@@ -482,16 +519,26 @@ export interface ExistingCardSafety {
   ok: boolean;
   mode:
     | 'empty'
+    | 'append_safe'
     | 'idempotent_exact'
+    | 'idempotent_slice'
     | 'blocked_hybrid'
-    | 'blocked_partial'
     | 'blocked_conflict'
     | 'blocked_duplicate'
+    | 'blocked_untracked'
     | 'blocked_other';
   reasons: string[];
   duplicateNaturalKeys: string[];
   conflictingKeys: string[];
+  /** Existing official keys not in the current planned tranche (prior tranche / off-slice). */
+  priorExistingKeys: string[];
+  /** Planned keys that already exist with exact wager-defining fields. */
+  matchedExistingKeys: string[];
+  /** Planned keys that do not yet exist and may be inserted. */
+  newPlannedKeys: string[];
+  /** @deprecated use priorExistingKeys; retained empty for older readers */
   missingPlannedKeys: string[];
+  /** @deprecated use priorExistingKeys */
   extraExistingKeys: string[];
 }
 
@@ -545,13 +592,24 @@ function pricesCompatible(
   return approxEqual(Number(a), Number(b), 1e-6);
 }
 
-function resultStateCompatible(row: ExistingOfficialBetRow): boolean {
-  // Ungraded official card only.
+/** Wager-defining fields only — ignores grading result/pnl/clv (immutable prior rows). */
+export function wagerFieldsMatch(
+  existing: ExistingOfficialBetRow,
+  planned: Pick<
+    PlannedBet,
+    'side' | 'modelPrice' | 'closePrice' | 'stake' | 'source' | 'strategyTag'
+  >
+): boolean {
   return (
-    (row.result == null || row.result === undefined) &&
-    (row.pnl == null || row.pnl === undefined) &&
-    (row.clv == null || row.clv === undefined) &&
-    (row.hybridConflictType == null || row.hybridConflictType === undefined)
+    existing.side === planned.side &&
+    pricesCompatible(Number(existing.modelPrice), planned.modelPrice) &&
+    pricesCompatible(
+      existing.closePrice === null ? null : Number(existing.closePrice),
+      planned.closePrice
+    ) &&
+    pricesCompatible(Number(existing.stake), planned.stake) &&
+    existing.source === planned.source &&
+    existing.strategyTag === planned.strategyTag
   );
 }
 
@@ -559,12 +617,18 @@ export function evaluateExistingCardSafety(options: {
   plannedBets: PlannedBet[];
   existingOfficial: ExistingOfficialBetRow[];
   existingHybrid: ExistingOfficialBetRow[];
+  /** Full provider-week tracked Game IDs. */
+  trackedGameIds: string[];
 }): ExistingCardSafety {
-  const reasons: string[] = [];
-  const duplicateNaturalKeys: string[] = [];
-  const conflictingKeys: string[] = [];
-  const missingPlannedKeys: string[] = [];
-  const extraExistingKeys: string[] = [];
+  const emptyLists = {
+    duplicateNaturalKeys: [] as string[],
+    conflictingKeys: [] as string[],
+    priorExistingKeys: [] as string[],
+    matchedExistingKeys: [] as string[],
+    newPlannedKeys: [] as string[],
+    missingPlannedKeys: [] as string[],
+    extraExistingKeys: [] as string[],
+  };
 
   if (options.existingHybrid.length > 0) {
     const hybridKeys = options.existingHybrid.map((r) =>
@@ -582,17 +646,42 @@ export function evaluateExistingCardSafety(options: {
       reasons: [
         `hybrid_v2 bets exist for target week (${options.existingHybrid.length}); Hybrid held — COMMIT blocked`,
       ],
-      duplicateNaturalKeys: [],
-      conflictingKeys: [],
-      missingPlannedKeys: [],
+      ...emptyLists,
       extraExistingKeys: hybridKeys,
+      priorExistingKeys: hybridKeys,
     };
   }
 
+  const tracked = new Set(options.trackedGameIds);
   const plannedByKey = new Map(options.plannedBets.map((b) => [b.naturalKey, b]));
   const existingByKey = new Map<string, ExistingOfficialBetRow[]>();
+  const reasons: string[] = [];
+  const duplicateNaturalKeys: string[] = [];
+  const conflictingKeys: string[] = [];
+  const untrackedKeys: string[] = [];
+
   for (const row of options.existingOfficial) {
-    if (row.strategyTag !== CORE_CARD_STRATEGY_TAG) continue;
+    if (row.strategyTag !== CORE_CARD_STRATEGY_TAG) {
+      reasons.push(`unsupported strategyTag on existing row: ${row.strategyTag}`);
+      return {
+        ok: false,
+        mode: 'blocked_other',
+        reasons,
+        ...emptyLists,
+      };
+    }
+    if (!tracked.has(row.gameId)) {
+      const key = naturalBetKey({
+        season: row.season,
+        week: row.week,
+        gameId: row.gameId,
+        marketType: row.marketType as CoreCardMarketType,
+      });
+      untrackedKeys.push(key);
+      reasons.push(
+        `existing official row gameId=${row.gameId} not in tracked provider-week universe`
+      );
+    }
     const key = naturalBetKey({
       season: row.season,
       week: row.week,
@@ -602,6 +691,17 @@ export function evaluateExistingCardSafety(options: {
     const list = existingByKey.get(key) ?? [];
     list.push(row);
     existingByKey.set(key, list);
+  }
+
+  if (untrackedKeys.length > 0) {
+    return {
+      ok: false,
+      mode: 'blocked_untracked',
+      reasons,
+      ...emptyLists,
+      priorExistingKeys: untrackedKeys,
+      extraExistingKeys: untrackedKeys,
+    };
   }
 
   for (const [key, rows] of Array.from(existingByKey.entries())) {
@@ -615,10 +715,8 @@ export function evaluateExistingCardSafety(options: {
       ok: false,
       mode: 'blocked_duplicate',
       reasons,
+      ...emptyLists,
       duplicateNaturalKeys,
-      conflictingKeys,
-      missingPlannedKeys,
-      extraExistingKeys,
     };
   }
 
@@ -627,55 +725,33 @@ export function evaluateExistingCardSafety(options: {
       ok: true,
       mode: 'empty',
       reasons: [],
-      duplicateNaturalKeys: [],
-      conflictingKeys: [],
-      missingPlannedKeys: [],
-      extraExistingKeys: [],
+      ...emptyLists,
+      newPlannedKeys: options.plannedBets.map((b) => b.naturalKey),
     };
   }
 
-  // Exact complete card → idempotent NO-OP
+  const priorExistingKeys: string[] = [];
+  const matchedExistingKeys: string[] = [];
+  const newPlannedKeys: string[] = [];
+
   for (const [key, planned] of Array.from(plannedByKey.entries())) {
     const existing = existingByKey.get(key)?.[0];
     if (!existing) {
-      missingPlannedKeys.push(key);
+      newPlannedKeys.push(key);
       continue;
     }
-    const sideOk = existing.side === planned.side;
-    const modelOk = pricesCompatible(Number(existing.modelPrice), planned.modelPrice);
-    const closeOk = pricesCompatible(
-      existing.closePrice === null ? null : Number(existing.closePrice),
-      planned.closePrice
-    );
-    const stakeOk = pricesCompatible(Number(existing.stake), planned.stake);
-    const sourceOk = existing.source === planned.source;
-    const stateOk = resultStateCompatible(existing);
-    if (!sideOk || !modelOk || !closeOk || !stakeOk || !sourceOk || !stateOk) {
+    if (!wagerFieldsMatch(existing, planned)) {
       conflictingKeys.push(key);
       reasons.push(`conflict on ${key}`);
+      continue;
     }
+    matchedExistingKeys.push(key);
   }
 
   for (const key of Array.from(existingByKey.keys())) {
     if (!plannedByKey.has(key)) {
-      extraExistingKeys.push(key);
+      priorExistingKeys.push(key);
     }
-  }
-
-  if (
-    missingPlannedKeys.length === 0 &&
-    extraExistingKeys.length === 0 &&
-    conflictingKeys.length === 0
-  ) {
-    return {
-      ok: true,
-      mode: 'idempotent_exact',
-      reasons: [],
-      duplicateNaturalKeys: [],
-      conflictingKeys: [],
-      missingPlannedKeys: [],
-      extraExistingKeys: [],
-    };
   }
 
   if (conflictingKeys.length > 0) {
@@ -683,29 +759,43 @@ export function evaluateExistingCardSafety(options: {
       ok: false,
       mode: 'blocked_conflict',
       reasons,
-      duplicateNaturalKeys,
+      duplicateNaturalKeys: [],
       conflictingKeys,
-      missingPlannedKeys,
-      extraExistingKeys,
+      priorExistingKeys,
+      matchedExistingKeys,
+      newPlannedKeys,
+      missingPlannedKeys: newPlannedKeys,
+      extraExistingKeys: priorExistingKeys,
     };
   }
 
+  if (newPlannedKeys.length === 0) {
+    return {
+      ok: true,
+      mode: priorExistingKeys.length === 0 ? 'idempotent_exact' : 'idempotent_slice',
+      reasons: [],
+      duplicateNaturalKeys: [],
+      conflictingKeys: [],
+      priorExistingKeys,
+      matchedExistingKeys,
+      newPlannedKeys: [],
+      missingPlannedKeys: [],
+      extraExistingKeys: priorExistingKeys,
+    };
+  }
+
+  // Prior off-tranche rows OK; insert only missing planned keys.
   return {
-    ok: false,
-    mode: 'blocked_partial',
-    reasons: [
-      ...reasons,
-      missingPlannedKeys.length
-        ? `missing planned keys: ${missingPlannedKeys.length}`
-        : '',
-      extraExistingKeys.length
-        ? `extra existing keys: ${extraExistingKeys.length}`
-        : '',
-    ].filter(Boolean),
-    duplicateNaturalKeys,
-    conflictingKeys,
-    missingPlannedKeys,
-    extraExistingKeys,
+    ok: true,
+    mode: 'append_safe',
+    reasons: [],
+    duplicateNaturalKeys: [],
+    conflictingKeys: [],
+    priorExistingKeys,
+    matchedExistingKeys,
+    newPlannedKeys,
+    missingPlannedKeys: newPlannedKeys,
+    extraExistingKeys: priorExistingKeys,
   };
 }
 
@@ -715,6 +805,8 @@ export function buildCoreWeeklyCardPlan(options: {
   mode: CoreCardMode;
   confirmation?: string | null;
   executionNow: Date | string;
+  /** Optional exclusive kickoff_before upper bound (ISO / Date). Blank/null = none. */
+  kickoffBefore?: Date | string | null;
   fbsMembershipCount: number;
   games: WeeklyCardGameInput[];
   existingOfficial: ExistingOfficialBetRow[];
@@ -733,6 +825,20 @@ export function buildCoreWeeklyCardPlan(options: {
   const writeBlockers: string[] = [...inputCheck.reasons];
   const executionNow = toDate(options.executionNow) ?? new Date();
   const generatedAt = options.generatedAt ?? executionNow.toISOString();
+
+  let kickoffBefore: Date | null = null;
+  if (options.kickoffBefore != null && String(options.kickoffBefore).trim() !== '') {
+    const parsed = parseKickoffBefore(
+      options.kickoffBefore instanceof Date
+        ? options.kickoffBefore.toISOString()
+        : String(options.kickoffBefore)
+    );
+    if (!parsed.ok) {
+      writeBlockers.push(parsed.reason ?? 'invalid kickoff_before');
+    } else {
+      kickoffBefore = parsed.value;
+    }
+  }
 
   const gameIds = options.games.map((g) => g.gameId);
   const seen = new Set<string>();
@@ -778,7 +884,7 @@ export function buildCoreWeeklyCardPlan(options: {
   }
 
   const exclusions: KickoffExclusion[] = [];
-  const eligible: WeeklyCardGameInput[] = [];
+  const kickoffEligible: WeeklyCardGameInput[] = [];
   for (const g of options.games) {
     const gate = isKickoffEligible({
       status: g.status,
@@ -795,7 +901,18 @@ export function buildCoreWeeklyCardPlan(options: {
       });
       continue;
     }
-    eligible.push(g);
+    kickoffEligible.push(g);
+  }
+
+  // Tranche selection: planning/write slice within kickoff-eligible games.
+  const selected: WeeklyCardGameInput[] = [];
+  const excludedAfterCutoffGameIds: string[] = [];
+  for (const g of kickoffEligible) {
+    if (isBeforeKickoffCutoff(g.kickoff, kickoffBefore)) {
+      selected.push(g);
+    } else {
+      excludedAfterCutoffGameIds.push(g.gameId);
+    }
   }
 
   const gamesMissingSpread: string[] = [];
@@ -811,8 +928,10 @@ export function buildCoreWeeklyCardPlan(options: {
 
   const plannedBets: PlannedBet[] = [];
   const consensusComparisons: CoreWeeklyCardPlan['consensusComparisons'] = [];
+  const selectedIds = new Set(selected.map((g) => g.gameId));
 
-  for (const g of eligible) {
+  // Market inventory across kickoff-eligible games for reporting; BLOCK only selected tranche.
+  for (const g of kickoffEligible) {
     const sel = g.marketSelection;
     sameTimestampTies += sel.sameTimestampTies ?? 0;
 
@@ -842,7 +961,11 @@ export function buildCoreWeeklyCardPlan(options: {
       if (incoherentMl) incoherentMlPairs.push(g.gameId);
     }
 
-    if (missingSpread || missingTotal || missingMl || incoherentSpread || incoherentMl) {
+    const inTranche = selectedIds.has(g.gameId);
+    if (
+      inTranche &&
+      (missingSpread || missingTotal || missingMl || incoherentSpread || incoherentMl)
+    ) {
       issues.push({
         gameId: g.gameId,
         missingSpread,
@@ -852,15 +975,19 @@ export function buildCoreWeeklyCardPlan(options: {
         incoherentMoneyline: incoherentMl,
       });
       writeBlockers.push(
-        `eligible game ${g.gameId} missing/incoherent required market data`
+        `selected tranche game ${g.gameId} missing/incoherent required market data`
       );
     }
 
-    consensusComparisons.push({
-      gameId: g.gameId,
-      displaySpreadHma: displaySpread?.marketSpreadHma ?? null,
-      consensusSpreadHma: sel.spreadConsensus?.value ?? null,
-    });
+    if (inTranche) {
+      consensusComparisons.push({
+        gameId: g.gameId,
+        displaySpreadHma: displaySpread?.marketSpreadHma ?? null,
+        consensusSpreadHma: sel.spreadConsensus?.value ?? null,
+      });
+    }
+
+    if (!inTranche) continue;
 
     if (!isFiniteNumber(g.coreSpreadHma)) {
       writeBlockers.push(`game ${g.gameId} missing finite coreSpreadHma`);
@@ -935,20 +1062,32 @@ export function buildCoreWeeklyCardPlan(options: {
     }
   }
 
+  const trackedGameIds = options.games.map((g) => g.gameId);
   const existingSafety = evaluateExistingCardSafety({
     plannedBets,
     existingOfficial: options.existingOfficial,
     existingHybrid: options.existingHybrid,
+    trackedGameIds,
   });
   if (!existingSafety.ok) {
     writeBlockers.push(...existingSafety.reasons);
   }
+
+  const newPlannedBets = plannedBets.filter((b) =>
+    existingSafety.newPlannedKeys.includes(b.naturalKey)
+  );
 
   if (plannedBets.length === 0) {
     writeBlockers.push('no planned bets');
   }
 
   const writeSafe = writeBlockers.length === 0;
+  const tranche: TrancheSelection = {
+    kickoffBefore: kickoffBefore ? kickoffBefore.toISOString() : null,
+    selectedGameIds: selected.map((g) => g.gameId),
+    selectedGameCount: selected.length,
+    excludedAfterCutoffGameIds,
+  };
 
   return {
     season: options.season,
@@ -971,7 +1110,7 @@ export function buildCoreWeeklyCardPlan(options: {
     },
     kickoffGate: {
       executionNowIso: executionNow.toISOString(),
-      eligibleGameIds: eligible.map((g) => g.gameId),
+      eligibleGameIds: kickoffEligible.map((g) => g.gameId),
       exclusions,
     },
     modelReadiness: {
@@ -992,14 +1131,17 @@ export function buildCoreWeeklyCardPlan(options: {
       issues,
     },
     plannedBets,
+    newPlannedBets,
     counts: {
       games: options.games.length,
-      eligibleGames: eligible.length,
+      eligibleGames: kickoffEligible.length,
+      selectedGames: selected.length,
       spreadPicks: plannedBets.filter((b) => b.marketType === 'spread').length,
       totalPicks: plannedBets.filter((b) => b.marketType === 'total').length,
       moneylinePicks: plannedBets.filter((b) => b.marketType === 'moneyline')
         .length,
       totalPlannedBets: plannedBets.length,
+      newPlannedBets: newPlannedBets.length,
       existingOfficial: options.existingOfficial.length,
       existingHybrid: options.existingHybrid.length,
     },
@@ -1021,6 +1163,7 @@ export function buildCoreWeeklyCardPlan(options: {
       })
     ),
     existingSafety,
+    tranche,
     consensusComparisons,
   };
 }
@@ -1030,16 +1173,19 @@ export function commitEligible(plan: CoreWeeklyCardPlan): boolean {
     plan.mode === 'COMMIT' &&
     plan.writeSafe &&
     plan.confirmationValid &&
-    plan.plannedBets.length > 0 &&
-    plan.existingSafety.mode === 'empty'
+    plan.newPlannedBets.length > 0 &&
+    (plan.existingSafety.mode === 'empty' ||
+      plan.existingSafety.mode === 'append_safe')
   );
 }
 
 export function isIdempotentNoOp(plan: CoreWeeklyCardPlan): boolean {
   return (
     plan.writeSafe &&
-    plan.existingSafety.mode === 'idempotent_exact' &&
-    plan.plannedBets.length > 0
+    plan.plannedBets.length > 0 &&
+    plan.newPlannedBets.length === 0 &&
+    (plan.existingSafety.mode === 'idempotent_exact' ||
+      plan.existingSafety.mode === 'idempotent_slice')
   );
 }
 
@@ -1091,27 +1237,31 @@ export function plannedBetToCreateData(bet: PlannedBet): {
 }
 
 /**
- * Atomic first COMMIT helper (injectable for tests).
- * Re-reads official+hybrid, requires both empty, createMany all, assert count.
+ * Atomic append-safe COMMIT helper (injectable for tests).
+ * Re-reads official+hybrid, re-evaluates append safety, createMany only missing keys.
+ * No upsert / update / delete / skipDuplicates.
  */
-export async function executeAtomicFirstCommit(options: {
+export async function executeAtomicAppendCommit(options: {
   plannedBets: PlannedBet[];
+  trackedGameIds: string[];
   reReadOfficial: () => Promise<ExistingOfficialBetRow[]>;
   reReadHybrid: () => Promise<ExistingOfficialBetRow[]>;
   createMany: (
     rows: ReturnType<typeof plannedBetToCreateData>[]
   ) => Promise<{ count: number }>;
-}): Promise<{ count: number }> {
+}): Promise<{ count: number; newPlannedBets: PlannedBet[]; beforeOfficial: ExistingOfficialBetRow[] }> {
   const official = await options.reReadOfficial();
   const hybrid = await options.reReadHybrid();
-  if (official.length !== 0) {
+
+  const safety = evaluateExistingCardSafety({
+    plannedBets: options.plannedBets,
+    existingOfficial: official,
+    existingHybrid: hybrid,
+    trackedGameIds: options.trackedGameIds,
+  });
+  if (!safety.ok) {
     throw new Error(
-      `transaction aborted: official_flat_100 rows already exist (${official.length})`
-    );
-  }
-  if (hybrid.length !== 0) {
-    throw new Error(
-      `transaction aborted: hybrid_v2 rows exist (${hybrid.length})`
+      `transaction aborted: append safety failed (${safety.mode}): ${safety.reasons.join('; ')}`
     );
   }
 
@@ -1123,13 +1273,58 @@ export async function executeAtomicFirstCommit(options: {
     keys.add(b.naturalKey);
   }
 
-  const data = options.plannedBets.map(plannedBetToCreateData);
+  const newPlannedBets = options.plannedBets.filter((b) =>
+    safety.newPlannedKeys.includes(b.naturalKey)
+  );
+
+  if (newPlannedBets.length === 0) {
+    // Exact safe no-op — do not invoke createMany.
+    return { count: 0, newPlannedBets: [], beforeOfficial: official };
+  }
+
+  const data = newPlannedBets.map(plannedBetToCreateData);
   const result = await options.createMany(data);
   assertCreateManyCountMatches(data.length, result.count);
-  return { count: result.count };
+  return { count: result.count, newPlannedBets, beforeOfficial: official };
+}
+
+/** Prefer executeAtomicAppendCommit — first-write-only semantics removed. */
+export async function executeAtomicFirstCommit(options: {
+  plannedBets: PlannedBet[];
+  trackedGameIds: string[];
+  reReadOfficial: () => Promise<ExistingOfficialBetRow[]>;
+  reReadHybrid: () => Promise<ExistingOfficialBetRow[]>;
+  createMany: (
+    rows: ReturnType<typeof plannedBetToCreateData>[]
+  ) => Promise<{ count: number }>;
+}): Promise<{ count: number; newPlannedBets: PlannedBet[]; beforeOfficial: ExistingOfficialBetRow[] }> {
+  return executeAtomicAppendCommit(options);
+}
+
+function officialRowFingerprint(row: ExistingOfficialBetRow): string {
+  return [
+    row.season,
+    row.week,
+    row.gameId,
+    row.marketType,
+    row.side,
+    String(row.modelPrice),
+    row.closePrice === null || row.closePrice === undefined
+      ? 'null'
+      : String(row.closePrice),
+    String(row.stake),
+    row.source,
+    row.strategyTag,
+    row.result ?? 'null',
+    row.pnl === null || row.pnl === undefined ? 'null' : String(row.pnl),
+    row.clv === null || row.clv === undefined ? 'null' : String(row.clv),
+    row.hybridConflictType ?? 'null',
+  ].join('|');
 }
 
 export interface CoreCardPostWriteVerification {
+  existingRowsBefore: number;
+  newRowsPlanned: number;
   plannedRows: number;
   insertedRows: number;
   rowsAfter: number;
@@ -1138,6 +1333,7 @@ export interface CoreCardPostWriteVerification {
   missingKeys: string[];
   extraKeys: string[];
   conflictingRows: string[];
+  changedPriorKeys: string[];
   hybridRowsAfter: number;
   exactMatches: number;
   ok: boolean;
@@ -1146,12 +1342,26 @@ export interface CoreCardPostWriteVerification {
 
 export function verifyCoreCardPostWrite(options: {
   plannedBets: PlannedBet[];
+  newPlannedBets: PlannedBet[];
   createManyCount: number;
+  beforeOfficial: ExistingOfficialBetRow[];
   afterOfficial: ExistingOfficialBetRow[];
   afterHybrid: ExistingOfficialBetRow[];
 }): CoreCardPostWriteVerification {
   const reasons: string[] = [];
   const plannedByKey = new Map(options.plannedBets.map((b) => [b.naturalKey, b]));
+  const newByKey = new Map(options.newPlannedBets.map((b) => [b.naturalKey, b]));
+  const beforeByKey = new Map<string, ExistingOfficialBetRow>();
+  for (const row of options.beforeOfficial) {
+    const key = naturalBetKey({
+      season: row.season,
+      week: row.week,
+      gameId: row.gameId,
+      marketType: row.marketType as CoreCardMarketType,
+    });
+    beforeByKey.set(key, row);
+  }
+
   const afterByKey = new Map<string, ExistingOfficialBetRow[]>();
   for (const row of options.afterOfficial) {
     const key = naturalBetKey({
@@ -1173,28 +1383,34 @@ export function verifyCoreCardPostWrite(options: {
   const missingKeys: string[] = [];
   const conflictingRows: string[] = [];
   const naturalKeysFound: string[] = [];
+  const changedPriorKeys: string[] = [];
   let exactMatches = 0;
 
-  for (const [key, planned] of Array.from(plannedByKey.entries())) {
+  // Preexisting rows must still exist unchanged (immutable).
+  for (const [key, before] of Array.from(beforeByKey.entries())) {
     const rows = afterByKey.get(key) ?? [];
     if (rows.length === 0) {
       missingKeys.push(key);
+      reasons.push(`prior row missing after write: ${key}`);
+      continue;
+    }
+    if (rows.length > 1) continue;
+    if (officialRowFingerprint(rows[0]) !== officialRowFingerprint(before)) {
+      changedPriorKeys.push(key);
+      reasons.push(`prior row changed after write: ${key}`);
+    }
+  }
+
+  // All currently planned keys must exist with exact wager-defining fields.
+  for (const [key, planned] of Array.from(plannedByKey.entries())) {
+    const rows = afterByKey.get(key) ?? [];
+    if (rows.length === 0) {
+      if (!missingKeys.includes(key)) missingKeys.push(key);
       continue;
     }
     if (rows.length > 1) continue;
     const row = rows[0];
-    const ok =
-      row.side === planned.side &&
-      pricesCompatible(Number(row.modelPrice), planned.modelPrice) &&
-      pricesCompatible(
-        row.closePrice === null ? null : Number(row.closePrice),
-        planned.closePrice
-      ) &&
-      pricesCompatible(Number(row.stake), CORE_CARD_STAKE) &&
-      row.source === CORE_CARD_SOURCE &&
-      row.strategyTag === CORE_CARD_STRATEGY_TAG &&
-      resultStateCompatible(row);
-    if (!ok) {
+    if (!wagerFieldsMatch(row, planned)) {
       conflictingRows.push(key);
     } else {
       exactMatches += 1;
@@ -1202,19 +1418,34 @@ export function verifyCoreCardPostWrite(options: {
     }
   }
 
-  const extraKeys: string[] = [];
-  for (const key of Array.from(afterByKey.keys())) {
-    if (!plannedByKey.has(key)) extraKeys.push(key);
+  // Newly inserted keys must be present (covered above) and were expected inserts.
+  for (const key of Array.from(newByKey.keys())) {
+    if (!afterByKey.has(key)) {
+      if (!missingKeys.includes(key)) missingKeys.push(key);
+    }
   }
 
-  if (options.createManyCount !== options.plannedBets.length) {
+  // Expected after = preexisting ∪ newly planned (matched already in before).
+  const expectedKeys = new Set<string>([
+    ...Array.from(beforeByKey.keys()),
+    ...Array.from(newByKey.keys()),
+  ]);
+  // Matched planned keys already in before; ensure no unexpected extras.
+  const extraKeys: string[] = [];
+  for (const key of Array.from(afterByKey.keys())) {
+    if (!expectedKeys.has(key)) extraKeys.push(key);
+  }
+
+  if (options.createManyCount !== options.newPlannedBets.length) {
     reasons.push(
-      `createManyCount ${options.createManyCount} != planned ${options.plannedBets.length}`
+      `createManyCount ${options.createManyCount} != newPlanned ${options.newPlannedBets.length}`
     );
   }
-  if (options.afterOfficial.length !== options.plannedBets.length) {
+  const expectedRowsAfter =
+    options.beforeOfficial.length + options.newPlannedBets.length;
+  if (options.afterOfficial.length !== expectedRowsAfter) {
     reasons.push(
-      `rowsAfter ${options.afterOfficial.length} != planned ${options.plannedBets.length}`
+      `rowsAfter ${options.afterOfficial.length} != preexisting+new ${expectedRowsAfter}`
     );
   }
   if (duplicateKeys.length) reasons.push(`duplicateKeys=${duplicateKeys.length}`);
@@ -1222,11 +1453,15 @@ export function verifyCoreCardPostWrite(options: {
   if (extraKeys.length) reasons.push(`extraKeys=${extraKeys.length}`);
   if (conflictingRows.length)
     reasons.push(`conflictingRows=${conflictingRows.length}`);
+  if (changedPriorKeys.length)
+    reasons.push(`changedPriorKeys=${changedPriorKeys.length}`);
   if (options.afterHybrid.length > 0) {
     reasons.push(`hybridRowsAfter=${options.afterHybrid.length}`);
   }
 
   return {
+    existingRowsBefore: options.beforeOfficial.length,
+    newRowsPlanned: options.newPlannedBets.length,
     plannedRows: options.plannedBets.length,
     insertedRows: options.createManyCount,
     rowsAfter: options.afterOfficial.length,
@@ -1235,6 +1470,7 @@ export function verifyCoreCardPostWrite(options: {
     missingKeys,
     extraKeys,
     conflictingRows,
+    changedPriorKeys,
     hybridRowsAfter: options.afterHybrid.length,
     exactMatches,
     ok: reasons.length === 0,
