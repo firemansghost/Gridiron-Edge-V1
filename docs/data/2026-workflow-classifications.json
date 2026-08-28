@@ -283,6 +283,12 @@
       "purpose2026": "Provider probe without DB writes; useful for Odds PREVIEW credit checks"
     },
     {
+      "file": "write-live-odds-2026.yml",
+      "classification": "MANUAL_SAFE",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Guarded 2026 Live Odds PREVIEW/COMMIT — dispatch only; append-only; no schedule"
+    },
+    {
       "file": "write-core-v1-lifecycle-ratings.yml",
       "classification": "MANUAL_SAFE",
       "scheduleReactivationRecommended": false,

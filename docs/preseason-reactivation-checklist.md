@@ -97,9 +97,10 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | **2C-2H-9 Core V1 lifecycle writer** | **COMPLETE** — Candidate A 138/138 persisted; `GLOBAL_BLEND_W3_W6` active |
 | **2C-2I-1 Hybrid V2 preseason readiness** | **COMPLETE** — audit 33134809476; Week1 official = Core V1; bridge NOT authorized |
 | **2C-2I-2 Hybrid activation hold** | **COMPLETE** (PR #62) — production smoke PASS; effective Week1 = Core V1 |
-| **2C-2J-1 Workflow reactivation inventory** | **In preparation (draft)** — 45 workflows; Odds/bet/score not authorized |
+| **2C-2J-1 Workflow reactivation inventory** | **COMPLETE** (PR #63) — 45→46 workflows; schedules 10; reactivation 0 |
+| **2C-2J-2 Guarded 2026 Live Odds** | **In preparation (draft)** — PREVIEW/COMMIT writer; production Odds NOT AUTHORIZED |
 | **Ratings computation / persistence** | **2026 Core V1 initialized** — do not rerun; further COMMITs via guarded lifecycle only |
-| **Odds ingestion** | **Not yet approved** (live path must be purpose-built; see matrix) |
+| **Odds ingestion** | **Not yet approved** (guarded writer in draft; no production PREVIEW/COMMIT until review) |
 | **Bet sync** | **Not yet approved** (dual Hybrid+Core sync invalid while Hybrid held) |
 | **Nightly reactivation** | **Not yet approved** — recurring workflows remain STOPPED |
 
@@ -185,10 +186,11 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 * 2C-2H-9: **COMPLETE** — production COMMIT run 33126432213 (`upserted=138`); post-write verification run 33127893613 (`existingV1Count=138`, create=0, update=138); Candidate A @ completedThroughWeek=0; `GLOBAL_BLEND_W3_W6` lifecycle active; **do not rerun ratings initialization**
 * 2C-2I-1: **COMPLETE** — production audit run 33134809476 `auditOk=true`; Core V1 Week1 ready; Hybrid inputs 0; prior bridge structurally available but **NOT AUTHORIZED for Week1**; human decision: official Week1 spread = **Core V1**
 * 2C-2I-2: **COMPLETE** (PR #62) — production HTTP smoke PASS; effective Core V1; held Hybrid has no runtime / no persisted Hybrid comparison metadata
-* 2C-2J-1: **IN PREPARATION / draft PR** — workflow reactivation inventory + live Odds architecture; recurring workflows STOPPED; Odds/bet/grade/score **NOT AUTHORIZED**
+* 2C-2J-1: **COMPLETE** (PR #63) — merge `19117af…`; 45 workflows at merge; schedules 10; reactivation 0; Odds path REPLACE
+* 2C-2J-2: **IN PREPARATION / draft PR** — guarded Live Odds PREVIEW/COMMIT; production Odds PREVIEW/COMMIT **NOT AUTHORIZED**; recurring workflows STOPPED
 * Recruiting schema mismatch remains separate
 * **Do not copy 2025 TeamUnitGrades into 2026 or run `compute_unit_grades.ts` until separately authorized**
-* **Do not enable workflows, reactivate crons, ingest Odds, or write bets from this inventory phase**
+* **Do not enable workflows, reactivate crons, run production Odds PREVIEW/COMMIT, or write bets from this draft**
 * **Do not run `compute_ratings_balanced.ts` or legacy `compute_ratings_v1` for 2026**
 
 ##### After 2C-2H-8 (complete) — recorded decision
@@ -218,6 +220,12 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 3. Proceed to **2C-2J-2** only after review: guarded Live Odds PREVIEW/COMMIT
 4. Do **not** run `sync-weekly-bets` until Core-only / effective-model gate exists
 
+##### After 2C-2J-2 draft — operator procedure
+1. Independently review guarded Live Odds PREVIEW/COMMIT code + report shape
+2. Do **not** run the production Odds workflow from the PR branch
+3. Do **not** authorize COMMIT until PREVIEW review on production is separately approved
+4. Do **not** enable recurring workflows or add schedules
+
 - [x] Preview week 0–2 reviewed
 - [x] Week 1–13 + 15 production writes
 - [x] 2C-1C inventory audit PASSED (761)
@@ -243,8 +251,8 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 - [x] 2C-2H-8 Balanced V1 transition blend evaluation PASSED (PR #59; B1 authorized model policy)
 - [x] 2C-2H-9 Core V1 lifecycle writer COMPLETE (production COMMIT + verification)
 - [x] 2C-2I-1 Hybrid V2 preseason readiness audit COMPLETE (production audit + Week1 Core V1 decision)
-- [x] 2C-2I-2 Hybrid activation hold + effective model truthfulness COMPLETE (PR #62)
-- [ ] 2C-2J-1 Workflow reactivation inventory + Live Odds architecture (draft)
+- [x] 2C-2J-1 Workflow reactivation inventory + Live Odds architecture COMPLETE (PR #63)
+- [ ] 2C-2J-2 Guarded 2026 Live Odds PREVIEW/COMMIT (draft — production Odds NOT AUTHORIZED)
 - [ ] Odds / unit-grade bridge / Hybrid activation / bets remain **out of scope** until separately approved
 
 ---

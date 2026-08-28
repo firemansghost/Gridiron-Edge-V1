@@ -77,7 +77,7 @@ describe('2C-2J-1 workflow reactivation inventory', () => {
 
   it('inventories every workflow file exactly once', () => {
     expect(raw.workflows).toHaveLength(workflowFiles.length);
-    expect(raw.workflows).toHaveLength(45);
+    expect(raw.workflows).toHaveLength(46);
     const classified = raw.workflows.map((w: { file: string }) => w.file).sort();
     expect(classified).toEqual(workflowFiles);
   });
@@ -91,7 +91,7 @@ describe('2C-2J-1 workflow reactivation inventory', () => {
     }
     expect(counts).toEqual({
       COMPLETED_LEAVE_OFF: 18,
-      MANUAL_SAFE: 5,
+      MANUAL_SAFE: 6,
       MANUAL_REVIEW_REQUIRED: 6,
       REPAIR_BEFORE_USE: 9,
       REPLACE: 4,
@@ -118,14 +118,14 @@ describe('2C-2J-1 workflow reactivation inventory', () => {
     expect(byFile['write-core-v1-lifecycle-ratings.yml']).toBe('MANUAL_SAFE');
   });
 
-  it('static inventory script reports 45 workflows and 10 scheduled', () => {
+  it('static inventory script reports 46 workflows and 10 scheduled', () => {
     const result = spawnSync('python', [INVENTORY_SCRIPT], {
       encoding: 'utf8',
       cwd: ROOT,
     });
     expect(result.status).toBe(0);
     const inv = JSON.parse(result.stdout);
-    expect(inv.count).toBe(45);
+    expect(inv.count).toBe(46);
     expect(inv.scheduled_count).toBe(10);
     const scheduled = inv.workflows
       .filter((w: { has_active_schedule_yaml: boolean }) => w.has_active_schedule_yaml)
