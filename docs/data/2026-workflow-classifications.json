@@ -1,11 +1,13 @@
 {
-  "phase": "2C-2J-1",
+  "phase": "2C-2J-4",
   "inventoryDate": "2026-08-28",
-  "mainSha": "afd59d68290fc8b8e8b4fcb562028becbf0d6017",
+  "mainSha": "4a80a5b3c1fa58e86986c3731cfda3ce77b6cf27",
   "notes": [
     "Classification is operational authorization guidance only — not an enablement action.",
     "scheduleReactivationRecommended is false for every workflow in this phase.",
-    "GitHub UI disablement is operator state; YAML schedules may still exist."
+    "GitHub UI disablement is operator state; YAML schedules may still exist.",
+    "2C-2J-3 append-only consumer audit added; 2C-2J-4 guarded Core V1 weekly card writer added.",
+    "sync-weekly-bets is LEGACY <=2025; 2026 uses write-core-v1-weekly-card-2026.yml."
   ],
   "allowedClassifications": [
     "COMPLETED_LEAVE_OFF",
@@ -23,6 +25,12 @@
       "classification": "COMPLETED_LEAVE_OFF",
       "scheduleReactivationRecommended": false,
       "purpose2026": "One-time structural ratings readiness audit; completed"
+    },
+    {
+      "file": "audit-2026-marketline-consumer-readiness.yml",
+      "classification": "MANUAL_SAFE",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "SELECT-only append-only MarketLine consumer readiness audit; no providers/writes"
     },
     {
       "file": "audit-2026-schedule-inventory.yml",
@@ -250,7 +258,7 @@
       "file": "sync-weekly-bets.yml",
       "classification": "REPLACE",
       "scheduleReactivationRecommended": false,
-      "purpose2026": "Always writes hybrid_v2 + official_flat_100 — invalid while Hybrid held"
+      "purpose2026": "LEGACY <=2025 only; rejects season>=2026; replaced for 2026 by write-core-v1-weekly-card-2026.yml"
     },
     {
       "file": "talent-cfbd.yml",
@@ -287,6 +295,12 @@
       "classification": "MANUAL_SAFE",
       "scheduleReactivationRecommended": false,
       "purpose2026": "Guarded 2026 Live Odds PREVIEW/COMMIT — dispatch only; append-only; no schedule"
+    },
+    {
+      "file": "write-core-v1-weekly-card-2026.yml",
+      "classification": "MANUAL_SAFE",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Guarded 2026 Core V1 weekly card PREVIEW/COMMIT — official_flat_100 only; no schedule; COMMIT not authorized until review"
     },
     {
       "file": "write-core-v1-lifecycle-ratings.yml",

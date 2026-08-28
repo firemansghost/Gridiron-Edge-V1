@@ -100,10 +100,11 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 | **2C-2J-1 Workflow reactivation inventory** | **COMPLETE** (PR #63) — 45→46 workflows; schedules 10; reactivation 0 |
 | **2C-2J-2 Guarded 2026 Live Odds** | **COMPLETE** (PR #64) — Week1 COMMIT run 33192011833 SUCCESS |
 | **2C-2J-2A Live Odds PREVIEW findings repair** | **COMPLETE** (PR #65) — aliases / FCS classify / MAX_ABS_SPREAD |
-| **2C-2J-3 Append-only Odds consumer readiness** | **In preparation (draft)** — shared snapshot selector |
+| **2C-2J-3 Append-only Odds consumer readiness** | **COMPLETE** (PR #66) — merge `4a80a5b3…`; audit **33204634358** PASS |
+| **2C-2J-4 Guarded Core V1 Weekly Card Writer** | **In preparation (draft)** — `official_flat_100` only; Core card COMMIT NOT AUTHORIZED |
 | **Ratings computation / persistence** | **2026 Core V1 initialized** — do not rerun; further COMMITs via guarded lifecycle only |
 | **Odds ingestion** | **Week1 snapshot PERSISTED** (33192011833); recurring polling / second COMMIT NOT AUTHORIZED |
-| **Bet sync** | **Not yet approved** (dual Hybrid+Core sync invalid while Hybrid held) |
+| **Bet sync** | **Legacy sync-weekly-bets REPLACED for 2026** (≤2025 only); new guarded Core card workflow draft |
 | **Nightly reactivation** | **Not yet approved** — recurring workflows remain STOPPED |
 
 **Do not** use `node apps/jobs/dist/ingest.js cfbd ...` for 2026 schedule-only work.
@@ -192,7 +193,10 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 * 2C-2J-2: **COMPLETE** (PR #64) — merge `1445cdb…`; writer live
 * 2C-2J-2A: **COMPLETE** (PR #65) — aliases + FCS classify + `MAX_ABS_SPREAD=100`
 * Week1 Odds COMMIT **33192011833** SUCCESS — inserted=2281, games=51, books=11, verification.ok=true, remaining=19682
-* 2C-2J-3: **IN PREPARATION / draft PR** — append-only consumer readiness (latest-per-book current/closing selection)
+* 2C-2J-3: **COMPLETE** (PR #66) — merge `4a80a5b3…`; production audit **33204634358** PASS
+* 2C-2J-4: **IN PREPARATION / draft PR #67** — Guarded Core V1 Weekly Card Writer; **2C-2J-4A** review repairs (unsafe PREVIEW fail / verification state machine / DIRECT_URL scope)
+* Recurring Odds polling / second Odds COMMIT / Core card COMMIT / grading / Hybrid: **NOT AUTHORIZED**
+* Grading activation blocked until ML payout uses captured sportsbook price (`closePrice`), not model fair (`modelPrice`)
 * Recruiting schema mismatch remains separate
 * **Do not copy 2025 TeamUnitGrades into 2026 or run `compute_unit_grades.ts` until separately authorized**
 * **Do not enable recurring Odds polling, run a second Odds COMMIT, or write bets from this consumer phase**
@@ -259,7 +263,8 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 - [x] 2C-2J-1 Workflow reactivation inventory + Live Odds architecture COMPLETE (PR #63)
 - [x] 2C-2J-2 Guarded 2026 Live Odds PREVIEW/COMMIT COMPLETE (PR #64)
 - [x] 2C-2J-2A Live Odds PREVIEW findings repair COMPLETE (PR #65)
-- [ ] 2C-2J-3 Append-only Odds consumer readiness (draft — no second Odds COMMIT)
+- [x] 2C-2J-3 Append-only Odds consumer readiness COMPLETE (PR #66)
+- [ ] 2C-2J-4 Guarded Core V1 Weekly Card Writer (draft — no production PREVIEW/COMMIT yet)
 - [ ] Recurring Odds polling / second COMMIT / unit-grade bridge / Hybrid activation / bets remain **out of scope** until separately approved
 
 ---
@@ -282,9 +287,9 @@ Local verification scripts (after Phase 2A) use `normalizeSlateApiResponse()` fo
 
 ## F. Bet sync (manual dry run)
 
-**Status (2C-2J-1):** Bet sync is **NOT AUTHORIZED** while Hybrid production is held.
+**Status (2C-2J-4):** Legacy `sync-weekly-bets.yml` is **REPLACED for 2026 purposes** (rejects season≥2026; ≤2025 preserved). New guarded workflow `write-core-v1-weekly-card-2026.yml` writes **only** `official_flat_100` (Core V1). **Core card COMMIT NOT AUTHORIZED** until independent PREVIEW review. Hybrid remains held.
 
-Current `sync-weekly-bets.yml` always writes **both** `hybrid_v2` and `official_flat_100`. That is invalid for Week1 2026 (Core V1 official; Hybrid held).
+Current legacy sync always wrote **both** `hybrid_v2` and `official_flat_100` — invalid for Week1 2026 while Hybrid held.
 
 Do **not** run the current dual sync until replaced/gated (prefer Core-only guarded writer). See [2026 Workflow Reactivation Matrix](./2026-workflow-reactivation-matrix.md).
 
@@ -296,7 +301,9 @@ Do **not** run the current dual sync until replaced/gated (prefer Core-only guar
 
 ## G. Scores and grading (manual dry run)
 
-**Status (2C-2J-1):** Score sync **NOT YET REACTIVATED**; grading **NOT AUTHORIZED**.
+**Status (2C-2J-4A):** Score sync **NOT YET REACTIVATED**; grading **NOT AUTHORIZED**.
+
+**Before 2026 grading activation:** repair ML payout-price contract — grade-bets currently uses `Bet.modelPrice` for winning ML PnL, but 2026 official cards store model fair American odds in `modelPrice` and sportsbook American odds in `closePrice`. CLV semantics remain a separate review item. Do **not** couple grading repair to card creation.
 
 `cfbd-scores-sync.yml` schedule defaults to season **2025** — repair before any 2026 use. Keep score → grade → feature → lifecycle **separate**.
 

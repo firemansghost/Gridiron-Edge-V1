@@ -288,15 +288,11 @@ Official model = Core V1; Hybrid held. Running current sync would **persist Hybr
 
 ### Recommendation
 
-**Prefer C: new Core-only guarded weekly-card writer** (PREVIEW/COMMIT + confirmation), writing only `official_flat_100` while Hybrid unauthorized.
+**Prefer C: new Core-only guarded weekly-card writer** — **IMPLEMENTED in draft (2C-2J-4)** as `write-core-v1-weekly-card-2026.yml` (PREVIEW/COMMIT + confirmation), writing only `official_flat_100` while Hybrid unauthorized.
 
-**Acceptable:** parameterize existing workflow by effective model / `isHybridV2ProductionAuthorized` so held seasons skip Hybrid.
+Legacy `sync-weekly-bets.yml` is labeled **LEGACY (<=2025)** and rejects season≥2026.
 
-**Avoid:** split workflows alone without a hold gate (easy to run the wrong one).
-
-`bowl-week-bootstrap.yml` has the same dual-sync hazard — MANUAL_REVIEW_REQUIRED.
-
-**Bet sync remains NOT AUTHORIZED** until that repair/replacement lands.
+**Core card COMMIT remains NOT AUTHORIZED** until independent PREVIEW review. Recurring Odds polling / second Odds COMMIT / grading remain **NOT AUTHORIZED**.
 
 ---
 
@@ -343,7 +339,7 @@ Preferred standard: **PR #60 / lifecycle** (step env inputs, scoped DB secret, i
 |------------|--------|
 | Recurring workflows | **STOPPED** (operator UI) |
 | Odds ingestion | **NOT AUTHORIZED** |
-| Bet sync | **NOT AUTHORIZED** |
+| Bet sync / Core card | **Core card writer draft (2C-2J-4); COMMIT NOT AUTHORIZED**; legacy sync ≤2025 only |
 | Grading | **NOT AUTHORIZED** |
 | Score sync | **NOT YET REACTIVATED** |
 | CFBD feature ingest | **NOT YET REACTIVATED** |

@@ -1,0 +1,172 @@
+# Manual GUARDED 2026 Core V1 Weekly Card PREVIEW/COMMIT (Phase 2C-2J-4).
+# workflow_dispatch ONLY — no schedule, push, or pull_request.
+# PREVIEW by default. COMMIT requires mode=COMMIT and confirmation=WRITE_2026_WEEK_<n>_CORE_CARD.
+# Writes ONLY strategyTag=official_flat_100. No hybrid_v2 / v4 / Fade.
+# No provider calls. No ratings / Game / MarketLine / score / grading writes.
+# Production COMMIT remains NOT AUTHORIZED until independent PREVIEW review.
+#
+# Security (PR #60 pattern):
+# - Dispatch inputs reach shell only via step-level env (never ${{ inputs.* }} inside run:).
+# - Production DIRECT_URL is NOT job-wide; scoped to the card DB step.
+# - Confirmation is never echoed.
+# - No ODDS_API_KEY / CFBD_API_KEY / SGO_API_KEY / weather keys.
+
+name: Preview/Write 2026 Core V1 Weekly Card (Manual, Guarded)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (must be 2026)'
+        required: true
+        type: string
+        default: '2026'
+      week:
+        description: 'CFB week (explicit)'
+        required: true
+        type: string
+        default: '1'
+      mode:
+        description: 'PREVIEW (DB read-only) or COMMIT (atomic official_flat_100 createMany)'
+        required: true
+        type: choice
+        options:
+          - PREVIEW
+          - COMMIT
+        default: PREVIEW
+      confirmation:
+        description: 'For COMMIT, type WRITE_2026_WEEK_<week>_CORE_CARD exactly (e.g. WRITE_2026_WEEK_1_CORE_CARD)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: write-core-v1-weekly-card-2026-${{ inputs.season }}-${{ inputs.week }}
+  cancel-in-progress: false
+
+jobs:
+  write:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight (names/presence only)
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          SEASON="$INPUT_SEASON"
+          WEEK="$INPUT_WEEK"
+          MODE="$INPUT_MODE"
+          CONFIRM="$INPUT_CONFIRMATION"
+          echo "season=${SEASON}"
+          echo "week=${WEEK}"
+          echo "mode=${MODE}"
+          echo "PREVIEW IS DATABASE READ-ONLY"
+          echo "providerCalls=0"
+          echo "strategyTag=official_flat_100 only"
+          echo "ODDS_API_KEY: not provided"
+          echo "CFBD_API_KEY: not provided"
+          echo "SGO_API_KEY: not provided"
+          echo "VISUALCROSSING_API_KEY: not provided"
+
+          if [ "$SEASON" != "2026" ]; then
+            echo "::error::season must equal 2026 (got ${SEASON})"
+            exit 1
+          fi
+          if ! [[ "$WEEK" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::week must be a positive integer"
+            exit 1
+          fi
+          if [ "$MODE" != "PREVIEW" ] && [ "$MODE" != "COMMIT" ]; then
+            echo "::error::mode must be PREVIEW or COMMIT"
+            exit 1
+          fi
+          EXPECTED="WRITE_2026_WEEK_${WEEK}_CORE_CARD"
+          if [ "$MODE" = "COMMIT" ] && [ "$CONFIRM" != "$EXPECTED" ]; then
+            echo "::error::COMMIT requires confirmation=${EXPECTED}"
+            exit 1
+          fi
+          echo "Preflight OK (no production DB secret in this step)"
+
+      - name: Install dependencies
+        env:
+          DATABASE_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+          DIRECT_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+        run: npm ci
+
+      - name: Generate Prisma client
+        env:
+          DATABASE_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+          DIRECT_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+        run: npm run prisma:generate
+
+      - name: Run guarded 2026 Core V1 weekly card
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          DATABASE_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          if [ "$INPUT_MODE" = "COMMIT" ]; then
+            npx tsx apps/jobs/write-core-v1-weekly-card-2026.ts \
+              --season "$INPUT_SEASON" \
+              --week "$INPUT_WEEK" \
+              --mode "$INPUT_MODE" \
+              --confirm "$INPUT_CONFIRMATION" \
+              --report "reports/core-v1-weekly-card-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-commit.json"
+          else
+            npx tsx apps/jobs/write-core-v1-weekly-card-2026.ts \
+              --season "$INPUT_SEASON" \
+              --week "$INPUT_WEEK" \
+              --mode "$INPUT_MODE" \
+              --report "reports/core-v1-weekly-card-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-preview.json"
+          fi
+
+      - name: Upload Core V1 card audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-v1-weekly-card-2026-w${{ inputs.week }}-${{ inputs.mode }}
+          path: reports/core-v1-weekly-card-2026-*.json
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+          INPUT_MODE: ${{ inputs.mode }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "============================================"
+          echo "PREVIEW/WRITE 2026 CORE V1 WEEKLY CARD"
+          echo "============================================"
+          echo "season: ${INPUT_SEASON}"
+          echo "week: ${INPUT_WEEK}"
+          echo "mode: ${INPUT_MODE}"
+          echo "status: ${JOB_STATUS}"
+          echo "strategyTag: official_flat_100 only"
+          echo "providerCalls=0"
+          echo "ratings/Game/MarketLine/score/grading writes: false"
+          echo "hybrid_v2 writes: false"
+          echo "============================================"
