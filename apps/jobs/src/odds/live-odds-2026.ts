@@ -20,6 +20,9 @@ export const WEEK1_GAME_COUNT = 51;
 /** Bounded kickoff/date drift for schedule↔provider temporal matching (36h). */
 export const KICKOFF_MATCH_TOLERANCE_MS = 36 * 60 * 60 * 1000;
 
+/** Max |spread| points accepted from a sportsbook observation (production: 50.5–51 seen). */
+export const MAX_ABS_SPREAD = 100;
+
 export type LiveOddsMode = 'PREVIEW' | 'COMMIT';
 
 export function expectedWriteConfirmation(week: number): string {
@@ -367,114 +370,77 @@ export function classifyProviderEvent(options: {
 
     // A: one authoritative FBS side resolved; opponent unresolved
     if (resolvedFbsId) {
-      const teamWeekGames = requestedWeekGames.filter(
+      // E: missing/malformed commence_time → fail closed
+      if (!commence) {
+        return {
+          ...base,
+          classification: 'unresolved_expected_fbs',
+          detail:
+            'resolved FBS with unresolved opponent; commence_time missing/malformed; cannot prove out-of-scope',
+        };
+      }
+
+      // Authoritative FBS-vs-FBS season Games for THIS team near provider kickoff.
+      // Do NOT use the global requested-week kickoff window of unrelated games.
+      const nearAuthoritativeFbsGamesForResolvedTeam = seasonGames.filter(
         (g) =>
-          g.homeTeamId === resolvedFbsId || g.awayTeamId === resolvedFbsId
+          (g.homeTeamId === resolvedFbsId || g.awayTeamId === resolvedFbsId) &&
+          fbsTeamIds.has(g.homeTeamId) &&
+          fbsTeamIds.has(g.awayTeamId) &&
+          withinKickoffTolerance(g.date, commence)
       );
 
-      // A1: no requested-week FBS-vs-FBS Game for this team → FCS/out-of-scope
-      if (teamWeekGames.length === 0) {
+      // A: zero near authoritative FBS games → FCS / out-of-scope (nonblocking)
+      if (nearAuthoritativeFbsGamesForResolvedTeam.length === 0) {
         return {
           ...base,
           classification: 'out_of_scope_fbs_fcs',
           detail:
-            'resolved FBS team has no authoritative requested-week FBS opponent',
+            'no authoritative FBS-vs-FBS Game for resolved FBS team near provider commence_time',
         };
       }
 
-      const teamWeekNear = commence
-        ? teamWeekGames.filter((g) => withinKickoffTolerance(g.date, commence))
-        : [];
-
-      // A3: multiple possible requested-week games
-      if (teamWeekGames.length > 1) {
-        if (teamWeekNear.length > 1) {
-          return {
-            ...base,
-            classification: 'ambiguous',
-            candidateGameIds: teamWeekNear.map((g) => g.gameId),
-            detail: `resolved FBS ${resolvedFbsId} has ${teamWeekNear.length} requested-week games near commence_time`,
-          };
-        }
-        if (teamWeekNear.length === 0 && commence) {
-          return {
-            ...base,
-            classification: 'out_of_requested_week',
-            detail:
-              'resolved FBS has requested-week games, but commence_time is outside their kickoff tolerance',
-            candidateGameIds: teamWeekGames.map((g) => g.gameId),
-          };
-        }
-        if (teamWeekNear.length === 0 && !commence) {
-          return {
-            ...base,
-            classification: 'ambiguous',
-            candidateGameIds: teamWeekGames.map((g) => g.gameId),
-            detail: `resolved FBS ${resolvedFbsId} has ${teamWeekGames.length} requested-week games; commence_time missing/malformed`,
-          };
-        }
-        // exactly one temporally aligned among multiple → treat as A2 below
+      // D: more than one near authoritative FBS game
+      if (nearAuthoritativeFbsGamesForResolvedTeam.length > 1) {
+        return {
+          ...base,
+          classification: 'ambiguous',
+          candidateGameIds: nearAuthoritativeFbsGamesForResolvedTeam.map(
+            (g) => g.gameId
+          ),
+          detail: `resolved FBS ${resolvedFbsId} has ${nearAuthoritativeFbsGamesForResolvedTeam.length} authoritative FBS games near commence_time`,
+        };
       }
 
-      const focusGames =
-        teamWeekGames.length === 1
-          ? teamWeekGames
-          : teamWeekNear.length === 1
-            ? teamWeekNear
-            : [];
+      const g = nearAuthoritativeFbsGamesForResolvedTeam[0];
+      const expectedOpp =
+        g.homeTeamId === resolvedFbsId ? g.awayTeamId : g.homeTeamId;
+      const otherId = homeIn ? away.teamId : home.teamId;
 
-      // A2: exactly one requested-week FBS-vs-FBS game (or one temporally selected)
-      if (focusGames.length === 1) {
-        const g = focusGames[0];
-        const expectedOpp =
-          g.homeTeamId === resolvedFbsId ? g.awayTeamId : g.homeTeamId;
-        const otherId = homeIn ? away.teamId : home.teamId;
+      // C: near game is not the requested week
+      if (g.week !== week) {
+        return {
+          ...base,
+          classification: 'out_of_requested_week',
+          gameId: g.gameId,
+          candidateGameIds: [g.gameId],
+          detail: `near authoritative FBS Game is DB week=${g.week}; requested=${week}`,
+        };
+      }
 
-        if (!commence) {
-          return {
-            ...base,
-            classification: 'unresolved_expected_fbs',
-            gameId: g.gameId,
-            candidateGameIds: [g.gameId],
-            detail: `resolved FBS ${resolvedFbsId} has requested-week Game ${g.gameId}; commence_time missing/malformed; opponent unresolved (expected ${expectedOpp})`,
-          };
-        }
-
-        if (withinKickoffTolerance(g.date, commence)) {
-          if (otherId !== expectedOpp) {
-            return {
-              ...base,
-              classification: 'unresolved_expected_fbs',
-              gameId: g.gameId,
-              candidateGameIds: [g.gameId],
-              detail: `resolved FBS ${resolvedFbsId} maps to requested-week Game ${g.gameId}; other provider name did not resolve to expected opponent ${expectedOpp}`,
-            };
-          }
-        }
-
-        // commence present but not aligned with the team's requested-week game
-        if (requestedNear.length === 0) {
-          return {
-            ...base,
-            classification: 'out_of_requested_week',
-            gameId: g.gameId,
-            candidateGameIds: [g.gameId],
-            detail:
-              'resolved FBS has a requested-week Game, but provider commence_time is outside requested-week kickoff window',
-          };
-        }
-
+      // B: near game is requested week; unresolved opponent ≠ expected FBS
+      if (otherId !== expectedOpp) {
         return {
           ...base,
           classification: 'unresolved_expected_fbs',
           gameId: g.gameId,
           candidateGameIds: [g.gameId],
-          detail: `resolved FBS ${resolvedFbsId} has requested-week Game ${g.gameId}; commence_time not within kickoff tolerance of canonical Game.date`,
+          detail: `resolved FBS ${resolvedFbsId} maps to requested-week Game ${g.gameId}; other provider name did not resolve to expected opponent ${expectedOpp}`,
         };
       }
     }
 
-    // C: both unresolved (or unresolved without usable FBS schedule context)
+    // Both unresolved (or unresolved without usable FBS schedule context)
     if (commence && requestedNear.length === 0) {
       return {
         ...base,
@@ -774,12 +740,12 @@ export function normalizeSpreadPair(
       });
       return { candidates: [], rejected };
     }
-    if (Math.abs(o.point) > 50) {
+    if (Math.abs(o.point) > MAX_ABS_SPREAD) {
       rejected.push({
         eventId,
         bookName,
         market: 'spreads',
-        reason: `abs(spread) > 50 (${o.point})`,
+        reason: `abs(spread) > ${MAX_ABS_SPREAD} (${o.point})`,
       });
       return { candidates: [], rejected };
     }

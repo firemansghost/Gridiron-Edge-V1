@@ -1,7 +1,7 @@
 # Team name aliases for Odds API → CFBD team slug mapping
 # Format: "Odds API team name": cfbd-team-slug
 # CRITICAL: All targets must be FBS teams only
-# Last updated: 2025-11-05
+# Last updated: 2026-08-28 (Phase 2C-2J-2A — production PREVIEW run 33186871080 Odds aliases)
 
 aliases:
   # Non-State schools (must NOT map to -state)
@@ -245,6 +245,25 @@ aliases:
   "North Dakota State Bison": north-dakota-state
   "Sacramento State": sacramento-state
   "Sacramento State Hornets": sacramento-state
+
+  # 2026 Odds API live PREVIEW run 33186871080 — exact provider strings (deterministic)
+  "Jacksonville State Gamecocks": jacksonville-state
+  "Florida State Seminoles": florida-state
+  "New Mexico State Aggies": new-mexico-state
+  "Hawaii Rainbow Warriors": hawai-i
+  "Akron Zips": akron
+  "Georgia State Panthers": georgia-state
+  "East Carolina Pirates": east-carolina
+  "Army Black Knights": army
+  "Coastal Carolina Chanticleers": coastal-carolina
+  "Oregon State Beavers": oregon-state
+  "Indiana Hoosiers": indiana
+  "Liberty Flames": liberty
+  "Marshall Thundering Herd": marshall
+  "Florida International Panthers": florida-international
+  "New Mexico Lobos": new-mexico
+  "Western Kentucky Hilltoppers": western-kentucky
+  "California Golden Bears": california
 
 # FCS/Non-FBS denylist - these teams should be rejected
 # NOTE: "Delaware Blue Hens" and "Missouri State Bears" removed - these teams are FBS in 2025

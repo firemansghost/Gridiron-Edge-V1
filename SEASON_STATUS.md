@@ -1,7 +1,7 @@
 # Season Status — Gridiron Edge
 
 **Status:** Offseason / paused for regular-season automation  
-**Updated:** 2026-08-28 (Phase 2C-2J-2 — Guarded 2026 Live Odds PREVIEW/COMMIT; draft PR)
+**Updated:** 2026-08-28 (Phase 2C-2J-2A — production Live Odds PREVIEW findings repair; draft PR)
 
 Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISABLE_REPORT.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -51,10 +51,11 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **Phase 2C-2I-1 Hybrid V2 preseason readiness** | **COMPLETE** — production audit run 33134809476 `auditOk=true`; Core V1 Week1 ready; Hybrid inputs 0/51 fallback |
 | **Phase 2C-2I-2 Hybrid activation hold** | **COMPLETE** (PR #62) — production smoke PASS; effective 2026 Week1 = Core V1; Hybrid held |
 | **Phase 2C-2J-1 Workflow reactivation inventory** | **COMPLETE** (PR #63) — 45→46 workflows after 2C-2J-2; active schedules 10; schedule reactivation 0 |
-| **Phase 2C-2J-2 Guarded 2026 Live Odds** | **In preparation (draft)** — PREVIEW/COMMIT append-only writer; production Odds run NOT YET AUTHORIZED |
+| **Phase 2C-2J-2 Guarded 2026 Live Odds** | **COMPLETE** (PR #64) — merged `1445cdb…`; writer live |
+| **Phase 2C-2J-2A Live Odds PREVIEW findings repair** | **In preparation (draft)** — aliases + FCS classification + MAX_ABS_SPREAD; no provider re-run |
 | **Expected 2026 schedule baseline** | **761** games / **138** distinct teams — **verified** |
 | **Ratings computation / persistence** | **2026 Core V1 initialized** (do not rerun); further lifecycle COMMITs only via guarded workflow |
-| **Odds ingestion** | **Not yet approved** (writer exists in draft; no production PREVIEW/COMMIT until review) |
+| **Odds ingestion** | **PREVIEW FAILED SAFELY** (run 33186871080); COMMIT still NOT AUTHORIZED; repair draft pending |
 | **Bet sync** | **Not yet approved** (dual Hybrid+Core sync invalid while Hybrid held) |
 | **Nightly workflow reactivation** | **Not yet approved** — recurring workflows remain STOPPED |
 
@@ -71,7 +72,7 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 
 **Scope notes:** Hybrid V2 = spreads only; totals/ML = current Core V1 logic; weekly `official_flat_100` sync for comparison.
 
-**Operational note (2C-2J-2):** Guarded Live Odds PREVIEW/COMMIT path is under draft review. Recurring workflows remain **STOPPED**. Odds PREVIEW production run and COMMIT remain **NOT AUTHORIZED** until independent review. Bet sync / grading / score sync remain unauthorized. Hybrid remains **held**; official Week1 spread = **Core V1**.
+**Operational note (2C-2J-2A):** Production Live Odds PREVIEW run **33186871080** FAILED SAFELY (`writeSafe=false`: fuzzy + unresolved expected-FBS). `providerCalls=1`, credits last=3 remaining=19688, matched=35/51, `proposedInsert=1375`, **zero DB writes**. Repair draft adds Odds aliases + FCS classification fix + `MAX_ABS_SPREAD=100`. Recurring workflows remain **STOPPED**. Odds COMMIT remains **NOT AUTHORIZED**. Hybrid remains **held**; official Week1 spread = **Core V1**.
 
 ---
 
@@ -537,22 +538,28 @@ Merge SHA: `19117af8b17de45121e0187e5d7fcf69afdbf6b9`
 - REPLACE: `nightly-ingest`, `ratings-v1`, `ratings-v2`, `sync-weekly-bets`
 - Do **not** reuse ingest-minimal wipe or ingest.ts+ratings for live 2026 Odds
 
-### 2C-2J-2 Guarded 2026 Live Odds PREVIEW/COMMIT — **in preparation (draft)**
+### 2C-2J-2 Guarded 2026 Live Odds PREVIEW/COMMIT — **COMPLETE** (PR #64)
 
-| Artifact | Role |
-|----------|------|
-| `apps/jobs/src/odds/live-odds-2026.ts` | Pure validation / normalization / reconciliation |
-| `apps/jobs/write-live-odds-2026.ts` | CLI + provider + Prisma orchestration |
-| `.github/workflows/write-live-odds-2026.yml` | Manual guarded workflow (dispatch only) |
-| `apps/jobs/__tests__/live-odds-2026.test.ts` | Pure/mocked guards |
+Merge SHA: `1445cdbec3e54587ea9bc70d5f5eca8f0cdbc86b`
 
-- Append-only MarketLine observations; no delete/update of history
-- Exactly one live Odds API call; fixed `h2h,spreads,totals` / `regions=us`
-- PREVIEW consumes Odds credits but cannot write DB; COMMIT requires `WRITE_2026_WEEK_<n>_ODDS`
-- **Production Odds PREVIEW run / COMMIT remain NOT AUTHORIZED** until independent review
-- No workflow enablement; no schedule added; recurring workflows remain STOPPED
+### 2C-2J-2A First production Live Odds PREVIEW findings repair — **in preparation (draft)**
 
-**Still out of scope / unapproved:** production Odds PREVIEW/COMMIT, bet writes, Hybrid activation, unit-grade writes, cron reactivation.
+**Production PREVIEW run 33186871080** (main `1445cdb…`):
+
+| Field | Value |
+|-------|--------|
+| Result | **FAILED SAFELY** (`writeSafe=false`) |
+| Blockers | fuzzy-only team resolution; unresolved expected-FBS mappings |
+| providerCalls | 1 |
+| x-requests-last / remaining | 3 / 19688 |
+| events / matched | 111 / 35 |
+| proposedInsert | 1375 |
+| mutationsInvoked | false |
+| marketLinePersistenceInvoked | false |
+
+Repair scope: 17 exact Odds API aliases; partial-resolution FBS/FCS by team-local kickoff; `MAX_ABS_SPREAD=100`. No provider re-run in this phase. Odds COMMIT still **NOT AUTHORIZED**. Recurring workflows remain **STOPPED**.
+
+**Still out of scope / unapproved:** production Odds COMMIT, bet writes, Hybrid activation, unit-grade writes, cron reactivation.
 
 ---
 
@@ -579,7 +586,8 @@ Merge SHA: `19117af8b17de45121e0187e5d7fcf69afdbf6b9`
 | **Hybrid V2 preseason readiness** | **COMPLETE (2C-2I-1)** | Audit 33134809476; Week1 official = Core V1; bridge unauthorized |
 | **Hybrid V2 activation hold** | **COMPLETE (2C-2I-2 / PR #62)** | 2026 effective Core V1; production smoke PASS |
 | **Workflow reactivation inventory** | **COMPLETE (2C-2J-1 / PR #63)** | 45 at merge; 46 with 2C-2J-2 writer; schedules 10; reactivation 0 |
-| **Guarded 2026 Live Odds writer** | **Draft (2C-2J-2)** | PREVIEW/COMMIT code; production Odds run NOT AUTHORIZED |
+| **Guarded 2026 Live Odds writer** | **COMPLETE (2C-2J-2 / PR #64)** | Merged; production PREVIEW run 33186871080 FAILED SAFELY |
+| **Live Odds PREVIEW findings repair** | **Draft (2C-2J-2A)** | Aliases + FCS classify + MAX_ABS_SPREAD; COMMIT still unauthorized |
 | **2026 FBS membership** | **PASSED** | Phase 2C-2B — **138/138** |
 | **Season conference persistence** | **PASSED (2C-2G-3)** | 138/138 populated; 0 NULL; do not rerun initializer |
 | **Prisma migrate auto-deploy** | **PASSED (2C-2G-1)** | Manual `MIGRATE_PRODUCTION` only |
@@ -590,7 +598,7 @@ Merge SHA: `19117af8b17de45121e0187e5d7fcf69afdbf6b9`
 | **Empty 2026 DB** | **Partial** | Schedule + membership + talent + Core V1 ratings; MarketLine Week1=0; unit grades 0 |
 | **Provider secrets** | **Validated** | GitHub secrets worked 2026-08-04 |
 | **Weekly bet sync** | **NOT AUTHORIZED** | Dual Hybrid+Core sync invalid while Hybrid held — REPLACE |
-| **Live Odds** | **NOT AUTHORIZED** | ingest-minimal wipe + ingest.ts ratings coupling unsafe |
+| **Live Odds** | **PREVIEW FAILED SAFELY** | Run 33186871080; COMMIT unauthorized; 2C-2J-2A repair draft |
 | **V3 totals** | **Blocked** | Missing `sync-v3-bets.ts` — leave disabled |
 | **Mock fallback** | **Fixed (2B-R)** | Production ingest fails closed if `CFBD_API_KEY` missing |
 | **nightly-ingest** | Keep UI-disabled | **REPLACE** — 2025 literals + wipe Odds + seed-ratings |
@@ -618,11 +626,11 @@ Merge SHA: `19117af8b17de45121e0187e5d7fcf69afdbf6b9`
 
 ## Next phases
 
-1. **Phase 2C-2J-2** — independent review of guarded Live Odds draft PR; do **not** run production PREVIEW/COMMIT until authorized
+1. **Phase 2C-2J-2A** — independent review/merge of production PREVIEW findings repair; then one new Week1 PREVIEW may be authorized
 2. Core-only guarded weekly-card writer (or effective-model gate) before any bet sync
 3. Repair 2026 score sync before any post-game automation
 4. Do **not** copy 2025 TeamUnitGrades / activate Hybrid / enable crons from this phase
-5. Odds / bet sync / grading remain **NOT AUTHORIZED** until separately approved
+5. Odds COMMIT / bet sync / grading remain **NOT AUTHORIZED** until separately approved
 
 See [Preseason Reactivation Checklist](docs/preseason-reactivation-checklist.md) and [2026 Workflow Reactivation Matrix](docs/2026-workflow-reactivation-matrix.md).
 
