@@ -105,8 +105,12 @@ describe('2C-2J-4A Core V1 weekly-card workflow security', () => {
   it('CLI separates transaction failure from committed verification failure', () => {
     expect(cli).toContain('resolvePreviewExitCode');
     expect(cli).toContain('buildCommittedVerificationFailureExecution');
+    expect(cli).toContain('buildRolledBackTransactionExecution');
+    expect(cli).toContain('txMutationInvoked');
     expect(cli).toContain('BET ROWS MAY / DO EXIST');
     expect(cli).toContain('NOT a rollback');
+    expect(cli).toContain('mutationAttempted');
+    expect(cli).toContain('persistenceCommitted');
     // Count assertion remains inside transaction helper path
     expect(cli).toContain('executeAtomicFirstCommit');
   });

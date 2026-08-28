@@ -9,6 +9,7 @@ import {
   buildCommittedVerificationFailureExecution,
   buildCoreWeeklyCardPlan,
   buildPreviewExecution,
+  buildRolledBackTransactionExecution,
   buildSuccessfulCommitExecution,
   commitEligible,
   evaluateExistingCardSafety,
@@ -606,6 +607,34 @@ describe('existing card safety + commit helpers', () => {
         createMany: async () => ({ count: 0 }),
       })
     ).rejects.toThrow(/createMany\.count mismatch/);
+  });
+
+  it('A: abort before createMany → no mutation invocation', () => {
+    const exec = buildRolledBackTransactionExecution({
+      createManyInvoked: false,
+      createManyCount: null,
+      error: 'official rows already exist',
+    });
+    expect(exec.transactionStarted).toBe(true);
+    expect(exec.mutationsInvoked).toBe(false);
+    expect(exec.betPersistenceInvoked).toBe(false);
+    expect(exec.createManyCount).toBeNull();
+    expect(exec.commitSucceeded).toBe(false);
+    expect(exec.providerCalls).toBe(0);
+  });
+
+  it('B: createMany invoked then count mismatch rollback → mutation reported', () => {
+    const exec = buildRolledBackTransactionExecution({
+      createManyInvoked: true,
+      createManyCount: 0,
+      error: 'createMany.count mismatch: expected=3 actual=0',
+    });
+    expect(exec.transactionStarted).toBe(true);
+    expect(exec.mutationsInvoked).toBe(true);
+    expect(exec.betPersistenceInvoked).toBe(true);
+    expect(exec.createManyCount).toBe(0);
+    expect(exec.commitSucceeded).toBe(false);
+    expect(exec.providerCalls).toBe(0);
   });
 
   it('assertCreateManyCountMatches throws', () => {

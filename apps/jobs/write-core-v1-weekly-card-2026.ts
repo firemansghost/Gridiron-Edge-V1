@@ -29,6 +29,7 @@ import {
   buildPreviewExecution,
   buildSuccessfulCommitExecution,
   buildCommittedVerificationFailureExecution,
+  buildRolledBackTransactionExecution,
   commitEligible,
   executeAtomicFirstCommit,
   expectedWriteConfirmation,
@@ -393,6 +394,8 @@ async function main(): Promise<void> {
 
     let createManyCount = 0;
     let transactionPersisted = false;
+    let txMutationInvoked = false;
+    let txCreateManyCount: number | null = null;
 
     // --- A. TRANSACTION PHASE ---
     try {
@@ -420,7 +423,9 @@ async function main(): Promise<void> {
               })
             ),
           createMany: async (rows) => {
-            return tx.bet.createMany({
+            // Track invocation even if later assert/rollback aborts the transaction.
+            txMutationInvoked = true;
+            const created = await tx.bet.createMany({
               data: rows.map((r) => ({
                 ...r,
                 modelPrice: r.modelPrice,
@@ -428,6 +433,8 @@ async function main(): Promise<void> {
                 stake: r.stake,
               })),
             });
+            txCreateManyCount = created.count;
+            return created;
           },
         });
         return result.count;
@@ -435,18 +442,18 @@ async function main(): Promise<void> {
       transactionPersisted = true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      // Transaction failed / rolled back — no committed Bet persistence.
-      execution = buildFailedCommitExecution({
-        transactionStarted: true,
-        mutationsInvoked: false,
-        betPersistenceInvoked: false,
-        createManyCount: null,
-        commitSucceeded: false,
+      // Transaction rolled back — ZERO Bet rows committed.
+      // Truthfully report whether createMany was reached (mutation attempted != committed).
+      execution = buildRolledBackTransactionExecution({
+        createManyInvoked: txMutationInvoked,
+        createManyCount: txCreateManyCount,
         error: msg,
       });
       writeReport(reportPath, plan, execution, null, {
         persistenceHappened: false,
         rolledBack: true,
+        mutationAttempted: txMutationInvoked,
+        persistenceCommitted: false,
       });
       throw err;
     }

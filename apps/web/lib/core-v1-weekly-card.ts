@@ -1309,6 +1309,29 @@ export function buildFailedCommitExecution(options: {
   };
 }
 
+/**
+ * Transaction aborted/rolled back — ZERO Bet rows committed.
+ * Truthfully report whether createMany was reached before rollback.
+ * mutation attempted != persistence committed.
+ */
+export function buildRolledBackTransactionExecution(options: {
+  /** True iff tx.bet.createMany(...) was entered/invoked before abort. */
+  createManyInvoked: boolean;
+  /** createMany result.count if available after invocation; else null. */
+  createManyCount?: number | null;
+  error: string;
+}): CoreCardExecutionState {
+  const invoked = options.createManyInvoked;
+  return buildFailedCommitExecution({
+    transactionStarted: true,
+    mutationsInvoked: invoked,
+    betPersistenceInvoked: invoked,
+    createManyCount: invoked ? (options.createManyCount ?? null) : null,
+    commitSucceeded: false,
+    error: options.error,
+  });
+}
+
 export function buildSuccessfulCommitExecution(options: {
   createManyCount: number;
   postWriteVerificationSucceeded: boolean;
