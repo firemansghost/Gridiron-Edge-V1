@@ -2,25 +2,47 @@ import {
   buildSlateApiUrl,
   buildSlateResponseMeta,
   computeSlateConfidenceSummary,
+  getProductionModelDisplayLabel,
   normalizeSlateApiResponse,
   resolveSlateModelParam,
+  shouldShowHybridPlaybookFilters,
 } from '@/lib/config/slate-model';
 
 describe('slate-model helpers', () => {
-  it('defaults omitted model param to hybrid_v2', () => {
+  it('param-only omitted model prefers hybrid_v2 (DEFAULT)', () => {
+    expect(resolveSlateModelParam(null).preferredModel).toBe('hybrid_v2');
     expect(resolveSlateModelParam(null).activeModel).toBe('hybrid_v2');
     expect(resolveSlateModelParam(undefined).activeModel).toBe('hybrid_v2');
   });
 
-  it('accepts core_v1 and hybrid_v2 model params', () => {
-    expect(resolveSlateModelParam('core_v1').activeModel).toBe('core_v1');
-    expect(resolveSlateModelParam('hybrid_v2').activeModel).toBe('hybrid_v2');
+  it('2026 omitted/default Hybrid request resolves effective Core V1', () => {
+    const omitted = resolveSlateModelParam(null, 2026, 1);
+    expect(omitted.preferredModel).toBe('hybrid_v2');
+    expect(omitted.activeModel).toBe('core_v1');
+    expect(omitted.activationHold).toBe(true);
   });
 
-  it('falls back invalid model params to hybrid_v2', () => {
+  it('accepts core_v1 and hybrid_v2 model params (preferred)', () => {
+    expect(resolveSlateModelParam('core_v1').activeModel).toBe('core_v1');
+    expect(resolveSlateModelParam('hybrid_v2').activeModel).toBe('hybrid_v2');
+    expect(resolveSlateModelParam('hybrid_v2', 2025, 9).activeModel).toBe(
+      'hybrid_v2'
+    );
+  });
+
+  it('falls back invalid model params to hybrid_v2 preferred', () => {
     const result = resolveSlateModelParam('v4_labs');
+    expect(result.preferredModel).toBe('hybrid_v2');
     expect(result.activeModel).toBe('hybrid_v2');
     expect(result.invalidRequest).toBe(true);
+  });
+
+  it('2026 invalid param still holds Hybrid preferred to Core V1 effective', () => {
+    const result = resolveSlateModelParam('v4_labs', 2026, 1);
+    expect(result.invalidRequest).toBe(true);
+    expect(result.preferredModel).toBe('hybrid_v2');
+    expect(result.activeModel).toBe('core_v1');
+    expect(result.activationHold).toBe(true);
   });
 
   it('builds response meta with spread scope and current totals/ML', () => {
@@ -57,6 +79,23 @@ describe('slate-model helpers', () => {
     expect(meta.fallback?.to).toBe('core_v1');
   });
 
+  it('includes activation override metadata for 2026 hold', () => {
+    const meta = buildSlateResponseMeta({
+      activeModel: 'core_v1',
+      requestedModel: 'hybrid_v2',
+      activationOverride: {
+        used: true,
+        requested: 'hybrid_v2',
+        effective: 'core_v1',
+        reason: 'held',
+      },
+    });
+    expect(meta.activeModel).toBe('core_v1');
+    expect(meta.modelScope.spread).toBe('core_v1');
+    expect(meta.activationOverride?.used).toBe(true);
+    expect(meta.invalidModelFallback).toBe(false);
+  });
+
   it('builds slate fetch URL with model param', () => {
     expect(buildSlateApiUrl(2025, 9, 'hybrid_v2')).toBe(
       '/api/weeks/slate?season=2025&week=9&model=hybrid_v2'
@@ -87,5 +126,15 @@ describe('slate-model helpers', () => {
     ]);
     expect(summary.totalGames).toBe(4);
     expect(summary.confidenceBreakdown).toEqual({ A: 2, B: 1, C: 0 });
+  });
+
+  it('display label helper maps production model ids', () => {
+    expect(getProductionModelDisplayLabel('core_v1')).toBe('Core V1');
+    expect(getProductionModelDisplayLabel('hybrid_v2')).toBe('Hybrid V2');
+  });
+
+  it('Hybrid playbook filters only when effective model is Hybrid', () => {
+    expect(shouldShowHybridPlaybookFilters('hybrid_v2')).toBe(true);
+    expect(shouldShowHybridPlaybookFilters('core_v1')).toBe(false);
   });
 });

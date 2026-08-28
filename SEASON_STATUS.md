@@ -1,7 +1,7 @@
 # Season Status — Gridiron Edge
 
 **Status:** Offseason / paused for regular-season automation  
-**Updated:** 2026-08-27 (Phase 2C-2I-1 — Hybrid V2 preseason readiness audit; draft PR)
+**Updated:** 2026-08-28 (Phase 2C-2I-2 — Hybrid activation hold; draft PR)
 
 Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISABLE_REPORT.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -48,10 +48,11 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **Phase 2C-2H-7 Balanced V1 transition timing** | **PASSED** (PR #58) — timing-only hard switch rejected; blend eval required |
 | **Phase 2C-2H-8 Balanced V1 transition blends** | **PASSED** (PR #59) — B1 AUTHORIZED as model policy; B2/B3/hard/per-team REJECTED; write still unauthorized |
 | **Phase 2C-2H-9 Core V1 lifecycle writer** | **COMPLETE** — Candidate A persisted 138/138; `GLOBAL_BLEND_W3_W6` lifecycle active; production COMMIT verified |
-| **Phase 2C-2I-1 Hybrid V2 preseason readiness** | **In preparation (draft)** — Core V1 consumer + Hybrid input readiness + prior-year grade diagnostic; bridge NOT authorized |
+| **Phase 2C-2I-1 Hybrid V2 preseason readiness** | **COMPLETE** — production audit run 33134809476 `auditOk=true`; Core V1 Week1 ready; Hybrid inputs 0/51 fallback |
+| **Phase 2C-2I-2 Hybrid activation hold** | **In preparation (draft)** — 2026 effective spread model = Core V1; Hybrid authorization held; bridge NOT authorized |
 | **Expected 2026 schedule baseline** | **761** games / **138** distinct teams — **verified** |
 | **Ratings computation / persistence** | **2026 Core V1 initialized** (do not rerun); further lifecycle COMMITs only via guarded workflow |
-| **Odds ingestion** | **Not yet approved** |
+| **Odds ingestion** | **Not yet approved** (blocked until effective-model truthfulness phase passes) |
 | **Nightly workflow reactivation** | **Not yet approved** |
 
 ---
@@ -67,7 +68,7 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 
 **Scope notes:** Hybrid V2 = spreads only; totals/ML = current Core V1 logic; weekly `official_flat_100` sync for comparison.
 
-**Operational note (2C-2I-1):** Hybrid is configured as the default spread model (`DEFAULT_PRODUCTION_MODEL='hybrid_v2'`), but **2026 TeamUnitGrades coverage is currently 0**. Present Hybrid runtime therefore **falls back to Core V1** for Week1 (explicit slate fallback). Do **not** describe Hybrid V2 as operationally active for Week1 until this phase is resolved and a human decision is made. Odds ingestion remains **NOT AUTHORIZED**.
+**Operational note (2C-2I-2):** Hybrid remains `DEFAULT_PRODUCTION_MODEL='hybrid_v2'` in catalog, but **2026 production authorization is held**. Effective Week1 spread model is **Core V1**. Explicit `model=hybrid_v2` requests resolve to Core V1 with `activationOverride` metadata — not Hybrid-runtime-with-fallback. The 2025 TeamUnitGrades preseason bridge is **NOT AUTHORIZED for Week1**. Odds ingestion remains **NOT AUTHORIZED**.
 
 ---
 
@@ -491,22 +492,36 @@ Provider-availability blocker removed. Persistence and ratings remain unauthoriz
 - Post-write verification: run **33127893613** (`existingV1Count=138`, proposedCreate=0, proposedUpdate=138, no mutations)
 - **2026 Core V1 preseason initialization finished — do not rerun ratings init**
 
-### 2C-2I-1 Hybrid V2 preseason readiness audit (in preparation / draft)
+### 2C-2I-1 Hybrid V2 preseason readiness audit — COMPLETE
 
 | Artifact | Role |
 |----------|------|
 | `apps/jobs/src/preseason/hybrid-v2-preseason-readiness.ts` | Pure SELECT-shaped readiness + prior-grade Hybrid diagnostic |
 | `apps/jobs/audit-hybrid-v2-preseason-readiness.ts` | SELECT-only CLI |
-| `.github/workflows/audit-hybrid-v2-preseason-readiness.yml` | Manual read-only workflow (`DIRECT_URL` only; PR #60 secret/input safety) |
+| `.github/workflows/audit-hybrid-v2-preseason-readiness.yml` | Manual read-only workflow (`DIRECT_URL` only) |
 
-- Scope: season **2026** / week **1** only
-- Questions: Core V1 Week1 readiness; current Hybrid input coverage; why slate falls back; whether 2025 TeamUnitGrades bridge is structurally possible; diagnostic Hybrid-vs-V1 deltas
-- Reuses exact `calculateHybridSpread()` — no formula/weight/HFA changes
-- Does **not** authorize prior-year bridge, Hybrid activation, unit-grade writes, Odds, or CFBD
-- Expected inventory: 2026 TeamUnitGrades=0 → Hybrid falls back to Core V1 for all 51 Week1 games; 2025 prior grades structurally 138/138 with NDSU + Sacramento State all-zero Hybrid fields
-- **Do not run production audit workflow until draft PR independently reviewed**
+- Production audit: GitHub Actions run **33134809476** — `auditOk=true`, detected 2026/W1
+- Core V1 Week1 operational ready (51/51 V1 coverage)
+- Current Hybrid inputs 0 → would-fallback 51; `sameSeasonUnitGradeSourceReady=false`
+- Prior-year grades structurally available (138/138; NDSU + Sac all-zero); historically validated=false
+- **Human Week1 decision:** official spread model = **Core V1**; 2025 unit-grade bridge **NOT AUTHORIZED for Week1**
 
-**Still out of scope / unapproved:** copying 2025 grades into 2026; running `compute_unit_grades.ts`; Odds; model activation changes.
+### 2C-2I-2 Hybrid activation hold + effective model truthfulness (in preparation / draft)
+
+| Artifact | Role |
+|----------|------|
+| `apps/web/lib/config/hybrid-production-activation.ts` | Operational authorization gate (`season >= 2026` → false) |
+| `apps/web/lib/config/slate-model.ts` | Resolve preferred → effective model; `activationOverride` meta |
+| `apps/web/app/api/weeks/slate/route.ts` | Apply hold before Hybrid runtime / conflict-tier derivation |
+| Picks / Homepage | Display `meta.activeModel`; hide Hybrid-only filters under Core V1 |
+
+- Effective 2026 spread model = **Core V1** (omitted / core_v1 / hybrid_v2 request)
+- Explicit Hybrid request is authorization hold — **not** Hybrid-runtime-with-fallback
+- Missing-input fallback code retained for post-activation safety
+- Hybrid formula / Core V1 formula / strategy tags unchanged
+- Odds still **NOT AUTHORIZED** until this phase passes review
+
+**Still out of scope / unapproved:** copying 2025 grades into 2026; running `compute_unit_grades.ts`; Hybrid activation; Odds; bet writes.
 
 ---
 
@@ -530,7 +545,8 @@ Provider-availability blocker removed. Persistence and ratings remain unauthoriz
 | **2025 Balanced V1 transition timing** | **PASSED (2C-2H-7 / PR #58)** | Timing-only hard switch rejected; blend eval required |
 | **2025 Balanced V1 transition blends** | **PASSED (2C-2H-8 / PR #59)** | B1 authorized model policy; write still unauthorized |
 | **2026 Core V1 lifecycle writer** | **COMPLETE (2C-2H-9)** | Candidate A 138/138 persisted; B1 lifecycle active |
-| **Hybrid V2 preseason readiness** | **In prep (2C-2I-1)** | 2026 unit grades 0 → slate falls back to Core V1; bridge unauthorized |
+| **Hybrid V2 preseason readiness** | **COMPLETE (2C-2I-1)** | Audit 33134809476; Week1 official = Core V1; bridge unauthorized |
+| **Hybrid V2 activation hold** | **In prep (2C-2I-2)** | 2026 effective Core V1; Hybrid catalog retained |
 | **2026 FBS membership** | **PASSED** | Phase 2C-2B — **138/138** |
 | **Season conference persistence** | **PASSED (2C-2G-3)** | 138/138 populated; 0 NULL; do not rerun initializer |
 | **Prisma migrate auto-deploy** | **PASSED (2C-2G-1)** | Manual `MIGRATE_PRODUCTION` only |
@@ -568,10 +584,10 @@ Provider-availability blocker removed. Persistence and ratings remain unauthoriz
 
 ## Next phases
 
-1. **Phase 2C-2I-1** — review/merge Hybrid V2 preseason readiness audit; run production audit only after merge; human decision on Week1 spread model (Core V1 vs prior-year Hybrid bridge) remains required
+1. **Phase 2C-2I-2** — review/merge Hybrid activation hold so 2026 effective spread model is Core V1 with truthful API/UI metadata
 2. Do **not** copy 2025 TeamUnitGrades into 2026 or run `compute_unit_grades.ts` until separately authorized
-3. Do **not** describe Hybrid V2 as operationally active for Week1 while 2026 unit grades are 0
-4. Odds ingestion remains **NOT AUTHORIZED**
+3. Do **not** describe Hybrid V2 as operationally active for 2026 until same-season readiness + explicit activation
+4. Odds ingestion remains **NOT AUTHORIZED** until this truthfulness phase passes
 5. **Phase 2D** — `TARGET_SEASON` in scheduled YAML before bulk UI enables
 
 See [Preseason Reactivation Checklist](docs/preseason-reactivation-checklist.md).

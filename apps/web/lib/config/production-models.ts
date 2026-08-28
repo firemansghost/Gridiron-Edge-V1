@@ -1,8 +1,11 @@
 /**
  * Production model configuration for Dual-Model Mode (2026).
  *
- * Hybrid V2 is the primary/default spread model. Core V1 remains available for
- * comparison and reporting. Labs models (V4, Fade V4) are not production selectors.
+ * Hybrid V2 is the configured DEFAULT_PRODUCTION_MODEL and future in-season
+ * primary spread model. Phase 2C-2I-2 holds Hybrid production authorization for
+ * season >= 2026 until same-season inputs are ready and activation is explicitly
+ * approved — see hybrid-production-activation.ts / resolveSlateModelParam.
+ * Core V1 remains available for comparison and is the effective 2026 Week1 model.
  *
  * Scope (2026): Hybrid V2 applies to SPREADS only. Totals and moneyline picks
  * continue to use existing Core V1 logic until separate Hybrid totals/ML exists.

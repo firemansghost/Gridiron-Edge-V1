@@ -18,9 +18,11 @@ import { ErrorState } from '@/components/ErrorState';
 import {
   buildSlateApiUrl,
   computeSlateConfidenceSummary,
+  getProductionModelDisplayLabel,
   normalizeSlateApiResponse,
   type SlateResponseMeta,
 } from '@/lib/config/slate-model';
+import type { ProductionModelId } from '@/lib/config/production-models';
 
 interface HomeSlateState {
   season: number;
@@ -31,10 +33,17 @@ interface HomeSlateState {
 }
 
 export default function HomePage() {
-  const { model, modelLabel } = useProductionModel();
+  const { model } = useProductionModel();
   const [slate, setSlate] = useState<HomeSlateState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const effectiveModel: ProductionModelId =
+    slate?.meta?.activeModel ?? model;
+  const effectiveModelLabel = getProductionModelDisplayLabel(effectiveModel);
+  const showHybridHoldNote =
+    Boolean(slate?.meta?.activationOverride?.used) ||
+    (model === 'hybrid_v2' && effectiveModel === 'core_v1');
 
   useEffect(() => {
     fetchSlate();
@@ -186,9 +195,15 @@ export default function HomePage() {
               <p className="text-gray-600">
                 {slate.week && slate.season ? (
                   <>
-                    Week {slate.week} • {slate.season} Season • Spread model: {modelLabel}
+                    Week {slate.week} • {slate.season} Season • Spread model: {effectiveModelLabel}
                     {slate.meta?.modelScope.total === 'current' && (
                       <span className="text-gray-500"> (totals/ML: current logic)</span>
+                    )}
+                    {showHybridHoldNote && (
+                      <span className="text-gray-500">
+                        {' '}
+                        — Hybrid V2 is not active for 2026 yet; Core V1 is being used.
+                      </span>
                     )}
                   </>
                 ) : (

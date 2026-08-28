@@ -1,13 +1,18 @@
 /**
- * Slate API model parameter resolution and response helpers (Phase D).
+ * Slate API model parameter resolution and response helpers (Phase D + 2C-2I-2).
  */
 
 import {
   AVAILABLE_PRODUCTION_MODELS,
   DEFAULT_PRODUCTION_MODEL,
+  PRODUCTION_MODEL_LABELS,
   type ProductionModelId,
 } from './production-models';
 import { isValidProductionModelId } from './production-model-preference';
+import {
+  HYBRID_V2_PRODUCTION_HOLD_REASON,
+  isHybridV2ProductionAuthorized,
+} from './hybrid-production-activation';
 
 export type SlateModelScope = 'hybrid_v2' | 'core_v1' | 'current';
 
@@ -17,6 +22,14 @@ export interface SlateModelFallbackMeta {
   from?: 'hybrid_v2';
   to?: 'core_v1';
   gamesAffected?: number;
+}
+
+/** Authorization hold: requested Hybrid, effective Core V1 (distinct from missing-input fallback). */
+export interface SlateActivationOverrideMeta {
+  used: boolean;
+  requested: 'hybrid_v2';
+  effective: 'core_v1';
+  reason: string;
 }
 
 export interface SlateResponseMeta {
@@ -31,19 +44,63 @@ export interface SlateResponseMeta {
     moneyline: 'current';
   };
   fallback?: SlateModelFallbackMeta;
+  activationOverride?: SlateActivationOverrideMeta;
 }
 
-export function resolveSlateModelParam(modelParam: string | null | undefined): {
+export interface ResolveSlateModelResult {
+  /** Effective model used for computation and meta.activeModel. */
   activeModel: ProductionModelId;
+  /** Preferred model after param validation, before activation hold. */
+  preferredModel: ProductionModelId;
   invalidRequest: boolean;
-} {
+  /** True when Hybrid was preferred but production authorization hold forced Core V1. */
+  activationHold: boolean;
+}
+
+/**
+ * Resolve slate model param, then apply Hybrid production authorization hold.
+ *
+ * When `season` is omitted, activation hold is not applied (param-only resolution).
+ * Callers that serve live slates should pass season/week.
+ */
+export function resolveSlateModelParam(
+  modelParam: string | null | undefined,
+  season?: number,
+  week?: number
+): ResolveSlateModelResult {
+  let preferredModel: ProductionModelId = DEFAULT_PRODUCTION_MODEL;
+  let invalidRequest = false;
+
   if (!modelParam) {
-    return { activeModel: DEFAULT_PRODUCTION_MODEL, invalidRequest: false };
+    preferredModel = DEFAULT_PRODUCTION_MODEL;
+    invalidRequest = false;
+  } else if (isValidProductionModelId(modelParam)) {
+    preferredModel = modelParam;
+    invalidRequest = false;
+  } else {
+    preferredModel = DEFAULT_PRODUCTION_MODEL;
+    invalidRequest = true;
   }
-  if (isValidProductionModelId(modelParam)) {
-    return { activeModel: modelParam, invalidRequest: false };
+
+  let activeModel = preferredModel;
+  let activationHold = false;
+
+  if (
+    preferredModel === 'hybrid_v2' &&
+    season !== undefined &&
+    Number.isFinite(season) &&
+    !isHybridV2ProductionAuthorized(season, week)
+  ) {
+    activeModel = 'core_v1';
+    activationHold = true;
   }
-  return { activeModel: DEFAULT_PRODUCTION_MODEL, invalidRequest: true };
+
+  return {
+    activeModel,
+    preferredModel,
+    invalidRequest,
+    activationHold,
+  };
 }
 
 export function buildSlateResponseMeta(options: {
@@ -51,6 +108,7 @@ export function buildSlateResponseMeta(options: {
   requestedModel?: string | null;
   invalidModelFallback?: boolean;
   fallback?: SlateModelFallbackMeta;
+  activationOverride?: SlateActivationOverrideMeta;
 }): SlateResponseMeta {
   const spreadScope: SlateModelScope =
     options.activeModel === 'hybrid_v2' ? 'hybrid_v2' : 'core_v1';
@@ -67,7 +125,35 @@ export function buildSlateResponseMeta(options: {
       moneyline: 'current',
     },
     ...(options.fallback ? { fallback: options.fallback } : {}),
+    ...(options.activationOverride
+      ? { activationOverride: options.activationOverride }
+      : {}),
   };
+}
+
+export function buildHybridActivationOverrideMeta(): Omit<
+  SlateActivationOverrideMeta,
+  never
+> {
+  return {
+    used: true,
+    requested: 'hybrid_v2',
+    effective: 'core_v1',
+    reason: HYBRID_V2_PRODUCTION_HOLD_REASON,
+  };
+}
+
+export function getProductionModelDisplayLabel(
+  modelId: ProductionModelId
+): string {
+  return PRODUCTION_MODEL_LABELS[modelId];
+}
+
+/** Hybrid Strong / Super Tier A filters apply only when Hybrid is effective. */
+export function shouldShowHybridPlaybookFilters(
+  effectiveModel: ProductionModelId
+): boolean {
+  return effectiveModel === 'hybrid_v2';
 }
 
 export function buildSlateApiUrl(

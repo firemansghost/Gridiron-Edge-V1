@@ -13,6 +13,7 @@ import { getCoreV1SpreadFromTeams, getATSPick, computeATSEdgeHma } from '@/lib/c
 import { getOUPick } from '@/lib/core-v1-total';
 import { americanToProb } from '@/lib/market-line-helpers';
 import {
+  buildHybridActivationOverrideMeta,
   buildSlateResponseMeta,
   resolveSlateModelParam,
 } from '@/lib/config/slate-model';
@@ -109,8 +110,12 @@ export async function GET(request: NextRequest) {
     const includeAdvanced = url.searchParams.get('includeAdvanced') === 'true';
     const debug = url.searchParams.get('debug') === '1' || url.searchParams.get('debug') === 'true';
     const requestedModel = url.searchParams.get('model');
-    const { activeModel, invalidRequest: invalidModelFallback } =
-      resolveSlateModelParam(requestedModel);
+    const {
+      activeModel,
+      preferredModel,
+      invalidRequest: invalidModelFallback,
+      activationHold,
+    } = resolveSlateModelParam(requestedModel, season, week);
 
     if (!season || !week) {
       return NextResponse.json(
@@ -120,7 +125,7 @@ export async function GET(request: NextRequest) {
     }
 
     console.log(
-      `📅 Fetching slate for ${season} Week ${week} (model=${activeModel})${limitDates > 0 ? ` (limitDates: ${limitDates})` : ''}${afterDate ? ` (afterDate: ${afterDate})` : ''}`
+      `📅 Fetching slate for ${season} Week ${week} (model=${activeModel}${activationHold ? `; preferred=${preferredModel}; activationHold` : ''})${limitDates > 0 ? ` (limitDates: ${limitDates})` : ''}${afterDate ? ` (afterDate: ${afterDate})` : ''}`
     );
 
     // Build where clause with date filtering
@@ -893,6 +898,9 @@ export async function GET(request: NextRequest) {
       activeModel,
       requestedModel,
       invalidModelFallback,
+      activationOverride: activationHold
+        ? buildHybridActivationOverrideMeta()
+        : undefined,
       fallback:
         activeModel === 'hybrid_v2' && hybridFallbackGames > 0
           ? {
