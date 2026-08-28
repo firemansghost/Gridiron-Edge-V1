@@ -17,6 +17,9 @@ export const MAX_EXPECTED_REQUEST_CREDITS = 3;
 export const AUTHORITATIVE_FBS_COUNT = 138;
 export const WEEK1_GAME_COUNT = 51;
 
+/** Bounded kickoff/date drift for schedule↔provider temporal matching (36h). */
+export const KICKOFF_MATCH_TOLERANCE_MS = 36 * 60 * 60 * 1000;
+
 export type LiveOddsMode = 'PREVIEW' | 'COMMIT';
 
 export function expectedWriteConfirmation(week: number): string {
@@ -29,6 +32,8 @@ export interface ScheduledGameRow {
   week: number;
   homeTeamId: string;
   awayTeamId: string;
+  /** Authoritative Game.date (kickoff). Required for temporal classification. */
+  date: Date | string;
 }
 
 export interface ExistingMarketLineRow {
@@ -75,6 +80,7 @@ export type EventClassification =
   | 'out_of_requested_week'
   | 'out_of_scope_fbs_fcs'
   | 'unresolved_team'
+  | 'unresolved_expected_fbs'
   | 'unmatched_both_fbs'
   | 'ambiguous'
   | 'week_mismatch'
@@ -104,12 +110,14 @@ export interface EventDiag {
   eventId?: string;
   home_team: string;
   away_team: string;
+  commence_time?: string | null;
   classification: EventClassification;
   homeTeamId?: string | null;
   awayTeamId?: string | null;
   homeMethod?: TeamResolveMethod;
   awayMethod?: TeamResolveMethod;
   gameId?: string | null;
+  candidateGameIds?: string[];
   detail?: string;
 }
 
@@ -119,6 +127,32 @@ function isFiniteNumber(n: unknown): n is number {
 
 function approxEqual(a: number, b: number, eps = 1e-6): boolean {
   return Math.abs(a - b) <= eps;
+}
+
+export function toDate(value: Date | string | null | undefined): Date | null {
+  if (value == null) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(d.getTime())) return null;
+  return d;
+}
+
+export function withinKickoffTolerance(
+  a: Date | string,
+  b: Date | string,
+  toleranceMs: number = KICKOFF_MATCH_TOLERANCE_MS
+): boolean {
+  const da = toDate(a);
+  const db = toDate(b);
+  if (!da || !db) return false;
+  return Math.abs(da.getTime() - db.getTime()) <= toleranceMs;
+}
+
+export function gamesNearCommence(
+  games: ScheduledGameRow[],
+  commence: Date,
+  toleranceMs: number = KICKOFF_MATCH_TOLERANCE_MS
+): ScheduledGameRow[] {
+  return games.filter((g) => withinKickoffTolerance(g.date, commence, toleranceMs));
 }
 
 export function fingerprintKey(row: {
@@ -207,6 +241,9 @@ export function validateAuthoritativeSchedule(options: {
     if (g.week !== options.week) {
       reasons.push(`game ${g.gameId} has week ${g.week}, expected ${options.week}`);
     }
+    if (!toDate(g.date)) {
+      reasons.push(`game ${g.gameId} has invalid date`);
+    }
     const both =
       fbs.has(g.homeTeamId) && fbs.has(g.awayTeamId);
     if (both) bothFbsCount++;
@@ -261,24 +298,20 @@ export function evaluateProviderCredits(options: {
   return { ok: reasons.length === 0, requestCreditsLast, reasons };
 }
 
-function findExactRequestedWeekGames(
+function findExactPairGames(
   games: ScheduledGameRow[],
   homeTeamId: string,
   awayTeamId: string
 ): ScheduledGameRow[] {
   return games.filter(
-    (g) => g.homeTeamId === homeTeamId && g.awayTeamId === awayTeamId
+    (g) =>
+      (g.homeTeamId === homeTeamId && g.awayTeamId === awayTeamId) ||
+      (g.homeTeamId === awayTeamId && g.awayTeamId === homeTeamId)
   );
 }
 
-function findAnyWeekGames(
-  allSeasonGames: ScheduledGameRow[],
-  homeTeamId: string,
-  awayTeamId: string
-): ScheduledGameRow[] {
-  return allSeasonGames.filter(
-    (g) => g.homeTeamId === homeTeamId && g.awayTeamId === awayTeamId
-  );
+function uniqueGames(games: ScheduledGameRow[]): ScheduledGameRow[] {
+  return [...new Map(games.map((g) => [g.gameId, g])).values()];
 }
 
 export function classifyProviderEvent(options: {
@@ -293,11 +326,13 @@ export function classifyProviderEvent(options: {
     options;
   const home = resolveTeam(event.home_team);
   const away = resolveTeam(event.away_team);
+  const commence = toDate(event.commence_time);
 
   const base: EventDiag = {
     eventId: event.id,
     home_team: event.home_team,
     away_team: event.away_team,
+    commence_time: event.commence_time ?? null,
     homeTeamId: home.teamId,
     awayTeamId: away.teamId,
     homeMethod: home.method,
@@ -305,14 +340,80 @@ export function classifyProviderEvent(options: {
     classification: 'unresolved_team',
   };
 
+  const requestedNear = commence
+    ? gamesNearCommence(requestedWeekGames, commence)
+    : [];
+  const seasonNear = commence ? gamesNearCommence(seasonGames, commence) : [];
+
+  // --- Partial / unresolved resolution ---
   if (!home.teamId || !away.teamId) {
-    // One side unresolved: if the other is FBS, still unresolved; if neither in FBS aliases, may be FCS
     const homeIn = home.teamId ? fbsTeamIds.has(home.teamId) : false;
     const awayIn = away.teamId ? fbsTeamIds.has(away.teamId) : false;
+
     if ((home.teamId && !homeIn) || (away.teamId && !awayIn)) {
-      return { ...base, classification: 'out_of_scope_fbs_fcs', detail: 'non-FBS side' };
+      return {
+        ...base,
+        classification: 'out_of_scope_fbs_fcs',
+        detail: 'non-FBS resolved side',
+      };
     }
-    return { ...base, classification: 'unresolved_team' };
+
+    // A: clearly outside requested-week kickoff window
+    if (commence && requestedNear.length === 0) {
+      return {
+        ...base,
+        classification: 'out_of_requested_week',
+        detail: 'commence_time outside requested-week kickoff window',
+        candidateGameIds: seasonNear.map((g) => g.gameId),
+      };
+    }
+
+    // B: one resolved authoritative FBS with exactly one near requested-week Game
+    const resolvedFbsId = homeIn
+      ? home.teamId!
+      : awayIn
+        ? away.teamId!
+        : null;
+    if (resolvedFbsId && commence) {
+      const cand = requestedNear.filter(
+        (g) =>
+          g.homeTeamId === resolvedFbsId || g.awayTeamId === resolvedFbsId
+      );
+      if (cand.length > 1) {
+        return {
+          ...base,
+          classification: 'ambiguous',
+          candidateGameIds: cand.map((g) => g.gameId),
+          detail: `resolved FBS ${resolvedFbsId} has ${cand.length} requested-week games near commence_time`,
+        };
+      }
+      if (cand.length === 1) {
+        const g = cand[0];
+        const expectedOpp =
+          g.homeTeamId === resolvedFbsId ? g.awayTeamId : g.homeTeamId;
+        const otherId = homeIn ? away.teamId : home.teamId;
+        if (otherId !== expectedOpp) {
+          return {
+            ...base,
+            classification: 'unresolved_expected_fbs',
+            gameId: g.gameId,
+            candidateGameIds: [g.gameId],
+            detail: `resolved FBS ${resolvedFbsId} maps to requested-week Game ${g.gameId}; other provider name did not resolve to expected opponent ${expectedOpp}`,
+          };
+        }
+      }
+    }
+
+    // Cannot safely prove out-of-scope → fail closed
+    return {
+      ...base,
+      classification: 'unresolved_expected_fbs',
+      candidateGameIds: requestedNear.map((g) => g.gameId),
+      detail:
+        commence == null
+          ? 'unresolved team(s) without commence_time; cannot prove out-of-scope'
+          : 'unresolved team(s) near requested-week window; missing alias / review required',
+    };
   }
 
   const homeFbs = fbsTeamIds.has(home.teamId);
@@ -329,52 +430,112 @@ export function classifyProviderEvent(options: {
     };
   }
 
-  const exact = findExactRequestedWeekGames(
-    requestedWeekGames,
-    home.teamId,
-    away.teamId
+  const exactUnique = uniqueGames(
+    findExactPairGames(requestedWeekGames, home.teamId, away.teamId)
   );
-  const exactSwapped = findExactRequestedWeekGames(
-    requestedWeekGames,
-    away.teamId,
-    home.teamId
-  );
-  const exactAll = [...exact, ...exactSwapped];
-  const exactUnique = [
-    ...new Map(exactAll.map((g) => [g.gameId, g])).values(),
-  ];
   if (exactUnique.length === 1) {
+    const g = exactUnique[0];
+    if (commence) {
+      const nearThis = withinKickoffTolerance(g.date, commence);
+      const otherWeekNear = seasonNear.filter(
+        (x) =>
+          x.week !== week &&
+          ((x.homeTeamId === home.teamId && x.awayTeamId === away.teamId) ||
+            (x.homeTeamId === away.teamId && x.awayTeamId === home.teamId))
+      );
+      if (!nearThis && otherWeekNear.length > 0) {
+        return {
+          ...base,
+          classification: 'week_mismatch',
+          gameId: otherWeekNear[0].gameId,
+          candidateGameIds: [g.gameId, ...otherWeekNear.map((x) => x.gameId)],
+          detail: `requested-week pair exists but commence_time aligns with other-week Game`,
+        };
+      }
+    }
     return {
       ...base,
       classification: 'matched_requested_week',
-      gameId: exactUnique[0].gameId,
+      gameId: g.gameId,
+      candidateGameIds: [g.gameId],
     };
   }
   if (exactUnique.length > 1) {
     return {
       ...base,
       classification: 'ambiguous',
+      candidateGameIds: exactUnique.map((g) => g.gameId),
       detail: `${exactUnique.length} requested-week games`,
     };
   }
 
-  const anyWeek = [
-    ...findAnyWeekGames(seasonGames, home.teamId, away.teamId),
-    ...findAnyWeekGames(seasonGames, away.teamId, home.teamId),
-  ];
-  const anyUnique = [...new Map(anyWeek.map((g) => [g.gameId, g])).values()];
+  // Both FBS; pair not in requested week
+  const anyUnique = uniqueGames(
+    findExactPairGames(seasonGames, home.teamId, away.teamId)
+  );
   if (anyUnique.length >= 1) {
-    // Present in DB under a different week — out of requested-week scope (coverage, not fail).
-    // Guarded writer never week-flexible COMMITs these.
+    const otherWeek = anyUnique.filter((g) => g.week !== week);
+    if (commence) {
+      const nearOther = otherWeek.filter((g) =>
+        withinKickoffTolerance(g.date, commence)
+      );
+      const inRequestedWindow = requestedNear.length > 0;
+
+      // C: commence corresponds to other week's Game → out of requested week (coverage)
+      if (nearOther.length >= 1 && !inRequestedWindow) {
+        return {
+          ...base,
+          classification: 'out_of_requested_week',
+          gameId: nearOther[0].gameId,
+          candidateGameIds: nearOther.map((g) => g.gameId),
+          detail: `DB week(s)=${[...new Set(nearOther.map((g) => g.week))].join(',')}; requested=${week}`,
+        };
+      }
+
+      // C/D: commence in requested-week window but only other-week Game exists
+      if (inRequestedWindow) {
+        return {
+          ...base,
+          classification: 'week_mismatch',
+          gameId: otherWeek[0]?.gameId ?? anyUnique[0].gameId,
+          candidateGameIds: [
+            ...requestedNear.map((g) => g.gameId),
+            ...otherWeek.map((g) => g.gameId),
+          ],
+          detail:
+            'commence_time in requested-week window but pair only stored under another DB week',
+        };
+      }
+
+      // commence present but not near other-week game and not in requested window
+      if (nearOther.length === 0 && !inRequestedWindow) {
+        return {
+          ...base,
+          classification: 'out_of_requested_week',
+          gameId: anyUnique[0].gameId,
+          candidateGameIds: anyUnique.map((g) => g.gameId),
+          detail: `pair exists under DB week(s)=${[...new Set(anyUnique.map((g) => g.week))].join(',')}; commence not near requested week`,
+        };
+      }
+
+      return {
+        ...base,
+        classification: 'ambiguous',
+        candidateGameIds: anyUnique.map((g) => g.gameId),
+        detail: 'ambiguous temporal/game mapping for both-FBS pair',
+      };
+    }
+
+    // No commence_time: pair only under another week — treat as later-week coverage
     return {
       ...base,
       classification: 'out_of_requested_week',
       gameId: anyUnique[0].gameId,
-      detail: `DB week(s)=${[...new Set(anyUnique.map((g) => g.week))].join(',')}; requested=${week}`,
+      candidateGameIds: anyUnique.map((g) => g.gameId),
+      detail: `DB week(s)=${[...new Set(anyUnique.map((g) => g.week))].join(',')}; requested=${week}; no commence_time`,
     };
   }
 
-  // Both FBS, no Game row anywhere this season for this pairing
   return {
     ...base,
     classification: 'unmatched_both_fbs',
@@ -393,8 +554,9 @@ export function normalizeBookmakerMarkets(options: {
   event: ProviderEvent;
   game: ScheduledGameRow;
   bookmaker: ProviderBookmaker;
+  resolveTeam?: TeamResolveFn;
 }): { candidates: CandidateMarketLine[]; rejected: RejectedSnapshot[] } {
-  const { event, game, bookmaker } = options;
+  const { event, game, bookmaker, resolveTeam } = options;
   const candidates: CandidateMarketLine[] = [];
   const rejected: RejectedSnapshot[] = [];
   const bookName = normalizeBookmakerName(bookmaker.title || bookmaker.key);
@@ -412,11 +574,24 @@ export function normalizeBookmakerMarkets(options: {
   for (const market of bookmaker.markets || []) {
     const outcomes = market.outcomes || [];
     if (market.key === 'spreads') {
-      const result = normalizeSpreadPair(outcomes, game, bookName, timestamp, event.id);
+      const result = normalizeSpreadPair(
+        outcomes,
+        game,
+        bookName,
+        timestamp,
+        event.id,
+        resolveTeam
+      );
       candidates.push(...result.candidates);
       rejected.push(...result.rejected);
     } else if (market.key === 'totals') {
-      const result = normalizeTotalPair(outcomes, game, bookName, timestamp, event.id);
+      const result = normalizeTotalPair(
+        outcomes,
+        game,
+        bookName,
+        timestamp,
+        event.id
+      );
       candidates.push(...result.candidates);
       rejected.push(...result.rejected);
     } else if (market.key === 'h2h') {
@@ -425,7 +600,8 @@ export function normalizeBookmakerMarkets(options: {
         game,
         bookName,
         timestamp,
-        event.id
+        event.id,
+        resolveTeam
       );
       candidates.push(...result.candidates);
       rejected.push(...result.rejected);
@@ -440,12 +616,29 @@ function mapOutcomeToGameTeam(
   game: ScheduledGameRow,
   resolveByName?: TeamResolveFn
 ): string | null {
-  // Prefer matching provider outcome name via optional resolver; else exact home/away string compare is insufficient.
-  // Callers pass resolved map via team ids when known — here we resolve by comparing resolved ids.
   if (!resolveByName) return null;
   const r = resolveByName(outcomeName);
   if (!r.teamId) return null;
-  if (r.teamId === game.homeTeamId || r.teamId === game.awayTeamId) return r.teamId;
+  if (r.teamId === game.homeTeamId || r.teamId === game.awayTeamId) {
+    return r.teamId;
+  }
+  return null;
+}
+
+function resolveOutcomeTeamId(
+  outcomeName: string,
+  game: ScheduledGameRow,
+  resolveTeam?: TeamResolveFn
+): string | null {
+  if (resolveTeam) {
+    return mapOutcomeToGameTeam(outcomeName, game, resolveTeam);
+  }
+  const slug = outcomeName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  if (slug === game.homeTeamId) return game.homeTeamId;
+  if (slug === game.awayTeamId) return game.awayTeamId;
   return null;
 }
 
@@ -459,29 +652,19 @@ export function normalizeSpreadPair(
 ): { candidates: CandidateMarketLine[]; rejected: RejectedSnapshot[] } {
   const rejected: RejectedSnapshot[] = [];
   const points = outcomes.filter((o) => isFiniteNumber(o.point));
-  if (points.length < 2) {
+  if (points.length !== 2) {
     rejected.push({
       eventId,
       bookName,
       market: 'spreads',
-      reason: 'spread requires two team outcomes with points',
+      reason: `spread requires exactly two team outcomes with points (got ${points.length})`,
     });
     return { candidates: [], rejected };
   }
 
-  // Resolve each outcome to a game participant
   const sides: Array<{ teamId: string; point: number }> = [];
   for (const o of points) {
-    let teamId: string | null = null;
-    if (resolveTeam) {
-      teamId = mapOutcomeToGameTeam(o.name, game, resolveTeam);
-    } else {
-      // Fallback: match by exact casing-insensitive name against known home/away labels is unavailable;
-      // tests pass resolveTeam. Without it, try slug-ish equality to home/away ids.
-      const slug = o.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-      if (slug === game.homeTeamId) teamId = game.homeTeamId;
-      if (slug === game.awayTeamId) teamId = game.awayTeamId;
-    }
+    const teamId = resolveOutcomeTeamId(o.name, game, resolveTeam);
     if (!teamId || !isFiniteNumber(o.point)) {
       rejected.push({
         eventId,
@@ -509,7 +692,7 @@ export function normalizeSpreadPair(
       eventId,
       bookName,
       market: 'spreads',
-      reason: 'spread pair must map to two distinct game participants',
+      reason: 'spread pair must map to two distinct game participants (duplicate team outcome)',
     });
     return { candidates: [], rejected };
   }
@@ -537,27 +720,18 @@ export function normalizeSpreadPair(
     return { candidates: [], rejected };
   }
 
-  // Dedup to one row per team (first wins)
-  const byTeam = new Map<string, number>();
-  for (const s of sides) {
-    if (!byTeam.has(s.teamId)) byTeam.set(s.teamId, s.point);
-  }
-
-  const candidates: CandidateMarketLine[] = [];
-  for (const [teamId, point] of byTeam) {
-    candidates.push({
-      gameId: game.gameId,
-      season: game.season,
-      week: game.week,
-      lineType: 'spread',
-      lineValue: point,
-      closingLine: point,
-      bookName,
-      timestamp,
-      source: LIVE_ODDS_SOURCE,
-      teamId,
-    });
-  }
+  const candidates: CandidateMarketLine[] = sides.map((s) => ({
+    gameId: game.gameId,
+    season: game.season,
+    week: game.week,
+    lineType: 'spread',
+    lineValue: s.point,
+    closingLine: s.point,
+    bookName,
+    timestamp,
+    source: LIVE_ODDS_SOURCE,
+    teamId: s.teamId,
+  }));
   return { candidates, rejected };
 }
 
@@ -569,17 +743,19 @@ export function normalizeTotalPair(
   eventId?: string
 ): { candidates: CandidateMarketLine[]; rejected: RejectedSnapshot[] } {
   const rejected: RejectedSnapshot[] = [];
-  const over = outcomes.find((o) => /over/i.test(o.name));
-  const under = outcomes.find((o) => /under/i.test(o.name));
-  if (!over || !under) {
+  const overs = outcomes.filter((o) => /over/i.test(o.name));
+  const unders = outcomes.filter((o) => /under/i.test(o.name));
+  if (overs.length !== 1 || unders.length !== 1) {
     rejected.push({
       eventId,
       bookName,
       market: 'totals',
-      reason: 'total requires Over and Under outcomes',
+      reason: `total requires exactly one Over and one Under (got Over=${overs.length} Under=${unders.length})`,
     });
     return { candidates: [], rejected };
   }
+  const over = overs[0];
+  const under = unders[0];
   if (!isFiniteNumber(over.point) || !isFiniteNumber(under.point)) {
     rejected.push({
       eventId,
@@ -638,26 +814,19 @@ export function normalizeMoneylinePair(
 ): { candidates: CandidateMarketLine[]; rejected: RejectedSnapshot[] } {
   const rejected: RejectedSnapshot[] = [];
   const priced = outcomes.filter((o) => isFiniteNumber(o.price) && o.price !== 0);
-  if (priced.length < 2) {
+  if (priced.length !== 2) {
     rejected.push({
       eventId,
       bookName,
       market: 'h2h',
-      reason: 'moneyline requires two finite nonzero American prices',
+      reason: `moneyline requires exactly two finite nonzero American prices (got ${priced.length})`,
     });
     return { candidates: [], rejected };
   }
 
   const sides: Array<{ teamId: string; price: number }> = [];
   for (const o of priced) {
-    let teamId: string | null = null;
-    if (resolveTeam) {
-      teamId = mapOutcomeToGameTeam(o.name, game, resolveTeam);
-    } else {
-      const slug = o.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-      if (slug === game.homeTeamId) teamId = game.homeTeamId;
-      if (slug === game.awayTeamId) teamId = game.awayTeamId;
-    }
+    const teamId = resolveOutcomeTeamId(o.name, game, resolveTeam);
     if (!teamId) {
       rejected.push({
         eventId,
@@ -671,11 +840,16 @@ export function normalizeMoneylinePair(
   }
 
   const unique = new Set(sides.map((s) => s.teamId));
-  if (
-    unique.size !== 2 ||
-    !unique.has(game.homeTeamId) ||
-    !unique.has(game.awayTeamId)
-  ) {
+  if (unique.size !== 2) {
+    rejected.push({
+      eventId,
+      bookName,
+      market: 'h2h',
+      reason: 'moneyline pair must map to two distinct game participants (duplicate team outcome)',
+    });
+    return { candidates: [], rejected };
+  }
+  if (!unique.has(game.homeTeamId) || !unique.has(game.awayTeamId)) {
     rejected.push({
       eventId,
       bookName,
@@ -685,26 +859,18 @@ export function normalizeMoneylinePair(
     return { candidates: [], rejected };
   }
 
-  const byTeam = new Map<string, number>();
-  for (const s of sides) {
-    if (!byTeam.has(s.teamId)) byTeam.set(s.teamId, s.price);
-  }
-
-  const candidates: CandidateMarketLine[] = [];
-  for (const [teamId, price] of byTeam) {
-    candidates.push({
-      gameId: game.gameId,
-      season: game.season,
-      week: game.week,
-      lineType: 'moneyline',
-      lineValue: price,
-      closingLine: price,
-      bookName,
-      timestamp,
-      source: LIVE_ODDS_SOURCE,
-      teamId,
-    });
-  }
+  const candidates: CandidateMarketLine[] = sides.map((s) => ({
+    gameId: game.gameId,
+    season: game.season,
+    week: game.week,
+    lineType: 'moneyline',
+    lineValue: s.price,
+    closingLine: s.price,
+    bookName,
+    timestamp,
+    source: LIVE_ODDS_SOURCE,
+    teamId: s.teamId,
+  }));
   return { candidates, rejected };
 }
 
@@ -898,8 +1064,6 @@ export interface LiveOddsPlan {
   coverage: ReturnType<typeof buildCoverage>;
   writeSafe: boolean;
   writeBlockers: string[];
-  mutationsInvoked: false;
-  marketLinePersistenceInvoked: false;
   productionOddsWriteAuthorizedByThisPhase: false;
   betsWriteAuthorized: false;
   ratingsWriteAuthorized: false;
@@ -909,6 +1073,44 @@ export interface LiveOddsPlan {
   previewConsumesOddsApiCredits: true;
   previewDbReadOnly: boolean;
   appendOnly: true;
+  kickoffMatchToleranceMs: number;
+}
+
+export interface LiveOddsExecutionState {
+  commitAttempted: boolean;
+  transactionStarted: boolean;
+  mutationsInvoked: boolean;
+  marketLinePersistenceInvoked: boolean;
+  proposedBeforeTransaction: number;
+  stillNewAtTransaction: number | null;
+  createManyCount: number | null;
+  insertedThisRun: number | null;
+  commitSucceeded: boolean;
+  postWriteVerificationSucceeded: boolean | null;
+  error: string | null;
+}
+
+export interface LiveOddsPostWriteVerification {
+  expectedInsertCount: number;
+  createManyCount: number;
+  totalRowsAfter: number;
+  distinctGamesAfter: number;
+  spreadsAfter: number;
+  totalsAfter: number;
+  moneylinesAfter: number;
+  distinctBooksAfter: number;
+  insertedFingerprintsExpected: string[];
+  insertedFingerprintsFound: string[];
+  missingInsertedFingerprints: string[];
+  conflictingInsertedFingerprints: Array<{
+    fingerprint: string;
+    expectedLineValue: number;
+    expectedClosingLine: number;
+    actualLineValue: number;
+    actualClosingLine: number;
+  }>;
+  ok: boolean;
+  reasons: string[];
 }
 
 function emptyEventCounts(): Record<EventClassification, number> {
@@ -917,6 +1119,7 @@ function emptyEventCounts(): Record<EventClassification, number> {
     out_of_requested_week: 0,
     out_of_scope_fbs_fcs: 0,
     unresolved_team: 0,
+    unresolved_expected_fbs: 0,
     unmatched_both_fbs: 0,
     ambiguous: 0,
     week_mismatch: 0,
@@ -977,7 +1180,6 @@ export function buildLiveOddsPlan(input: LiveOddsPlanInput): LiveOddsPlan {
     if (!game) continue;
 
     for (const book of event.bookmakers || []) {
-      // Use normalize helpers with resolveTeam for outcome→team mapping
       const bookName = normalizeBookmakerName(book.title || book.key);
       const timestamp = parseBookTimestamp(book.last_update);
       if (!timestamp) {
@@ -1040,6 +1242,12 @@ export function buildLiveOddsPlan(input: LiveOddsPlanInput): LiveOddsPlan {
   if (eventCounts.fuzzy_required > 0) {
     writeBlockers.push('fuzzy-only team resolution present');
   }
+  if (eventCounts.unresolved_expected_fbs > 0) {
+    writeBlockers.push('unresolved expected-FBS mapping present');
+  }
+  if (eventCounts.unresolved_team > 0) {
+    writeBlockers.push('unresolved team mapping present');
+  }
 
   const deduped = dedupeCandidates(rawCandidates);
   if (deduped.fingerprintCollisions.length > 0) {
@@ -1074,9 +1282,6 @@ export function buildLiveOddsPlan(input: LiveOddsPlanInput): LiveOddsPlan {
     candidates: deduped.unique,
   });
 
-  // Coverage gaps alone do not block writeSafe.
-  // PREVIEW: writeSafe reflects structural/provider safety (may have 0 inserts).
-  // COMMIT: also requires proposedInsert > 0 (enforced below).
   if (input.mode === 'COMMIT' && reconciled.proposedInsert.length === 0) {
     writeBlockers.push('proposedInsert must be > 0 for COMMIT');
   }
@@ -1107,8 +1312,6 @@ export function buildLiveOddsPlan(input: LiveOddsPlanInput): LiveOddsPlan {
     coverage,
     writeSafe: finalWriteSafe,
     writeBlockers: [...new Set(writeBlockers)],
-    mutationsInvoked: false,
-    marketLinePersistenceInvoked: false,
     productionOddsWriteAuthorizedByThisPhase: false,
     betsWriteAuthorized: false,
     ratingsWriteAuthorized: false,
@@ -1118,6 +1321,7 @@ export function buildLiveOddsPlan(input: LiveOddsPlanInput): LiveOddsPlan {
     previewConsumesOddsApiCredits: true,
     previewDbReadOnly: input.mode === 'PREVIEW',
     appendOnly: true,
+    kickoffMatchToleranceMs: KICKOFF_MATCH_TOLERANCE_MS,
   };
 }
 
@@ -1129,4 +1333,175 @@ export function commitEligible(plan: LiveOddsPlan): boolean {
     plan.proposedInsert.length > 0 &&
     plan.providerCalls === 1
   );
+}
+
+export function buildPreviewExecution(
+  proposedInsertCount: number
+): LiveOddsExecutionState {
+  return {
+    commitAttempted: false,
+    transactionStarted: false,
+    mutationsInvoked: false,
+    marketLinePersistenceInvoked: false,
+    proposedBeforeTransaction: proposedInsertCount,
+    stillNewAtTransaction: null,
+    createManyCount: null,
+    insertedThisRun: null,
+    commitSucceeded: false,
+    postWriteVerificationSucceeded: null,
+    error: null,
+  };
+}
+
+export function buildFailedCommitExecution(options: {
+  proposedBeforeTransaction: number;
+  transactionStarted?: boolean;
+  mutationsInvoked?: boolean;
+  marketLinePersistenceInvoked?: boolean;
+  stillNewAtTransaction?: number | null;
+  createManyCount?: number | null;
+  insertedThisRun?: number | null;
+  commitSucceeded?: boolean;
+  postWriteVerificationSucceeded?: boolean | null;
+  error: string;
+}): LiveOddsExecutionState {
+  return {
+    commitAttempted: true,
+    transactionStarted: options.transactionStarted ?? false,
+    mutationsInvoked: options.mutationsInvoked ?? false,
+    marketLinePersistenceInvoked: options.marketLinePersistenceInvoked ?? false,
+    proposedBeforeTransaction: options.proposedBeforeTransaction,
+    stillNewAtTransaction: options.stillNewAtTransaction ?? null,
+    createManyCount: options.createManyCount ?? null,
+    insertedThisRun: options.insertedThisRun ?? null,
+    commitSucceeded: options.commitSucceeded ?? false,
+    postWriteVerificationSucceeded:
+      options.postWriteVerificationSucceeded ?? null,
+    error: options.error,
+  };
+}
+
+export function buildSuccessfulCommitExecution(options: {
+  proposedBeforeTransaction: number;
+  stillNewAtTransaction: number;
+  createManyCount: number;
+  postWriteVerificationSucceeded: boolean;
+  error?: string | null;
+}): LiveOddsExecutionState {
+  return {
+    commitAttempted: true,
+    transactionStarted: true,
+    mutationsInvoked: true,
+    marketLinePersistenceInvoked: true,
+    proposedBeforeTransaction: options.proposedBeforeTransaction,
+    stillNewAtTransaction: options.stillNewAtTransaction,
+    createManyCount: options.createManyCount,
+    insertedThisRun: options.createManyCount,
+    commitSucceeded: true,
+    postWriteVerificationSucceeded: options.postWriteVerificationSucceeded,
+    error: options.error ?? null,
+  };
+}
+
+export function verifyInsertedFingerprints(options: {
+  expectedInserts: CandidateMarketLine[];
+  createManyCount: number;
+  afterRows: ExistingMarketLineRow[];
+}): LiveOddsPostWriteVerification {
+  const expectedInserts = options.expectedInserts;
+  const expectedFps = expectedInserts.map((c) => fingerprintKey(c));
+  const afterMap = new Map<string, ExistingMarketLineRow>();
+  for (const row of options.afterRows) {
+    afterMap.set(fingerprintKey(row), row);
+  }
+
+  const insertedFingerprintsFound: string[] = [];
+  const missingInsertedFingerprints: string[] = [];
+  const conflictingInsertedFingerprints: LiveOddsPostWriteVerification['conflictingInsertedFingerprints'] =
+    [];
+
+  for (const c of expectedInserts) {
+    const fp = fingerprintKey(c);
+    const found = afterMap.get(fp);
+    if (!found) {
+      missingInsertedFingerprints.push(fp);
+      continue;
+    }
+    if (
+      !approxEqual(Number(found.lineValue), c.lineValue) ||
+      !approxEqual(Number(found.closingLine), c.closingLine)
+    ) {
+      conflictingInsertedFingerprints.push({
+        fingerprint: fp,
+        expectedLineValue: c.lineValue,
+        expectedClosingLine: c.closingLine,
+        actualLineValue: Number(found.lineValue),
+        actualClosingLine: Number(found.closingLine),
+      });
+      continue;
+    }
+    insertedFingerprintsFound.push(fp);
+  }
+
+  const reasons: string[] = [];
+  if (options.createManyCount !== expectedInserts.length) {
+    reasons.push(
+      `createManyCount ${options.createManyCount} != expectedInsertCount ${expectedInserts.length}`
+    );
+  }
+  if (missingInsertedFingerprints.length > 0) {
+    reasons.push(
+      `missing ${missingInsertedFingerprints.length} expected inserted fingerprint(s)`
+    );
+  }
+  if (conflictingInsertedFingerprints.length > 0) {
+    reasons.push(
+      `${conflictingInsertedFingerprints.length} conflicting inserted fingerprint(s)`
+    );
+  }
+
+  return {
+    expectedInsertCount: expectedInserts.length,
+    createManyCount: options.createManyCount,
+    totalRowsAfter: options.afterRows.length,
+    distinctGamesAfter: new Set(options.afterRows.map((r) => r.gameId)).size,
+    spreadsAfter: options.afterRows.filter((r) => r.lineType === 'spread').length,
+    totalsAfter: options.afterRows.filter((r) => r.lineType === 'total').length,
+    moneylinesAfter: options.afterRows.filter((r) => r.lineType === 'moneyline')
+      .length,
+    distinctBooksAfter: new Set(options.afterRows.map((r) => r.bookName)).size,
+    insertedFingerprintsExpected: expectedFps,
+    insertedFingerprintsFound,
+    missingInsertedFingerprints,
+    conflictingInsertedFingerprints,
+    ok: reasons.length === 0,
+    reasons,
+  };
+}
+
+export function finalizeLiveOddsReport(options: {
+  plan: LiveOddsPlan;
+  execution: LiveOddsExecutionState;
+  verification: LiveOddsPostWriteVerification | null;
+  meta?: Record<string, unknown>;
+}): {
+  generatedAt: string;
+  plan: LiveOddsPlan;
+  execution: LiveOddsExecutionState;
+  verification: LiveOddsPostWriteVerification | null;
+  sampleCandidates: CandidateMarketLine[];
+  sampleProposedInsert: CandidateMarketLine[];
+  productionOddsWriteAuthorizedByThisPhase: false;
+  [key: string]: unknown;
+} {
+  return {
+    generatedAt: new Date().toISOString(),
+    ...(options.meta || {}),
+    plan: options.plan,
+    execution: options.execution,
+    verification: options.verification,
+    sampleCandidates: options.plan.candidates.slice(0, 20),
+    sampleProposedInsert: options.plan.proposedInsert.slice(0, 20),
+    productionOddsWriteAuthorizedByThisPhase: false,
+  };
 }

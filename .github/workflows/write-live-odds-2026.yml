@@ -175,6 +175,7 @@ jobs:
           echo "mode: ${INPUT_MODE}"
           echo "status: ${JOB_STATUS}"
           echo "appendOnly: true"
-          echo "providerCalls: 1 (live endpoint)"
+          echo "provider call target: exactly 1 per successful execution"
+          echo "actual providerCalls: see audit artifact"
           echo "ratings/bets/schedules/scores: false"
           echo "============================================"

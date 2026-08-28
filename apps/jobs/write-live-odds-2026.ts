@@ -4,6 +4,9 @@
  * PREVIEW: one Odds API live call + DB reads; no MarketLine writes.
  * COMMIT: new live snapshot + append-only createMany of validated new rows.
  *
+ * Final audit report is written AFTER persistence verification (COMMIT) or
+ * with explicit non-persistence execution flags (PREVIEW).
+ *
  * Does NOT invoke seed-ratings / CFBD / SGO / weather / bets / schedules / scores / unit grades.
  */
 
@@ -19,12 +22,20 @@ import {
   LIVE_ODDS_SEASON,
   LIVE_ODDS_SOURCE,
   MAX_EXPECTED_REQUEST_CREDITS,
+  buildFailedCommitExecution,
   buildLiveOddsPlan,
+  buildPreviewExecution,
+  buildSuccessfulCommitExecution,
   commitEligible,
   expectedWriteConfirmation,
+  finalizeLiveOddsReport,
   fingerprintKey,
+  verifyInsertedFingerprints,
   type CandidateMarketLine,
+  type LiveOddsExecutionState,
   type LiveOddsMode,
+  type LiveOddsPlan,
+  type LiveOddsPostWriteVerification,
 } from './src/odds/live-odds-2026';
 
 function parseArgs(argv: string[]): {
@@ -60,6 +71,27 @@ function defaultReportPath(week: number, mode: LiveOddsMode): string {
   );
 }
 
+function writeReport(
+  reportPath: string,
+  plan: LiveOddsPlan,
+  execution: LiveOddsExecutionState,
+  verification: LiveOddsPostWriteVerification | null,
+  meta: Record<string, unknown>
+): void {
+  fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+  const report = finalizeLiveOddsReport({
+    plan,
+    execution,
+    verification,
+    meta,
+  });
+  fs.writeFileSync(reportPath, JSON.stringify(report, null, 2), 'utf8');
+  console.log(`report=${reportPath}`);
+  console.log(
+    `execution.mutationsInvoked=${execution.mutationsInvoked} persistence=${execution.marketLinePersistenceInvoked} commitSucceeded=${execution.commitSucceeded}`
+  );
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
 
@@ -92,6 +124,12 @@ async function main(): Promise<void> {
   const resolver = new TeamResolver();
   await resolver.loadFBSTeamsForSeason(LIVE_ODDS_SEASON);
 
+  const reportPath = args.reportPath || defaultReportPath(args.week, args.mode);
+  let plan: LiveOddsPlan | null = null;
+  let meta: Record<string, unknown> = {
+    apiKeyPresent: Boolean(process.env.ODDS_API_KEY),
+  };
+
   try {
     const memberships = await prisma.teamMembership.findMany({
       where: { season: LIVE_ODDS_SEASON, level: 'fbs' },
@@ -112,6 +150,7 @@ async function main(): Promise<void> {
         week: true,
         homeTeamId: true,
         awayTeamId: true,
+        date: true,
       },
       orderBy: { id: 'asc' },
     });
@@ -121,6 +160,7 @@ async function main(): Promise<void> {
       week: g.week,
       homeTeamId: g.homeTeamId,
       awayTeamId: g.awayTeamId,
+      date: g.date,
     }));
 
     const seasonGamesRaw = await prisma.game.findMany({
@@ -131,6 +171,7 @@ async function main(): Promise<void> {
         week: true,
         homeTeamId: true,
         awayTeamId: true,
+        date: true,
       },
     });
     const seasonGames = seasonGamesRaw.map((g) => ({
@@ -139,6 +180,7 @@ async function main(): Promise<void> {
       week: g.week,
       homeTeamId: g.homeTeamId,
       awayTeamId: g.awayTeamId,
+      date: g.date,
     }));
 
     const gameIds = requestedWeekGames.map((g) => g.gameId);
@@ -179,11 +221,18 @@ async function main(): Promise<void> {
 
     // Exactly one live provider call — COMMIT does NOT reuse PREVIEW snapshot.
     const snapshot = await adapter.fetchLiveNcaafOddsSnapshot();
+    meta = {
+      ...meta,
+      endpoint: snapshot.endpoint,
+      markets: snapshot.markets,
+      region: snapshot.region,
+      urlRedacted: snapshot.urlRedacted,
+    };
 
     const resolveTeam = (name: string) =>
       resolver.resolveTeamDetailed(name, 'NCAAF');
 
-    const plan = buildLiveOddsPlan({
+    plan = buildLiveOddsPlan({
       season: args.season,
       week: args.week,
       mode: args.mode,
@@ -199,23 +248,6 @@ async function main(): Promise<void> {
       maxExpectedCredits: MAX_EXPECTED_REQUEST_CREDITS,
     });
 
-    const reportPath = args.reportPath || defaultReportPath(args.week, args.mode);
-    fs.mkdirSync(path.dirname(reportPath), { recursive: true });
-
-    const report = {
-      generatedAt: new Date().toISOString(),
-      ...plan,
-      endpoint: snapshot.endpoint,
-      markets: snapshot.markets,
-      region: snapshot.region,
-      urlRedacted: snapshot.urlRedacted,
-      sampleCandidates: plan.candidates.slice(0, 20),
-      sampleProposedInsert: plan.proposedInsert.slice(0, 20),
-      // Explicit: never persist secrets
-      apiKeyPresent: Boolean(process.env.ODDS_API_KEY),
-    };
-    fs.writeFileSync(reportPath, JSON.stringify(report, null, 2), 'utf8');
-    console.log(`report=${reportPath}`);
     console.log(`writeSafe=${plan.writeSafe}`);
     console.log(`writeBlockers=${JSON.stringify(plan.writeBlockers)}`);
     console.log(
@@ -226,7 +258,8 @@ async function main(): Promise<void> {
     );
 
     if (args.mode === 'PREVIEW') {
-      console.log('mutationsInvoked=false marketLinePersistenceInvoked=false');
+      const execution = buildPreviewExecution(plan.proposedInsert.length);
+      writeReport(reportPath, plan, execution, null, meta);
       console.log(
         'PREVIEW complete — credits may have been consumed; DB unchanged'
       );
@@ -237,83 +270,115 @@ async function main(): Promise<void> {
     }
 
     if (!commitEligible(plan)) {
+      const execution = buildFailedCommitExecution({
+        proposedBeforeTransaction: plan.proposedInsert.length,
+        error: 'COMMIT blocked — see writeBlockers / confirmation',
+      });
+      writeReport(reportPath, plan, execution, null, meta);
       console.error('COMMIT blocked — see writeBlockers / confirmation');
       process.exitCode = 1;
       return;
     }
 
-    const inserted = await prisma.$transaction(async (tx) => {
-      const freshExisting = await tx.marketLine.findMany({
-        where: {
-          season: LIVE_ODDS_SEASON,
-          week: args.week,
-          source: LIVE_ODDS_SOURCE,
-          gameId: { in: gameIds },
-        },
-        select: {
-          gameId: true,
-          lineType: true,
-          bookName: true,
-          timestamp: true,
-          teamId: true,
-          lineValue: true,
-          closingLine: true,
-        },
-      });
-      const freshMap = new Map(
-        freshExisting.map((r) => [
-          fingerprintKey({
-            gameId: r.gameId,
-            lineType: r.lineType,
-            bookName: r.bookName,
-            timestamp: r.timestamp,
-            teamId: r.teamId,
-          }),
-          r,
-        ])
-      );
+    const proposedBeforeTransaction = plan.proposedInsert.length;
+    let stillNewAtTransaction: CandidateMarketLine[] = [];
+    let createManyCount = 0;
+    let transactionPersisted = false;
 
-      const toInsert: CandidateMarketLine[] = [];
-      for (const c of plan.proposedInsert) {
-        const fp = fingerprintKey(c);
-        const ex = freshMap.get(fp);
-        if (!ex) {
-          toInsert.push(c);
-          continue;
+    try {
+      const txResult = await prisma.$transaction(async (tx) => {
+        const freshExisting = await tx.marketLine.findMany({
+          where: {
+            season: LIVE_ODDS_SEASON,
+            week: args.week,
+            source: LIVE_ODDS_SOURCE,
+            gameId: { in: gameIds },
+          },
+          select: {
+            gameId: true,
+            lineType: true,
+            bookName: true,
+            timestamp: true,
+            teamId: true,
+            lineValue: true,
+            closingLine: true,
+          },
+        });
+        const freshMap = new Map(
+          freshExisting.map((r) => [
+            fingerprintKey({
+              gameId: r.gameId,
+              lineType: r.lineType,
+              bookName: r.bookName,
+              timestamp: r.timestamp,
+              teamId: r.teamId,
+            }),
+            r,
+          ])
+        );
+
+        const toInsert: CandidateMarketLine[] = [];
+        for (const c of plan!.proposedInsert) {
+          const fp = fingerprintKey(c);
+          const ex = freshMap.get(fp);
+          if (!ex) {
+            toInsert.push(c);
+            continue;
+          }
+          if (
+            Number(ex.lineValue) !== c.lineValue ||
+            Number(ex.closingLine) !== c.closingLine
+          ) {
+            throw new Error(
+              `COMMIT abort: fingerprint collision appeared for ${fp}`
+            );
+          }
         }
-        if (
-          Number(ex.lineValue) !== c.lineValue ||
-          Number(ex.closingLine) !== c.closingLine
-        ) {
-          throw new Error(
-            `COMMIT abort: fingerprint collision appeared for ${fp}`
-          );
+
+        if (toInsert.length === 0) {
+          throw new Error('COMMIT abort: no new rows after transaction re-read');
         }
-      }
 
-      if (toInsert.length === 0) {
-        throw new Error('COMMIT abort: no new rows after transaction re-read');
-      }
+        // Append-only — no deleteMany, no update, no upsert of historical rows.
+        const createResult = await tx.marketLine.createMany({
+          data: toInsert.map((c) => ({
+            gameId: c.gameId,
+            season: c.season,
+            week: c.week,
+            lineType: c.lineType,
+            lineValue: c.lineValue,
+            closingLine: c.closingLine,
+            bookName: c.bookName,
+            timestamp: c.timestamp,
+            source: c.source,
+            teamId: c.teamId,
+          })),
+          skipDuplicates: true,
+        });
 
-      // Append-only — no deleteMany, no update, no upsert of historical rows.
-      await tx.marketLine.createMany({
-        data: toInsert.map((c) => ({
-          gameId: c.gameId,
-          season: c.season,
-          week: c.week,
-          lineType: c.lineType,
-          lineValue: c.lineValue,
-          closingLine: c.closingLine,
-          bookName: c.bookName,
-          timestamp: c.timestamp,
-          source: c.source,
-          teamId: c.teamId,
-        })),
-        skipDuplicates: true,
+        return {
+          toInsert,
+          createManyCount: createResult.count,
+        };
       });
 
-      return toInsert.length;
-    });
+      stillNewAtTransaction = txResult.toInsert;
+      createManyCount = txResult.createManyCount;
+      transactionPersisted = true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const execution = buildFailedCommitExecution({
+        proposedBeforeTransaction,
+        transactionStarted: true,
+        mutationsInvoked: false,
+        marketLinePersistenceInvoked: false,
+        stillNewAtTransaction: stillNewAtTransaction.length || null,
+        createManyCount: null,
+        error: message,
+      });
+      writeReport(reportPath, plan, execution, null, meta);
+      throw err;
+    }
 
     const after = await prisma.marketLine.findMany({
       where: {
@@ -322,27 +387,60 @@ async function main(): Promise<void> {
         source: LIVE_ODDS_SOURCE,
         gameId: { in: gameIds },
       },
-      select: { gameId: true, lineType: true, bookName: true },
+      select: {
+        gameId: true,
+        lineType: true,
+        bookName: true,
+        timestamp: true,
+        teamId: true,
+        lineValue: true,
+        closingLine: true,
+      },
+    });
+    const afterRows = after.map((r) => ({
+      gameId: r.gameId,
+      lineType: r.lineType,
+      bookName: r.bookName,
+      timestamp: r.timestamp,
+      teamId: r.teamId,
+      lineValue: Number(r.lineValue),
+      closingLine: Number(r.closingLine),
+    }));
+
+    const verification = verifyInsertedFingerprints({
+      expectedInserts: stillNewAtTransaction,
+      createManyCount,
+      afterRows,
     });
 
-    const verification = {
-      insertedThisRun: inserted,
-      totalRowsAfter: after.length,
-      distinctGamesAfter: new Set(after.map((r) => r.gameId)).size,
-      spreadsAfter: after.filter((r) => r.lineType === 'spread').length,
-      totalsAfter: after.filter((r) => r.lineType === 'total').length,
-      moneylinesAfter: after.filter((r) => r.lineType === 'moneyline').length,
-      distinctBooksAfter: new Set(after.map((r) => r.bookName)).size,
-    };
+    const execution = buildSuccessfulCommitExecution({
+      proposedBeforeTransaction,
+      stillNewAtTransaction: stillNewAtTransaction.length,
+      createManyCount,
+      postWriteVerificationSucceeded: verification.ok,
+      error: verification.ok
+        ? null
+        : `post-write verification failed: ${verification.reasons.join('; ')}`,
+    });
+
+    // Persistence already occurred — report must say so even if verification fails.
+    writeReport(reportPath, plan, execution, verification, meta);
     console.log(JSON.stringify({ verification }, null));
 
-    if (inserted > 0 && after.length === 0) {
-      throw new Error(
-        'post-write verification failed: inserted rows not visible'
+    if (!verification.ok) {
+      console.error(
+        'COMMIT persisted rows but post-write verification failed — see report'
       );
+      process.exitCode = 1;
+      return;
     }
 
-    console.log('COMMIT complete — append-only MarketLine persistence');
+    if (!transactionPersisted) {
+      process.exitCode = 1;
+      return;
+    }
+
+    console.log('COMMIT complete — append-only MarketLine persistence verified');
   } finally {
     await prisma.$disconnect();
   }
