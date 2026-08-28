@@ -1,7 +1,7 @@
 # Season Status — Gridiron Edge
 
 **Status:** Offseason / paused for regular-season automation  
-**Updated:** 2026-08-28 (Phase 2C-2J-3 — append-only Odds consumer readiness; draft PR)
+**Updated:** 2026-08-28 (Phase 2C-2J-4 — guarded Core V1 weekly-card writer; draft PR)
 
 Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISABLE_REPORT.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -53,11 +53,12 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 | **Phase 2C-2J-1 Workflow reactivation inventory** | **COMPLETE** (PR #63) — 45→46 workflows after 2C-2J-2; active schedules 10; schedule reactivation 0 |
 | **Phase 2C-2J-2 Guarded 2026 Live Odds** | **COMPLETE** (PR #64) — merged `1445cdb…`; writer live |
 | **Phase 2C-2J-2A Live Odds PREVIEW findings repair** | **COMPLETE** (PR #65) — aliases + FCS classify + `MAX_ABS_SPREAD=100` |
-| **Phase 2C-2J-3 Append-only Odds consumer readiness** | **In preparation (draft PR #66)** — repair 2C-2J-3A review findings |
+| **Phase 2C-2J-3 Append-only Odds consumer readiness** | **COMPLETE** (PR #66) — merge `4a80a5b3…`; production audit run **33204634358** `pass=true` |
+| **Phase 2C-2J-4 Guarded Core V1 Weekly Card Writer** | **In preparation (draft)** — PREVIEW/COMMIT `official_flat_100` only; Core card COMMIT NOT AUTHORIZED |
 | **Expected 2026 schedule baseline** | **761** games / **138** distinct teams — **verified** |
 | **Ratings computation / persistence** | **2026 Core V1 initialized** (do not rerun); further lifecycle COMMITs only via guarded workflow |
 | **Odds ingestion** | **Week1 COMMIT SUCCESS** (run **33192011833**); recurring polling NOT AUTHORIZED; second COMMIT NOT AUTHORIZED |
-| **Bet sync** | **Not yet approved** (dual Hybrid+Core sync invalid while Hybrid held) |
+| **Bet sync** | **Legacy `sync-weekly-bets` REPLACED for 2026** (≤2025 only); new Core card writer draft — **Core card COMMIT NOT AUTHORIZED** |
 | **Nightly workflow reactivation** | **Not yet approved** — recurring workflows remain STOPPED |
 
 ---
@@ -73,7 +74,9 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 
 **Scope notes:** Hybrid V2 = spreads only; totals/ML = current Core V1 logic; weekly `official_flat_100` sync for comparison.
 
-**Operational note (2C-2J-3):** Week1 Odds COMMIT run **33192011833** SUCCESS on `main` `964ae2dd…`. `providerCalls=1`, credits last=3 remaining=19682, matched=51/51, inserted=2281, totalRowsAfter=2281, books=11, fingerprint verification=2281/2281, `verification.ok=true`. Phases **2C-2J-2** and **2C-2J-2A** COMPLETE. Consumer readiness (append-only latest-per-book selection) in draft. Recurring Odds polling **NOT AUTHORIZED**. Second Odds COMMIT **NOT AUTHORIZED**. Bet sync / grading **NOT AUTHORIZED**. Hybrid remains **held**; official Week1 spread = **Core V1**.
+**Operational note (2C-2J-4):** Start guarded Core V1 weekly-card writer (`official_flat_100` only). Legacy `sync-weekly-bets` is ≤2025 only (rejects season≥2026). New workflow MANUAL_SAFE after independent review; **no schedule**. Core card COMMIT **NOT AUTHORIZED**. Recurring Odds polling **NOT AUTHORIZED**. Second Odds COMMIT **NOT AUTHORIZED**. Grading **NOT AUTHORIZED**. Score sync repair pending. Hybrid remains **held**; official Week1 spread = **Core V1**. Production Week1 Bet baseline = **ZERO**.
+
+**Prior note (2C-2J-3):** COMPLETE (PR #66) merge `4a80a5b3…`. Consumer-readiness audit run **33204634358** `readOnly=true` `providerCalls=0` `writes=0` `games=51` `pass=true`. Week1 Odds COMMIT run **33192011833** SUCCESS (`rows=2281`, books=11, fingerprint 2281/2281).
 
 **Prior note (2C-2J-2A):** Production Live Odds PREVIEW run **33186871080** FAILED SAFELY then repaired via PR #65 before COMMIT.
 
@@ -635,11 +638,11 @@ Shared `market-line-snapshot` selector (timestamp DESC, id DESC); slate + game d
 
 ## Next phases
 
-1. **Phase 2C-2J-3** — independent review/merge of append-only Odds consumer readiness; then second Odds COMMIT may be considered separately
-2. Core-only guarded weekly-card writer (or effective-model gate) before any bet sync
+1. Independent review of **2C-2J-4** guarded Core V1 weekly-card writer (draft)
+2. Production Core card **PREVIEW** only after review — **COMMIT still NOT AUTHORIZED**
 3. Repair 2026 score sync before any post-game automation
 4. Do **not** copy 2025 TeamUnitGrades / activate Hybrid / enable crons from this phase
-5. Recurring Odds polling / second Odds COMMIT / bet sync / grading remain **NOT AUTHORIZED** until separately approved
+5. Recurring Odds polling / second Odds COMMIT / Core card COMMIT / grading remain **NOT AUTHORIZED** until separately approved
 
 See [Preseason Reactivation Checklist](docs/preseason-reactivation-checklist.md) and [2026 Workflow Reactivation Matrix](docs/2026-workflow-reactivation-matrix.md).
 

@@ -1,17 +1,18 @@
-# Manual weekly bet sync — Hybrid V2 + Core V1 Card (official_flat_100).
+# LEGACY (<=2025) — Manual weekly bet sync (Hybrid V2 + Core V1 Card).
 # workflow_dispatch ONLY. Do not add schedule triggers.
-# Workflows remain disabled in GitHub UI until Phase 2C dry-run sign-off.
+# 2026 operators: DO NOT USE. Use write-core-v1-weekly-card-2026.yml instead.
+# This workflow rejects season >= 2026 in preflight.
 # Does NOT run ingest, ratings, V3 totals, or V4/Fade V4.
 
-name: Sync Weekly Bets (Manual)
+name: "LEGACY (<=2025) Sync Weekly Bets (Manual)"
 
 on:
   workflow_dispatch:
     inputs:
       season:
-        description: 'Season year (e.g., 2026)'
+        description: 'Season year (must be <= 2025; 2026+ blocked)'
         required: true
-        default: '2026'
+        default: '2025'
         type: string
       week:
         description: 'CFB week to sync (required)'
@@ -43,6 +44,22 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: Reject 2026+ (use guarded Core V1 weekly card)
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+        run: |
+          set -euo pipefail
+          SEASON="$INPUT_SEASON"
+          echo "LEGACY sync-weekly-bets — season=${SEASON}"
+          if ! [[ "$SEASON" =~ ^[0-9]+$ ]]; then
+            echo "::error::season must be an integer"
+            exit 1
+          fi
+          if [ "$SEASON" -ge 2026 ]; then
+            echo "::error::season ${SEASON} is blocked. For 2026 use workflow: Preview/Write 2026 Core V1 Weekly Card (Manual, Guarded)"
+            exit 1
+          fi
+
       - name: Install dependencies
         run: npm ci
 
@@ -69,7 +86,7 @@ jobs:
         if: always()
         run: |
           echo "============================================"
-          echo "📋 SYNC WEEKLY BETS SUMMARY"
+          echo "LEGACY (<=2025) SYNC WEEKLY BETS SUMMARY"
           echo "============================================"
           echo "Season: $SEASON"
           echo "Week: $WEEK"

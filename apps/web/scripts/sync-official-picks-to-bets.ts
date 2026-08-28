@@ -325,6 +325,16 @@ async function main() {
     process.exit(1);
   }
 
+  if (season >= 2026) {
+    console.error(
+      'Error: sync-official-picks-to-bets.ts is LEGACY (<=2025) only.\n' +
+        'For 2026 official_flat_100 cards use the guarded workflow:\n' +
+        '  Preview/Write 2026 Core V1 Weekly Card (Manual, Guarded)\n' +
+        '  CLI: npx tsx apps/jobs/write-core-v1-weekly-card-2026.ts --season 2026 --week <n> --mode PREVIEW'
+    );
+    process.exit(1);
+  }
+
   console.log(`\n🚀 Syncing Official $100 Flat bets`);
   console.log(`   Season: ${season}`);
   console.log(`   Weeks: ${weekStart} to ${weekEnd}`);
