@@ -899,10 +899,17 @@ describe('2C-2J-5 split-slate kickoff_before tranche', () => {
       true
     );
 
-    // Strict ISO-8601 with timezone
+    // Strict ISO-8601 with timezone + calendar/time component validation
     expect(parseKickoffBefore('2026-09-01T00:00:00Z').ok).toBe(true);
     expect(parseKickoffBefore('2026-09-01T00:00:00.000Z').ok).toBe(true);
     expect(parseKickoffBefore('2026-08-31T19:00:00-05:00').ok).toBe(true);
+    expect(parseKickoffBefore('2024-02-29T12:00:00Z').ok).toBe(true); // leap year
+    expect(parseKickoffBefore('2026-02-29T00:00:00Z').ok).toBe(false); // non-leap Feb 29
+    expect(parseKickoffBefore('2026-02-31T00:00:00Z').ok).toBe(false);
+    expect(parseKickoffBefore('2026-09-31T00:00:00Z').ok).toBe(false);
+    expect(parseKickoffBefore('2026-09-01T24:00:00Z').ok).toBe(false);
+    expect(parseKickoffBefore('2026-09-01T00:60:00Z').ok).toBe(false);
+    expect(parseKickoffBefore('2026-09-01T00:00:60Z').ok).toBe(false);
     expect(parseKickoffBefore('2026-09-01').ok).toBe(false);
     expect(parseKickoffBefore('09/01/2026').ok).toBe(false);
     expect(parseKickoffBefore('September 1, 2026').ok).toBe(false);
@@ -947,6 +954,17 @@ describe('2C-2J-5 split-slate kickoff_before tranche', () => {
     expect(blank.tranche.kickoffBefore).toBeNull();
     expect(blank.tranche.selectedGameCount).toBe(51);
     expect(blank.tranche.excludedAfterCutoffGameIds).toEqual([]);
+  });
+
+  it('kickoff_before rejects invalid calendar/time components (no JS Date normalization)', () => {
+    expect(parseKickoffBefore('2024-02-29T12:00:00Z').ok).toBe(true);
+    expect(parseKickoffBefore('2026-02-31T00:00:00Z').ok).toBe(false);
+    expect(parseKickoffBefore('2026-09-31T00:00:00Z').ok).toBe(false);
+    expect(parseKickoffBefore('2026-09-01T24:00:00Z').ok).toBe(false);
+    expect(parseKickoffBefore('2026-09-01T00:60:00Z').ok).toBe(false);
+    expect(parseKickoffBefore('2026-09-01T00:00:60Z').ok).toBe(false);
+    expect(parseKickoffBefore('2026-09-01T00:00:00Z').ok).toBe(true);
+    expect(parseKickoffBefore('2026-08-31T19:00:00-05:00').ok).toBe(true);
   });
 
   it('30-minute kickoff gate still wins over kickoff_before', () => {

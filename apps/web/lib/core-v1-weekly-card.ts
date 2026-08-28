@@ -195,7 +195,18 @@ export interface TrancheSelection {
 
 /** Full ISO-8601 timestamp with explicit timezone (Z or ±HH:MM). Blank = no cutoff. */
 const KICKOFF_BEFORE_ISO_RE =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/;
+
+function isValidGregorianDate(year: number, month: number, day: number): boolean {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  // UTC Date constructor uses 0-based month; reject JS normalization of invalid days.
+  const probe = new Date(Date.UTC(year, month - 1, day));
+  return (
+    probe.getUTCFullYear() === year &&
+    probe.getUTCMonth() === month - 1 &&
+    probe.getUTCDate() === day
+  );
+}
 
 /** Parse optional exclusive kickoff_before (blank = no upper bound). */
 export function parseKickoffBefore(
@@ -205,7 +216,8 @@ export function parseKickoffBefore(
     return { ok: true, value: null, reason: null };
   }
   const trimmed = String(raw).trim();
-  if (!KICKOFF_BEFORE_ISO_RE.test(trimmed)) {
+  const m = KICKOFF_BEFORE_ISO_RE.exec(trimmed);
+  if (!m) {
     return {
       ok: false,
       value: null,
@@ -213,6 +225,41 @@ export function parseKickoffBefore(
         'kickoff_before must be a full ISO-8601 timestamp with explicit timezone (Z or ±HH:MM)',
     };
   }
+
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const hour = Number(m[4]);
+  const minute = Number(m[5]);
+  const second = Number(m[6]);
+  const tz = m[7];
+
+  if (hour > 23 || minute > 59 || second > 59) {
+    return {
+      ok: false,
+      value: null,
+      reason: 'kickoff_before has an invalid hour/minute/second component',
+    };
+  }
+  if (!isValidGregorianDate(year, month, day)) {
+    return {
+      ok: false,
+      value: null,
+      reason: 'kickoff_before is not a valid calendar date',
+    };
+  }
+  if (tz !== 'Z') {
+    const tzHour = Number(tz.slice(1, 3));
+    const tzMinute = Number(tz.slice(4, 6));
+    if (tzHour > 23 || tzMinute > 59) {
+      return {
+        ok: false,
+        value: null,
+        reason: 'kickoff_before has an invalid timezone offset',
+      };
+    }
+  }
+
   const d = new Date(trimmed);
   if (!Number.isFinite(d.getTime())) {
     return { ok: false, value: null, reason: 'kickoff_before must be a valid ISO-8601 timestamp' };
