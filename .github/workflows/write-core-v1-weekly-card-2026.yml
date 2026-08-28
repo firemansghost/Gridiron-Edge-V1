@@ -1,7 +1,8 @@
-# Manual GUARDED 2026 Core V1 Weekly Card PREVIEW/COMMIT (Phase 2C-2J-4).
+# Manual GUARDED 2026 Core V1 Weekly Card PREVIEW/COMMIT (Phase 2C-2J-5).
 # workflow_dispatch ONLY — no schedule, push, or pull_request.
 # PREVIEW by default. COMMIT requires mode=COMMIT and confirmation=WRITE_2026_WEEK_<n>_CORE_CARD.
-# Writes ONLY strategyTag=official_flat_100. No hybrid_v2 / v4 / Fade.
+# Optional kickoff_before: exclusive ISO-8601 upper bound for split-slate tranches.
+# Writes ONLY strategyTag=official_flat_100 (append-safe). No hybrid_v2 / v4 / Fade.
 # No provider calls. No ratings / Game / MarketLine / score / grading writes.
 # Production COMMIT remains NOT AUTHORIZED until independent PREVIEW review.
 #
@@ -39,6 +40,11 @@ on:
         required: false
         type: string
         default: ''
+      kickoff_before:
+        description: 'Optional exclusive ISO-8601 kickoff upper bound with explicit timezone (Z or ±HH:MM). Blank = no tranche cutoff. Example: 2026-09-01T00:00:00Z'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -68,15 +74,22 @@ jobs:
           INPUT_WEEK: ${{ inputs.week }}
           INPUT_MODE: ${{ inputs.mode }}
           INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+          INPUT_KICKOFF_BEFORE: ${{ inputs.kickoff_before }}
         run: |
           set -euo pipefail
           SEASON="$INPUT_SEASON"
           WEEK="$INPUT_WEEK"
           MODE="$INPUT_MODE"
           CONFIRM="$INPUT_CONFIRMATION"
+          KICKOFF_BEFORE="$INPUT_KICKOFF_BEFORE"
           echo "season=${SEASON}"
           echo "week=${WEEK}"
           echo "mode=${MODE}"
+          if [ -n "$KICKOFF_BEFORE" ]; then
+            echo "kickoff_before=${KICKOFF_BEFORE}"
+          else
+            echo "kickoff_before=(none)"
+          fi
           echo "PREVIEW IS DATABASE READ-ONLY"
           echo "providerCalls=0"
           echo "strategyTag=official_flat_100 only"
@@ -122,23 +135,30 @@ jobs:
           INPUT_WEEK: ${{ inputs.week }}
           INPUT_MODE: ${{ inputs.mode }}
           INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+          INPUT_KICKOFF_BEFORE: ${{ inputs.kickoff_before }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
           DATABASE_URL: ${{ secrets.DIRECT_URL }}
         run: |
           set -euo pipefail
           mkdir -p reports
+          EXTRA_ARGS=()
+          if [ -n "$INPUT_KICKOFF_BEFORE" ]; then
+            EXTRA_ARGS+=(--kickoff-before "$INPUT_KICKOFF_BEFORE")
+          fi
           if [ "$INPUT_MODE" = "COMMIT" ]; then
             npx tsx apps/jobs/write-core-v1-weekly-card-2026.ts \
               --season "$INPUT_SEASON" \
               --week "$INPUT_WEEK" \
               --mode "$INPUT_MODE" \
               --confirm "$INPUT_CONFIRMATION" \
+              "${EXTRA_ARGS[@]}" \
               --report "reports/core-v1-weekly-card-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-commit.json"
           else
             npx tsx apps/jobs/write-core-v1-weekly-card-2026.ts \
               --season "$INPUT_SEASON" \
               --week "$INPUT_WEEK" \
               --mode "$INPUT_MODE" \
+              "${EXTRA_ARGS[@]}" \
               --report "reports/core-v1-weekly-card-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-preview.json"
           fi
 
@@ -156,6 +176,7 @@ jobs:
           INPUT_SEASON: ${{ inputs.season }}
           INPUT_WEEK: ${{ inputs.week }}
           INPUT_MODE: ${{ inputs.mode }}
+          INPUT_KICKOFF_BEFORE: ${{ inputs.kickoff_before }}
           JOB_STATUS: ${{ job.status }}
         run: |
           echo "============================================"
@@ -164,6 +185,11 @@ jobs:
           echo "season: ${INPUT_SEASON}"
           echo "week: ${INPUT_WEEK}"
           echo "mode: ${INPUT_MODE}"
+          if [ -n "$INPUT_KICKOFF_BEFORE" ]; then
+            echo "kickoff_before: ${INPUT_KICKOFF_BEFORE}"
+          else
+            echo "kickoff_before: (none)"
+          fi
           echo "status: ${JOB_STATUS}"
           echo "strategyTag: official_flat_100 only"
           echo "providerCalls=0"

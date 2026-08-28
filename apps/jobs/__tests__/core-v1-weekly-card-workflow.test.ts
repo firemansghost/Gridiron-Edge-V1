@@ -1,5 +1,5 @@
 /**
- * Phase 2C-2J-4A — static workflow security for Core V1 weekly card + legacy sync.
+ * Phase 2C-2J-5 — static workflow security for Core V1 weekly card + legacy sync.
  * No providers, no DB, no network.
  */
 
@@ -23,7 +23,7 @@ function stepBlock(src: string, stepName: string): string {
   return next === -1 ? rest : rest.slice(0, next);
 }
 
-describe('2C-2J-4A Core V1 weekly-card workflow security', () => {
+describe('2C-2J-5 Core V1 weekly-card workflow security', () => {
   const wf = fs.readFileSync(CARD_WF, 'utf8');
   const cli = fs.readFileSync(CARD_CLI, 'utf8');
   const legacy = fs.readFileSync(LEGACY_SYNC_WF, 'utf8');
@@ -34,6 +34,14 @@ describe('2C-2J-4A Core V1 weekly-card workflow security', () => {
     expect(wf).not.toMatch(/^\s*push:/m);
     expect(wf).not.toMatch(/^\s*pull_request:/m);
     expect(wf).toMatch(/default:\s*PREVIEW/);
+  });
+
+  it('optional kickoff_before input; reaches shell only via step-level env', () => {
+    expect(wf).toMatch(/kickoff_before:/);
+    expect(wf).toContain('INPUT_KICKOFF_BEFORE:');
+    expect(cli).toContain('--kickoff-before');
+    expect(cli).toContain('parseKickoffBefore');
+    expect(cli).toContain('executeAtomicAppendCommit');
   });
 
   it('production DIRECT_URL absent from Preflight; only on card DB step', () => {
@@ -102,6 +110,20 @@ describe('2C-2J-4A Core V1 weekly-card workflow security', () => {
     expect(runText).not.toMatch(/\$\{\{\s*inputs\./);
   });
 
+  it('CLI always enters Serializable transaction for COMMIT; no pre-tx idempotent shortcut', () => {
+    expect(cli).toContain('commitMayEnterTransaction');
+    expect(cli).toContain('Prisma.TransactionIsolationLevel.Serializable');
+    expect(cli).toContain('buildTransactionalIdempotentNoOpExecution');
+    expect(cli).toContain('buildTransactionalIdempotentVerificationFailureExecution');
+    expect(cli).toContain('executeAtomicAppendCommit');
+    // Must not short-circuit COMMIT on initial-plan isIdempotentNoOp alone.
+    expect(cli).not.toMatch(
+      /if\s*\(\s*isIdempotentNoOp\s*\(\s*plan\s*\)\s*&&\s*plan\.confirmationValid\s*\)/
+    );
+    // Fresh post-tx reads even for zero-insert path (not snapshot-vs-self).
+    expect(cli).toMatch(/transactionalIdempotentNoOp/);
+  });
+
   it('CLI separates transaction failure from committed verification failure', () => {
     expect(cli).toContain('resolvePreviewExitCode');
     expect(cli).toContain('buildCommittedVerificationFailureExecution');
@@ -111,8 +133,7 @@ describe('2C-2J-4A Core V1 weekly-card workflow security', () => {
     expect(cli).toContain('NOT a rollback');
     expect(cli).toContain('mutationAttempted');
     expect(cli).toContain('persistenceCommitted');
-    // Count assertion remains inside transaction helper path
-    expect(cli).toContain('executeAtomicFirstCommit');
+    expect(cli).toContain('executeAtomicAppendCommit');
   });
 
   it('legacy sync-weekly-bets rejects season >= 2026', () => {

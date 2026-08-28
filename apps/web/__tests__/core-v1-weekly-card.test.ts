@@ -11,11 +11,18 @@ import {
   buildPreviewExecution,
   buildRolledBackTransactionExecution,
   buildSuccessfulCommitExecution,
+  buildTransactionalIdempotentNoOpExecution,
+  buildTransactionalIdempotentVerificationFailureExecution,
   commitEligible,
+  commitMayEnterTransaction,
   evaluateExistingCardSafety,
-  executeAtomicFirstCommit,
+  executeAtomicAppendCommit,
+  finalizeCoreCardReport,
+  isBeforeKickoffCutoff,
+  isIdempotentNoOp,
   isKickoffEligible,
   naturalBetKey,
+  parseKickoffBefore,
   planMoneylineBet,
   planSpreadBet,
   planTotalBet,
@@ -521,12 +528,14 @@ describe('existing card safety + commit helpers', () => {
     coreSpreadHma: 10,
     displaySpread: selection({ spreadHma: 7 }).displaySpread!,
   })!;
+  const tracked = ['g1', 'g2'];
 
   it('natural-key duplicate rejection', () => {
     const safety = evaluateExistingCardSafety({
       plannedBets: [planned],
       existingOfficial: [asExisting(planned), asExisting(planned)],
       existingHybrid: [],
+      trackedGameIds: tracked,
     });
     expect(safety.ok).toBe(false);
     expect(safety.mode).toBe('blocked_duplicate');
@@ -537,45 +546,69 @@ describe('existing card safety + commit helpers', () => {
       plannedBets: [planned],
       existingOfficial: [asExisting(planned)],
       existingHybrid: [],
+      trackedGameIds: tracked,
     });
     expect(safety.ok).toBe(true);
     expect(safety.mode).toBe('idempotent_exact');
+    expect(safety.newPlannedKeys).toEqual([]);
+    expect(safety.matchedExistingKeys).toContain(planned.naturalKey);
   });
 
-  it('partial card BLOCK', () => {
+  it('empty existing card → first tranche safe', () => {
     const safety = evaluateExistingCardSafety({
       plannedBets: [planned],
       existingOfficial: [],
       existingHybrid: [],
+      trackedGameIds: tracked,
     });
     expect(safety.mode).toBe('empty');
+    expect(safety.ok).toBe(true);
+    expect(safety.newPlannedKeys).toEqual([planned.naturalKey]);
+  });
 
-    const extraKey = naturalBetKey({
+  it('legitimate prior off-tranche rows → append safe', () => {
+    const prior = {
+      ...asExisting(planned),
+      gameId: 'g2',
+      result: 'win' as string | null,
+      pnl: 100,
+    };
+    const priorKey = naturalBetKey({
       season: 2026,
       week: 1,
       gameId: 'g2',
       marketType: 'spread',
     });
-    const partial = evaluateExistingCardSafety({
+    const safety = evaluateExistingCardSafety({
       plannedBets: [planned],
-      existingOfficial: [
-        {
-          ...asExisting(planned),
-          gameId: 'g2',
-        },
-      ],
+      existingOfficial: [prior],
       existingHybrid: [],
+      trackedGameIds: tracked,
     });
-    expect(partial.ok).toBe(false);
-    expect(partial.mode).toBe('blocked_partial');
-    expect(partial.extraExistingKeys).toContain(extraKey);
+    expect(safety.ok).toBe(true);
+    expect(safety.mode).toBe('append_safe');
+    expect(safety.priorExistingKeys).toContain(priorKey);
+    expect(safety.newPlannedKeys).toContain(planned.naturalKey);
+    expect(safety.matchedExistingKeys).toEqual([]);
   });
 
-  it('conflicting side / closePrice BLOCK', () => {
+  it('existing row referencing untracked game blocks', () => {
+    const safety = evaluateExistingCardSafety({
+      plannedBets: [planned],
+      existingOfficial: [{ ...asExisting(planned), gameId: 'g-orphan' }],
+      existingHybrid: [],
+      trackedGameIds: tracked,
+    });
+    expect(safety.ok).toBe(false);
+    expect(safety.mode).toBe('blocked_untracked');
+  });
+
+  it('conflicting side / closePrice / modelPrice BLOCK', () => {
     const sideConflict = evaluateExistingCardSafety({
       plannedBets: [planned],
       existingOfficial: [{ ...asExisting(planned), side: 'away' }],
       existingHybrid: [],
+      trackedGameIds: tracked,
     });
     expect(sideConflict.mode).toBe('blocked_conflict');
 
@@ -583,8 +616,17 @@ describe('existing card safety + commit helpers', () => {
       plannedBets: [planned],
       existingOfficial: [{ ...asExisting(planned), closePrice: -9 }],
       existingHybrid: [],
+      trackedGameIds: tracked,
     });
     expect(closeConflict.mode).toBe('blocked_conflict');
+
+    const modelConflict = evaluateExistingCardSafety({
+      plannedBets: [planned],
+      existingOfficial: [{ ...asExisting(planned), modelPrice: -99 }],
+      existingHybrid: [],
+      trackedGameIds: tracked,
+    });
+    expect(modelConflict.mode).toBe('blocked_conflict');
   });
 
   it('existing hybrid_v2 BLOCK', () => {
@@ -594,14 +636,16 @@ describe('existing card safety + commit helpers', () => {
       existingHybrid: [
         { ...asExisting(planned), strategyTag: 'hybrid_v2' },
       ],
+      trackedGameIds: tracked,
     });
     expect(safety.mode).toBe('blocked_hybrid');
   });
 
   it('createMany count mismatch throws inside helper', async () => {
     await expect(
-      executeAtomicFirstCommit({
+      executeAtomicAppendCommit({
         plannedBets: [planned],
+        trackedGameIds: tracked,
         reReadOfficial: async () => [],
         reReadHybrid: async () => [],
         createMany: async () => ({ count: 0 }),
@@ -609,11 +653,66 @@ describe('existing card safety + commit helpers', () => {
     ).rejects.toThrow(/createMany\.count mismatch/);
   });
 
+  it('transaction re-read race blocks before createMany', async () => {
+    let createCalled = false;
+    await expect(
+      executeAtomicAppendCommit({
+        plannedBets: [planned],
+        trackedGameIds: tracked,
+        reReadOfficial: async () => [
+          { ...asExisting(planned), side: 'away' },
+        ],
+        reReadHybrid: async () => [],
+        createMany: async () => {
+          createCalled = true;
+          return { count: 1 };
+        },
+      })
+    ).rejects.toThrow(/append safety failed/);
+    expect(createCalled).toBe(false);
+  });
+
+  it('exact existing planned key → no createMany (idempotent no-op)', async () => {
+    let createCalled = false;
+    const result = await executeAtomicAppendCommit({
+      plannedBets: [planned],
+      trackedGameIds: tracked,
+      reReadOfficial: async () => [asExisting(planned)],
+      reReadHybrid: async () => [],
+      createMany: async () => {
+        createCalled = true;
+        return { count: 1 };
+      },
+    });
+    expect(createCalled).toBe(false);
+    expect(result.count).toBe(0);
+    expect(result.newPlannedBets).toEqual([]);
+  });
+
+  it('append inserts only missing keys', async () => {
+    const prior = { ...asExisting(planned), gameId: 'g2' };
+    const created: unknown[] = [];
+    const result = await executeAtomicAppendCommit({
+      plannedBets: [planned],
+      trackedGameIds: tracked,
+      reReadOfficial: async () => [prior],
+      reReadHybrid: async () => [],
+      createMany: async (rows) => {
+        created.push(...rows);
+        return { count: rows.length };
+      },
+    });
+    expect(result.count).toBe(1);
+    expect(result.newPlannedBets).toHaveLength(1);
+    expect(created).toHaveLength(1);
+    expect((created[0] as { gameId: string }).gameId).toBe('g1');
+  });
+
   it('A: abort before createMany → no mutation invocation', () => {
     const exec = buildRolledBackTransactionExecution({
       createManyInvoked: false,
       createManyCount: null,
-      error: 'official rows already exist',
+      error: 'append safety failed',
     });
     expect(exec.transactionStarted).toBe(true);
     expect(exec.mutationsInvoked).toBe(false);
@@ -641,10 +740,29 @@ describe('existing card safety + commit helpers', () => {
     expect(() => assertCreateManyCountMatches(3, 2)).toThrow();
   });
 
-  it('post-write verification fails missing/extra/conflict/duplicate', () => {
+  it('post-write append verification checks prior+new union', () => {
+    const prior = { ...asExisting(planned), gameId: 'g2' };
+    const ok = verifyCoreCardPostWrite({
+      plannedBets: [planned],
+      newPlannedBets: [planned],
+      createManyCount: 1,
+      beforeOfficial: [prior],
+      afterOfficial: [prior, asExisting(planned)],
+      afterHybrid: [],
+    });
+    expect(ok.ok).toBe(true);
+    expect(ok.existingRowsBefore).toBe(1);
+    expect(ok.newRowsPlanned).toBe(1);
+    expect(ok.insertedRows).toBe(1);
+    expect(ok.rowsAfter).toBe(2);
+  });
+
+  it('post-write verification fails missing/extra/conflict/duplicate/changed prior', () => {
     const missing = verifyCoreCardPostWrite({
       plannedBets: [planned],
+      newPlannedBets: [planned],
       createManyCount: 1,
+      beforeOfficial: [],
       afterOfficial: [],
       afterHybrid: [],
     });
@@ -653,7 +771,9 @@ describe('existing card safety + commit helpers', () => {
 
     const conflict = verifyCoreCardPostWrite({
       plannedBets: [planned],
+      newPlannedBets: [planned],
       createManyCount: 1,
+      beforeOfficial: [],
       afterOfficial: [{ ...asExisting(planned), closePrice: -99 }],
       afterHybrid: [],
     });
@@ -661,7 +781,9 @@ describe('existing card safety + commit helpers', () => {
 
     const dup = verifyCoreCardPostWrite({
       plannedBets: [planned],
+      newPlannedBets: [planned],
       createManyCount: 1,
+      beforeOfficial: [],
       afterOfficial: [asExisting(planned), asExisting(planned)],
       afterHybrid: [],
     });
@@ -669,7 +791,9 @@ describe('existing card safety + commit helpers', () => {
 
     const extra = verifyCoreCardPostWrite({
       plannedBets: [planned],
+      newPlannedBets: [planned],
       createManyCount: 1,
+      beforeOfficial: [],
       afterOfficial: [
         asExisting(planned),
         { ...asExisting(planned), gameId: 'g-extra' },
@@ -677,6 +801,21 @@ describe('existing card safety + commit helpers', () => {
       afterHybrid: [],
     });
     expect(extra.extraKeys.length).toBe(1);
+
+    const prior = { ...asExisting(planned), gameId: 'g2' };
+    const changed = verifyCoreCardPostWrite({
+      plannedBets: [planned],
+      newPlannedBets: [planned],
+      createManyCount: 1,
+      beforeOfficial: [prior],
+      afterOfficial: [
+        { ...prior, closePrice: -99 },
+        asExisting(planned),
+      ],
+      afterHybrid: [],
+    });
+    expect(changed.ok).toBe(false);
+    expect(changed.changedPriorKeys.length).toBe(1);
   });
 });
 
@@ -723,6 +862,304 @@ describe('kickoff gate', () => {
         executionNow: now,
       }).eligible
     ).toBe(false);
+  });
+});
+
+describe('2C-2J-5 split-slate kickoff_before tranche', () => {
+  const executionNow = new Date('2026-08-28T12:00:00.000Z');
+  const cutoff = '2026-09-01T00:00:00.000Z';
+
+  function mkGame(
+    id: string,
+    kickoffIso: string,
+    markets: Parameters<typeof selection>[0] = {
+      spreadHma: 7,
+      total: 50,
+      homeMl: -200,
+      awayMl: 170,
+    }
+  ): WeeklyCardGameInput {
+    return baseGame({
+      gameId: id,
+      week: 1,
+      kickoff: kickoffIso,
+      coreSpreadHma: 10,
+      marketSelection: selection(markets),
+    });
+  }
+
+  it('kickoff_before is exclusive; blank preserves full kickoff-eligible set', () => {
+    expect(parseKickoffBefore('').ok).toBe(true);
+    expect(parseKickoffBefore('').value).toBeNull();
+    expect(parseKickoffBefore(cutoff).ok).toBe(true);
+    expect(isBeforeKickoffCutoff('2026-09-01T00:00:00.000Z', new Date(cutoff))).toBe(
+      false
+    );
+    expect(isBeforeKickoffCutoff('2026-08-31T23:59:59.000Z', new Date(cutoff))).toBe(
+      true
+    );
+
+    // Strict ISO-8601 with timezone + calendar/time component validation
+    expect(parseKickoffBefore('2026-09-01T00:00:00Z').ok).toBe(true);
+    expect(parseKickoffBefore('2026-09-01T00:00:00.000Z').ok).toBe(true);
+    expect(parseKickoffBefore('2026-08-31T19:00:00-05:00').ok).toBe(true);
+    expect(parseKickoffBefore('2024-02-29T12:00:00Z').ok).toBe(true); // leap year
+    expect(parseKickoffBefore('2026-02-29T00:00:00Z').ok).toBe(false); // non-leap Feb 29
+    expect(parseKickoffBefore('2026-02-31T00:00:00Z').ok).toBe(false);
+    expect(parseKickoffBefore('2026-09-31T00:00:00Z').ok).toBe(false);
+    expect(parseKickoffBefore('2026-09-01T24:00:00Z').ok).toBe(false);
+    expect(parseKickoffBefore('2026-09-01T00:60:00Z').ok).toBe(false);
+    expect(parseKickoffBefore('2026-09-01T00:00:60Z').ok).toBe(false);
+    expect(parseKickoffBefore('2026-09-01').ok).toBe(false);
+    expect(parseKickoffBefore('09/01/2026').ok).toBe(false);
+    expect(parseKickoffBefore('September 1, 2026').ok).toBe(false);
+    expect(parseKickoffBefore('2026-09-01T00:00:00').ok).toBe(false);
+
+    const early = mkGame('early', '2026-08-30T00:00:00.000Z');
+    const late = mkGame('late', '2026-09-05T00:00:00.000Z');
+    // Pad to Week-1 51 for universe invariant when week=1.
+    const fillers = Array.from({ length: 49 }, (_, i) =>
+      mkGame(`f${i}`, '2026-09-06T00:00:00.000Z')
+    );
+
+    const withCutoff = buildCoreWeeklyCardPlan({
+      season: 2026,
+      week: 1,
+      mode: 'PREVIEW',
+      executionNow,
+      kickoffBefore: cutoff,
+      fbsMembershipCount: 138,
+      games: [early, late, ...fillers],
+      existingOfficial: [],
+      existingHybrid: [],
+    });
+    expect(withCutoff.tranche.selectedGameIds).toEqual(['early']);
+    expect(withCutoff.tranche.selectedGameCount).toBe(1);
+    expect(withCutoff.tranche.excludedAfterCutoffGameIds).toContain('late');
+    expect(withCutoff.tranche.kickoffBefore).toBe(new Date(cutoff).toISOString());
+    expect(withCutoff.games.trackedCount).toBe(51);
+    expect(withCutoff.games.week1Exact51).toBe(true);
+
+    const blank = buildCoreWeeklyCardPlan({
+      season: 2026,
+      week: 1,
+      mode: 'PREVIEW',
+      executionNow,
+      kickoffBefore: null,
+      fbsMembershipCount: 138,
+      games: [early, late, ...fillers],
+      existingOfficial: [],
+      existingHybrid: [],
+    });
+    expect(blank.tranche.kickoffBefore).toBeNull();
+    expect(blank.tranche.selectedGameCount).toBe(51);
+    expect(blank.tranche.excludedAfterCutoffGameIds).toEqual([]);
+  });
+
+  it('kickoff_before rejects invalid calendar/time components (no JS Date normalization)', () => {
+    expect(parseKickoffBefore('2024-02-29T12:00:00Z').ok).toBe(true);
+    expect(parseKickoffBefore('2026-02-31T00:00:00Z').ok).toBe(false);
+    expect(parseKickoffBefore('2026-09-31T00:00:00Z').ok).toBe(false);
+    expect(parseKickoffBefore('2026-09-01T24:00:00Z').ok).toBe(false);
+    expect(parseKickoffBefore('2026-09-01T00:60:00Z').ok).toBe(false);
+    expect(parseKickoffBefore('2026-09-01T00:00:60Z').ok).toBe(false);
+    expect(parseKickoffBefore('2026-09-01T00:00:00Z').ok).toBe(true);
+    expect(parseKickoffBefore('2026-08-31T19:00:00-05:00').ok).toBe(true);
+  });
+
+  it('30-minute kickoff gate still wins over kickoff_before', () => {
+    const soon = mkGame('soon', new Date(executionNow.getTime() + 20 * 60 * 1000).toISOString());
+    const ok = mkGame('ok', '2026-08-30T00:00:00.000Z');
+    const fillers = Array.from({ length: 49 }, (_, i) =>
+      mkGame(`f${i}`, '2026-09-06T00:00:00.000Z')
+    );
+    const plan = buildCoreWeeklyCardPlan({
+      season: 2026,
+      week: 1,
+      mode: 'PREVIEW',
+      executionNow,
+      kickoffBefore: cutoff,
+      fbsMembershipCount: 138,
+      games: [soon, ok, ...fillers],
+      existingOfficial: [],
+      existingHybrid: [],
+    });
+    expect(plan.kickoffGate.exclusions.some((e) => e.gameId === 'soon')).toBe(true);
+    expect(plan.tranche.selectedGameIds).toEqual(['ok']);
+    expect(plan.tranche.selectedGameIds).not.toContain('soon');
+  });
+
+  it('missing market outside selected tranche does not block; inside does', () => {
+    const early = mkGame('early', '2026-08-30T00:00:00.000Z');
+    const lateMissing = mkGame('late', '2026-09-05T00:00:00.000Z', {
+      spreadHma: null,
+      total: null,
+      homeMl: null,
+      awayMl: null,
+    });
+    const fillers = Array.from({ length: 49 }, (_, i) =>
+      mkGame(`f${i}`, '2026-09-06T00:00:00.000Z')
+    );
+    const okOutside = buildCoreWeeklyCardPlan({
+      season: 2026,
+      week: 1,
+      mode: 'PREVIEW',
+      executionNow,
+      kickoffBefore: cutoff,
+      fbsMembershipCount: 138,
+      games: [early, lateMissing, ...fillers],
+      existingOfficial: [],
+      existingHybrid: [],
+    });
+    expect(okOutside.tranche.selectedGameIds).toEqual(['early']);
+    expect(okOutside.writeBlockers.some((b) => /late/.test(b))).toBe(false);
+    expect(okOutside.marketReadiness.gamesMissingSpread).toContain('late');
+
+    const earlyMissing = mkGame('early', '2026-08-30T00:00:00.000Z', {
+      spreadHma: null,
+      total: 50,
+      homeMl: -200,
+      awayMl: 170,
+    });
+    const late = mkGame('late', '2026-09-05T00:00:00.000Z');
+    const blocked = buildCoreWeeklyCardPlan({
+      season: 2026,
+      week: 1,
+      mode: 'PREVIEW',
+      executionNow,
+      kickoffBefore: cutoff,
+      fbsMembershipCount: 138,
+      games: [earlyMissing, late, ...fillers],
+      existingOfficial: [],
+      existingHybrid: [],
+    });
+    expect(blocked.writeSafe).toBe(false);
+    expect(
+      blocked.writeBlockers.some((b) => /selected tranche game early/.test(b))
+    ).toBe(true);
+  });
+
+  it('entire selected tranche already present → idempotent NO-OP; commitEligible false', () => {
+    const early = mkGame('early', '2026-08-30T00:00:00.000Z');
+    const fillers = Array.from({ length: 50 }, (_, i) =>
+      mkGame(`f${i}`, '2026-09-06T00:00:00.000Z')
+    );
+    const preview = buildCoreWeeklyCardPlan({
+      season: 2026,
+      week: 1,
+      mode: 'PREVIEW',
+      executionNow,
+      kickoffBefore: cutoff,
+      fbsMembershipCount: 138,
+      games: [early, ...fillers],
+      existingOfficial: [],
+      existingHybrid: [],
+    });
+    expect(preview.plannedBets.length).toBeGreaterThan(0);
+
+    const commit = buildCoreWeeklyCardPlan({
+      season: 2026,
+      week: 1,
+      mode: 'COMMIT',
+      confirmation: 'WRITE_2026_WEEK_1_CORE_CARD',
+      executionNow,
+      kickoffBefore: cutoff,
+      fbsMembershipCount: 138,
+      games: [early, ...fillers],
+      existingOfficial: preview.plannedBets.map(asExisting),
+      existingHybrid: [],
+    });
+    expect(commit.existingSafety.mode).toBe('idempotent_exact');
+    expect(commit.newPlannedBets).toHaveLength(0);
+    expect(isIdempotentNoOp(commit)).toBe(true);
+    expect(commitEligible(commit)).toBe(false);
+    // Apparently idempotent plans still may enter the authoritative transaction.
+    expect(commitMayEnterTransaction(commit)).toBe(true);
+  });
+});
+
+describe('2C-2J-5A transactional idempotent audit + phase', () => {
+  it('transactional idempotent no-op reports transactionStarted=true', () => {
+    const exec = buildTransactionalIdempotentNoOpExecution();
+    expect(exec.transactionStarted).toBe(true);
+    expect(exec.mutationsInvoked).toBe(false);
+    expect(exec.betPersistenceInvoked).toBe(false);
+    expect(exec.createManyCount).toBe(0);
+    expect(exec.commitSucceeded).toBe(true);
+    expect(exec.postWriteVerificationSucceeded).toBe(true);
+  });
+
+  it('transactional no-op verification failure is fail-closed with zero mutation flags', () => {
+    const exec = buildTransactionalIdempotentVerificationFailureExecution({
+      error: 'fresh verification failed',
+    });
+    expect(exec.transactionStarted).toBe(true);
+    expect(exec.mutationsInvoked).toBe(false);
+    expect(exec.betPersistenceInvoked).toBe(false);
+    expect(exec.createManyCount).toBe(0);
+    expect(exec.commitSucceeded).toBe(true);
+    expect(exec.postWriteVerificationSucceeded).toBe(false);
+  });
+
+  it('serialization/transaction rollback after mutation attempt preserves 4B flags', () => {
+    const exec = buildRolledBackTransactionExecution({
+      createManyInvoked: true,
+      createManyCount: 2,
+      error: 'could not serialize access due to concurrent update',
+    });
+    expect(exec.transactionStarted).toBe(true);
+    expect(exec.mutationsInvoked).toBe(true);
+    expect(exec.betPersistenceInvoked).toBe(true);
+    expect(exec.createManyCount).toBe(2);
+    expect(exec.commitSucceeded).toBe(false);
+  });
+
+  it('report phase === 2C-2J-5', () => {
+    const plan = buildCoreWeeklyCardPlan({
+      season: 2026,
+      week: 2,
+      mode: 'PREVIEW',
+      executionNow: new Date(),
+      fbsMembershipCount: 138,
+      games: [],
+      existingOfficial: [],
+      existingHybrid: [],
+    });
+    const report = finalizeCoreCardReport({
+      plan,
+      execution: buildPreviewExecution('PREVIEW'),
+      verification: null,
+    });
+    expect(report.phase).toBe('2C-2J-5');
+  });
+
+  it('authoritative transaction exact match → zero createMany invocation', async () => {
+    const planned = planSpreadBet({
+      season: 2026,
+      week: 1,
+      gameId: 'g1',
+      homeTeamId: HOME,
+      awayTeamId: AWAY,
+      homeTeamName: 'Home U',
+      awayTeamName: 'Away U',
+      kickoffIso: TS,
+      coreSpreadHma: 10,
+      displaySpread: selection({ spreadHma: 7 }).displaySpread!,
+    })!;
+    let createCalled = false;
+    const result = await executeAtomicAppendCommit({
+      plannedBets: [planned],
+      trackedGameIds: ['g1'],
+      reReadOfficial: async () => [asExisting(planned)],
+      reReadHybrid: async () => [],
+      createMany: async () => {
+        createCalled = true;
+        return { count: 1 };
+      },
+    });
+    expect(createCalled).toBe(false);
+    expect(result.count).toBe(0);
+    expect(result.newPlannedBets).toEqual([]);
   });
 });
 
