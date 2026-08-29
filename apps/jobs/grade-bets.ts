@@ -1,10 +1,18 @@
 import { PrismaClient, BetResult, BetType, BetSide } from '@prisma/client';
+import {
+  findCloseLineAtCutoff,
+  gradeMoneyline,
+  gradeSpreadTotal,
+  isOfficial2026MissingClosePrice,
+  type GradeMarketType,
+} from './lib/grading-settlement';
 
 /**
- * Outcome grading job
+ * Outcome grading job (2C-2J-6A)
  * - Grades ungraded bets where the underlying game is final
- * - Fills closePrice from last market line at kickoff if missing
- * - Computes PnL and CLV
+ * - Fills closePrice from side-aware pre-kick MarketLine if missing (legacy only)
+ * - 2026 official_flat_100 missing closePrice → fail closed (no MarketLine guess)
+ * - Moneyline PnL uses sportsbook closePrice, never modelPrice
  * - Idempotent: only grades bets with result=null unless --force
  */
 
@@ -34,41 +42,18 @@ function parseArgs(): Args {
   return args;
 }
 
-function americanToProb(price: number): number {
-  if (price === 0 || !isFinite(price)) return 0;
-  return price > 0 ? 100 / (price + 100) : Math.abs(price) / (Math.abs(price) + 100);
-}
-
-async function findCloseLineAtCutoff(
-  gameId: string,
-  marketType: BetType,
-  cutoff: Date
-): Promise<number | null> {
-  // Use the same logic as the web app helper for consistency
-  // First try to find line at or before kickoff
-  const preKickoffLine = await prisma.marketLine.findFirst({
-    where: {
-      gameId,
-      lineType: marketType === 'moneyline' ? 'moneyline' : marketType,
-      timestamp: { lte: cutoff }
-    },
-    orderBy: { timestamp: 'desc' }
-  });
-
-  if (preKickoffLine) {
-    return Number(preKickoffLine.lineValue);
-  }
-
-  // Fallback: get the latest line regardless of time
-  const latestLine = await prisma.marketLine.findFirst({
-    where: {
-      gameId,
-      lineType: marketType === 'moneyline' ? 'moneyline' : marketType
-    },
-    orderBy: { timestamp: 'desc' }
-  });
-
-  return latestLine ? Number(latestLine.lineValue) : null;
+function prismaCloseLineDeps() {
+  return {
+    findFirst: async (args: {
+      where: Record<string, unknown>;
+      orderBy: Array<Record<string, 'asc' | 'desc'>>;
+    }) =>
+      prisma.marketLine.findFirst({
+        where: args.where as any,
+        orderBy: args.orderBy as any,
+        select: { lineValue: true, id: true },
+      }),
+  };
 }
 
 type GradeCounts = {
@@ -78,121 +63,50 @@ type GradeCounts = {
   filledClosePrice: number;
 };
 
-function gradeSpreadTotal(
-  marketType: BetType,
-  side: BetSide,
-  modelLine: number,
-  closeLine: number,
-  margin: number,
-  totalPts: number,
-  stake: number
-): { result: BetResult; pnl: number; clv: number } {
-  let result: BetResult;
-  if (marketType === 'spread') {
-    // Compare from side perspective (matches API route logic)
-    const sideMargin = side === 'home' ? margin : -margin;
-    const diff = sideMargin - closeLine;
-    
-    // Check for push (within 0.5, accounting for floating point precision)
-    if (Math.abs(diff) < 0.5) {
-      result = 'push';
-    } else {
-      result = diff > 0 ? 'win' : 'loss';
-    }
-  } else {
-    // total
-    const diff = side === 'over' ? totalPts - closeLine : closeLine - totalPts;
-    if (Math.abs(diff) < 0.5) {
-      result = 'push';
-    } else {
-      result = diff > 0 ? 'win' : 'loss';
-    }
-  }
-
-  // PnL: assume -110 if no explicit price (profit if win, else -stake, push 0)
-  // Matches API route: win = stake * 0.909, loss = -stake, push = 0
-  const pnl = result === 'win' ? stake * 0.909 : result === 'loss' ? -stake : 0;
-
-  // CLV (bettor perspective) - matches API route logic
-  let clv: number;
-  if (marketType === 'spread') {
-    clv = side === 'home' ? modelLine - closeLine : closeLine - modelLine;
-  } else {
-    clv = side === 'over' ? modelLine - closeLine : closeLine - modelLine;
-  }
-
-  return { result, pnl, clv };
-}
-
-function gradeMoneyline(
-  side: BetSide,
-  modelPrice: number,
-  closePrice: number,
-  margin: number,
-  stake: number
-): { result: BetResult; pnl: number; clv: number } {
-  // Winner
-  let winner: 'home' | 'away' | 'push';
-  if (margin > 0) winner = 'home';
-  else if (margin < 0) winner = 'away';
-  else winner = 'push';
-
-  let result: BetResult;
-  if (winner === 'push') result = 'push';
-  else result = (side === winner ? 'win' : 'loss');
-
-  // PnL using American odds
-  let pnl = 0;
-  if (result === 'win') {
-    if (modelPrice < 0) pnl = stake * (100 / Math.abs(modelPrice));
-    else pnl = stake * (modelPrice / 100);
-  } else if (result === 'loss') {
-    pnl = -stake;
-  }
-
-  // CLV in probability space for bet side
-  const pModel = americanToProb(modelPrice);
-  const pClose = americanToProb(closePrice);
-  const clv = pModel - pClose;
-
-  return { result, pnl, clv };
-}
-
 async function main() {
   const args = parseArgs();
 
   console.log('🧮 Grade Bets Job');
-  console.log(`   force=${args.force} limit=${args.limit} season=${args.season ?? '-'} week=${args.week ?? '-'}`);
+  console.log(
+    `   force=${args.force} limit=${args.limit} season=${args.season ?? '-'} week=${args.week ?? '-'}`
+  );
 
-  // Find candidate bets to grade
-  // Only grade strategy_run bets (not manual entries) to match API route behavior
   const whereClause: any = {
-    source: 'strategy_run', // Only grade strategy-run bets
+    source: 'strategy_run',
     ...(args.force ? {} : { result: null }),
     ...(args.season ? { season: args.season } : {}),
     ...(args.week ? { week: args.week } : {}),
     game: {
-      // Only grade bets for games that are actually final
       status: 'final',
       homeScore: { not: null },
-      awayScore: { not: null }
-    }
+      awayScore: { not: null },
+    },
   };
 
   const candidates = await prisma.bet.findMany({
     where: whereClause,
     include: { game: true },
-    take: args.limit
+    take: args.limit,
   });
 
   console.log(`   Found ${candidates.length} bet(s) to grade`);
 
-  const counts: GradeCounts = { graded: 0, pushes: 0, failed: 0, filledClosePrice: 0 };
+  const counts: GradeCounts = {
+    graded: 0,
+    pushes: 0,
+    failed: 0,
+    filledClosePrice: 0,
+  };
 
   for (const bet of candidates) {
     try {
       const game = bet.game as any;
-      if (!game || game.homeScore == null || game.awayScore == null || !game.date) {
+      if (
+        !game ||
+        game.homeScore == null ||
+        game.awayScore == null ||
+        !game.date
+      ) {
         counts.failed++;
         continue;
       }
@@ -200,37 +114,77 @@ async function main() {
       const margin = Number(game.homeScore) - Number(game.awayScore);
       const totalPts = Number(game.homeScore) + Number(game.awayScore);
       const kickoff = new Date(game.date);
+      const side = bet.side as BetSide;
+      const marketType = bet.marketType as GradeMarketType;
 
-      let closePrice = bet.closePrice != null ? Number(bet.closePrice) : null;
-      if (closePrice == null) {
-        const fetched = await findCloseLineAtCutoff(bet.gameId, bet.marketType, kickoff);
-        if (fetched != null) {
+      // Explicit null check — closePrice=0 (pick'em) is valid.
+      let closePrice: number | null =
+        bet.closePrice !== null && bet.closePrice !== undefined
+          ? Number(bet.closePrice)
+          : null;
+
+      if (
+        isOfficial2026MissingClosePrice({
+          season: bet.season,
+          strategyTag: bet.strategyTag,
+          closePrice,
+        })
+      ) {
+        counts.failed++;
+        continue;
+      }
+
+      if (closePrice === null) {
+        const fetched = await findCloseLineAtCutoff(prismaCloseLineDeps(), {
+          gameId: bet.gameId,
+          marketType,
+          side,
+          homeTeamId: game.homeTeamId,
+          awayTeamId: game.awayTeamId,
+          cutoff: kickoff,
+        });
+        if (fetched !== null && fetched !== undefined) {
           closePrice = fetched;
           counts.filledClosePrice++;
         }
       }
 
-      // If still no close price, we can grade result (except ML CLV) but prefer to skip to keep data consistent
-      if (closePrice == null) {
+      if (closePrice === null || closePrice === undefined) {
         counts.failed++;
         continue;
       }
 
       const stake = Number(bet.stake);
-      const side = bet.side as BetSide;
-
       let result: BetResult;
       let pnl = 0;
       let clv = 0;
 
-      if (bet.marketType === 'moneyline') {
+      if (marketType === 'moneyline') {
         const modelPrice = Number(bet.modelPrice);
-        const graded = gradeMoneyline(side, modelPrice, closePrice, margin, stake);
-        result = graded.result; pnl = graded.pnl; clv = graded.clv;
+        const graded = gradeMoneyline(
+          side,
+          modelPrice,
+          closePrice,
+          margin,
+          stake
+        );
+        result = graded.result as BetResult;
+        pnl = graded.pnl;
+        clv = graded.clv;
       } else {
-        const modelLine = Number(bet.modelPrice); // modelPrice stores line for spread/total in our design
-        const graded = gradeSpreadTotal(bet.marketType, side, modelLine, closePrice, margin, totalPts, stake);
-        result = graded.result; pnl = graded.pnl; clv = graded.clv;
+        const modelLine = Number(bet.modelPrice);
+        const graded = gradeSpreadTotal(
+          marketType as Exclude<BetType, 'moneyline'>,
+          side,
+          modelLine,
+          closePrice,
+          margin,
+          totalPts,
+          stake
+        );
+        result = graded.result as BetResult;
+        pnl = graded.pnl;
+        clv = graded.clv;
       }
 
       await prisma.bet.update({
@@ -240,7 +194,7 @@ async function main() {
           pnl,
           clv,
           closePrice,
-        }
+        },
       });
 
       counts.graded++;
@@ -252,7 +206,9 @@ async function main() {
   }
 
   console.log(`\n[GRADE_BETS] Summary:`);
-  console.log(`   graded=${counts.graded} pushes=${counts.pushes} failed=${counts.failed} filledClosePrice=${counts.filledClosePrice}`);
+  console.log(
+    `   graded=${counts.graded} pushes=${counts.pushes} failed=${counts.failed} filledClosePrice=${counts.filledClosePrice}`
+  );
 }
 
 main()
@@ -263,5 +219,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-
-
