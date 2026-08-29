@@ -32,7 +32,17 @@ export type ScoreAction =
   | 'missing_db'
   | 'db_only'
   | 'invalid_provider_scores'
-  | 'invalid_db_final';
+  | 'invalid_db_final'
+  | 'identity_mismatch'
+  | 'unexpected_status';
+
+export const ALLOWED_DB_STATUSES = new Set([
+  'scheduled',
+  'in_progress',
+  'final',
+]);
+
+export const CFBD_SCORES_FETCH_TIMEOUT_MS = 20_000;
 
 export interface ScoreCliArgs {
   season: number;
@@ -122,7 +132,10 @@ export interface ScoreExecutionState {
   commitAttempted: boolean;
   transactionStarted: boolean;
   gameMutationsInvoked: boolean;
+  /** Persisted Game updates after a successful transaction; null on rollback. */
   gameUpdateCount: number | null;
+  /** Attempted tx.game.update() calls (including those rolled back). */
+  gameMutationAttempts: number | null;
   commitSucceeded: boolean;
   postWriteVerificationSucceeded: boolean | null;
   error: string | null;
@@ -160,28 +173,47 @@ export function parseScoreCliArgs(argv: string[]): {
     '--report',
   ]);
 
+  const takeValue = (flag: string, idx: number): string | null => {
+    const next = argv[idx + 1];
+    if (next === undefined || next.startsWith('-')) {
+      errors.push(`missing value for ${flag}`);
+      return null;
+    }
+    return next;
+  };
+
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (!known.has(a) && a.startsWith('-')) {
+    if (known.has(a)) {
+      const v = takeValue(a, i);
+      if (v === null) continue;
+      i += 1;
+      if (a === '--season') season = Number(v);
+      else if (a === '--week') {
+        if (/current/i.test(v) || /[.,]/.test(v) || /-/.test(v)) {
+          errors.push(
+            'week must be a single positive integer (no current/ranges)'
+          );
+        } else {
+          week = Number(v);
+        }
+      } else if (a === '--mode') {
+        const m = String(v).toUpperCase();
+        if (m !== 'PREVIEW' && m !== 'COMMIT') {
+          errors.push('mode must be PREVIEW or COMMIT');
+        } else mode = m as ScoreMode;
+      } else if (a === '--confirm' || a === '--confirmation') {
+        confirmation = v;
+      } else if (a === '--report') {
+        reportPath = v;
+      }
+      continue;
+    }
+    if (a.startsWith('-')) {
       errors.push(`unknown argument: ${a}`);
       continue;
     }
-    if (a === '--season') season = Number(argv[++i]);
-    else if (a === '--week') {
-      const raw = String(argv[++i] ?? '');
-      if (/current/i.test(raw) || /[.,]/.test(raw) || /-/.test(raw)) {
-        errors.push('week must be a single positive integer (no current/ranges)');
-      } else {
-        week = Number(raw);
-      }
-    } else if (a === '--mode') {
-      const m = String(argv[++i] ?? '').toUpperCase();
-      if (m !== 'PREVIEW' && m !== 'COMMIT') {
-        errors.push('mode must be PREVIEW or COMMIT');
-      } else mode = m as ScoreMode;
-    } else if (a === '--confirm' || a === '--confirmation') {
-      confirmation = String(argv[++i] ?? '');
-    } else if (a === '--report') reportPath = String(argv[++i] ?? '');
+    errors.push(`unexpected positional argument: ${a}`);
   }
 
   if (season !== SCORES_SEASON) {
@@ -229,16 +261,20 @@ export async function fetchCfbdScoresWeek(options: {
   apiKey: string;
   baseUrl?: string;
   fetchImpl?: typeof fetch;
+  timeoutMs?: number;
 }): Promise<{ games: CfbdProviderGame[]; httpStatus: number; providerCalls: 1 }> {
   if (!options.apiKey || !String(options.apiKey).trim()) {
     throw new Error('CFBD_API_KEY is missing or empty');
   }
   const fetchImpl = options.fetchImpl ?? fetch;
+  const timeoutMs = options.timeoutMs ?? CFBD_SCORES_FETCH_TIMEOUT_MS;
   const url = buildCfbdWeekGamesUrl(
     options.season,
     options.week,
     options.baseUrl
   );
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
   try {
     res = await fetchImpl(url, {
@@ -246,13 +282,21 @@ export async function fetchCfbdScoresWeek(options: {
         Authorization: `Bearer ${options.apiKey}`,
         Accept: 'application/json',
       },
+      signal: controller.signal,
     });
   } catch (err) {
+    const name = err instanceof Error ? err.name : '';
+    const msg = err instanceof Error ? err.message : String(err);
+    if (name === 'AbortError' || /aborted/i.test(msg)) {
+      throw new Error(
+        redactSecretLike(`CFBD games request timed out after ${timeoutMs}ms`)
+      );
+    }
     throw new Error(
-      redactSecretLike(
-        `CFBD games fetch failed: ${err instanceof Error ? err.message : String(err)}`
-      )
+      redactSecretLike(`CFBD games fetch failed: ${msg}`)
     );
+  } finally {
+    clearTimeout(timer);
   }
   if (!res.ok) {
     throw new Error(`CFBD games HTTP ${res.status}`);
@@ -293,7 +337,27 @@ export async function normalizeProviderScoreGames(options: {
   );
   for (const issue of weekIssues) blockers.push(issue.message);
 
-  const fbs = options.providerGames.filter(isFbsMatchup);
+  // Provider season must match requested season before any canonical IDs are built.
+  for (const g of options.providerGames) {
+    if (
+      g.season === null ||
+      g.season === undefined ||
+      !Number.isInteger(g.season)
+    ) {
+      blockers.push(
+        `provider row missing/invalid season (got ${String(g.season)})`
+      );
+    } else if (g.season !== options.season) {
+      blockers.push(
+        `provider season mismatch: expected ${options.season} got ${g.season}`
+      );
+    }
+  }
+
+  const seasonOkRows = options.providerGames.filter(
+    (g) => Number.isInteger(g.season) && g.season === options.season
+  );
+  const fbs = seasonOkRows.filter(isFbsMatchup);
   if (options.providerGames.length === 0) {
     blockers.push('provider returned zero games');
   }
@@ -468,6 +532,32 @@ export function planScoreUpdates(options: {
       continue;
     }
 
+    if (
+      db.homeTeamId !== n.homeTeamId ||
+      db.awayTeamId !== n.awayTeamId ||
+      db.season !== options.season ||
+      db.week !== options.week
+    ) {
+      row.action = 'identity_mismatch';
+      blockers.push(
+        `canonical identity mismatch for ${n.gameId}: db home/away/season/week=` +
+          `${db.homeTeamId}/${db.awayTeamId}/${db.season}/${db.week} ` +
+          `expected ${n.homeTeamId}/${n.awayTeamId}/${options.season}/${options.week}`
+      );
+      games.push(row);
+      continue;
+    }
+
+    const status = String(db.status || '').toLowerCase();
+    if (!ALLOWED_DB_STATUSES.has(status)) {
+      row.action = 'unexpected_status';
+      blockers.push(
+        `unexpected DB status for ${n.gameId}: ${String(db.status)}`
+      );
+      games.push(row);
+      continue;
+    }
+
     if (!n.completed) {
       incompleteProviderGames += 1;
       row.action = 'pending';
@@ -486,7 +576,6 @@ export function planScoreUpdates(options: {
       continue;
     }
 
-    const status = String(db.status || '').toLowerCase();
     const dbHome = db.homeScore;
     const dbAway = db.awayScore;
 
@@ -515,7 +604,16 @@ export function planScoreUpdates(options: {
       continue;
     }
 
-    // scheduled / in_progress / other non-final
+    // Only scheduled / in_progress remain writable non-final states.
+    if (status !== 'scheduled' && status !== 'in_progress') {
+      row.action = 'unexpected_status';
+      blockers.push(
+        `unexpected DB status for ${n.gameId}: ${String(db.status)}`
+      );
+      games.push(row);
+      continue;
+    }
+
     if (dbHome !== null && dbHome !== undefined && dbAway !== null && dbAway !== undefined) {
       if (Number(dbHome) === n.homePoints && Number(dbAway) === n.awayPoints) {
         row.action = 'finalize_existing_scores';
@@ -634,6 +732,7 @@ export function buildPreviewExecution(providerCalls: number): ScoreExecutionStat
     transactionStarted: false,
     gameMutationsInvoked: false,
     gameUpdateCount: null,
+    gameMutationAttempts: null,
     commitSucceeded: false,
     postWriteVerificationSucceeded: null,
     error: null,
@@ -650,6 +749,7 @@ export function buildTransactionalIdempotentScoreExecution(
     transactionStarted: true,
     gameMutationsInvoked: false,
     gameUpdateCount: 0,
+    gameMutationAttempts: 0,
     commitSucceeded: true,
     postWriteVerificationSucceeded: true,
     error: null,
@@ -669,6 +769,7 @@ export function buildSuccessfulScoreCommitExecution(options: {
     transactionStarted: true,
     gameMutationsInvoked: options.gameUpdateCount > 0,
     gameUpdateCount: options.gameUpdateCount,
+    gameMutationAttempts: options.gameUpdateCount,
     commitSucceeded: true,
     postWriteVerificationSucceeded: options.postWriteVerificationSucceeded,
     error: options.error ?? null,
@@ -676,20 +777,26 @@ export function buildSuccessfulScoreCommitExecution(options: {
   };
 }
 
+/**
+ * Rollback audit contract:
+ * - `gameUpdateCount` = null (persisted rows unknown / not committed; never report a false 0)
+ * - `gameMutationAttempts` = attempted `tx.game.update()` calls before rollback
+ * - `gameMutationsInvoked` = gameMutationAttempts > 0
+ * - `postWriteVerificationSucceeded` = null (no success verification on rollback)
+ */
 export function buildRolledBackScoreExecution(options: {
   providerCalls: number;
-  gameMutationsInvoked: boolean;
-  gameUpdateCount: number | null;
+  gameMutationAttempts: number;
   error: string;
 }): ScoreExecutionState {
+  const attempts = options.gameMutationAttempts;
   return {
     mode: 'COMMIT',
     commitAttempted: true,
     transactionStarted: true,
-    gameMutationsInvoked: options.gameMutationsInvoked,
-    gameUpdateCount: options.gameMutationsInvoked
-      ? options.gameUpdateCount
-      : null,
+    gameMutationsInvoked: attempts > 0,
+    gameUpdateCount: null,
+    gameMutationAttempts: attempts,
     commitSucceeded: false,
     postWriteVerificationSucceeded: null,
     error: options.error,
@@ -707,6 +814,7 @@ export function buildFailedScoreCommitExecution(options: {
     transactionStarted: false,
     gameMutationsInvoked: false,
     gameUpdateCount: null,
+    gameMutationAttempts: null,
     commitSucceeded: false,
     postWriteVerificationSucceeded: null,
     error: options.error,
@@ -764,42 +872,96 @@ export async function executeAtomicScoreCommitWithNormalized(options: {
   };
 }
 
+/**
+ * Compare authoritative before/after DB state after COMMIT.
+ * Incomplete provider games must not change status/scores (do not finalize if not
+ * already final; do not unfinalize if already final). Completed games keep exact
+ * final-score checks. All rows: count, ID set, and home/away FKs must be unchanged.
+ */
 export function verifyScorePostWrite(options: {
   normalized: NormalizedScoreGame[];
+  dbGamesBefore: DbScoreGameRow[];
   dbGamesAfter: DbScoreGameRow[];
-  dbGamesBeforeCount: number;
-  plannedUpdateIds: string[];
 }): ScorePostWriteVerification {
   const reasons: string[] = [];
+  const beforeById = new Map(options.dbGamesBefore.map((g) => [g.id, g]));
   const afterById = new Map(options.dbGamesAfter.map((g) => [g.id, g]));
 
-  if (options.dbGamesAfter.length !== options.dbGamesBeforeCount) {
+  if (options.dbGamesAfter.length !== options.dbGamesBefore.length) {
     reasons.push(
-      `db game count changed: before=${options.dbGamesBeforeCount} after=${options.dbGamesAfter.length}`
+      `db game count changed: before=${options.dbGamesBefore.length} after=${options.dbGamesAfter.length}`
     );
+  }
+
+  for (const id of Array.from(beforeById.keys())) {
+    if (!afterById.has(id)) {
+      reasons.push(`db ID set changed: missing after write: ${id}`);
+    }
+  }
+  for (const id of Array.from(afterById.keys())) {
+    if (!beforeById.has(id)) {
+      reasons.push(`db ID set changed: unexpected after write: ${id}`);
+    }
+  }
+
+  for (const before of options.dbGamesBefore) {
+    const after = afterById.get(before.id);
+    if (!after) continue;
+    if (after.homeTeamId !== before.homeTeamId) {
+      reasons.push(
+        `homeTeamId changed for ${before.id}: ${before.homeTeamId} → ${after.homeTeamId}`
+      );
+    }
+    if (after.awayTeamId !== before.awayTeamId) {
+      reasons.push(
+        `awayTeamId changed for ${before.id}: ${before.awayTeamId} → ${after.awayTeamId}`
+      );
+    }
   }
 
   let completedVerified = 0;
   for (const n of options.normalized) {
-    const db = afterById.get(n.gameId);
-    if (!db) {
+    const before = beforeById.get(n.gameId);
+    const after = afterById.get(n.gameId);
+    if (!after) {
       reasons.push(`missing DB game after write: ${n.gameId}`);
       continue;
     }
+
     if (!n.completed) {
-      if (String(db.status).toLowerCase() === 'final' && options.plannedUpdateIds.includes(n.gameId)) {
-        reasons.push(`incomplete provider game was finalized: ${n.gameId}`);
+      if (before) {
+        const statusChanged = String(after.status) !== String(before.status);
+        const homeChanged = after.homeScore !== before.homeScore;
+        const awayChanged = after.awayScore !== before.awayScore;
+        if (statusChanged || homeChanged || awayChanged) {
+          const wasFinal = String(before.status).toLowerCase() === 'final';
+          const isFinal = String(after.status).toLowerCase() === 'final';
+          if (!wasFinal && isFinal) {
+            reasons.push(`incomplete provider game was finalized: ${n.gameId}`);
+          } else if (wasFinal && !isFinal) {
+            reasons.push(
+              `already-final incomplete provider game was unfinalized: ${n.gameId}`
+            );
+          } else {
+            reasons.push(
+              `incomplete provider game fields mutated: ${n.gameId}`
+            );
+          }
+        }
       }
-      // Incomplete must not have been mutated by this writer to final unless it was already final.
       continue;
     }
+
     completedVerified += 1;
-    if (String(db.status).toLowerCase() !== 'final') {
+    if (String(after.status).toLowerCase() !== 'final') {
       reasons.push(`completed game not final: ${n.gameId}`);
     }
-    if (Number(db.homeScore) !== n.homePoints || Number(db.awayScore) !== n.awayPoints) {
+    if (
+      Number(after.homeScore) !== n.homePoints ||
+      Number(after.awayScore) !== n.awayPoints
+    ) {
       reasons.push(
-        `score mismatch ${n.gameId}: db=${db.homeScore}-${db.awayScore} provider=${n.homePoints}-${n.awayPoints}`
+        `score mismatch ${n.gameId}: db=${after.homeScore}-${after.awayScore} provider=${n.homePoints}-${n.awayPoints}`
       );
     }
   }

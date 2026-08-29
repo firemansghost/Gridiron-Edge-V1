@@ -4,6 +4,7 @@
 
 import {
   WEEK1_GAME_COUNT,
+  buildRolledBackScoreExecution,
   commitEligible,
   executeAtomicScoreCommitWithNormalized,
   expectedScoreConfirmation,
@@ -71,6 +72,46 @@ describe('2C-2J-6B args / confirmation', () => {
     ).toBe(false);
   });
 
+  it('rejects bare positional garbage and missing flag values', () => {
+    expect(
+      parseScoreCliArgs([
+        '--season',
+        '2026',
+        '--week',
+        '1',
+        'garbage',
+      ]).ok
+    ).toBe(false);
+    expect(
+      parseScoreCliArgs([
+        '--season',
+        '2026',
+        '--week',
+        '1',
+        'PREVIEW',
+      ]).ok
+    ).toBe(false);
+    expect(
+      parseScoreCliArgs(['foo', '--season', '2026', '--week', '1']).ok
+    ).toBe(false);
+    const missing = parseScoreCliArgs(['--season', '2026', '--week']);
+    expect(missing.ok).toBe(false);
+    expect(missing.errors.some((e) => /missing value for --week/i.test(e))).toBe(
+      true
+    );
+    const missingMode = parseScoreCliArgs([
+      '--season',
+      '2026',
+      '--week',
+      '1',
+      '--mode',
+    ]);
+    expect(missingMode.ok).toBe(false);
+    expect(
+      missingMode.errors.some((e) => /missing value for --mode/i.test(e))
+    ).toBe(true);
+  });
+
   it('COMMIT bad confirmation rejected; exact confirmation accepted', () => {
     const bad = parseScoreCliArgs([
       '--season',
@@ -135,6 +176,135 @@ describe('2C-2J-6B provider fetch', () => {
           ({ ok: false, status: 500, json: async () => ({}) }) as Response) as typeof fetch,
       })
     ).rejects.toThrow(/HTTP 500/);
+  });
+
+  it('aborts on provider timeout; secret redacted; single call', async () => {
+    let calls = 0;
+    await expect(
+      fetchCfbdScoresWeek({
+        season: 2026,
+        week: 1,
+        apiKey: 'super-secret-key-xyz',
+        timeoutMs: 30,
+        fetchImpl: ((
+          _url: RequestInfo | URL,
+          init?: RequestInit
+        ) => {
+          calls += 1;
+          return new Promise((_resolve, reject) => {
+            const signal = init?.signal;
+            if (!signal) {
+              reject(new Error('missing abort signal'));
+              return;
+            }
+            const onAbort = () => {
+              const err = new Error('The operation was aborted');
+              err.name = 'AbortError';
+              reject(err);
+            };
+            if (signal.aborted) onAbort();
+            else signal.addEventListener('abort', onAbort, { once: true });
+          });
+        }) as typeof fetch,
+      })
+    ).rejects.toThrow(/timed out/i);
+    expect(calls).toBe(1);
+  });
+});
+
+describe('2C-2J-6B provider season validation', () => {
+  const teams = [
+    { id: 'alabama', name: 'Alabama' },
+    { id: 'auburn', name: 'Auburn' },
+  ];
+  const lookup = fakeLookup(teams);
+  const aliases = new Map<string, string>();
+
+  it('requested 2026 + provider season 2025 → blocker; no wrong-season ID', async () => {
+    const res = await normalizeProviderScoreGames({
+      season: 2026,
+      week: 2,
+      providerGames: [
+        providerGame({
+          season: 2025,
+          week: 2,
+          homeTeam: 'Alabama',
+          awayTeam: 'Auburn',
+          completed: true,
+          homePoints: 21,
+          awayPoints: 14,
+        }),
+      ],
+      teamLookup: lookup,
+      aliases,
+    });
+    expect(res.blockers.some((b) => /season mismatch/i.test(b))).toBe(true);
+    expect(res.normalized).toHaveLength(0);
+    expect(res.normalized.every((n) => !n.gameId.includes('2025'))).toBe(true);
+  });
+
+  it('missing/invalid provider season → blocker', async () => {
+    const missing = await normalizeProviderScoreGames({
+      season: 2026,
+      week: 2,
+      providerGames: [
+        providerGame({
+          season: undefined as unknown as number,
+          week: 2,
+          homeTeam: 'Alabama',
+          awayTeam: 'Auburn',
+          completed: false,
+        }),
+      ],
+      teamLookup: lookup,
+      aliases,
+    });
+    expect(missing.blockers.some((b) => /missing\/invalid season/i.test(b))).toBe(
+      true
+    );
+    expect(missing.normalized).toHaveLength(0);
+
+    const invalid = await normalizeProviderScoreGames({
+      season: 2026,
+      week: 2,
+      providerGames: [
+        providerGame({
+          season: 2026.5 as unknown as number,
+          week: 2,
+          homeTeam: 'Alabama',
+          awayTeam: 'Auburn',
+          completed: false,
+        }),
+      ],
+      teamLookup: lookup,
+      aliases,
+    });
+    expect(invalid.blockers.some((b) => /missing\/invalid season/i.test(b))).toBe(
+      true
+    );
+  });
+
+  it('correct 2026 season → allowed', async () => {
+    const ok = await normalizeProviderScoreGames({
+      season: 2026,
+      week: 2,
+      providerGames: [
+        providerGame({
+          season: 2026,
+          week: 2,
+          homeTeam: 'Alabama',
+          awayTeam: 'Auburn',
+          completed: true,
+          homePoints: 21,
+          awayPoints: 14,
+        }),
+      ],
+      teamLookup: lookup,
+      aliases,
+    });
+    expect(ok.blockers.filter((b) => /season/i.test(b))).toEqual([]);
+    expect(ok.normalized).toHaveLength(1);
+    expect(ok.normalized[0].gameId).toBe('2026-wk2-auburn-alabama');
   });
 });
 
@@ -516,6 +686,123 @@ describe('2C-2J-6B identity + week1 + planning', () => {
     expect(dbOnly.writeSafe).toBe(false);
     expect(dbOnly.counts.dbOnlyGames).toBe(1);
   });
+
+  it('canonical DB identity mismatches and unexpected status block', () => {
+    const n: NormalizedScoreGame = {
+      gameId: '2026-wk2-auburn-alabama',
+      season: 2026,
+      week: 2,
+      homeTeamId: 'alabama',
+      awayTeamId: 'auburn',
+      homeTeamName: 'Alabama',
+      awayTeamName: 'Auburn',
+      completed: true,
+      homePoints: 21,
+      awayPoints: 14,
+    };
+    const baseOpts = {
+      season: 2026,
+      week: 2,
+      mode: 'PREVIEW' as const,
+      confirmation: '',
+      normalized: [n],
+      providerRows: 1,
+      providerHttpStatus: 200,
+      providerCalls: 1,
+      unresolvedTeams: 0,
+      duplicateGames: 0,
+    };
+
+    const wrongHome = planScoreUpdates({
+      ...baseOpts,
+      dbGames: [
+        {
+          id: n.gameId,
+          season: 2026,
+          week: 2,
+          homeTeamId: 'wrong-home',
+          awayTeamId: 'auburn',
+          status: 'scheduled',
+          homeScore: null,
+          awayScore: null,
+        },
+      ],
+    });
+    expect(wrongHome.writeSafe).toBe(false);
+    expect(wrongHome.games[0].action).toBe('identity_mismatch');
+
+    const wrongAway = planScoreUpdates({
+      ...baseOpts,
+      dbGames: [
+        {
+          id: n.gameId,
+          season: 2026,
+          week: 2,
+          homeTeamId: 'alabama',
+          awayTeamId: 'wrong-away',
+          status: 'scheduled',
+          homeScore: null,
+          awayScore: null,
+        },
+      ],
+    });
+    expect(wrongAway.writeSafe).toBe(false);
+    expect(wrongAway.games[0].action).toBe('identity_mismatch');
+
+    const wrongSeasonWeek = planScoreUpdates({
+      ...baseOpts,
+      dbGames: [
+        {
+          id: n.gameId,
+          season: 2025,
+          week: 3,
+          homeTeamId: 'alabama',
+          awayTeamId: 'auburn',
+          status: 'scheduled',
+          homeScore: null,
+          awayScore: null,
+        },
+      ],
+    });
+    expect(wrongSeasonWeek.writeSafe).toBe(false);
+    expect(wrongSeasonWeek.games[0].action).toBe('identity_mismatch');
+
+    const unexpected = planScoreUpdates({
+      ...baseOpts,
+      dbGames: [
+        {
+          id: n.gameId,
+          season: 2026,
+          week: 2,
+          homeTeamId: 'alabama',
+          awayTeamId: 'auburn',
+          status: 'postponed',
+          homeScore: null,
+          awayScore: null,
+        },
+      ],
+    });
+    expect(unexpected.writeSafe).toBe(false);
+    expect(unexpected.games[0].action).toBe('unexpected_status');
+
+    const exact = planScoreUpdates({
+      ...baseOpts,
+      dbGames: [
+        {
+          id: n.gameId,
+          season: 2026,
+          week: 2,
+          homeTeamId: 'alabama',
+          awayTeamId: 'auburn',
+          status: 'scheduled',
+          homeScore: null,
+          awayScore: null,
+        },
+      ],
+    });
+    expect(exact.writeSafe).toBe(true);
+    expect(exact.games[0].action).toBe('update_to_final');
+  });
 });
 
 describe('2C-2J-6B transaction + verification', () => {
@@ -643,29 +930,30 @@ describe('2C-2J-6B transaction + verification', () => {
     ).rejects.toThrow(/transaction aborted/);
   });
 
-  it('post-write verification catches wrong score and accidental finalize', () => {
+  it('post-write verification catches wrong score, accidental finalize, identity drift', () => {
+    const afterOk: DbScoreGameRow[] = [
+      {
+        id: 'g1',
+        season: 2026,
+        week: 2,
+        homeTeamId: 'h',
+        awayTeamId: 'a',
+        status: 'final',
+        homeScore: 10,
+        awayScore: 7,
+      },
+      baseDb[1],
+    ];
     const ok = verifyScorePostWrite({
       normalized,
-      dbGamesAfter: [
-        {
-          id: 'g1',
-          season: 2026,
-          week: 2,
-          homeTeamId: 'h',
-          awayTeamId: 'a',
-          status: 'final',
-          homeScore: 10,
-          awayScore: 7,
-        },
-        baseDb[1],
-      ],
-      dbGamesBeforeCount: 2,
-      plannedUpdateIds: ['g1'],
+      dbGamesBefore: baseDb,
+      dbGamesAfter: afterOk,
     });
     expect(ok.ok).toBe(true);
 
     const wrong = verifyScorePostWrite({
       normalized,
+      dbGamesBefore: baseDb,
       dbGamesAfter: [
         {
           id: 'g1',
@@ -679,13 +967,13 @@ describe('2C-2J-6B transaction + verification', () => {
         },
         baseDb[1],
       ],
-      dbGamesBeforeCount: 2,
-      plannedUpdateIds: ['g1'],
     });
     expect(wrong.ok).toBe(false);
 
+    // Incomplete g2 was never planned; still catch accidental finalization via before/after.
     const accidental = verifyScorePostWrite({
       normalized,
+      dbGamesBefore: baseDb,
       dbGamesAfter: [
         {
           id: 'g1',
@@ -708,13 +996,15 @@ describe('2C-2J-6B transaction + verification', () => {
           awayScore: 0,
         },
       ],
-      dbGamesBeforeCount: 2,
-      plannedUpdateIds: ['g1', 'g2'],
     });
     expect(accidental.ok).toBe(false);
+    expect(
+      accidental.reasons.some((r) => /incomplete provider game was finalized/i.test(r))
+    ).toBe(true);
 
     const countChange = verifyScorePostWrite({
       normalized,
+      dbGamesBefore: baseDb,
       dbGamesAfter: [
         {
           id: 'g1',
@@ -727,9 +1017,144 @@ describe('2C-2J-6B transaction + verification', () => {
           awayScore: 7,
         },
       ],
-      dbGamesBeforeCount: 2,
-      plannedUpdateIds: ['g1'],
     });
     expect(countChange.ok).toBe(false);
+    expect(countChange.reasons.some((r) => /count changed|ID set changed/i.test(r))).toBe(
+      true
+    );
+
+    const fkDrift = verifyScorePostWrite({
+      normalized,
+      dbGamesBefore: baseDb,
+      dbGamesAfter: [
+        {
+          id: 'g1',
+          season: 2026,
+          week: 2,
+          homeTeamId: 'hacked',
+          awayTeamId: 'a',
+          status: 'final',
+          homeScore: 10,
+          awayScore: 7,
+        },
+        baseDb[1],
+      ],
+    });
+    expect(fkDrift.ok).toBe(false);
+    expect(fkDrift.reasons.some((r) => /homeTeamId changed/i.test(r))).toBe(true);
+
+    // Already-final + provider incomplete: leave alone (do not unfinalize).
+    const alreadyFinalIncomplete: NormalizedScoreGame[] = [
+      normalized[0],
+      { ...normalized[1], completed: false },
+    ];
+    const beforeFinalG2: DbScoreGameRow[] = [
+      afterOk[0],
+      {
+        ...baseDb[1],
+        status: 'final',
+        homeScore: 3,
+        awayScore: 0,
+      },
+    ];
+    const leaveAlone = verifyScorePostWrite({
+      normalized: alreadyFinalIncomplete,
+      dbGamesBefore: beforeFinalG2,
+      dbGamesAfter: beforeFinalG2,
+    });
+    expect(leaveAlone.ok).toBe(true);
+  });
+
+  it('mid-transaction failure audits mutation attempts; no success verification', async () => {
+    const twoComplete: NormalizedScoreGame[] = [
+      {
+        gameId: 'g1',
+        season: 2026,
+        week: 2,
+        homeTeamId: 'h',
+        awayTeamId: 'a',
+        homeTeamName: 'H',
+        awayTeamName: 'A',
+        completed: true,
+        homePoints: 10,
+        awayPoints: 7,
+      },
+      {
+        gameId: 'g2',
+        season: 2026,
+        week: 2,
+        homeTeamId: 'h2',
+        awayTeamId: 'a2',
+        homeTeamName: 'H2',
+        awayTeamName: 'A2',
+        completed: true,
+        homePoints: 20,
+        awayPoints: 17,
+      },
+    ];
+    const twoDb: DbScoreGameRow[] = [
+      {
+        id: 'g1',
+        season: 2026,
+        week: 2,
+        homeTeamId: 'h',
+        awayTeamId: 'a',
+        status: 'scheduled',
+        homeScore: null,
+        awayScore: null,
+      },
+      {
+        id: 'g2',
+        season: 2026,
+        week: 2,
+        homeTeamId: 'h2',
+        awayTeamId: 'a2',
+        status: 'scheduled',
+        homeScore: null,
+        awayScore: null,
+      },
+    ];
+    const plan = planScoreUpdates({
+      season: 2026,
+      week: 2,
+      mode: 'COMMIT',
+      confirmation: 'WRITE_2026_WEEK_2_SCORES',
+      normalized: twoComplete,
+      dbGames: twoDb,
+      providerRows: 2,
+      providerHttpStatus: 200,
+      providerCalls: 1,
+      unresolvedTeams: 0,
+      duplicateGames: 0,
+    });
+    expect(plan.plannedMutations.length).toBeGreaterThanOrEqual(2);
+
+    let txMutationAttempts = 0;
+    await expect(
+      executeAtomicScoreCommitWithNormalized({
+        plan,
+        normalized: twoComplete,
+        reReadDbGames: async () => twoDb,
+        updateGameScores: async () => {
+          txMutationAttempts += 1;
+          if (txMutationAttempts >= 2) {
+            throw new Error('simulated mid-transaction failure');
+          }
+        },
+      })
+    ).rejects.toThrow(/simulated mid-transaction failure/);
+
+    expect(txMutationAttempts).toBe(2);
+
+    const execution = buildRolledBackScoreExecution({
+      providerCalls: 1,
+      gameMutationAttempts: txMutationAttempts,
+      error: 'simulated mid-transaction failure',
+    });
+    expect(execution.gameMutationsInvoked).toBe(true);
+    expect(execution.gameUpdateCount).toBeNull();
+    expect(execution.gameMutationAttempts).toBe(2);
+    expect(execution.commitSucceeded).toBe(false);
+    expect(execution.postWriteVerificationSucceeded).toBeNull();
   });
 });

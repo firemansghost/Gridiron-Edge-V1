@@ -208,8 +208,9 @@ async function main(): Promise<void> {
     }
 
     let updateCount = 0;
-    let txMutationsInvoked = false;
-    let beforeCount = dbRows.length;
+    /** Incremented immediately before each tx.game.update() (truthful attempt audit). */
+    let txMutationAttempts = 0;
+    let beforeDb = dbRows;
     const normalized = normalizedResult.normalized;
 
     try {
@@ -235,7 +236,7 @@ async function main(): Promise<void> {
                 })
               ),
             updateGameScores: async (row) => {
-              txMutationsInvoked = true;
+              txMutationAttempts += 1;
               await tx.game.update({
                 where: { id: row.gameId },
                 data: {
@@ -251,7 +252,7 @@ async function main(): Promise<void> {
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
       );
       updateCount = txResult.updateCount;
-      beforeCount = txResult.beforeDb.length;
+      beforeDb = txResult.beforeDb;
       plan = txResult.rePlan;
     } catch (err) {
       const msg = redactSecretLike(
@@ -259,8 +260,7 @@ async function main(): Promise<void> {
       );
       execution = buildRolledBackScoreExecution({
         providerCalls: plan.providerCalls,
-        gameMutationsInvoked: txMutationsInvoked,
-        gameUpdateCount: txMutationsInvoked ? updateCount : null,
+        gameMutationAttempts: txMutationAttempts,
         error: msg,
       });
       writeReport(reportPath, plan, execution, null, {
@@ -288,12 +288,11 @@ async function main(): Promise<void> {
 
     verification = verifyScorePostWrite({
       normalized,
+      dbGamesBefore: beforeDb,
       dbGamesAfter: afterRows,
-      dbGamesBeforeCount: beforeCount,
-      plannedUpdateIds: plan.plannedMutations.map((m) => m.gameId),
     });
 
-    if (updateCount === 0 && !txMutationsInvoked) {
+    if (updateCount === 0 && txMutationAttempts === 0) {
       if (!verification.ok) {
         execution = {
           ...buildTransactionalIdempotentScoreExecution(plan.providerCalls),
