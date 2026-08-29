@@ -35,6 +35,7 @@
     "adapters/GameLookup.ts",
     "config/*.ts",
     "grade-bets.ts",
+    "lib/grading-settlement.ts",
     "src/cfbd-game-results.ts",
     "src/stats/cfbd_team_stats.ts",
     "src/stats/cfbd_team_season_stats.ts",
