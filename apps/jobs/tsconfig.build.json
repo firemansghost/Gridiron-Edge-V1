@@ -36,6 +36,8 @@
     "config/*.ts",
     "grade-bets.ts",
     "lib/grading-settlement.ts",
+    "lib/cfbd-scores-2026.ts",
+    "write-cfbd-scores-2026.ts",
     "src/cfbd-game-results.ts",
     "src/stats/cfbd_team_stats.ts",
     "src/stats/cfbd_team_season_stats.ts",
