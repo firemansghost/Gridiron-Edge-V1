@@ -1,7 +1,8 @@
 /**
  * Model View Mode Context
- * 
- * Global state for toggling between "Official (Trust-Market)" and "Raw Model" views.
+ *
+ * Global state for toggling between production (market-adjusted) presentation
+ * and raw model presentation. Mode id `official` is legacy; UI label is "Production view".
  */
 
 'use client';

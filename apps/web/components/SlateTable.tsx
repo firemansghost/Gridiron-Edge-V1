@@ -12,6 +12,8 @@ import {
   normalizeSlateApiResponse,
   type SlateResponseMeta,
 } from '@/lib/config/slate-model';
+import { resolveTeamDisplayName } from '@/lib/team-display-name';
+import type { ModelViewMode } from '@/contexts/ModelViewModeContext';
 
 /**
  * Terminology:
@@ -26,6 +28,8 @@ interface SlateGame {
   status: 'final' | 'scheduled' | 'in_progress';
   awayTeamId: string;
   homeTeamId: string;
+  awayTeamName?: string;
+  homeTeamName?: string;
   awayScore: number | null;
   homeScore: number | null;
   closingSpread: {
@@ -43,9 +47,61 @@ interface SlateGame {
   modelTotal?: number | null;
   pickSpread?: string | null;
   pickTotal?: string | null;
+  /** @deprecated Mixed-unit max; do not present as a shared scale in public UI. */
   maxEdge?: number | null;
+  /** @deprecated Mixed-market confidence; prefer picks.spread.grade for spread UX. */
   confidence?: string | null;
   hasOdds?: boolean; // Indicates if game has any market lines
+  picks?: {
+    spread?: {
+      label?: string | null;
+      edge?: number | null;
+      grade?: string | null;
+    } | null;
+    total?: {
+      label?: string | null;
+      edge?: number | null;
+      grade?: string | null;
+    } | null;
+    moneyline?: {
+      label?: string | null;
+      value?: number | null;
+      grade?: string | null;
+    } | null;
+  } | null;
+}
+
+function rawSpreadEdgePts(game: SlateGame): number | null {
+  if (
+    game.modelSpread !== null &&
+    game.modelSpread !== undefined &&
+    Number.isFinite(game.modelSpread) &&
+    game.closingSpread !== null &&
+    game.closingSpread.value !== null &&
+    Number.isFinite(game.closingSpread.value)
+  ) {
+    return Math.round(Math.abs(game.modelSpread - game.closingSpread.value) * 10) / 10;
+  }
+  return null;
+}
+
+function resolveSpreadEdgePts(game: SlateGame, mode: ModelViewMode): number | null {
+  if (mode === 'raw') return rawSpreadEdgePts(game);
+  const edge = game.picks?.spread?.edge;
+  if (edge !== null && edge !== undefined && Number.isFinite(edge)) return edge;
+  return null;
+}
+
+function resolveSpreadGrade(game: SlateGame, mode: ModelViewMode): string | null {
+  if (mode === 'raw') {
+    const edge = rawSpreadEdgePts(game);
+    if (edge === null) return null;
+    if (edge >= 4.0) return 'A';
+    if (edge >= 3.0) return 'B';
+    if (edge >= 2.0) return 'C';
+    return null;
+  }
+  return game.picks?.spread?.grade ?? null;
 }
 
 interface SearchResult extends SlateGame {
@@ -306,8 +362,8 @@ export default function SlateTable({
     }> = [];
 
     games.forEach(game => {
-      const awayName = game.awayTeamId.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-      const homeName = game.homeTeamId.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      const awayName = resolveTeamDisplayName(game.awayTeamName, game.awayTeamId);
+      const homeName = resolveTeamDisplayName(game.homeTeamName, game.homeTeamId);
       
       const searchTerms = [
         game.awayTeamId,
@@ -563,11 +619,11 @@ export default function SlateTable({
         console.log(`[Slate ${activeModel}] Received games:`, data.length);
         data.slice(0, 3).forEach((game: SlateGame) => {
           console.log('[CoreV1 Slate Row]', {
-            matchup: `${game.awayTeamId} @ ${game.homeTeamId}`,
+            matchup: `${resolveTeamDisplayName(game.awayTeamName, game.awayTeamId)} @ ${resolveTeamDisplayName(game.homeTeamName, game.homeTeamId)}`,
             modelSpread: game.modelSpread,
             pickSpread: game.pickSpread,
-            maxEdge: game.maxEdge,
-            confidence: game.confidence,
+            spreadEdge: game.picks?.spread?.edge ?? null,
+            spreadGrade: game.picks?.spread?.grade ?? null,
           });
         });
       }
@@ -772,16 +828,19 @@ export default function SlateTable({
       filteredGames = filteredGames.filter(game => game.hasOdds === true);
     }
 
-    // Filter: Min edge
+    // Filter: Min spread edge (points only — never mix with ML %)
     if (minEdge > 0) {
-      filteredGames = filteredGames.filter(game => 
-        game.maxEdge !== null && game.maxEdge !== undefined && game.maxEdge >= minEdge
-      );
+      filteredGames = filteredGames.filter((game) => {
+        const edge = resolveSpreadEdgePts(game, modelViewMode);
+        return edge !== null && edge >= minEdge;
+      });
     }
 
-    // Filter: Confidence tier
+    // Filter: Spread tier
     if (confidenceTier !== 'all') {
-      filteredGames = filteredGames.filter(game => game.confidence === confidenceTier);
+      filteredGames = filteredGames.filter(
+        (game) => resolveSpreadGrade(game, modelViewMode) === confidenceTier
+      );
     }
 
     // Filter: Time range
@@ -804,15 +863,19 @@ export default function SlateTable({
     // Sort games
     filteredGames = [...filteredGames].sort((a, b) => {
       switch (sortBy) {
-        case 'edge':
-          const edgeA = a.maxEdge ?? -Infinity;
-          const edgeB = b.maxEdge ?? -Infinity;
-          return edgeB - edgeA; // Descending (highest edge first)
-        case 'confidence':
-          const confOrder = { 'A': 3, 'B': 2, 'C': 1, null: 0 };
-          const confA = confOrder[a.confidence as keyof typeof confOrder] ?? 0;
-          const confB = confOrder[b.confidence as keyof typeof confOrder] ?? 0;
+        case 'edge': {
+          const edgeA = resolveSpreadEdgePts(a, modelViewMode) ?? -Infinity;
+          const edgeB = resolveSpreadEdgePts(b, modelViewMode) ?? -Infinity;
+          return edgeB - edgeA; // Descending (highest spread edge first)
+        }
+        case 'confidence': {
+          const confOrder = { A: 3, B: 2, C: 1 } as const;
+          const gradeA = resolveSpreadGrade(a, modelViewMode);
+          const gradeB = resolveSpreadGrade(b, modelViewMode);
+          const confA = gradeA ? confOrder[gradeA as keyof typeof confOrder] ?? 0 : 0;
+          const confB = gradeB ? confOrder[gradeB as keyof typeof confOrder] ?? 0 : 0;
           return confB - confA; // Descending (A first)
+        }
         case 'time':
         default:
           // Sort by date/time
@@ -833,7 +896,7 @@ export default function SlateTable({
       acc[dateKey].games.push(game);
       return acc;
     }, {} as Record<string, { dateKey: string; formattedDate: string; games: SlateGame[] }>);
-  }, [games, hideGamesWithoutOdds, minEdge, confidenceTier, timeRange, sortBy]);
+  }, [games, hideGamesWithoutOdds, minEdge, confidenceTier, timeRange, sortBy, modelViewMode]);
 
   // Show all dates (no lazy loading to ensure all games show)
   const dateEntries = Object.entries(groupedGames).sort(([a], [b]) => a.localeCompare(b));
@@ -944,10 +1007,10 @@ export default function SlateTable({
       {showAdvancedColumns && (
         <div className="px-6 py-3 border-b border-gray-200 bg-gray-50">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* Min Edge Filter */}
+            {/* Min Spread Edge Filter */}
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
-                Min Edge
+                Min Spread Edge
               </label>
               <input
                 type="number"
@@ -960,10 +1023,10 @@ export default function SlateTable({
               />
             </div>
 
-            {/* Confidence Tier Filter */}
+            {/* Spread Tier Filter */}
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
-                Confidence Tier
+                Spread Tier
               </label>
               <select
                 value={confidenceTier}
@@ -1005,8 +1068,8 @@ export default function SlateTable({
                 className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="time">Time</option>
-                <option value="edge">Edge (High to Low)</option>
-                <option value="confidence">Confidence (A→C)</option>
+                <option value="edge">Spread Edge (High to Low)</option>
+                <option value="confidence">Spread Tier (A→C)</option>
               </select>
             </div>
           </div>
@@ -1059,8 +1122,8 @@ export default function SlateTable({
             >
               {searchResults.length > 0 ? (
                 searchResults.map((game, index) => {
-                  const awayName = game.awayTeamId.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                  const homeName = game.homeTeamId.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                  const awayName = resolveTeamDisplayName(game.awayTeamName, game.awayTeamId);
+                  const homeName = resolveTeamDisplayName(game.homeTeamName, game.homeTeamId);
                   
                   return (
                     <button
@@ -1275,8 +1338,8 @@ export default function SlateTable({
               </th>
               {showAdvancedColumns && (
                 <>
-                  <th colSpan={2} className="text-center text-xs font-semibold text-slate-500 border-l border-slate-200 px-6 py-2">
-                    EDGE
+                  <th colSpan={1} className="text-center text-xs font-semibold text-slate-500 border-l border-slate-200 px-6 py-2">
+                    SPREAD TIER
                   </th>
                 </>
               )}
@@ -1343,21 +1406,15 @@ export default function SlateTable({
                       <InfoTooltip content={modelViewMode === 'raw' ? "Raw model edge (before Trust-Market caps). Higher edge means stronger betting opportunity." : "Total edge (in points), after Trust-Market caps. Higher edge means stronger betting opportunity."} position="bottom" />
                     </div>
                   </th>
-                  {/* PICKS group columns (already handled above) */}
-                  {/* EDGE group columns */}
-                  <th className="px-6 py-3 text-center text-[11px] font-medium text-slate-500 border-l border-slate-200 min-w-[80px]">
-                    <div className="flex items-center justify-center gap-1">
-                      Max
-                      <InfoTooltip content={modelViewMode === 'raw' ? "Raw model edge (before Trust-Market caps). Higher edge means stronger betting opportunity." : "The larger of spread edge or total edge (in points), after Trust-Market caps. Higher edge means stronger betting opportunity."} position="bottom" />
-                    </div>
-                  </th>
-                  <th className="px-6 py-3 text-center text-[11px] font-medium text-slate-500 min-w-[80px]">
-                    <div className="flex items-center justify-center gap-1">
-                      Conf
-                      <InfoTooltip content={modelViewMode === 'raw' ? "Raw confidence tier (A/B/C) based on raw edge size. A = 4.0+ pts (highest), B = 3.0-3.9 pts, C = 2.0-2.9 pts (lowest)." : "Confidence tier (A/B/C) based on edge size after Trust-Market caps. A = 4.0+ pts (highest), B = 3.0-3.9 pts, C = 2.0-2.9 pts (lowest)."} position="bottom" />
-                    </div>
-                  </th>
                 </>
+              )}
+              {showAdvancedColumns && (
+                <th className="px-6 py-3 text-center text-[11px] font-medium text-slate-500 border-l border-slate-200 min-w-[80px]">
+                  <div className="flex items-center justify-center gap-1">
+                    Tier
+                    <InfoTooltip content={modelViewMode === 'raw' ? "Raw spread tier from raw spread edge size." : "Production spread tier from the spread pick grade (not moneyline or total)."} position="bottom" />
+                  </div>
+                </th>
               )}
             </tr>
           </thead>
@@ -1373,7 +1430,7 @@ export default function SlateTable({
                     }}
                     className="bg-white/90 sticky top-[var(--header-height,48px)] z-9 border-b"
                   >
-                    <td colSpan={showAdvancedColumns ? (allGamesHaveNullTotals ? 10 : 13) : 5} className="px-6 py-3 text-sm font-medium text-gray-700">
+                    <td colSpan={showAdvancedColumns ? (allGamesHaveNullTotals ? 9 : 12) : 5} className="px-6 py-3 text-sm font-medium text-gray-700">
                       {dateData.formattedDate}
                     </td>
                   </tr>
@@ -1395,9 +1452,9 @@ export default function SlateTable({
                           className="text-sm font-medium text-slate-900 hover:underline"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          {game.awayTeamId.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                          {resolveTeamDisplayName(game.awayTeamName, game.awayTeamId)}
                           <span className="text-gray-400 mx-1">@</span>
-                          {game.homeTeamId.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                          {resolveTeamDisplayName(game.homeTeamName, game.homeTeamId)}
                         </Link>
                         <span className="text-xs text-slate-500">
                           {game.date ? new Date(game.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}
@@ -1447,9 +1504,8 @@ export default function SlateTable({
                         {/* SPREAD: Edge */}
                         <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1.5' : 'py-3'}`}>
                           {(() => {
-                            if (game.modelSpread !== null && game.modelSpread !== undefined && Number.isFinite(game.modelSpread) && 
-                                game.closingSpread !== null && game.closingSpread.value !== null && Number.isFinite(game.closingSpread.value)) {
-                              const spreadEdge = Math.abs(game.modelSpread - game.closingSpread.value);
+                            const spreadEdge = resolveSpreadEdgePts(game, modelViewMode);
+                            if (spreadEdge !== null && Number.isFinite(spreadEdge)) {
                               return (
                                 <div className="text-sm text-gray-900">
                                   {spreadEdge.toFixed(1)}
@@ -1523,62 +1579,11 @@ export default function SlateTable({
                       {getStatusBadge(game)}
                     </td>
                     {showAdvancedColumns && (
-                      <>
-                        {/* Max Edge */}
-                        <td className={`px-6 whitespace-nowrap text-center border-l border-slate-200 ${compactMode ? 'py-1.5' : 'py-3'}`}>
-                          {(() => {
-                            // Compute raw edge if in raw mode
-                            let displayEdge: number | null = null;
-                            
-                            if (modelViewMode === 'raw') {
-                              // Compute raw edge from modelSpread and closingSpread
-                              if (game.modelSpread !== null && game.modelSpread !== undefined && Number.isFinite(game.modelSpread) && 
-                                  game.closingSpread !== null && game.closingSpread.value !== null && Number.isFinite(game.closingSpread.value)) {
-                                const rawEdge = Math.abs(game.modelSpread - game.closingSpread.value);
-                                displayEdge = Math.round(rawEdge * 10) / 10;
-                              }
-                            } else {
-                              // Official mode: use Trust-Market values
-                              displayEdge = game.maxEdge ?? null;
-                            }
-                            
-                            return (
-                              <div className="text-sm text-gray-900">
-                                {displayEdge !== null && Number.isFinite(displayEdge) ? displayEdge.toFixed(1) : '—'}
-                              </div>
-                            );
-                          })()}
-                        </td>
-                        {/* Confidence */}
-                        <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1.5' : 'py-3'}`}>
-                          {(() => {
-                            // Compute raw confidence if in raw mode
-                            let displayConfidence: string | null = null;
-                            
-                            if (modelViewMode === 'raw') {
-                              // Compute raw edge and confidence
-                              if (game.modelSpread !== null && game.modelSpread !== undefined && Number.isFinite(game.modelSpread) && 
-                                  game.closingSpread !== null && game.closingSpread.value !== null && Number.isFinite(game.closingSpread.value)) {
-                                const rawEdge = Math.abs(game.modelSpread - game.closingSpread.value);
-                                const roundedEdge = Math.round(rawEdge * 10) / 10;
-                                
-                                if (roundedEdge >= 4.0) displayConfidence = 'A';
-                                else if (roundedEdge >= 3.0) displayConfidence = 'B';
-                                else if (roundedEdge >= 2.0) displayConfidence = 'C';
-                              }
-                            } else {
-                              // Official mode: use Trust-Market confidence
-                              displayConfidence = game.confidence ?? null;
-                            }
-                            
-                            return (
-                              <div className="text-sm text-gray-900">
-                                {displayConfidence || '—'}
-                              </div>
-                            );
-                          })()}
-                        </td>
-                      </>
+                      <td className={`px-6 whitespace-nowrap text-center border-l border-slate-200 ${compactMode ? 'py-1.5' : 'py-3'}`}>
+                        <div className="text-sm text-gray-900">
+                          {resolveSpreadGrade(game, modelViewMode) || '—'}
+                        </div>
+                      </td>
                     )}
                   </tr>
                   );

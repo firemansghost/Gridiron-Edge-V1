@@ -198,7 +198,7 @@ describe('Hybrid V2 production activation hold', () => {
     );
   });
 
-  it('Picks and Homepage use effective activeModel and hide Hybrid filters under Core V1', () => {
+  it('Picks and Homepage use effective activeModel; selector shows hold state', () => {
     const fs = require('fs');
     const path = require('path');
     const picks = fs.readFileSync(
@@ -219,8 +219,17 @@ describe('Hybrid V2 production activation hold', () => {
     );
     expect(home).toContain('slate?.meta?.activeModel ?? model');
     expect(home).toContain('effectiveModelLabel');
-    expect(home).toContain(
-      'Hybrid V2 is not active for 2026 yet; Core V1 is being used.'
+    expect(home).toContain('Core V1 production spread');
+    expect(home).toContain('Hybrid V2 held');
+    expect(home).toContain("heldModelIds={heldModelIds}");
+
+    const selector = fs.readFileSync(
+      path.join(__dirname, '../components/ProductionModelSelector.tsx'),
+      'utf8'
     );
+    expect(selector).toContain('effectiveModel');
+    expect(selector).toContain('heldModelIds');
+    expect(selector).toContain("suffix = 'HELD'");
+    expect(selector).toContain('aria-pressed={isEffective}');
   });
 });

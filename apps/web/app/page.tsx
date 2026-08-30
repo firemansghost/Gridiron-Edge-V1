@@ -1,12 +1,13 @@
 /**
  * M3 Home Page - Seed Slate
- * 
- * Displays this week's seed games with implied vs market data and confidence tiers.
+ *
+ * Displays this week's seed games with implied vs market data and spread tiers.
+ * Phase 2C-2J-6D-3: public slate truthfulness + UX compression (presentation only).
  */
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
@@ -17,18 +18,41 @@ import { InfoTooltip } from '@/components/InfoTooltip';
 import { ErrorState } from '@/components/ErrorState';
 import {
   buildSlateApiUrl,
-  computeSlateConfidenceSummary,
+  computeSlateSpreadTierSummary,
   getProductionModelDisplayLabel,
   normalizeSlateApiResponse,
   type SlateResponseMeta,
 } from '@/lib/config/slate-model';
 import type { ProductionModelId } from '@/lib/config/production-models';
+import {
+  formatSlateStatusLabel,
+  summarizeSlateStatus,
+} from '@/lib/slate-status-summary';
+import { summarizeMarketSnapshotFreshness } from '@/lib/market-snapshot-freshness';
+
+interface HomeSlateGame {
+  status?: string | null;
+  confidence?: string | null;
+  homeScore?: number | null;
+  awayScore?: number | null;
+  awayTeamId?: string;
+  homeTeamId?: string;
+  awayTeamName?: string;
+  homeTeamName?: string;
+  closingSpread?: { timestamp?: string | null } | null;
+  closingTotal?: { timestamp?: string | null } | null;
+  picks?: {
+    spread?: { edge?: number | null; grade?: string | null } | null;
+    total?: { edge?: number | null; grade?: string | null } | null;
+    moneyline?: { value?: number | null; grade?: string | null } | null;
+  } | null;
+}
 
 interface HomeSlateState {
   season: number;
   week: number;
-  games: Array<{ confidence?: string | null; homeScore?: number | null; awayScore?: number | null }>;
-  summary: ReturnType<typeof computeSlateConfidenceSummary>;
+  games: HomeSlateGame[];
+  summary: ReturnType<typeof computeSlateSpreadTierSummary>;
   meta: SlateResponseMeta | null;
 }
 
@@ -41,9 +65,20 @@ export default function HomePage() {
   const effectiveModel: ProductionModelId =
     slate?.meta?.activeModel ?? model;
   const effectiveModelLabel = getProductionModelDisplayLabel(effectiveModel);
-  const showHybridHoldNote =
+  const hybridHeld =
     Boolean(slate?.meta?.activationOverride?.used) ||
     (model === 'hybrid_v2' && effectiveModel === 'core_v1');
+  const heldModelIds: ProductionModelId[] = hybridHeld ? ['hybrid_v2'] : [];
+
+  const statusSummary = useMemo(
+    () => summarizeSlateStatus(slate?.games),
+    [slate?.games]
+  );
+  const statusLabel = formatSlateStatusLabel(statusSummary);
+  const marketFreshness = useMemo(
+    () => summarizeMarketSnapshotFreshness(slate?.games),
+    [slate?.games]
+  );
 
   useEffect(() => {
     fetchSlate();
@@ -68,13 +103,13 @@ export default function HomePage() {
       }
 
       const raw = await response.json();
-      const { games, meta } = normalizeSlateApiResponse<HomeSlateState['games'][number]>(raw);
+      const { games, meta } = normalizeSlateApiResponse<HomeSlateGame>(raw);
 
       setSlate({
         season,
         week,
         games,
-        summary: computeSlateConfidenceSummary(games),
+        summary: computeSlateSpreadTierSummary(games),
         meta,
       });
     } catch (err) {
@@ -111,61 +146,54 @@ export default function HomePage() {
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <HeaderNav />
       <div className="flex-1">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* 2026 Season Live */}
-        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border-l-4 border-emerald-500 p-6 rounded-r-lg mb-4">
-          <div className="flex-1">
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">2026 Season Live</h3>
-            <p className="text-sm text-gray-700">
-              Gridiron Edge is live for the 2026 college-football season. Core V1 is currently
-              powering the production spread card while Hybrid V2 remains held for additional
-              same-season validation. The slate below reflects the latest market data loaded for
-              the active week.
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Compact 2026 season status + historical link */}
+        <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50/80 px-4 py-2.5">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <p className="text-sm text-gray-800">
+              <span className="font-semibold text-emerald-900">2026 Season Live</span>
+              <span className="text-gray-500"> · </span>
+              Core V1 production spread
+              <span className="text-gray-500"> · </span>
+              Hybrid V2 held
+            </p>
+            <p className="text-sm">
+              <Link
+                href="/labs/portfolio?season=2025"
+                className="text-blue-600 hover:text-blue-800 underline font-medium"
+              >
+                2025 results &amp; Labs what-ifs →
+              </Link>
+              <span className="text-xs text-gray-500 italic ml-2">
+                Historical simulations/records, not future guarantees.
+              </span>
             </p>
           </div>
         </div>
 
-        {/* 2025 historical receipts — separate from live-season status */}
-        <div className="bg-white border border-gray-200 border-l-4 border-l-gray-400 p-5 rounded-r-lg mb-8">
-          <h3 className="text-base font-semibold text-gray-900 mb-2">2025 Results &amp; What-Ifs</h3>
-          <p className="text-sm text-gray-700 mb-2">
-            Want the receipts? Review the 2025 model results and historical portfolio what-if
-            scenarios in Labs.
-          </p>
-          <p className="mb-2">
-            <Link
-              href="/labs/portfolio?season=2025"
-              className="text-blue-600 hover:text-blue-800 underline font-medium text-sm"
-            >
-              View 2025 Results →
-            </Link>
-          </p>
-          <p className="text-xs text-gray-500 italic">
-            Historical results and Labs scenarios are simulations/records, not guarantees of
-            future performance.
-          </p>
-        </div>
-
         {/* Header */}
-        <div className="mb-8">
+        <div className="mb-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <h1 className="text-3xl font-bold text-gray-900">Current Slate</h1>
               <div className="relative group">
-                <button className="text-gray-400 hover:text-gray-600">
+                <button className="text-gray-400 hover:text-gray-600" type="button" aria-label="Slate glossary">
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
                   </svg>
                 </button>
                 <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10 max-w-xs">
-                  <div className="mb-1"><strong>Spread:</strong> Home team's advantage. Negative = home favored</div>
-                  <div><strong>Edge:</strong> Difference between our model's prediction and the betting market (in points). Higher edge = stronger opportunity.</div>
+                  <div className="mb-1"><strong>Spread:</strong> Home team&apos;s advantage. Negative = home favored</div>
+                  <div><strong>Spread edge:</strong> Difference between our model and the market, in points.</div>
                   <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
                 </div>
               </div>
             </div>
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-              <ProductionModelSelector />
+              <ProductionModelSelector
+                effectiveModel={slate ? effectiveModel : null}
+                heldModelIds={heldModelIds}
+              />
               <Link 
                 href={`/weeks?season=${slate?.season}&week=${slate?.week}`}
                 className="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm"
@@ -175,7 +203,6 @@ export default function HomePage() {
             </div>
           </div>
           
-          {/* Subheader with today's date and auto-selected season/week */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-2">
             <div className="text-sm text-gray-500">
               Today: {new Date().toLocaleDateString('en-US', { 
@@ -195,88 +222,87 @@ export default function HomePage() {
           </div>
           
           {slate && (
-            <div className="flex items-center gap-3 mt-2">
-              <p className="text-gray-600">
-                {slate.week && slate.season ? (
-                  <>
-                    Week {slate.week} • {slate.season} Season • Spread model: {effectiveModelLabel}
-                    {slate.meta?.modelScope.total === 'current' && (
-                      <span className="text-gray-500"> (totals/ML: current logic)</span>
-                    )}
-                    {showHybridHoldNote && (
-                      <span className="text-gray-500">
-                        {' '}
-                        — Hybrid V2 is not active for 2026 yet; Core V1 is being used.
-                      </span>
-                    )}
-                  </>
-                ) : (
-                  <span className="text-yellow-600">Season/Week detection failed - try selecting manually</span>
+            <div className="flex flex-col gap-1 mt-2">
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="text-gray-600">
+                  {slate.week && slate.season ? (
+                    <>
+                      Week {slate.week} • {slate.season} Season • Spread model: {effectiveModelLabel}
+                      {slate.meta?.modelScope.total === 'current' && (
+                        <span className="text-gray-500"> (totals/ML: current logic)</span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-yellow-600">Season/Week detection failed - try selecting manually</span>
+                  )}
+                </p>
+                {statusLabel && (
+                  <span
+                    className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                      statusSummary.allFinal
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-slate-100 text-slate-700'
+                    }`}
+                  >
+                    {statusLabel}
+                  </span>
                 )}
-              </p>
-              {slate?.games?.some(game => game.homeScore !== null && game.awayScore !== null) && (
-                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                  Final
-                </span>
-              )}
+              </div>
+              <p className="text-xs text-gray-500">{marketFreshness.label}</p>
             </div>
           )}
-          
-          {/* M6 Adjustment Toggles - REMOVED: Non-functional, hidden until feature is built */}
         </div>
 
-        {/* What is Edge? - Prominent explanation */}
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-l-4 border-blue-400 p-6 rounded-r-lg mb-8">
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-2">
-                <h3 className="text-lg font-semibold text-gray-900">What is Edge?</h3>
-                <InfoTooltip content="Edge is the difference between our model's prediction and the betting market (in points). Higher edge = stronger betting opportunity." />
-              </div>
-              <p className="text-sm text-gray-700 mb-3">
-                <strong>Edge</strong> shows how much our model disagrees with the betting market. When our model thinks the market is wrong, 
-                that creates a betting opportunity. The numbers below show games where we found meaningful edges (2.0+ points difference).
-              </p>
-              <div className="flex flex-wrap gap-2 text-xs">
-                <span className="bg-green-100 text-green-800 px-2 py-1 rounded font-medium">High (A) ≥ 4.0 pts</span>
-                <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-medium">Medium (B) ≥ 3.0 pts</span>
-                <span className="bg-red-100 text-red-800 px-2 py-1 rounded font-medium">Low (C) ≥ 2.0 pts</span>
-                <Link href="/getting-started" className="text-blue-600 hover:text-blue-800 underline font-medium">
-                  Learn more →
-                </Link>
-              </div>
-            </div>
+        {/* What is Edge? — collapsed by default */}
+        <details className="bg-gradient-to-r from-blue-50 to-indigo-50 border-l-4 border-blue-400 rounded-r-lg mb-6 group">
+          <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between gap-2">
+            <span className="flex items-center gap-2">
+              <h3 className="text-base font-semibold text-gray-900">What is Edge?</h3>
+              <InfoTooltip content="Spread and total edges are in points. Moneyline value is a separate probability/price measure." />
+            </span>
+            <span className="text-xs text-blue-700 group-open:hidden">Show</span>
+            <span className="text-xs text-blue-700 hidden group-open:inline">Hide</span>
+          </summary>
+          <div className="px-4 pb-4">
+            <p className="text-sm text-gray-700 mb-2">
+              Spread and total edges are measured in points. Moneyline value is a probability/
+              price-value measure and is shown separately. The summary below reflects spread
+              tiers.
+            </p>
+            <Link href="/getting-started" className="text-blue-600 hover:text-blue-800 underline font-medium text-sm">
+              Learn more →
+            </Link>
           </div>
-        </div>
+        </details>
 
-        {/* Summary Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        {/* Spread-tier summary */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-white p-4 rounded-lg shadow">
             <div className="text-2xl font-bold text-blue-600">{slate?.summary?.totalGames || 0}</div>
             <div className="text-sm text-gray-600 flex items-center gap-1">
               Total Games
-              <InfoTooltip content="Total number of games scheduled for this week. Edge counts show games where our model's prediction differs from the betting market by 2.0+ points." />
+              <InfoTooltip content="Total games on this week&apos;s slate. Tier counts use spread grade only." />
             </div>
           </div>
           <div className="bg-white p-4 rounded-lg shadow">
-            <div className="text-2xl font-bold text-green-600">{slate?.summary?.confidenceBreakdown?.A || 0}</div>
+            <div className="text-2xl font-bold text-green-600">{slate?.summary?.spreadTier?.A || 0}</div>
             <div className="text-sm text-gray-600 flex items-center gap-1">
-              High Confidence (A)
-              <InfoTooltip content="Games where our model differs from the betting market by 4.0+ points. These represent the strongest betting opportunities with high confidence in the model's advantage." />
+              Spread Tier A
+              <InfoTooltip content="Games with a spread pick graded A." />
             </div>
           </div>
           <div className="bg-white p-4 rounded-lg shadow">
-            <div className="text-2xl font-bold text-yellow-600">{slate?.summary?.confidenceBreakdown?.B || 0}</div>
+            <div className="text-2xl font-bold text-yellow-600">{slate?.summary?.spreadTier?.B || 0}</div>
             <div className="text-sm text-gray-600 flex items-center gap-1">
-              Medium Confidence (B)
-              <InfoTooltip content="Games where our model differs from the betting market by 3.0-3.9 points. Moderate betting opportunities with good model advantage." />
+              Spread Tier B
+              <InfoTooltip content="Games with a spread pick graded B." />
             </div>
           </div>
           <div className="bg-white p-4 rounded-lg shadow">
-            <div className="text-2xl font-bold text-red-600">{slate?.summary?.confidenceBreakdown?.C || 0}</div>
+            <div className="text-2xl font-bold text-red-600">{slate?.summary?.spreadTier?.C || 0}</div>
             <div className="text-sm text-gray-600 flex items-center gap-1">
-              Low Confidence (C)
-              <InfoTooltip content="Games where our model differs from the betting market by 2.0-2.9 points. Lower confidence opportunities - use with caution." />
+              Spread Tier C
+              <InfoTooltip content="Games with a spread pick graded C." />
             </div>
           </div>
         </div>
@@ -315,30 +341,6 @@ export default function HomePage() {
             </div>
           </div>
         )}
-
-        {/* Quick Actions - Simplified from "Selections & Profitability" */}
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-lg shadow mb-8 border border-blue-100">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-1">Quick Actions</h2>
-              <p className="text-sm text-gray-600">Review past weeks and track your selections</p>
-            </div>
-            <div className="flex gap-3">
-              <Link 
-                href="/weeks"
-                className="px-4 py-2 bg-white text-blue-600 rounded-md hover:bg-blue-50 border border-blue-200 text-sm font-medium transition-colors"
-              >
-                Browse Weeks
-              </Link>
-              <Link 
-                href="/weeks/review"
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium transition-colors"
-              >
-                Week Review
-              </Link>
-            </div>
-          </div>
-        </div>
 
         {/* Games Table */}
         {slate && (
