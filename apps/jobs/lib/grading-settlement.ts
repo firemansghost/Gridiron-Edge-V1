@@ -91,7 +91,8 @@ export function gradeSpreadTotal(
 
   let clv: number;
   if (marketType === 'spread') {
-    clv = side === 'home' ? modelLine - closeLine : closeLine - modelLine;
+    // Both modelLine and closeLine are the selected team's signed spread.
+    clv = closeLine - modelLine;
   } else {
     clv = side === 'over' ? modelLine - closeLine : closeLine - modelLine;
   }
