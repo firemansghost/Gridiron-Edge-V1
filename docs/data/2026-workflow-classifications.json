@@ -1,7 +1,7 @@
 {
-  "phase": "2C-2J-6D-1",
+  "phase": "2C-2J-6D-2",
   "inventoryDate": "2026-08-30",
-  "mainSha": "b568c0d4ffd0c5e98f3350227e8e850f865c06db",
+  "mainSha": "2e8c167a15c9f5fc5dc4ea9683b18ae6258aecfc",
   "notes": [
     "Classification is operational authorization guidance only — not an enablement action.",
     "scheduleReactivationRecommended is false for every workflow in this phase.",
@@ -9,6 +9,7 @@
     "2C-2J-6C-2: retired legacy cfbd-scores-sync.yml and grade-bets.yml workflow identities; deleted expired one-time Aug 29 workflow.",
     "Canonical production entrypoints are manual guarded: write-live-odds-2026, write-core-v1-weekly-card-2026, cfbd-scores-2026-manual, grade-bets-2026-manual.",
     "2C-2J-6D-1: added cfbd-team-game-stats-2026-manual.yml (MANUAL_SAFE) — feeds Core V1 lifecycle TeamGameStat EPA; not production-authorized merely by merge.",
+    "2C-2J-6D-2: Core V1 lifecycle integrity + Serializable COMMIT hardening (completed-week gates, EPA readiness when blend>0, week-tied confirmation, JSON artifact); not production-authorized merely by merge.",
     "Core V1 lifecycle path: Game finals → TeamGameStat ingest → Core V1 lifecycle. cfbd-feature-ingest writes parallel cfbdEff* feature-store (not the lifecycle EPA feed).",
     "Opening provider Week 1 Saturday tranche proven end-to-end; recurring score/grading schedules remain NOT AUTHORIZED.",
     "Deleting workflow YAML does not delete historical Actions run records or historical implementation code.",
@@ -317,7 +318,7 @@
       "file": "write-core-v1-lifecycle-ratings.yml",
       "classification": "MANUAL_SAFE",
       "scheduleReactivationRecommended": false,
-      "purpose2026": "Guarded Core V1 lifecycle PREVIEW/COMMIT — preferred 2026 ratings path"
+      "purpose2026": "Guarded Core V1 lifecycle PREVIEW/COMMIT — completed-week integrity, TeamGameStat EPA readiness when blend>0, Serializable re-plan/verify; preferred 2026 ratings path; not production-authorized merely by merge"
     }
   ]
 }

@@ -29,17 +29,29 @@ import {
   CORE_V1_2026_TRANSITION_POLICY,
   EXPECTED_FBS_COUNT,
   MODEL_VERSION_V1,
+  PHASE,
   TARGET_SEASON,
   WRITE_CONFIRM_PHRASE,
   buildCoreV1LifecycleEvaluation,
+  buildPreviewExecution,
+  buildRolledBackExecution,
+  buildSuccessfulCommitExecution,
   canonicalWeightForCompletedWeek,
+  executeAtomicCoreV1LifecycleCommit,
+  expectedCoreV1LifecycleConfirmation,
   parseCoreV1LifecycleArgs,
   persistCoreV1LifecycleRatings,
   sanitizeCoreV1LifecycleError,
   toPersistRows,
+  verifyCoreV1LifecyclePostWrite,
   type CoreV1LifecycleInput,
 } from '../src/ratings/core-v1-lifecycle';
-import type { CoreV1LifecycleReadStore } from '../write-core-v1-lifecycle';
+import {
+  runCoreV1Lifecycle,
+  type CoreV1LifecycleReadStore,
+  type CoreV1LifecycleWriteDeps,
+} from '../write-core-v1-lifecycle';
+import * as os from 'os';
 
 function fbs2026(): string[] {
   const base = buildBaseFbsFixture(136);
@@ -679,7 +691,7 @@ describe('Core V1 lifecycle — canonical FBS-vs-FCS EPA asymmetry', () => {
     ).toBe(true);
   });
 
-  it('FBS-vs-FCS scheduled/non-final: EPA excluded', () => {
+  it('FBS-vs-FCS scheduled/non-final inside cutoff: fail closed (EPA still excluded from filter)', () => {
     const base = healthyThroughWeek(6);
     const team = base.fbsIds[0];
     const scheduled = fbsVsFcsFinal(team, 6, 'fbs-fcs-scheduled', 'scheduled');
@@ -706,11 +718,12 @@ describe('Core V1 lifecycle — canonical FBS-vs-FCS EPA asymmetry', () => {
         epaRows: [...base.epaRows, fcsEpa],
       })
     );
-    expect(life.ok).toBe(true);
-    const lifeBase = buildCoreV1LifecycleEvaluation(base);
-    expect(life.rows.map((r) => r.finalPowerRating)).toEqual(
-      lifeBase.rows.map((r) => r.finalPowerRating)
-    );
+    expect(life.ok).toBe(false);
+    expect(life.writeSafe).toBe(false);
+    expect(life.nonFinalRelevantGamesThroughCutoff).toBeGreaterThan(0);
+    expect(
+      life.findings.some((f) => f.includes('nonFinalRelevantGamesThroughCutoff'))
+    ).toBe(true);
   });
 
   it('future final FBS-vs-FCS beyond cutoff → fail closed (no write auth)', () => {
@@ -890,6 +903,7 @@ describe('Core V1 lifecycle — CLI / store / COMMIT gates', () => {
       completedThroughWeek: 0,
       mode: 'PREVIEW',
       confirmation: '',
+      reportPath: null,
     });
     expect(
       parseCoreV1LifecycleArgs([
@@ -900,14 +914,17 @@ describe('Core V1 lifecycle — CLI / store / COMMIT gates', () => {
         '--mode',
         'COMMIT',
         '--confirm',
-        WRITE_CONFIRM_PHRASE,
+        expectedCoreV1LifecycleConfirmation(3),
+        '--report',
+        'reports/out.json',
       ])
     ).toEqual({
       ok: true,
       season: 2026,
       completedThroughWeek: 3,
       mode: 'COMMIT',
-      confirmation: WRITE_CONFIRM_PHRASE,
+      confirmation: expectedCoreV1LifecycleConfirmation(3),
+      reportPath: 'reports/out.json',
     });
   });
 
@@ -956,6 +973,35 @@ describe('Core V1 lifecycle — CLI / store / COMMIT gates', () => {
     expect(result.commitEligible).toBe(false);
   });
 
+  it('old generic WRITE_CONFIRM_PHRASE does not authorize COMMIT', () => {
+    expect(WRITE_CONFIRM_PHRASE).toBe('WRITE_2026_CORE_V1');
+    expect(expectedCoreV1LifecycleConfirmation(0)).toBe(
+      'WRITE_2026_CORE_V1_THROUGH_WEEK_0'
+    );
+    expect(expectedCoreV1LifecycleConfirmation(3)).toBe(
+      'WRITE_2026_CORE_V1_THROUGH_WEEK_3'
+    );
+    const withLegacy = buildCoreV1LifecycleEvaluation(
+      healthyWeek0({
+        mode: 'COMMIT',
+        confirmation: WRITE_CONFIRM_PHRASE,
+      })
+    );
+    expect(withLegacy.ok).toBe(false);
+    expect(withLegacy.confirmationValid).toBe(false);
+    expect(withLegacy.commitEligible).toBe(false);
+
+    const withThroughWeek = buildCoreV1LifecycleEvaluation(
+      healthyWeek0({
+        mode: 'COMMIT',
+        confirmation: expectedCoreV1LifecycleConfirmation(0),
+      })
+    );
+    expect(withThroughWeek.ok).toBe(true);
+    expect(withThroughWeek.confirmationValid).toBe(true);
+    expect(withThroughWeek.commitEligible).toBe(true);
+  });
+
   it('season != 2026 fails', () => {
     const parsed = parseCoreV1LifecycleArgs(['--season', '2025']);
     expect(parsed.ok).toBe(false);
@@ -983,10 +1029,11 @@ describe('Core V1 lifecycle — persist targeting / safety', () => {
     expect(WRITE_CONFIRM_PHRASE).toBe('WRITE_2026_CORE_V1');
     expect(EXPECTED_FBS_COUNT).toBe(138);
 
+    expect(PHASE).toBe('2C-2J-6D-2');
     const result = buildCoreV1LifecycleEvaluation(
       healthyWeek0({
         mode: 'COMMIT',
-        confirmation: WRITE_CONFIRM_PHRASE,
+        confirmation: expectedCoreV1LifecycleConfirmation(0),
       })
     );
     expect(result.ok).toBe(true);
@@ -1099,7 +1146,7 @@ describe('Core V1 lifecycle — persist targeting / safety', () => {
     expect(safe).not.toMatch(/postgres|s3cret/i);
   });
 
-  it('workflow yml is workflow_dispatch only, no CFBD, confirmation WRITE_2026_CORE_V1', () => {
+  it('workflow yml is workflow_dispatch only, no CFBD, through-week confirmation', () => {
     const wf = fs.readFileSync(
       path.join(
         __dirname,
@@ -1113,11 +1160,21 @@ describe('Core V1 lifecycle — persist targeting / safety', () => {
     expect(wf).not.toMatch(/^\s*pull_request:/m);
     expect(wf).toContain('CFBD_API_KEY: not provided');
     expect(wf).toContain('ODDS_API_KEY: not provided');
-    expect(wf).toContain('WRITE_2026_CORE_V1');
+    expect(wf).toContain('WRITE_2026_CORE_V1_THROUGH_WEEK_');
     expect(wf).toContain('GLOBAL_BLEND_W3_W6');
     expect(wf).toMatch(/default:\s*PREVIEW/);
+    expect(wf).toContain('--report');
+    expect(wf).toContain('upload-artifact');
+    expect(wf).toContain('core-v1-lifecycle-2026-through-w');
+    expect(wf).toContain('cancel-in-progress: false');
+    expect(wf).toContain('actions/checkout@v6');
+    expect(wf).toContain('actions/setup-node@v6');
     expect(wf).not.toMatch(/CFBD_API_KEY:\s*\$\{\{\s*secrets/);
     expect(wf).not.toMatch(/ODDS_API_KEY:\s*\$\{\{\s*secrets/);
+    // Old generic phrase must not authorize COMMIT in preflight
+    expect(wf).not.toMatch(
+      /CONFIRM" != "WRITE_2026_CORE_V1"/
+    );
   });
 
   it('workflow security: no job-wide production DB secret; inputs via step env only', () => {
@@ -1212,15 +1269,17 @@ describe('Core V1 lifecycle — persist targeting / safety', () => {
     const lifecycleIdx = wf.indexOf(
       '- name: Run Core V1 lifecycle (guarded)'
     );
+    const uploadIdx = wf.indexOf('- name: Upload lifecycle report artifact');
     const summaryIdx = wf.indexOf('- name: Summary');
     expect(installIdx).toBeGreaterThan(-1);
     expect(prismaIdx).toBeGreaterThan(-1);
     expect(lifecycleIdx).toBeGreaterThan(-1);
-    expect(summaryIdx).toBeGreaterThan(-1);
+    expect(uploadIdx).toBeGreaterThan(lifecycleIdx);
+    expect(summaryIdx).toBeGreaterThan(uploadIdx);
 
     const installBlock = wf.slice(installIdx, prismaIdx);
     const prismaBlock = wf.slice(prismaIdx, lifecycleIdx);
-    const lifecycleBlock = wf.slice(lifecycleIdx, summaryIdx);
+    const lifecycleBlock = wf.slice(lifecycleIdx, uploadIdx);
     const summaryBlock = wf.slice(summaryIdx);
 
     expect(installBlock).not.toMatch(/secrets\.DIRECT_URL/);
@@ -1274,5 +1333,561 @@ describe('Core V1 lifecycle — persist targeting / safety', () => {
       'PREVIEW',
     ]);
     expect(parsed.ok).toBe(false);
+  });
+});
+
+describe('Core V1 lifecycle — completed-week integrity (2C-2J-6D-2)', () => {
+  it('completedThroughWeek=1 with Week 1 scheduled relevant game → FAIL', () => {
+    const ids = fbs2026();
+    const games = buildWeeklyGames(ids, 1).map((g, i) =>
+      i === 0 ? { ...g, status: 'scheduled', homeScore: null, awayScore: null } : g
+    );
+    const result = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(1, { games, epaRows: epaForGames(games) })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.nonFinalRelevantGamesThroughCutoff).toBeGreaterThan(0);
+    expect(
+      result.findings.some((f) => f.includes('nonFinalRelevantGamesThroughCutoff'))
+    ).toBe(true);
+  });
+
+  it('completedThroughWeek=3 with one Week 3 scheduled relevant game → FAIL', () => {
+    const ids = fbs2026();
+    const games = buildWeeklyGames(ids, 3);
+    const week3Idx = games.findIndex((g) => g.week === 3);
+    expect(week3Idx).toBeGreaterThanOrEqual(0);
+    games[week3Idx] = {
+      ...games[week3Idx],
+      status: 'scheduled',
+      homeScore: null,
+      awayScore: null,
+    };
+    const result = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(3, { games, epaRows: epaForGames(games) })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.canonicalWeight).toBe(0.25);
+    expect(result.nonFinalRelevantGamesThroughCutoff).toBe(1);
+  });
+
+  it('scheduled future Week 4 while completedThroughWeek=3 → allowed', () => {
+    const base = healthyThroughWeek(3);
+    const scheduledFuture: TransitionGameRow = {
+      gameId: 'future-w4-scheduled',
+      week: 4,
+      date: '2026-09-20T19:00:00.000Z',
+      status: 'scheduled',
+      homeTeamId: base.fbsIds[0],
+      awayTeamId: base.fbsIds[1],
+      homeScore: null,
+      awayScore: null,
+    };
+    const result = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(3, {
+        games: [...base.games, scheduledFuture],
+        epaRows: base.epaRows,
+      })
+    );
+    expect(result.ok).toBe(true);
+    expect(result.nonFinalRelevantGamesThroughCutoff).toBe(0);
+    expect(result.missingRelevantCanonicalWeeks).toEqual([]);
+  });
+
+  it('missing an entire canonical completed week → FAIL', () => {
+    const ids = fbs2026();
+    // Only week 1 games, but claim completedThroughWeek=2
+    const games = buildWeeklyGames(ids, 1);
+    const result = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(2, { games, epaRows: epaForGames(games) })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.missingRelevantCanonicalWeeks).toContain(2);
+    expect(
+      result.findings.some((f) => f.includes('missingRelevantCanonicalWeeks'))
+    ).toBe(true);
+  });
+
+  it('final FBS-vs-FBS with null homeScore → FAIL', () => {
+    const base = healthyThroughWeek(1);
+    const games = base.games.map((g, i) =>
+      i === 0 ? { ...g, homeScore: null } : g
+    );
+    const result = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(1, { games, epaRows: epaForGames(games) })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.finalFbsVsFbsMissingScoreGames).toBeGreaterThan(0);
+    expect(
+      result.findings.some((f) => f.includes('finalFbsVsFbsMissingScoreGames'))
+    ).toBe(true);
+  });
+
+  it('final FBS-vs-FBS with null awayScore → FAIL', () => {
+    const base = healthyThroughWeek(1);
+    const games = base.games.map((g, i) =>
+      i === 0 ? { ...g, awayScore: null } : g
+    );
+    const result = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(1, { games, epaRows: epaForGames(games) })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.finalFbsVsFbsMissingScoreGames).toBeGreaterThan(0);
+  });
+
+  it('fully final scored completed weeks pass integrity gates', () => {
+    for (const week of [1, 2, 3]) {
+      const result = buildCoreV1LifecycleEvaluation(healthyThroughWeek(week));
+      expect(result.ok).toBe(true);
+      expect(result.missingRelevantCanonicalWeeks).toEqual([]);
+      expect(result.nonFinalRelevantGamesThroughCutoff).toBe(0);
+      expect(result.finalFbsVsFbsMissingScoreGames).toBe(0);
+      expect(result.relevantCanonicalWeeksPresent).toEqual(
+        Array.from({ length: week }, (_, i) => i + 1)
+      );
+    }
+  });
+});
+
+describe('Core V1 lifecycle — EPA readiness (2C-2J-6D-2)', () => {
+  it('canonicalWeight=0 with zero TeamGameStat EPA → allowed', () => {
+    const result = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(2, { epaRows: [] })
+    );
+    expect(result.canonicalWeight).toBe(0);
+    expect(result.ok).toBe(true);
+    expect(result.expectedEpaParticipantRows).toBeGreaterThan(0);
+    expect(result.actualEpaParticipantRows).toBe(0);
+    expect(result.missingEpaKeys.length).toBeGreaterThan(0);
+    expect(result.epaCoverageExact).toBe(false);
+  });
+
+  it('canonicalWeight>0 with exact EPA keys and finite fields → allowed', () => {
+    const result = buildCoreV1LifecycleEvaluation(healthyThroughWeek(3));
+    expect(result.canonicalWeight).toBe(0.25);
+    expect(result.ok).toBe(true);
+    expect(result.epaCoverageExact).toBe(true);
+    expect(result.missingEpaKeys).toEqual([]);
+    expect(result.duplicateEpaKeys).toEqual([]);
+    expect(result.nullOrNonFiniteEpaRows).toEqual([]);
+  });
+
+  it('missing expected EPA key → FAIL when weight>0', () => {
+    const base = healthyThroughWeek(3);
+    const result = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(3, { epaRows: base.epaRows.slice(1) })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.missingEpaKeys.length).toBeGreaterThan(0);
+    expect(result.findings.some((f) => f.includes('missingEpaKeys'))).toBe(
+      true
+    );
+  });
+
+  it('duplicate EPA natural key → FAIL when weight>0', () => {
+    const base = healthyThroughWeek(3);
+    const dup = { ...base.epaRows[0] };
+    const result = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(3, { epaRows: [...base.epaRows, dup] })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.duplicateEpaKeys.length).toBeGreaterThan(0);
+    expect(result.findings.some((f) => f.includes('duplicateEpaKeys'))).toBe(
+      true
+    );
+  });
+
+  it('expected EPA row with null epaOff → FAIL when weight>0', () => {
+    const base = healthyThroughWeek(3);
+    const epaRows = base.epaRows.map((e, i) =>
+      i === 0 ? { ...e, epaOff: null } : e
+    );
+    const result = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(3, { epaRows })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.nullOrNonFiniteEpaRows.length).toBeGreaterThan(0);
+  });
+
+  it('expected EPA row with null epaDef → FAIL when weight>0', () => {
+    const base = healthyThroughWeek(3);
+    const epaRows = base.epaRows.map((e, i) =>
+      i === 0 ? { ...e, epaDef: null } : e
+    );
+    const result = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(3, { epaRows })
+    );
+    expect(result.ok).toBe(false);
+    expect(result.nullOrNonFiniteEpaRows.length).toBeGreaterThan(0);
+  });
+
+  it('future-game EPA remains excluded', () => {
+    const ids = fbs2026();
+    const games = buildWeeklyGames(ids, 3);
+    const scheduledFuture: TransitionGameRow = {
+      gameId: 'future-scheduled',
+      week: 4,
+      date: '2026-09-20T19:00:00.000Z',
+      status: 'scheduled',
+      homeTeamId: ids[0],
+      awayTeamId: ids[1],
+      homeScore: null,
+      awayScore: null,
+    };
+    const allGames = [...games, scheduledFuture];
+    const epa = [
+      ...epaForGames(games),
+      {
+        gameId: 'future-scheduled',
+        week: 4,
+        teamId: ids[0],
+        epaOff: 99,
+        epaDef: 99,
+      },
+    ];
+    const withFuture = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(3, { games: allGames, epaRows: epa })
+    );
+    const without = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(3, { games, epaRows: epaForGames(games) })
+    );
+    expect(withFuture.ok).toBe(true);
+    expect(without.ok).toBe(true);
+    expect(withFuture.rows.map((r) => r.finalPowerRating)).toEqual(
+      without.rows.map((r) => r.finalPowerRating)
+    );
+  });
+
+  it('FBS-vs-FCS expected EPA semantics: one authoritative FBS row', () => {
+    const base = healthyThroughWeek(6);
+    const team = base.fbsIds[0];
+    const fcsGame: TransitionGameRow = {
+      gameId: 'fbs-fcs-epa-expect',
+      week: 6,
+      date: '2026-10-01T19:00:00.000Z',
+      status: 'final',
+      homeTeamId: team,
+      awayTeamId: 'fcs-northwestern-state',
+      homeScore: 42,
+      awayScore: 7,
+    };
+    const without = buildCoreV1LifecycleEvaluation(base);
+    const withFcs = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(6, {
+        games: [...base.games, fcsGame],
+        epaRows: [
+          ...base.epaRows,
+          {
+            gameId: fcsGame.gameId,
+            week: 6,
+            teamId: team,
+            epaOff: 0.5,
+            epaDef: -0.2,
+          },
+        ],
+      })
+    );
+    expect(withFcs.ok).toBe(true);
+    expect(withFcs.expectedEpaParticipantRows).toBe(
+      without.expectedEpaParticipantRows + 1
+    );
+    expect(withFcs.epaCoverageExact).toBe(true);
+  });
+});
+
+describe('Core V1 lifecycle — Serializable COMMIT / PREVIEW (2C-2J-6D-2)', () => {
+  function mockStoreFromInput(
+    input: CoreV1LifecycleInput,
+    mutate?: {
+      games?: TransitionGameRow[];
+      epaRows?: TransitionEpaRow[];
+    }
+  ): CoreV1LifecycleReadStore {
+    return {
+      async loadFbsTeamIds() {
+        return [...input.fbsIds];
+      },
+      async loadTalentRows() {
+        return input.talentRows.map((t) => ({
+          teamId: t.teamId,
+          talentComposite: t.talentComposite,
+        }));
+      },
+      async loadGames() {
+        const games = mutate?.games ?? input.games;
+        return games.map((g) => ({
+          gameId: g.gameId,
+          week: g.week,
+          date: new Date(g.date),
+          status: g.status,
+          homeTeamId: g.homeTeamId,
+          awayTeamId: g.awayTeamId,
+          homeScore: g.homeScore,
+          awayScore: g.awayScore,
+        }));
+      },
+      async loadEpaRows() {
+        return [...(mutate?.epaRows ?? input.epaRows)];
+      },
+      async loadExistingV1Fbs() {
+        return input.existingV1TeamIds.map((teamId) => ({ teamId }));
+      },
+      async loadV1Ratings(_season, fbsTeamIds) {
+        return fbsTeamIds.map((teamId) => ({
+          teamId,
+          powerRating: 0,
+          rating: 0,
+          games: 0,
+        }));
+      },
+    };
+  }
+
+  it('PREVIEW never invokes transaction/write persistence', async () => {
+    const input = healthyWeek0();
+    let txCalls = 0;
+    const writeDeps: CoreV1LifecycleWriteDeps = {
+      async transaction() {
+        txCalls += 1;
+        throw new Error('should not enter transaction in PREVIEW');
+      },
+    };
+    const reportPath = path.join(
+      os.tmpdir(),
+      `core-v1-preview-${Date.now()}.json`
+    );
+    const { exitCode, execution } = await runCoreV1Lifecycle({
+      season: TARGET_SEASON,
+      completedThroughWeek: 0,
+      mode: 'PREVIEW',
+      confirmation: '',
+      reportPath,
+      store: mockStoreFromInput(input),
+      writeDeps,
+    });
+    expect(exitCode).toBe(0);
+    expect(txCalls).toBe(0);
+    expect(execution.mutationsInvoked).toBe(false);
+    expect(execution.commitAttempted).toBe(false);
+    expect(execution.transactionStarted).toBe(false);
+    const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+    expect(report.mutationsInvoked).toBe(false);
+    expect(report.execution.mutationsInvoked).toBe(false);
+    expect(report.providerCalls).toBe(0);
+    try {
+      fs.unlinkSync(reportPath);
+    } catch {
+      /* ignore */
+    }
+  });
+
+  it('successful transactional verification returns commitSucceeded=true', async () => {
+    const input = healthyWeek0({
+      mode: 'COMMIT',
+      confirmation: expectedCoreV1LifecycleConfirmation(0),
+    });
+    const planned = buildCoreV1LifecycleEvaluation(input);
+    const storeRatings = new Map<
+      string,
+      { powerRating: number; rating: number; games: number }
+    >();
+
+    const outcome = await executeAtomicCoreV1LifecycleCommit({
+      season: TARGET_SEASON,
+      completedThroughWeek: 0,
+      confirmation: expectedCoreV1LifecycleConfirmation(0),
+      loadFbsTeamIds: async () => [...input.fbsIds],
+      loadTalentRows: async () =>
+        input.talentRows.map((t) => ({
+          teamId: t.teamId,
+          talentComposite: t.talentComposite as number,
+        })),
+      loadGames: async () => [],
+      loadEpaRows: async () => [],
+      loadExistingV1Fbs: async () => [],
+      persist: async (rows) => {
+        for (const r of rows) {
+          storeRatings.set(r.teamId.toLowerCase(), {
+            powerRating: r.powerRating,
+            rating: r.powerRating,
+            games: r.games,
+          });
+        }
+        return { upserted: rows.length };
+      },
+      loadAfterV1Ratings: async (ids) =>
+        ids.map((teamId) => {
+          const row = storeRatings.get(teamId.toLowerCase())!;
+          return { teamId, ...row };
+        }),
+    });
+    expect(outcome.verification.ok).toBe(true);
+    expect(outcome.upserted).toBe(138);
+    expect(outcome.result.ok).toBe(true);
+
+    const exec = buildSuccessfulCommitExecution({
+      upsertCount: outcome.upserted,
+    });
+    expect(exec.commitSucceeded).toBe(true);
+    expect(exec.postWriteVerificationSucceeded).toBe(true);
+    expect(planned.outputCount).toBe(138);
+  });
+
+  it('if Game becomes non-final between plan and tx re-read → refuse write', async () => {
+    const input = healthyThroughWeek(1, {
+      mode: 'COMMIT',
+      confirmation: expectedCoreV1LifecycleConfirmation(1),
+    });
+    const pre = buildCoreV1LifecycleEvaluation(input);
+    expect(pre.ok).toBe(true);
+
+    const mutatedGames = input.games.map((g, i) =>
+      i === 0
+        ? { ...g, status: 'scheduled', homeScore: null, awayScore: null }
+        : g
+    );
+    await expect(
+      executeAtomicCoreV1LifecycleCommit({
+        season: TARGET_SEASON,
+        completedThroughWeek: 1,
+        confirmation: expectedCoreV1LifecycleConfirmation(1),
+        loadFbsTeamIds: async () => [...input.fbsIds],
+        loadTalentRows: async () =>
+          input.talentRows.map((t) => ({
+            teamId: t.teamId,
+            talentComposite: t.talentComposite as number,
+          })),
+        loadGames: async () => mutatedGames,
+        loadEpaRows: async () => input.epaRows,
+        loadExistingV1Fbs: async () => [],
+        persist: async () => {
+          throw new Error('persist should not run');
+        },
+        loadAfterV1Ratings: async () => [],
+      })
+    ).rejects.toThrow(/lifecycle safety failed|nonFinalRelevant/);
+  });
+
+  it('if TeamGameStat coverage changes between plan and tx → refuse write', async () => {
+    const input = healthyThroughWeek(3, {
+      mode: 'COMMIT',
+      confirmation: expectedCoreV1LifecycleConfirmation(3),
+    });
+    const pre = buildCoreV1LifecycleEvaluation(input);
+    expect(pre.ok).toBe(true);
+
+    await expect(
+      executeAtomicCoreV1LifecycleCommit({
+        season: TARGET_SEASON,
+        completedThroughWeek: 3,
+        confirmation: expectedCoreV1LifecycleConfirmation(3),
+        loadFbsTeamIds: async () => [...input.fbsIds],
+        loadTalentRows: async () =>
+          input.talentRows.map((t) => ({
+            teamId: t.teamId,
+            talentComposite: t.talentComposite as number,
+          })),
+        loadGames: async () => input.games,
+        loadEpaRows: async () => input.epaRows.slice(2),
+        loadExistingV1Fbs: async () => [],
+        persist: async () => {
+          throw new Error('persist should not run');
+        },
+        loadAfterV1Ratings: async () => [],
+      })
+    ).rejects.toThrow(/lifecycle safety failed|missingEpaKeys/);
+  });
+
+  it('transactional post-write mismatch throws and rolls back', async () => {
+    const input = healthyWeek0({
+      mode: 'COMMIT',
+      confirmation: expectedCoreV1LifecycleConfirmation(0),
+    });
+    let persisted = false;
+    await expect(
+      executeAtomicCoreV1LifecycleCommit({
+        season: TARGET_SEASON,
+        completedThroughWeek: 0,
+        confirmation: expectedCoreV1LifecycleConfirmation(0),
+        loadFbsTeamIds: async () => [...input.fbsIds],
+        loadTalentRows: async () =>
+          input.talentRows.map((t) => ({
+            teamId: t.teamId,
+            talentComposite: t.talentComposite as number,
+          })),
+        loadGames: async () => [],
+        loadEpaRows: async () => [],
+        loadExistingV1Fbs: async () => [],
+        persist: async (rows) => {
+          persisted = true;
+          return { upserted: rows.length };
+        },
+        loadAfterV1Ratings: async (ids) =>
+          ids.map((teamId) => ({
+            teamId,
+            powerRating: 999,
+            rating: 999,
+            games: 0,
+          })),
+      })
+    ).rejects.toThrow(/post-write verification failed/);
+    expect(persisted).toBe(true);
+
+    const rolled = buildRolledBackExecution({
+      mutationAttempts: 138,
+      error: 'post-write verification failed',
+      postWriteVerificationSucceeded: false,
+    });
+    expect(rolled.commitSucceeded).toBe(false);
+    expect(rolled.postWriteVerificationSucceeded).toBe(false);
+  });
+
+  it('verifyCoreV1LifecyclePostWrite requires exact 138 and managed fields', () => {
+    const input = healthyWeek0();
+    const result = buildCoreV1LifecycleEvaluation(input);
+    const rows = toPersistRows(result);
+    const ok = verifyCoreV1LifecyclePostWrite({
+      plannedRows: rows,
+      afterRows: rows.map((r) => ({
+        teamId: r.teamId,
+        powerRating: r.powerRating,
+        rating: r.powerRating,
+        games: r.games,
+      })),
+      fbsTeamIds: input.fbsIds,
+    });
+    expect(ok.ok).toBe(true);
+    expect(ok.verifiedTeams).toBe(138);
+
+    const bad = verifyCoreV1LifecyclePostWrite({
+      plannedRows: rows,
+      afterRows: rows.slice(0, 137).map((r) => ({
+        teamId: r.teamId,
+        powerRating: r.powerRating,
+        rating: r.powerRating,
+        games: r.games,
+      })),
+      fbsTeamIds: input.fbsIds,
+    });
+    expect(bad.ok).toBe(false);
+  });
+
+  it('successful commit can only report postWriteVerificationSucceeded=true', () => {
+    const exec = buildSuccessfulCommitExecution({ upsertCount: 138 });
+    expect(exec.commitSucceeded).toBe(true);
+    expect(exec.postWriteVerificationSucceeded).toBe(true);
+    const preview = buildPreviewExecution();
+    expect(preview.commitSucceeded).toBe(false);
+    expect(preview.postWriteVerificationSucceeded).toBeNull();
+  });
+
+  it('CLI source uses Serializable isolation', () => {
+    const cli = fs.readFileSync(
+      path.join(__dirname, '../write-core-v1-lifecycle.ts'),
+      'utf8'
+    );
+    expect(cli).toContain('Prisma.TransactionIsolationLevel.Serializable');
+    expect(cli).toContain('executeAtomicCoreV1LifecycleCommit');
+    expect(cli).toContain('--report');
   });
 });

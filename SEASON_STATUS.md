@@ -1,8 +1,8 @@
 # Season Status — Gridiron Edge
 
 **Status:** 2026 season active (manual guarded production)  
-**Updated:** 2026-08-30 (Phase **2C-2J-6D-1** — guarded TeamGameStat writer prepared)  
-**Baseline `main`:** `b568c0d4ffd0c5e98f3350227e8e850f865c06db`
+**Updated:** 2026-08-30 (Phase **2C-2J-6D-2** — Core V1 lifecycle integrity + Serializable COMMIT hardening)  
+**Baseline `main`:** `2e8c167a15c9f5fc5dc4ea9683b18ae6258aecfc`
 
 Operator-facing current state for the active 2026 season. Complements `docs/2026-workflow-reactivation-matrix.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -37,7 +37,7 @@ Sections below the current-state block retain useful preseason/phase chronology.
 
 All are **workflow_dispatch** only. No score/grading/TeamGameStat cron is authorized. TeamGameStat path is **prepared** — **not** production-run/authorized merely by merge.
 
-### Workflow inventory (after 2C-2J-6D-1)
+### Workflow inventory (after 2C-2J-6D-2)
 
 | Metric | Value |
 |--------|------:|
@@ -60,6 +60,11 @@ Legacy `stats-cfbd.yml` and `cfbd-feature-ingest.yml` remain on disk as `REPAIR_
 * Lifecycle reads in-season EPA from Prisma `teamGameStat` (`epaOff` / `epaDef`).
 * `cfbd-feature-ingest.yml` writes the parallel `cfbdEff*` feature-store / legacy V2 or Labs path — **not** the Core V1 lifecycle feed.
 * Legacy `stats-cfbd.yml` / `cfbd_team_stats.ts` are historical; the guarded 2026 writer is the intended production entrypoint once authorized.
+* Lifecycle COMMIT uses week-tied confirmation `WRITE_2026_CORE_V1_THROUGH_WEEK_<n>`, completed-week integrity gates, EPA readiness when blend > 0, and Serializable in-tx re-plan + post-write verification.
+
+**Operating cadence:**
+* **Weeks 1–2:** scores / grading / optional TeamGameStat maintenance; lifecycle weight = 0; no lifecycle COMMIT required for production ratings.
+* **After completed Week 3:** TeamGameStat PREVIEW/COMMIT → lifecycle PREVIEW → audit → lifecycle COMMIT only if gates pass (first nonzero weight = 0.25).
 
 Because blend weight is 0 through completed Week 2, preparing TeamGameStat now is **not** a Week 2 card blocker.
 

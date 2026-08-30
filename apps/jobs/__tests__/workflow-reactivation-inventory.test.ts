@@ -1,5 +1,5 @@
 /**
- * Phase 2C-2J-6D-1 — static workflow reactivation inventory checks.
+ * Phase 2C-2J-6D-2 — static workflow reactivation inventory checks.
  * No providers, no DB, no network.
  */
 
@@ -72,7 +72,7 @@ ${snippet}
   }
 }
 
-describe('2C-2J-6D-1 workflow reactivation inventory', () => {
+describe('2C-2J-6D-2 workflow reactivation inventory', () => {
   const raw = JSON.parse(fs.readFileSync(CLASSIFICATIONS, 'utf8'));
   const workflowFiles = fs
     .readdirSync(WF_DIR)
@@ -80,8 +80,9 @@ describe('2C-2J-6D-1 workflow reactivation inventory', () => {
     .sort();
 
   it('inventories every workflow file exactly once (49)', () => {
-    expect(raw.phase).toBe('2C-2J-6D-1');
+    expect(raw.phase).toBe('2C-2J-6D-2');
     expect(raw.inventoryDate).toBe('2026-08-30');
+    expect(raw.mainSha).toBe('2e8c167a15c9f5fc5dc4ea9683b18ae6258aecfc');
     expect(raw.workflows).toHaveLength(workflowFiles.length);
     expect(raw.workflows).toHaveLength(49);
     const classified = raw.workflows.map((w: { file: string }) => w.file).sort();
@@ -236,9 +237,9 @@ print(json.dumps({
     expect(lifecycle.direct_inputs_in_run).toBe(false);
   });
 
-  it('matrix doc records 6D-1 posture, proven manuals, TeamGameStat path, and schedule hold', () => {
+  it('matrix doc records 6D-2 posture, proven manuals, TeamGameStat path, and schedule hold', () => {
     const md = fs.readFileSync(MATRIX, 'utf8');
-    expect(md).toContain('2C-2J-6D-1');
+    expect(md).toContain('2C-2J-6D-2');
     expect(md).toContain('2026-08-30');
     expect(md).toContain('| Workflow files inventoried | **49** |');
     expect(md).toContain('| YAML files with active `schedule:` triggers | **8** |');
@@ -252,6 +253,8 @@ print(json.dumps({
     expect(md).toContain('NOT AUTHORIZED');
     expect(md).toContain('historical Actions run records');
     expect(md).toContain('Game finals → TeamGameStat ingest → Core V1 lifecycle');
+    expect(md).toContain('Weeks 1–2');
+    expect(md).toContain('After completed Week 3');
     expect(md).toContain(
       '| stats-cfbd.yml | Stats CFBD | dispatch | REPAIR_BEFORE_USE | N | N |'
     );

@@ -1,9 +1,9 @@
 # 2026 Workflow Reactivation Matrix + Live Odds Architecture Audit
 
-**Phase:** 2C-2J-6D-1  
+**Phase:** 2C-2J-6D-2  
 **Date:** 2026-08-30  
-**Main SHA:** `b568c0d4ffd0c5e98f3350227e8e850f865c06db`  
-**Status:** Guarded TeamGameStat writer added; Core lifecycle feed path corrected  
+**Main SHA:** `2e8c167a15c9f5fc5dc4ea9683b18ae6258aecfc`  
+**Status:** Core V1 lifecycle integrity + Serializable COMMIT hardening; TeamGameStat feed path unchanged  
 
 **This phase does NOT:**
 - enable any GitHub workflow schedule
@@ -205,8 +205,23 @@ Keep **score → grading → TeamGameStat ingest → Core V1 lifecycle** as sepa
 | Score sync | Yes after kickoff | Manual guarded (recurring **NOT AUTHORIZED**) | CFBD `/games` | Game scores/status | `cfbd-scores-2026-manual.yml` (**proven**) |
 | Grading | After finals + bets | Manual guarded (recurring **NOT AUTHORIZED**) | none | Bet result/pnl/clv | `grade-bets-2026-manual.yml` (**proven**) |
 | **TeamGameStat ingest** | For Core V1 lifecycle EPA | Manual guarded (not production-authorized yet) | CFBD `/stats/game/advanced` | `TeamGameStat` | `cfbd-team-game-stats-2026-manual.yml` |
-| Core V1 lifecycle | After completedThroughWeek | Manual guarded | none (reads `teamGameStat`) | TeamSeasonRating v1 | `write-core-v1-lifecycle-ratings` |
+| Core V1 lifecycle | After completedThroughWeek | Manual guarded (integrity + Serializable COMMIT; not authorized by merge) | none (reads `teamGameStat`) | TeamSeasonRating v1 | `write-core-v1-lifecycle-ratings` |
 | CFBD feature ingest (`cfbdEff*`) | Parallel / Labs / legacy V2 | REPAIR_BEFORE_USE | CFBD | feature-store tables | `cfbd-feature-ingest.yml` — **not** the Core V1 lifecycle feed |
+
+**Lifecycle operating cadence (2C-2J-6D-2):**
+
+### Weeks 1–2
+* scores + grading as games finalize
+* TeamGameStat ingest can be maintained for readiness
+* lifecycle canonical weight = **0** (Candidate A only)
+* no lifecycle COMMIT is required to change production ratings
+
+### After completed Week 3
+* score completion + grading
+* TeamGameStat PREVIEW/COMMIT
+* lifecycle PREVIEW (completed-week integrity + EPA readiness)
+* independent audit of JSON artifact
+* lifecycle COMMIT only if all gates pass (first nonzero canonical weight = **0.25**)
 
 ### HYBRID READINESS (future)
 
