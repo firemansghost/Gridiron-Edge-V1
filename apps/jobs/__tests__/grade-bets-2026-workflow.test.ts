@@ -1,5 +1,5 @@
 /**
- * 2C-2J-6C-1 — static workflow security for guarded official grading.
+ * 2C-2J-6C-2 — static workflow security for canonical guarded official grading.
  */
 
 import * as fs from 'fs';
@@ -48,38 +48,25 @@ function collectRunBodies(src: string): string {
   return runBodies.join('\n');
 }
 
-describe('2C-2J-6C-1 legacy Grade Bets hold', () => {
-  const wf = fs.readFileSync(WF_LEGACY, 'utf8');
-
-  it('schedule/dispatch are hold-only; cannot invoke grading writer', () => {
-    expect(wf).toContain('grading-hold');
-    expect(wf).toContain('Hold Grade Bets (2C-2J-6C-1)');
-    expect(wf).toContain('gradingWrites=false');
-    expect(wf).toContain('dbAccess=false');
-    expect(wf).not.toMatch(/actions\/checkout/);
-    expect(wf).not.toMatch(/npm ci/);
-    expect(wf).not.toMatch(/npm run build:jobs/);
-    expect(wf).not.toMatch(/npm run grade:bets --/);
-    expect(wf).not.toMatch(/run:\s*npm run grade:bets/);
-    expect(wf).not.toContain('grade-bets-2026.ts');
-    expect(wf).not.toMatch(/secrets\.(DIRECT_URL|DATABASE_URL|CFBD|ODDS|SGO)/);
-    const hold = stepBlock(wf, 'Hold Grade Bets (2C-2J-6C-1)');
-    expect(hold).toContain('not invoked');
-    expect(hold).not.toMatch(/secrets\./);
-  });
-});
-
-describe('2C-2J-6C-1 fresh manual grading workflow', () => {
+describe('2C-2J-6C-2 canonical official grading workflow', () => {
   const wf = fs.readFileSync(WF_MANUAL, 'utf8');
   const cli = fs.readFileSync(CLI, 'utf8');
   const legacyCli = fs.readFileSync(LEGACY_CLI, 'utf8');
 
-  it('manual-only; PREVIEW default; fresh concurrency; confirmation gate', () => {
+  it('legacy Grade Bets workflow is absent', () => {
+    expect(fs.existsSync(WF_LEGACY)).toBe(false);
+    expect(wf).not.toContain('name: Grade Bets');
+  });
+
+  it('manual workflow exists; workflow_dispatch only; no schedule/cron', () => {
     expect(fs.existsSync(WF_MANUAL)).toBe(true);
     expect(wf).toContain('name: 2026 Grade Bets (Manual, Guarded)');
     expect(wf).toMatch(/^\s*workflow_dispatch:\s*$/m);
     expect(wf).not.toMatch(/^\s*schedule:\s*$/m);
     expect(wf).not.toMatch(/cron:/);
+  });
+
+  it('PREVIEW default; fresh concurrency; exact COMMIT confirmation', () => {
     expect(wf).toMatch(/default:\s*PREVIEW/);
     expect(wf).toContain(
       'grade-bets-2026-manual-v1-${{ inputs.season }}-${{ inputs.week }}'
@@ -87,9 +74,15 @@ describe('2C-2J-6C-1 fresh manual grading workflow', () => {
     expect(wf).toContain('cancel-in-progress: false');
     expect(wf).toContain('GRADE_2026_WEEK_');
     expect(wf).toContain('_OFFICIAL');
+  });
+
+  it('guarded 2026 writer is the only grading workflow entrypoint', () => {
     expect(wf).toContain('grade-bets-2026.ts');
     expect(wf).not.toMatch(/npm run grade:bets --/);
     expect(wf).not.toMatch(/run:\s*npm run grade:bets/);
+    expect(wf).not.toContain('apps/jobs/grade-bets.ts');
+    expect(fs.existsSync(LEGACY_CLI)).toBe(true);
+    expect(legacyCli).toContain('gradeMoneyline');
   });
 
   it('no provider secrets/calls; DIRECT_URL only on grading step; artifact upload', () => {
@@ -118,8 +111,5 @@ describe('2C-2J-6C-1 fresh manual grading workflow', () => {
     expect(cli).toMatch(/pnl:\s*row\.pnl/);
     expect(cli).toMatch(/clv:\s*row\.clv/);
     expect(cli).not.toMatch(/data:\s*\{[^}]*closePrice/s);
-    // Legacy writer retained but not invoked by new workflow
-    expect(legacyCli).toContain('gradeMoneyline');
-    expect(wf).not.toContain('apps/jobs/grade-bets.ts');
   });
 });
