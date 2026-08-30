@@ -1,6 +1,7 @@
 # Manual GUARDED Core V1 2026 lifecycle ratings (Candidate A + B1 GLOBAL_BLEND_W3_W6).
+# Phase 2C-2J-6D-2 — completed-week integrity, EPA readiness, Serializable re-plan/verify.
 # workflow_dispatch ONLY — no schedule, push, or pull_request.
-# PREVIEW by default. COMMIT requires mode=COMMIT and confirmation=WRITE_2026_CORE_V1.
+# PREVIEW by default. COMMIT requires mode=COMMIT and confirmation=WRITE_2026_CORE_V1_THROUGH_WEEK_<n>.
 # completed_through_week = last week of FINAL results allowed into ratings (not prediction week).
 # DIRECT_URL only. No CFBD. No Odds. No schedule ingest.
 # First production COMMIT remains NOT AUTHORIZED until PREVIEW independently reviewed.
@@ -33,7 +34,7 @@ on:
           - COMMIT
         default: PREVIEW
       confirmation:
-        description: 'For COMMIT, type WRITE_2026_CORE_V1 exactly'
+        description: 'For COMMIT, type WRITE_2026_CORE_V1_THROUGH_WEEK_<completed_through_week> exactly'
         required: false
         type: string
         default: ''
@@ -73,13 +74,16 @@ jobs:
           WEEK="$INPUT_COMPLETED_THROUGH_WEEK"
           MODE="$INPUT_MODE"
           CONFIRM="$INPUT_CONFIRMATION"
+          EXPECTED_CONFIRM="WRITE_2026_CORE_V1_THROUGH_WEEK_${WEEK}"
           echo "season=${SEASON}"
           echo "completedThroughWeek=${WEEK}"
           echo "mode=${MODE}"
           echo "selectedPolicy=GLOBAL_BLEND_W3_W6"
           echo "candidateAFormula=talentZ*3.5"
+          echo "expectedConfirmation=${EXPECTED_CONFIRM} (value not echoed from input)"
           echo "providersInvoked=false"
           echo "Odds=false"
+          echo "providerCalls=0"
           echo "CFBD_API_KEY: not provided"
           echo "ODDS_API_KEY: not provided"
 
@@ -95,8 +99,8 @@ jobs:
             echo "::error::mode must be PREVIEW or COMMIT"
             exit 1
           fi
-          if [ "$MODE" = "COMMIT" ] && [ "$CONFIRM" != "WRITE_2026_CORE_V1" ]; then
-            echo "::error::COMMIT requires confirmation=WRITE_2026_CORE_V1"
+          if [ "$MODE" = "COMMIT" ] && [ "$CONFIRM" != "$EXPECTED_CONFIRM" ]; then
+            echo "::error::COMMIT requires confirmation=WRITE_2026_CORE_V1_THROUGH_WEEK_<week>"
             exit 1
           fi
           if [ -z "${DIRECT_URL:-}" ]; then
@@ -129,18 +133,30 @@ jobs:
           DATABASE_URL: ${{ secrets.DIRECT_URL }}
         run: |
           set -euo pipefail
+          REPORT_PATH="reports/core-v1-lifecycle-2026-through-week-${INPUT_COMPLETED_THROUGH_WEEK}-${INPUT_MODE}.json"
+          mkdir -p reports
           if [ "$INPUT_MODE" = "COMMIT" ]; then
             npx tsx apps/jobs/write-core-v1-lifecycle.ts \
               --season "$INPUT_SEASON" \
               --completed-through-week "$INPUT_COMPLETED_THROUGH_WEEK" \
               --mode "$INPUT_MODE" \
-              --confirm "$INPUT_CONFIRMATION"
+              --confirm "$INPUT_CONFIRMATION" \
+              --report "$REPORT_PATH"
           else
             npx tsx apps/jobs/write-core-v1-lifecycle.ts \
               --season "$INPUT_SEASON" \
               --completed-through-week "$INPUT_COMPLETED_THROUGH_WEEK" \
-              --mode "$INPUT_MODE"
+              --mode "$INPUT_MODE" \
+              --report "$REPORT_PATH"
           fi
+
+      - name: Upload lifecycle report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-v1-lifecycle-2026-through-w${{ inputs.completed_through_week }}-${{ inputs.mode }}
+          path: reports/core-v1-lifecycle-2026-through-week-${{ inputs.completed_through_week }}-${{ inputs.mode }}.json
+          if-no-files-found: warn
 
       - name: Summary
         if: always()
@@ -158,6 +174,9 @@ jobs:
           echo "mode: ${INPUT_MODE}"
           echo "status: ${JOB_STATUS}"
           echo "selectedPolicy: GLOBAL_BLEND_W3_W6"
+          echo "canonicalWeight: see B1 schedule for completedThroughWeek (0 through week 2; 0.25 at week 3)"
+          echo "providerCalls: 0"
+          echo "write status: see uploaded artifact"
           echo "secrets used (names only): DIRECT_URL"
           echo "providers: none"
           echo "Odds: false"

@@ -1,45 +1,74 @@
 #!/usr/bin/env node
 /**
- * Phase 2C-2H-9 — Guarded Core V1 2026 lifecycle ratings writer.
+ * Phase 2C-2J-6D-2 — Guarded Core V1 2026 lifecycle ratings writer.
  *
  * Preview (default):
  *   npx tsx apps/jobs/write-core-v1-lifecycle.ts --season 2026 --completed-through-week 0 --mode PREVIEW
  *
- * Commit (exact confirmation required — NOT authorized until production PREVIEW reviewed):
- *   npx tsx apps/jobs/write-core-v1-lifecycle.ts --season 2026 --completed-through-week 0 --mode COMMIT --confirm WRITE_2026_CORE_V1
+ * Commit (week-tied confirmation required — NOT authorized until production PREVIEW reviewed):
+ *   npx tsx apps/jobs/write-core-v1-lifecycle.ts --season 2026 --completed-through-week 3 --mode COMMIT --confirm WRITE_2026_CORE_V1_THROUGH_WEEK_3
  *
  * SELECT-only in PREVIEW. DIRECT_URL only. No CFBD. No Odds.
+ * COMMIT: Serializable re-read → re-evaluate → persist → verify (rollback on fail).
  * completedThroughWeek = last week of FINAL results allowed into ratings (not prediction week).
  */
 
-import { PrismaClient } from '@prisma/client';
+import * as fs from 'fs';
+import * as path from 'path';
+import { Prisma, PrismaClient } from '@prisma/client';
 import {
   EXPECTED_FBS_COUNT,
   MODEL_VERSION_V1,
+  PHASE,
   TARGET_SEASON,
-  WRITE_CONFIRM_PHRASE,
   buildCoreV1LifecycleEvaluation,
+  buildFailedCommitExecution,
+  buildPreviewExecution,
+  buildRolledBackExecution,
+  buildSuccessfulCommitExecution,
+  commitEligibleFromResult,
+  decimalLikeToNumber,
+  executeAtomicCoreV1LifecycleCommit,
+  expectedCoreV1LifecycleConfirmation,
+  finalizeCoreV1LifecycleReport,
   formatCoreV1LifecycleReport,
   parseCoreV1LifecycleArgs,
   persistCoreV1LifecycleRatings,
+  resolvePreviewExitCode,
   sanitizeCoreV1LifecycleError,
-  toPersistRows,
+  type CoreV1LifecycleExecutionState,
+  type CoreV1LifecyclePostWriteVerification,
   type CoreV1LifecycleResult,
   type LifecycleMode,
 } from './src/ratings/core-v1-lifecycle';
 
-function decimalToNumber(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (typeof value === 'string') {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : null;
-  }
-  if (typeof (value as { toNumber?: () => number }).toNumber === 'function') {
-    const n = (value as { toNumber: () => number }).toNumber();
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
+function defaultReportPath(
+  completedThroughWeek: number,
+  mode: string
+): string {
+  return path.join(
+    process.cwd(),
+    'reports',
+    `core-v1-lifecycle-2026-through-week-${completedThroughWeek}-${mode.toLowerCase()}.json`
+  );
+}
+
+function writeReport(
+  reportPath: string,
+  result: CoreV1LifecycleResult,
+  execution: CoreV1LifecycleExecutionState,
+  verification: CoreV1LifecyclePostWriteVerification | null,
+  meta: Record<string, unknown> = {}
+): void {
+  fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+  const report = finalizeCoreV1LifecycleReport({
+    result,
+    execution,
+    verification,
+    meta,
+  });
+  fs.writeFileSync(reportPath, JSON.stringify(report, null, 2), 'utf8');
+  console.log(`report=${reportPath}`);
 }
 
 /** Read-only store — SELECT only. */
@@ -53,7 +82,7 @@ export interface CoreV1LifecycleReadStore {
     Array<{
       gameId: string;
       week: number;
-      date: Date;
+      date: Date | string;
       status: string;
       homeTeamId: string;
       awayTeamId: string;
@@ -74,16 +103,60 @@ export interface CoreV1LifecycleReadStore {
     season: number,
     fbsTeamIds: string[]
   ): Promise<Array<{ teamId: string }>>;
+  loadV1Ratings?(
+    season: number,
+    fbsTeamIds: string[]
+  ): Promise<
+    Array<{
+      teamId: string;
+      powerRating: unknown;
+      rating: unknown;
+      games: unknown;
+    }>
+  >;
 }
 
 export interface CoreV1LifecycleWriteDeps {
   transaction: <T>(
-    fn: (store: {
-      teamSeasonRating: {
-        upsert: (args: unknown) => Promise<unknown>;
-      };
-    }) => Promise<T>
+    fn: (txStore: CoreV1LifecycleReadStore & {
+      persist: (
+        rows: Array<{
+          season: number;
+          teamId: string;
+          powerRating: number;
+          games: number;
+        }>
+      ) => Promise<{ upserted: number }>;
+    }) => Promise<T>,
+    options?: { isolationLevel: Prisma.TransactionIsolationLevel }
   ) => Promise<T>;
+}
+
+function mapGames(
+  rows: Array<{
+    gameId: string;
+    week: number;
+    date: Date | string;
+    status: string;
+    homeTeamId: string;
+    awayTeamId: string;
+    homeScore: number | null;
+    awayScore: number | null;
+  }>
+) {
+  return rows.map((g) => ({
+    gameId: g.gameId,
+    week: g.week,
+    date:
+      typeof g.date === 'string'
+        ? g.date
+        : g.date.toISOString(),
+    status: g.status,
+    homeTeamId: g.homeTeamId,
+    awayTeamId: g.awayTeamId,
+    homeScore: g.homeScore,
+    awayScore: g.awayScore,
+  }));
 }
 
 export function createPrismaCoreV1LifecycleReadStore(
@@ -104,7 +177,7 @@ export function createPrismaCoreV1LifecycleReadStore(
       });
       return rows.map((r) => ({
         teamId: r.teamId,
-        talentComposite: decimalToNumber(r.talentComposite),
+        talentComposite: decimalLikeToNumber(r.talentComposite),
       }));
     },
     async loadGames(season) {
@@ -151,8 +224,8 @@ export function createPrismaCoreV1LifecycleReadStore(
         gameId: r.gameId,
         week: r.week,
         teamId: r.teamId,
-        epaOff: decimalToNumber(r.epaOff),
-        epaDef: decimalToNumber(r.epaDef),
+        epaOff: decimalLikeToNumber(r.epaOff),
+        epaDef: decimalLikeToNumber(r.epaDef),
       }));
     },
     async loadExistingV1Fbs(season, fbsTeamIds) {
@@ -166,6 +239,22 @@ export function createPrismaCoreV1LifecycleReadStore(
       });
       return rows;
     },
+    async loadV1Ratings(season, fbsTeamIds) {
+      const rows = await prisma.teamSeasonRating.findMany({
+        where: {
+          season,
+          modelVersion: MODEL_VERSION_V1,
+          teamId: { in: fbsTeamIds },
+        },
+        select: {
+          teamId: true,
+          powerRating: true,
+          rating: true,
+          games: true,
+        },
+      });
+      return rows;
+    },
   };
 }
 
@@ -173,13 +262,40 @@ export function createPrismaCoreV1LifecycleWriteDeps(
   prisma: PrismaClient
 ): CoreV1LifecycleWriteDeps {
   return {
-    async transaction(fn) {
-      return prisma.$transaction(async (tx) =>
-        fn({
-          teamSeasonRating: {
-            upsert: (args) => tx.teamSeasonRating.upsert(args as never),
-          },
-        })
+    async transaction(fn, options) {
+      return prisma.$transaction(
+        async (tx) => {
+          const store: CoreV1LifecycleReadStore & {
+            persist: (
+              rows: Array<{
+                season: number;
+                teamId: string;
+                powerRating: number;
+                games: number;
+              }>
+            ) => Promise<{ upserted: number }>;
+          } = {
+            ...createPrismaCoreV1LifecycleReadStore(
+              tx as unknown as PrismaClient
+            ),
+            persist: (rows) =>
+              persistCoreV1LifecycleRatings(
+                {
+                  teamSeasonRating: {
+                    upsert: (args) =>
+                      tx.teamSeasonRating.upsert(args as never),
+                  },
+                },
+                rows
+              ),
+          };
+          return fn(store);
+        },
+        {
+          isolationLevel:
+            options?.isolationLevel ??
+            Prisma.TransactionIsolationLevel.Serializable,
+        }
       );
     },
   };
@@ -190,16 +306,30 @@ export async function runCoreV1Lifecycle(options: {
   completedThroughWeek: number;
   mode: LifecycleMode;
   confirmation: string;
+  reportPath: string;
   store: CoreV1LifecycleReadStore;
   writeDeps?: CoreV1LifecycleWriteDeps;
-}): Promise<{ exitCode: number; result?: CoreV1LifecycleResult }> {
+}): Promise<{
+  exitCode: number;
+  result?: CoreV1LifecycleResult;
+  execution: CoreV1LifecycleExecutionState;
+}> {
+  console.log(`phase=${PHASE}`);
   console.log(`season=${options.season}`);
   console.log(`completedThroughWeek=${options.completedThroughWeek}`);
   console.log(`mode=${options.mode}`);
+  console.log(
+    `expectedConfirmation=${expectedCoreV1LifecycleConfirmation(options.completedThroughWeek)} (value not echoed from input)`
+  );
   console.log('providersInvoked=false');
   console.log('Odds=false');
+  console.log('providerCalls=0');
   console.log('CFBD_API_KEY=not provided');
   console.log('ODDS_API_KEY=not provided');
+
+  let execution: CoreV1LifecycleExecutionState = buildPreviewExecution();
+  let verification: CoreV1LifecyclePostWriteVerification | null = null;
+  let result: CoreV1LifecycleResult | undefined;
 
   try {
     const fbsIds = await options.store.loadFbsTeamIds(options.season);
@@ -209,23 +339,14 @@ export async function runCoreV1Lifecycle(options: {
       fbsLower
     );
     const gamesRaw = await options.store.loadGames(options.season);
-    const games = gamesRaw.map((g) => ({
-      gameId: g.gameId,
-      week: g.week,
-      date: g.date.toISOString(),
-      status: g.status,
-      homeTeamId: g.homeTeamId,
-      awayTeamId: g.awayTeamId,
-      homeScore: g.homeScore,
-      awayScore: g.awayScore,
-    }));
+    const games = mapGames(gamesRaw);
     const epaRows = await options.store.loadEpaRows(options.season, fbsLower);
     const existing = await options.store.loadExistingV1Fbs(
       options.season,
       fbsLower
     );
 
-    let result = buildCoreV1LifecycleEvaluation({
+    result = buildCoreV1LifecycleEvaluation({
       season: options.season,
       completedThroughWeek: options.completedThroughWeek,
       mode: options.mode,
@@ -241,56 +362,149 @@ export async function runCoreV1Lifecycle(options: {
     console.log(formatCoreV1LifecycleReport(result));
 
     if (options.mode === 'PREVIEW') {
+      execution = buildPreviewExecution();
+      writeReport(options.reportPath, result, execution, null, {
+        isolationLevel: null,
+      });
       console.log('mutationsInvoked=false');
       console.log('ratingsPersistenceInvoked=false');
       console.log('ratingsWriteAuthorized=false');
       if (!result.ok) {
         console.error('[core-v1-lifecycle] PREVIEW FAILED — gates not met');
-        return { exitCode: 1, result };
+        return {
+          exitCode: resolvePreviewExitCode(false),
+          result,
+          execution,
+        };
       }
       console.log(
         '[core-v1-lifecycle] PREVIEW COMPLETE — diagnostic only; production COMMIT not authorized by this run'
       );
-      return { exitCode: 0, result };
+      return { exitCode: 0, result, execution };
     }
 
-    // COMMIT path
-    if (!result.commitEligible || !result.ok) {
+    // COMMIT path — pre-tx evaluation is diagnostic only.
+    if (!commitEligibleFromResult(result) || !result.ok) {
+      execution = buildFailedCommitExecution({
+        error: `COMMIT blocked: writeSafe=${result.writeSafe} confirmationValid=${result.confirmationValid}`,
+      });
+      writeReport(options.reportPath, result, execution, null, {});
       console.error(
-        `[core-v1-lifecycle] COMMIT blocked — require confirmation=${WRITE_CONFIRM_PHRASE} and all gates`
+        `[core-v1-lifecycle] COMMIT blocked — require confirmation=${result.expectedConfirmation} and all gates`
       );
-      return { exitCode: 1, result };
+      return { exitCode: 1, result, execution };
     }
     if (!options.writeDeps) {
+      execution = buildFailedCommitExecution({
+        error: 'COMMIT requires write deps',
+      });
+      writeReport(options.reportPath, result, execution, null, {});
       console.error('[core-v1-lifecycle] COMMIT requires write deps');
-      return { exitCode: 1, result };
+      return { exitCode: 1, result, execution };
     }
     if (result.outputCount !== EXPECTED_FBS_COUNT) {
+      execution = buildFailedCommitExecution({
+        error: 'refuse write: outputCount != 138',
+      });
+      writeReport(options.reportPath, result, execution, null, {});
       console.error('[core-v1-lifecycle] refuse write: outputCount != 138');
-      return { exitCode: 1, result };
+      return { exitCode: 1, result, execution };
     }
 
-    const persistRows = toPersistRows(result);
-    await options.writeDeps.transaction(async (tx) => {
-      await persistCoreV1LifecycleRatings(tx, persistRows);
-    });
+    let mutationAttempts = 0;
+    try {
+      const txOutcome = await options.writeDeps.transaction(
+        async (txStore) => {
+          const outcome = await executeAtomicCoreV1LifecycleCommit({
+            season: options.season,
+            completedThroughWeek: options.completedThroughWeek,
+            confirmation: options.confirmation,
+            loadFbsTeamIds: () => txStore.loadFbsTeamIds(options.season),
+            loadTalentRows: (ids) =>
+              txStore.loadTalentRows(options.season, ids),
+            loadGames: async () => mapGames(await txStore.loadGames(options.season)),
+            loadEpaRows: (ids) => txStore.loadEpaRows(options.season, ids),
+            loadExistingV1Fbs: (ids) =>
+              txStore.loadExistingV1Fbs(options.season, ids),
+            persist: async (rows) => {
+              mutationAttempts = rows.length;
+              return txStore.persist(rows);
+            },
+            loadAfterV1Ratings: async (ids) => {
+              if (txStore.loadV1Ratings) {
+                return txStore.loadV1Ratings(options.season, ids);
+              }
+              throw new Error('loadV1Ratings required for post-write verification');
+            },
+          });
+          return outcome;
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+      );
 
-    result = {
-      ...result,
-      mutationsInvoked: true,
-      ratingsPersistenceInvoked: true,
-      ratingsWriteAuthorized: true,
-    };
-    console.log('mutationsInvoked=true');
-    console.log('ratingsPersistenceInvoked=true');
-    console.log(`upserted=${persistRows.length}`);
-    console.log(
-      '[core-v1-lifecycle] COMMIT COMPLETE — TeamSeasonRating season=2026 modelVersion=v1'
-    );
-    return { exitCode: 0, result };
+      result = {
+        ...txOutcome.result,
+        mutationsInvoked: true,
+        ratingsPersistenceInvoked: true,
+        ratingsWriteAuthorized: true,
+      };
+      verification = txOutcome.verification;
+      execution = buildSuccessfulCommitExecution({
+        upsertCount: txOutcome.upserted,
+      });
+      // Invariant: commitSucceeded=true requires postWriteVerificationSucceeded=true
+      if (
+        execution.commitSucceeded &&
+        execution.postWriteVerificationSucceeded !== true
+      ) {
+        throw new Error(
+          'invariant violated: commitSucceeded without postWriteVerificationSucceeded'
+        );
+      }
+      writeReport(options.reportPath, result, execution, verification, {
+        isolationLevel: 'Serializable',
+        transactionalVerification: true,
+      });
+      console.log('mutationsInvoked=true');
+      console.log('ratingsPersistenceInvoked=true');
+      console.log(`upserted=${txOutcome.upserted}`);
+      console.log(
+        '[core-v1-lifecycle] COMMIT COMPLETE — TeamSeasonRating season=2026 modelVersion=v1'
+      );
+      return { exitCode: 0, result, execution };
+    } catch (err) {
+      const msg = sanitizeCoreV1LifecycleError(err);
+      const verificationFailed = /post-write verification failed/i.test(
+        err instanceof Error ? err.message : String(err)
+      );
+      execution = buildRolledBackExecution({
+        mutationAttempts,
+        error: msg,
+        postWriteVerificationSucceeded: verificationFailed ? false : null,
+      });
+      if (result) {
+        writeReport(options.reportPath, result, execution, verification, {
+          rolledBack: true,
+          isolationLevel: 'Serializable',
+          transactionalVerificationFailed: verificationFailed,
+        });
+      }
+      console.error(`[core-v1-lifecycle] ${msg}`);
+      return { exitCode: 1, result, execution };
+    }
   } catch (err) {
-    console.error(`[core-v1-lifecycle] ${sanitizeCoreV1LifecycleError(err)}`);
-    return { exitCode: 1 };
+    const msg = sanitizeCoreV1LifecycleError(err);
+    console.error(`[core-v1-lifecycle] ${msg}`);
+    if (result && !execution.commitAttempted) {
+      execution = {
+        ...buildPreviewExecution(),
+        error: msg,
+      };
+      writeReport(options.reportPath, result, execution, verification, {
+        fatal: true,
+      });
+    }
+    return { exitCode: 1, result, execution };
   }
 }
 
@@ -301,10 +515,14 @@ async function main(): Promise<void> {
       console.error(`[core-v1-lifecycle] ${e}`);
     }
     console.error(
-      'Usage: npx tsx apps/jobs/write-core-v1-lifecycle.ts --season 2026 --completed-through-week 0 --mode PREVIEW'
+      'Usage: npx tsx apps/jobs/write-core-v1-lifecycle.ts --season 2026 --completed-through-week 0 --mode PREVIEW --report reports/core-v1-lifecycle.json'
     );
     process.exit(1);
   }
+
+  const reportPath =
+    parsed.reportPath ??
+    defaultReportPath(parsed.completedThroughWeek, parsed.mode);
 
   const prisma = new PrismaClient();
   try {
@@ -313,6 +531,7 @@ async function main(): Promise<void> {
       completedThroughWeek: parsed.completedThroughWeek,
       mode: parsed.mode,
       confirmation: parsed.confirmation,
+      reportPath,
       store: createPrismaCoreV1LifecycleReadStore(prisma),
       writeDeps:
         parsed.mode === 'COMMIT'
