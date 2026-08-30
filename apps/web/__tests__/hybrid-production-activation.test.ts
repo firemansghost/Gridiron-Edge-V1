@@ -198,7 +198,7 @@ describe('Hybrid V2 production activation hold', () => {
     );
   });
 
-  it('Picks and Homepage use effective activeModel; selector shows hold state', () => {
+  it('Picks and Homepage use effective activeModel; hold from authorization helper', () => {
     const fs = require('fs');
     const path = require('path');
     const picks = fs.readFileSync(
@@ -221,7 +221,9 @@ describe('Hybrid V2 production activation hold', () => {
     expect(home).toContain('effectiveModelLabel');
     expect(home).toContain('Core V1 production spread');
     expect(home).toContain('Hybrid V2 held');
-    expect(home).toContain("heldModelIds={heldModelIds}");
+    expect(home).toContain('heldModelIds={heldModelIds}');
+    expect(home).toContain('resolveHeldProductionModelIds');
+    expect(home).not.toContain('activationOverride?.used');
 
     const selector = fs.readFileSync(
       path.join(__dirname, '../components/ProductionModelSelector.tsx'),

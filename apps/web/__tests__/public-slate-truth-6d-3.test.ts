@@ -19,8 +19,104 @@ import {
   resolveTeamDisplayName,
 } from '@/lib/team-display-name';
 import { computeSlateSpreadTierSummary } from '@/lib/config/slate-model';
+import {
+  resolveHeldProductionModelIds,
+  resolveProductionModelHoldPresentation,
+} from '@/lib/config/held-production-models';
+import type { ProductionModelId } from '@/lib/config/production-models';
 
 const webRoot = path.join(__dirname, '..');
+
+describe('resolveHeldProductionModelIds (authorization, not preference)', () => {
+  it('holds Hybrid for 2026 regardless of preferred model', () => {
+    expect(resolveHeldProductionModelIds(2026, 1)).toEqual(['hybrid_v2']);
+    expect(resolveHeldProductionModelIds(2026, 12)).toEqual(['hybrid_v2']);
+  });
+
+  it('does not hold Hybrid for historically authorized seasons', () => {
+    expect(resolveHeldProductionModelIds(2025, 9)).toEqual([]);
+    expect(resolveHeldProductionModelIds(2024, 1)).toEqual([]);
+  });
+
+  it('returns empty until season is known', () => {
+    expect(resolveHeldProductionModelIds(null)).toEqual([]);
+    expect(resolveHeldProductionModelIds(undefined)).toEqual([]);
+  });
+});
+
+describe('selector hold presentation — preferred Hybrid vs Core under 2026 hold', () => {
+  const held2026 = resolveHeldProductionModelIds(2026, 1);
+
+  function byId(
+    rows: ReturnType<typeof resolveProductionModelHoldPresentation>,
+    id: ProductionModelId
+  ) {
+    return rows.find((r) => r.id === id)!;
+  }
+
+  it('A. preferred Hybrid during 2026 hold: Core LIVE, Hybrid HELD+disabled', () => {
+    // Preference is hybrid_v2; effective production remains Core V1.
+    const preferred: ProductionModelId = 'hybrid_v2';
+    const effective: ProductionModelId = 'core_v1';
+    expect(preferred).toBe('hybrid_v2'); // preference retained; unused for hold
+    const rows = resolveProductionModelHoldPresentation({
+      effectiveModel: effective,
+      heldModelIds: held2026,
+    });
+    const core = byId(rows, 'core_v1');
+    const hybrid = byId(rows, 'hybrid_v2');
+    expect(core.label).toBe('Core V1 · LIVE');
+    expect(core.disabled).toBe(false);
+    expect(core.ariaPressed).toBe(true);
+    expect(hybrid.label).toBe('Hybrid V2 · HELD');
+    expect(hybrid.disabled).toBe(true);
+    expect(hybrid.ariaPressed).toBe(false);
+  });
+
+  it('B. preferred Core during same 2026 hold: Hybrid still HELD+disabled', () => {
+    const preferred: ProductionModelId = 'core_v1';
+    const effective: ProductionModelId = 'core_v1';
+    expect(preferred).toBe('core_v1');
+    const rows = resolveProductionModelHoldPresentation({
+      effectiveModel: effective,
+      heldModelIds: held2026,
+    });
+    const core = byId(rows, 'core_v1');
+    const hybrid = byId(rows, 'hybrid_v2');
+    expect(core.label).toBe('Core V1 · LIVE');
+    expect(core.disabled).toBe(false);
+    expect(core.ariaPressed).toBe(true);
+    expect(hybrid.label).toBe('Hybrid V2 · HELD');
+    expect(hybrid.disabled).toBe(true);
+    expect(hybrid.ariaPressed).toBe(false);
+  });
+
+  it('historically authorized season: normal selectable Hybrid/Core (no LIVE/HELD suffixes)', () => {
+    const held = resolveHeldProductionModelIds(2025, 9);
+    expect(held).toEqual([]);
+    const asHybrid = resolveProductionModelHoldPresentation({
+      effectiveModel: 'hybrid_v2',
+      heldModelIds: held,
+    });
+    expect(byId(asHybrid, 'hybrid_v2')).toMatchObject({
+      label: 'Hybrid V2',
+      disabled: false,
+      ariaPressed: true,
+    });
+    expect(byId(asHybrid, 'core_v1')).toMatchObject({
+      label: 'Core V1',
+      disabled: false,
+      ariaPressed: false,
+    });
+
+    const asCore = resolveProductionModelHoldPresentation({
+      effectiveModel: 'core_v1',
+      heldModelIds: held,
+    });
+    expect(byId(asCore, 'core_v1').ariaPressed).toBe(true);
+    expect(byId(asCore, 'hybrid_v2').disabled).toBe(false);
+  });
+});
 
 describe('slate status summary (Game.status)', () => {
   it('0 final / all upcoming', () => {
@@ -106,7 +202,7 @@ describe('market snapshot freshness', () => {
     expect(newestDisplayedMarketTimestamp(games)).toBe(newer);
     const now = new Date('2026-08-30T15:42:00.000Z');
     expect(formatMarketSnapshotLabel(newer, now)).toContain(
-      'Newest displayed market snapshot:'
+      'Newest slate market snapshot:'
     );
   });
 });
@@ -166,10 +262,14 @@ describe('homepage / selector / footer public truth (static)', () => {
     expect(selector).not.toMatch(/aria-pressed=\{model === option\.id\}/);
   });
 
-  it('homepage wires effective Core LIVE + Hybrid HELD during hold', () => {
+  it('homepage wires Hybrid hold from authorization helper (not preference/override alone)', () => {
     expect(home).toContain('effectiveModel={slate ? effectiveModel : null}');
-    expect(home).toContain("heldModelIds={heldModelIds}");
-    expect(home).toContain("hybridHeld ? ['hybrid_v2'] : []");
+    expect(home).toContain('heldModelIds={heldModelIds}');
+    expect(home).toContain('resolveHeldProductionModelIds');
+    expect(home).toContain('slate?.season');
+    expect(home).toContain('slate?.week');
+    expect(home).not.toContain('hybridHeld');
+    expect(home).not.toContain('activationOverride?.used');
     expect(home).toContain('Core V1 production spread');
     expect(home).toContain('Hybrid V2 held');
   });

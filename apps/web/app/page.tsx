@@ -29,6 +29,7 @@ import {
   summarizeSlateStatus,
 } from '@/lib/slate-status-summary';
 import { summarizeMarketSnapshotFreshness } from '@/lib/market-snapshot-freshness';
+import { resolveHeldProductionModelIds } from '@/lib/config/held-production-models';
 
 interface HomeSlateGame {
   status?: string | null;
@@ -65,10 +66,12 @@ export default function HomePage() {
   const effectiveModel: ProductionModelId =
     slate?.meta?.activeModel ?? model;
   const effectiveModelLabel = getProductionModelDisplayLabel(effectiveModel);
-  const hybridHeld =
-    Boolean(slate?.meta?.activationOverride?.used) ||
-    (model === 'hybrid_v2' && effectiveModel === 'core_v1');
-  const heldModelIds: ProductionModelId[] = hybridHeld ? ['hybrid_v2'] : [];
+  // Hold from shared authorization (season/week), not merely activationOverride /
+  // preferred model — Hybrid stays held for 2026 even when preference is core_v1.
+  const heldModelIds: ProductionModelId[] = resolveHeldProductionModelIds(
+    slate?.season,
+    slate?.week
+  );
 
   const statusSummary = useMemo(
     () => summarizeSlateStatus(slate?.games),

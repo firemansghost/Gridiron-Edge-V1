@@ -58,9 +58,9 @@ export function formatMarketSnapshotLabel(
     const hours = Math.max(1, Math.round(ageHours));
     if (ageHours < 1) {
       const mins = Math.max(1, Math.round(ageMs / (1000 * 60)));
-      return `Newest displayed market snapshot: ${mins}m ago`;
+      return `Newest slate market snapshot: ${mins}m ago`;
     }
-    return `Newest displayed market snapshot: ${hours}h ago`;
+    return `Newest slate market snapshot: ${hours}h ago`;
   }
 
   const clock = new Date(ms).toLocaleString('en-US', {
