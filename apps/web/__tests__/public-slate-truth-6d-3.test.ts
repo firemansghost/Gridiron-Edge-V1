@@ -215,7 +215,7 @@ describe('canonical team display names', () => {
   });
 
   it('falls back to formatted id when name missing', () => {
-    expect(resolveTeamDisplayName(undefined, 'nc-state')).toBe('Nc State');
+    expect(resolveTeamDisplayName(undefined, 'nc-state')).toBe('NC State');
     expect(formatTeamIdFallback('ohio-state')).toBe('Ohio State');
   });
 });
