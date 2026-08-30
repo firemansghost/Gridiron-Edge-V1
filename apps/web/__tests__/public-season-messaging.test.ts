@@ -1,5 +1,6 @@
 /**
  * 2C-2J-6C-3 — Public 2026 season messaging + portfolio season URL.
+ * Updated assertions for 2C-2J-6D-3 compact status strip (still truthful).
  * Source/static checks only (no provider / DB).
  */
 
@@ -47,18 +48,16 @@ describe('homepage 2026 season messaging', () => {
     expect(home).not.toContain('Offseason plan:');
   });
 
-  it('shows 2026 Season Live callout with Core V1 / Hybrid hold messaging', () => {
+  it('shows compact 2026 Season Live strip with Core V1 / Hybrid hold messaging', () => {
     expect(home).toContain('2026 Season Live');
-    expect(home).toContain('Core V1 is currently');
-    expect(home).toContain('Hybrid V2 remains held');
-    expect(home).toContain('latest market data loaded for');
+    expect(home).toContain('Core V1 production spread');
+    expect(home).toContain('Hybrid V2 held');
   });
 
   it('keeps a separate 2025 results link targeting season=2025', () => {
-    expect(home).toContain('2025 Results');
+    expect(home).toContain('2025 results');
     expect(home).toContain('href="/labs/portfolio?season=2025"');
-    expect(home).toContain('View 2025 Results');
-    expect(home).toContain('simulations/records, not guarantees');
+    expect(home).toContain('Historical simulations/records, not future guarantees');
   });
 });
 

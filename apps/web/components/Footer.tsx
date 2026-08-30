@@ -72,9 +72,9 @@ export function Footer() {
           <div>
             <h3 className="text-sm font-semibold text-gray-900 mb-3">Model Info</h3>
             <ul className="space-y-2 text-sm text-gray-600">
-              <li>Ratings Model v1</li>
-              <li>Home Field Advantage: +2.0 pts</li>
-              <li>Confidence Tiers: A (≥4.0), B (≥3.0), C (≥2.0)</li>
+              <li>Current production spread: Core V1</li>
+              <li>HFA: team-adjusted; neutral sites = 0</li>
+              <li>Market tiers are market-specific</li>
             </ul>
           </div>
         </div>

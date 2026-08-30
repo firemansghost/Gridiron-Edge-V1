@@ -210,3 +210,20 @@ export function computeSlateConfidenceSummary(games: Array<{ confidence?: string
     },
   };
 }
+
+/** Public Current Slate summary: count by spread grade only (not mixed game.confidence). */
+export function computeSlateSpreadTierSummary(
+  games: Array<{ picks?: { spread?: { grade?: string | null } | null } | null }>
+): {
+  totalGames: number;
+  spreadTier: { A: number; B: number; C: number };
+} {
+  return {
+    totalGames: games.length,
+    spreadTier: {
+      A: games.filter((g) => g.picks?.spread?.grade === 'A').length,
+      B: games.filter((g) => g.picks?.spread?.grade === 'B').length,
+      C: games.filter((g) => g.picks?.spread?.grade === 'C').length,
+    },
+  };
+}
