@@ -1,0 +1,169 @@
+# Fresh manual-only entrypoint for guarded 2026 official_flat_100 grading (2C-2J-6C-1).
+# workflow_dispatch ONLY — no schedule, push, or pull_request.
+# PREVIEW: DB read-only. COMMIT: Serializable Bet.result/pnl/clv writes only.
+# No CFBD / Odds / SGO / weather / MarketLine / ratings / score / schedule writes.
+#
+# Security:
+# - Dispatch inputs reach shell only via step-level env (never ${{ inputs.* }} inside run:).
+# - Production DIRECT_URL scoped to the grading DB step.
+# - Confirmation never echoed.
+# - No provider secrets.
+
+name: 2026 Grade Bets (Manual, Guarded)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (must be 2026)'
+        required: true
+        type: string
+        default: '2026'
+      week:
+        description: 'CFB week (explicit integer; no current/ranges)'
+        required: true
+        type: string
+        default: '1'
+      mode:
+        description: 'PREVIEW (DB read-only) or COMMIT (result/pnl/clv writes)'
+        required: true
+        type: choice
+        options:
+          - PREVIEW
+          - COMMIT
+        default: PREVIEW
+      confirmation:
+        description: 'For COMMIT, type GRADE_2026_WEEK_<week>_OFFICIAL exactly'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: grade-bets-2026-manual-v1-${{ inputs.season }}-${{ inputs.week }}
+  cancel-in-progress: false
+
+jobs:
+  grade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight (names/presence only)
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          SEASON="$INPUT_SEASON"
+          WEEK="$INPUT_WEEK"
+          MODE="$INPUT_MODE"
+          CONFIRM="$INPUT_CONFIRMATION"
+          echo "season=${SEASON}"
+          echo "week=${WEEK}"
+          echo "mode=${MODE}"
+          echo "PREVIEW IS DATABASE READ-ONLY"
+          echo "strategyTag=official_flat_100"
+          echo "CFBD_API_KEY: not provided"
+          echo "ODDS_API_KEY: not provided"
+          echo "SGO_API_KEY: not provided"
+          echo "VISUALCROSSING_API_KEY: not provided"
+          echo "legacy grade:bets: not invoked"
+
+          if [ "$SEASON" != "2026" ]; then
+            echo "::error::season must equal 2026 (got ${SEASON})"
+            exit 1
+          fi
+          if ! [[ "$WEEK" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::week must be a positive integer (no current/ranges)"
+            exit 1
+          fi
+          if [ "$MODE" != "PREVIEW" ] && [ "$MODE" != "COMMIT" ]; then
+            echo "::error::mode must be PREVIEW or COMMIT"
+            exit 1
+          fi
+          EXPECTED="GRADE_2026_WEEK_${WEEK}_OFFICIAL"
+          if [ "$MODE" = "COMMIT" ] && [ "$CONFIRM" != "$EXPECTED" ]; then
+            echo "::error::COMMIT requires confirmation=${EXPECTED}"
+            exit 1
+          fi
+          echo "Preflight OK (no production DB secret in this step)"
+
+      - name: Install dependencies
+        env:
+          DATABASE_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+          DIRECT_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+        run: npm ci
+
+      - name: Generate Prisma client
+        env:
+          DATABASE_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+          DIRECT_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+        run: npm run prisma:generate
+
+      - name: Run guarded 2026 official bet grading
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          DATABASE_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          if [ "$INPUT_MODE" = "COMMIT" ]; then
+            npx tsx apps/jobs/grade-bets-2026.ts \
+              --season "$INPUT_SEASON" \
+              --week "$INPUT_WEEK" \
+              --mode "$INPUT_MODE" \
+              --confirm "$INPUT_CONFIRMATION" \
+              --report "reports/grade-bets-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-commit.json"
+          else
+            npx tsx apps/jobs/grade-bets-2026.ts \
+              --season "$INPUT_SEASON" \
+              --week "$INPUT_WEEK" \
+              --mode "$INPUT_MODE" \
+              --report "reports/grade-bets-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-preview.json"
+          fi
+
+      - name: Upload grading audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: grade-bets-2026-manual-w${{ inputs.week }}-${{ inputs.mode }}
+          path: reports/grade-bets-2026-*.json
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+          INPUT_MODE: ${{ inputs.mode }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "============================================"
+          echo "GUARDED 2026 OFFICIAL BET GRADING (MANUAL)"
+          echo "============================================"
+          echo "season: ${INPUT_SEASON}"
+          echo "week: ${INPUT_WEEK}"
+          echo "mode: ${INPUT_MODE}"
+          echo "status: ${JOB_STATUS}"
+          echo "writer: grade-bets-2026.ts"
+          echo "legacy grade:bets: not invoked"
+          echo "providers: not called"
+          echo "============================================"

@@ -6,6 +6,7 @@ import {
   americanOddsWinPnl,
   findCloseLineAtCutoff,
   gradeMoneyline,
+  gradeSpreadTotal,
   isOfficial2026MissingClosePrice,
   resolveSideTeamId,
 } from '../lib/grading-settlement';
@@ -47,6 +48,72 @@ describe('2C-2J-6A moneyline payout (jobs)', () => {
   it('invalid sportsbook odds 0 fail closed', () => {
     expect(() => gradeMoneyline('home', 180, 0, 7, 100)).toThrow(/invalid sportsbook/);
     expect(() => americanOddsWinPnl(100, 0)).toThrow(/invalid sportsbook/);
+  });
+});
+
+describe('2C-2J-6C-1r spread settlement sign (jobs)', () => {
+  it('away underdog +38.5 loses by 16 → win (SJSU)', () => {
+    // USC 42–26; margin home-away = +16; away sideMargin = -16; close = +38.5
+    const g = gradeSpreadTotal('spread', 'away', 38.5, 38.5, 16, 68, 100);
+    expect(g.result).toBe('win');
+  });
+
+  it('away underdog +31.5 loses by 17 → win (NMSU)', () => {
+    const g = gradeSpreadTotal('spread', 'away', 31.5, 31.5, 17, 51, 100);
+    expect(g.result).toBe('win');
+  });
+
+  it('underdog +7 loses by exactly 7 → push', () => {
+    const away = gradeSpreadTotal('spread', 'away', 7, 7, 7, 40, 100);
+    expect(away.result).toBe('push');
+    expect(away.pnl).toBe(0);
+    const home = gradeSpreadTotal('spread', 'home', 7, 7, -7, 40, 100);
+    expect(home.result).toBe('push');
+  });
+
+  it('favorite -4 wins by 10 → win; favorite -7 wins by 7 → push', () => {
+    const win = gradeSpreadTotal('spread', 'home', -4, -4, 10, 64, 100);
+    expect(win.result).toBe('win');
+    const push = gradeSpreadTotal('spread', 'home', -7, -7, 7, 40, 100);
+    expect(push.result).toBe('push');
+  });
+
+  it('Week 1 opening-card seven spreads settle 4–3', () => {
+    const spreads: Array<{
+      name: string;
+      side: 'home' | 'away';
+      close: number;
+      home: number;
+      away: number;
+      expect: 'win' | 'loss';
+    }> = [
+      { name: 'SJSU', side: 'away', close: 38.5, home: 42, away: 26, expect: 'win' },
+      { name: 'NMSU', side: 'away', close: 31.5, home: 34, away: 17, expect: 'win' },
+      { name: 'NCST', side: 'away', close: 4, home: 34, away: 8, expect: 'loss' },
+      { name: 'JVST', side: 'away', close: 6.5, home: 33, away: 7, expect: 'loss' },
+      { name: 'SAC', side: 'away', close: 9.5, home: 28, away: 17, expect: 'loss' },
+      { name: 'STAN', side: 'home', close: -4, home: 37, away: 27, expect: 'win' },
+      { name: 'MEM', side: 'home', close: 4, home: 27, away: 21, expect: 'win' },
+    ];
+    let wins = 0;
+    let losses = 0;
+    for (const s of spreads) {
+      const margin = s.home - s.away;
+      const total = s.home + s.away;
+      const g = gradeSpreadTotal(
+        'spread',
+        s.side,
+        s.close,
+        s.close,
+        margin,
+        total,
+        100
+      );
+      expect(`${s.name}:${g.result}`).toBe(`${s.name}:${s.expect}`);
+      if (g.result === 'win') wins += 1;
+      if (g.result === 'loss') losses += 1;
+    }
+    expect(`${wins}-${losses}`).toBe('4-3');
   });
 });
 

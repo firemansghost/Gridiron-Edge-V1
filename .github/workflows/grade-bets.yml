@@ -1,3 +1,9 @@
+# Legacy Grade Bets workflow (Phase 2C-2J-6C-1).
+# Identity/schedule retained for inventory compatibility.
+# ALL events (schedule + workflow_dispatch) are HARD-HELD:
+# zero checkout, secrets, npm, grading commands, providers, or Bet writes.
+# Production grading uses 2026 Grade Bets (Manual, Guarded) instead.
+
 name: Grade Bets
 
 on:
@@ -9,52 +15,39 @@ on:
   workflow_dispatch:
     inputs:
       season:
-        description: 'Season to grade (optional)'
+        description: 'Season to grade (optional) — IGNORED under 6C-1 hold'
         required: false
         type: string
       week:
-        description: 'Week to grade (optional)'
+        description: 'Week to grade (optional) — IGNORED under 6C-1 hold'
         required: false
         type: string
       force:
-        description: 'Force regrade existing bets'
+        description: 'Force regrade — IGNORED under 6C-1 hold'
         required: false
         type: boolean
         default: false
 
+permissions:
+  contents: read
+
 concurrency:
   group: grade-bets-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  grade:
+  # 2C-2J-6C-1 hold — zero checkout / secrets / provider / DB / Bet writes.
+  grading-hold:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      DIRECT_URL:   ${{ secrets.DIRECT_URL }}
-      TZ: America/Chicago
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20', cache: 'npm' }
-      - run: npm ci
-      - run: npm run prisma:generate
-      - run: npm run build:jobs
-      - name: Grade Bets
+      - name: Hold Grade Bets (2C-2J-6C-1)
         run: |
-          echo "🧮 Grading bets..."
-          ARGS=""
-          if [ "${{ github.event.inputs.season }}" != "" ]; then
-            ARGS="$ARGS --season ${{ github.event.inputs.season }}"
-          fi
-          if [ "${{ github.event.inputs.week }}" != "" ]; then
-            ARGS="$ARGS --week ${{ github.event.inputs.week }}"
-          fi
-          if [ "${{ github.event.inputs.force }}" == "true" ]; then
-            ARGS="$ARGS --force"
-          fi
-          npm run grade:bets -- $ARGS
-          echo "✅ Grading completed"
-
-
+          set -euo pipefail
+          echo "2C-2J-6C-1 Grade Bets hold"
+          echo "Recurring / legacy grading is NOT AUTHORIZED in this phase."
+          echo "gradingWrites=false"
+          echo "dbAccess=false"
+          echo "providerCalls=0"
+          echo "legacy npm run grade:bets: not invoked"
+          echo "Use workflow 2026 Grade Bets (Manual, Guarded) for PREVIEW/COMMIT."
