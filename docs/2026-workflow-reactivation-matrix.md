@@ -1,16 +1,18 @@
 # 2026 Workflow Reactivation Matrix + Live Odds Architecture Audit
 
-**Phase:** 2C-2J-1  
-**Date:** 2026-08-28  
-**Main SHA:** `afd59d68290fc8b8e8b4fcb562028becbf0d6017`  
-**Status:** DRAFT — inventory / architecture only  
+**Phase:** 2C-2J-6C-2  
+**Date:** 2026-08-30  
+**Main SHA:** `f0c8c6af339884be44a6dd47780bc1adfc717799`  
+**Status:** Operating inventory refresh — YAML cleanup + catalog sync  
 
 **This phase does NOT:**
-- enable any GitHub workflow
-- add or reactivate cron schedules
+- enable any GitHub workflow schedule
+- add or reactivate cron schedules for score/grading
 - call CFBD / Odds / SGO / weather providers
 - write production DB rows
-- change Hybrid or Core V1 formulas
+- change Hybrid or Core V1 formulas, card selections, settlement, or CLV
+
+Deleting workflow YAML files does **not** delete historical Actions run records or historical implementation code under `apps/jobs/`.
 
 Machine-readable companion: [`docs/data/2026-workflow-classifications.json`](./data/2026-workflow-classifications.json)  
 Static inventory script: `scripts/inventory-workflows-2026.py`
@@ -21,30 +23,30 @@ Static inventory script: `scripts/inventory-workflows-2026.py`
 
 | Metric | Value |
 |--------|------:|
-| Workflow files inventoried | **46** |
-| YAML files with active `schedule:` triggers | **10** |
+| Workflow files inventoried | **48** |
+| YAML files with active `schedule:` triggers | **8** |
 | `scheduleReactivationRecommended=true` | **0** |
-| Odds ingestion authorized | **NO** |
-| Bet sync authorized | **NO** |
-| Grading authorized | **NO** |
-| Score sync reactivated | **NO** |
+| Manual guarded Live Odds path | **proven** (Week 1) |
+| Manual guarded Core V1 card path | **proven** (Week 1) |
+| Manual guarded CFBD score path | **proven** (Week 1) |
+| Manual guarded official grading path | **proven** (Week 1) |
+| Recurring score/grading schedules | **NOT AUTHORIZED** |
 | Official Week1 spread model | **Core V1** |
 | Hybrid production authorization | **held** |
-| Production Week1 MarketLine rows | **0** |
 
 ### Classification counts
 
 | Classification | Count |
 |----------------|------:|
 | COMPLETED_LEAVE_OFF | 18 |
-| MANUAL_SAFE | 6 |
+| MANUAL_SAFE | 10 |
 | MANUAL_REVIEW_REQUIRED | 6 |
-| REPAIR_BEFORE_USE | 9 |
+| REPAIR_BEFORE_USE | 8 |
 | REPLACE | 4 |
-| FUTURE_AFTER_GAMES | 1 |
+| FUTURE_AFTER_GAMES | 0 |
 | BLOCKED | 1 |
 | CI_ONLY | 1 |
-| **Total** | **46** |
+| **Total** | **48** |
 
 ### REPLACE (do not reactivate as-is)
 
@@ -57,7 +59,16 @@ Static inventory script: `scripts/inventory-workflows-2026.py`
 
 ### REPAIR_BEFORE_USE
 
-`cfbd-scores-sync.yml`, `cfbd-feature-ingest.yml`, `cfbd-rankings-sync.yml`, `stats-cfbd.yml`, `stats-season-cfbd.yml`, `stats-advanced-cfbd.yml`, `roster-churn-cfbd.yml`, `talent-commits-sync.yml`, `sgo-team-stats.yml`
+`cfbd-feature-ingest.yml`, `cfbd-rankings-sync.yml`, `stats-cfbd.yml`, `stats-season-cfbd.yml`, `stats-advanced-cfbd.yml`, `roster-churn-cfbd.yml`, `talent-commits-sync.yml`, `sgo-team-stats.yml`
+
+### MANUAL_SAFE canonical production entrypoints (dispatch only)
+
+| Workflow | Role |
+|----------|------|
+| `write-live-odds-2026.yml` | Guarded Live Odds PREVIEW/COMMIT |
+| `write-core-v1-weekly-card-2026.yml` | Guarded Core V1 `official_flat_100` card |
+| `cfbd-scores-2026-manual.yml` | Guarded CFBD score PREVIEW/COMMIT |
+| `grade-bets-2026-manual.yml` | Guarded official bet grading PREVIEW/COMMIT |
 
 ### BLOCKED
 
@@ -69,29 +80,32 @@ Static inventory script: `scripts/inventory-workflows-2026.py`
 
 Schedule write/inventory, FBS membership, season conferences, talent init, Core V1 ratings preview + forensics/evals, Hybrid readiness audit *as a completed decision phase* (workflow itself remains MANUAL_SAFE for re-runs), backfill-scores-2025.
 
+### Retired workflow identities (2C-2J-6C-2)
+
+| Deleted YAML | Replacement |
+|--------------|-------------|
+| `cfbd-scores-sync.yml` (`CFBD Scores Sync`) | `cfbd-scores-2026-manual.yml` |
+| `grade-bets.yml` (`Grade Bets`) | `grade-bets-2026-manual.yml` |
+| `one-time-week1-odds-core-preview-2026-08-29.yml` | none (expired one-time) |
+
 ---
 
 ## A. Operator context
 
 At end of 2025, **all recurring production workflows were stopped in the GitHub UI**. YAML may still contain `schedule:` blocks. This audit answers what would happen **if** a workflow were enabled — it does **not** change GitHub enabled/disabled state.
 
-Phase 2C-2I-2 (PR #62) established:
-- Effective 2026 model = **Core V1**
-- Explicit `hybrid_v2` → authorization hold (no Hybrid runtime; no persisted Hybrid comparison metadata)
-- Odds still **NOT AUTHORIZED**
+Opening provider Week 1 Saturday tranche completed the full guarded production chain (Live Odds → Core card → CFBD Scores → Official grading). Recurring schedules for score/grading remain **NOT AUTHORIZED**.
 
 ---
 
 ## B. Scheduled workflows (active YAML `schedule:`)
 
-All **10** remain **operator-stopped**. Recommendation: keep stopped. `scheduleReactivationRecommended=false` for each.
+All **8** remain **operator-stopped**. Recommendation: keep stopped. `scheduleReactivationRecommended=false` for each.
 
 | File | Cron(s) | If enabled would… | Season | Provider | Prod writes | 2026 recommendation |
 |------|---------|-------------------|--------|----------|-------------|---------------------|
 | `nightly-ingest.yml` | `0 7 * * *` | Schedules (CFBD 2025), Odds wipe+insert, weather, talent/commits, **seed-ratings** | **2025** | CFBD, Odds, SGO stub, VC | Yes (Game/MarketLine/ratings side effects) | **REPLACE** — never re-enable |
 | `v3-totals-nightly.yml` | `0 8 * * *` | Attempt V3 totals bet sync | 2025 default | CFBD | Would fail / blocked | **BLOCKED** |
-| `cfbd-scores-sync.yml` | Fri–Sun every 2h + daily `0 2 * * *` | Finalize Game scores | **defaults 2025** on schedule | CFBD | Game scores/status | **REPAIR** season→2026 then new guarded path |
-| `grade-bets.yml` | Hourly Sat/Sun; `0 3 * * 1-5` | Grade ungraded `strategy_run` bets | empty = **all seasons** risk | none | Bet result/pnl | **FUTURE_AFTER_GAMES** + repair blast radius |
 | `stats-season-cfbd.yml` | `0 2 * * *` | Season stats | 2024/2025 | CFBD | stats | REPAIR |
 | `stats-advanced-cfbd.yml` | `0 3 * * *` | Advanced / EPA features | 2024/2025 | CFBD | feature tables | REPAIR; prefer feature-ingest review |
 | `cfbd-rankings-sync.yml` | `0 9 * * 1` | Rankings | 2025 | CFBD | rankings | REPAIR; optional |
@@ -100,6 +114,8 @@ All **10** remain **operator-stopped**. Recommendation: keep stopped. `scheduleR
 | `sgo-team-stats.yml` | `0 4 20 2 *` | SGO team stats (**not MarketLine**) | 2024 | SGO | team stats | REPAIR; optional |
 
 Note: `stats-cfbd.yml` has a **commented-out** historical schedule only — it is **not** actively scheduled (dispatch-only).
+
+Legacy `cfbd-scores-sync.yml` and `grade-bets.yml` schedules are **removed** from the repo; their historical Actions runs remain in GitHub history only.
 
 ---
 
@@ -110,6 +126,7 @@ Legend: **Class** = classification; **Sched?** = YAML schedule present; **SchedO
 | File | Display name (short) | Triggers | Class | Sched? | SchedOK? |
 |------|----------------------|----------|-------|--------|----------|
 | audit-2026-ratings-readiness.yml | Audit 2026 Ratings Readiness | dispatch | COMPLETED_LEAVE_OFF | N | N |
+| audit-2026-marketline-consumer-readiness.yml | Audit MarketLine Consumer Readiness | dispatch | MANUAL_SAFE | N | N |
 | audit-2026-schedule-inventory.yml | Audit 2026 Schedule Inventory | dispatch | COMPLETED_LEAVE_OFF | N | N |
 | audit-balanced-v1-historical-parity.yml | Audit Balanced V1 Historical Parity | dispatch | COMPLETED_LEAVE_OFF | N | N |
 | audit-hybrid-v2-preseason-readiness.yml | Audit Hybrid V2 Preseason Readiness | dispatch | MANUAL_SAFE | N | N |
@@ -121,12 +138,12 @@ Legend: **Class** = classification; **Sched?** = YAML schedule present; **SchedO
 | bowl-week-bootstrap.yml | Bowl Week Bootstrap | dispatch | MANUAL_REVIEW_REQUIRED | N | N |
 | cfbd-feature-ingest.yml | CFBD Feature Ingest | dispatch | REPAIR_BEFORE_USE | N | N |
 | cfbd-rankings-sync.yml | CFBD Rankings Sync | dispatch+schedule | REPAIR_BEFORE_USE | Y | N |
-| cfbd-scores-sync.yml | CFBD Scores Sync | dispatch+schedule | REPAIR_BEFORE_USE | Y | N |
+| cfbd-scores-2026-manual.yml | 2026 CFBD Scores (Manual, Guarded) | dispatch | MANUAL_SAFE | N | N |
 | diagnose-2026-conference-recruiting.yml | Diagnose Conference/Recruiting | dispatch | COMPLETED_LEAVE_OFF | N | N |
 | evaluate-balanced-v1-preseason-bridge.yml | Evaluate Preseason Bridge | dispatch | COMPLETED_LEAVE_OFF | N | N |
 | evaluate-balanced-v1-transition-blends.yml | Evaluate Transition Blends | dispatch | COMPLETED_LEAVE_OFF | N | N |
 | evaluate-balanced-v1-transition-timing.yml | Evaluate Transition Timing | dispatch | COMPLETED_LEAVE_OFF | N | N |
-| grade-bets.yml | Grade Bets | dispatch+schedule | FUTURE_AFTER_GAMES | Y | N |
+| grade-bets-2026-manual.yml | 2026 Grade Bets (Manual, Guarded) | dispatch | MANUAL_SAFE | N | N |
 | ingest-2026-schedules.yml | Ingest 2026 Schedules | dispatch | COMPLETED_LEAVE_OFF | N | N |
 | init-2026-fbs-membership.yml | Init 2026 FBS Membership | dispatch | COMPLETED_LEAVE_OFF | N | N |
 | initialize-2026-season-conferences.yml | Init Season Conferences | dispatch | COMPLETED_LEAVE_OFF | N | N |
@@ -154,6 +171,7 @@ Legend: **Class** = classification; **Sched?** = YAML schedule present; **SchedO
 | v3-totals-nightly.yml | V3 Totals Nightly | dispatch+schedule | BLOCKED | Y | N |
 | validate-preseason-providers.yml | Validate Preseason Providers | dispatch | MANUAL_SAFE | N | N |
 | write-live-odds-2026.yml | Preview/Write 2026 Live Odds | dispatch | MANUAL_SAFE | N | N |
+| write-core-v1-weekly-card-2026.yml | Write Core V1 Weekly Card 2026 | dispatch | MANUAL_SAFE | N | N |
 | write-core-v1-lifecycle-ratings.yml | Write Core V1 Lifecycle | dispatch | MANUAL_SAFE | N | N |
 
 Full static fields (secrets, scripts, hardcoded years, security flags) can be regenerated with:
@@ -164,24 +182,26 @@ python scripts/inventory-workflows-2026.py
 
 ---
 
-## D. Minimal 2026 operating pipeline (design only — not activated)
+## D. Minimal 2026 operating pipeline (current)
+
+Keep **score → grading → feature ingest → lifecycle** as separate stages. Do not merge into one mega-job.
 
 ### PRE-GAME
 
-| Stage | Required? | Cadence | Provider | Writes | Upstream | Existing usable? | Repair vs new |
-|-------|-----------|---------|----------|--------|----------|------------------|---------------|
-| Schedule maintenance | As needed | Manual | CFBD | Game schedule | — | `preview-2026-schedules` + guarded ingest | Keep manual; leave schedule cron off |
-| **Live Odds polling** | **Yes for card** | Manual first (later poll) | **Odds API** | MarketLine | Week schedule + teams | **No** — `ingest-minimal` wipe unsafe; `ingest.ts` runs ratings | **NEW 2C-2J-2** guarded PREVIEW/COMMIT |
-| Official slate/card | Yes | After Odds | none (DB) | Bet (`official_flat_100`) | Odds + Core V1 ratings | `sync-weekly-bets` **unsafe** | **REPLACE** with Core-only gated writer |
+| Stage | Required? | Cadence | Provider | Writes | Canonical path |
+|-------|-----------|---------|----------|--------|----------------|
+| Schedule maintenance | As needed | Manual | CFBD | Game schedule | `preview-2026-schedules` + guarded ingest |
+| **Live Odds** | Yes for card | Manual guarded | Odds API | MarketLine append | `write-live-odds-2026.yml` (**proven**) |
+| Official slate/card | Yes | Manual guarded | none (DB) | Bet (`official_flat_100`) | `write-core-v1-weekly-card-2026.yml` (**proven**) |
 
 ### GAME / POST-GAME
 
-| Stage | Required? | Cadence | Provider | Writes | Upstream | Existing usable? | Repair vs new |
-|-------|-----------|---------|----------|--------|----------|------------------|---------------|
-| Score sync | Yes after kickoff | Frequent weekends | CFBD | Game scores/status | Schedule | `cfbd-scores-sync` | **REPAIR** season=2026 + fail-closed; keep separate |
-| Grading | After finals + bets | After scores | none | Bet result/pnl | Scores + bets | `grade-bets` | Repair empty-season blast radius; after Week1 card exists |
-| CFBD feature ingest | For lifecycle | After week completes | CFBD | feature tables | Scores optional | `cfbd-feature-ingest` / stats-* | REPAIR secrets/season; keep separate from lifecycle |
-| Core V1 lifecycle | After completedThroughWeek | Manual guarded | none (DB features) | TeamSeasonRating v1 | Features + finals | `write-core-v1-lifecycle-ratings` | **Keep** (PR #60 pattern) |
+| Stage | Required? | Cadence | Provider | Writes | Canonical path |
+|-------|-----------|---------|----------|--------|----------------|
+| Score sync | Yes after kickoff | Manual guarded (recurring **NOT AUTHORIZED**) | CFBD `/games` | Game scores/status | `cfbd-scores-2026-manual.yml` (**proven**) |
+| Grading | After finals + bets | Manual guarded (recurring **NOT AUTHORIZED**) | none | Bet result/pnl/clv | `grade-bets-2026-manual.yml` (**proven**) |
+| CFBD feature ingest | For lifecycle | After week completes | CFBD | feature tables | `cfbd-feature-ingest` / stats-* — REPAIR before use |
+| Core V1 lifecycle | After completedThroughWeek | Manual guarded | none (DB features) | TeamSeasonRating v1 | `write-core-v1-lifecycle-ratings` |
 
 ### HYBRID READINESS (future)
 
@@ -196,7 +216,7 @@ python scripts/inventory-workflows-2026.py
 
 Talent/roster/rankings/SGO team stats — repair season params before any use; none needed for Week1 Core V1 card once Odds exist.
 
-**Keep score → grade → feature → lifecycle as separate workflows.** Do not merge into one mega-job.
+**Keep score → grading → feature ingest → lifecycle as separate workflows.**
 
 ---
 
@@ -238,7 +258,7 @@ Talent/roster/rankings/SGO team stats — repair season params before any use; n
 
 ### Week1 Odds need (no Hybrid required)
 
-Market data for spreads / totals / moneylines / edge / official Core V1 card. Production currently: **0 MarketLine rows** for 2026 Week1.
+Market data for spreads / totals / moneylines / edge / official Core V1 card. Opening Week 1 Live Odds path is **proven** via `write-live-odds-2026.yml`.
 
 ---
 
@@ -288,29 +308,36 @@ Official model = Core V1; Hybrid held. Running current sync would **persist Hybr
 
 ### Recommendation
 
-**Prefer C: new Core-only guarded weekly-card writer** — **IMPLEMENTED in draft (2C-2J-4)** as `write-core-v1-weekly-card-2026.yml` (PREVIEW/COMMIT + confirmation), writing only `official_flat_100` while Hybrid unauthorized.
+**Prefer C: new Core-only guarded weekly-card writer** — **IMPLEMENTED** as `write-core-v1-weekly-card-2026.yml` (PREVIEW/COMMIT + confirmation), writing only `official_flat_100` while Hybrid unauthorized.
 
 Legacy `sync-weekly-bets.yml` is labeled **LEGACY (<=2025)** and rejects season≥2026.
 
-**Core card COMMIT remains NOT AUTHORIZED** until independent PREVIEW review. Recurring Odds polling / second Odds COMMIT / grading remain **NOT AUTHORIZED**.
+**Week 1 opening Core card COMMIT is proven.** Recurring Odds polling schedule remains **NOT AUTHORIZED**.
 
 ---
 
 ## H. Score / post-game pipeline audit
 
-### `cfbd-scores-sync.yml`
+### Canonical score path — `cfbd-scores-2026-manual.yml`
 
-- Schedule + dispatch present
-- `SEASON: ${{ github.event.inputs.season || '2025' }}` → **scheduled runs write 2025**
-- Soft-skip if CFBD key missing (non-fail-closed)
-- Writes `Game.homeScore/awayScore/status=final` for completed FBS-vs-FBS
-- Feeds grading + lifecycle `completedThroughWeek` decisions
+- `workflow_dispatch` only (no schedule)
+- Guarded `write-cfbd-scores-2026.ts`; one CFBD `/games` call
+- Production Week 1 PREVIEW + COMMIT proven
+- Recurring score schedule **NOT AUTHORIZED**
 
-### Recommendation
+### Canonical grading path — `grade-bets-2026-manual.yml`
 
-Repair or replace with a **2026-parameterized, fail-closed, manual-first** score sync. Keep **separate** from grade, feature ingest, and lifecycle COMMIT.
+- `workflow_dispatch` only (no schedule)
+- Guarded `grade-bets-2026.ts` for `official_flat_100` / `strategy_run`
+- No provider calls; Serializable COMMIT of result/pnl/clv only
+- Production Week 1 PREVIEW + COMMIT proven
+- Recurring grading schedule **NOT AUTHORIZED**
 
-**Score sync NOT YET REACTIVATED.**
+### Retired identities
+
+Legacy `cfbd-scores-sync.yml` (`CFBD Scores Sync`) and `grade-bets.yml` (`Grade Bets`) YAML files were deleted in 2C-2J-6C-2. Historical Actions run records and historical `apps/jobs` implementations remain in the repository but are not invoked by any workflow.
+
+Keep **score → grading → feature ingest → lifecycle** as separate stages.
 
 ---
 
@@ -320,15 +347,13 @@ Preferred standard: **PR #60 / lifecycle** (step env inputs, scoped DB secret, i
 
 | Anti-pattern | Examples |
 |--------------|----------|
-| Hard-coded 2025 in scheduled paths | `nightly-ingest`, `cfbd-scores-sync`, stats/rankings/commits |
+| Hard-coded 2025 in scheduled paths | `nightly-ingest`, stats/rankings/commits |
 | `${{ inputs.* }}` inside shell `run:` | Multiple legacy workflows (e.g. `v3-totals-nightly`) |
 | Secrets echoed to `GITHUB_ENV` | `cfbd-feature-ingest` |
-| Job-wide production DB for broad jobs | nightly, sync-weekly-bets, scores, grade |
+| Job-wide production DB for broad jobs | nightly, sync-weekly-bets |
 | `continue-on-error` on required data | feature-ingest season-stats |
-| Non-fail-closed provider skip | scores soft-skip without key |
 | Mock/simulated fallback advertised as live | nightly SGO → `ingest-simple` |
 | Ratings as Odds side effect | `ingest.ts`, nightly `seed-ratings` |
-| Implicit current-week / empty season | grade-bets empty season grades all |
 | UTF-16 workflow file | `v3-totals-nightly.yml` (fragile tooling) |
 
 ---
@@ -337,11 +362,11 @@ Preferred standard: **PR #60 / lifecycle** (step env inputs, scoped DB secret, i
 
 | Capability | Status |
 |------------|--------|
-| Recurring workflows | **STOPPED** (operator UI) |
-| Odds ingestion | **NOT AUTHORIZED** |
-| Bet sync / Core card | **Core card writer draft (2C-2J-4); COMMIT NOT AUTHORIZED**; legacy sync ≤2025 only |
-| Grading | **NOT AUTHORIZED** |
-| Score sync | **NOT YET REACTIVATED** |
+| Recurring workflows | **STOPPED** (operator UI); 8 YAML schedules remain inert |
+| Live Odds | **Manual guarded proven**; recurring schedule **NOT AUTHORIZED** |
+| Core V1 official card | **Manual guarded proven** |
+| Official grading | **Manual guarded proven**; recurring schedule **NOT AUTHORIZED** |
+| Score sync | **Manual guarded proven**; recurring schedule **NOT AUTHORIZED** |
 | CFBD feature ingest | **NOT YET REACTIVATED** |
 | Hybrid activation | **HELD** |
 | Core V1 Week1 official | **YES** |
@@ -350,4 +375,4 @@ Preferred standard: **PR #60 / lifecycle** (step env inputs, scoped DB secret, i
 
 ## K. Next phase
 
-**2C-2J-2** — Implement guarded 2026 Live Odds PREVIEW/COMMIT writer + manual workflow (no schedule), per section F. Optionally design Core-only card writer in parallel or as 2C-2J-3.
+Authorize recurring score/grading cadence only after explicit operator review (separate from this inventory cleanup). Feature ingest / lifecycle remain separate stages.

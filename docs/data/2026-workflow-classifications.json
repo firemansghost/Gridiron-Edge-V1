@@ -1,12 +1,15 @@
 {
-  "phase": "2C-2J-4",
-  "inventoryDate": "2026-08-28",
-  "mainSha": "4a80a5b3c1fa58e86986c3731cfda3ce77b6cf27",
+  "phase": "2C-2J-6C-2",
+  "inventoryDate": "2026-08-30",
+  "mainSha": "f0c8c6af339884be44a6dd47780bc1adfc717799",
   "notes": [
     "Classification is operational authorization guidance only — not an enablement action.",
     "scheduleReactivationRecommended is false for every workflow in this phase.",
     "GitHub UI disablement is operator state; YAML schedules may still exist.",
-    "2C-2J-3 append-only consumer audit added; 2C-2J-4 guarded Core V1 weekly card writer added.",
+    "2C-2J-6C-2: retired legacy cfbd-scores-sync.yml and grade-bets.yml workflow identities; deleted expired one-time Aug 29 workflow.",
+    "Canonical production entrypoints are manual guarded: write-live-odds-2026, write-core-v1-weekly-card-2026, cfbd-scores-2026-manual, grade-bets-2026-manual.",
+    "Opening provider Week 1 Saturday tranche proven end-to-end; recurring score/grading schedules remain NOT AUTHORIZED.",
+    "Deleting workflow YAML does not delete historical Actions run records or historical implementation code.",
     "sync-weekly-bets is LEGACY <=2025; 2026 uses write-core-v1-weekly-card-2026.yml."
   ],
   "allowedClassifications": [
@@ -99,10 +102,10 @@
       "purpose2026": "Rankings sync; schedule present; season 2025 hard-coded"
     },
     {
-      "file": "cfbd-scores-sync.yml",
-      "classification": "REPAIR_BEFORE_USE",
+      "file": "cfbd-scores-2026-manual.yml",
+      "classification": "MANUAL_SAFE",
       "scheduleReactivationRecommended": false,
-      "purpose2026": "Score finals; schedule defaults season 2025 — must repair before any 2026 use"
+      "purpose2026": "Canonical guarded 2026 CFBD score PREVIEW/COMMIT; manual-only; one /games provider call; production Week 1 path successfully proven; recurring schedule not authorized"
     },
     {
       "file": "diagnose-2026-conference-recruiting.yml",
@@ -129,10 +132,10 @@
       "purpose2026": "Timing study; hard-switch rejected"
     },
     {
-      "file": "grade-bets.yml",
-      "classification": "FUTURE_AFTER_GAMES",
+      "file": "grade-bets-2026-manual.yml",
+      "classification": "MANUAL_SAFE",
       "scheduleReactivationRecommended": false,
-      "purpose2026": "Grade strategy_run bets; needs 2026 bets+scores; schedule unsafe until reviewed"
+      "purpose2026": "Canonical guarded official_flat_100 grading PREVIEW/COMMIT; manual-only; no provider calls; production Week 1 path successfully proven; recurring schedule not authorized"
     },
     {
       "file": "ingest-2026-schedules.yml",
