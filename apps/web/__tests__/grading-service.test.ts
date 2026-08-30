@@ -81,6 +81,29 @@ describe('2C-2J-6C-1r spread settlement sign (web)', () => {
     );
   });
 
+  it('spread CLV is closeLine - modelLine for every side', () => {
+    expect(
+      gradeSpreadTotal('spread', 'home', -6.3219, -4, 10, 64, 100).clv
+    ).toBeCloseTo(2.3219, 4);
+    expect(gradeSpreadTotal('spread', 'home', 2, 4, 6, 48, 100).clv).toBe(2);
+    expect(
+      gradeSpreadTotal('spread', 'away', 12, 38.5, 16, 68, 100).clv
+    ).toBe(26.5);
+    expect(gradeSpreadTotal('spread', 'away', -7, -4, -10, 50, 100).clv).toBe(
+      3
+    );
+  });
+
+  it('Stanford Week 1: WIN, pnl +90.90, positive CLV ~+2.3219', () => {
+    const model = -6.321889701911643;
+    const close = -4;
+    const g = gradeSpreadTotal('spread', 'home', model, close, 10, 64, 100);
+    expect(g.result).toBe('win');
+    expect(g.pnl).toBeCloseTo(90.9, 6);
+    expect(g.clv).toBeCloseTo(2.321889701911643, 10);
+    expect(g.clv).toBeGreaterThan(0);
+  });
+
   it('Week 1 opening-card seven spreads settle 4–3', () => {
     const cases = [
       { side: 'away' as const, close: 38.5, home: 42, away: 26, expect: 'win' },
