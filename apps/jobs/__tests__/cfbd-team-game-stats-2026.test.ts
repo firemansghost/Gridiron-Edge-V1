@@ -3,10 +3,13 @@
  */
 
 import {
+  EXPECTED_2026_FBS_COUNT,
   buildPreviewExecution,
+  buildRolledBackExecution,
   buildSuccessfulCommitExecution,
   commitEligible,
   derivePaceFromSecondsPerPlay,
+  executeAtomicTeamGameStatCommit,
   expectedTeamGameStatConfirmation,
   fetchCfbdAdvancedGameStatsWeek,
   managedFieldsEqual,
@@ -22,6 +25,15 @@ import {
   type ManagedTeamGameStatFields,
 } from '../src/stats/cfbd-team-game-stats-2026';
 import type { TeamResolutionResult } from '../src/preseason/cfbd-schedule-ingest';
+
+function buildFbsIds(...required: string[]): string[] {
+  const ids = [...required];
+  for (let i = 0; ids.length < EXPECTED_2026_FBS_COUNT; i++) {
+    const pad = `fbs-pad-${i}`;
+    if (!ids.includes(pad)) ids.push(pad);
+  }
+  return ids.slice(0, EXPECTED_2026_FBS_COUNT);
+}
 
 function resolved(
   name: string,
@@ -286,7 +298,7 @@ describe('2C-2J-6D-1 planning', () => {
   const homeId = 'team-home';
   const awayId = 'team-away';
   const gameId = '2026-W01-away-home';
-  const fbs = [homeId, awayId];
+  const fbs = buildFbsIds(homeId, awayId);
 
   const finalGame: DbGameRowForStats = {
     id: gameId,
@@ -620,5 +632,284 @@ describe('2C-2J-6D-1 planning', () => {
     expect(exec.createCount).toBe(2);
     expect(exec.updateCount).toBe(1);
     expect(exec.commitSucceeded).toBe(true);
+    expect(exec.postWriteVerificationSucceeded).toBe(true);
+  });
+
+  it('duplicate existing natural keys block planning', () => {
+    const fields = baseFieldsFrom(homeRow);
+    const plan = planTeamGameStats({
+      season: 2026,
+      week: 1,
+      mode: 'PREVIEW',
+      confirmation: '',
+      providerRows: [homeRow, awayRow],
+      providerHttpStatus: 200,
+      providerCalls: 1,
+      dbGames: [finalGame],
+      existingStats: [
+        asDbStat(gameId, homeId, fields, 's1'),
+        asDbStat(gameId, homeId, fields, 's1-dup'),
+        asDbStat(gameId, awayId, baseFieldsFrom(awayRow), 's2'),
+      ],
+      fbsTeamIds: fbs,
+      teamResolutions: resolutions,
+    });
+    expect(plan.writeSafe).toBe(false);
+    expect(plan.counts.duplicateExistingNaturalKeys).toBe(1);
+    expect(
+      plan.blockers.some((b) =>
+        b.startsWith(`duplicate_existing_natural_key:${naturalKey(gameId, homeId)}`)
+      )
+    ).toBe(true);
+  });
+
+  it('wrong-season and wrong-week provider rows fail closed', () => {
+    const wrongSeason = providerRow({
+      team: 'Alabama',
+      opponent: 'Georgia',
+      homeAway: 'home',
+      season: 2025,
+    });
+    const wrongWeek = providerRow({
+      team: 'Georgia',
+      opponent: 'Alabama',
+      homeAway: 'away',
+      week: 9,
+    });
+    const seasonPlan = planTeamGameStats({
+      season: 2026,
+      week: 1,
+      mode: 'PREVIEW',
+      confirmation: '',
+      providerRows: [wrongSeason, awayRow],
+      providerHttpStatus: 200,
+      providerCalls: 1,
+      dbGames: [finalGame],
+      existingStats: [],
+      fbsTeamIds: fbs,
+      teamResolutions: resolutions,
+    });
+    expect(seasonPlan.writeSafe).toBe(false);
+    expect(
+      seasonPlan.blockers.some((b) => b.startsWith('provider_row_season_mismatch:'))
+    ).toBe(true);
+
+    const weekPlan = planTeamGameStats({
+      season: 2026,
+      week: 1,
+      mode: 'PREVIEW',
+      confirmation: '',
+      providerRows: [homeRow, wrongWeek],
+      providerHttpStatus: 200,
+      providerCalls: 1,
+      dbGames: [finalGame],
+      existingStats: [],
+      fbsTeamIds: fbs,
+      teamResolutions: resolutions,
+    });
+    expect(weekPlan.writeSafe).toBe(false);
+    expect(
+      weekPlan.blockers.some((b) => b.startsWith('provider_row_week_mismatch:'))
+    ).toBe(true);
+  });
+});
+
+describe('2C-2J-6D-1 FBS / Game structural gates', () => {
+  const homeId = 'team-home';
+  const awayId = 'team-away';
+  const gameId = '2026-W01-away-home';
+  const finalGame: DbGameRowForStats = {
+    id: gameId,
+    season: 2026,
+    week: 1,
+    homeTeamId: homeId,
+    awayTeamId: awayId,
+    status: 'final',
+  };
+  const resolutions = new Map<string, TeamResolutionResult>([
+    ['Alabama', resolved('Alabama', homeId)],
+    ['Georgia', resolved('Georgia', awayId)],
+  ]);
+  const homeRow = providerRow({
+    team: 'Alabama',
+    opponent: 'Georgia',
+    homeAway: 'home',
+  });
+  const awayRow = providerRow({
+    team: 'Georgia',
+    opponent: 'Alabama',
+    homeAway: 'away',
+  });
+
+  function planWith(fbsTeamIds: string[], dbGames: DbGameRowForStats[]) {
+    return planTeamGameStats({
+      season: 2026,
+      week: 1,
+      mode: 'PREVIEW',
+      confirmation: '',
+      providerRows: [homeRow, awayRow],
+      providerHttpStatus: 200,
+      providerCalls: 1,
+      dbGames,
+      existingStats: [],
+      fbsTeamIds,
+      teamResolutions: resolutions,
+    });
+  }
+
+  it('empty FBS membership → blocker / writeSafe false', () => {
+    const plan = planWith([], [finalGame]);
+    expect(plan.writeSafe).toBe(false);
+    expect(plan.counts.fbsMembershipRows).toBe(0);
+    expect(plan.blockers.some((b) => b.includes('fbs_membership_row_count'))).toBe(
+      true
+    );
+  });
+
+  it('137 FBS membership → blocker', () => {
+    const fbs137 = buildFbsIds(homeId, awayId).slice(0, 137);
+    const plan = planWith(fbs137, [finalGame]);
+    expect(plan.writeSafe).toBe(false);
+    expect(plan.counts.fbsMembershipRows).toBe(137);
+    expect(plan.blockers.some((b) => b.includes('fbs_membership_row_count:137'))).toBe(
+      true
+    );
+  });
+
+  it('duplicate membership IDs → blocker', () => {
+    const base = buildFbsIds(homeId, awayId).slice(0, 137);
+    const withDup = [...base, homeId]; // 138 rows, 137 distinct, duplicate homeId
+    const plan = planWith(withDup, [finalGame]);
+    expect(plan.writeSafe).toBe(false);
+    expect(plan.counts.duplicateFbsMembershipIds).toBeGreaterThanOrEqual(1);
+    expect(
+      plan.blockers.some((b) => b.startsWith('duplicate_fbs_membership_ids:'))
+    ).toBe(true);
+  });
+
+  it('empty canonical Game set → blocker', () => {
+    const plan = planWith(buildFbsIds(homeId, awayId), []);
+    expect(plan.writeSafe).toBe(false);
+    expect(plan.counts.canonicalGames).toBe(0);
+    expect(plan.blockers).toContain('empty_canonical_game_set');
+  });
+
+  it('zero relevant FBS games → blocker', () => {
+    const nonFbsGame: DbGameRowForStats = {
+      id: 'fcs-only',
+      season: 2026,
+      week: 1,
+      homeTeamId: 'fcs-a',
+      awayTeamId: 'fcs-b',
+      status: 'final',
+    };
+    const plan = planWith(buildFbsIds(homeId, awayId), [nonFbsGame]);
+    expect(plan.writeSafe).toBe(false);
+    expect(plan.counts.relevantCanonicalGames).toBe(0);
+    expect(plan.blockers).toContain('zero_relevant_canonical_fbs_games');
+    expect(plan.blockers).toContain('zero_expected_fbs_participant_keys');
+  });
+
+  it('valid 138-member fixture plus valid target game still passes', () => {
+    const plan = planWith(buildFbsIds(homeId, awayId), [finalGame]);
+    expect(plan.counts.fbsMembershipRows).toBe(EXPECTED_2026_FBS_COUNT);
+    expect(plan.counts.distinctFbsMembership).toBe(EXPECTED_2026_FBS_COUNT);
+    expect(plan.counts.duplicateFbsMembershipIds).toBe(0);
+    expect(plan.counts.canonicalGames).toBe(1);
+    expect(plan.counts.relevantCanonicalGames).toBe(1);
+    expect(plan.counts.expectedFbsParticipantRows).toBe(2);
+    expect(plan.writeSafe).toBe(true);
+  });
+});
+
+describe('2C-2J-6D-1 transactional verification rollback', () => {
+  const homeId = 'team-home';
+  const awayId = 'team-away';
+  const gameId = '2026-W01-away-home';
+  const fbs = buildFbsIds(homeId, awayId);
+  const finalGame: DbGameRowForStats = {
+    id: gameId,
+    season: 2026,
+    week: 1,
+    homeTeamId: homeId,
+    awayTeamId: awayId,
+    status: 'final',
+  };
+  const resolutions = new Map<string, TeamResolutionResult>([
+    ['Alabama', resolved('Alabama', homeId)],
+    ['Georgia', resolved('Georgia', awayId)],
+  ]);
+  const homeRow = providerRow({
+    team: 'Alabama',
+    opponent: 'Georgia',
+    homeAway: 'home',
+  });
+  const awayRow = providerRow({
+    team: 'Georgia',
+    opponent: 'Alabama',
+    homeAway: 'away',
+  });
+
+  it('mutation then transactional verification mismatch throws (rollback semantics)', async () => {
+    const plan = planTeamGameStats({
+      season: 2026,
+      week: 1,
+      mode: 'COMMIT',
+      confirmation: 'WRITE_2026_WEEK_1_TEAM_GAME_STATS',
+      providerRows: [homeRow, awayRow],
+      providerHttpStatus: 200,
+      providerCalls: 1,
+      dbGames: [finalGame],
+      existingStats: [],
+      fbsTeamIds: fbs,
+      teamResolutions: resolutions,
+    });
+    expect(plan.writeSafe).toBe(true);
+
+    const store = new Map<string, DbTeamGameStatRow>();
+    let mutationAttempts = 0;
+
+    await expect(
+      executeAtomicTeamGameStatCommit({
+        plan,
+        providerRows: [homeRow, awayRow],
+        fbsTeamIds: fbs,
+        teamResolutions: resolutions,
+        reReadExisting: async () => Array.from(store.values()),
+        reReadGames: async () => [finalGame],
+        createRow: async (row) => {
+          mutationAttempts += 1;
+          const key = naturalKey(row.gameId, row.teamId);
+          // Persist a corrupted epaOff so in-tx verification fails after mutation.
+          store.set(key, {
+            id: `created-${key}`,
+            gameId: row.gameId,
+            teamId: row.teamId,
+            season: 2026,
+            week: 1,
+            ...row.fields,
+            epaOff: 999,
+          });
+        },
+        updateRow: async () => {
+          mutationAttempts += 1;
+        },
+      })
+    ).rejects.toThrow(/post-write verification failed/);
+
+    expect(mutationAttempts).toBeGreaterThan(0);
+
+    const rolled = buildRolledBackExecution({
+      providerCalls: 1,
+      mutationAttempts,
+      error: 'post-write verification failed: managed_fields_mismatch',
+      postWriteVerificationSucceeded: false,
+    });
+    expect(rolled.commitAttempted).toBe(true);
+    expect(rolled.transactionStarted).toBe(true);
+    expect(rolled.commitSucceeded).toBe(false);
+    expect(rolled.postWriteVerificationSucceeded).toBe(false);
+    expect(rolled.createCount).toBeNull();
+    expect(rolled.updateCount).toBeNull();
   });
 });

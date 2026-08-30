@@ -132,6 +132,19 @@ describe('2C-2J-6D-1 canonical CFBD TeamGameStat workflow', () => {
     expect(cli).toContain('provider call skipped');
   });
 
+  it('post-write verification lives inside executeAtomic (not after commit)', () => {
+    const lib = fs.readFileSync(
+      path.join(ROOT, 'apps/jobs/src/stats/cfbd-team-game-stats-2026.ts'),
+      'utf8'
+    );
+    expect(lib).toMatch(
+      /export async function executeAtomicTeamGameStatCommit[\s\S]*verifyTeamGameStatPostWrite[\s\S]*post-write verification failed/
+    );
+    expect(cli).not.toContain('verifyTeamGameStatPostWrite');
+    expect(cli).toContain('transactionalVerification');
+    expect(cli).toContain('buildRolledBackExecution');
+  });
+
   it('checkout@v6 setup-node@v6 node 20; summary mentions providerCalls/write status', () => {
     expect(wf).toContain('actions/checkout@v6');
     expect(wf).toContain('actions/setup-node@v6');

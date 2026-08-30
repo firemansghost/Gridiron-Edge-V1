@@ -9,10 +9,13 @@ import {
   redactSecretLike,
   type TeamResolutionResult,
 } from '../preseason/cfbd-schedule-ingest';
+import { EXPECTED_2026_FBS_COUNT } from '../preseason/balanced-v1-preseason-bridge-eval';
 
 export const TEAM_GAME_STATS_SEASON = 2026;
 export const PHASE = '2C-2J-6D-1';
 export const CFBD_TEAM_GAME_STATS_TIMEOUT_MS = 20_000;
+/** Re-export authoritative 2026 FBS denominator for planner gates/tests. */
+export { EXPECTED_2026_FBS_COUNT };
 
 export type TeamGameStatMode = 'PREVIEW' | 'COMMIT';
 
@@ -119,7 +122,11 @@ export interface TeamGameStatPlan {
   mutationsInvoked: false;
   counts: {
     providerRows: number;
+    fbsMembershipRows: number;
+    distinctFbsMembership: number;
+    duplicateFbsMembershipIds: number;
     canonicalGames: number;
+    relevantCanonicalGames: number;
     finalTargetGames: number;
     incompleteTargetGames: number;
     expectedFbsParticipantRows: number;
@@ -127,6 +134,7 @@ export interface TeamGameStatPlan {
     ignoredProviderRows: number;
     unresolvedRows: number;
     duplicateKeys: number;
+    duplicateExistingNaturalKeys: number;
     missingExpectedKeys: number;
     existingRows: number;
     proposedCreates: number;
@@ -471,6 +479,24 @@ function isTeamResolved(
   );
 }
 
+export function assessFbsMembership(fbsTeamIds: string[]): {
+  fbsMembershipRows: number;
+  distinctFbsMembership: number;
+  duplicateFbsMembershipIds: string[];
+} {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const id of fbsTeamIds) {
+    if (seen.has(id)) duplicates.add(id);
+    else seen.add(id);
+  }
+  return {
+    fbsMembershipRows: fbsTeamIds.length,
+    distinctFbsMembership: seen.size,
+    duplicateFbsMembershipIds: Array.from(duplicates).sort(),
+  };
+}
+
 export function buildExpectedFbsParticipantKeys(
   games: DbGameRowForStats[],
   fbsTeamIds: Set<string>
@@ -551,12 +577,39 @@ export function planTeamGameStats(options: {
     blockers.push(`COMMIT requires confirmation=${expectedConfirmation}`);
   }
 
+  const fbsMembership = assessFbsMembership(options.fbsTeamIds);
   const fbsSet = new Set(options.fbsTeamIds);
   const {
     expectedKeys,
+    relevantGames,
     finalRelevantGames,
     incompleteRelevantGames,
   } = buildExpectedFbsParticipantKeys(options.dbGames, fbsSet);
+
+  if (fbsMembership.fbsMembershipRows !== EXPECTED_2026_FBS_COUNT) {
+    blockers.push(
+      `fbs_membership_row_count:${fbsMembership.fbsMembershipRows}!=${EXPECTED_2026_FBS_COUNT}`
+    );
+  }
+  if (fbsMembership.distinctFbsMembership !== EXPECTED_2026_FBS_COUNT) {
+    blockers.push(
+      `fbs_membership_distinct_count:${fbsMembership.distinctFbsMembership}!=${EXPECTED_2026_FBS_COUNT}`
+    );
+  }
+  if (fbsMembership.duplicateFbsMembershipIds.length > 0) {
+    blockers.push(
+      `duplicate_fbs_membership_ids:${fbsMembership.duplicateFbsMembershipIds.join(',')}`
+    );
+  }
+  if (options.dbGames.length === 0) {
+    blockers.push('empty_canonical_game_set');
+  }
+  if (relevantGames.length === 0) {
+    blockers.push('zero_relevant_canonical_fbs_games');
+  }
+  if (expectedKeys.size === 0) {
+    blockers.push('zero_expected_fbs_participant_keys');
+  }
 
   // Index games by home|away pair — duplicate pairs are blockers.
   const gamesByPair = new Map<string, DbGameRowForStats[]>();
@@ -584,6 +637,29 @@ export function planTeamGameStats(options: {
   ): DbGameRowForStats[] => options.dbGames.filter(predicate);
 
   for (const row of options.providerRows) {
+    if (
+      row.season !== undefined &&
+      row.season !== null &&
+      Number(row.season) !== options.season
+    ) {
+      unresolvedRows += 1;
+      blockers.push(
+        `provider_row_season_mismatch:team=${row.team} season=${String(row.season)} expected=${options.season}`
+      );
+      continue;
+    }
+    if (
+      row.week !== undefined &&
+      row.week !== null &&
+      Number(row.week) !== options.week
+    ) {
+      unresolvedRows += 1;
+      blockers.push(
+        `provider_row_week_mismatch:team=${row.team} week=${String(row.week)} expected=${options.week}`
+      );
+      continue;
+    }
+
     const homeAway = String(row.homeAway ?? '').toLowerCase();
     if (homeAway !== 'home' && homeAway !== 'away') {
       unresolvedRows += 1;
@@ -720,8 +796,18 @@ export function planTeamGameStats(options: {
   }
 
   const existingByKey = new Map<string, DbTeamGameStatRow>();
+  const duplicateExistingKeys = new Set<string>();
   for (const row of options.existingStats) {
-    existingByKey.set(naturalKey(row.gameId, row.teamId), row);
+    const key = naturalKey(row.gameId, row.teamId);
+    if (existingByKey.has(key) || duplicateExistingKeys.has(key)) {
+      if (!duplicateExistingKeys.has(key)) {
+        blockers.push(`duplicate_existing_natural_key:${key}`);
+      }
+      duplicateExistingKeys.add(key);
+      existingByKey.delete(key);
+      continue;
+    }
+    existingByKey.set(key, row);
   }
 
   const plannedCreates: PlannedTeamGameStatMutation[] = [];
@@ -732,6 +818,7 @@ export function planTeamGameStats(options: {
   for (const matched of Array.from(matchedByKey.values())) {
     // Skip keys that are duplicated (unsafe)
     if (duplicateKeySet.has(matched.key)) continue;
+    if (duplicateExistingKeys.has(matched.key)) continue;
     plannedByKey[matched.key] = matched.fields;
     const existing = existingByKey.get(matched.key);
     if (!existing) {
@@ -771,7 +858,11 @@ export function planTeamGameStats(options: {
     mutationsInvoked: false,
     counts: {
       providerRows: options.providerRows.length,
+      fbsMembershipRows: fbsMembership.fbsMembershipRows,
+      distinctFbsMembership: fbsMembership.distinctFbsMembership,
+      duplicateFbsMembershipIds: fbsMembership.duplicateFbsMembershipIds.length,
       canonicalGames: options.dbGames.length,
+      relevantCanonicalGames: relevantGames.length,
       finalTargetGames: finalRelevantGames.length,
       incompleteTargetGames: incompleteRelevantGames.length,
       expectedFbsParticipantRows: expectedKeys.size,
@@ -779,6 +870,7 @@ export function planTeamGameStats(options: {
       ignoredProviderRows,
       unresolvedRows,
       duplicateKeys,
+      duplicateExistingNaturalKeys: duplicateExistingKeys.size,
       missingExpectedKeys: missingExpected.length,
       existingRows: options.existingStats.length,
       proposedCreates: plannedCreates.length,
@@ -823,7 +915,6 @@ export function buildSuccessfulCommitExecution(options: {
   createCount: number;
   updateCount: number;
   unchangedCount: number;
-  postWriteVerificationSucceeded?: boolean;
   error?: string | null;
 }): TeamGameStatExecutionState {
   const attempts = options.createCount + options.updateCount;
@@ -836,9 +927,9 @@ export function buildSuccessfulCommitExecution(options: {
     createCount: options.createCount,
     updateCount: options.updateCount,
     unchangedCount: options.unchangedCount,
+    // Successful commit implies transactional verification already passed.
     commitSucceeded: true,
-    postWriteVerificationSucceeded:
-      options.postWriteVerificationSucceeded ?? true,
+    postWriteVerificationSucceeded: true,
     error: options.error ?? null,
     providerCalls: options.providerCalls,
   };
@@ -848,6 +939,7 @@ export function buildRolledBackExecution(options: {
   providerCalls: number;
   mutationAttempts: number;
   error: string;
+  postWriteVerificationSucceeded?: false | null;
 }): TeamGameStatExecutionState {
   return {
     mode: 'COMMIT',
@@ -859,7 +951,8 @@ export function buildRolledBackExecution(options: {
     updateCount: null,
     unchangedCount: null,
     commitSucceeded: false,
-    postWriteVerificationSucceeded: null,
+    postWriteVerificationSucceeded:
+      options.postWriteVerificationSucceeded === false ? false : null,
     error: options.error,
     providerCalls: options.providerCalls,
   };
@@ -887,7 +980,8 @@ export function buildFailedCommitExecution(options: {
 
 /**
  * Authoritative TeamGameStat COMMIT inside a transaction callback.
- * Re-reads DB, re-plans, then creates/updates only planned rows.
+ * Re-reads DB, re-plans, mutates, then verifies — all before the transaction returns.
+ * Verification failure must throw so the Serializable transaction rolls back.
  */
 export async function executeAtomicTeamGameStatCommit(options: {
   plan: TeamGameStatPlan;
@@ -904,6 +998,7 @@ export async function executeAtomicTeamGameStatCommit(options: {
   unchangedCount: number;
   rePlan: TeamGameStatPlan;
   beforeStats: DbTeamGameStatRow[];
+  verification: TeamGameStatPostWriteVerification;
 }> {
   if (!options.reReadGames) {
     throw new Error(
@@ -941,12 +1036,37 @@ export async function executeAtomicTeamGameStatCommit(options: {
     await options.updateRow(row);
   }
 
+  const createCount = rePlan.plannedCreates.length;
+  const updateCount = rePlan.plannedUpdates.length;
+
+  // Re-read the complete requested-week target set inside the same transaction.
+  const afterRows = await options.reReadExisting();
+  const plannedByKey = new Map<string, ManagedTeamGameStatFields>(
+    Object.entries(rePlan.plannedByKey)
+  );
+  const verification = verifyTeamGameStatPostWrite({
+    expectedKeys: rePlan.expectedKeys,
+    plannedByKey,
+    afterRows,
+    expectedCreateCount: createCount,
+    expectedUpdateCount: updateCount,
+    createCount,
+    updateCount,
+  });
+
+  if (!verification.ok) {
+    throw new Error(
+      `post-write verification failed: ${verification.reasons.join('; ')}`
+    );
+  }
+
   return {
-    createCount: rePlan.plannedCreates.length,
-    updateCount: rePlan.plannedUpdates.length,
+    createCount,
+    updateCount,
     unchangedCount: rePlan.counts.unchangedRows,
     rePlan,
     beforeStats,
+    verification,
   };
 }
 

@@ -32,7 +32,6 @@ import {
   parseTeamGameStatCliArgs,
   planTeamGameStats,
   resolvePreviewExitCode,
-  verifyTeamGameStatPostWrite,
   type DbGameRowForStats,
   type DbTeamGameStatRow,
   type ManagedTeamGameStatFields,
@@ -415,78 +414,24 @@ async function main(): Promise<void> {
       updateCount = txResult.updateCount;
       unchangedCount = txResult.unchangedCount;
       plan = txResult.rePlan;
+      verification = txResult.verification;
     } catch (err) {
       const msg = redactSecretLike(
         err instanceof Error ? err.message : String(err)
       );
+      const verificationFailed = /post-write verification failed/i.test(msg);
       execution = buildRolledBackExecution({
         providerCalls: plan.providerCalls,
         mutationAttempts: txMutationAttempts,
         error: msg,
-      });
-      writeReport(reportPath, plan, execution, null, {
-        rolledBack: true,
-        isolationLevel: 'Serializable',
-      });
-      throw err;
-    }
-
-    const afterRows = mapStatRows(
-      await prisma.teamGameStat.findMany({
-        where: { season: args.season, week: args.week },
-        select: {
-          id: true,
-          gameId: true,
-          teamId: true,
-          season: true,
-          week: true,
-          yppOff: true,
-          successOff: true,
-          epaOff: true,
-          pace: true,
-          passYpaOff: true,
-          rushYpcOff: true,
-          yppDef: true,
-          successDef: true,
-          epaDef: true,
-          passYpaDef: true,
-          rushYpcDef: true,
-          offensive_stats: true,
-          defensive_stats: true,
-          special_teams: true,
-          rawJson: true,
-        },
-      })
-    );
-
-    const plannedByKey = new Map<string, ManagedTeamGameStatFields>(
-      Object.entries(plan.plannedByKey)
-    );
-
-    verification = verifyTeamGameStatPostWrite({
-      expectedKeys: plan.expectedKeys,
-      plannedByKey,
-      afterRows,
-      expectedCreateCount: createCount,
-      expectedUpdateCount: updateCount,
-      createCount,
-      updateCount,
-    });
-
-    if (!verification.ok) {
-      execution = buildSuccessfulCommitExecution({
-        providerCalls: plan.providerCalls,
-        createCount,
-        updateCount,
-        unchangedCount,
-        postWriteVerificationSucceeded: false,
-        error: `post-write verification failed: ${verification.reasons.join('; ')}`,
+        postWriteVerificationSucceeded: verificationFailed ? false : null,
       });
       writeReport(reportPath, plan, execution, verification, {
-        verificationFailed: true,
+        rolledBack: true,
+        isolationLevel: 'Serializable',
+        transactionalVerificationFailed: verificationFailed,
       });
-      process.exitCode = 1;
-      return;
+      throw err;
     }
 
     execution = buildSuccessfulCommitExecution({
@@ -494,10 +439,10 @@ async function main(): Promise<void> {
       createCount,
       updateCount,
       unchangedCount,
-      postWriteVerificationSucceeded: true,
     });
     writeReport(reportPath, plan, execution, verification, {
       isolationLevel: 'Serializable',
+      transactionalVerification: true,
     });
     console.log(
       `COMMIT succeeded: createCount=${createCount} updateCount=${updateCount} unchangedCount=${unchangedCount}`
