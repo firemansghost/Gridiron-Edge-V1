@@ -1,65 +1,96 @@
 # Season Status — Gridiron Edge
 
-**Status:** Offseason / paused for regular-season automation  
-**Updated:** 2026-08-28 (Phase 2C-2J-4A — Core card writer review repairs; draft PR #67)
+**Status:** 2026 season active (manual guarded production)  
+**Updated:** 2026-08-30 (Phase **2C-2J-6C-3** — public season messaging + operator status refresh)  
+**Baseline `main`:** `6fcc9d213e35bf523d63b1814cb80125f1adc1f1`
 
-Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISABLE_REPORT.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
+Operator-facing current state for the active 2026 season. Complements `docs/2026-workflow-reactivation-matrix.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
+
+Sections below the current-state block retain useful preseason/phase chronology. Treat dated **NOT AUTHORIZED** language in those historical notes as phase archaeology unless restated above.
 
 ---
 
-## Current mode
+## CURRENT STATE (2026-08-30)
+
+### Season posture
 
 | Item | Status |
 |------|--------|
-| **Calendar context** | **2026-08-04** — Week Zero begins **2026-08-27**; public 2026 schedules exist |
-| **Production Supabase** | **761** schedule + **138** 2026 FBS membership; talent **138/138**; Core V1 ratings **138/138** (Candidate A @ completedThroughWeek=0); TeamUnitGrades **0/138**; commits still **0/138** |
-| **2025 regular season** | Complete |
-| **Production app** | Deployed; Season Update banner (Dec 22, 2025) is stale — update before public preseason |
-| **Dual-model** | **Merged to `main`** (PR #34); Phase H verification passed |
-| **Phase 2A** | **Merged to `main`** (PR #35) |
-| **Phase 2B-R / 2C-0** | **Merged to `main`** (PR #36) |
-| **GitHub Actions** | **All workflows disabled in GitHub UI** (Bobby, offseason) — intentional |
-| **Workflow YAML** | Schedules still present — disablement is **UI state**, not encoded in YAML |
-| **Mock schedule fallback** | **Removed** from production-connected ingest (fail-closed on missing `CFBD_API_KEY`) |
-| **Phase 2C-0 provider validation** | **PASSED** (2026-08-04) |
-| **Phase 2C-1A audit** | **Stopped safely** — monolithic `ingest.js cfbd` not approved for schedule-only |
-| **Phase 2C-1A2** | **Merged (PR #37)** — preview-only pathway live-validated |
-| **Phase 2C-1A2 preview validation** | **PASSED** (weeks 0/1/2 reviewed) |
-| **Phase 2C-1B production schedule write** | **Merged (PR #38)** — Weeks **1–13** and **15** written via guarded workflow |
-| **Phase 2C-1C inventory audit** | **PASSED** (PR #39) — **761** verified rows |
-| **Phase 2C-2A ratings readiness audit** | **Rerun PASSED structural** after 2C-2B — talent/commits still 0/138; `ratingsWriteAuthorized=false` |
-| **Phase 2C-2B FBS membership init** | **PASSED** (PR #41) — **138/138** membership ↔ schedule |
-| **Phase 2C-2C ratings-input provider preview** | **Executed** (PR #42) — `/talent` **0** rows; recruiting schema mismatch; conference diagnostics later corrected in 2C-2H-1 |
-| **Phase 2C-2D conference + recruiting diagnostic** | **PASSED** (PR #43) — initial run found resolver gaps; post-2C-2E rerun exact |
-| **Phase 2C-2E CFBD resolver hardening** | **PASSED** (PR #44) — 138/138 provider FBS + conference map safe; recruitingResolverSafe=true |
-| **Phase 2C-2F season conference design** | **PASSED** (PR #45) — production preview writeEligible=true (classification); no schema write |
-| **Phase 2C-2G-1 Prisma migrate hardening** | **PASSED** (PR #46) — manual-only `MIGRATE_PRODUCTION`; no recurring `_prisma_migrations` repair |
-| **Phase 2C-2G-1B Schema Guardrails repair** | **PASSED** (PR #47) — live base-SHA comparison; fail-closed |
-| **Phase 2C-2G-2 TeamMembership.conference schema** | **PASSED** (PR #48) — production migrate applied; column text/nullable; 138/138 still NULL |
-| **Phase 2C-2G-2B migrate history-divergence guard** | **PASSED** (PR #49) — future migrate fails closed on DB/repo history divergence |
-| **Phase 2C-2G-3 season conference initializer** | **PASSED** — production COMMIT: 138/138 populated, 0 NULL, verificationExact=true |
-| **Phase 2C-2G-4 Core V1 season-aware conferences** | **PASSED** (PR #51) — production audit 138/138; legacyFallback=false |
-| **Phase 2C-2H-1 ratings readiness / talent probe** | **PASSED** (PR #52) — season-aware diagnostics; Aug 27 probe: talent structurally complete |
-| **Phase 2C-2H-2 guarded 2026 talent initializer** | **PASSED** (PR #53) — production COMMIT 138/138; `blueChipsPct` NULL by design; ratings still unauthorized |
-| **Phase 2C-2H-3 Core V1 ratings preview** | **PASSED** (PR #54) — production read-only preview; 138 finite in-memory ratings; **zero writes**; ratings persistence still NOT AUTHORIZED |
-| **Phase 2C-2H-4 V1 historical parity forensic** | **PASSED structurally (PR #55)** — legacy `compute_ratings_v1` did **not** reproduce persisted 2025 (`exact=0/136`, MAE≈32.21) |
-| **Phase 2C-2H-5 Balanced V1 historical parity** | **PASSED — EXACT** (PR #56) — cutoff Balanced replay matched persisted 2025 V1 136/136 (machine MAE≈2.3e-15) |
-| **Phase 2C-2H-6 Balanced V1 preseason bridge eval** | **PASSED** (PR #57) — Candidate A provisional preferred; Candidate B rejected (scale too wide); persistence unauthorized |
-| **Phase 2C-2H-7 Balanced V1 transition timing** | **PASSED** (PR #58) — timing-only hard switch rejected; blend eval required |
-| **Phase 2C-2H-8 Balanced V1 transition blends** | **PASSED** (PR #59) — B1 AUTHORIZED as model policy; B2/B3/hard/per-team REJECTED; write still unauthorized |
-| **Phase 2C-2H-9 Core V1 lifecycle writer** | **COMPLETE** — Candidate A persisted 138/138; `GLOBAL_BLEND_W3_W6` lifecycle active; production COMMIT verified |
-| **Phase 2C-2I-1 Hybrid V2 preseason readiness** | **COMPLETE** — production audit run 33134809476 `auditOk=true`; Core V1 Week1 ready; Hybrid inputs 0/51 fallback |
-| **Phase 2C-2I-2 Hybrid activation hold** | **COMPLETE** (PR #62) — production smoke PASS; effective 2026 Week1 = Core V1; Hybrid held |
-| **Phase 2C-2J-1 Workflow reactivation inventory** | **COMPLETE** (PR #63) — 45→46 workflows after 2C-2J-2; active schedules 10; schedule reactivation 0 |
-| **Phase 2C-2J-2 Guarded 2026 Live Odds** | **COMPLETE** (PR #64) — merged `1445cdb…`; writer live |
-| **Phase 2C-2J-2A Live Odds PREVIEW findings repair** | **COMPLETE** (PR #65) — aliases + FCS classify + `MAX_ABS_SPREAD=100` |
-| **Phase 2C-2J-3 Append-only Odds consumer readiness** | **COMPLETE** (PR #66) — merge `4a80a5b3…`; production audit run **33204634358** `pass=true` |
-| **Phase 2C-2J-4 Guarded Core V1 Weekly Card Writer** | **In preparation (draft PR #67)** — 2C-2J-4A review repairs; Core card COMMIT NOT AUTHORIZED |
-| **Expected 2026 schedule baseline** | **761** games / **138** distinct teams — **verified** |
-| **Ratings computation / persistence** | **2026 Core V1 initialized** (do not rerun); further lifecycle COMMITs only via guarded workflow |
-| **Odds ingestion** | **Week1 COMMIT SUCCESS** (run **33192011833**); recurring polling NOT AUTHORIZED; second COMMIT NOT AUTHORIZED |
-| **Bet sync** | **Legacy `sync-weekly-bets` REPLACED for 2026** (≤2025 only); new Core card writer draft — **Core card COMMIT NOT AUTHORIZED** |
-| **Nightly workflow reactivation** | **Not yet approved** — recurring workflows remain STOPPED |
+| **Season** | **2026 active** |
+| **Provider Week 1** | Opening **Aug. 29** tranche + remaining **Sep. 3–7** games |
+| **Effective production spread model** | **Core V1** (`official_flat_100`) |
+| **Hybrid V2** | **Held** for additional same-season validation |
+| **Totals / moneylines** | Current Core logic |
+| **Recurring production schedules** | Operator-stopped / **not authorized** |
+| **Schedule reactivation recommended** | **0** workflows |
+
+### Canonical guarded production entrypoints (manual only)
+
+| Workflow | Role |
+|----------|------|
+| `.github/workflows/write-live-odds-2026.yml` | Guarded Live Odds PREVIEW/COMMIT |
+| `.github/workflows/write-core-v1-weekly-card-2026.yml` | Guarded Core V1 weekly card PREVIEW/COMMIT |
+| `.github/workflows/cfbd-scores-2026-manual.yml` | Guarded CFBD scores PREVIEW/COMMIT |
+| `.github/workflows/grade-bets-2026-manual.yml` | Guarded official bet grading PREVIEW/COMMIT |
+
+All four are **workflow_dispatch** only. No score/grading cron is authorized.
+
+### Workflow inventory (after PR #75 / 2C-2J-6C-2)
+
+| Metric | Value |
+|--------|------:|
+| Workflow YAML files | **48** |
+| Active YAML schedules | **8** |
+| `scheduleReactivationRecommended=true` | **0** |
+
+**Deleted workflow identities (YAML only — historical Actions runs / legacy code may remain):**
+
+* `cfbd-scores-sync.yml`
+* `grade-bets.yml`
+* `one-time-week1-odds-core-preview-2026-08-29.yml`
+
+### Week 1 opening tranche — proven
+
+Opening Aug. 29 Saturday path completed the full guarded chain (Live Odds → Core card → scores → official grading):
+
+| Result | Value |
+|--------|--------|
+| Opening games finalized | **8** |
+| Core V1 opening card games | **7** |
+| Official `official_flat_100` bets | **14** (7 spreads + 7 moneylines) |
+| Scores | Persisted successfully |
+| Grading | Persisted successfully (post-write verification OK) |
+| Spread record | **4–3** |
+| Moneyline record | **2–5** |
+| Overall | **6–8** |
+| Combined PnL | ≈ **-$223.77** |
+
+Grading / PnL / CLV issues found during PREVIEW were repaired before official COMMIT.
+
+### Remaining Week 1 continuation — PREVIEW only (not committed)
+
+A later Core card PREVIEW against the then-current MarketLine snapshot (plumbing check only):
+
+* **51** provider Week 1 games tracked; **8** opening games excluded → **43** Sep. 3–7 games eligible
+* **14** prior official bets detected and preserved; Hybrid rows = **0**; append safety clean
+* Snapshot would have proposed **83** new bets (**43** spread / **40** ML / **0** total)
+* **Intentionally not committed** — market data was stale
+
+### Next production operation
+
+**Fresh Live Odds COMMIT → Core V1 PREVIEW → independent audit → append-only Core V1 COMMIT**
+
+Planned for **Wednesday evening / Thursday morning** before the Sep. 3 openers. Manual only — **not** an automated schedule.
+
+### Known / deferred (not current blockers for the next Odds→card pass)
+
+* Zero totals remains known current Core behavior; a real totals model is deferred
+* `cfbd-feature-ingest` remains `REPAIR_BEFORE_USE`
+* After full Week 1 completion: `scores → grading → feature ingest → lifecycle`
+* npm/Node maintenance deferred until after the remaining Week 1 card:
+  * npm audit currently reports **19** vulnerabilities
+  * GitHub Actions Node 20 deprecation / Node 24 forcing warning
+* Recurring workflow cadence remains a later explicit operator decision
 
 ---
 
@@ -67,22 +98,41 @@ Operator-facing status for offseason/preseason work. Complements `WORKFLOW_DISAB
 
 | Model | Role | DB `strategyTag` | UI label |
 |-------|------|------------------|----------|
-| **Hybrid V2** | Primary/default **spread** model | `hybrid_v2` | Hybrid V2 (Flat $100) |
-| **Core V1** | Comparison / reporting | `official_flat_100` (historical — do not rename) | Core V1 Card (Flat $100) |
+| **Core V1** | **Active production spread card** | `official_flat_100` (historical tag — do not rename) | Core V1 Card (Flat $100) |
+| **Hybrid V2** | Held pending same-season validation | `hybrid_v2` | Hybrid V2 (Flat $100) |
 | **V4** | Labs only | `v4_labs` | V4 Labs (Flat $100) |
 | **Fade V4** | Labs only | `fade_v4_labs` | Fade V4 Labs (Flat $100) |
 
-**Scope notes:** Hybrid V2 = spreads only; totals/ML = current Core V1 logic; weekly `official_flat_100` sync for comparison.
+**Scope notes:** Hybrid V2 = spreads only when authorized; totals/ML = current Core logic. Effective 2026 public/production spread = **Core V1** while Hybrid remains held (2C-2I-2).
 
-**Operational note (2C-2J-4A):** Review repairs for guarded Core card writer (unsafe PREVIEW fails workflow; committed-verification failure never implies rollback; DIRECT_URL scoped off Preflight). Core card PREVIEW/COMMIT still **NOT AUTHORIZED**.
+**Historical note (2C-2J-4 / 2C-2J-4A — pre-activation):** Those phases documented Core card / grading / score paths as not yet authorized. That posture is **obsolete as of 2026-08-30** — see CURRENT STATE above. Retained only as chronology.
 
-**Grading blocker (document only — do not fix in 2C-2J-4/4A):** 2026 grading remains **NOT AUTHORIZED**. Current grade-bets ML PnL uses `Bet.modelPrice` as payout price, but the 2026 card stores `modelPrice` = model fair American odds and `closePrice` = captured sportsbook American odds. ML payout-price contract must be repaired before grading activation. CLV semantics remain a separate grading-review item.
-
-**Operational note (2C-2J-4):** Start guarded Core V1 weekly-card writer (`official_flat_100` only). Legacy `sync-weekly-bets` is ≤2025 only (rejects season≥2026). New workflow MANUAL_SAFE after independent review; **no schedule**. Core card COMMIT **NOT AUTHORIZED**. Recurring Odds polling **NOT AUTHORIZED**. Second Odds COMMIT **NOT AUTHORIZED**. Grading **NOT AUTHORIZED**. Score sync repair pending. Hybrid remains **held**; official Week1 spread = **Core V1**. Production Week1 Bet baseline = **ZERO**.
+**Historical grading blocker note (pre-6C-1):** ML payout-price / CLV concerns raised during card-writer review were repaired before official Week 1 grading COMMIT.
 
 **Prior note (2C-2J-3):** COMPLETE (PR #66) merge `4a80a5b3…`. Consumer-readiness audit run **33204634358** `readOnly=true` `providerCalls=0` `writes=0` `games=51` `pass=true`. Week1 Odds COMMIT run **33192011833** SUCCESS (`rows=2281`, books=11, fingerprint 2281/2281).
 
 **Prior note (2C-2J-2A):** Production Live Odds PREVIEW run **33186871080** FAILED SAFELY then repaired via PR #65 before COMMIT.
+
+---
+
+## Phase chronology (preseason → Week 1)
+
+The long table below is **historical** operator archaeology from Aug 2026 preseason through early 2C-2J work. Prefer CURRENT STATE for live guidance.
+
+| Item | Historical status (as recorded at phase close) |
+|------|--------|
+| **Calendar context (Aug 4)** | Week Zero begins **2026-08-27**; public 2026 schedules exist |
+| **Production Supabase (preseason baseline)** | **761** schedule + **138** FBS membership; talent **138/138**; Core V1 ratings **138/138** |
+| **2025 regular season** | Complete |
+| **Dual-model** | Merged (PR #34); Phase H verification passed |
+| **Phase 2A / 2B-R / 2C-0** | Merged (PR #35 / #36); provider validation PASSED 2026-08-04 |
+| **GitHub Actions (offseason)** | UI-disabled by operator — intentional at the time |
+| **Phase 2C-1A → 2C-1C** | Schedule path preview + write + inventory — **761** verified |
+| **Phase 2C-2A → 2C-2H-9** | Membership, conferences, talent, Balanced V1 lifecycle — Core V1 initialized |
+| **Phase 2C-2I-1 / 2C-2I-2** | Hybrid readiness + activation hold — effective Core V1 |
+| **Phase 2C-2J-1 → 2C-2J-3** | Inventory + Live Odds + append-only consumers |
+| **Phase 2C-2J-4 / 4A** | Guarded Core card writer — later merged and production-proven (see CURRENT STATE) |
+| **Phase 2C-2J-6B / 6C** | Guarded scores + grading manuals; Week 1 opening tranche proven; workflow cleanup PR #75 |
 
 ---
 
@@ -570,15 +620,17 @@ Merge SHA: `964ae2ddbc98d7a082157e8134bcc4e70eaf99d0` (includes Week1 Odds COMMI
 | fingerprint verification | 2281/2281 |
 | verification.ok | true |
 
-### 2C-2J-3 Append-only Odds consumer readiness — **in preparation (draft)**
+### 2C-2J-3 Append-only Odds consumer readiness — **COMPLETE** (PR #66)
 
-Shared `market-line-snapshot` selector (timestamp DESC, id DESC); slate + game detail + closing helpers use latest coherent per-book current/closing snapshots. Read-only audit workflow: `audit-2026-marketline-consumer-readiness.yml`.
+Shared `market-line-snapshot` selector (timestamp DESC, id DESC); slate + game detail + closing helpers use latest coherent per-book current/closing snapshots. Read-only audit workflow: `audit-2026-marketline-consumer-readiness.yml`. Production audit run **33204634358** `pass=true`.
 
-**Still out of scope / unapproved:** recurring Odds polling, second Odds COMMIT, bet writes, grading, Hybrid activation, unit-grade writes, cron reactivation.
+**Historical note at phase close:** recurring Odds polling / cron reactivation remained unapproved (still true as of CURRENT STATE). Bet writes, scores, and grading were later delivered via guarded manuals (see CURRENT STATE / 2C-2J-6*).
 
 ---
 
-## P0 reactivation blockers
+## P0 reactivation blockers (historical preseason tracker)
+
+> **Operator note (2026-08-30):** Prefer **CURRENT STATE** above for live guidance. Rows below retain preseason archaeology and may lag the active season. Do not treat outdated “NOT AUTHORIZED” cells here as current holds when CURRENT STATE contradicts them.
 
 | Blocker | Status | Notes |
 |---------|--------|-------|
@@ -640,13 +692,13 @@ Shared `market-line-snapshot` selector (timestamp DESC, id DESC); slate + game d
 
 ---
 
-## Next phases
+## Next phases (current)
 
-1. Independent review of **2C-2J-4** guarded Core V1 weekly-card writer (draft)
-2. Production Core card **PREVIEW** only after review — **COMMIT still NOT AUTHORIZED**
-3. Repair 2026 score sync before any post-game automation
-4. Do **not** copy 2025 TeamUnitGrades / activate Hybrid / enable crons from this phase
-5. Recurring Odds polling / second Odds COMMIT / Core card COMMIT / grading remain **NOT AUTHORIZED** until separately approved
+1. **Fresh Live Odds COMMIT** for remaining Week 1 (manual) — Wed evening / Thu morning before Sep. 3
+2. **Core V1 PREVIEW → independent audit → append-only Core V1 COMMIT** (manual; preserve existing 14 official bets)
+3. After full Week 1 completion: scores → grading → feature ingest → lifecycle (separate operator decisions)
+4. Do **not** activate Hybrid, enable recurring Odds polling, or authorize score/grading cron without an explicit later decision
+5. Deferred maintenance: npm audit (19 vulns) + Actions Node 20→24 — after remaining Week 1 card
 
 See [Preseason Reactivation Checklist](docs/preseason-reactivation-checklist.md) and [2026 Workflow Reactivation Matrix](docs/2026-workflow-reactivation-matrix.md).
 

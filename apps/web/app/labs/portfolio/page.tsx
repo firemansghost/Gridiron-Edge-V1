@@ -1,16 +1,21 @@
 /**
  * Labs: Portfolio What-Ifs Dashboard
- * 
+ *
  * Displays portfolio statistics for various filter scenarios
  */
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import { ErrorState } from '@/components/ErrorState';
 import { LabsNav } from '@/components/LabsNav';
+import {
+  DEFAULT_PORTFOLIO_SEASON,
+  resolvePortfolioSeasonParam,
+} from '@/lib/labs/portfolio-season';
 
 interface PortfolioStats {
   bets: number;
@@ -30,11 +35,16 @@ interface PortfolioScenario {
   stats: PortfolioStats;
 }
 
-export default function PortfolioLabsPage() {
+function PortfolioLabsContent() {
+  const searchParams = useSearchParams();
   const [scenarios, setScenarios] = useState<PortfolioScenario[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [season, setSeason] = useState<number>(2025);
+  const [season, setSeason] = useState<number>(DEFAULT_PORTFOLIO_SEASON);
+
+  useEffect(() => {
+    setSeason(resolvePortfolioSeasonParam(searchParams.get('season')));
+  }, [searchParams]);
 
   useEffect(() => {
     fetchPortfolioData();
@@ -44,12 +54,12 @@ export default function PortfolioLabsPage() {
     try {
       setLoading(true);
       setError(null);
-      
+
       const response = await fetch(`/api/labs/portfolio-whatifs?season=${season}`);
       if (!response.ok) {
         throw new Error(`Failed to fetch portfolio data: ${response.statusText}`);
       }
-      
+
       const data = await response.json();
       setScenarios(data.scenarios || []);
     } catch (err) {
@@ -195,6 +205,20 @@ export default function PortfolioLabsPage() {
   );
 }
 
-
-
-
+export default function PortfolioLabsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 flex flex-col">
+          <HeaderNav />
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-gray-600">Loading portfolio scenarios...</div>
+          </div>
+          <Footer />
+        </div>
+      }
+    >
+      <PortfolioLabsContent />
+    </Suspense>
+  );
+}
