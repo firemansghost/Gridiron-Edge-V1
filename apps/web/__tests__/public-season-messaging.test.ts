@@ -68,11 +68,24 @@ describe('portfolio what-ifs season URL wiring', () => {
     'utf8'
   );
 
-  it('reads season from the URL and fetches season-specific API data', () => {
+  it('initializes season from the resolved query param on first render', () => {
     expect(page).toContain('useSearchParams');
-    expect(page).toContain('resolvePortfolioSeasonParam(searchParams.get(\'season\'))');
+    expect(page).toMatch(
+      /useState<number>\(\(\)\s*=>[\s\S]*?resolvePortfolioSeasonParam\(searchParams\.get\('season'\)\)/
+    );
+    expect(page).not.toMatch(
+      /useState<number>\(\s*DEFAULT_PORTFOLIO_SEASON\s*\)/
+    );
+  });
+
+  it('syncs season on URL changes without redundant updates', () => {
+    expect(page).toContain(
+      "const nextSeason = resolvePortfolioSeasonParam(searchParams.get('season'));"
+    );
+    expect(page).toContain(
+      'setSeason((current) => (current === nextSeason ? current : nextSeason))'
+    );
     expect(page).toContain('/api/labs/portfolio-whatifs?season=${season}');
-    expect(page).toContain('DEFAULT_PORTFOLIO_SEASON');
   });
 
   it('keeps an editable Season input', () => {

@@ -12,10 +12,7 @@ import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import { ErrorState } from '@/components/ErrorState';
 import { LabsNav } from '@/components/LabsNav';
-import {
-  DEFAULT_PORTFOLIO_SEASON,
-  resolvePortfolioSeasonParam,
-} from '@/lib/labs/portfolio-season';
+import { resolvePortfolioSeasonParam } from '@/lib/labs/portfolio-season';
 
 interface PortfolioStats {
   bets: number;
@@ -40,10 +37,13 @@ function PortfolioLabsContent() {
   const [scenarios, setScenarios] = useState<PortfolioScenario[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [season, setSeason] = useState<number>(DEFAULT_PORTFOLIO_SEASON);
+  const [season, setSeason] = useState<number>(() =>
+    resolvePortfolioSeasonParam(searchParams.get('season'))
+  );
 
   useEffect(() => {
-    setSeason(resolvePortfolioSeasonParam(searchParams.get('season')));
+    const nextSeason = resolvePortfolioSeasonParam(searchParams.get('season'));
+    setSeason((current) => (current === nextSeason ? current : nextSeason));
   }, [searchParams]);
 
   useEffect(() => {
