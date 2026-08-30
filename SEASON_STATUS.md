@@ -1,8 +1,8 @@
 # Season Status — Gridiron Edge
 
 **Status:** 2026 season active (manual guarded production)  
-**Updated:** 2026-08-30 (Phase **2C-2J-6C-3** — public season messaging + operator status refresh)  
-**Baseline `main`:** `6fcc9d213e35bf523d63b1814cb80125f1adc1f1`
+**Updated:** 2026-08-30 (Phase **2C-2J-6D-1** — guarded TeamGameStat writer prepared)  
+**Baseline `main`:** `b568c0d4ffd0c5e98f3350227e8e850f865c06db`
 
 Operator-facing current state for the active 2026 season. Complements `docs/2026-workflow-reactivation-matrix.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -23,6 +23,7 @@ Sections below the current-state block retain useful preseason/phase chronology.
 | **Totals / moneylines** | Current Core logic |
 | **Recurring production schedules** | Operator-stopped / **not authorized** |
 | **Schedule reactivation recommended** | **0** workflows |
+| **Core V1 lifecycle blend** | Candidate A / `GLOBAL_BLEND_W3_W6` — canonical weight **0** through completed Week **2**; first non-zero canonical contribution after completed Week **3** |
 
 ### Canonical guarded production entrypoints (manual only)
 
@@ -32,14 +33,15 @@ Sections below the current-state block retain useful preseason/phase chronology.
 | `.github/workflows/write-core-v1-weekly-card-2026.yml` | Guarded Core V1 weekly card PREVIEW/COMMIT |
 | `.github/workflows/cfbd-scores-2026-manual.yml` | Guarded CFBD scores PREVIEW/COMMIT |
 | `.github/workflows/grade-bets-2026-manual.yml` | Guarded official bet grading PREVIEW/COMMIT |
+| `.github/workflows/cfbd-team-game-stats-2026-manual.yml` | Guarded TeamGameStat PREVIEW/COMMIT (Core V1 lifecycle EPA feed) |
 
-All four are **workflow_dispatch** only. No score/grading cron is authorized.
+All are **workflow_dispatch** only. No score/grading/TeamGameStat cron is authorized. TeamGameStat path is **prepared** — **not** production-run/authorized merely by merge.
 
-### Workflow inventory (after PR #75 / 2C-2J-6C-2)
+### Workflow inventory (after 2C-2J-6D-1)
 
 | Metric | Value |
 |--------|------:|
-| Workflow YAML files | **48** |
+| Workflow YAML files | **49** |
 | Active YAML schedules | **8** |
 | `scheduleReactivationRecommended=true` | **0** |
 
@@ -48,6 +50,18 @@ All four are **workflow_dispatch** only. No score/grading cron is authorized.
 * `cfbd-scores-sync.yml`
 * `grade-bets.yml`
 * `one-time-week1-odds-core-preview-2026-08-29.yml`
+
+Legacy `stats-cfbd.yml` and `cfbd-feature-ingest.yml` remain on disk as `REPAIR_BEFORE_USE` (not deleted).
+
+### Core V1 post-game sequence (corrected)
+
+**Actual Core path:** `Game finals → TeamGameStat ingest → Core V1 lifecycle`
+
+* Lifecycle reads in-season EPA from Prisma `teamGameStat` (`epaOff` / `epaDef`).
+* `cfbd-feature-ingest.yml` writes the parallel `cfbdEff*` feature-store / legacy V2 or Labs path — **not** the Core V1 lifecycle feed.
+* Legacy `stats-cfbd.yml` / `cfbd_team_stats.ts` are historical; the guarded 2026 writer is the intended production entrypoint once authorized.
+
+Because blend weight is 0 through completed Week 2, preparing TeamGameStat now is **not** a Week 2 card blocker.
 
 ### Week 1 opening tranche — proven
 
@@ -85,8 +99,9 @@ Planned for **Wednesday evening / Thursday morning** before the Sep. 3 openers. 
 ### Known / deferred (not current blockers for the next Odds→card pass)
 
 * Zero totals remains known current Core behavior; a real totals model is deferred
-* `cfbd-feature-ingest` remains `REPAIR_BEFORE_USE`
-* After full Week 1 completion: `scores → grading → feature ingest → lifecycle`
+* TeamGameStat guarded path prepared (6D-1); production PREVIEW/COMMIT still requires explicit operator authorization
+* `cfbd-feature-ingest` remains `REPAIR_BEFORE_USE` (parallel `cfbdEff*` — not Core lifecycle)
+* After full Week 1 completion: `scores → grading → TeamGameStat → lifecycle` (separate stages)
 * npm/Node maintenance deferred until after the remaining Week 1 card:
   * npm audit currently reports **19** vulnerabilities
   * GitHub Actions Node 20 deprecation / Node 24 forcing warning

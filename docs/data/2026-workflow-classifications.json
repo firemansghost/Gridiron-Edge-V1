@@ -1,13 +1,15 @@
 {
-  "phase": "2C-2J-6C-2",
+  "phase": "2C-2J-6D-1",
   "inventoryDate": "2026-08-30",
-  "mainSha": "f0c8c6af339884be44a6dd47780bc1adfc717799",
+  "mainSha": "b568c0d4ffd0c5e98f3350227e8e850f865c06db",
   "notes": [
     "Classification is operational authorization guidance only — not an enablement action.",
     "scheduleReactivationRecommended is false for every workflow in this phase.",
     "GitHub UI disablement is operator state; YAML schedules may still exist.",
     "2C-2J-6C-2: retired legacy cfbd-scores-sync.yml and grade-bets.yml workflow identities; deleted expired one-time Aug 29 workflow.",
     "Canonical production entrypoints are manual guarded: write-live-odds-2026, write-core-v1-weekly-card-2026, cfbd-scores-2026-manual, grade-bets-2026-manual.",
+    "2C-2J-6D-1: added cfbd-team-game-stats-2026-manual.yml (MANUAL_SAFE) — feeds Core V1 lifecycle TeamGameStat EPA; not production-authorized merely by merge.",
+    "Core V1 lifecycle path: Game finals → TeamGameStat ingest → Core V1 lifecycle. cfbd-feature-ingest writes parallel cfbdEff* feature-store (not the lifecycle EPA feed).",
     "Opening provider Week 1 Saturday tranche proven end-to-end; recurring score/grading schedules remain NOT AUTHORIZED.",
     "Deleting workflow YAML does not delete historical Actions run records or historical implementation code.",
     "sync-weekly-bets is LEGACY <=2025; 2026 uses write-core-v1-weekly-card-2026.yml."
@@ -93,7 +95,7 @@
       "file": "cfbd-feature-ingest.yml",
       "classification": "REPAIR_BEFORE_USE",
       "scheduleReactivationRecommended": false,
-      "purpose2026": "Post-game CFBD features; defaults 2025; GITHUB_ENV secret pattern; continue-on-error"
+      "purpose2026": "Parallel cfbdEff* feature-store / legacy V2 or Labs path; defaults 2025; GITHUB_ENV secret pattern; continue-on-error — NOT the Core V1 lifecycle TeamGameStat EPA feed"
     },
     {
       "file": "cfbd-rankings-sync.yml",
@@ -106,6 +108,12 @@
       "classification": "MANUAL_SAFE",
       "scheduleReactivationRecommended": false,
       "purpose2026": "Canonical guarded 2026 CFBD score PREVIEW/COMMIT; manual-only; one /games provider call; production Week 1 path successfully proven; recurring schedule not authorized"
+    },
+    {
+      "file": "cfbd-team-game-stats-2026-manual.yml",
+      "classification": "MANUAL_SAFE",
+      "scheduleReactivationRecommended": false,
+      "purpose2026": "Canonical guarded 2026 TeamGameStat PREVIEW/COMMIT; feeds Core V1 lifecycle teamGameStat EPA source; manual-only; no schedule; not yet production-run/authorized merely by merging"
     },
     {
       "file": "diagnose-2026-conference-recruiting.yml",

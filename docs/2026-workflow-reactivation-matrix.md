@@ -1,13 +1,14 @@
 # 2026 Workflow Reactivation Matrix + Live Odds Architecture Audit
 
-**Phase:** 2C-2J-6C-2  
+**Phase:** 2C-2J-6D-1  
 **Date:** 2026-08-30  
-**Main SHA:** `f0c8c6af339884be44a6dd47780bc1adfc717799`  
-**Status:** Operating inventory refresh — YAML cleanup + catalog sync  
+**Main SHA:** `b568c0d4ffd0c5e98f3350227e8e850f865c06db`  
+**Status:** Guarded TeamGameStat writer added; Core lifecycle feed path corrected  
 
 **This phase does NOT:**
 - enable any GitHub workflow schedule
-- add or reactivate cron schedules for score/grading
+- authorize production TeamGameStat / lifecycle execution merely by merge
+- add or reactivate cron schedules for score/grading/stats
 - call CFBD / Odds / SGO / weather providers
 - write production DB rows
 - change Hybrid or Core V1 formulas, card selections, settlement, or CLV
@@ -23,13 +24,14 @@ Static inventory script: `scripts/inventory-workflows-2026.py`
 
 | Metric | Value |
 |--------|------:|
-| Workflow files inventoried | **48** |
+| Workflow files inventoried | **49** |
 | YAML files with active `schedule:` triggers | **8** |
 | `scheduleReactivationRecommended=true` | **0** |
 | Manual guarded Live Odds path | **proven** (Week 1) |
 | Manual guarded Core V1 card path | **proven** (Week 1) |
 | Manual guarded CFBD score path | **proven** (Week 1) |
 | Manual guarded official grading path | **proven** (Week 1) |
+| Manual guarded TeamGameStat path | **ready** (not production-run/authorized yet) |
 | Recurring score/grading schedules | **NOT AUTHORIZED** |
 | Official Week1 spread model | **Core V1** |
 | Hybrid production authorization | **held** |
@@ -39,14 +41,14 @@ Static inventory script: `scripts/inventory-workflows-2026.py`
 | Classification | Count |
 |----------------|------:|
 | COMPLETED_LEAVE_OFF | 18 |
-| MANUAL_SAFE | 10 |
+| MANUAL_SAFE | 11 |
 | MANUAL_REVIEW_REQUIRED | 6 |
 | REPAIR_BEFORE_USE | 8 |
 | REPLACE | 4 |
 | FUTURE_AFTER_GAMES | 0 |
 | BLOCKED | 1 |
 | CI_ONLY | 1 |
-| **Total** | **48** |
+| **Total** | **49** |
 
 ### REPLACE (do not reactivate as-is)
 
@@ -69,6 +71,7 @@ Static inventory script: `scripts/inventory-workflows-2026.py`
 | `write-core-v1-weekly-card-2026.yml` | Guarded Core V1 `official_flat_100` card |
 | `cfbd-scores-2026-manual.yml` | Guarded CFBD score PREVIEW/COMMIT |
 | `grade-bets-2026-manual.yml` | Guarded official bet grading PREVIEW/COMMIT |
+| `cfbd-team-game-stats-2026-manual.yml` | Guarded TeamGameStat PREVIEW/COMMIT (Core V1 lifecycle EPA feed; not yet production-authorized) |
 
 ### BLOCKED
 
@@ -139,6 +142,7 @@ Legend: **Class** = classification; **Sched?** = YAML schedule present; **SchedO
 | cfbd-feature-ingest.yml | CFBD Feature Ingest | dispatch | REPAIR_BEFORE_USE | N | N |
 | cfbd-rankings-sync.yml | CFBD Rankings Sync | dispatch+schedule | REPAIR_BEFORE_USE | Y | N |
 | cfbd-scores-2026-manual.yml | 2026 CFBD Scores (Manual, Guarded) | dispatch | MANUAL_SAFE | N | N |
+| cfbd-team-game-stats-2026-manual.yml | 2026 CFBD TeamGameStat (Manual, Guarded) | dispatch | MANUAL_SAFE | N | N |
 | diagnose-2026-conference-recruiting.yml | Diagnose Conference/Recruiting | dispatch | COMPLETED_LEAVE_OFF | N | N |
 | evaluate-balanced-v1-preseason-bridge.yml | Evaluate Preseason Bridge | dispatch | COMPLETED_LEAVE_OFF | N | N |
 | evaluate-balanced-v1-transition-blends.yml | Evaluate Transition Blends | dispatch | COMPLETED_LEAVE_OFF | N | N |
@@ -184,7 +188,7 @@ python scripts/inventory-workflows-2026.py
 
 ## D. Minimal 2026 operating pipeline (current)
 
-Keep **score → grading → feature ingest → lifecycle** as separate stages. Do not merge into one mega-job.
+Keep **score → grading → TeamGameStat ingest → Core V1 lifecycle** as separate stages. Keep parallel `cfbd-feature-ingest` (`cfbdEff*`) separate from the Core path. Do not merge into one mega-job.
 
 ### PRE-GAME
 
@@ -200,8 +204,9 @@ Keep **score → grading → feature ingest → lifecycle** as separate stages. 
 |-------|-----------|---------|----------|--------|----------------|
 | Score sync | Yes after kickoff | Manual guarded (recurring **NOT AUTHORIZED**) | CFBD `/games` | Game scores/status | `cfbd-scores-2026-manual.yml` (**proven**) |
 | Grading | After finals + bets | Manual guarded (recurring **NOT AUTHORIZED**) | none | Bet result/pnl/clv | `grade-bets-2026-manual.yml` (**proven**) |
-| CFBD feature ingest | For lifecycle | After week completes | CFBD | feature tables | `cfbd-feature-ingest` / stats-* — REPAIR before use |
-| Core V1 lifecycle | After completedThroughWeek | Manual guarded | none (DB features) | TeamSeasonRating v1 | `write-core-v1-lifecycle-ratings` |
+| **TeamGameStat ingest** | For Core V1 lifecycle EPA | Manual guarded (not production-authorized yet) | CFBD `/stats/game/advanced` | `TeamGameStat` | `cfbd-team-game-stats-2026-manual.yml` |
+| Core V1 lifecycle | After completedThroughWeek | Manual guarded | none (reads `teamGameStat`) | TeamSeasonRating v1 | `write-core-v1-lifecycle-ratings` |
+| CFBD feature ingest (`cfbdEff*`) | Parallel / Labs / legacy V2 | REPAIR_BEFORE_USE | CFBD | feature-store tables | `cfbd-feature-ingest.yml` — **not** the Core V1 lifecycle feed |
 
 ### HYBRID READINESS (future)
 
@@ -216,7 +221,8 @@ Keep **score → grading → feature ingest → lifecycle** as separate stages. 
 
 Talent/roster/rankings/SGO team stats — repair season params before any use; none needed for Week1 Core V1 card once Odds exist.
 
-**Keep score → grading → feature ingest → lifecycle as separate workflows.**
+**Actual Core path:** `Game finals → TeamGameStat ingest → Core V1 lifecycle`.  
+**Keep score → grading → TeamGameStat → lifecycle as separate workflows.** Do not treat `cfbd-feature-ingest` as the lifecycle EPA source.
 
 ---
 
@@ -337,7 +343,15 @@ Legacy `sync-weekly-bets.yml` is labeled **LEGACY (<=2025)** and rejects season�
 
 Legacy `cfbd-scores-sync.yml` (`CFBD Scores Sync`) and `grade-bets.yml` (`Grade Bets`) YAML files were deleted in 2C-2J-6C-2. Historical Actions run records and historical `apps/jobs` implementations remain in the repository but are not invoked by any workflow.
 
-Keep **score → grading → feature ingest → lifecycle** as separate stages.
+### Canonical TeamGameStat path — `cfbd-team-game-stats-2026-manual.yml` (2C-2J-6D-1)
+
+- `workflow_dispatch` only (no schedule)
+- Guarded `write-cfbd-team-game-stats-2026.ts`; one CFBD `/stats/game/advanced` call
+- Writes `TeamGameStat` only (Core V1 lifecycle EPA source)
+- Legacy `stats-cfbd.yml` / `cfbd_team_stats.ts` retained as REPAIR_BEFORE_USE / historical
+- **Not production-run/authorized merely by merging this workflow**
+
+Keep **score → grading → TeamGameStat ingest → lifecycle** as separate stages. `cfbd-feature-ingest` remains a parallel `cfbdEff*` path, not the Core V1 EPA feed.
 
 ---
 
@@ -375,4 +389,4 @@ Preferred standard: **PR #60 / lifecycle** (step env inputs, scoped DB secret, i
 
 ## K. Next phase
 
-Authorize recurring score/grading cadence only after explicit operator review (separate from this inventory cleanup). Feature ingest / lifecycle remain separate stages.
+Authorize recurring score/grading cadence only after explicit operator review (separate from this inventory cleanup). TeamGameStat ingest and Core V1 lifecycle remain separate stages from the parallel `cfbd-feature-ingest` path.
