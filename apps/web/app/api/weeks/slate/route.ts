@@ -39,8 +39,10 @@ interface SlateGame {
   status: 'final' | 'scheduled' | 'in_progress';
   awayTeamId: string;
   awayTeamName: string;
+  awayTeamMascot?: string | null;
   homeTeamId: string;
   homeTeamName: string;
+  homeTeamMascot?: string | null;
   awayScore: number | null;
   homeScore: number | null;
   /** Primary display market: current (scheduled) or closing (final). value = HMA for spreads. */
@@ -148,8 +150,8 @@ export async function GET(request: NextRequest) {
     const games = await prisma.game.findMany({
       where: whereClause,
       include: {
-        homeTeam: { select: { id: true, name: true } },
-        awayTeam: { select: { id: true, name: true } }
+        homeTeam: { select: { id: true, name: true, mascot: true } },
+        awayTeam: { select: { id: true, name: true, mascot: true } }
       },
       orderBy: { date: 'asc' }
     });
@@ -318,8 +320,10 @@ export async function GET(request: NextRequest) {
         status,
         awayTeamId: game.awayTeam.id,
         awayTeamName: game.awayTeam.name,
+        awayTeamMascot: game.awayTeam.mascot ?? null,
         homeTeamId: game.homeTeam.id,
         homeTeamName: game.homeTeam.name,
+        homeTeamMascot: game.homeTeam.mascot ?? null,
         awayScore: game.awayScore,
         homeScore: game.homeScore,
         closingSpread,

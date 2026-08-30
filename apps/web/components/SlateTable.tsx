@@ -13,6 +13,12 @@ import {
   type SlateResponseMeta,
 } from '@/lib/config/slate-model';
 import { resolveTeamDisplayName } from '@/lib/team-display-name';
+import {
+  prefersReducedMotionScrollBehavior,
+  resolveActiveDateIndex,
+  resolveAdjacentDateIndex,
+  scrollSlateTargetIntoView,
+} from '@/lib/slate-table-scroll';
 import type { ModelViewMode } from '@/contexts/ModelViewModeContext';
 
 /**
@@ -30,6 +36,8 @@ interface SlateGame {
   homeTeamId: string;
   awayTeamName?: string;
   homeTeamName?: string;
+  awayTeamMascot?: string | null;
+  homeTeamMascot?: string | null;
   awayScore: number | null;
   homeScore: number | null;
   closingSpread: {
@@ -155,12 +163,36 @@ export default function SlateTable({
   const { model: contextModel, modelLabel } = useProductionModel();
   const activeModel = modelProp ?? contextModel;
   
-  // Refs for scroll synchronization
+  // Refs: horizontal table scroller + date headers (page vertical scroll)
   const topScrollRef = useRef<HTMLDivElement>(null);
-  const bodyScrollRef = useRef<HTMLDivElement>(null);
+  const tableHScrollRef = useRef<HTMLDivElement>(null);
   const dateHeaderRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
   const searchInputRef = useRef<HTMLInputElement>(null);
   const datePillsRef = useRef<HTMLDivElement>(null);
+  const tableRootRef = useRef<HTMLDivElement>(null);
+
+  const scrollToDateKey = (dateKey: string, updateHash = true) => {
+    const header = dateHeaderRefs.current.get(dateKey);
+    if (!header) return;
+    scrollSlateTargetIntoView(header);
+    setActiveDate(dateKey);
+    if (updateHash) {
+      window.history.replaceState(null, '', `#date-${dateKey}`);
+    }
+  };
+
+  const scrollToGameId = (gameId: string, updateHash = true) => {
+    const gameRow = document.getElementById(`game-${gameId}`);
+    if (!gameRow) return;
+    scrollSlateTargetIntoView(gameRow);
+    gameRow.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2');
+    setTimeout(() => {
+      gameRow.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2');
+    }, 1500);
+    if (updateHash) {
+      window.history.replaceState(null, '', `#game-${gameId}`);
+    }
+  };
 
   useEffect(() => {
     if (providedGames) {
@@ -172,40 +204,55 @@ export default function SlateTable({
     fetchSlate();
   }, [season, week, activeModel, providedGames]);
 
-  // Handle URL hash for deep linking
+  // Handle URL hash for deep linking (page scroll)
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash;
       if (hash.startsWith('#date-')) {
         const dateKey = hash.replace('#date-', '');
-        const header = dateHeaderRefs.current.get(dateKey);
-        if (header && bodyScrollRef.current) {
-          const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
-          bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
-          setActiveDate(dateKey);
-        }
+        scrollToDateKey(dateKey, false);
       } else if (hash.startsWith('#game-')) {
         const gameId = hash.replace('#game-', '');
-        const gameRow = document.getElementById(`game-${gameId}`);
-        if (gameRow && bodyScrollRef.current) {
-          const offset = gameRow.offsetTop - bodyScrollRef.current.offsetTop;
-          bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
-          
-          // Highlight the row briefly
-          gameRow.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2');
-          setTimeout(() => {
-            gameRow.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2');
-          }, 1500);
-        }
+        scrollToGameId(gameId, false);
       }
     };
 
-    // Handle initial hash on mount
     handleHashChange();
-    
-    // Listen for hash changes
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [games]);
+
+  // Active date via IntersectionObserver (page scroll–safe)
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return;
+    const headers = Array.from(dateHeaderRefs.current.entries());
+    if (headers.length === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort(
+            (a, b) =>
+              (a.boundingClientRect.top ?? 0) - (b.boundingClientRect.top ?? 0)
+          );
+        if (visible[0]?.target) {
+          const key = (visible[0].target as HTMLElement).dataset.dateKey;
+          if (key) setActiveDate(key);
+        }
+      },
+      {
+        root: null,
+        // Account for sticky date nav / table chrome
+        rootMargin: '-120px 0px -60% 0px',
+        threshold: [0, 0.25, 0.5, 1],
+      }
+    );
+
+    for (const [, el] of headers) {
+      if (el) observer.observe(el);
+    }
+    return () => observer.disconnect();
   }, [games]);
 
   // Load preferences from localStorage
@@ -281,14 +328,13 @@ export default function SlateTable({
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Only handle shortcuts when the table container is focused or hovered
-      if (!bodyScrollRef.current?.matches(':hover') && !bodyScrollRef.current?.matches(':focus-within')) {
+      // Only when the slate table region is hovered / focused
+      if (
+        !tableRootRef.current?.matches(':hover') &&
+        !tableRootRef.current?.matches(':focus-within')
+      ) {
         return;
       }
-
-      // Check for reduced motion preference
-      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      const behavior = prefersReducedMotion ? 'auto' : 'smooth';
 
       switch (event.key.toLowerCase()) {
         case 't':
@@ -311,8 +357,9 @@ export default function SlateTable({
           break;
         case '/':
           event.preventDefault();
-          // Focus search input if it exists (for S5g)
-          const searchInput = document.querySelector('[data-search-input]') as HTMLInputElement;
+          const searchInput = document.querySelector(
+            '[data-search-input]'
+          ) as HTMLInputElement;
           if (searchInput) {
             searchInput.focus();
           }
@@ -327,29 +374,25 @@ export default function SlateTable({
   // Auto-scroll date pills container to show active date
   useEffect(() => {
     if (activeDate && datePillsRef.current) {
-      const activeButton = datePillsRef.current.querySelector(`[data-date-key="${activeDate}"]`) as HTMLElement;
+      const activeButton = datePillsRef.current.querySelector(
+        `[data-date-key="${activeDate}"]`
+      ) as HTMLElement;
       if (activeButton) {
-        activeButton.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        activeButton.scrollIntoView({
+          behavior: prefersReducedMotionScrollBehavior(),
+          block: 'nearest',
+          inline: 'center',
+        });
       }
     }
   }, [activeDate]);
 
-  // Navigate to next/previous date
+  // Navigate to next/previous date (shared by arrows + keyboard)
   const navigateToDate = (direction: 'next' | 'prev') => {
-    const currentIndex = dateEntries.findIndex(([dateKey]) => dateKey === activeDate);
-    if (currentIndex === -1) return;
-
-    const newIndex = direction === 'next' 
-      ? Math.min(currentIndex + 1, dateEntries.length - 1)
-      : Math.max(currentIndex - 1, 0);
-
-    const [newDateKey] = dateEntries[newIndex];
-    const header = dateHeaderRefs.current.get(newDateKey);
-    if (header && bodyScrollRef.current) {
-      const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
-      bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
-      setActiveDate(newDateKey);
-    }
+    const dateKeys = dateEntries.map(([dateKey]) => dateKey);
+    const newIndex = resolveAdjacentDateIndex(dateKeys, activeDate, direction);
+    if (newIndex < 0) return;
+    scrollToDateKey(dateKeys[newIndex]);
   };
 
   // Build in-memory game index
@@ -362,8 +405,16 @@ export default function SlateTable({
     }> = [];
 
     games.forEach(game => {
-      const awayName = resolveTeamDisplayName(game.awayTeamName, game.awayTeamId);
-      const homeName = resolveTeamDisplayName(game.homeTeamName, game.homeTeamId);
+      const awayName = resolveTeamDisplayName(
+        game.awayTeamName,
+        game.awayTeamId,
+        game.awayTeamMascot
+      );
+      const homeName = resolveTeamDisplayName(
+        game.homeTeamName,
+        game.homeTeamId,
+        game.homeTeamMascot
+      );
       
       const searchTerms = [
         game.awayTeamId,
@@ -452,21 +503,7 @@ export default function SlateTable({
 
   // Handle search result selection
   const selectSearchResult = (game: SlateGame) => {
-    const gameRow = document.getElementById(`game-${game.gameId}`);
-    if (gameRow && bodyScrollRef.current) {
-      const offset = gameRow.offsetTop - bodyScrollRef.current.offsetTop;
-      bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
-      
-      // Highlight the row briefly
-      gameRow.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2');
-      setTimeout(() => {
-        gameRow.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2');
-      }, 1500);
-      
-      // Update URL hash
-      window.history.replaceState(null, '', `#game-${game.gameId}`);
-    }
-    
+    scrollToGameId(game.gameId);
     setShowSearchResults(false);
     setSearchQuery('');
   };
@@ -511,64 +548,32 @@ export default function SlateTable({
     localStorage.setItem('slateTable-compactMode', JSON.stringify(compact));
   };
 
-  // Scroll synchronization between top and body scrollbars
+  // Horizontal scroll synchronization (top ↔ table); no vertical container
   const handleTopScroll = () => {
-    if (topScrollRef.current && bodyScrollRef.current) {
-      if (topScrollRef.current.scrollLeft !== bodyScrollRef.current.scrollLeft) {
-        bodyScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+    if (topScrollRef.current && tableHScrollRef.current) {
+      if (topScrollRef.current.scrollLeft !== tableHScrollRef.current.scrollLeft) {
+        tableHScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
       }
     }
   };
 
-  const handleBodyScroll = () => {
-    if (topScrollRef.current && bodyScrollRef.current) {
-      if (bodyScrollRef.current.scrollLeft !== topScrollRef.current.scrollLeft) {
-        topScrollRef.current.scrollLeft = bodyScrollRef.current.scrollLeft;
+  const handleTableHScroll = () => {
+    if (topScrollRef.current && tableHScrollRef.current) {
+      if (tableHScrollRef.current.scrollLeft !== topScrollRef.current.scrollLeft) {
+        topScrollRef.current.scrollLeft = tableHScrollRef.current.scrollLeft;
       }
     }
-    
-    // Show floating buttons after scrolling 200px
-    if (bodyScrollRef.current) {
-      setShowFloatingButtons(bodyScrollRef.current.scrollTop > 200);
-    }
-    
-    // Update active date based on scroll position
-    updateActiveDate();
   };
 
-  // Update active date based on scroll position
-  const updateActiveDate = () => {
-    if (!bodyScrollRef.current) return;
-    
-    const scrollTop = bodyScrollRef.current.scrollTop;
-    const headerHeight = 48; // Approximate header height
-    
-    // Find the date header that's currently visible
-    // Sort by position to check in order
-    const sortedHeaders = Array.from(dateHeaderRefs.current.entries())
-      .sort(([, a], [, b]) => {
-        const offsetA = a.offsetTop - bodyScrollRef.current!.offsetTop;
-        const offsetB = b.offsetTop - bodyScrollRef.current!.offsetTop;
-        return offsetA - offsetB;
-      });
-    
-    for (const [dateKey, header] of sortedHeaders) {
-      if (header) {
-        const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
-        if (offset <= scrollTop + headerHeight) {
-          const nextHeader = sortedHeaders.find(([, h]) => {
-            const nextOffset = h.offsetTop - bodyScrollRef.current!.offsetTop;
-            return nextOffset > scrollTop + headerHeight;
-          });
-          
-          if (!nextHeader || header === nextHeader[1]) {
-            setActiveDate(dateKey);
-            break;
-          }
-        }
-      }
-    }
-  };
+  // Floating buttons from page scroll
+  useEffect(() => {
+    const onWindowScroll = () => {
+      setShowFloatingButtons(window.scrollY > 200);
+    };
+    onWindowScroll();
+    window.addEventListener('scroll', onWindowScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onWindowScroll);
+  }, []);
 
   // Get today's date in YYYY-MM-DD format for comparison
   const getTodayDate = () => {
@@ -589,19 +594,14 @@ export default function SlateTable({
   // Scroll to today's games
   const scrollToToday = () => {
     const today = getTodayDate();
-    const header = dateHeaderRefs.current.get(today);
-    if (header && bodyScrollRef.current) {
-      const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
-      bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
-      setActiveDate(today);
+    if (dateHeaderRefs.current.has(today)) {
+      scrollToDateKey(today);
     }
   };
 
-  // Scroll to top
+  // Scroll to top of slate
   const scrollToTop = () => {
-    if (bodyScrollRef.current) {
-      bodyScrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-    }
+    scrollSlateTargetIntoView(tableRootRef.current);
   };
 
   const fetchSlate = async () => {
@@ -619,7 +619,7 @@ export default function SlateTable({
         console.log(`[Slate ${activeModel}] Received games:`, data.length);
         data.slice(0, 3).forEach((game: SlateGame) => {
           console.log('[CoreV1 Slate Row]', {
-            matchup: `${resolveTeamDisplayName(game.awayTeamName, game.awayTeamId)} @ ${resolveTeamDisplayName(game.homeTeamName, game.homeTeamId)}`,
+            matchup: `${resolveTeamDisplayName(game.awayTeamName, game.awayTeamId, game.awayTeamMascot)} @ ${resolveTeamDisplayName(game.homeTeamName, game.homeTeamId, game.homeTeamMascot)}`,
             modelSpread: game.modelSpread,
             pickSpread: game.pickSpread,
             spreadEdge: game.picks?.spread?.edge ?? null,
@@ -961,7 +961,7 @@ export default function SlateTable({
   }
 
   return (
-    <div className="bg-white rounded-lg shadow overflow-hidden">
+    <div ref={tableRootRef} className="bg-white rounded-lg shadow relative">
       <div className="px-6 py-4 border-b border-gray-200">
         <div className="flex justify-between items-center">
           <div>
@@ -1122,8 +1122,16 @@ export default function SlateTable({
             >
               {searchResults.length > 0 ? (
                 searchResults.map((game, index) => {
-                  const awayName = resolveTeamDisplayName(game.awayTeamName, game.awayTeamId);
-                  const homeName = resolveTeamDisplayName(game.homeTeamName, game.homeTeamId);
+                  const awayName = resolveTeamDisplayName(
+                    game.awayTeamName,
+                    game.awayTeamId,
+                    game.awayTeamMascot
+                  );
+                  const homeName = resolveTeamDisplayName(
+                    game.homeTeamName,
+                    game.homeTeamId,
+                    game.homeTeamMascot
+                  );
                   
                   return (
                     <button
@@ -1158,42 +1166,37 @@ export default function SlateTable({
         </div>
       </div>
       
-      {/* Top horizontal scrollbar */}
+      {/* Top horizontal scrollbar (advanced / wide tables) */}
       <div 
         ref={topScrollRef}
         onScroll={handleTopScroll}
-        className="sticky top-0 z-20 overflow-x-auto bg-gray-50 border-b border-gray-200"
+        className="sticky top-0 z-30 overflow-x-auto bg-gray-50 border-b border-gray-200"
         style={{ height: '17px' }}
+        aria-hidden="true"
       >
         <div 
           className="h-full"
           style={{ 
-            width: showAdvancedColumns ? '1400px' : '1100px',
-            minWidth: showAdvancedColumns ? '1400px' : '1100px'
+            width: showAdvancedColumns ? '1400px' : '100%',
+            minWidth: showAdvancedColumns ? '1400px' : '100%'
           }}
         />
       </div>
       
       {/* Enhanced date navigation with arrows and game counts */}
       {dateEntries.length > 1 && (
-        <div className="sticky top-[17px] z-19 bg-gray-50 border-b border-gray-200">
+        <div className="sticky top-[17px] z-20 bg-gray-50 border-b border-gray-200">
           <div className="flex items-center gap-2 px-4 py-2">
             {/* Left arrow button */}
             <button
-              onClick={() => {
-                const currentIndex = dateEntries.findIndex(([dateKey]) => dateKey === activeDate || dateKey === dateEntries[0][0]);
-                if (currentIndex > 0) {
-                  const [prevDateKey] = dateEntries[currentIndex - 1];
-                  const header = dateHeaderRefs.current.get(prevDateKey);
-                  if (header && bodyScrollRef.current) {
-                    const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
-                    bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
-                    window.history.replaceState(null, '', `#date-${prevDateKey}`);
-                    setActiveDate(prevDateKey);
-                  }
-                }
-              }}
-              disabled={activeDate === dateEntries[0][0]}
+              type="button"
+              onClick={() => navigateToDate('prev')}
+              disabled={
+                resolveActiveDateIndex(
+                  dateEntries.map(([k]) => k),
+                  activeDate
+                ) <= 0
+              }
               className="flex-shrink-0 p-1.5 rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500"
               title="Previous date"
             >
@@ -1220,15 +1223,7 @@ export default function SlateTable({
                     key={dateKey}
                     data-date-key={dateKey}
                     onClick={() => {
-                      const header = dateHeaderRefs.current.get(dateKey);
-                      if (header && bodyScrollRef.current) {
-                        const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
-                        bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
-                        
-                        // Update URL hash and active date
-                        window.history.replaceState(null, '', `#date-${dateKey}`);
-                        setActiveDate(dateKey);
-                      }
+                      scrollToDateKey(dateKey);
                     }}
                     className={`flex-shrink-0 px-3 py-1.5 text-xs font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 whitespace-nowrap transition-colors cursor-pointer ${
                       isActive 
@@ -1257,20 +1252,13 @@ export default function SlateTable({
 
             {/* Right arrow button */}
             <button
-              onClick={() => {
-                const currentIndex = dateEntries.findIndex(([dateKey]) => dateKey === activeDate || dateKey === dateEntries[0][0]);
-                if (currentIndex < dateEntries.length - 1) {
-                  const [nextDateKey] = dateEntries[currentIndex + 1];
-                  const header = dateHeaderRefs.current.get(nextDateKey);
-                  if (header && bodyScrollRef.current) {
-                    const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
-                    bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
-                    window.history.replaceState(null, '', `#date-${nextDateKey}`);
-                    setActiveDate(nextDateKey);
-                  }
-                }
-              }}
-              disabled={activeDate === dateEntries[dateEntries.length - 1][0]}
+              type="button"
+              onClick={() => navigateToDate('next')}
+              disabled={(() => {
+                const keys = dateEntries.map(([k]) => k);
+                const idx = resolveActiveDateIndex(keys, activeDate);
+                return idx < 0 || idx >= keys.length - 1;
+              })()}
               className="flex-shrink-0 p-1.5 rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500"
               title="Next date"
             >
@@ -1289,13 +1277,7 @@ export default function SlateTable({
                   <button
                     onClick={() => {
                       const [lastDateKey] = dateEntries[dateEntries.length - 1];
-                      const header = dateHeaderRefs.current.get(lastDateKey);
-                      if (header && bodyScrollRef.current) {
-                        const offset = header.offsetTop - bodyScrollRef.current.offsetTop;
-                        bodyScrollRef.current.scrollTo({ top: offset, behavior: 'smooth' });
-                        window.history.replaceState(null, '', `#date-${lastDateKey}`);
-                        setActiveDate(lastDateKey);
-                      }
+                      scrollToDateKey(lastDateKey);
                     }}
                     className="text-xs text-blue-600 hover:text-blue-800 underline px-2"
                     title="Jump to last date"
@@ -1309,22 +1291,32 @@ export default function SlateTable({
         </div>
       )}
       
-      {/* Fixed-height scroll container */}
-      <div 
-        ref={bodyScrollRef}
-        onScroll={handleBodyScroll}
-        className="overflow-auto"
-        style={{ height: '70vh', maxHeight: '70vh' }}
+      {/* Page-height table: horizontal overflow only (no nested vertical scroll) */}
+      <div
+        ref={tableHScrollRef}
+        onScroll={handleTableHScroll}
+        className="w-full overflow-x-auto"
+        data-slate-table-hscroll="true"
       >
-        <div className="w-full overflow-x-auto md:overflow-visible">
-          <table className="min-w-full divide-y divide-gray-200" style={{ minWidth: showAdvancedColumns ? '1400px' : '1100px' }}>
-          <thead className="bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/70 sticky top-0 z-10 border-b">
+          <table
+            className="min-w-full divide-y divide-gray-200"
+            style={{
+              minWidth: showAdvancedColumns ? '1400px' : undefined,
+            }}
+          >
+          <thead className="bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/70 border-b">
             {/* Row 1: Grouped headers */}
             <tr>
-              <th rowSpan={2} className="sticky left-0 z-20 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/70 border-r border-slate-200 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[200px]">
+              <th
+                rowSpan={2}
+                className="sticky left-0 z-20 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/70 border-r border-slate-200 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[200px]"
+              >
                 Matchup
               </th>
-              <th rowSpan={2} className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]">
+              <th
+                rowSpan={2}
+                className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider min-w-[100px]"
+              >
                 Time / Score
               </th>
               <th colSpan={showAdvancedColumns ? 4 : 1} className="text-center text-xs font-semibold text-slate-500 border-l border-slate-200 px-6 py-2">
@@ -1428,7 +1420,9 @@ export default function SlateTable({
                         dateHeaderRefs.current.set(dateKey, el);
                       }
                     }}
-                    className="bg-white/90 sticky top-[var(--header-height,48px)] z-9 border-b"
+                    data-date-key={dateKey}
+                    id={`date-${dateKey}`}
+                    className="bg-slate-50 border-b scroll-mt-28"
                   >
                     <td colSpan={showAdvancedColumns ? (allGamesHaveNullTotals ? 9 : 12) : 5} className="px-6 py-3 text-sm font-medium text-gray-700">
                       {dateData.formattedDate}
@@ -1442,7 +1436,7 @@ export default function SlateTable({
                   <tr 
                     key={game.gameId} 
                     id={`game-${game.gameId}`}
-                    className={`border-b border-slate-100 transition-colors ${!noOdds ? 'hover:bg-slate-50' : ''} ${noOdds ? 'opacity-40 italic' : ''} cursor-pointer`}
+                    className={`border-b border-slate-100 transition-colors scroll-mt-28 ${!noOdds ? 'hover:bg-slate-50' : ''} ${noOdds ? 'opacity-40 italic' : ''} cursor-pointer`}
                     onClick={() => window.location.href = `/game/${game.gameId}`}
                   >
                     <td className={`sticky left-0 z-10 bg-white border-r border-slate-200 px-6 whitespace-nowrap ${compactMode ? 'py-1.5' : 'py-3'}`}>
@@ -1452,9 +1446,17 @@ export default function SlateTable({
                           className="text-sm font-medium text-slate-900 hover:underline"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          {resolveTeamDisplayName(game.awayTeamName, game.awayTeamId)}
+                          {resolveTeamDisplayName(
+                            game.awayTeamName,
+                            game.awayTeamId,
+                            game.awayTeamMascot
+                          )}
                           <span className="text-gray-400 mx-1">@</span>
-                          {resolveTeamDisplayName(game.homeTeamName, game.homeTeamId)}
+                          {resolveTeamDisplayName(
+                            game.homeTeamName,
+                            game.homeTeamId,
+                            game.homeTeamMascot
+                          )}
                         </Link>
                         <span className="text-xs text-slate-500">
                           {game.date ? new Date(game.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}
@@ -1592,37 +1594,35 @@ export default function SlateTable({
             ))}
           </tbody>
         </table>
-        </div>
+      </div>
         
-        {/* Floating action buttons */}
-        {showFloatingButtons && (
-          <div className="absolute bottom-4 right-4 flex flex-col space-y-2 z-30">
+      {/* Floating action buttons (page viewport) */}
+      {showFloatingButtons && (
+        <div className="fixed bottom-4 right-4 flex flex-col space-y-2 z-40">
+          <button
+            onClick={scrollToTop}
+            aria-label="Back to top"
+            title="Back to top"
+            className="p-3 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+            </svg>
+          </button>
+          {hasTodayGames() && (
             <button
-              onClick={scrollToTop}
-              aria-label="Back to top"
-              title="Back to top"
-              className="p-3 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              onClick={scrollToToday}
+              aria-label="Scroll to today"
+              title="Scroll to today"
+              className="p-3 bg-green-600 text-white rounded-full shadow-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
             </button>
-            {hasTodayGames() && (
-              <button
-                onClick={scrollToToday}
-                aria-label="Scroll to today"
-                title="Scroll to today"
-                className="p-3 bg-green-600 text-white rounded-full shadow-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-      
+          )}
+        </div>
+      )}
       
       {/* View all columns link */}
       <div className="px-6 py-3 border-t border-gray-200 bg-gray-50">
