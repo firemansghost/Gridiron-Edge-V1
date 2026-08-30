@@ -13,10 +13,49 @@ import {
 } from '@/lib/team-display-name';
 import {
   prefersReducedMotionScrollBehavior,
+  resolveActiveDateIndex,
+  resolveAdjacentDateIndex,
   scrollSlateTargetIntoView,
 } from '@/lib/slate-table-scroll';
 
 const webRoot = path.join(__dirname, '..');
+
+describe('date navigation index helpers', () => {
+  const sixDates = [
+    '2026-08-28',
+    '2026-08-29',
+    '2026-08-30',
+    '2026-08-31',
+    '2026-09-01',
+    '2026-09-02',
+  ];
+
+  it('empty activeDate starts at index 0', () => {
+    expect(resolveActiveDateIndex(sixDates, '')).toBe(0);
+    expect(resolveActiveDateIndex(sixDates, null)).toBe(0);
+    expect(resolveActiveDateIndex(sixDates, undefined)).toBe(0);
+  });
+
+  it('known activeDate resolves exact index', () => {
+    expect(resolveActiveDateIndex(sixDates, sixDates[2])).toBe(2);
+    expect(resolveActiveDateIndex(sixDates, sixDates[5])).toBe(5);
+  });
+
+  it('next/prev navigate sequentially and clamp at ends', () => {
+    expect(resolveAdjacentDateIndex(sixDates, '', 'next')).toBe(1);
+    expect(resolveAdjacentDateIndex(sixDates, sixDates[0], 'next')).toBe(1);
+    expect(resolveAdjacentDateIndex(sixDates, sixDates[1], 'next')).toBe(2);
+    expect(resolveAdjacentDateIndex(sixDates, sixDates[2], 'prev')).toBe(1);
+    expect(resolveAdjacentDateIndex(sixDates, sixDates[1], 'prev')).toBe(0);
+    expect(resolveAdjacentDateIndex(sixDates, sixDates[0], 'prev')).toBe(0);
+    expect(resolveAdjacentDateIndex(sixDates, sixDates[5], 'next')).toBe(5);
+  });
+
+  it('empty date keys → -1', () => {
+    expect(resolveActiveDateIndex([], 'x')).toBe(-1);
+    expect(resolveAdjacentDateIndex([], '', 'next')).toBe(-1);
+  });
+});
 
 describe('team display name — acronym + mascot strip (6D-4)', () => {
   it('normalizes Tcu / Usc / Nc State acronyms', () => {
@@ -92,6 +131,29 @@ describe('SlateTable layout contracts (static)', () => {
     expect(slateTable).not.toContain('maxHeight: \'70vh\'');
     expect(slateTable).not.toContain('bodyScrollRef');
     expect(slateTable).not.toMatch(/overflow-auto[\s\S]{0,80}70vh/);
+  });
+
+  it('outer table root is not an overflow clipping ancestor for sticky page controls', () => {
+    expect(slateTable).toContain(
+      'ref={tableRootRef} className="bg-white rounded-lg shadow relative"'
+    );
+    expect(slateTable).not.toContain(
+      'ref={tableRootRef} className="bg-white rounded-lg shadow overflow-hidden relative"'
+    );
+    expect(slateTable).toContain('sticky top-0');
+    expect(slateTable).toContain('sticky top-[17px]');
+    expect(slateTable).toContain('overflow-x-auto');
+    expect(slateTable).not.toMatch(
+      /data-slate-table-hscroll[\s\S]{0,120}overflow-(y-auto|y-scroll|auto)/
+    );
+  });
+
+  it('visible prev/next arrows reuse navigateToDate (no always-0 index bug)', () => {
+    expect(slateTable).toContain("onClick={() => navigateToDate('prev')}");
+    expect(slateTable).toContain("onClick={() => navigateToDate('next')}");
+    expect(slateTable).toContain('resolveActiveDateIndex');
+    expect(slateTable).toContain('resolveAdjacentDateIndex');
+    expect(slateTable).not.toContain('dateKey === dateEntries[0][0]');
   });
 
   it('keeps a horizontal overflow surface for wide/advanced tables', () => {

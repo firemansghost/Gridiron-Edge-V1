@@ -15,6 +15,8 @@ import {
 import { resolveTeamDisplayName } from '@/lib/team-display-name';
 import {
   prefersReducedMotionScrollBehavior,
+  resolveActiveDateIndex,
+  resolveAdjacentDateIndex,
   scrollSlateTargetIntoView,
 } from '@/lib/slate-table-scroll';
 import type { ModelViewMode } from '@/contexts/ModelViewModeContext';
@@ -385,20 +387,12 @@ export default function SlateTable({
     }
   }, [activeDate]);
 
-  // Navigate to next/previous date
+  // Navigate to next/previous date (shared by arrows + keyboard)
   const navigateToDate = (direction: 'next' | 'prev') => {
-    const currentIndex = dateEntries.findIndex(
-      ([dateKey]) => dateKey === activeDate
-    );
-    if (currentIndex === -1) return;
-
-    const newIndex =
-      direction === 'next'
-        ? Math.min(currentIndex + 1, dateEntries.length - 1)
-        : Math.max(currentIndex - 1, 0);
-
-    const [newDateKey] = dateEntries[newIndex];
-    scrollToDateKey(newDateKey);
+    const dateKeys = dateEntries.map(([dateKey]) => dateKey);
+    const newIndex = resolveAdjacentDateIndex(dateKeys, activeDate, direction);
+    if (newIndex < 0) return;
+    scrollToDateKey(dateKeys[newIndex]);
   };
 
   // Build in-memory game index
@@ -967,7 +961,7 @@ export default function SlateTable({
   }
 
   return (
-    <div ref={tableRootRef} className="bg-white rounded-lg shadow overflow-hidden relative">
+    <div ref={tableRootRef} className="bg-white rounded-lg shadow relative">
       <div className="px-6 py-4 border-b border-gray-200">
         <div className="flex justify-between items-center">
           <div>
@@ -1195,17 +1189,14 @@ export default function SlateTable({
           <div className="flex items-center gap-2 px-4 py-2">
             {/* Left arrow button */}
             <button
-              onClick={() => {
-                const currentIndex = dateEntries.findIndex(
-                  ([dateKey]) =>
-                    dateKey === activeDate || dateKey === dateEntries[0][0]
-                );
-                if (currentIndex > 0) {
-                  const [prevDateKey] = dateEntries[currentIndex - 1];
-                  scrollToDateKey(prevDateKey);
-                }
-              }}
-              disabled={activeDate === dateEntries[0][0]}
+              type="button"
+              onClick={() => navigateToDate('prev')}
+              disabled={
+                resolveActiveDateIndex(
+                  dateEntries.map(([k]) => k),
+                  activeDate
+                ) <= 0
+              }
               className="flex-shrink-0 p-1.5 rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500"
               title="Previous date"
             >
@@ -1261,17 +1252,13 @@ export default function SlateTable({
 
             {/* Right arrow button */}
             <button
-              onClick={() => {
-                const currentIndex = dateEntries.findIndex(
-                  ([dateKey]) =>
-                    dateKey === activeDate || dateKey === dateEntries[0][0]
-                );
-                if (currentIndex < dateEntries.length - 1) {
-                  const [nextDateKey] = dateEntries[currentIndex + 1];
-                  scrollToDateKey(nextDateKey);
-                }
-              }}
-              disabled={activeDate === dateEntries[dateEntries.length - 1][0]}
+              type="button"
+              onClick={() => navigateToDate('next')}
+              disabled={(() => {
+                const keys = dateEntries.map(([k]) => k);
+                const idx = resolveActiveDateIndex(keys, activeDate);
+                return idx < 0 || idx >= keys.length - 1;
+              })()}
               className="flex-shrink-0 p-1.5 rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500"
               title="Next date"
             >
