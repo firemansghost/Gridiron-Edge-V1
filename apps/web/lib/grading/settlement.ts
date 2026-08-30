@@ -82,7 +82,8 @@ export function gradeSpreadTotal(
   let result: GradeResult;
   if (marketType === 'spread') {
     const sideMargin = side === 'home' ? margin : -margin;
-    const diff = sideMargin - closeLine;
+    // closeLine is the selected side's signed wager line (underdog +, favorite −).
+    const diff = sideMargin + closeLine;
     if (Math.abs(diff) < 0.5) {
       result = 'push';
     } else {

@@ -83,6 +83,9 @@ export interface PlannedGradeRow {
   stake: number;
   closePrice: number | null;
   modelPrice: number | null;
+  gameSeason: number;
+  gameWeek: number;
+  gameStatus: string;
   homeScore: number | null;
   awayScore: number | null;
   result: GradeResult | null;
@@ -244,9 +247,45 @@ function isFiniteNumber(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v);
 }
 
-function nearlyEqual(a: number | null, b: number | null): boolean {
-  if (a === null || b === null) return a === b;
+/** Null-safe numeric equality: null !== 0. */
+export function sameNullableNumber(
+  a: number | null | undefined,
+  b: number | null | undefined
+): boolean {
+  const aNull = a === null || a === undefined;
+  const bNull = b === null || b === undefined;
+  if (aNull || bNull) return aNull && bNull;
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
   return Math.abs(a - b) < 1e-9;
+}
+
+/** Planned finite numeric value must match a present finite DB value. */
+export function matchRequiredNumber(
+  actual: number | null | undefined,
+  expected: number,
+  field: string,
+  id: string
+): string | null {
+  if (actual === null || actual === undefined) {
+    return `${field} null for ${id} (expected ${expected})`;
+  }
+  if (!Number.isFinite(actual)) {
+    return `${field} non-finite for ${id}: ${String(actual)}`;
+  }
+  if (!Number.isFinite(expected) || Math.abs(actual - expected) >= 1e-9) {
+    return `${field} mismatch ${id}: db=${actual} expected=${expected}`;
+  }
+  return null;
+}
+
+export function officialNaturalKey(bet: {
+  season: number;
+  week: number;
+  gameId: string;
+  marketType: string;
+  strategyTag: string;
+}): string {
+  return `${bet.season}|${bet.week}|${bet.gameId}|${bet.marketType}|${bet.strategyTag}`;
 }
 
 const SPREAD_SIDES = new Set(['home', 'away']);
@@ -396,11 +435,22 @@ export function planOfficialGrades(options: {
   }
 
   const seenIds = new Set<string>();
+  const seenNaturalKeys = new Map<string, string>();
   for (const bet of options.officialBets) {
     if (seenIds.has(bet.id)) {
       blockers.push(`duplicate bet id ${bet.id}`);
     }
     seenIds.add(bet.id);
+
+    const nat = officialNaturalKey(bet);
+    const prior = seenNaturalKeys.get(nat);
+    if (prior) {
+      blockers.push(
+        `duplicate official natural identity ${nat} (bets ${prior} and ${bet.id})`
+      );
+    } else {
+      seenNaturalKeys.set(nat, bet.id);
+    }
 
     if (bet.strategyTag !== OFFICIAL_STRATEGY_TAG) {
       blockers.push(
@@ -412,11 +462,23 @@ export function planOfficialGrades(options: {
     }
     if (bet.season !== options.season || bet.week !== options.week) {
       blockers.push(
-        `bet ${bet.id} season/week mismatch: ${bet.season}/${bet.week}`
+        `bet ${bet.id} season/week mismatch: ${bet.season}/${bet.week} (requested ${options.season}/${options.week})`
       );
     }
     if (bet.game.id !== bet.gameId) {
-      blockers.push(`bet ${bet.id} game identity mismatch`);
+      blockers.push(
+        `bet ${bet.id} game.id mismatch: game.id=${bet.game.id} bet.gameId=${bet.gameId}`
+      );
+    }
+    if (bet.game.season !== bet.season) {
+      blockers.push(
+        `bet ${bet.id} game.season mismatch: game.season=${bet.game.season} bet.season=${bet.season}`
+      );
+    }
+    if (bet.game.week !== bet.week) {
+      blockers.push(
+        `bet ${bet.id} game.week mismatch: game.week=${bet.game.week} bet.week=${bet.week}`
+      );
     }
   }
 
@@ -436,6 +498,9 @@ export function planOfficialGrades(options: {
       stake: bet.stake,
       closePrice: bet.closePrice,
       modelPrice: bet.modelPrice,
+      gameSeason: bet.game.season,
+      gameWeek: bet.game.week,
+      gameStatus: bet.game.status,
       homeScore: bet.game.homeScore,
       awayScore: bet.game.awayScore,
       result: null,
@@ -494,14 +559,8 @@ export function planOfficialGrades(options: {
 
     if (
       String(bet.result) === settled.result &&
-      nearlyEqual(
-        bet.pnl === null || bet.pnl === undefined ? null : Number(bet.pnl),
-        settled.pnl
-      ) &&
-      nearlyEqual(
-        bet.clv === null || bet.clv === undefined ? null : Number(bet.clv),
-        settled.clv
-      )
+      sameNullableNumber(bet.pnl, settled.pnl) &&
+      sameNullableNumber(bet.clv, settled.clv)
     ) {
       base.action = 'already_graded_same';
       alreadyGradedSame += 1;
@@ -706,6 +765,42 @@ export function verifyGradePostWrite(options: {
   const afterById = new Map(options.officialBetsAfter.map((b) => [b.id, b]));
   const plannedIds = new Set(options.plan.plannedMutations.map((m) => m.betId));
 
+  function assertGradingInputsUnchanged(
+    row: PlannedGradeRow,
+    after: GradeBetRow
+  ): void {
+    if (after.gameId !== row.gameId || after.game.id !== row.gameId) {
+      reasons.push(
+        `game id changed for ${row.betId}: planned=${row.gameId} after=${after.gameId}/${after.game.id}`
+      );
+    }
+    if (after.game.season !== row.gameSeason) {
+      reasons.push(
+        `game.season changed for ${row.betId}: planned=${row.gameSeason} after=${after.game.season}`
+      );
+    }
+    if (after.game.week !== row.gameWeek) {
+      reasons.push(
+        `game.week changed for ${row.betId}: planned=${row.gameWeek} after=${after.game.week}`
+      );
+    }
+    if (String(after.game.status) !== String(row.gameStatus)) {
+      reasons.push(
+        `game.status changed for ${row.betId}: planned=${row.gameStatus} after=${after.game.status}`
+      );
+    }
+    if (!sameNullableNumber(after.game.homeScore, row.homeScore)) {
+      reasons.push(
+        `homeScore changed for ${row.betId}: planned=${row.homeScore} after=${after.game.homeScore}`
+      );
+    }
+    if (!sameNullableNumber(after.game.awayScore, row.awayScore)) {
+      reasons.push(
+        `awayScore changed for ${row.betId}: planned=${row.awayScore} after=${after.game.awayScore}`
+      );
+    }
+  }
+
   for (const m of options.plan.plannedMutations) {
     const after = afterById.get(m.betId);
     if (!after) {
@@ -717,25 +812,21 @@ export function verifyGradePostWrite(options: {
         `result mismatch ${m.betId}: db=${after.result} expected=${m.result}`
       );
     }
-    if (!nearlyEqual(Number(after.pnl), m.pnl)) {
-      reasons.push(
-        `pnl mismatch ${m.betId}: db=${after.pnl} expected=${m.pnl}`
-      );
-    }
-    if (!nearlyEqual(Number(after.clv), m.clv)) {
-      reasons.push(
-        `clv mismatch ${m.betId}: db=${after.clv} expected=${m.clv}`
-      );
-    }
+    const pnlErr = matchRequiredNumber(after.pnl, m.pnl, 'pnl', m.betId);
+    if (pnlErr) reasons.push(pnlErr);
+    const clvErr = matchRequiredNumber(after.clv, m.clv, 'clv', m.betId);
+    if (clvErr) reasons.push(clvErr);
+
     const before = options.plan.rows.find((r) => r.betId === m.betId);
     if (before) {
-      if (!nearlyEqual(after.closePrice, before.closePrice)) {
+      assertGradingInputsUnchanged(before, after);
+      if (!sameNullableNumber(after.closePrice, before.closePrice)) {
         reasons.push(`closePrice mutated for ${m.betId}`);
       }
-      if (!nearlyEqual(after.modelPrice, before.modelPrice)) {
+      if (!sameNullableNumber(after.modelPrice, before.modelPrice)) {
         reasons.push(`modelPrice mutated for ${m.betId}`);
       }
-      if (!nearlyEqual(Number(after.stake), Number(before.stake))) {
+      if (!sameNullableNumber(after.stake, before.stake)) {
         reasons.push(`stake mutated for ${m.betId}`);
       }
     }
@@ -750,12 +841,21 @@ export function verifyGradePostWrite(options: {
     if (plannedIds.has(row.betId)) continue;
 
     if (row.action === 'already_graded_same') {
-      if (
-        String(after.result) !== row.result ||
-        !nearlyEqual(Number(after.pnl), row.pnl) ||
-        !nearlyEqual(Number(after.clv), row.clv)
-      ) {
-        reasons.push(`already-graded row drifted: ${row.betId}`);
+      assertGradingInputsUnchanged(row, after);
+      if (String(after.result) !== row.result) {
+        reasons.push(`already-graded result drifted: ${row.betId}`);
+      }
+      if (row.pnl !== null && row.pnl !== undefined) {
+        const err = matchRequiredNumber(after.pnl, row.pnl, 'pnl', row.betId);
+        if (err) reasons.push(`already-graded ${err}`);
+      } else if (!sameNullableNumber(after.pnl, row.pnl)) {
+        reasons.push(`already-graded pnl drifted: ${row.betId}`);
+      }
+      if (row.clv !== null && row.clv !== undefined) {
+        const err = matchRequiredNumber(after.clv, row.clv, 'clv', row.betId);
+        if (err) reasons.push(`already-graded ${err}`);
+      } else if (!sameNullableNumber(after.clv, row.clv)) {
+        reasons.push(`already-graded clv drifted: ${row.betId}`);
       }
     } else if (row.action === 'pending_game') {
       if (after.result !== null && after.result !== undefined) {
@@ -781,11 +881,11 @@ export function verifyGradePostWrite(options: {
     }
     if (
       after.result !== before.result ||
-      !nearlyEqual(after.pnl, before.pnl) ||
-      !nearlyEqual(after.clv, before.clv) ||
-      !nearlyEqual(after.closePrice, before.closePrice) ||
-      !nearlyEqual(after.modelPrice, before.modelPrice) ||
-      !nearlyEqual(after.stake, before.stake)
+      !sameNullableNumber(after.pnl, before.pnl) ||
+      !sameNullableNumber(after.clv, before.clv) ||
+      !sameNullableNumber(after.closePrice, before.closePrice) ||
+      !sameNullableNumber(after.modelPrice, before.modelPrice) ||
+      !sameNullableNumber(after.stake, before.stake)
     ) {
       reasons.push(`non-target bet mutated: ${after.id}`);
     }

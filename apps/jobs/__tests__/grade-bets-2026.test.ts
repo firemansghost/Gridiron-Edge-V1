@@ -27,8 +27,8 @@ function officialBet(
   const gameId = overrides.gameId;
   return {
     id: overrides.id,
-    season: 2026,
-    week: 1,
+    season: overrides.season ?? 2026,
+    week: overrides.week ?? 1,
     gameId,
     marketType: overrides.marketType,
     side: overrides.side,
@@ -43,8 +43,8 @@ function officialBet(
     source: overrides.source ?? 'strategy_run',
     game: overrides.game ?? {
       id: gameId,
-      season: 2026,
-      week: 1,
+      season: overrides.season ?? 2026,
+      week: overrides.week ?? 1,
       status: 'final',
       homeScore: 28,
       awayScore: 21,
@@ -241,6 +241,91 @@ describe('2C-2J-6C-1 settlement scope + fail-closed', () => {
     expect(plan.counts.pendingGame).toBe(1);
     expect(plan.rows.find((r) => r.betId === 'b2')?.action).toBe('pending_game');
   });
+
+  it('game season/week mismatch vs bet blocks the whole plan', () => {
+    const wrongSeason = officialBet({
+      id: 'b1',
+      gameId: 'g1',
+      marketType: 'spread',
+      side: 'home',
+      season: 2026,
+      week: 1,
+      game: {
+        id: 'g1',
+        season: 2025,
+        week: 1,
+        status: 'final',
+        homeScore: 28,
+        awayScore: 21,
+      },
+    });
+    const planSeason = planOfficialGrades({
+      season: 2026,
+      week: 1,
+      mode: 'PREVIEW',
+      confirmation: '',
+      officialBets: [wrongSeason],
+    });
+    expect(planSeason.writeSafe).toBe(false);
+    expect(planSeason.blockers.some((b) => /game\.season mismatch/i.test(b))).toBe(
+      true
+    );
+
+    const wrongWeek = officialBet({
+      id: 'b2',
+      gameId: 'g2',
+      marketType: 'spread',
+      side: 'away',
+      game: {
+        id: 'g2',
+        season: 2026,
+        week: 2,
+        status: 'final',
+        homeScore: 20,
+        awayScore: 17,
+      },
+    });
+    const planWeek = planOfficialGrades({
+      season: 2026,
+      week: 1,
+      mode: 'PREVIEW',
+      confirmation: '',
+      officialBets: [wrongWeek],
+    });
+    expect(planWeek.writeSafe).toBe(false);
+    expect(planWeek.blockers.some((b) => /game\.week mismatch/i.test(b))).toBe(
+      true
+    );
+  });
+
+  it('duplicate official natural identity blocks regardless of bet id/side', () => {
+    const a = officialBet({
+      id: 'bet-a',
+      gameId: 'g1',
+      marketType: 'spread',
+      side: 'home',
+      closePrice: -3.5,
+    });
+    const b = officialBet({
+      id: 'bet-b',
+      gameId: 'g1',
+      marketType: 'spread',
+      side: 'away',
+      closePrice: 3.5,
+    });
+    const plan = planOfficialGrades({
+      season: 2026,
+      week: 1,
+      mode: 'PREVIEW',
+      confirmation: '',
+      officialBets: [a, b],
+    });
+    expect(plan.writeSafe).toBe(false);
+    expect(
+      plan.blockers.some((x) => /duplicate official natural identity/i.test(x))
+    ).toBe(true);
+    expect(plan.plannedMutations).toHaveLength(0);
+  });
 });
 
 describe('2C-2J-6C-1 COMMIT atomicity + verification', () => {
@@ -400,6 +485,98 @@ describe('2C-2J-6C-1 COMMIT atomicity + verification', () => {
       nonTargetBetsAfter: nonTarget,
     });
     expect(missing.ok).toBe(false);
+  });
+
+  it('null pnl/clv fails when expected numeric zero; genuine zero ok; score drift fails', () => {
+    const pushBet = officialBet({
+      id: 'push-1',
+      gameId: 'g-push',
+      marketType: 'spread',
+      side: 'away',
+      modelPrice: 7,
+      closePrice: 7,
+      game: {
+        id: 'g-push',
+        season: 2026,
+        week: 1,
+        status: 'final',
+        homeScore: 21,
+        awayScore: 14, // margin 7; away +7 → push
+      },
+    });
+    const plan = planOfficialGrades({
+      season: 2026,
+      week: 1,
+      mode: 'COMMIT',
+      confirmation: 'GRADE_2026_WEEK_1_OFFICIAL',
+      officialBets: [pushBet],
+      nonTargetBets: [],
+    });
+    expect(plan.writeSafe).toBe(true);
+    expect(plan.plannedMutations[0].result).toBe('push');
+    expect(plan.plannedMutations[0].pnl).toBe(0);
+
+    const nullPnl = verifyGradePostWrite({
+      plan,
+      officialBetsAfter: [
+        {
+          ...pushBet,
+          result: 'push',
+          pnl: null,
+          clv: plan.plannedMutations[0].clv,
+        },
+      ],
+      nonTargetBetsAfter: [],
+    });
+    expect(nullPnl.ok).toBe(false);
+    expect(nullPnl.reasons.some((r) => /pnl null/i.test(r))).toBe(true);
+
+    const nullClv = verifyGradePostWrite({
+      plan,
+      officialBetsAfter: [
+        {
+          ...pushBet,
+          result: 'push',
+          pnl: 0,
+          clv: null,
+        },
+      ],
+      nonTargetBetsAfter: [],
+    });
+    expect(nullClv.ok).toBe(false);
+    expect(nullClv.reasons.some((r) => /clv null/i.test(r))).toBe(true);
+
+    const zeroOk = verifyGradePostWrite({
+      plan,
+      officialBetsAfter: [
+        {
+          ...pushBet,
+          result: 'push',
+          pnl: 0,
+          clv: plan.plannedMutations[0].clv,
+        },
+      ],
+      nonTargetBetsAfter: [],
+    });
+    expect(zeroOk.ok).toBe(true);
+
+    const scoreDrift = verifyGradePostWrite({
+      plan,
+      officialBetsAfter: [
+        {
+          ...pushBet,
+          result: 'push',
+          pnl: 0,
+          clv: plan.plannedMutations[0].clv,
+          game: { ...pushBet.game, homeScore: 99, awayScore: 0 },
+        },
+      ],
+      nonTargetBetsAfter: [],
+    });
+    expect(scoreDrift.ok).toBe(false);
+    expect(scoreDrift.reasons.some((r) => /homeScore changed/i.test(r))).toBe(
+      true
+    );
   });
 
   it('idempotent second execution: zero mutations when already graded correctly', async () => {
