@@ -156,6 +156,7 @@ export interface CoreV1LifecycleResult {
   expectedEpaParticipantRows: number;
   actualEpaParticipantRows: number;
   missingEpaKeys: string[];
+  unexpectedEpaKeys: string[];
   duplicateEpaKeys: string[];
   nullOrNonFiniteEpaRows: string[];
   epaCoverageExact: boolean;
@@ -559,6 +560,9 @@ export function buildCoreV1LifecycleEvaluation(
   const missingEpaKeys = [...expectedEpaKeys]
     .filter((k) => !epaKeyCounts.has(k))
     .sort();
+  const unexpectedEpaKeys = [...epaKeyCounts.keys()]
+    .filter((k) => !expectedEpaKeys.has(k))
+    .sort();
   const nullOrNonFiniteEpaRows: string[] = [];
   for (const key of expectedEpaKeys) {
     const row = epaByKey.get(key);
@@ -575,6 +579,7 @@ export function buildCoreV1LifecycleEvaluation(
   nullOrNonFiniteEpaRows.sort();
   const epaCoverageExact =
     missingEpaKeys.length === 0 &&
+    unexpectedEpaKeys.length === 0 &&
     duplicateEpaKeys.length === 0 &&
     nullOrNonFiniteEpaRows.length === 0 &&
     actualEpaParticipantRows === expectedEpaParticipantRows;
@@ -590,12 +595,22 @@ export function buildCoreV1LifecycleEvaluation(
         `missingEpaKeys=${missingEpaKeys.length} (must be 0 when canonicalWeight>0)`
       );
     }
+    if (unexpectedEpaKeys.length > 0) {
+      findings.push(
+        `unexpectedEpaKeys=${unexpectedEpaKeys.length} (must be 0 when canonicalWeight>0)`
+      );
+    }
     if (nullOrNonFiniteEpaRows.length > 0) {
       findings.push(
         `nullOrNonFiniteEpaRows=${nullOrNonFiniteEpaRows.length} (must be 0 when canonicalWeight>0)`
       );
     }
   }
+
+  // Integrity boundary: only expected participant keys enter canonical EPA aggregation.
+  const epaForCanonical = epaThrough.filter((e) =>
+    expectedEpaKeys.has(epaNaturalKey(e.gameId, e.teamId))
+  );
 
   const candidateARows = computeTalentOnlyBridgeRatings(
     [...talent.finiteByTeam.entries()].map(([teamId, talentComposite]) => ({
@@ -617,7 +632,7 @@ export function buildCoreV1LifecycleEvaluation(
   let canonicalFinite = 0;
 
   if (canonicalWeight > 0) {
-    const epaByTeam = aggregateBalancedEpa(epaThrough);
+    const epaByTeam = aggregateBalancedEpa(epaForCanonical);
     const built = buildBalancedTeamMetrics({
       fbsTeamIds: fbs,
       talentRows: input.talentRows,
@@ -770,6 +785,7 @@ export function buildCoreV1LifecycleEvaluation(
     expectedEpaParticipantRows,
     actualEpaParticipantRows,
     missingEpaKeys,
+    unexpectedEpaKeys,
     duplicateEpaKeys,
     nullOrNonFiniteEpaRows,
     epaCoverageExact,
@@ -835,7 +851,7 @@ export function formatCoreV1LifecycleReport(
     `relevantWeeksPresent=[${result.relevantCanonicalWeeksPresent.join(',')}] missingWeeks=[${result.missingRelevantCanonicalWeeks.join(',')}] relevantGames=${result.relevantGamesThroughCutoff} nonFinalRelevant=${result.nonFinalRelevantGamesThroughCutoff} missingScores=${result.finalFbsVsFbsMissingScoreGames}`
   );
   lines.push(
-    `epa expected=${result.expectedEpaParticipantRows} actual=${result.actualEpaParticipantRows} missing=${result.missingEpaKeys.length} dup=${result.duplicateEpaKeys.length} nullEpa=${result.nullOrNonFiniteEpaRows.length} exact=${result.epaCoverageExact}`
+    `epa expected=${result.expectedEpaParticipantRows} actual=${result.actualEpaParticipantRows} missing=${result.missingEpaKeys.length} unexpected=${result.unexpectedEpaKeys.length} dup=${result.duplicateEpaKeys.length} nullEpa=${result.nullOrNonFiniteEpaRows.length} exact=${result.epaCoverageExact}`
   );
   lines.push(
     `existingV1Count=${result.existingV1Count} proposedCreate=${result.proposedCreateCount} proposedUpdate=${result.proposedUpdateCount}`
@@ -1189,7 +1205,17 @@ export async function executeAtomicCoreV1LifecycleCommit(options: {
   }
 
   const persistRows = toPersistRows(result);
+  if (persistRows.length !== EXPECTED_FBS_COUNT) {
+    throw new Error(
+      `transaction aborted: persistRows.length ${persistRows.length} != ${EXPECTED_FBS_COUNT}`
+    );
+  }
   const { upserted } = await options.persist(persistRows);
+  if (upserted !== persistRows.length) {
+    throw new Error(
+      `transaction aborted: upserted ${upserted} != persistRows.length ${persistRows.length}`
+    );
+  }
 
   const afterRows = await options.loadAfterV1Ratings(fbsLower);
   const verification = verifyCoreV1LifecyclePostWrite({
@@ -1253,6 +1279,7 @@ export function finalizeCoreV1LifecycleReport(options: {
     expectedEpaParticipantRows: r.expectedEpaParticipantRows,
     actualEpaParticipantRows: r.actualEpaParticipantRows,
     missingEpaKeys: r.missingEpaKeys,
+    unexpectedEpaKeys: r.unexpectedEpaKeys,
     duplicateEpaKeys: r.duplicateEpaKeys,
     nullOrNonFiniteEpaRows: r.nullOrNonFiniteEpaRows,
     epaCoverageExact: r.epaCoverageExact,
@@ -1269,7 +1296,7 @@ export function finalizeCoreV1LifecycleReport(options: {
     execution: options.execution,
     verification: options.verification,
     meta: {
-      isolationLevel: options.execution.isolationLevel ?? 'Serializable',
+      isolationLevel: options.execution.isolationLevel,
       Odds: false,
       providersInvoked: false,
       providerCalls: 0,

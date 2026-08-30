@@ -33,12 +33,14 @@ import {
   TARGET_SEASON,
   WRITE_CONFIRM_PHRASE,
   buildCoreV1LifecycleEvaluation,
+  buildFailedCommitExecution,
   buildPreviewExecution,
   buildRolledBackExecution,
   buildSuccessfulCommitExecution,
   canonicalWeightForCompletedWeek,
   executeAtomicCoreV1LifecycleCommit,
   expectedCoreV1LifecycleConfirmation,
+  finalizeCoreV1LifecycleReport,
   parseCoreV1LifecycleArgs,
   persistCoreV1LifecycleRatings,
   sanitizeCoreV1LifecycleError,
@@ -1468,8 +1470,46 @@ describe('Core V1 lifecycle — EPA readiness (2C-2J-6D-2)', () => {
     expect(result.ok).toBe(true);
     expect(result.epaCoverageExact).toBe(true);
     expect(result.missingEpaKeys).toEqual([]);
+    expect(result.unexpectedEpaKeys).toEqual([]);
     expect(result.duplicateEpaKeys).toEqual([]);
     expect(result.nullOrNonFiniteEpaRows).toEqual([]);
+  });
+
+  it('unexpected EPA natural key → FAIL when weight>0', () => {
+    const base = healthyThroughWeek(3);
+    const sample = base.epaRows[0];
+    const game = base.games.find((g) => g.gameId === sample.gameId)!;
+    const stranger = base.fbsIds.find(
+      (id) =>
+        id.toLowerCase() !== game.homeTeamId.toLowerCase() &&
+        id.toLowerCase() !== game.awayTeamId.toLowerCase()
+    )!;
+    const extra: TransitionEpaRow = {
+      gameId: sample.gameId,
+      week: sample.week,
+      teamId: stranger,
+      epaOff: 0.5,
+      epaDef: -0.2,
+    };
+    const result = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(3, { epaRows: [...base.epaRows, extra] })
+    );
+    expect(result.unexpectedEpaKeys.length).toBe(1);
+    expect(result.epaCoverageExact).toBe(false);
+    expect(result.writeSafe).toBe(false);
+    expect(result.ok).toBe(false);
+    expect(
+      result.findings.some((f) => f.includes('unexpectedEpaKeys'))
+    ).toBe(true);
+
+    const commitResult = buildCoreV1LifecycleEvaluation(
+      healthyThroughWeek(3, {
+        mode: 'COMMIT',
+        confirmation: expectedCoreV1LifecycleConfirmation(3),
+        epaRows: [...base.epaRows, extra],
+      })
+    );
+    expect(commitResult.commitEligible).toBe(false);
   });
 
   it('missing expected EPA key → FAIL when weight>0', () => {
@@ -1879,6 +1919,64 @@ describe('Core V1 lifecycle — Serializable COMMIT / PREVIEW (2C-2J-6D-2)', () 
     const preview = buildPreviewExecution();
     expect(preview.commitSucceeded).toBe(false);
     expect(preview.postWriteVerificationSucceeded).toBeNull();
+  });
+
+  it('mocked persistence reporting 137 rejects inside atomic commit', async () => {
+    const input = healthyWeek0({
+      mode: 'COMMIT',
+      confirmation: expectedCoreV1LifecycleConfirmation(0),
+    });
+    await expect(
+      executeAtomicCoreV1LifecycleCommit({
+        season: TARGET_SEASON,
+        completedThroughWeek: 0,
+        confirmation: expectedCoreV1LifecycleConfirmation(0),
+        loadFbsTeamIds: async () => [...input.fbsIds],
+        loadTalentRows: async () =>
+          input.talentRows.map((t) => ({
+            teamId: t.teamId,
+            talentComposite: t.talentComposite as number,
+          })),
+        loadGames: async () => [],
+        loadEpaRows: async () => [],
+        loadExistingV1Fbs: async () => [],
+        persist: async () => ({ upserted: 137 }),
+        loadAfterV1Ratings: async () => {
+          throw new Error('loadAfter should not run after upsert count failure');
+        },
+      })
+    ).rejects.toThrow(/upserted 137/);
+  });
+
+  it('finalize report keeps isolationLevel null on PREVIEW / non-tx paths', () => {
+    const result = buildCoreV1LifecycleEvaluation(healthyWeek0());
+    const previewReport = finalizeCoreV1LifecycleReport({
+      result,
+      execution: buildPreviewExecution(),
+      verification: null,
+    });
+    expect((previewReport.meta as { isolationLevel: unknown }).isolationLevel).toBeNull();
+    expect(
+      (previewReport.execution as { isolationLevel: unknown }).isolationLevel
+    ).toBeNull();
+
+    const blocked = finalizeCoreV1LifecycleReport({
+      result,
+      execution: buildFailedCommitExecution({
+        error: 'blocked before transaction',
+      }),
+      verification: null,
+    });
+    expect((blocked.meta as { isolationLevel: unknown }).isolationLevel).toBeNull();
+
+    const success = finalizeCoreV1LifecycleReport({
+      result,
+      execution: buildSuccessfulCommitExecution({ upsertCount: 138 }),
+      verification: { ok: true, reasons: [], afterRows: 138, verifiedTeams: 138 },
+    });
+    expect(
+      (success.meta as { isolationLevel: unknown }).isolationLevel
+    ).toBe('Serializable');
   });
 
   it('CLI source uses Serializable isolation', () => {
