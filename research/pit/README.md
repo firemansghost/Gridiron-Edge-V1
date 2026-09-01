@@ -53,7 +53,10 @@ No exploratory endpoints, no `/info`, no teams/games/advanced-stats in this seed
 ## Environment
 
 - `CFBD_API_KEY` — required only for live `--capture-seed`
-- `CFBD_BASE_URL` — optional; default `https://api.collegefootballdata.com`
+- Live `--capture-seed` origin is locked to `https://api.collegefootballdata.com`
+  (HTTPS, host `api.collegefootballdata.com`, no username/password, default HTTPS
+  port only). `CFBD_BASE_URL` is **not** a live override and is not used to send
+  the API key to an arbitrary host.
 - Auth: `Authorization: Bearer <CFBD_API_KEY>`, `Accept: application/json`
 
 ## Invocation

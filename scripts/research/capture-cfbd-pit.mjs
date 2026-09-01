@@ -31,6 +31,7 @@ import { fileURLToPath } from 'node:url';
 export const CAPTURE_TOOL_VERSION = 'cfbd-pit-seed-v1';
 export const SCHEMA_VERSION = '1.0.0';
 export const DEFAULT_BASE_URL = 'https://api.collegefootballdata.com';
+export const LIVE_CFBD_ORIGIN = DEFAULT_BASE_URL;
 export const TIMEZONE = 'America/Chicago';
 
 export const SEED_FIXED = Object.freeze({
@@ -231,7 +232,76 @@ function weekField(row) {
   return null;
 }
 
-export function validateTopLevelArray(decoded, expectedSeason, expectedWeek) {
+function isPlainObject(value) {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+const IDENTITY_CORE = Object.freeze({
+  year: 'scalar',
+  throughWeek: 'scalar',
+  throughSeasonType: 'scalar',
+  team: 'scalar',
+  modelVersion: 'scalar',
+});
+const IDENTITY_WEPA = Object.freeze({
+  year: 'scalar',
+  teamId: 'scalar',
+  team: 'scalar',
+});
+const IDENTITY_PASSING_PLAYS = Object.freeze({
+  gameId: 'scalar',
+  playId: 'scalar',
+  season: 'scalar',
+  week: 'scalar',
+});
+const IDENTITY_PASSING_TEAM_GAMES = Object.freeze({
+  gameId: 'scalar',
+  season: 'scalar',
+  week: 'scalar',
+  team: 'scalar',
+  offense: 'object',
+  defense: 'object',
+});
+const IDENTITY_RETURNING = Object.freeze({
+  season: 'scalar',
+  team: 'scalar',
+});
+const IDENTITY_PORTAL = Object.freeze({
+  season: 'scalar',
+});
+
+function identityFailure(row, index, spec) {
+  if (!isPlainObject(row)) {
+    return `row[${index}] is not an object`;
+  }
+  for (const [field, kind] of Object.entries(spec)) {
+    const value = row[field];
+    if (kind === 'object') {
+      if (!isPlainObject(value)) {
+        return `row[${index}] missing ${field} object`;
+      }
+    } else if (value == null) {
+      return `row[${index}] missing ${field}`;
+    }
+  }
+  return null;
+}
+
+function validationFailed(warnings, record_count) {
+  return {
+    validation_status: 'VALIDATION_FAILED',
+    validation_warnings: warnings,
+    record_count,
+    coverage_metrics: {},
+  };
+}
+
+export function validateTopLevelArray(
+  decoded,
+  expectedSeason,
+  expectedWeek,
+  identitySpec = null
+) {
   const warnings = [];
   if (!Array.isArray(decoded)) {
     return {
@@ -252,28 +322,27 @@ export function validateTopLevelArray(decoded, expectedSeason, expectedWeek) {
   }
 
   for (let i = 0; i < decoded.length; i++) {
-    const y = yearField(decoded[i]);
+    const row = decoded[i];
+    if (identitySpec) {
+      const missing = identityFailure(row, i, identitySpec);
+      if (missing) return validationFailed([missing], record_count);
+    } else if (!isPlainObject(row)) {
+      return validationFailed([`row[${i}] is not an object`], record_count);
+    }
+    const y = yearField(row);
     if (y != null && y !== expectedSeason) {
-      return {
-        validation_status: 'VALIDATION_FAILED',
-        validation_warnings: [
-          `row[${i}] year/season=${y} expected ${expectedSeason}`,
-        ],
-        record_count,
-        coverage_metrics: {},
-      };
+      return validationFailed(
+        [`row[${i}] year/season=${y} expected ${expectedSeason}`],
+        record_count
+      );
     }
     if (expectedWeek != null) {
-      const w = weekField(decoded[i]);
+      const w = weekField(row);
       if (w != null && w !== expectedWeek) {
-        return {
-          validation_status: 'VALIDATION_FAILED',
-          validation_warnings: [
-            `row[${i}] week=${w} expected ${expectedWeek}`,
-          ],
-          record_count,
-          coverage_metrics: {},
-        };
+        return validationFailed(
+          [`row[${i}] week=${w} expected ${expectedWeek}`],
+          record_count
+        );
       }
     }
   }
@@ -286,8 +355,29 @@ export function validateTopLevelArray(decoded, expectedSeason, expectedWeek) {
   };
 }
 
+function sortedUnique(values, { numeric = false } = {}) {
+  const seen = new Map();
+  for (const value of values) {
+    if (value == null) continue;
+    const key = String(value);
+    if (!seen.has(key)) seen.set(key, value);
+  }
+  const arr = [...seen.values()];
+  arr.sort((a, b) => {
+    if (numeric) {
+      const na = Number(a);
+      const nb = Number(b);
+      if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) {
+        return na - nb;
+      }
+    }
+    return String(a).localeCompare(String(b));
+  });
+  return arr;
+}
+
 export function validateCore(decoded) {
-  const base = validateTopLevelArray(decoded, 2026, null);
+  const base = validateTopLevelArray(decoded, 2026, null, IDENTITY_CORE);
   if (
     base.validation_status !== 'VALID' &&
     base.validation_status !== 'VALID_EMPTY'
@@ -302,34 +392,42 @@ export function validateCore(decoded) {
         distinct_through_weeks: 0,
         distinct_through_season_types: 0,
         distinct_model_versions: 0,
+        through_weeks: [],
+        through_season_types: [],
+        model_versions: [],
       },
     };
   }
   const teams = new Set();
-  const throughWeeks = new Set();
-  const seasonTypes = new Set();
-  const models = new Set();
+  const throughWeekValues = [];
+  const seasonTypeValues = [];
+  const modelValues = [];
   for (const row of decoded) {
     if (row.team != null) teams.add(String(row.team));
     else if (row.teamId != null) teams.add(String(row.teamId));
-    if (row.throughWeek != null) throughWeeks.add(String(row.throughWeek));
-    if (row.throughSeasonType != null)
-      seasonTypes.add(String(row.throughSeasonType));
-    if (row.modelVersion != null) models.add(String(row.modelVersion));
+    throughWeekValues.push(row.throughWeek);
+    seasonTypeValues.push(row.throughSeasonType);
+    modelValues.push(row.modelVersion);
   }
+  const through_weeks = sortedUnique(throughWeekValues, { numeric: true });
+  const through_season_types = sortedUnique(seasonTypeValues);
+  const model_versions = sortedUnique(modelValues);
   return {
     ...base,
     coverage_metrics: {
       team_count: teams.size,
-      distinct_through_weeks: throughWeeks.size,
-      distinct_through_season_types: seasonTypes.size,
-      distinct_model_versions: models.size,
+      distinct_through_weeks: through_weeks.length,
+      distinct_through_season_types: through_season_types.length,
+      distinct_model_versions: model_versions.length,
+      through_weeks,
+      through_season_types,
+      model_versions,
     },
   };
 }
 
 export function validateWepa(decoded) {
-  const base = validateTopLevelArray(decoded, 2026, null);
+  const base = validateTopLevelArray(decoded, 2026, null, IDENTITY_WEPA);
   if (
     base.validation_status !== 'VALID' &&
     base.validation_status !== 'VALID_EMPTY'
@@ -358,7 +456,7 @@ export function validateWepa(decoded) {
 }
 
 export function validatePassingPlays(decoded) {
-  const base = validateTopLevelArray(decoded, 2026, 1);
+  const base = validateTopLevelArray(decoded, 2026, 1, IDENTITY_PASSING_PLAYS);
   if (
     base.validation_status !== 'VALID' &&
     base.validation_status !== 'VALID_EMPTY'
@@ -429,15 +527,21 @@ export function validatePassingPlays(decoded) {
   };
 }
 
-function countAvailable(row, keys) {
-  for (const k of keys) {
-    if (row[k] != null) return 1;
-  }
+function nestedNumericSum(row, side, field) {
+  const obj = row?.[side];
+  if (!isPlainObject(obj)) return 0;
+  const value = obj[field];
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
   return 0;
 }
 
 export function validatePassingTeamGames(decoded) {
-  const base = validateTopLevelArray(decoded, 2026, 1);
+  const base = validateTopLevelArray(
+    decoded,
+    2026,
+    1,
+    IDENTITY_PASSING_TEAM_GAMES
+  );
   if (
     base.validation_status !== 'VALID' &&
     base.validation_status !== 'VALID_EMPTY'
@@ -481,24 +585,12 @@ export function validatePassingTeamGames(decoded) {
     if (keys.has(nk)) dup = true;
     keys.add(nk);
 
-    oa += countAvailable(row, [
-      'offenseAirYardsAttempts',
-      'offense_air_yards_attempts',
-    ]);
-    ot += countAvailable(row, [
-      'offenseTotalYardsAttempts',
-      'offense_total_yards_attempts',
-    ]);
-    oy += countAvailable(row, ['offenseYacAttempts', 'offense_yac_attempts']);
-    da += countAvailable(row, [
-      'defenseAirYardsAttempts',
-      'defense_air_yards_attempts',
-    ]);
-    dt += countAvailable(row, [
-      'defenseTotalYardsAttempts',
-      'defense_total_yards_attempts',
-    ]);
-    dy += countAvailable(row, ['defenseYacAttempts', 'defense_yac_attempts']);
+    oa += nestedNumericSum(row, 'offense', 'airYardsAttemptsAvailable');
+    ot += nestedNumericSum(row, 'offense', 'totalYardsAttemptsAvailable');
+    oy += nestedNumericSum(row, 'offense', 'yardsAfterCatchAttemptsAvailable');
+    da += nestedNumericSum(row, 'defense', 'airYardsAttemptsAvailable');
+    dt += nestedNumericSum(row, 'defense', 'totalYardsAttemptsAvailable');
+    dy += nestedNumericSum(row, 'defense', 'yardsAfterCatchAttemptsAvailable');
   }
 
   const warnings = [...base.validation_warnings];
@@ -527,7 +619,7 @@ export function validatePassingTeamGames(decoded) {
 }
 
 export function validateReturning(decoded) {
-  const base = validateTopLevelArray(decoded, 2026, null);
+  const base = validateTopLevelArray(decoded, 2026, null, IDENTITY_RETURNING);
   if (
     base.validation_status !== 'VALID' &&
     base.validation_status !== 'VALID_EMPTY'
@@ -548,7 +640,7 @@ export function validateReturning(decoded) {
 }
 
 export function validatePortal(decoded) {
-  const base = validateTopLevelArray(decoded, 2026, null);
+  const base = validateTopLevelArray(decoded, 2026, null, IDENTITY_PORTAL);
   if (
     base.validation_status !== 'VALID' &&
     base.validation_status !== 'VALID_EMPTY'
@@ -682,6 +774,29 @@ export function safeLog(...args) {
 // HTTP capture (live path only)
 // ---------------------------------------------------------------------------
 
+export function assertLiveCfbdOrigin(baseUrl) {
+  let parsed;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    throw new Error('live CFBD origin is invalid');
+  }
+  const portOk = parsed.port === '' || parsed.port === '443';
+  const pathOk = parsed.pathname === '' || parsed.pathname === '/';
+  if (
+    parsed.protocol !== 'https:' ||
+    parsed.hostname !== 'api.collegefootballdata.com' ||
+    parsed.username !== '' ||
+    parsed.password !== '' ||
+    !portOk ||
+    !pathOk ||
+    parsed.search !== '' ||
+    parsed.hash !== ''
+  ) {
+    throw new Error('live CFBD origin is locked to https://api.collegefootballdata.com');
+  }
+}
+
 function buildUrl(baseUrl, endpoint, params) {
   const u = new URL(baseUrl);
   u.pathname = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
@@ -706,15 +821,17 @@ async function fetchOnce(url, apiKey) {
     httpStatus: response.status,
     contentType: response.headers.get('content-type'),
     buffer: buf,
+    receivedAt: new Date(),
   };
 }
 
-async function captureSource({
+export async function captureSource({
   def,
   baseUrl,
   apiKey,
   rawDir,
   counters,
+  fetchOnceImpl = fetchOnce,
 }) {
   const url = buildUrl(baseUrl, def.endpoint, def.params);
   let attempt = 0;
@@ -729,16 +846,12 @@ async function captureSource({
     attempt += 1;
     counters.http_request_count += 1;
     try {
-      const started = attempt === 1 ? requestStarted : new Date();
-      if (attempt === 1) {
-        // keep original requestStarted
-      }
-      void started;
-      const result = await fetchOnce(url, apiKey);
-      responseReceived = new Date();
+      const result = await fetchOnceImpl(url, apiKey);
       lastHttp = result.httpStatus;
       lastBuf = result.buffer;
       lastContentType = result.contentType;
+      responseReceived = result.receivedAt ? new Date(result.receivedAt) : new Date();
+      lastNetworkError = null;
 
       if (result.httpStatus === 200) break;
 
@@ -751,7 +864,7 @@ async function captureSource({
       await sleepMs(250 * attempt);
     } catch (err) {
       lastNetworkError = true;
-      responseReceived = new Date();
+      void err;
       if (
         !isRetryableFailure({ networkError: true }) ||
         attempt >= MAX_ATTEMPTS
@@ -857,12 +970,15 @@ export async function writeChecksumsFile(snapshotRoot, endpointEntries) {
 export async function runSeedCapture({
   researchRoot,
   apiKey,
-  baseUrl = process.env.CFBD_BASE_URL || DEFAULT_BASE_URL,
+  baseUrl = DEFAULT_BASE_URL,
   now = new Date(),
   fetchImpl = null, // injectable for tests; null → real captureSource
 }) {
   if (!apiKey) {
     throw new Error('CFBD_API_KEY is required for --capture-seed');
+  }
+  if (!fetchImpl) {
+    assertLiveCfbdOrigin(baseUrl);
   }
 
   const batchStarted = now;
@@ -1145,6 +1261,241 @@ export async function runSelfTest() {
     fail('retry', e.message || e);
   }
 
+  // 8b. Nested passing team-game availability sums (including zero)
+  try {
+    const r = validatePassingTeamGames([
+      {
+        season: 2026,
+        week: 1,
+        gameId: 10,
+        team: 'A',
+        offenseAirYardsAttempts: 99,
+        offense: {
+          airYardsAttemptsAvailable: 3,
+          totalYardsAttemptsAvailable: 0,
+          yardsAfterCatchAttemptsAvailable: 2,
+        },
+        defense: {
+          airYardsAttemptsAvailable: 1,
+          totalYardsAttemptsAvailable: 4,
+          yardsAfterCatchAttemptsAvailable: 0,
+        },
+      },
+      {
+        season: 2026,
+        week: 1,
+        gameId: 11,
+        team: 'B',
+        offense: {
+          airYardsAttemptsAvailable: 5,
+          totalYardsAttemptsAvailable: 7,
+          yardsAfterCatchAttemptsAvailable: 1,
+        },
+        defense: {
+          airYardsAttemptsAvailable: 0,
+          totalYardsAttemptsAvailable: 2,
+          yardsAfterCatchAttemptsAvailable: 8,
+        },
+      },
+    ]);
+    if (r.validation_status !== 'VALID') throw new Error(r.validation_status);
+    const m = r.coverage_metrics;
+    if (m.offense_air_yards_attempts_available !== 8) {
+      throw new Error(`oa ${m.offense_air_yards_attempts_available}`);
+    }
+    if (m.offense_total_yards_attempts_available !== 7) {
+      throw new Error(`ot ${m.offense_total_yards_attempts_available}`);
+    }
+    if (m.offense_yac_attempts_available !== 3) {
+      throw new Error(`oy ${m.offense_yac_attempts_available}`);
+    }
+    if (m.defense_air_yards_attempts_available !== 1) {
+      throw new Error(`da ${m.defense_air_yards_attempts_available}`);
+    }
+    if (m.defense_total_yards_attempts_available !== 6) {
+      throw new Error(`dt ${m.defense_total_yards_attempts_available}`);
+    }
+    if (m.defense_yac_attempts_available !== 8) {
+      throw new Error(`dy ${m.defense_yac_attempts_available}`);
+    }
+    ok('nested passing availability summed including zero');
+  } catch (e) {
+    fail('passing availability', e.message || e);
+  }
+
+  // 8c. CORE actual distinct provenance values
+  try {
+    const r = validateCore([
+      {
+        year: 2026,
+        throughWeek: 1,
+        throughSeasonType: 'regular',
+        team: 'Alpha',
+        modelVersion: 'v2',
+        rating: 99.9,
+      },
+      {
+        year: 2026,
+        throughWeek: 2,
+        throughSeasonType: 'postseason',
+        team: 'Beta',
+        modelVersion: 'v1',
+        rating: 12.3,
+      },
+      {
+        year: 2026,
+        throughWeek: 1,
+        throughSeasonType: 'regular',
+        team: 'Gamma',
+        modelVersion: 'v2',
+        rating: 4.1,
+      },
+    ]);
+    if (r.validation_status !== 'VALID') throw new Error(r.validation_status);
+    const m = r.coverage_metrics;
+    if (JSON.stringify(m.through_weeks) !== JSON.stringify([1, 2])) {
+      throw new Error(`through_weeks ${JSON.stringify(m.through_weeks)}`);
+    }
+    if (
+      JSON.stringify(m.through_season_types) !==
+      JSON.stringify(['postseason', 'regular'])
+    ) {
+      throw new Error(`types ${JSON.stringify(m.through_season_types)}`);
+    }
+    if (JSON.stringify(m.model_versions) !== JSON.stringify(['v1', 'v2'])) {
+      throw new Error(`models ${JSON.stringify(m.model_versions)}`);
+    }
+    if (m.distinct_through_weeks !== 2) throw new Error('count weeks');
+    if (m.rating != null || 'rating' in m) throw new Error('rating leaked');
+    ok('CORE distinct throughWeek/modelVersion values');
+  } catch (e) {
+    fail('core provenance', e.message || e);
+  }
+
+  // 8d. Strict required-identity validation
+  try {
+    const primitive = validateCore(['not-an-object']);
+    if (primitive.validation_status !== 'VALIDATION_FAILED') {
+      throw new Error(`primitive ${primitive.validation_status}`);
+    }
+    const missingSeason = validatePassingPlays([
+      { week: 1, gameId: 1, playId: 1 },
+    ]);
+    if (missingSeason.validation_status !== 'VALIDATION_FAILED') {
+      throw new Error(`season ${missingSeason.validation_status}`);
+    }
+    const missingGameId = validatePassingPlays([
+      { season: 2026, week: 1, playId: 1 },
+    ]);
+    if (missingGameId.validation_status !== 'VALIDATION_FAILED') {
+      throw new Error(`gameId ${missingGameId.validation_status}`);
+    }
+    const missingPlayId = validatePassingPlays([
+      { season: 2026, week: 1, gameId: 1 },
+    ]);
+    if (missingPlayId.validation_status !== 'VALIDATION_FAILED') {
+      throw new Error(`playId ${missingPlayId.validation_status}`);
+    }
+    const missingSides = validatePassingTeamGames([
+      { season: 2026, week: 1, gameId: 1, team: 'A' },
+    ]);
+    if (missingSides.validation_status !== 'VALIDATION_FAILED') {
+      throw new Error(`sides ${missingSides.validation_status}`);
+    }
+    const missingCore = validateCore([
+      { year: 2026, throughSeasonType: 'regular', team: 'A' },
+    ]);
+    if (missingCore.validation_status !== 'VALIDATION_FAILED') {
+      throw new Error(`core ${missingCore.validation_status}`);
+    }
+    const missingModel = validateCore([
+      {
+        year: 2026,
+        throughWeek: 1,
+        throughSeasonType: 'regular',
+        team: 'A',
+      },
+    ]);
+    if (missingModel.validation_status !== 'VALIDATION_FAILED') {
+      throw new Error(`model ${missingModel.validation_status}`);
+    }
+    ok('strict required-identity validation');
+  } catch (e) {
+    fail('identity', e.message || e);
+  }
+
+  // 8e. Live CFBD origin lock
+  try {
+    assertLiveCfbdOrigin(LIVE_CFBD_ORIGIN);
+    assertLiveCfbdOrigin('https://api.collegefootballdata.com/');
+    const reject = (url) => {
+      try {
+        assertLiveCfbdOrigin(url);
+        throw new Error(`accepted ${url}`);
+      } catch (err) {
+        if (String(err.message).startsWith('accepted')) throw err;
+      }
+    };
+    reject('https://example.invalid');
+    reject('http://api.collegefootballdata.com');
+    reject('https://user:pass@api.collegefootballdata.com');
+    reject('https://api.collegefootballdata.com:8443');
+    const here = fileURLToPath(import.meta.url);
+    const src = await readFile(here, 'utf8');
+    if (/baseUrl:\s*process\.env\.CFBD_BASE_URL/.test(src)) {
+      throw new Error('CLI still accepts CFBD_BASE_URL override');
+    }
+    ok('live CFBD origin locked');
+  } catch (e) {
+    fail('origin lock', e.message || e);
+  }
+
+  // 8f. response_received_at matches persisted HTTP bytes, not later network fail
+  try {
+    const dir = await mkdtemp(path.join(tmpdir(), 'cfbd-pit-ts-'));
+    const rawDir = path.join(dir, 'raw');
+    await mkdir(rawDir, { recursive: true });
+    const receivedAt5xx = new Date('2026-09-01T18:00:00.123Z');
+    let n = 0;
+    const counters = { http_request_count: 0 };
+    const entry = await captureSource({
+      def: SOURCE_DEFINITIONS[0],
+      baseUrl: 'https://example.invalid',
+      apiKey: 'fake-not-used',
+      rawDir,
+      counters,
+      fetchOnceImpl: async () => {
+        n += 1;
+        if (n === 1) {
+          return {
+            httpStatus: 503,
+            contentType: 'text/plain',
+            buffer: Buffer.from('unavailable', 'utf8'),
+            receivedAt: receivedAt5xx,
+          };
+        }
+        throw new Error('connect failed');
+      },
+    });
+    if (entry.response_received_at !== receivedAt5xx.toISOString()) {
+      throw new Error(`ts ${entry.response_received_at}`);
+    }
+    if (entry.http_status !== 503) throw new Error(`http ${entry.http_status}`);
+    if (entry.validation_status !== 'HTTP_FAILED') {
+      throw new Error(entry.validation_status);
+    }
+    const onDisk = await readFile(
+      path.join(rawDir, SOURCE_DEFINITIONS[0].raw_file)
+    );
+    if (!onDisk.equals(Buffer.from('unavailable', 'utf8'))) {
+      throw new Error('persisted bytes mismatch');
+    }
+    await rm(dir, { recursive: true, force: true });
+    ok('response_received_at matches persisted HTTP bytes');
+  } catch (e) {
+    fail('response timestamp', e.message || e);
+  }
+
   // 9. Secrets never in manifest
   try {
     const dir = await mkdtemp(path.join(tmpdir(), 'cfbd-pit-m-'));
@@ -1281,7 +1632,7 @@ async function main(argv) {
     const result = await runSeedCapture({
       researchRoot,
       apiKey,
-      baseUrl: process.env.CFBD_BASE_URL || DEFAULT_BASE_URL,
+      baseUrl: DEFAULT_BASE_URL,
     });
     safeLog(
       `[cfbd-pit] batch_status=${result.manifest.batch_status} snapshot_id=${result.manifest.snapshot_id} http_request_count=${result.http_request_count}`
