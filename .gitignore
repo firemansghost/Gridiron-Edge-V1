@@ -51,3 +51,7 @@ logs/
 *.tmp
 *.temp
 node_modules/
+
+# Research-only local CFBD PIT archives (never commit)
+.research-data/
+
