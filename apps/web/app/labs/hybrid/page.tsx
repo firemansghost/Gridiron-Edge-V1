@@ -23,6 +23,7 @@ import {
   SUPER_TIER_A_SHADOW_STATUS,
   V4_FADE_HISTORICAL_STATUS,
   hybridShadowEmptyMessage,
+  teamSidedPickLine,
   type HybridShadowCoverage,
   type HybridShadowCoverageKind,
   type HybridShadowGame,
@@ -191,10 +192,12 @@ export default function HybridLabsPage() {
     const pickTeamId = pickHome ? game.homeTeamId : game.awayTeamId;
     const pickTeamName = pickHome ? game.homeTeamName : game.awayTeamName;
     const absEdge = Math.abs(edge);
+    const pickLine = teamSidedPickLine(pickHome, marketMargin);
 
     return {
       teamId: pickTeamId,
       teamName: pickTeamName,
+      pickLine,
       marketSpreadHma: marketMargin,
       marketFavoriteTeamId: game.marketSpread.favoriteTeamId,
       edge: absEdge,
@@ -283,7 +286,7 @@ export default function HybridLabsPage() {
         Market_Timestamp: game.marketSpread?.timestamp || '—',
         Market_Source: game.marketSpread?.source || '—',
         Hybrid_Pick: pick ? pick.teamName : '—',
-        Pick_Line: pick ? pick.marketSpreadHma.toFixed(1) : '—',
+        Pick_Line: pick ? formatSpread(pick.pickLine) : '—',
         Edge: pick ? pick.edge.toFixed(1) : '—',
       };
     });
@@ -707,7 +710,7 @@ export default function HybridLabsPage() {
                                   {pick.teamName}
                                 </div>
                                 <div className="text-sm text-gray-600">
-                                  HMA {pick.marketSpreadHma.toFixed(1)}
+                                  {formatSpread(pick.pickLine)}
                                 </div>
                                 <span
                                   className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getEdgeBadgeColor(pick.edge)}`}

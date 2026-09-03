@@ -279,6 +279,14 @@ export function canonicalMarketSpreadHma(input: {
   return null;
 }
 
+/**
+ * Convert canonical market HMA into the selected team's ATS pick line.
+ * Home pick → -HMA. Away pick → +HMA. Do not treat HMA as a pick line.
+ */
+export function teamSidedPickLine(pickHome: boolean, marketSpreadHma: number): number {
+  return pickHome ? -marketSpreadHma : marketSpreadHma;
+}
+
 export function canonicalizeLabsMarketSpread(input: {
   line: HybridShadowSelectedMarketLine;
   homeTeamId: string;

@@ -30,6 +30,7 @@ import {
   classifyHybridShadowCoverage,
   computeProductionCoreV1HmaFromV1Ratings,
   hybridShadowEmptyMessage,
+  teamSidedPickLine,
   hybridUnavailableReasons,
   isFiniteRating,
   toSpreadInfo,
@@ -373,6 +374,13 @@ describe('Phase 4A Core V1, market favorite, and V2 favorite repairs', () => {
       10
     );
   });
+
+  it('converts canonical market HMA into a team-sided ATS pick line', () => {
+    expect(teamSidedPickLine(true, 7)).toBe(-7);
+    expect(teamSidedPickLine(false, 7)).toBe(7);
+    expect(teamSidedPickLine(true, -3)).toBe(3);
+    expect(teamSidedPickLine(false, -3)).toBe(-3);
+  });
 });
 
 describe('Phase 4A Models / Hybrid static source gates', () => {
@@ -430,6 +438,12 @@ describe('Phase 4A Models / Hybrid static source gates', () => {
     expect(route).not.toContain('favoriteTeamId: line.teamId');
     expect(page).toContain('Diff (Hybrid − Core V1 HMA)');
     expect(page).toContain('spreadHma');
+    expect(page).toContain('teamSidedPickLine');
+    expect(page).toContain('pickLine');
+    expect(page).toContain('Pick_Line: pick ? formatSpread(pick.pickLine)');
+    expect(page).not.toContain('Pick_Line: pick ? pick.marketSpreadHma');
+    expect(page).toContain('Market_HMA:');
+    expect(page).not.toContain('HMA {pick.marketSpreadHma');
   });
 
   it('V4/Fade is explicitly historical/backtest and Super Tier A remains shadow/held', () => {
