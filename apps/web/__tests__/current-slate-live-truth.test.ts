@@ -46,6 +46,14 @@ describe('Phase 1C Current Slate live/dynamic labeling', () => {
     // In Phase 1C header area there should only be one homepage Official Card CTA.
     const picksLinks = home.match(/href=\"\/picks\"/g) || [];
     expect(picksLinks).toHaveLength(1);
+
+    // Responsive Phase 1C header behavior (presentation-only):
+    // outer header stacks on small screens and switches to a row at lg.
+    expect(home).toContain('flex flex-col lg:flex-row');
+    // heading and controls groups must be allowed to wrap.
+    expect(home).toContain('flex flex-wrap items-center gap-4');
+    expect(home).toContain('flex flex-wrap items-center gap-3');
+
     expect(home).toContain('ProductionModelSelector');
     expect(home).toContain('Model selector changes this live view only');
     expect(home).toContain('Hybrid V2 held');
