@@ -1,8 +1,7 @@
 /**
- * Labs: Hybrid Model Dashboard
- * 
- * Displays V1, V2, and Hybrid spread predictions side-by-side for comparison.
- * Highlights games where Hybrid differs significantly from V1 (> 3 points).
+ * Labs: Hybrid V2 Shadow Dashboard
+ *
+ * Live/mutable research comparison. Not the official 2026 card.
  */
 
 'use client';
@@ -15,36 +14,23 @@ import { TeamLogo } from '@/components/TeamLogo';
 import { ErrorState } from '@/components/ErrorState';
 import { LabsNav } from '@/components/LabsNav';
 import { downloadAsCsv } from '@/lib/csv-export';
+import {
+  CORE_V1_EFFECTIVE_PRODUCTION_LABEL,
+  HYBRID_LIVE_MUTABLE_SHADOW,
+  HYBRID_NOT_OFFICIAL_2026_BET,
+  HYBRID_SHADOW_STATUS_LABEL,
+  SUPER_TIER_A_FROZEN_QUALIFICATION,
+  SUPER_TIER_A_SHADOW_STATUS,
+  V4_FADE_HISTORICAL_STATUS,
+  hybridShadowEmptyMessage,
+  type HybridShadowCoverage,
+  type HybridShadowCoverageKind,
+  type HybridShadowGame,
+  type HybridShadowStatus,
+} from '@/lib/labs/hybrid-shadow-truth';
 
-interface SpreadInfo {
-  hma: number;
-  favoriteSpread: number;
-  favoriteTeamId: string | null;
-  favoriteName: string | null;
-}
-
-interface HybridGame {
-  gameId: string;
-  date: string;
-  kickoffLocal: string;
-  status: 'final' | 'scheduled' | 'in_progress';
-  awayTeamId: string;
-  awayTeamName: string;
-  homeTeamId: string;
-  homeTeamName: string;
-  awayScore: number | null;
-  homeScore: number | null;
-  neutralSite: boolean;
-  v1Spread: SpreadInfo;
-  v2Spread: SpreadInfo;
-  hybridSpread: SpreadInfo;
-  diff: number; // Hybrid - V1 (in favorite-centric terms)
-  marketSpread: {
-    value: number | null;
-    favoriteTeamId: string | null;
-  } | null;
-  // Validation flags
-  favoritesDisagree?: boolean;
+interface HybridGame extends HybridShadowGame {
+  kickoffLocal?: string;
 }
 
 interface V4OverlaySummary {
@@ -62,8 +48,23 @@ interface V4OverlaySummary {
   tierARoi: number | null;
 }
 
+interface HybridSlateResponse {
+  season: number;
+  week: number;
+  liveMutable?: string;
+  status?: HybridShadowStatus;
+  coverage?: HybridShadowCoverage;
+  games: HybridGame[];
+  count: number;
+  error?: string;
+}
+
 export default function HybridLabsPage() {
   const [games, setGames] = useState<HybridGame[]>([]);
+  const [coverage, setCoverage] = useState<HybridShadowCoverage | null>(null);
+  const [hybridStatus, setHybridStatus] = useState<HybridShadowStatus | null>(
+    null
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [season, setSeason] = useState<number | null>(null);
@@ -81,32 +82,41 @@ export default function HybridLabsPage() {
     try {
       setLoading(true);
       setError(null);
-      
-      // First, get current week from weeks API
-      const weeksResponse = await fetch('/api/weeks');
-      if (!weeksResponse.ok) {
-        throw new Error(`Failed to fetch current week: ${weeksResponse.statusText}`);
+
+      const currentResponse = await fetch('/api/current-season-week');
+      if (!currentResponse.ok) {
+        throw new Error(
+          `Failed to fetch current season/week: ${currentResponse.statusText}`
+        );
       }
-      const weeksData = await weeksResponse.json();
-      if (!weeksData.success) {
-        throw new Error(weeksData.error || 'Failed to get current week');
+      const current = await currentResponse.json();
+      const currentSeason = current.season;
+      const currentWeek = current.week;
+      if (!currentSeason || !currentWeek) {
+        throw new Error('Current season/week was not returned');
       }
-      const currentWeek = weeksData.week || 13;
-      const currentSeason = weeksData.season || 2025;
-      
+
       setSeason(currentSeason);
       setWeek(currentWeek);
-      
-      // Fetch hybrid slate
-      const response = await fetch(`/api/labs/hybrid-slate?season=${currentSeason}&week=${currentWeek}`);
+
+      const response = await fetch(
+        `/api/labs/hybrid-slate?season=${currentSeason}&week=${currentWeek}`
+      );
       if (!response.ok) {
         throw new Error(`Failed to fetch hybrid slate: ${response.statusText}`);
       }
-      
-      const data = await response.json();
+
+      const data = (await response.json()) as HybridSlateResponse;
+      if (data.error) {
+        throw new Error(data.error);
+      }
       setGames(data.games || []);
+      setCoverage(data.coverage || null);
+      setHybridStatus(data.status || null);
     } catch (err) {
-      setError('Network error: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      setError(
+        'Network error: ' + (err instanceof Error ? err.message : 'Unknown error')
+      );
     } finally {
       setLoading(false);
     }
@@ -140,7 +150,7 @@ export default function HybridLabsPage() {
       hour: 'numeric',
       minute: '2-digit',
       hour12: true,
-      timeZone: 'America/Chicago'
+      timeZone: 'America/Chicago',
     });
   };
 
@@ -149,7 +159,8 @@ export default function HybridLabsPage() {
     return spread > 0 ? `+${spread.toFixed(1)}` : spread.toFixed(1);
   };
 
-  const getDiffColor = (diff: number) => {
+  const getDiffColor = (diff: number | null) => {
+    if (diff == null) return '';
     const absDiff = Math.abs(diff);
     if (absDiff >= 3.0) return 'bg-red-50 border-red-200';
     if (absDiff >= 1.5) return 'bg-yellow-50 border-yellow-200';
@@ -164,36 +175,29 @@ export default function HybridLabsPage() {
   };
 
   const calculateHybridPick = (game: HybridGame) => {
-    if (!game.marketSpread || game.marketSpread.value === null) {
+    if (
+      !game.hybridAvailable ||
+      !game.hybridSpread ||
+      !game.marketSpread ||
+      game.marketSpread.value === null
+    ) {
       return null;
     }
 
-    // Hybrid margin: Home Minus Away (positive = home wins)
     const hybridMargin = game.hybridSpread.hma;
-
-    // Market spread is favorite-centric (negative for favorite)
-    // Convert to market margin (Home Minus Away)
     const marketValue = game.marketSpread.value;
     const marketFavoriteTeamId = game.marketSpread.favoriteTeamId;
-    
+
     let marketMargin: number;
     if (marketFavoriteTeamId === game.homeTeamId) {
-      // Home is favorite: value is negative (e.g., -7 means home -7)
-      // Market expects home to win by |value|, so margin = -value
       marketMargin = -marketValue;
     } else if (marketFavoriteTeamId === game.awayTeamId) {
-      // Away is favorite: value is negative (e.g., -7 means away -7)
-      // Market expects away to win by |value|, so home margin = value (negative)
       marketMargin = marketValue;
     } else {
-      // Fallback: assume value is already in HMA format
       marketMargin = marketValue;
     }
 
-    // Calculate edge: positive = home has value, negative = away has value
     const edge = hybridMargin - marketMargin;
-
-    // Determine pick side
     const pickHome = edge > 0;
     const pickTeamId = pickHome ? game.homeTeamId : game.awayTeamId;
     const pickTeamName = pickHome ? game.homeTeamName : game.awayTeamName;
@@ -216,38 +220,82 @@ export default function HybridLabsPage() {
     return 'bg-gray-100 text-gray-800';
   };
 
+  const renderSpreadCell = (
+    spread: HybridGame['v1Spread'],
+    unavailable: boolean
+  ) => {
+    if (unavailable || !spread) {
+      return <span className="text-xs text-gray-400">—</span>;
+    }
+    return (
+      <>
+        <div className="text-sm font-medium text-gray-900">
+          {spread.favoriteName}
+        </div>
+        <div className="text-sm text-gray-600">
+          {formatSpread(spread.favoriteSpread)}
+        </div>
+      </>
+    );
+  };
+
   const handleExportCsv = () => {
-    // Get visible games (respecting the filter)
-    const visibleGames = games.filter(game => {
+    const visibleGames = games.filter((game) => {
       if (hideNoOdds) {
-        return game.marketSpread !== null && game.marketSpread !== undefined && game.marketSpread.value !== null;
+        return (
+          game.marketSpread !== null &&
+          game.marketSpread !== undefined &&
+          game.marketSpread.value !== null
+        );
       }
       return true;
     });
 
-    const csvRows = visibleGames.map(game => {
+    const csvRows = visibleGames.map((game) => {
       const pick = calculateHybridPick(game);
-      
       return {
         Away_Team: game.awayTeamName,
         Home_Team: game.homeTeamName,
         Kickoff: formatKickoff(game.date),
-        V1_Spread: `${game.v1Spread.favoriteName} ${formatSpread(game.v1Spread.favoriteSpread)}`,
-        V2_Spread: `${game.v2Spread.favoriteName} ${formatSpread(game.v2Spread.favoriteSpread)}`,
-        Hybrid_Spread: `${game.hybridSpread.favoriteName} ${formatSpread(game.hybridSpread.favoriteSpread)}`,
-        Diff_Hybrid_V1: game.diff > 0 ? `+${game.diff.toFixed(1)}` : game.diff.toFixed(1),
-        Market_Line: game.marketSpread && game.marketSpread.value !== null
-          ? formatSpread(game.marketSpread.value)
+        Hybrid_Available: game.hybridAvailable ? 'yes' : 'no',
+        Unavailable: game.unavailableLabel || '',
+        Core_V1_Spread: game.v1Spread
+          ? `${game.v1Spread.favoriteName} ${formatSpread(game.v1Spread.favoriteSpread)}`
           : '—',
+        V2_Spread: game.v2Spread
+          ? `${game.v2Spread.favoriteName} ${formatSpread(game.v2Spread.favoriteSpread)}`
+          : '—',
+        Hybrid_Spread: game.hybridSpread
+          ? `${game.hybridSpread.favoriteName} ${formatSpread(game.hybridSpread.favoriteSpread)}`
+          : '—',
+        Diff_Hybrid_V1:
+          game.diff == null
+            ? '—'
+            : game.diff > 0
+              ? `+${game.diff.toFixed(1)}`
+              : game.diff.toFixed(1),
+        Market_Line:
+          game.marketSpread && game.marketSpread.value !== null
+            ? formatSpread(game.marketSpread.value)
+            : '—',
+        Market_Book: game.marketSpread?.book || '—',
+        Market_Timestamp: game.marketSpread?.timestamp || '—',
+        Market_Source: game.marketSpread?.source || '—',
         Hybrid_Pick: pick ? pick.teamName : '—',
         Pick_Line: pick ? formatSpread(pick.marketSpread) : '—',
         Edge: pick ? pick.edge.toFixed(1) : '—',
       };
     });
 
-    const filename = `hybrid-analysis-week-${week || 'unknown'}`;
+    const filename = `hybrid-shadow-week-${week || 'unknown'}`;
     downloadAsCsv(filename, csvRows);
   };
+
+  const coverageKind: HybridShadowCoverageKind =
+    coverage?.coverageKind ||
+    (games.length === 0 ? 'no_games' : 'games_without_hybrid');
+  const totalGames = coverage?.totalGames ?? games.length;
+  const emptyMessage = hybridShadowEmptyMessage(coverageKind, totalGames);
 
   if (loading) {
     return (
@@ -256,7 +304,7 @@ export default function HybridLabsPage() {
         <div className="container mx-auto px-4 py-8">
           <div className="text-center">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-            <p className="mt-4 text-gray-600">Loading hybrid model data...</p>
+            <p className="mt-4 text-gray-600">Loading hybrid shadow data...</p>
           </div>
         </div>
         <Footer />
@@ -282,49 +330,157 @@ export default function HybridLabsPage() {
       <div className="container mx-auto px-4 py-8">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            🔬 Labs: Hybrid Model Dashboard
+            Models: Hybrid V2 Shadow
           </h1>
           <p className="text-gray-600 mb-4">
-            Comparing V1 (Composite), V2 (Matchup), and Hybrid (70% V1 + 30% V2) spread predictions
-            {season && week && ` - ${season} Week ${week}`}
+            {CORE_V1_EFFECTIVE_PRODUCTION_LABEL} is the effective official 2026
+            production spread model. Hybrid V2 is held and shown here only as a
+            shadow/research comparison.
+            {season && week && ` — ${season} Week ${week}`}
           </p>
           <LabsNav />
 
-          {/* V4 Overlay Summary Card */}
+          <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4">
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <span className="inline-flex items-center rounded px-2 py-1 text-xs font-bold tracking-wide bg-amber-200 text-amber-950">
+                {hybridStatus?.statusLabel || HYBRID_SHADOW_STATUS_LABEL}
+              </span>
+              <span className="inline-flex items-center rounded px-2 py-1 text-xs font-bold tracking-wide bg-red-100 text-red-800">
+                {hybridStatus?.notOfficialBetLabel || HYBRID_NOT_OFFICIAL_2026_BET}
+              </span>
+              <span className="inline-flex items-center rounded px-2 py-1 text-xs font-bold tracking-wide bg-slate-200 text-slate-800">
+                {HYBRID_LIVE_MUTABLE_SHADOW}
+              </span>
+            </div>
+            <ul className="text-sm text-amber-950 space-y-1 list-disc list-inside">
+              <li>
+                Effective 2026 production spread model:{' '}
+                <strong>
+                  {hybridStatus?.effectiveProductionModel === 'hybrid_v2'
+                    ? 'Hybrid V2'
+                    : CORE_V1_EFFECTIVE_PRODUCTION_LABEL}
+                </strong>
+                . Official strategy tag remains <code>official_flat_100</code>.
+              </li>
+              <li>
+                Hybrid production authorized:{' '}
+                <strong>
+                  {hybridStatus?.hybridProductionAuthorized ? 'true' : 'false'}
+                </strong>
+                {hybridStatus?.holdReason ? ` — ${hybridStatus.holdReason}` : ''}
+              </li>
+              <li>
+                This page is a live recomputation from currently persisted model
+                inputs and current market data. It is not a frozen pregame
+                prediction, not the Official Card, and not a prospective 2026
+                Hybrid performance record.
+              </li>
+              <li>
+                Nothing on this page changes the Official Card. Hybrid selections
+                shown here, when available, are not official wagers.
+              </li>
+              <li>
+                Super Tier A is {SUPER_TIER_A_SHADOW_STATUS}. Frozen
+                qualification remains actual Hybrid V2 spread selection,{' '}
+                <code>{SUPER_TIER_A_FROZEN_QUALIFICATION.hybridConflictType}</code>
+                , and absolute spread edge {'>='}{' '}
+                {SUPER_TIER_A_FROZEN_QUALIFICATION.minAbsSpreadEdge.toFixed(1)}.
+                This live shadow view does not claim a 2026 Super Tier A record.
+              </li>
+            </ul>
+          </div>
+
+          {coverage && (
+            <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-800">
+              <div className="font-semibold mb-1">Game frame / Hybrid coverage</div>
+              <p>
+                {coverage.totalGames} football games in this week.{' '}
+                {coverage.computedGames} Hybrid predictions available.{' '}
+                {coverage.unavailableGames} Hybrid unavailable.
+              </p>
+              <p className="mt-1 text-slate-600">{emptyMessage}</p>
+            </div>
+          )}
+
           {!v4SummaryLoading && v4Summary.length > 0 && (
             <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <h3 className="text-sm font-semibold text-yellow-900 mb-3">
-                📊 V4 (Labs) vs Fade V4 — Backtest Snapshot
+                V4 (Labs) vs Fade V4 — {V4_FADE_HISTORICAL_STATUS}
               </h3>
               <div className="space-y-3">
                 {[2024, 2025].map((s) => {
-                  const seasonData = v4Summary.filter(sum => sum.season === s);
+                  const seasonData = v4Summary.filter((sum) => sum.season === s);
                   if (seasonData.length === 0) return null;
-                  
-                  const v4Data = seasonData.find(sum => sum.strategy === 'v4_labs');
-                  const fadeData = seasonData.find(sum => sum.strategy === 'fade_v4_labs');
-                  
+
+                  const v4Data = seasonData.find(
+                    (sum) => sum.strategy === 'v4_labs'
+                  );
+                  const fadeData = seasonData.find(
+                    (sum) => sum.strategy === 'fade_v4_labs'
+                  );
+
                   return (
-                    <div key={s} className="bg-white rounded p-3 border border-yellow-200">
-                      <div className="text-xs font-semibold text-yellow-800 mb-2">{s} Season</div>
+                    <div
+                      key={s}
+                      className="bg-white rounded p-3 border border-yellow-200"
+                    >
+                      <div className="text-xs font-semibold text-yellow-800 mb-2">
+                        {s} Season
+                      </div>
                       <div className="grid grid-cols-2 gap-3 text-xs">
                         <div>
-                          <div className="font-medium text-gray-700 mb-1">V4 (Labs)</div>
+                          <div className="font-medium text-gray-700 mb-1">
+                            V4 (Labs)
+                          </div>
                           <div className="space-y-0.5 text-gray-600">
                             <div>Bets: {v4Data?.bets ?? '—'}</div>
-                            <div>Win Rate: {v4Data && v4Data.winRate !== null && v4Data.winRate !== undefined ? `${v4Data.winRate.toFixed(1)}%` : '—'}</div>
-                            <div className={v4Data?.roi !== undefined && v4Data.roi < 0 ? 'text-red-600 font-medium' : 'text-gray-600'}>
-                              ROI: {v4Data?.roi !== undefined ? `${v4Data.roi.toFixed(2)}%` : '—'}
+                            <div>
+                              Win Rate:{' '}
+                              {v4Data &&
+                              v4Data.winRate !== null &&
+                              v4Data.winRate !== undefined
+                                ? `${v4Data.winRate.toFixed(1)}%`
+                                : '—'}
+                            </div>
+                            <div
+                              className={
+                                v4Data?.roi !== undefined && v4Data.roi < 0
+                                  ? 'text-red-600 font-medium'
+                                  : 'text-gray-600'
+                              }
+                            >
+                              ROI:{' '}
+                              {v4Data?.roi !== undefined
+                                ? `${v4Data.roi.toFixed(2)}%`
+                                : '—'}
                             </div>
                           </div>
                         </div>
                         <div>
-                          <div className="font-medium text-gray-700 mb-1">Fade V4 (Labs)</div>
+                          <div className="font-medium text-gray-700 mb-1">
+                            Fade V4 (Labs)
+                          </div>
                           <div className="space-y-0.5 text-gray-600">
                             <div>Bets: {fadeData?.bets ?? '—'}</div>
-                            <div>Win Rate: {fadeData && fadeData.winRate !== null && fadeData.winRate !== undefined ? `${fadeData.winRate.toFixed(1)}%` : '—'}</div>
-                            <div className={fadeData?.roi !== undefined && fadeData.roi > 0 ? 'text-green-600 font-medium' : 'text-gray-600'}>
-                              ROI: {fadeData?.roi !== undefined ? `${fadeData.roi.toFixed(2)}%` : '—'}
+                            <div>
+                              Win Rate:{' '}
+                              {fadeData &&
+                              fadeData.winRate !== null &&
+                              fadeData.winRate !== undefined
+                                ? `${fadeData.winRate.toFixed(1)}%`
+                                : '—'}
+                            </div>
+                            <div
+                              className={
+                                fadeData?.roi !== undefined && fadeData.roi > 0
+                                  ? 'text-green-600 font-medium'
+                                  : 'text-gray-600'
+                              }
+                            >
+                              ROI:{' '}
+                              {fadeData?.roi !== undefined
+                                ? `${fadeData.roi.toFixed(2)}%`
+                                : '—'}
                             </div>
                           </div>
                         </div>
@@ -334,7 +490,9 @@ export default function HybridLabsPage() {
                 })}
               </div>
               <p className="text-xs text-yellow-700 mt-3 italic">
-                V4 and Fade V4 are Labs-only strategies based on backtested data. Hybrid V2 remains the only production spread model used for My Picks.
+                V4 and Fade V4 are historical Labs/backtest strategies for
+                2024–2025 only. They are not 2026 production models and are not
+                official wagers.
               </p>
             </div>
           )}
@@ -347,7 +505,10 @@ export default function HybridLabsPage() {
                 onChange={(e) => setHideNoOdds(e.target.checked)}
                 className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
-              <label htmlFor="hideNoOdds" className="text-sm font-medium text-gray-700 select-none cursor-pointer">
+              <label
+                htmlFor="hideNoOdds"
+                className="text-sm font-medium text-gray-700 select-none cursor-pointer"
+              >
                 Hide games without market odds
               </label>
             </div>
@@ -356,8 +517,18 @@ export default function HybridLabsPage() {
                 onClick={handleExportCsv}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  />
                 </svg>
                 Export CSV
               </button>
@@ -374,43 +545,52 @@ export default function HybridLabsPage() {
                     Matchup
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    V1 (Composite)
+                    Core V1
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     V2 (Matchup)
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Hybrid (70/30)
+                    Hybrid V2 Shadow
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Diff (Hybrid - V1)
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Hybrid Pick
+                    Shadow Pick
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Market
+                    Current Market
                   </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {(() => {
-                  const visibleGames = games.filter(game => {
+                  const visibleGames = games.filter((game) => {
                     if (hideNoOdds) {
-                      return game.marketSpread !== null && game.marketSpread !== undefined && game.marketSpread.value !== null;
+                      return (
+                        game.marketSpread !== null &&
+                        game.marketSpread !== undefined &&
+                        game.marketSpread.value !== null
+                      );
                     }
                     return true;
                   });
 
                   if (visibleGames.length === 0) {
+                    const message =
+                      games.length === 0
+                        ? emptyMessage
+                        : hideNoOdds
+                          ? 'No games with current market odds are shown.'
+                          : emptyMessage;
                     return (
                       <tr>
-                        <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
-                          {games.length === 0
-                            ? 'No games found for this week.'
-                            : hideNoOdds
-                            ? 'No games with market odds found.'
-                            : 'No games found for this week.'}
+                        <td
+                          colSpan={7}
+                          className="px-4 py-8 text-center text-gray-500"
+                        >
+                          {message}
                         </td>
                       </tr>
                     );
@@ -450,10 +630,20 @@ export default function HybridLabsPage() {
                             )}
                           </div>
                           <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            {!game.hybridAvailable && (
+                              <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-800 border border-slate-200">
+                                {game.unavailableLabel || 'Hybrid unavailable'}
+                              </span>
+                            )}
+                            {game.hybridAvailable && (
+                              <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-900 border border-amber-200">
+                                {HYBRID_NOT_OFFICIAL_2026_BET}
+                              </span>
+                            )}
                             {game.favoritesDisagree && (
-                              <span 
+                              <span
                                 className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800 border border-yellow-200"
-                                title="Model and market favor different teams — treat as Labs-only, not an official edge."
+                                title="Shadow model and current market favor different teams — not an official edge."
                               >
                                 Favs Disagree
                               </span>
@@ -469,39 +659,46 @@ export default function HybridLabsPage() {
                           )}
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-center">
-                          <div className="text-sm font-medium text-gray-900">
-                            {game.v1Spread.favoriteName}
-                          </div>
-                          <div className="text-sm text-gray-600">
-                            {formatSpread(game.v1Spread.favoriteSpread)}
-                          </div>
+                          {renderSpreadCell(game.v1Spread, false)}
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-center">
-                          <div className="text-sm font-medium text-gray-900">
-                            {game.v2Spread.favoriteName}
-                          </div>
-                          <div className="text-sm text-gray-600">
-                            {formatSpread(game.v2Spread.favoriteSpread)}
-                          </div>
+                          {renderSpreadCell(game.v2Spread, !game.hybridAvailable)}
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-center">
-                          <div className="text-sm font-semibold text-blue-900">
-                            {game.hybridSpread.favoriteName}
-                          </div>
-                          <div className="text-sm font-semibold text-blue-600">
-                            {formatSpread(game.hybridSpread.favoriteSpread)}
-                          </div>
+                          {game.hybridAvailable && game.hybridSpread ? (
+                            <>
+                              <div className="text-sm font-semibold text-blue-900">
+                                {game.hybridSpread.favoriteName}
+                              </div>
+                              <div className="text-sm font-semibold text-blue-600">
+                                {formatSpread(game.hybridSpread.favoriteSpread)}
+                              </div>
+                            </>
+                          ) : (
+                            <div className="text-xs text-slate-600 max-w-[12rem] mx-auto">
+                              {game.unavailableLabel || 'Hybrid unavailable'}
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-center">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getDiffBadge(game.diff)}`}>
-                            {game.diff > 0 ? '+' : ''}{game.diff.toFixed(1)}
-                          </span>
+                          {game.diff == null ? (
+                            <span className="text-xs text-gray-400">—</span>
+                          ) : (
+                            <span
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getDiffBadge(game.diff)}`}
+                            >
+                              {game.diff > 0 ? '+' : ''}
+                              {game.diff.toFixed(1)}
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-center">
                           {(() => {
                             const pick = calculateHybridPick(game);
                             if (!pick) {
-                              return <span className="text-xs text-gray-400">—</span>;
+                              return (
+                                <span className="text-xs text-gray-400">—</span>
+                              );
                             }
                             return (
                               <div className="space-y-1">
@@ -511,17 +708,43 @@ export default function HybridLabsPage() {
                                 <div className="text-sm text-gray-600">
                                   {formatSpread(pick.marketSpread)}
                                 </div>
-                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getEdgeBadgeColor(pick.edge)}`}>
+                                <span
+                                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getEdgeBadgeColor(pick.edge)}`}
+                                >
                                   Edge: {pick.edge.toFixed(1)}
                                 </span>
+                                <div className="text-[10px] uppercase tracking-wide text-amber-800">
+                                  Not official
+                                </div>
                               </div>
                             );
                           })()}
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-center">
-                          {game.marketSpread && game.marketSpread.value !== null ? (
+                          {game.marketSpread &&
+                          game.marketSpread.value !== null ? (
                             <div className="text-sm text-gray-600">
-                              {formatSpread(game.marketSpread.value)}
+                              <div>{formatSpread(game.marketSpread.value)}</div>
+                              <div className="text-[11px] text-gray-500 mt-1">
+                                {game.marketSpread.book || 'book n/a'}
+                              </div>
+                              <div className="text-[11px] text-gray-400">
+                                {game.marketSpread.timestamp
+                                  ? new Date(
+                                      game.marketSpread.timestamp
+                                    ).toLocaleString('en-US', {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      hour: 'numeric',
+                                      minute: '2-digit',
+                                      timeZone: 'America/Chicago',
+                                    })
+                                  : 'time n/a'}
+                              </div>
+                              <div className="text-[11px] text-gray-400">
+                                {game.marketSpread.source || 'source n/a'} ·
+                                current/live
+                              </div>
                             </div>
                           ) : (
                             <span className="text-xs text-gray-400">—</span>
@@ -537,12 +760,25 @@ export default function HybridLabsPage() {
         </div>
 
         <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-blue-900 mb-2">📊 Model Details</h3>
+          <h3 className="text-sm font-semibold text-blue-900 mb-2">
+            Shadow comparison details
+          </h3>
           <ul className="text-sm text-blue-800 space-y-1">
-            <li><strong>V1 (Composite):</strong> Power ratings from Talent, Efficiency, Scoring, and Record (25% each)</li>
-            <li><strong>V2 (Matchup):</strong> Unit grades (Run 40%, Pass 40%, Explosiveness 20%) scaled by 9.0</li>
-            <li><strong>Hybrid:</strong> 70% V1 + 30% V2 blend (optimized from backtesting)</li>
-            <li><strong>Diff:</strong> Difference between Hybrid and V1 predictions. Highlighted rows show significant disagreements (&gt;3 pts).</li>
+            <li>
+              <strong>Core V1:</strong> persisted V1 power-rating comparison when
+              ratings exist. This is not a Hybrid value.
+            </li>
+            <li>
+              <strong>V2 / Hybrid:</strong> shown only when Hybrid inputs exist.
+              Missing unit grades or ratings make Hybrid unavailable. Core is
+              never labeled Hybrid.
+            </li>
+            <li>
+              <strong>Current market:</strong> latest persisted MarketLine for
+              this Labs selection. Book, timestamp, and source are shown when
+              available. This is current/live, not a prediction-time or closing
+              line unless that contract is separately satisfied.
+            </li>
           </ul>
         </div>
 
@@ -556,4 +792,3 @@ export default function HybridLabsPage() {
     </div>
   );
 }
-

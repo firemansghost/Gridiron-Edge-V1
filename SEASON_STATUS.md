@@ -1,8 +1,8 @@
 # Season Status — Gridiron Edge
 
 **Status:** 2026 season active (manual guarded production)  
-**Updated:** 2026-09-03 (Phase 2 closeout — PR #88 Week Archive production-verified)  
-**Production `main`:** `9b6b97b362c52f64b2ceec2b09d2b11b4c98b663`
+**Updated:** 2026-09-03 (Phase 4A Models / Hybrid shadow truth — active)  
+**Production `main`:** `985220966d9b65a642631c197ed2f697e4a92017`
 
 Operator-facing current state for the active 2026 season. Complements `docs/2026-workflow-reactivation-matrix.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -17,10 +17,10 @@ Sections below the current-state block retain useful preseason/phase chronology.
 | Item | Status |
 |------|--------|
 | **Season** | **2026 active** |
-| **Production `main`** | `9b6b97b362c52f64b2ceec2b09d2b11b4c98b663` |
+| **Production `main`** | `985220966d9b65a642631c197ed2f697e4a92017` |
 | **Provider Week 1** | Opening **Aug. 29** tranche + remaining **Sep. 3–7** games |
 | **Effective production spread model** | **Core V1** (`official_flat_100`) |
-| **Hybrid V2** | **Held** for additional same-season validation |
+| **Hybrid V2** | **Held** / shadow-research only — not official |
 | **Totals / moneylines** | Current Core logic |
 | **Recurring production schedules** | Operator-stopped / **not authorized** |
 | **Schedule reactivation recommended** | **0** workflows |
@@ -36,15 +36,21 @@ Sections below the current-state block retain useful preseason/phase chronology.
 | **2A** Week Review + Season Review persisted-Bet truth | **COMPLETE** | #87 |
 | **2B** Week Archive / Browse Weeks persisted-history truth | **COMPLETE** | #88 |
 | **2** (1A–2B site truth) | **COMPLETE** | — |
-| **3** Ratings Page Truthfulness | **NEXT** — not started | — |
+| **3** Ratings Page Truthfulness | **COMPLETE** | #90 |
+| **4** Models / Hybrid product-truth audit | **COMPLETE** | — |
+| **4A** Models / Hybrid Shadow truth | **ACTIVE** | this PR |
 
 Phase 1 COMPLETE — `/picks` is persisted locked Official Card truth (`official_flat_100` Bet rows). Current Slate remains live/dynamic and is not the Official Card.
 Phase 2A COMPLETE — Week/Season Review is persisted Bet review truth (read-only).
 Phase 2B COMPLETE — `/weeks` Week Archive for 2026 is persisted Game + Official Card Bet truth. Seasons through 2025 remain the legacy reconstructed model view if retained.
+Phase 3 COMPLETE — `/ratings` displays season-membership conference and persisted Core V1 `modelVersion=v1` provenance. Ratings production verification is complete.
+Phase 4 audit COMPLETE — Hybrid remains held; a live Hybrid recalculation is not a frozen shadow record.
 Core V1 (`official_flat_100`) is the default 2026 review strategy.
-Hybrid remains held for 2026.
+Hybrid remains held for 2026. Hybrid Super Tier A remains SHADOW / HELD. No recurring workflow authorization change.
 
-**Next engineering priority:** Phase 3 Ratings Page Truthfulness (source/provenance/presentation only). No Core V1 formula or lifecycle policy change is authorized. No Phase 3 implementation has started.
+**Verified production baseline before Phase 4A:** `985220966d9b65a642631c197ed2f697e4a92017`
+
+**Active engineering task:** Phase 4A Models / Hybrid Shadow truth (read-only product-truth repair). No Core V1 formula, Hybrid formula, Hybrid authorization, lifecycle, or Prisma change is authorized.
 
 ### Phase 2B production verification (PR #88)
 

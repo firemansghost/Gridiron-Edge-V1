@@ -1,6 +1,8 @@
 /**
  * Shared Labs Navigation Component
  */
+'use client';
+
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -8,7 +10,7 @@ export function LabsNav() {
   const pathname = usePathname();
 
   const navItems = [
-    { label: 'Hybrid Model', href: '/labs/hybrid' },
+    { label: 'Hybrid V2 Shadow', href: '/labs/hybrid' },
     { label: 'Portal Continuity', href: '/labs/portal' },
     { label: 'Portfolio What-Ifs', href: '/labs/portfolio' },
   ];
@@ -39,4 +41,3 @@ export function LabsNav() {
     </div>
   );
 }
-

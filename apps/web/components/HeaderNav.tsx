@@ -52,8 +52,8 @@ export function HeaderNav() {
             <Link href="/ratings" className={linkClass('/ratings')} title="View team power ratings">
               Ratings
             </Link>
-            <Link href="/labs/hybrid" className={linkClass('/labs/hybrid')} title="V2 Hybrid Model Dashboard">
-              Labs (V2)
+            <Link href="/labs/hybrid" className={linkClass('/labs')} title="Models — Hybrid V2 is a shadow/research comparison, not the official 2026 card">
+              Models
             </Link>
             {/* Dev-only links - commented out for V1 public release */}
             {/* <Link href="/bets" className={linkClass('/bets')}>
@@ -99,8 +99,8 @@ export function HeaderNav() {
             <Link href="/ratings" className={linkClass('/ratings')} title="View team power ratings">
               Ratings
             </Link>
-            <Link href="/labs/hybrid" className={linkClass('/labs/hybrid')} title="V2 Hybrid Model Dashboard">
-              Labs (V2)
+            <Link href="/labs/hybrid" className={linkClass('/labs')} title="Models — Hybrid V2 is a shadow/research comparison, not the official 2026 card">
+              Models
             </Link>
             {/* Dev-only links - commented out for V1 public release */}
             {/* <Link href="/bets" className={linkClass('/bets')}>
