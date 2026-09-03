@@ -24,13 +24,16 @@ on:
         default: false
         type: boolean
       max_concurrency:
-        description: 'Max concurrent week jobs (1-4)'
+        description: 'Max concurrent week jobs (1 or 2; CFBD /stats/game/advanced limit)'
         required: false
         default: '2'
-        type: string
+        type: choice
+        options:
+          - '1'
+          - '2'
 
 concurrency:
-  group: cfbd-ingest-${{ github.ref }}-${{ inputs.season }}
+  group: cfbd-stats-game-advanced
   cancel-in-progress: false
 
 jobs:
@@ -55,14 +58,18 @@ jobs:
       
       - name: Set max parallel
         id: set-max-parallel
+        env:
+          MAX_CONCURRENCY: ${{ inputs.max_concurrency }}
         run: |
-          MAX="${{ inputs.max_concurrency }}"
-          # Ensure it's a valid number, default to 2
-          MAX_NUM=${MAX:-2}
-          # Output as JSON number so fromJson can parse it
-          MAX_JSON=$(echo "$MAX_NUM" | jq -c .)
-          echo "value=$MAX_JSON" >> $GITHUB_OUTPUT
-          echo "Max parallel: $MAX_NUM"
+          set -euo pipefail
+          MAX="${MAX_CONCURRENCY}"
+          # Fail closed: do not clamp 3/4 (or any other value) to 2.
+          if [ "$MAX" != "1" ] && [ "$MAX" != "2" ]; then
+            echo "::error::max_concurrency must be 1 or 2 (got '${MAX}')"
+            exit 1
+          fi
+          echo "value=${MAX}" >> $GITHUB_OUTPUT
+          echo "Max parallel: ${MAX}"
 
   season-stats:
     runs-on: ubuntu-latest

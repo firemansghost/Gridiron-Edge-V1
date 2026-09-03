@@ -76,9 +76,7 @@ describe('2C-2J-6D-1 canonical CFBD TeamGameStat workflow', () => {
   });
 
   it('fresh concurrency; PREVIEW default; exact COMMIT confirmation', () => {
-    expect(wf).toContain(
-      'cfbd-team-game-stats-2026-manual-v1-${{ inputs.season }}-${{ inputs.week }}'
-    );
+    expect(wf).toContain('group: cfbd-stats-game-advanced');
     expect(wf).toContain('cancel-in-progress: false');
     expect(wf).toMatch(/default:\s*PREVIEW/);
     expect(wf).toContain('WRITE_2026_WEEK_');

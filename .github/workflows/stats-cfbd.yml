@@ -19,6 +19,10 @@ on:
         default: '1..current'
         type: string
 
+concurrency:
+  group: cfbd-stats-game-advanced
+  cancel-in-progress: false
+
 jobs:
   sync-team-stats:
     runs-on: ubuntu-latest

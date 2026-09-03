@@ -45,7 +45,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: cfbd-team-game-stats-2026-manual-v1-${{ inputs.season }}-${{ inputs.week }}
+  group: cfbd-stats-game-advanced
   cancel-in-progress: false
 
 jobs:
