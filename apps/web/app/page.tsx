@@ -176,8 +176,8 @@ export default function HomePage() {
 
         {/* Header */}
         <div className="mb-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-4">
               <h1 className="text-3xl font-bold text-gray-900">Current Slate</h1>
               <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold tracking-wide bg-sky-100 text-sky-900 border border-sky-200">
                 LIVE / DYNAMIC
@@ -195,7 +195,7 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <ProductionModelSelector
                 effectiveModel={slate ? effectiveModel : null}
                 heldModelIds={heldModelIds}
@@ -223,11 +223,6 @@ export default function HomePage() {
           <p className="text-xs text-gray-500 mt-1">
             Model selector changes this live view only. It does not alter the
             locked Official Card.
-          </p>
-          <p className="text-sm mt-2">
-            <Link href="/picks" className="text-blue-600 hover:text-blue-800 underline font-medium">
-              Locked Official Card →
-            </Link>
           </p>
           
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-2">

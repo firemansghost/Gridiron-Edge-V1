@@ -42,7 +42,10 @@ describe('Phase 1C Current Slate live/dynamic labeling', () => {
   it('links to Official Card and keeps live selector/hold wiring', () => {
     expect(home).toContain('href="/picks"');
     expect(home).toContain('View Locked Official Card');
-    expect(home).toContain('Locked Official Card →');
+    expect(home).not.toContain('Locked Official Card →');
+    // In Phase 1C header area there should only be one homepage Official Card CTA.
+    const picksLinks = home.match(/href=\"\/picks\"/g) || [];
+    expect(picksLinks).toHaveLength(1);
     expect(home).toContain('ProductionModelSelector');
     expect(home).toContain('Model selector changes this live view only');
     expect(home).toContain('Hybrid V2 held');
