@@ -254,6 +254,53 @@ describe('Phase 2A review-truth: static UI/API gates', () => {
     expect(seasonReviewPage).not.toContain('resolveReviewStrategySelection(strategyParam, [])');
   });
 
+  it('does not clear explicit Week Review URL strategy via a blanket [season, week] effect', () => {
+    expect(weekReviewPage).not.toMatch(
+      /useEffect\(\(\) => \{\s*defaultStrategySet\.current = false;\s*\}, \[season, week\]\)/
+    );
+    expect(weekReviewPage).not.toContain('}, [season, week]);');
+    expect(weekReviewPage).toContain('if (strategyParam !== null)');
+    expect(weekReviewPage).toContain('preserveExplicitReviewStrategyRequest(strategyParam)');
+    expect(weekReviewPage).toContain('defaultStrategySet.current = true');
+  });
+
+  it('keeps explicit custom and all Week Review URL strategies through initialization', () => {
+    expect(weekReviewPage).toContain("reviewStrategyToWeekReviewState(preserved ?? 'all')");
+    expect(weekReviewPage).toContain('resolveReviewStrategyAfterAvailability(requested, season, available)');
+    expect(weekReviewPage).toContain("const requested = strategy === '' ? 'all' : strategy");
+  });
+
+  it('resets Week Review strategy default only on user season/week changes', () => {
+    expect(weekReviewPage).toMatch(
+      /defaultStrategySet\.current = false;\s*setSeason\(parseInt\(e\.target\.value/
+    );
+    expect(weekReviewPage).toMatch(
+      /defaultStrategySet\.current = false;\s*setWeek\(parseInt\(e\.target\.value/
+    );
+    expect(weekReviewPage).toMatch(
+      /defaultStrategySet\.current = true;\s*\/\/ Normalize empty string and "all" to empty for API/
+    );
+  });
+
+  it('gates Season Review fetch until URL params are applied', () => {
+    const seasonReviewPage = fs.readFileSync(
+      path.join(webRoot, 'app/season-review/page.tsx'),
+      'utf8'
+    );
+    expect(seasonReviewPage).toContain('const [paramsReady, setParamsReady] = useState(false)');
+    expect(seasonReviewPage).toContain('if (!paramsReady) return');
+    expect(seasonReviewPage).toContain('setParamsReady(true)');
+    expect(seasonReviewPage).toContain('[paramsReady, season, strategyTag, selectedMarket]');
+    expect(seasonReviewPage).not.toContain('}, [season, strategyTag, selectedMarket]);');
+    expect(seasonReviewPage).toContain('preserveExplicitReviewStrategyRequest(strategyParam)');
+    expect(seasonReviewPage).toMatch(
+      /defaultStrategySet\.current = false;\s*setSeason\(parseInt\(e\.target\.value/
+    );
+    expect(seasonReviewPage).toMatch(
+      /defaultStrategySet\.current = true;\s*setStrategyTag\(e\.target\.value\)/
+    );
+  });
+
   it('Season Summary avoids unsafe avgEdge recomputation for 2026 official_flat_100', () => {
     expect(seasonSummaryApi).toContain('isOfficial2026Review');
     expect(seasonSummaryApi).toContain('if (!isOfficial2026Review)');

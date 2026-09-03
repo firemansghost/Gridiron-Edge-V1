@@ -82,6 +82,7 @@ export default function SeasonReviewPage() {
   const [data, setData] = useState<SeasonSummaryData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [paramsReady, setParamsReady] = useState(false);
   const defaultStrategySet = useRef(false);
   const urlParamsApplied = useRef(false);
   
@@ -92,6 +93,7 @@ export default function SeasonReviewPage() {
     : 'server';
 
   const fetchData = async () => {
+    if (!paramsReady) return;
     if (!season) return;
     setLoading(true);
     setError(null);
@@ -139,11 +141,13 @@ export default function SeasonReviewPage() {
       defaultStrategySet.current = true;
     }
     urlParamsApplied.current = true;
+    setParamsReady(true);
   }, []);
 
   useEffect(() => {
+    if (!paramsReady) return;
     fetchData();
-  }, [season, strategyTag, selectedMarket]);
+  }, [paramsReady, season, strategyTag, selectedMarket]);
 
   // Initialize season and strategy defaults from available data on first load
   useEffect(() => {
@@ -234,7 +238,10 @@ export default function SeasonReviewPage() {
                 <label className="block text-sm font-medium mb-1">Season</label>
                 <select
                   value={season}
-                  onChange={(e) => setSeason(parseInt(e.target.value))}
+                  onChange={(e) => {
+                    defaultStrategySet.current = false;
+                    setSeason(parseInt(e.target.value, 10));
+                  }}
                   className="border rounded px-3 py-2"
                 >
                   {data?.meta.seasonsAvailable.map((s) => (
@@ -254,7 +261,10 @@ export default function SeasonReviewPage() {
                 <label className="block text-sm font-medium mb-1">Strategy</label>
                 <select
                   value={strategyTag}
-                  onChange={(e) => setStrategyTag(e.target.value)}
+                  onChange={(e) => {
+                    defaultStrategySet.current = true;
+                    setStrategyTag(e.target.value);
+                  }}
                   className="border rounded px-3 py-2"
                 >
                   <option value="all">{getStrategyLabel('all')}</option>

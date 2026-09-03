@@ -210,11 +210,6 @@ export default function WeekReviewPage() {
     defaultStrategySet.current = true;
   }, [data?.meta?.strategyTagsAvailable, strategy, season]);
 
-  // Reset default strategy flag when season/week changes
-  useEffect(() => {
-    defaultStrategySet.current = false;
-  }, [season, week]);
-
   // Pagination: whenever we change the underlying review scope, go back to page 1.
   useEffect(() => {
     setPage(1);
@@ -325,7 +320,10 @@ export default function WeekReviewPage() {
             <label className="block text-sm font-medium mb-1">Season</label>
             <select 
               value={season} 
-              onChange={(e) => setSeason(parseInt(e.target.value))}
+              onChange={(e) => {
+                defaultStrategySet.current = false;
+                setSeason(parseInt(e.target.value, 10));
+              }}
               className="border rounded px-3 py-2"
             >
               <option value={2024}>2024</option>
@@ -338,7 +336,10 @@ export default function WeekReviewPage() {
             <label className="block text-sm font-medium mb-1">Week</label>
             <select 
               value={week} 
-              onChange={(e) => setWeek(parseInt(e.target.value))}
+              onChange={(e) => {
+                defaultStrategySet.current = false;
+                setWeek(parseInt(e.target.value, 10));
+              }}
               className="border rounded px-3 py-2"
             >
               {Array.from({ length: 16 }, (_, i) => i + 1).map(w => (
@@ -353,6 +354,7 @@ export default function WeekReviewPage() {
               value={strategy || ''} 
               onChange={(e) => {
                 const val = e.target.value;
+                defaultStrategySet.current = true;
                 // Normalize empty string and "all" to empty for API
                 setStrategy(val === 'all' || val === '' ? '' : val);
               }}
