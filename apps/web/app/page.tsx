@@ -176,9 +176,12 @@ export default function HomePage() {
 
         {/* Header */}
         <div className="mb-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-4">
               <h1 className="text-3xl font-bold text-gray-900">Current Slate</h1>
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold tracking-wide bg-sky-100 text-sky-900 border border-sky-200">
+                LIVE / DYNAMIC
+              </span>
               <div className="relative group">
                 <button className="text-gray-400 hover:text-gray-600" type="button" aria-label="Slate glossary">
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
@@ -192,11 +195,17 @@ export default function HomePage() {
                 </div>
               </div>
             </div>
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <ProductionModelSelector
                 effectiveModel={slate ? effectiveModel : null}
                 heldModelIds={heldModelIds}
               />
+              <Link
+                href="/picks"
+                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium"
+              >
+                View Locked Official Card
+              </Link>
               <Link 
                 href={`/weeks?season=${slate?.season}&week=${slate?.week}`}
                 className="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm"
@@ -205,6 +214,16 @@ export default function HomePage() {
               </Link>
             </div>
           </div>
+
+          <p className="text-sm text-gray-700 mt-3 max-w-3xl">
+            This page recalculates recommendations from the current model and
+            available market snapshot. Picks and lines here may change. It is not
+            the locked Official Card.
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            Model selector changes this live view only. It does not alter the
+            locked Official Card.
+          </p>
           
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-2">
             <div className="text-sm text-gray-500">
@@ -291,21 +310,21 @@ export default function HomePage() {
             <div className="text-2xl font-bold text-green-600">{slate?.summary?.spreadTier?.A || 0}</div>
             <div className="text-sm text-gray-600 flex items-center gap-1">
               Spread Tier A
-              <InfoTooltip content="Games with a spread pick graded A." />
+              <InfoTooltip content="Games with a live spread recommendation graded A." />
             </div>
           </div>
           <div className="bg-white p-4 rounded-lg shadow">
             <div className="text-2xl font-bold text-yellow-600">{slate?.summary?.spreadTier?.B || 0}</div>
             <div className="text-sm text-gray-600 flex items-center gap-1">
               Spread Tier B
-              <InfoTooltip content="Games with a spread pick graded B." />
+              <InfoTooltip content="Games with a live spread recommendation graded B." />
             </div>
           </div>
           <div className="bg-white p-4 rounded-lg shadow">
             <div className="text-2xl font-bold text-red-600">{slate?.summary?.spreadTier?.C || 0}</div>
             <div className="text-sm text-gray-600 flex items-center gap-1">
               Spread Tier C
-              <InfoTooltip content="Games with a spread pick graded C." />
+              <InfoTooltip content="Games with a live spread recommendation graded C." />
             </div>
           </div>
         </div>

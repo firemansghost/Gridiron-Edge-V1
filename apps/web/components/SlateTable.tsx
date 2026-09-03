@@ -1341,8 +1341,8 @@ export default function SlateTable({
               {/* SPREAD columns */}
               <th className="px-6 py-3 text-center text-[11px] font-medium text-slate-500 border-l border-slate-200 min-w-[120px]">
                 <div className="flex items-center justify-center gap-1">
-                  Best
-                  <InfoTooltip content="The best available point spread from the betting market (prefers SGO source, then latest). Negative values mean the home team is favored." position="bottom" />
+                  Market
+                  <InfoTooltip content="Current stored market snapshot for this spread (not a locked closing line for upcoming games)." position="bottom" />
                 </div>
               </th>
               {showAdvancedColumns && (
@@ -1355,8 +1355,8 @@ export default function SlateTable({
                   </th>
                   <th className="px-6 py-3 text-center text-[11px] font-medium text-slate-500 min-w-[100px]">
                     <div className="flex items-center justify-center gap-1">
-                      Pick
-                      <InfoTooltip content="Model's pick against the spread. Shows which team to bet based on our spread prediction vs. the market." position="bottom" />
+                      Model Pick
+                      <InfoTooltip content="Current model recommendation against the spread versus the market snapshot. Not a locked Official Card wager." position="bottom" />
                     </div>
                   </th>
                   <th className="px-6 py-3 text-center text-[11px] font-medium text-slate-500 min-w-[80px]">
@@ -1370,8 +1370,8 @@ export default function SlateTable({
               {/* TOTAL columns */}
               <th className="px-6 py-3 text-center text-[11px] font-medium text-slate-500 border-l border-slate-200 min-w-[120px]">
                 <div className="flex items-center justify-center gap-1">
-                  Best
-                  <InfoTooltip content="The best available total points line from the betting market (prefers SGO source, then latest). This is the combined points both teams are expected to score." position="bottom" />
+                  Market
+                  <InfoTooltip content="Current stored market snapshot for this total (not a locked closing total for upcoming games)." position="bottom" />
                 </div>
               </th>
               {showAdvancedColumns && (
@@ -1387,8 +1387,8 @@ export default function SlateTable({
                   {!allGamesHaveNullTotals && (
                     <th className="px-6 py-3 text-center text-[11px] font-medium text-slate-500 min-w-[100px]">
                       <div className="flex items-center justify-center gap-1">
-                        Pick
-                        <InfoTooltip content="Model's pick for the total (over/under). Based on our total prediction vs. the market line." position="bottom" />
+                        Model Pick
+                        <InfoTooltip content="Current model recommendation for the total (over/under) versus the market snapshot. Not a locked Official Card wager." position="bottom" />
                       </div>
                     </th>
                   )}
@@ -1466,7 +1466,7 @@ export default function SlateTable({
                     <td className={`px-6 whitespace-nowrap text-center ${compactMode ? 'py-1.5' : 'py-3'}`}>
                       {getScoreDisplay(game)}
                     </td>
-                    {/* SPREAD: Best */}
+                    {/* SPREAD: Market snapshot */}
                     <td className={`px-6 whitespace-nowrap text-center border-l border-slate-200 ${compactMode ? 'py-1.5' : 'py-3'}`}>
                       {game.closingSpread ? (
                         <div className="text-center">
@@ -1519,7 +1519,7 @@ export default function SlateTable({
                         </td>
                       </>
                     )}
-                    {/* TOTAL: Best */}
+                    {/* TOTAL: Market snapshot */}
                     <td className={`px-6 whitespace-nowrap text-center border-l border-slate-200 ${compactMode ? 'py-1.5' : 'py-3'}`}>
                       {game.closingTotal ? (
                         <div className="text-center">

@@ -37,7 +37,7 @@ Sections below the current-state block retain useful preseason/phase chronology.
 
 All are **workflow_dispatch** only. No score/grading/TeamGameStat cron is authorized. TeamGameStat path is **prepared** — **not** production-run/authorized merely by merge.
 
-Phase **1A COMPLETE**. Direct public website grading / score-sync / demo-seed controls are retired. `/picks` is now persisted **Official Card** truth (`official_flat_100` Bet rows). **Current Slate** remains live/dynamic. **Core V1** remains official. **Hybrid V2** remains held.
+Phase **1A COMPLETE**. Phase **1B COMPLETE** — `/picks` is persisted locked Official Card truth (`official_flat_100` Bet rows). Phase **1C** adds explicit UI separation: **Current Slate** is the live/dynamic model-and-market view. **Core V1** remains official. **Hybrid V2** remains held.
 
 ### Workflow inventory (after 2C-2J-6D-2)
 
