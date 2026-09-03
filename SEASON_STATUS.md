@@ -3,7 +3,9 @@
 **Status:** 2026 season active (manual guarded production)  
 **Updated:** 2026-09-03 (Phase 4A COMPLETE — PR #91)
 
-**Production `main`:** `e8dfa90c4e3510a363694cfe6fb4605a00181361`
+**Verified production baseline entering this closeout:** `e8dfa90c4e3510a363694cfe6fb4605a00181361`
+
+This docs-only closeout PR will advance `main` when merged; the exact closeout merge SHA is intentionally not guessed in advance.
 
 Operator-facing current state for the active 2026 season. Complements `docs/2026-workflow-reactivation-matrix.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -18,7 +20,7 @@ Sections below the current-state block retain useful preseason/phase chronology.
 | Item | Status |
 |------|--------|
 | **Season** | **2026 active** |
-| **Production `main`** | `e8dfa90c4e3510a363694cfe6fb4605a00181361` |
+| **Verified Phase 4A production baseline** | `e8dfa90c4e3510a363694cfe6fb4605a00181361` (PR #91 merge) |
 | **Provider Week 1** | Opening **Aug. 29** tranche complete; remaining **Sep. 3–7** games are still pending on the **locked** Official Card |
 | **Effective production spread model** | **Core V1** (`official_flat_100`) — official |
 | **Hybrid V2** | **SHADOW / HELD / NOT OFFICIAL** |
