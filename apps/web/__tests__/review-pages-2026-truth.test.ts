@@ -7,6 +7,7 @@ import {
 } from '@/lib/review-truth-week';
 import {
   getDefaultReviewStrategyTag,
+  getPreferredReviewStrategyTagForSeason,
   preserveExplicitReviewStrategyRequest,
   resolveReviewStrategyAfterAvailability,
   resolveReviewStrategySelection,
@@ -44,6 +45,53 @@ describe('Phase 2A review-truth: defaults + metrics', () => {
       expect(
         getDefaultReviewStrategyTag(2026, ['demo_seed', 'test_grader', 'experimental_x'])
       ).toBe('all');
+    });
+  });
+
+  describe('getPreferredReviewStrategyTagForSeason', () => {
+    it('prefers official_flat_100 for 2026+ before availability is known', () => {
+      expect(getPreferredReviewStrategyTagForSeason(2026)).toBe('official_flat_100');
+      expect(getPreferredReviewStrategyTagForSeason(2027)).toBe('official_flat_100');
+    });
+
+    it('prefers hybrid_v2 for historical seasons <= 2025', () => {
+      expect(getPreferredReviewStrategyTagForSeason(2025)).toBe('hybrid_v2');
+      expect(getPreferredReviewStrategyTagForSeason(2024)).toBe('hybrid_v2');
+    });
+  });
+
+  describe('cross-season availability validation', () => {
+    it('keeps 2025 hybrid_v2 when persisted', () => {
+      expect(
+        resolveReviewStrategyAfterAvailability('hybrid_v2', 2025, [
+          'hybrid_v2',
+          'official_flat_100',
+        ])
+      ).toBe('hybrid_v2');
+    });
+
+    it('falls back to official_flat_100 when 2025 hybrid is missing', () => {
+      expect(
+        resolveReviewStrategyAfterAvailability('hybrid_v2', 2025, ['official_flat_100'])
+      ).toBe('official_flat_100');
+    });
+
+    it('keeps 2026 official_flat_100 when persisted', () => {
+      expect(
+        resolveReviewStrategyAfterAvailability('official_flat_100', 2026, [
+          'official_flat_100',
+          'hybrid_v2',
+        ])
+      ).toBe('official_flat_100');
+    });
+
+    it('falls back to valid non-demo non-hybrid when 2026 official is missing', () => {
+      expect(
+        resolveReviewStrategyAfterAvailability('official_flat_100', 2026, [
+          'hybrid_v2',
+          'v4_labs',
+        ])
+      ).toBe('v4_labs');
     });
   });
 
@@ -271,14 +319,36 @@ describe('Phase 2A review-truth: static UI/API gates', () => {
   });
 
   it('resets Week Review strategy default only on user season/week changes', () => {
+    expect(weekReviewPage).toContain('getPreferredReviewStrategyTagForSeason');
     expect(weekReviewPage).toMatch(
-      /defaultStrategySet\.current = false;\s*setSeason\(parseInt\(e\.target\.value/
+      /const nextSeason = parseInt\(e\.target\.value, 10\);\s*const preferred = getPreferredReviewStrategyTagForSeason\(nextSeason\);/
     );
     expect(weekReviewPage).toMatch(
-      /defaultStrategySet\.current = false;\s*setWeek\(parseInt\(e\.target\.value/
+      /setData\(null\);\s*setPage\(1\);\s*setStrategy\(reviewStrategyToWeekReviewState\(preferred\)\);\s*defaultStrategySet\.current = true;\s*setSeason\(nextSeason\);/
+    );
+    expect(weekReviewPage).toMatch(
+      /const preferred = getPreferredReviewStrategyTagForSeason\(season\);/
+    );
+    expect(weekReviewPage).toMatch(
+      /setData\(null\);\s*setPage\(1\);\s*setStrategy\(reviewStrategyToWeekReviewState\(preferred\)\);\s*defaultStrategySet\.current = true;\s*setWeek\(nextWeek\);/
     );
     expect(weekReviewPage).toMatch(
       /defaultStrategySet\.current = true;\s*\/\/ Normalize empty string and "all" to empty for API/
+    );
+  });
+
+  it('applies provisional preferred strategy on Week Review manual cross-season change', () => {
+    expect(getPreferredReviewStrategyTagForSeason(2025)).toBe('hybrid_v2');
+    expect(getPreferredReviewStrategyTagForSeason(2026)).toBe('official_flat_100');
+    expect(weekReviewPage).toContain(
+      'const preferred = getPreferredReviewStrategyTagForSeason(nextSeason)'
+    );
+    expect(weekReviewPage).toContain('setData(null)');
+    expect(weekReviewPage).toContain(
+      'setStrategy(reviewStrategyToWeekReviewState(preferred))'
+    );
+    expect(weekReviewPage).not.toMatch(
+      /defaultStrategySet\.current = false;\s*setSeason\(parseInt\(e\.target\.value/
     );
   });
 
@@ -293,11 +363,30 @@ describe('Phase 2A review-truth: static UI/API gates', () => {
     expect(seasonReviewPage).toContain('[paramsReady, season, strategyTag, selectedMarket]');
     expect(seasonReviewPage).not.toContain('}, [season, strategyTag, selectedMarket]);');
     expect(seasonReviewPage).toContain('preserveExplicitReviewStrategyRequest(strategyParam)');
+    expect(seasonReviewPage).toContain('getPreferredReviewStrategyTagForSeason');
     expect(seasonReviewPage).toMatch(
-      /defaultStrategySet\.current = false;\s*setSeason\(parseInt\(e\.target\.value/
+      /const nextSeason = parseInt\(e\.target\.value, 10\);\s*const preferred = getPreferredReviewStrategyTagForSeason\(nextSeason\);/
+    );
+    expect(seasonReviewPage).toMatch(
+      /setData\(null\);\s*setStrategyTag\(preferred\);\s*defaultStrategySet\.current = true;\s*setSeason\(nextSeason\);/
     );
     expect(seasonReviewPage).toMatch(
       /defaultStrategySet\.current = true;\s*setStrategyTag\(e\.target\.value\)/
+    );
+  });
+
+  it('applies provisional preferred strategy on Season Review manual cross-season change', () => {
+    const seasonReviewPage = fs.readFileSync(
+      path.join(webRoot, 'app/season-review/page.tsx'),
+      'utf8'
+    );
+    expect(seasonReviewPage).toContain(
+      'const preferred = getPreferredReviewStrategyTagForSeason(nextSeason)'
+    );
+    expect(seasonReviewPage).toContain('setStrategyTag(preferred)');
+    expect(seasonReviewPage).toContain('setData(null)');
+    expect(seasonReviewPage).not.toMatch(
+      /defaultStrategySet\.current = false;\s*setSeason\(parseInt\(e\.target\.value/
     );
   });
 

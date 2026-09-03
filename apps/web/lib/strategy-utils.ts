@@ -77,6 +77,20 @@ export function getDefaultReviewStrategyTag(
   return 'all';
 }
 
+/**
+ * Provisional preferred review strategy for a season before persisted
+ * strategyTagsAvailable is known (e.g. after a manual cross-season change).
+ *
+ * - season >= 2026 -> official_flat_100
+ * - season <= 2025 -> hybrid_v2
+ *
+ * Does NOT replace getDefaultReviewStrategyTag. After fresh availability
+ * arrives, resolveReviewStrategyAfterAvailability remains authoritative.
+ */
+export function getPreferredReviewStrategyTagForSeason(season: number): string {
+  return season >= 2026 ? 'official_flat_100' : 'hybrid_v2';
+}
+
 const EXPLICIT_REVIEW_STRATEGY_TAGS = new Set([
   'hybrid_v2',
   'official_flat_100',

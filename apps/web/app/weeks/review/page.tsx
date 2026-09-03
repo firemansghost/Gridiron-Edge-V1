@@ -7,6 +7,7 @@ import { Footer } from '@/components/Footer';
 import {
   getStrategyLabel,
   getDefaultReviewStrategyTag,
+  getPreferredReviewStrategyTagForSeason,
   preserveExplicitReviewStrategyRequest,
   resolveReviewStrategyAfterAvailability,
   reviewStrategyToWeekReviewState,
@@ -321,8 +322,13 @@ export default function WeekReviewPage() {
             <select 
               value={season} 
               onChange={(e) => {
-                defaultStrategySet.current = false;
-                setSeason(parseInt(e.target.value, 10));
+                const nextSeason = parseInt(e.target.value, 10);
+                const preferred = getPreferredReviewStrategyTagForSeason(nextSeason);
+                setData(null);
+                setPage(1);
+                setStrategy(reviewStrategyToWeekReviewState(preferred));
+                defaultStrategySet.current = true;
+                setSeason(nextSeason);
               }}
               className="border rounded px-3 py-2"
             >
@@ -337,8 +343,13 @@ export default function WeekReviewPage() {
             <select 
               value={week} 
               onChange={(e) => {
-                defaultStrategySet.current = false;
-                setWeek(parseInt(e.target.value, 10));
+                const nextWeek = parseInt(e.target.value, 10);
+                const preferred = getPreferredReviewStrategyTagForSeason(season);
+                setData(null);
+                setPage(1);
+                setStrategy(reviewStrategyToWeekReviewState(preferred));
+                defaultStrategySet.current = true;
+                setWeek(nextWeek);
               }}
               className="border rounded px-3 py-2"
             >

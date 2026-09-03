@@ -17,6 +17,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import {
   getStrategyLabel,
   getDefaultReviewStrategyTag,
+  getPreferredReviewStrategyTagForSeason,
   preserveExplicitReviewStrategyRequest,
   resolveReviewStrategyAfterAvailability,
 } from '@/lib/strategy-utils';
@@ -239,8 +240,12 @@ export default function SeasonReviewPage() {
                 <select
                   value={season}
                   onChange={(e) => {
-                    defaultStrategySet.current = false;
-                    setSeason(parseInt(e.target.value, 10));
+                    const nextSeason = parseInt(e.target.value, 10);
+                    const preferred = getPreferredReviewStrategyTagForSeason(nextSeason);
+                    setData(null);
+                    setStrategyTag(preferred);
+                    defaultStrategySet.current = true;
+                    setSeason(nextSeason);
                   }}
                   className="border rounded px-3 py-2"
                 >
