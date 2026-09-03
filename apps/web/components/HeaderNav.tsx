@@ -34,8 +34,8 @@ export function HeaderNav() {
 
           {/* Center: Navigation Links */}
           <div className="hidden md:flex items-center space-x-1">
-            <Link href="/picks" className={linkClass('/picks')} title="View all active spread bets for this week">
-              My Picks
+            <Link href="/picks" className={linkClass('/picks')} title="View the persisted Official Card for this week">
+              Official Card
             </Link>
             <Link href="/" className={linkClass('/')} title="View current week's slate of games">
               Current Slate
@@ -81,8 +81,8 @@ export function HeaderNav() {
         {/* Mobile Navigation */}
         <div className="md:hidden pb-3">
           <div className="flex flex-wrap gap-2">
-            <Link href="/picks" className={linkClass('/picks')} title="View all active spread bets for this week">
-              My Picks
+            <Link href="/picks" className={linkClass('/picks')} title="View the persisted Official Card for this week">
+              Official Card
             </Link>
             <Link href="/" className={linkClass('/')} title="View current week's slate of games">
               Current Slate
