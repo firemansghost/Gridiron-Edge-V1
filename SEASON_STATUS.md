@@ -4,7 +4,7 @@
 **Updated:** 2026-09-03 (Phase 2 closeout — PR #88 Week Archive production-verified)  
 **Production `main`:** `9b6b97b362c52f64b2ceec2b09d2b11b4c98b663`
 
-Operator-facing current state for the active 2026 season. Complements `STATUS.md`, `HANDOFF.md`, `docs/2026-workflow-reactivation-matrix.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
+Operator-facing current state for the active 2026 season. Complements `docs/2026-workflow-reactivation-matrix.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
 Sections below the current-state block retain useful preseason/phase chronology. Treat dated **NOT AUTHORIZED** language in those historical notes as phase archaeology unless restated above.
 
