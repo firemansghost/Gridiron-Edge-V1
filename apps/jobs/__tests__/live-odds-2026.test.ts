@@ -1663,3 +1663,103 @@ describe('2C-2J-2A production Odds aliases from team_aliases.yml', () => {
     expect(cal.method).toBe('alias');
   });
 });
+
+describe('Week 1 Maryland Terrapins alias repair (Hampton FCS nonblocking)', () => {
+  it('"Maryland Terrapins" and "Maryland" resolve to canonical FBS teamId maryland', () => {
+    const yaml = require('js-yaml') as typeof import('js-yaml');
+    const aliasDoc = yaml.load(
+      fs.readFileSync(
+        path.join(ROOT, 'apps/jobs/config/team_aliases.yml'),
+        'utf8'
+      )
+    ) as { aliases: Record<string, string> };
+
+    expect(aliasDoc.aliases['Maryland']).toBe('maryland');
+    expect(aliasDoc.aliases['Maryland Terrapins']).toBe('maryland');
+    expect(aliasDoc.aliases['Hampton']).toBeUndefined();
+    expect(aliasDoc.aliases['Hampton Pirates']).toBeUndefined();
+
+    const fbsSlugs = new Set(
+      JSON.parse(
+        fs.readFileSync(
+          path.join(ROOT, 'apps/jobs/config/fbs_slugs.json'),
+          'utf8'
+        )
+      ) as string[]
+    );
+    expect(fbsSlugs.has('maryland')).toBe(true);
+    expect(fbsSlugs.has('hampton')).toBe(false);
+
+    const { TeamResolver } = require('../adapters/TeamResolver') as typeof import('../adapters/TeamResolver');
+    const resolver = new TeamResolver();
+    const maryland = resolver.resolveTeamDetailed('Maryland Terrapins', 'NCAAF');
+    expect(maryland.teamId).toBe('maryland');
+    expect(maryland.method).toBe('alias');
+    expect(maryland.method).not.toBe('fuzzy');
+
+    const plain = resolver.resolveTeamDetailed('Maryland', 'NCAAF');
+    expect(plain.teamId).toBe('maryland');
+    expect(plain.method).toBe('alias');
+
+    const hampton = resolver.resolveTeamDetailed('Hampton Pirates', 'NCAAF');
+    expect(hampton.teamId).toBeNull();
+  });
+
+  it('Maryland Terrapins vs Hampton Pirates with no nearby Maryland FBS-vs-FBS Game is out_of_scope_fbs_fcs', () => {
+    const { TeamResolver } = require('../adapters/TeamResolver') as typeof import('../adapters/TeamResolver');
+    const resolver = new TeamResolver();
+    const resolveTeam = (name: string) =>
+      resolver.resolveTeamDetailed(name, 'NCAAF');
+
+    const ids = fbsIds();
+    ids[134] = 'maryland';
+    const games = week1Games(ids);
+    const fbsTeamIds = new Set(ids);
+
+    const diag = classifyProviderEvent({
+      event: {
+        home_team: 'Maryland Terrapins',
+        away_team: 'Hampton Pirates',
+        commence_time: WK1_DATE,
+      },
+      week: 1,
+      fbsTeamIds,
+      requestedWeekGames: games,
+      seasonGames: games,
+      resolveTeam,
+    });
+    expect(diag.homeTeamId).toBe('maryland');
+    expect(diag.awayTeamId).toBeNull();
+    expect(diag.classification).toBe('out_of_scope_fbs_fcs');
+    expect(diag.classification).not.toBe('unresolved_expected_fbs');
+    expect(diag.detail).toMatch(/no authoritative FBS-vs-FBS Game/i);
+
+    const plan = buildLiveOddsPlan({
+      season: 2026,
+      week: 1,
+      mode: 'PREVIEW',
+      fbsTeamIds: ids,
+      requestedWeekGames: games,
+      seasonGames: games,
+      providerEvents: [
+        {
+          home_team: 'Maryland Terrapins',
+          away_team: 'Hampton Pirates',
+          commence_time: WK1_DATE,
+          bookmakers: [],
+        },
+      ],
+      providerCalls: 1,
+      providerUsage: {
+        requestsLast: '1',
+        requestsUsed: null,
+        requestsRemaining: null,
+      },
+      existingRows: [],
+      resolveTeam,
+    });
+    expect(plan.eventCounts.out_of_scope_fbs_fcs).toBe(1);
+    expect(plan.eventCounts.unresolved_expected_fbs).toBe(0);
+    expect(plan.writeSafe).toBe(true);
+  });
+});

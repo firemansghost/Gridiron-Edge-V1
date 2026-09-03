@@ -265,6 +265,10 @@ aliases:
   "Western Kentucky Hilltoppers": western-kentucky
   "California Golden Bears": california
 
+  # 2026 Week 1 live Odds — Maryland is FBS; Hampton is FCS and must not be aliased
+  "Maryland": maryland
+  "Maryland Terrapins": maryland
+
 # FCS/Non-FBS denylist - these teams should be rejected
 # NOTE: "Delaware Blue Hens" and "Missouri State Bears" removed - these teams are FBS in 2025
 denylist:
