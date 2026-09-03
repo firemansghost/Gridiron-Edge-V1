@@ -19,6 +19,7 @@ import {
   WEEK_ARCHIVE_SOURCE,
   WEEK_ARCHIVE_STRATEGY_TAG,
   buildWeekArchiveBetWhere,
+  WeekArchiveIntegrityError,
   buildWeekArchiveView,
   parseWeekArchiveSeasonParam,
   parseWeekArchiveWeekParam,
@@ -205,12 +206,17 @@ describe('Phase 2B Week Archive query contract', () => {
 describe('Phase 2B Week Archive game frame', () => {
   it('returns every persisted Game, including the no-wager game', () => {
     const { games, bets } = buildWeek1ReferenceFixture();
-    const view = buildWeekArchiveView(games, bets, 2026);
+    const view = buildWeekArchiveView(games, bets, 2026, 1);
     expect(view.games).toHaveLength(51);
-    expect(view.summary.gamesScheduled).toBe(51);
+    expect(view.summary.totalGames).toBe(51);
+    expect(view.summary.gamesScheduled).toBe(43);
+    expect(view.summary.gamesFinal).toBe(8);
+    expect(view.summary.gamesInProgress).toBe(0);
     expect(view.summary.officialGames).toBe(50);
     expect(view.summary.gamesWithoutOfficialWager).toBe(1);
     expect(view.summary.totalBets).toBe(98);
+    const attachedMarkets = view.games.reduce((count, game) => count + game.markets.length, 0);
+    expect(attachedMarkets).toBe(view.summary.totalBets);
 
     const noWager = view.games.find((game) => game.gameId === 'g51');
     expect(noWager).toBeDefined();
@@ -223,7 +229,7 @@ describe('Phase 2B Week Archive game frame', () => {
   it('sorts games by kickoff ascending', () => {
     const early = makeGame('early', { away: 'A', home: 'B' }, 'scheduled', '2026-08-29T12:00:00.000Z');
     const late = makeGame('late', { away: 'C', home: 'D' }, 'scheduled', '2026-08-30T12:00:00.000Z');
-    const view = buildWeekArchiveView([late, early], [], 2026);
+    const view = buildWeekArchiveView([late, early], [], 2026, 1);
     expect(view.games.map((game) => game.gameId)).toEqual(['early', 'late']);
   });
 });
@@ -235,8 +241,8 @@ describe('Phase 2B Week Archive integrity and filtering', () => {
       makeBet(game, { id: 'a', marketType: 'spread', side: 'home' }),
       makeBet(game, { id: 'b', marketType: 'spread', side: 'away' }),
     ];
-    expect(() => buildWeekArchiveView([game], rows, 2026)).toThrow(OfficialCardIntegrityError);
-    expect(() => buildWeekArchiveView([game], rows, 2026)).toThrow(/duplicate official rows/i);
+    expect(() => buildWeekArchiveView([game], rows, 2026, 1)).toThrow(OfficialCardIntegrityError);
+    expect(() => buildWeekArchiveView([game], rows, 2026, 1)).toThrow(/duplicate official rows/i);
   });
 
   it('excludes hybrid and non-strategy_run rows from the canonical archive', () => {
@@ -248,16 +254,45 @@ describe('Phase 2B Week Archive integrity and filtering', () => {
     ];
     const selected = selectWeekArchiveOfficialRows(rows, 2026);
     expect(selected.map((row) => row.id)).toEqual(['official']);
-    const view = buildWeekArchiveView([game], rows, 2026);
+    const view = buildWeekArchiveView([game], rows, 2026, 1);
     expect(view.summary.totalBets).toBe(1);
     expect(view.games[0].markets).toHaveLength(1);
+  });
+
+  it('fails closed when an official Bet gameId is absent from the selected Game frame', () => {
+    const inFrame = makeGame('g1', { away: 'Away', home: 'Home' });
+    const missing = makeGame('missing', { away: 'Ghost', home: 'Team' });
+    const rows = [makeBet(missing, { id: 'orphan', marketType: 'spread', side: 'away' })];
+    expect(() => buildWeekArchiveView([inFrame], rows, 2026, 1)).toThrow(WeekArchiveIntegrityError);
+    expect(() => buildWeekArchiveView([inFrame], rows, 2026, 1)).toThrow(
+      /outside the selected game frame/i
+    );
+  });
+
+  it('fails closed when an official Bet week does not match the requested archive week', () => {
+    const game = makeGame('g1', { away: 'Away', home: 'Home' });
+    const rows = [
+      makeBet(game, {
+        id: 'wrong-week',
+        marketType: 'spread',
+        side: 'away',
+        week: 2,
+        game: { ...gameForBet(game), week: 2 },
+      }),
+    ];
+    expect(() => buildWeekArchiveView([game], rows, 2026, 1)).toThrow(WeekArchiveIntegrityError);
+    expect(() => buildWeekArchiveView([game], rows, 2026, 1)).toThrow(/week does not match/i);
   });
 });
 
 describe('Phase 2B Week Archive Week 1 metrics', () => {
   it('matches the Week 1 official reference counts and ROI', () => {
     const { games, bets } = buildWeek1ReferenceFixture();
-    const view = buildWeekArchiveView(games, bets, 2026);
+    const view = buildWeekArchiveView(games, bets, 2026, 1);
+    expect(view.summary.totalGames).toBe(51);
+    expect(view.summary.gamesScheduled).toBe(43);
+    expect(view.summary.gamesFinal).toBe(8);
+    expect(view.summary.gamesInProgress).toBe(0);
     expect(view.summary.totalBets).toBe(98);
     expect(view.summary.officialGames).toBe(50);
     expect(view.summary.spreadBets).toBe(50);
@@ -272,6 +307,9 @@ describe('Phase 2B Week Archive Week 1 metrics', () => {
     expect(view.summary.totalPnL).toBeCloseTo(-223.768421, 6);
     expect(view.summary.roi).toBeCloseTo(-0.159834586, 9);
     expect(view.summary.hitRate).toBeCloseTo(6 / 14, 10);
+    const attachedMarkets = view.games.reduce((count, game) => count + game.markets.length, 0);
+    expect(attachedMarkets).toBe(98);
+    expect(view.summary.totalBets).toBe(attachedMarkets);
   });
 });
 
@@ -290,7 +328,7 @@ describe('Phase 2B Week Archive persisted truth', () => {
       pnl: -100,
       clv: -1.5,
     });
-    const view = buildWeekArchiveView([game], [bet], 2026);
+    const view = buildWeekArchiveView([game], [bet], 2026, 1);
     const wager = view.games[0].markets[0];
     expect(wager.result).toBe('loss');
     expect(wager.pnl).toBe(-100);
@@ -307,7 +345,7 @@ describe('Phase 2B Week Archive persisted truth', () => {
       closePrice: 6.5,
       notes: 'not-valid-notes {grade:A}',
     });
-    const view = buildWeekArchiveView([game], [bet], 2026);
+    const view = buildWeekArchiveView([game], [bet], 2026, 1);
     const wager = view.games[0].markets[0];
     expect(wager.pickLabel).toBe('Away +6.5');
     expect(wager.notesMeta.metadataAvailable).toBe(false);
@@ -328,7 +366,7 @@ describe('Phase 2B Week Archive persisted truth', () => {
       pnl: 0,
       clv: 0,
     });
-    const view = buildWeekArchiveView([game], [bet], 2026);
+    const view = buildWeekArchiveView([game], [bet], 2026, 1);
     const wager = view.games[0].markets[0];
     expect(wager.closePrice).toBe(0);
     expect(wager.pickLabel).toBe('Away PK');
@@ -345,7 +383,7 @@ describe('Phase 2B Week Archive persisted truth', () => {
       closePrice: 200,
       modelPrice: 189,
     });
-    const view = buildWeekArchiveView([game], [bet], 2026);
+    const view = buildWeekArchiveView([game], [bet], 2026, 1);
     const wager = view.games[0].markets[0];
     expect(wager.pickLabel).toBe('Colorado +200');
     expect(wager.lockedLineLabel).toBe('+200');
@@ -360,7 +398,7 @@ describe('Phase 2B Week Archive persisted truth', () => {
       side: 'away',
       result: null,
     });
-    const view = buildWeekArchiveView([game], [bet], 2026);
+    const view = buildWeekArchiveView([game], [bet], 2026, 1);
     expect(view.games[0].markets[0].awaitingGrading).toBe(true);
   });
 
@@ -374,7 +412,7 @@ describe('Phase 2B Week Archive persisted truth', () => {
       modelPrice: 4,
       notes: 'book=DraftKings; edgePts=2.5; grade=C; model=Core V1; marketTimestamp=2026-08-29T16:00:00.000Z',
     });
-    const view = buildWeekArchiveView([game], [bet], 2026);
+    const view = buildWeekArchiveView([game], [bet], 2026, 1);
     const meta = view.games[0].markets[0].notesMeta;
     expect(meta.metadataAvailable).toBe(true);
     expect(meta.grade).toBe('C');
@@ -404,6 +442,10 @@ describe('Phase 2B Week Archive static API/page gates', () => {
     expect(route).toContain('weekArchiveGamePrismaSelect()');
     expect(route).toContain('status: 409');
     expect(route).toContain('Week archive data integrity error');
+    expect(route).toContain('WeekArchiveIntegrityError');
+    expect(route).toContain('buildWeekArchiveView(');
+    expect(route).toContain('season,');
+    expect(route).toContain('week');
   });
 
   it('does not use MarketLine, MatchupOutput, or live pick/model calculation', () => {
@@ -427,6 +469,9 @@ describe('Phase 2B Week Archive static API/page gates', () => {
   });
 
   it('does not hardcode Week 1 reference counts in runtime archive code', () => {
+    expect(helper).toContain('assertWeekArchiveFrameIntegrity');
+    expect(helper).toContain("status === 'scheduled'");
+    expect(helper).toContain('totalGames: games.length');
     expect(helper).not.toMatch(/\b51\b/);
     expect(helper).not.toContain('North Carolina');
     expect(helper).not.toContain('TCU');
@@ -464,6 +509,10 @@ describe('Phase 2B Week Archive static API/page gates', () => {
     expect(page).toContain('if (!paramsReady) return');
     expect(page).toContain('option value={2026}');
     expect(page).toContain('Array.from({ length: 16 }');
+    expect(page).toContain('archiveSummary.totalGames');
+    expect(page).toContain('>Games<');
+    expect(page).toContain('>Scheduled<');
+    expect(page).not.toContain('Games scheduled');
   });
 
   it('does not render SlateTable for 2026 archive mode', () => {

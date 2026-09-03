@@ -385,7 +385,8 @@ function WeekPageContent() {
               <div className="bg-white p-6 rounded-lg shadow">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Archive Summary</h3>
                 <div className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="text-gray-600">Games scheduled</span><span className="font-semibold">{archiveSummary.gamesScheduled}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">Games</span><span className="font-semibold">{archiveSummary.totalGames}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">Scheduled</span><span className="font-semibold">{archiveSummary.gamesScheduled}</span></div>
                   <div className="flex justify-between"><span className="text-gray-600">Final</span><span className="font-semibold">{archiveSummary.gamesFinal}</span></div>
                   <div className="flex justify-between"><span className="text-gray-600">In progress</span><span className="font-semibold">{archiveSummary.gamesInProgress}</span></div>
                   <div className="flex justify-between"><span className="text-gray-600">Official games</span><span className="font-semibold">{archiveSummary.officialGames}</span></div>

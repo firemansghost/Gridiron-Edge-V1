@@ -24,6 +24,26 @@ export const WEEK_ARCHIVE_SOURCE = OFFICIAL_CARD_SOURCE;
 export const WEEK_ARCHIVE_NO_WAGER_MESSAGE = 'No official wager';
 export const WEEK_ARCHIVE_AWAITING_GRADING = 'Awaiting grading';
 
+export interface WeekArchiveIntegrityIssue {
+  betId: string;
+  gameId: string;
+  reasons: string[];
+}
+
+export class WeekArchiveIntegrityError extends Error {
+  readonly issues: WeekArchiveIntegrityIssue[];
+
+  constructor(issues: WeekArchiveIntegrityIssue[]) {
+    const details = issues
+      .map((issue) => `${issue.betId}/${issue.gameId}: ${issue.reasons.join('; ')}`)
+      .join(', ');
+    super(`official bet is outside the selected game frame (${details})`);
+    this.name = 'WeekArchiveIntegrityError';
+    this.issues = issues;
+    Object.setPrototypeOf(this, WeekArchiveIntegrityError.prototype);
+  }
+}
+
 export function buildWeekArchiveBetWhere(season: number, week: number) {
   return {
     season,
@@ -91,6 +111,7 @@ export interface WeekArchiveGameView extends OfficialCardGameView {
 }
 
 export interface WeekArchiveSummary {
+  totalGames: number;
   gamesScheduled: number;
   gamesFinal: number;
   gamesInProgress: number;
@@ -210,16 +231,19 @@ function summarizeWeekArchiveFrame(
   officialGameCount: number,
   betSummary: ReturnType<typeof summarizeWeekArchiveBets>
 ): WeekArchiveSummary {
+  let gamesScheduled = 0;
   let gamesFinal = 0;
   let gamesInProgress = 0;
   for (const game of games) {
     const status = String(game.status);
     if (status === 'final') gamesFinal += 1;
     else if (status === 'in_progress') gamesInProgress += 1;
+    else if (status === 'scheduled') gamesScheduled += 1;
   }
 
   return {
-    gamesScheduled: games.length,
+    totalGames: games.length,
+    gamesScheduled,
     gamesFinal,
     gamesInProgress,
     officialGames: officialGameCount,
@@ -228,16 +252,69 @@ function summarizeWeekArchiveFrame(
   };
 }
 
+export function assertWeekArchiveFrameIntegrity(
+  games: WeekArchiveGameInput[],
+  official: OfficialCardBetInput[],
+  season: number,
+  week: number
+): void {
+  const gameById = new Map(games.map((game) => [game.id, game]));
+  const issues: WeekArchiveIntegrityIssue[] = [];
+
+  for (const row of official) {
+    const reasons: string[] = [];
+    const frameGame = gameById.get(row.gameId);
+
+    if (row.season !== season) {
+      reasons.push('bet season does not match the archive season');
+    }
+    if (row.week !== week) {
+      reasons.push('bet week does not match the archive week');
+    }
+    if (!frameGame) {
+      reasons.push('gameId is not in the selected Game frame');
+    }
+    if (row.game) {
+      if (row.game.season !== season) {
+        reasons.push('nested game season does not match the archive season');
+      }
+      if (row.game.week !== week) {
+        reasons.push('nested game week does not match the archive week');
+      }
+      if (
+        frameGame &&
+        (row.game.season !== frameGame.season || row.game.week !== frameGame.week)
+      ) {
+        reasons.push('nested game season/week does not match the frame game');
+      }
+    }
+
+    if (reasons.length > 0) {
+      issues.push({
+        betId: row.id,
+        gameId: row.gameId,
+        reasons,
+      });
+    }
+  }
+
+  if (issues.length > 0) {
+    throw new WeekArchiveIntegrityError(issues);
+  }
+}
+
 export function buildWeekArchiveView(
   games: WeekArchiveGameInput[],
   bets: OfficialCardBetInput[],
-  season: number
+  season: number,
+  week: number
 ): {
   summary: WeekArchiveSummary;
   games: WeekArchiveGameView[];
 } {
   const official = selectWeekArchiveOfficialRows(bets, season);
   assertOfficialCardIntegrity(official);
+  assertWeekArchiveFrameIntegrity(games, official, season, week);
 
   const wagersByGame: Record<string, OfficialCardWager[]> = {};
   for (const row of official) {

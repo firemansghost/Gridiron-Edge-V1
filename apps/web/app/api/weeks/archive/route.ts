@@ -14,6 +14,7 @@ import { prisma } from '@/lib/prisma';
 import { OfficialCardIntegrityError, officialCardPrismaSelect, type OfficialCardBetInput } from '@/lib/official-card';
 import {
   WEEK_ARCHIVE_MIN_SEASON,
+  WeekArchiveIntegrityError,
   buildWeekArchiveBetWhere,
   buildWeekArchiveView,
   parseWeekArchiveSeasonParam,
@@ -59,7 +60,8 @@ export async function GET(request: NextRequest) {
     const { summary, games } = buildWeekArchiveView(
       gameRows as unknown as WeekArchiveGameInput[],
       betRows as unknown as OfficialCardBetInput[],
-      season
+      season,
+      week
     );
 
     return NextResponse.json({
@@ -76,6 +78,16 @@ export async function GET(request: NextRequest) {
           ok: false,
           error: `Week archive data integrity error: ${error.message}`,
           duplicates: error.duplicates,
+        },
+        { status: 409 }
+      );
+    }
+    if (error instanceof WeekArchiveIntegrityError) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Week archive data integrity error: ${error.message}`,
+          issues: error.issues,
         },
         { status: 409 }
       );
