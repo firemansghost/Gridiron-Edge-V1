@@ -23,6 +23,9 @@ CREATE TYPE "ShadowQualificationStatus" AS ENUM ('QUALIFIED', 'NOT_QUALIFIED', '
 -- CreateEnum
 CREATE TYPE "ShadowAtsResult" AS ENUM ('WIN', 'LOSS', 'PUSH', 'NOT_APPLICABLE', 'UNAVAILABLE');
 
+-- CreateEnum
+CREATE TYPE "ShadowMarketType" AS ENUM ('SPREAD');
+
 -- CreateTable
 CREATE TABLE "shadow_capture_runs" (
     "id" TEXT NOT NULL,
@@ -116,6 +119,7 @@ CREATE TABLE "shadow_closing_market_snapshots" (
     "evaluation_protocol" TEXT NOT NULL,
     "policy_definition_id" TEXT NOT NULL,
     "policy_definition_hash" TEXT NOT NULL,
+    "market_type" "ShadowMarketType" NOT NULL,
     "target_timestamp" TIMESTAMP(3) NOT NULL,
     "status" "ShadowAvailabilityStatus" NOT NULL,
     "unavailable_reason" TEXT,
@@ -212,7 +216,7 @@ CREATE INDEX "shadow_closing_market_snapshots_policy_definition_hash_idx" ON "sh
 CREATE INDEX "shadow_closing_market_snapshots_status_idx" ON "shadow_closing_market_snapshots"("status");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "shadow_closing_market_snapshots_identity_key" ON "shadow_closing_market_snapshots"("game_id", "evaluation_protocol", "policy_definition_hash", "target_timestamp");
+CREATE UNIQUE INDEX "shadow_closing_market_snapshots_identity_key" ON "shadow_closing_market_snapshots"("game_id", "evaluation_protocol", "policy_definition_hash", "market_type", "target_timestamp");
 
 -- CreateIndex
 CREATE INDEX "shadow_evaluation_results_prediction_snapshot_id_idx" ON "shadow_evaluation_results"("prediction_snapshot_id");

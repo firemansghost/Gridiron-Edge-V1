@@ -1005,6 +1005,10 @@ enum ShadowAtsResult {
   UNAVAILABLE
 }
 
+enum ShadowMarketType {
+  SPREAD
+}
+
 model ShadowCaptureRun {
   id                             String                     @id @default(cuid())
   season                         Int
@@ -1118,6 +1122,7 @@ model ShadowClosingMarketSnapshot {
   evaluationProtocol         String                   @map("evaluation_protocol")
   policyDefinitionId         String                   @map("policy_definition_id")
   policyDefinitionHash       String                   @map("policy_definition_hash")
+  marketType                 ShadowMarketType         @map("market_type")
   targetTimestamp            DateTime                 @map("target_timestamp")
   status                     ShadowAvailabilityStatus
   unavailableReason          String?                  @map("unavailable_reason")
@@ -1132,7 +1137,7 @@ model ShadowClosingMarketSnapshot {
   createdAt                  DateTime                 @default(now()) @map("created_at")
   evaluations                ShadowEvaluationResult[]
 
-  @@unique([gameId, evaluationProtocol, policyDefinitionHash, targetTimestamp], map: "shadow_closing_market_snapshots_identity_key")
+  @@unique([gameId, evaluationProtocol, policyDefinitionHash, marketType, targetTimestamp], map: "shadow_closing_market_snapshots_identity_key")
   @@index([gameId])
   @@index([targetTimestamp])
   @@index([policyDefinitionHash])
