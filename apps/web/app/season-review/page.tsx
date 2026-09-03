@@ -16,8 +16,10 @@ import { Footer } from '@/components/Footer';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import {
   getStrategyLabel,
-  getDefaultStrategyTag,
-  resolveReviewStrategySelection,
+  getDefaultReviewStrategyTag,
+  getPreferredReviewStrategyTagForSeason,
+  preserveExplicitReviewStrategyRequest,
+  resolveReviewStrategyAfterAvailability,
 } from '@/lib/strategy-utils';
 
 interface WeekBreakdown {
@@ -75,12 +77,13 @@ interface SeasonSummaryData {
 
 export default function SeasonReviewPage() {
   const router = useRouter();
-  const [season, setSeason] = useState<number>(2025);
-  const [strategyTag, setStrategyTag] = useState<string>('hybrid_v2');
+  const [season, setSeason] = useState<number>(2026);
+  const [strategyTag, setStrategyTag] = useState<string>('');
   const [selectedMarket, setSelectedMarket] = useState<string>('ALL');
   const [data, setData] = useState<SeasonSummaryData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [paramsReady, setParamsReady] = useState(false);
   const defaultStrategySet = useRef(false);
   const urlParamsApplied = useRef(false);
   
@@ -91,6 +94,8 @@ export default function SeasonReviewPage() {
     : 'server';
 
   const fetchData = async () => {
+    if (!paramsReady) return;
+    if (!season) return;
     setLoading(true);
     setError(null);
     try {
@@ -122,25 +127,39 @@ export default function SeasonReviewPage() {
       return;
     }
     const params = new URLSearchParams(window.location.search);
+    const seasonParam = params.get('season');
     const strategyParam = params.get('strategyTag') ?? params.get('strategy');
+
+    if (seasonParam) {
+      const parsedSeason = parseInt(seasonParam, 10);
+      if (Number.isFinite(parsedSeason)) {
+        setSeason(parsedSeason);
+      }
+    }
+
     if (strategyParam !== null) {
-      setStrategyTag(resolveReviewStrategySelection(strategyParam, []));
+      setStrategyTag(preserveExplicitReviewStrategyRequest(strategyParam) ?? 'all');
       defaultStrategySet.current = true;
     }
     urlParamsApplied.current = true;
+    setParamsReady(true);
   }, []);
 
   useEffect(() => {
+    if (!paramsReady) return;
     fetchData();
-  }, [season, strategyTag, selectedMarket]);
+  }, [paramsReady, season, strategyTag, selectedMarket]);
 
   // Initialize season and strategy defaults from available data on first load
   useEffect(() => {
+    let effectiveSeason = season;
     if (data?.meta.seasonsAvailable && data.meta.seasonsAvailable.length > 0) {
       const latestSeason = data.meta.seasonsAvailable[data.meta.seasonsAvailable.length - 1];
       if (!data.meta.seasonsAvailable.includes(season)) {
         setSeason(latestSeason);
+        effectiveSeason = latestSeason;
       }
+      if (season) effectiveSeason = season;
     }
 
     if (!data?.meta.strategyTagsAvailable || data.meta.strategyTagsAvailable.length === 0) {
@@ -150,15 +169,20 @@ export default function SeasonReviewPage() {
     const available = data.meta.strategyTagsAvailable;
 
     if (defaultStrategySet.current) {
-      if (strategyTag !== 'all' && !available.includes(strategyTag)) {
-        setStrategyTag(getDefaultStrategyTag(available));
+      const resolved = resolveReviewStrategyAfterAvailability(
+        strategyTag,
+        effectiveSeason || 0,
+        available
+      );
+      if (resolved !== strategyTag) {
+        setStrategyTag(resolved);
       }
       return;
     }
 
-    setStrategyTag(getDefaultStrategyTag(available));
+    setStrategyTag(getDefaultReviewStrategyTag(effectiveSeason || 0, available));
     defaultStrategySet.current = true;
-  }, [data?.meta.seasonsAvailable, data?.meta.strategyTagsAvailable]);
+  }, [data?.meta.seasonsAvailable, data?.meta.strategyTagsAvailable, season]);
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
@@ -215,7 +239,14 @@ export default function SeasonReviewPage() {
                 <label className="block text-sm font-medium mb-1">Season</label>
                 <select
                   value={season}
-                  onChange={(e) => setSeason(parseInt(e.target.value))}
+                  onChange={(e) => {
+                    const nextSeason = parseInt(e.target.value, 10);
+                    const preferred = getPreferredReviewStrategyTagForSeason(nextSeason);
+                    setData(null);
+                    setStrategyTag(preferred);
+                    defaultStrategySet.current = true;
+                    setSeason(nextSeason);
+                  }}
                   className="border rounded px-3 py-2"
                 >
                   {data?.meta.seasonsAvailable.map((s) => (
@@ -235,7 +266,10 @@ export default function SeasonReviewPage() {
                 <label className="block text-sm font-medium mb-1">Strategy</label>
                 <select
                   value={strategyTag}
-                  onChange={(e) => setStrategyTag(e.target.value)}
+                  onChange={(e) => {
+                    defaultStrategySet.current = true;
+                    setStrategyTag(e.target.value);
+                  }}
                   className="border rounded px-3 py-2"
                 >
                   <option value="all">{getStrategyLabel('all')}</option>

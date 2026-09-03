@@ -1,5 +1,6 @@
 import {
   getDefaultStrategyTag,
+  getPreferredReviewStrategyTagForSeason,
   getStrategyLabel,
   resolveReviewStrategySelection,
   reviewStrategyToWeekReviewState,
@@ -25,6 +26,16 @@ describe('strategy-utils', () => {
     it('exposes STRATEGY_LABELS alias with corrected semantics', () => {
       expect(STRATEGY_LABELS.hybrid_v2).toBe('Hybrid V2 (Flat $100)');
       expect(STRATEGY_LABELS.official_flat_100).toBe('Core V1 Card (Flat $100)');
+    });
+  });
+
+  describe('getPreferredReviewStrategyTagForSeason', () => {
+    it('returns official_flat_100 for 2026+', () => {
+      expect(getPreferredReviewStrategyTagForSeason(2026)).toBe('official_flat_100');
+    });
+
+    it('returns hybrid_v2 for historical seasons <= 2025', () => {
+      expect(getPreferredReviewStrategyTagForSeason(2025)).toBe('hybrid_v2');
     });
   });
 
@@ -70,6 +81,12 @@ describe('strategy-utils', () => {
 
     it('honors explicit all URL param', () => {
       expect(resolveReviewStrategySelection('all', available)).toBe('all');
+    });
+
+    it('preserves a custom persisted tag until available tags are known', () => {
+      expect(resolveReviewStrategySelection('custom_ruleset_v1', [])).toBe(
+        'custom_ruleset_v1'
+      );
     });
 
     it('keeps historical official_flat_100 queryable when present in available tags', () => {

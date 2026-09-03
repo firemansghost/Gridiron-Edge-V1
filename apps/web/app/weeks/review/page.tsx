@@ -6,10 +6,18 @@ import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import {
   getStrategyLabel,
-  getDefaultStrategyTag,
-  resolveReviewStrategySelection,
+  getDefaultReviewStrategyTag,
+  getPreferredReviewStrategyTagForSeason,
+  preserveExplicitReviewStrategyRequest,
+  resolveReviewStrategyAfterAvailability,
   reviewStrategyToWeekReviewState,
 } from '@/lib/strategy-utils';
+import {
+  parseOfficialCardNotes,
+  formatAmericanOdds,
+  formatLineNumber,
+  formatSignedSpread,
+} from '@/lib/official-card';
 
 interface BetSummary {
   totalBets: number;
@@ -17,8 +25,21 @@ interface BetSummary {
   hitRate: number;
   totalPnL: number;
   roi: number;
-  avgEdge: number;
+  avgEdge: number | null;
   avgCLV: number;
+}
+
+interface MarketBreakdown {
+  totalBets: number;
+  gradedBets: number;
+  pendingBets: number;
+  wins: number;
+  losses: number;
+  pushes: number;
+  gradedStake: number;
+  pnl: number;
+  roi: number;
+  hitRate: number;
 }
 
 interface Bet {
@@ -48,6 +69,7 @@ interface Bet {
 interface WeekReviewData {
   summary: BetSummary;
   bets: Bet[];
+  byMarketType?: Record<string, MarketBreakdown>;
   pagination: {
     currentPage: number;
     pageSize: number;
@@ -73,9 +95,10 @@ interface WeekReviewData {
 
 export default function WeekReviewPage() {
   const router = useRouter();
-  const [season, setSeason] = useState(2025);
-  const [week, setWeek] = useState(9);
+  const [season, setSeason] = useState<number>(0);
+  const [week, setWeek] = useState<number>(0);
   const [strategy, setStrategy] = useState<string>('');
+  const [page, setPage] = useState(1);
   const [data, setData] = useState<WeekReviewData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,29 +114,48 @@ export default function WeekReviewPage() {
     const weekParam = params.get('week');
     const strategyParam = params.get('strategy');
 
-    if (seasonParam) {
-      setSeason(parseInt(seasonParam, 10));
+    const hasSeasonAndWeek = seasonParam !== null && weekParam !== null;
+    if (hasSeasonAndWeek) {
+      setSeason(parseInt(seasonParam!, 10));
+      setWeek(parseInt(weekParam!, 10));
     }
-    if (weekParam) {
-      setWeek(parseInt(weekParam, 10));
-    }
+
     if (strategyParam !== null) {
-      const resolved = resolveReviewStrategySelection(strategyParam, []);
-      setStrategy(reviewStrategyToWeekReviewState(resolved));
+      const preserved = preserveExplicitReviewStrategyRequest(strategyParam);
+      setStrategy(reviewStrategyToWeekReviewState(preserved ?? 'all'));
       defaultStrategySet.current = true;
     }
+
+    if (!hasSeasonAndWeek) {
+      // Default to the current DB-derived season/week (read-only).
+      fetch('/api/current-season-week')
+        .then((r) => r.json())
+        .then((cur) => {
+          if (cur?.season && cur?.week) {
+            setSeason(cur.season);
+            setWeek(cur.week);
+          }
+        })
+        .catch(() => {
+          // If this read-only endpoint fails, fall back to a safe placeholder.
+          setSeason((s) => (s || 2026));
+          setWeek((w) => (w || 1));
+        });
+    }
+
     urlParamsApplied.current = true;
   }, []);
 
   const fetchData = async () => {
+    if (!season || !week) return;
     setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams({
         season: season.toString(),
         week: week.toString(),
-        page: '1',
-        limit: '50'
+        page: page.toString(),
+        limit: '50',
       });
       // Only add strategy if it's not empty (not "All Strategies")
       // Note: The API expects strategyTag, but we're using strategy ID from rulesets
@@ -145,7 +187,7 @@ export default function WeekReviewPage() {
 
   useEffect(() => {
     fetchData();
-  }, [season, week, strategy]);
+  }, [season, week, strategy, page]);
 
   // Default to Hybrid V2 when no URL strategy; validate explicit URL against available tags
   useEffect(() => {
@@ -156,25 +198,28 @@ export default function WeekReviewPage() {
     const available = data.meta.strategyTagsAvailable;
 
     if (defaultStrategySet.current) {
-      if (strategy && strategy !== 'all' && !available.includes(strategy)) {
-        setStrategy(reviewStrategyToWeekReviewState(getDefaultStrategyTag(available)));
+      const requested = strategy === '' ? 'all' : strategy;
+      const resolved = resolveReviewStrategyAfterAvailability(requested, season, available);
+      if (resolved !== requested) {
+        setStrategy(reviewStrategyToWeekReviewState(resolved));
       }
       return;
     }
 
-    const defaultTag = getDefaultStrategyTag(available);
+    const defaultTag = getDefaultReviewStrategyTag(season, available);
     setStrategy(reviewStrategyToWeekReviewState(defaultTag));
     defaultStrategySet.current = true;
-  }, [data?.meta?.strategyTagsAvailable, strategy]);
+  }, [data?.meta?.strategyTagsAvailable, strategy, season]);
 
-  // Reset default strategy flag when season/week changes
+  // Pagination: whenever we change the underlying review scope, go back to page 1.
   useEffect(() => {
-    defaultStrategySet.current = false;
-  }, [season, week]);
+    setPage(1);
+  }, [season, week, strategy]);
 
   const exportCSV = () => {
     const params = new URLSearchParams({
       season: season.toString(),
+      source: 'strategy_run',
       ...(week && { week: week.toString() }),
       ...(strategy && { strategy }),
     });
@@ -203,10 +248,36 @@ export default function WeekReviewPage() {
   };
 
   const calculateEdge = (bet: any) => {
-    if (!bet.closePrice || bet.marketType === 'moneyline') return null;
+    // Edge (pts) for historical/non-official strategies is derived from model-close.
+    // For 2026 official_flat_100, we show persisted note metadata instead.
+    const isOfficial =
+      season >= 2026 &&
+      bet.strategyTag === 'official_flat_100' &&
+      bet.source === 'strategy_run';
+    if (isOfficial) return null;
+    if (bet.marketType === 'moneyline') return null;
+    if (bet.closePrice === null || bet.closePrice === undefined) return null;
     const modelLine = Number(bet.modelPrice);
     const closeLine = Number(bet.closePrice);
     return modelLine - closeLine;
+  };
+
+  const formatOfficialLockedLinePrice = (bet: any): string => {
+    if (bet.closePrice === null || bet.closePrice === undefined) return '-';
+    const close = Number(bet.closePrice);
+    if (bet.marketType === 'spread') return formatSignedSpread(close);
+    if (bet.marketType === 'moneyline') return formatAmericanOdds(close);
+    if (bet.marketType === 'total') return formatLineNumber(close);
+    return String(close);
+  };
+
+  const getOfficialPersistedEdgeNumeric = (bet: any): number | null => {
+    const meta = parseOfficialCardNotes(bet.notes);
+    if (!meta.metadataAvailable) return null;
+    if (bet.marketType === 'spread') return meta.edgePts;
+    if (bet.marketType === 'total') return meta.ouEdgePts;
+    if (bet.marketType === 'moneyline') return meta.valuePercent;
+    return null;
   };
 
   const getResultColor = (result: string | null) => {
@@ -238,7 +309,7 @@ export default function WeekReviewPage() {
           Week Review looks back at strategy-run picks for this week — how they performed vs the closing line and the final score. Use the Strategy filter to slice by ruleset or strategy tag.
         </p>
         <p className="text-sm text-gray-500 mb-4">
-          Close prices and CLV calculations use the latest market lines as of kickoff time. 
+          Reviews read persisted wager + grading fields from the locked bet record (result, PnL, and CLV are not recomputed from today's market).
           <a href="/docs/selections-profitability" className="text-blue-600 hover:underline ml-1">
             Learn more about grading
           </a>
@@ -250,11 +321,20 @@ export default function WeekReviewPage() {
             <label className="block text-sm font-medium mb-1">Season</label>
             <select 
               value={season} 
-              onChange={(e) => setSeason(parseInt(e.target.value))}
+              onChange={(e) => {
+                const nextSeason = parseInt(e.target.value, 10);
+                const preferred = getPreferredReviewStrategyTagForSeason(nextSeason);
+                setData(null);
+                setPage(1);
+                setStrategy(reviewStrategyToWeekReviewState(preferred));
+                defaultStrategySet.current = true;
+                setSeason(nextSeason);
+              }}
               className="border rounded px-3 py-2"
             >
               <option value={2024}>2024</option>
               <option value={2025}>2025</option>
+              <option value={2026}>2026</option>
             </select>
           </div>
           
@@ -262,7 +342,15 @@ export default function WeekReviewPage() {
             <label className="block text-sm font-medium mb-1">Week</label>
             <select 
               value={week} 
-              onChange={(e) => setWeek(parseInt(e.target.value))}
+              onChange={(e) => {
+                const nextWeek = parseInt(e.target.value, 10);
+                const preferred = getPreferredReviewStrategyTagForSeason(season);
+                setData(null);
+                setPage(1);
+                setStrategy(reviewStrategyToWeekReviewState(preferred));
+                defaultStrategySet.current = true;
+                setWeek(nextWeek);
+              }}
               className="border rounded px-3 py-2"
             >
               {Array.from({ length: 16 }, (_, i) => i + 1).map(w => (
@@ -277,6 +365,7 @@ export default function WeekReviewPage() {
               value={strategy || ''} 
               onChange={(e) => {
                 const val = e.target.value;
+                defaultStrategySet.current = true;
                 // Normalize empty string and "all" to empty for API
                 setStrategy(val === 'all' || val === '' ? '' : val);
               }}
@@ -348,16 +437,8 @@ export default function WeekReviewPage() {
               <div className="bg-white p-6 rounded-lg shadow">
                 <h3 className="text-lg font-semibold text-gray-700 mb-3">ATS – Strategy-run picks</h3>
                 {(() => {
-                  // Filter to ATS/spread market type
-                  // Note: The API already filters to strategy-run bets, so we just need to filter by market type here.
-                  const atsBets = data.bets.filter(bet => bet.marketType === 'spread');
-                  const gradedAts = atsBets.filter(bet => bet.result !== null);
-                  const wins = gradedAts.filter(bet => bet.result === 'win').length;
-                  const losses = gradedAts.filter(bet => bet.result === 'loss').length;
-                  const pushes = gradedAts.filter(bet => bet.result === 'push').length;
-                  const totalPnL = atsBets.reduce((sum, bet) => sum + Number(bet.pnl || 0), 0);
-                  
-                  if (atsBets.length === 0) {
+                  const spread = data.byMarketType?.spread;
+                  if (!spread || spread.totalBets === 0) {
                     return (
                       <div className="text-sm text-gray-500">
                         No ATS picks this week.
@@ -368,16 +449,18 @@ export default function WeekReviewPage() {
                   return (
                     <>
                       <div className="text-3xl font-bold text-gray-900 mb-2">
-                        {wins}-{losses}{pushes > 0 ? `-${pushes}` : ''}
+                        {spread.wins}-{spread.losses}
+                        {spread.pushes > 0 ? `-${spread.pushes}` : ''}
                       </div>
                       <div className="text-sm text-gray-600 mb-2">
-                        {atsBets.length} {atsBets.length === 1 ? 'play' : 'plays'}
+                        {spread.totalBets} {spread.totalBets === 1 ? 'play' : 'plays'} · {spread.gradedBets} graded · {spread.pendingBets} pending
                       </div>
-                      {totalPnL !== 0 && (
-                        <div className={`text-sm font-medium ${totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {totalPnL >= 0 ? '+' : ''}{totalPnL.toFixed(2)} units
-                        </div>
-                      )}
+                      <div
+                        className={`text-sm font-medium ${spread.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}
+                      >
+                        {spread.pnl > 0 ? '+' : ''}
+                        {formatCurrency(spread.pnl)}
+                      </div>
                       <div className="text-xs text-gray-500 mt-2">
                         Counts all strategy-run ATS picks for this week.
                       </div>
@@ -390,16 +473,8 @@ export default function WeekReviewPage() {
               <div className="bg-white p-6 rounded-lg shadow">
                 <h3 className="text-lg font-semibold text-gray-700 mb-3">Moneyline – Strategy-run picks</h3>
                 {(() => {
-                  // Filter to moneyline market type
-                  // Note: The API already filters to strategy-run bets, so we just need to filter by market type here.
-                  const mlBets = data.bets.filter(bet => bet.marketType === 'moneyline');
-                  const gradedMl = mlBets.filter(bet => bet.result !== null);
-                  const wins = gradedMl.filter(bet => bet.result === 'win').length;
-                  const losses = gradedMl.filter(bet => bet.result === 'loss').length;
-                  const pushes = gradedMl.filter(bet => bet.result === 'push').length;
-                  const totalPnL = mlBets.reduce((sum, bet) => sum + Number(bet.pnl || 0), 0);
-                  
-                  if (mlBets.length === 0) {
+                  const moneyline = data.byMarketType?.moneyline;
+                  if (!moneyline || moneyline.totalBets === 0) {
                     return (
                       <div className="text-sm text-gray-500">
                         No moneyline picks this week.
@@ -410,16 +485,18 @@ export default function WeekReviewPage() {
                   return (
                     <>
                       <div className="text-3xl font-bold text-gray-900 mb-2">
-                        {wins}-{losses}{pushes > 0 ? `-${pushes}` : ''}
+                        {moneyline.wins}-{moneyline.losses}
+                        {moneyline.pushes > 0 ? `-${moneyline.pushes}` : ''}
                       </div>
                       <div className="text-sm text-gray-600 mb-2">
-                        {mlBets.length} {mlBets.length === 1 ? 'play' : 'plays'}
+                        {moneyline.totalBets} {moneyline.totalBets === 1 ? 'play' : 'plays'} · {moneyline.gradedBets} graded · {moneyline.pendingBets} pending
                       </div>
-                      {totalPnL !== 0 && (
-                        <div className={`text-sm font-medium ${totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {totalPnL >= 0 ? '+' : ''}{totalPnL.toFixed(2)} units
-                        </div>
-                      )}
+                      <div
+                        className={`text-sm font-medium ${moneyline.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}
+                      >
+                        {moneyline.pnl > 0 ? '+' : ''}
+                        {formatCurrency(moneyline.pnl)}
+                      </div>
                       <div className="text-xs text-gray-500 mt-2">
                         Counts all strategy-run moneyline picks for this week.
                       </div>
@@ -447,7 +524,7 @@ export default function WeekReviewPage() {
             <div className="bg-white p-6 rounded-lg shadow">
               <h3 className="text-lg font-semibold text-gray-700 mb-2">ROI</h3>
               <p className={`text-3xl font-bold ${data.summary.roi >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {formatPercent(data.summary.roi / 100)}
+                {formatPercent(data.summary.roi)}
               </p>
             </div>
             
@@ -464,7 +541,7 @@ export default function WeekReviewPage() {
             <div className="bg-white p-6 rounded-lg shadow">
               <h3 className="text-lg font-semibold text-gray-700 mb-2">Avg Edge</h3>
               <p className="text-2xl font-bold text-blue-600">
-                {data.summary.avgEdge.toFixed(2)}
+                {data.summary.avgEdge === null ? 'N/A' : data.summary.avgEdge.toFixed(2)}
               </p>
             </div>
             
@@ -620,13 +697,13 @@ export default function WeekReviewPage() {
                         Model Price
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Close Price
+                        Locked Line / Price
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         CLV
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Edge
+                        Edge (pts) / Value (%)
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Result
@@ -667,21 +744,72 @@ export default function WeekReviewPage() {
                           {bet.modelPrice}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {bet.closePrice || '-'}
+                          {season >= 2026 &&
+                          bet.strategyTag === 'official_flat_100' &&
+                          bet.source === 'strategy_run'
+                            ? formatOfficialLockedLinePrice(bet)
+                            : bet.closePrice === null || bet.closePrice === undefined
+                              ? '-'
+                              : bet.closePrice}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          {bet.clv ? (
+                          {bet.clv !== null && bet.clv !== undefined ? (
                             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getCLVColor(bet.clv)}`}>
                               {bet.clv > 0 ? '+' : ''}{bet.clv.toFixed(3)}
                             </span>
                           ) : '-'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          {calculateEdge(bet) !== null ? (
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getEdgeColor(calculateEdge(bet))}`}>
-                              {calculateEdge(bet)! > 0 ? '+' : ''}{calculateEdge(bet)!.toFixed(1)}
-                            </span>
-                          ) : '-'}
+                          {(() => {
+                            const isOfficial =
+                              season >= 2026 &&
+                              bet.strategyTag === 'official_flat_100' &&
+                              bet.source === 'strategy_run';
+
+                            if (isOfficial) {
+                              const edgeNumeric = getOfficialPersistedEdgeNumeric(bet);
+                              if (edgeNumeric === null) {
+                                return (
+                                  <span
+                                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getEdgeColor(null)}`}
+                                  >
+                                    N/A
+                                  </span>
+                                );
+                              }
+
+                              const sign = edgeNumeric > 0 ? '+' : '';
+                              if (bet.marketType === 'moneyline') {
+                                return (
+                                  <span
+                                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getEdgeColor(edgeNumeric)}`}
+                                  >
+                                    {sign}
+                                    {edgeNumeric.toFixed(1)}%
+                                  </span>
+                                );
+                              }
+
+                              // spread/total -> points
+                              return (
+                                <span
+                                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getEdgeColor(edgeNumeric)}`}
+                                >
+                                  {sign}
+                                  {edgeNumeric.toFixed(1)} pts
+                                </span>
+                              );
+                            }
+
+                            const edge = calculateEdge(bet);
+                            if (edge === null) return '-';
+                            return (
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getEdgeColor(edge)}`}>
+                                {edge > 0 ? '+' : ''}
+                                {edge.toFixed(1)}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`inline-flex items-center text-sm font-medium ${getResultColor(bet.result)}`}>
@@ -692,7 +820,7 @@ export default function WeekReviewPage() {
                           {formatCurrency(bet.stake)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {bet.pnl ? (
+                          {bet.pnl !== null && bet.pnl !== undefined ? (
                             <span className={bet.pnl >= 0 ? 'text-green-600' : 'text-red-600'}>
                               {formatCurrency(bet.pnl)}
                             </span>
@@ -717,7 +845,7 @@ export default function WeekReviewPage() {
                   <button
                     key={page}
                     onClick={() => {
-                      // TODO: Implement pagination
+                      setPage(page);
                     }}
                     className={`px-3 py-2 rounded ${
                       page === data.pagination.currentPage 

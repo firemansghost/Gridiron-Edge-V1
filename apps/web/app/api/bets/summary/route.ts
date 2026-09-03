@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getOfficialStrategyTagsForFilter, isExcludedStrategyTag } from '@/lib/config/official-strategies';
+import { isExcludedStrategyTag } from '@/lib/config/official-strategies';
+import {
+  computeMarketBreakdownByMarketType,
+  computeWeekReviewMetrics,
+  type ReviewBetRow,
+} from '@/lib/review-truth-week';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,14 +18,18 @@ export async function GET(request: NextRequest) {
     const strategy = searchParams.get('strategy');
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '50');
+    const seasonNum = season ? parseInt(season, 10) : null;
+    const weekNum = week ? parseInt(week, 10) : null;
+    const isOfficial2026Review =
+      seasonNum !== null && seasonNum >= 2026 && strategy === 'official_flat_100';
 
     // Build where clause
     // NOTE: In the 2025 dev phase we include ALL strategy_run bets (including demo/test)
     // in Week Review for testing. Once official strategies are live, we may re-enable
     // filtering using isOfficialStrategyTag(...) here.
     const where: any = {};
-    if (season) where.season = parseInt(season);
-    if (week) where.week = parseInt(week);
+    if (seasonNum !== null) where.season = seasonNum;
+    if (weekNum !== null) where.week = weekNum;
     
     // Always filter to strategy-run bets (not manual entries)
     where.source = 'strategy_run';
@@ -68,8 +77,8 @@ export async function GET(request: NextRequest) {
     // Get metadata for demo/test awareness
     // Query all strategy_run bets matching the same filters to detect demo/test presence
     const metaWhere: any = {};
-    if (season) metaWhere.season = parseInt(season);
-    if (week) metaWhere.week = parseInt(week);
+    if (seasonNum !== null) metaWhere.season = seasonNum;
+    if (weekNum !== null) metaWhere.week = weekNum;
     metaWhere.source = 'strategy_run';
     // Use same strategy filter as main query
     if (strategy && strategy.trim() !== '' && strategy !== 'all') {
@@ -96,8 +105,8 @@ export async function GET(request: NextRequest) {
     // Get all distinct strategy tags for this season/week (for strategy selector)
     const strategyTagsForScope = await prisma.bet.findMany({
       where: {
-        ...(season && { season: parseInt(season) }),
-        ...(week && { week: parseInt(week) }),
+        ...(seasonNum !== null && { season: seasonNum }),
+        ...(weekNum !== null && { week: weekNum }),
         source: 'strategy_run',
       },
       select: {
@@ -163,43 +172,61 @@ export async function GET(request: NextRequest) {
       ...(Object.keys(conflictBreakdown).length > 0 && { conflictBreakdown }),
     };
 
-    // Calculate metrics
-    const gradedBets = allBets.filter(bet => bet.result !== null);
-    const hitRate = gradedBets.length > 0 
-      ? gradedBets.filter(bet => bet.result === 'win').length / gradedBets.length 
-      : 0;
+    // Full matching Bet population → tested pure helpers (pagination is table-only).
+    const metricRows: ReviewBetRow[] = allBets.map((bet) => ({
+      marketType: String(bet.marketType),
+      result: bet.result == null ? null : (bet.result as ReviewBetRow['result']),
+      stake: Number(bet.stake),
+      pnl: bet.pnl === null ? null : Number(bet.pnl),
+      clv: bet.clv === null ? null : Number(bet.clv),
+    }));
+    const summaryMetrics = computeWeekReviewMetrics(metricRows);
+    const byMarketType = computeMarketBreakdownByMarketType(metricRows);
+    const {
+      totalBets,
+      gradedBets,
+      pendingBets,
+      wins,
+      losses,
+      pushes,
+      gradedStake,
+      totalPnL,
+      roi,
+      hitRate,
+      avgCLV,
+    } = summaryMetrics;
 
-    const totalPnL = allBets.reduce((sum, bet) => sum + Number(bet.pnl || 0), 0);
-    const totalStake = allBets.reduce((sum, bet) => sum + Number(bet.stake), 0);
-    const roi = totalStake > 0 ? (totalPnL / totalStake) * 100 : 0;
+    // Average edge is only safe as a unit-consistent review metric for a subset.
+    // For 2026 official_flat_100, we return null to avoid recomputing from live market.
+    let avgEdge: number | null = null;
+    if (!isOfficial2026Review) {
+      const edgeValues = allBets
+        .filter((bet) => bet.closePrice !== null)
+        .map((bet) => {
+          const modelPrice = Number(bet.modelPrice);
+          const closePrice = Number(bet.closePrice);
 
-    const clvValues = allBets
-      .filter(bet => bet.clv !== null)
-      .map(bet => Number(bet.clv));
-    const avgCLV = clvValues.length > 0 
-      ? clvValues.reduce((sum, clv) => sum + clv, 0) / clvValues.length 
-      : 0;
+          if (bet.marketType === 'moneyline') {
+            // For moneyline, calculate implied probability difference.
+            const modelImplied =
+              modelPrice > 0
+                ? 100 / (modelPrice + 100)
+                : Math.abs(modelPrice) / (Math.abs(modelPrice) + 100);
+            const closeImplied =
+              closePrice > 0
+                ? 100 / (closePrice + 100)
+                : Math.abs(closePrice) / (Math.abs(closePrice) + 100);
+            return modelImplied - closeImplied;
+          }
 
-    // Calculate average edge (modelPrice vs closePrice)
-    const edgeValues = allBets
-      .filter(bet => bet.closePrice !== null)
-      .map(bet => {
-        const modelPrice = Number(bet.modelPrice);
-        const closePrice = Number(bet.closePrice);
-        
-        if (bet.marketType === 'moneyline') {
-          // For moneyline, calculate implied probability difference
-          const modelImplied = modelPrice > 0 ? 100 / (modelPrice + 100) : Math.abs(modelPrice) / (Math.abs(modelPrice) + 100);
-          const closeImplied = closePrice > 0 ? 100 / (closePrice + 100) : Math.abs(closePrice) / (Math.abs(closePrice) + 100);
-          return modelImplied - closeImplied;
-        } else {
-          // For spread/total, calculate line difference
+          // For spread/total, calculate line difference.
           return modelPrice - closePrice;
-        }
-      });
-    const avgEdge = edgeValues.length > 0 
-      ? edgeValues.reduce((sum, edge) => sum + edge, 0) / edgeValues.length 
-      : 0;
+        });
+
+      avgEdge = edgeValues.length > 0
+        ? edgeValues.reduce((sum, edge) => sum + edge, 0) / edgeValues.length
+        : 0;
+    }
 
     // Group by strategy if no specific strategy requested
     let strategyBreakdown = null;
@@ -230,23 +257,29 @@ export async function GET(request: NextRequest) {
         totalPages: Math.ceil(total / limit),
       },
       summary: {
-        totalBets: allBets.length,
-        gradedBets: gradedBets.length,
-        hitRate: Math.round(hitRate * 100) / 100,
-        roi: Math.round(roi * 100) / 100,
-        totalPnL: Math.round(totalPnL * 100) / 100,
-        avgEdge: Math.round(avgEdge * 100) / 100,
-        avgCLV: Math.round(avgCLV * 100) / 100,
+        totalBets,
+        gradedBets,
+        pendingBets,
+        wins,
+        losses,
+        pushes,
+        gradedStake,
+        hitRate,
+        roi,
+        totalPnL,
+        avgEdge,
+        avgCLV,
       },
+      byMarketType,
       strategyBreakdown,
       meta,
       bets: bets.map(bet => ({
         ...bet,
         modelPrice: Number(bet.modelPrice),
-        closePrice: bet.closePrice ? Number(bet.closePrice) : null,
+        closePrice: bet.closePrice === null ? null : Number(bet.closePrice),
         stake: Number(bet.stake),
-        pnl: bet.pnl ? Number(bet.pnl) : null,
-        clv: bet.clv ? Number(bet.clv) : null,
+        pnl: bet.pnl === null ? null : Number(bet.pnl),
+        clv: bet.clv === null ? null : Number(bet.clv),
       })),
     });
 

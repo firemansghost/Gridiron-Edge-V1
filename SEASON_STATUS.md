@@ -37,7 +37,11 @@ Sections below the current-state block retain useful preseason/phase chronology.
 
 All are **workflow_dispatch** only. No score/grading/TeamGameStat cron is authorized. TeamGameStat path is **prepared** — **not** production-run/authorized merely by merge.
 
-Phase **1A COMPLETE**. Phase **1B COMPLETE** — `/picks` is persisted locked Official Card truth (`official_flat_100` Bet rows). Phase **1C** adds explicit UI separation: **Current Slate** is the live/dynamic model-and-market view. **Core V1** remains official. **Hybrid V2** remains held.
+Phase 1 COMPLETE — `/picks` is persisted locked Official Card truth (`official_flat_100` Bet rows).
+Phase 2A Week/Season Review supports 2026 persisted Bet truth (read-only).
+Core V1 (`official_flat_100`) is the default 2026 review strategy.
+Hybrid remains held for 2026.
+Browse Weeks remains pending Phase 2B.
 
 ### Workflow inventory (after 2C-2J-6D-2)
 
