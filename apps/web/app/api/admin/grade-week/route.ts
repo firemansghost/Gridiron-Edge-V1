@@ -1,6 +1,10 @@
 /**
  * Admin endpoint: Sync scores and grade bets for a specific week
  * Requires x-admin-secret header matching ADMIN_SECRET env var
+ *
+ * Canonical 2026 production writes are the guarded GitHub Actions workflows
+ * (scores, grading, Odds, Core card, schedule rollover). This authenticated
+ * route is retained but is not a public-site write console.
  */
 
 export const runtime = 'nodejs';

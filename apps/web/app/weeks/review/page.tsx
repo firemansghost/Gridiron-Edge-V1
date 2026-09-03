@@ -79,8 +79,6 @@ export default function WeekReviewPage() {
   const [data, setData] = useState<WeekReviewData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [seeding, setSeeding] = useState(false);
-  const [grading, setGrading] = useState(false);
   const defaultStrategySet = useRef(false);
   const urlParamsApplied = useRef(false);
 
@@ -173,78 +171,6 @@ export default function WeekReviewPage() {
   useEffect(() => {
     defaultStrategySet.current = false;
   }, [season, week]);
-
-  const handleSeed = async () => {
-    setSeeding(true);
-    try {
-      const response = await fetch('/api/bets/seed', { method: 'GET' });
-      const result = await response.json();
-      
-      if (result.success) {
-        alert(`Seeded ${result.inserted} demo bets`);
-        fetchData(); // Refresh the data
-      } else {
-        alert(`Error: ${result.error}`);
-      }
-    } catch (err) {
-      alert(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally {
-      setSeeding(false);
-    }
-  };
-
-  const handleGrade = async () => {
-    setGrading(true);
-    try {
-      // Use the new serverless-friendly grading API
-      const response = await fetch('/api/admin/grade', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ season, week }),
-      });
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        const { graded, pushes, failed, filledClosePrice } = result.summary;
-        alert(`Grading complete: ${graded} bets graded, ${pushes} pushes, ${failed} failed, ${filledClosePrice} close prices filled`);
-        fetchData(); // Refresh the data
-      } else {
-        alert(`Error: ${result.error || result.detail || 'Grading failed'}`);
-      }
-    } catch (err) {
-      alert(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally {
-      setGrading(false);
-    }
-  };
-
-  const handleSyncAndGrade = async () => {
-    setGrading(true);
-    try {
-      // Call the new serverless-friendly sync-week endpoint
-      // This endpoint uses services directly (no child processes)
-      const response = await fetch('/api/admin/sync-week', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ season, week, gradeAfterSync: true }),
-      });
-      
-      const result = await response.json();
-      
-      if (result.ok) {
-        const { updatedGames, graded, pushes, failed, filledClosePrices } = result;
-        alert(`Sync & Grade complete: ${updatedGames || 0} games updated, ${graded || 0} bets graded, ${pushes || 0} pushes, ${failed || 0} failed, ${filledClosePrices || 0} close prices filled`);
-        fetchData(); // Refresh the data
-      } else {
-        alert(`Error: ${result.error || result.detail || 'Sync & Grade failed'}`);
-      }
-    } catch (err) {
-      alert(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally {
-      setGrading(false);
-    }
-  };
 
   const exportCSV = () => {
     const params = new URLSearchParams({
@@ -376,31 +302,6 @@ export default function WeekReviewPage() {
               className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
             >
               {loading ? 'Loading...' : 'Refresh'}
-            </button>
-            {process.env.NEXT_PUBLIC_ENABLE_BETS_SEED === 'true' && (
-              <button 
-                onClick={handleSeed}
-                disabled={seeding}
-                className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
-              >
-                {seeding ? 'Seeding...' : 'Insert Demo Bets'}
-              </button>
-            )}
-            {process.env.NEXT_PUBLIC_ENABLE_GRADE_UI === 'true' && (
-              <button 
-                onClick={handleGrade}
-                disabled={grading}
-                className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 disabled:opacity-50"
-              >
-                {grading ? 'Grading...' : 'Run Grading'}
-              </button>
-            )}
-            <button 
-              onClick={handleSyncAndGrade}
-              disabled={grading}
-              className="bg-orange-600 text-white px-4 py-2 rounded hover:bg-orange-700 disabled:opacity-50"
-            >
-              {grading ? 'Syncing & Grading...' : 'Sync Results & Grade'}
             </button>
           </div>
         </div>
@@ -700,15 +601,6 @@ export default function WeekReviewPage() {
                     </a>
                   </p>
                 </div>
-                {process.env.NEXT_PUBLIC_ENABLE_BETS_SEED === 'true' && (
-                  <button 
-                    onClick={handleSeed}
-                    disabled={seeding}
-                    className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
-                  >
-                    {seeding ? 'Seeding...' : 'Insert Demo Bets'}
-                  </button>
-                )}
               </div>
             ) : (
               <div className="overflow-x-auto">

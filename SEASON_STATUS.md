@@ -37,6 +37,8 @@ Sections below the current-state block retain useful preseason/phase chronology.
 
 All are **workflow_dispatch** only. No score/grading/TeamGameStat cron is authorized. TeamGameStat path is **prepared** — **not** production-run/authorized merely by merge.
 
+Direct public website grading / score-sync / demo-seed controls on Week Review are **retired**. The public site is not a production write console. A Bet-backed Official Card is a **separate follow-up** and is not part of this containment.
+
 ### Workflow inventory (after 2C-2J-6D-2)
 
 | Metric | Value |
