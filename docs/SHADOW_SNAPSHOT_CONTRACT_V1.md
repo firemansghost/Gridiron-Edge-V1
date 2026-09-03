@@ -80,6 +80,24 @@ Do **not** use a later market row to repair a stale prediction after the fact.
 
 Do **not** fall forward to a market observation after the T-30 closing target.
 
+### 3.2 Authoritative predictionTimestamp (frozen)
+
+`predictionTimestamp` is the system-observed timestamp of the actual prospective capture operation for that snapshot / run.
+
+- It is **immutable** after capture.
+- It must **not** be supplied as an arbitrary historical timestamp by the operator or workflow input.
+- It must **not** be backdated.
+- It must satisfy: `predictionTimestamp < kickoffTimestamp`
+- Any snapshot attempted at or after kickoff is Hybrid prediction **UNAVAILABLE** with `post_kickoff`.
+
+The operator / workflow may choose **when** to execute a declared capture context. It may **not** choose **what historical time** the resulting record claims to have been captured.
+
+If implementation later uses one run-level timestamp for all game rows versus tightly system-observed per-row timestamps, that physical choice may remain open **only if** these semantics remain true and the chosen behavior is explicit and deterministic.
+
+All as-of evidence used by the snapshot must be observable **no later than** `predictionTimestamp`.
+
+This does **not** invent a new minimum lead time before kickoff. `CORE_EVAL_V1` remains unchanged.
+
 ---
 
 ## 4. What this is not
@@ -154,7 +172,8 @@ Exact key encoding and exact workflow schedule remain implementation questions. 
 - total games
 - Hybrid prediction available count
 - Hybrid prediction unavailable count
-- Super Tier A / qualification coverage counts (separate from Hybrid prediction coverage)
+- Super Tier A / qualification determinacy counts (separate from Hybrid prediction coverage)
+- V4-comparator provenance coverage counts (separate from Super Tier A determinacy)
 - capture status
 
 ### 6.3 Game-frame denominator
@@ -171,12 +190,13 @@ If 51 games exist and Hybrid computes only 20:
 
 Do **not** persist only the 20 successful predictions and later describe that as complete model coverage.
 
-**Hybrid prediction coverage and Super Tier A qualification coverage are separate denominators.** A game can have an AVAILABLE Hybrid prediction whose Super Tier A qualification is UNAVAILABLE (`missing_v4_provenance`). That game counts as Hybrid-available and qualification-unavailable. It must not be dropped from either report.
+**Hybrid prediction coverage, Super Tier A qualification determinacy, and V4-comparator provenance coverage are separate reports.** A game can have an AVAILABLE Hybrid prediction that is Super Tier A `NOT_QUALIFIED` even when V4 provenance is `PROVENANCE_UNAVAILABLE`, if Super Tier A is already decided by `NO_SELECTION` or `absSpreadEdge < 4.0`. V4 provenance is decision-relevant only when a HOME/AWAY selection has `absSpreadEdge >= 4.0`. Do not drop those games from any denominator.
 
 Capture status must be able to represent at least:
 
 - complete expected frame with mixed available / unavailable Hybrid predictions
-- mixed qualification coverage on available Hybrid predictions
+- mixed Super Tier A qualification determinacy on available Hybrid predictions
+- mixed V4-comparator provenance coverage, reported separately
 - rejected / failed capture (no silent partial overwrite)
 
 How expected Game IDs are physically stored (normalized rows vs frozen JSON) is an implementation question. The **complete Game-frame set must be frozen either way**.
@@ -208,7 +228,7 @@ Hybrid prediction availability is **not** the same as Super Tier A / V4 qualific
 - away team ID
 - kickoff timestamp
 - neutral-site flag
-- prediction timestamp
+- prediction timestamp (system-observed capture time; section 3.2)
 
 ### 7.2 Definition identity / provenance
 
@@ -272,10 +292,10 @@ Exact enum names are not locked. The behavioral dimensions are frozen.
 Rules:
 
 1. If Hybrid inputs and the prediction market are valid, the Hybrid prediction remains **AVAILABLE** even when V4 provenance is unavailable.
-2. `missing_v4_provenance` means: do **not** claim Super Tier A; `qualificationStatus` is `UNAVAILABLE`; it does **not** erase an otherwise valid Hybrid prediction.
-3. `hybrid_only` requires a **VERIFIED** no-V4-selection state (`v4ComparisonStatus = VERIFIED_NO_SELECTION`). Do **not** treat “no V4 row found” as proof that V4 legitimately made no pick.
+2. `hybrid_only` requires a **VERIFIED** no-V4-selection state (`v4ComparisonStatus = VERIFIED_NO_SELECTION`). Do **not** treat “no V4 row found” as proof that V4 legitimately made no pick.
+3. Super Tier A `qualificationStatus` is **not** universally `UNAVAILABLE` merely because V4 provenance is missing. V4 is decision-relevant only in the Super Tier A path defined in section 7.8.
 
-V4 as-of provenance must be sufficient to establish that the comparator state existed **at or before** the Hybrid prediction timestamp. Do not reconstruct V4 later with hindsight.
+V4 as-of provenance must be sufficient to establish that the comparator state existed **at or before** the Hybrid `predictionTimestamp`. Do not reconstruct V4 later with hindsight.
 
 ### 7.5 Computed prediction freeze (AVAILABLE Hybrid snapshots)
 
@@ -354,46 +374,73 @@ This docs PR does **not** change the broader current book-selection policy. The 
 
 A later market row must **not** repair a stale or missing prediction after the fact.
 
-### 7.8 Super Tier A / V4 dependency (mandatory, separate from Hybrid availability)
+### 7.8 Super Tier A / V4 dependency (decision-relevant, not universally required)
 
-Current frozen Hybrid conflict semantics depend on V4 comparison side, but only when that comparator state is prospectively established:
+Frozen Super Tier A rule remains **unchanged**. Super Tier A requires **all** of:
 
-| V4 comparator state at or before Hybrid prediction timestamp | Result |
-|--------------------------------------------------------------|--------|
-| A. V4 side HOME/AWAY was prospectively available | `hybrid_strong` or `hybrid_weak` |
-| B. V4 was prospectively evaluated and verifiably produced no selection | `hybrid_only` |
-| C. V4 state / provenance cannot be established | `hybridConflictType` / qualification **UNAVAILABLE**; `missing_v4_provenance`; **no Super Tier A claim** |
+- actual Hybrid selection `HOME` or `AWAY` (not `NO_SELECTION`)
+- **AND** `absSpreadEdge >= 4.0`
+- **AND** `hybridConflictType = hybrid_strong`
 
-When state A applies:
+V4 provenance is **not** required to reach a known Super Tier A result in every case.
+
+**A.** Hybrid `selectedSide = NO_SELECTION`
+
+- `qualificationStatus = NOT_QUALIFIED`
+- V4 provenance is **not** required to reach that Super Tier A result
+
+**B.** Hybrid has a `HOME`/`AWAY` selection but `absSpreadEdge < 4.0`
+
+- `qualificationStatus = NOT_QUALIFIED`
+- V4 provenance is **not** required to reach that Super Tier A result
+
+**C.** Hybrid has a `HOME`/`AWAY` selection **AND** `absSpreadEdge >= 4.0`
+
+- the V4 comparator **becomes decision-relevant**
+- if V4 side / provenance is established:
+  - `hybrid_strong` → `QUALIFIED`
+  - `hybrid_weak` / verified `hybrid_only` → `NOT_QUALIFIED`
+- if V4 provenance cannot be established:
+  - `qualificationStatus = UNAVAILABLE`
+  - `missing_v4_provenance`
+  - **no Super Tier A claim**
+
+`v4ComparisonStatus` may still be `PROVENANCE_UNAVAILABLE` in cases A or B. That must **not** turn a logically known Super Tier A `NOT_QUALIFIED` result into `UNAVAILABLE`.
+
+Report V4-comparator provenance coverage **separately** from Super Tier A qualification determinacy when needed.
+
+V4 comparator states, when captured, remain:
+
+| V4 comparator state at or before Hybrid `predictionTimestamp` | Meaning |
+|--------------------------------------------------------------|---------|
+| `SIDE_AVAILABLE` | V4 side HOME/AWAY was prospectively available |
+| `VERIFIED_NO_SELECTION` | V4 was prospectively evaluated and verifiably produced no selection |
+| `PROVENANCE_UNAVAILABLE` | V4 state / provenance cannot be established as-of `predictionTimestamp` |
+
+When `SIDE_AVAILABLE` and Hybrid has a `HOME`/`AWAY` selection:
 
 | Condition | `hybridConflictType` |
 |-----------|----------------------|
 | Hybrid vs V4 disagreement | `hybrid_strong` |
 | Hybrid vs V4 agreement | `hybrid_weak` |
 
-`hybrid_only` is **only** state B, never state C.
+`hybrid_only` requires `VERIFIED_NO_SELECTION`. It is never inferred from “no V4 row found.”
 
-Freeze enough V4 as-of provenance to reproduce the qualification. At minimum:
+Freeze enough V4 as-of provenance to reproduce the **decision-relevant** qualification path. At minimum:
 
 - `v4ComparisonStatus`
 - V4 comparison side used at capture when `SIDE_AVAILABLE`
 - source / provenance of that V4 state
 - source row / reference if one exists
-- as-of evidence that the comparator existed at or before the Hybrid prediction timestamp
-- `hybridConflictType` when available
-- `tierBucket` when available
+- as-of evidence that the comparator existed at or before the Hybrid `predictionTimestamp`
+- `hybridConflictType` when established
+- `tierBucket` when established
 - `isSuperTierA`
 - `qualificationStatus`
 
-Frozen Super Tier A rule remains **unchanged**:
-
-- actual Hybrid V2 spread selection (`HOME` or `AWAY`, not `NO_SELECTION`)
-- **AND** `hybridConflictType = hybrid_strong`
-- **AND** `absSpreadEdge >= 4.0`
-
 Super Tier A is **not** a separate prediction model and must **not** create a duplicate independent prediction record. It is a qualification on an AVAILABLE Hybrid V2 snapshot.
 
-If V4 provenance is state C, mark `missing_v4_provenance`, set `qualificationStatus = UNAVAILABLE`, leave Hybrid `predictionStatus` AVAILABLE when Hybrid itself is valid, and do not claim Super Tier A. Do not reconstruct V4 later using hindsight.
+Do not reconstruct V4 later using hindsight.
 
 V4 / Fade remain historical / backtest. Freezing V4 comparison side at Hybrid capture does **not** authorize V4 as a 2026 production model.
 
@@ -408,7 +455,7 @@ Each Hybrid-unavailable snapshot must retain explicit reason(s). Hybrid-predicti
 - `post_kickoff`
 - `invalid_model_output`
 
-`missing_v4_provenance` is a **qualification** reason, **not** a Hybrid-prediction unavailability reason.
+`missing_v4_provenance` is a **qualification** reason, **not** a Hybrid-prediction unavailability reason. It makes Super Tier A `qualificationStatus = UNAVAILABLE` **only** on the decision-relevant path (HOME/AWAY and `absSpreadEdge >= 4.0`).
 
 Additional explicit reasons may be added later only if they are equally fail-closed and do not invent values.
 
@@ -435,15 +482,28 @@ This contract does **not** change the frozen T-30 rule.
 - evaluation protocol = `CORE_EVAL_V1`
 - market type
 - target timestamp = kickoff - 30 minutes
-- selected MarketLine ID if available
+- selector / evaluation-policy identity or hash under which the closing row was chosen (section 13B)
 - signed-row team ID / value
 - canonical market HMA
 - book
 - source
-- market observation timestamp
+- actual selected market observation timestamp
 - capture / evaluation timestamp
 - AVAILABLE / UNAVAILABLE state
 - explicit unavailable reason
+
+For a Shadow Closing Market Snapshot with status **AVAILABLE**:
+
+- selected MarketLine technical ID is **REQUIRED**, not merely “if available”
+- preserve the selector / evaluation-policy identity or hash under which that closing row was chosen
+- preserve `targetTimestamp = kickoff - 30 minutes`
+- preserve the actual selected market observation timestamp
+- preserve `timestamp DESC, id DESC` selection semantics
+- preserve no fall-forward after T-30
+
+This allows a frozen closing observation to prove not only **what** row was chosen but **which frozen selection policy** chose it.
+
+If the snapshot is UNAVAILABLE, MarketLine ID may be absent; do not invent a row.
 
 Signed-row side vs canonical HMA vs actual favorite remain distinct, as at prediction time.
 
@@ -468,7 +528,7 @@ Results must be linked later **without mutating** the frozen prediction facts.
 - closing-market snapshot ID when available
 - final home score
 - final away score
-- ATS result: `win` / `loss` / `push` / `unavailable`
+- ATS result: `WIN` / `LOSS` / `PUSH` / `NOT_APPLICABLE` / `UNAVAILABLE` (exact spelling is an implementation choice; the behavioral distinction is frozen)
 - `sideMargin` / `coverMargin` as defined below
 - shadow CLV as defined below, or unavailable
 - shadow PnL / stake under the research comparison convention below, when graded
@@ -477,7 +537,27 @@ Results must be linked later **without mutating** the frozen prediction facts.
 
 ### 9.2 ATS settlement (frozen)
 
-Applies only when Hybrid `predictionStatus` is AVAILABLE and selected side is `HOME` or `AWAY` and final scores exist.
+Behaviorally distinguish at least:
+
+- `WIN`
+- `LOSS`
+- `PUSH`
+- `NOT_APPLICABLE`
+- `UNAVAILABLE`
+
+Exact enum spelling can remain an implementation choice.
+
+Rules:
+
+- `selectedSide = NO_SELECTION` → ATS evaluation = `NOT_APPLICABLE`; no shadow stake; no PnL; no ATS CLV. This is **not** missing / ungradable evidence.
+- `selectedSide` `HOME`/`AWAY` with missing final result → ATS evaluation = `UNAVAILABLE`
+- `selectedSide` `HOME`/`AWAY` with final scores → settle as below
+
+`NO_SELECTION` observations remain part of Hybrid **prediction coverage** but **not** the graded-wager denominator.
+
+Do not treat a deliberate `NO_SELECTION` as missing/ungradable evidence.
+
+Applies when Hybrid `predictionStatus` is AVAILABLE and selected side is `HOME` or `AWAY` and final scores exist.
 
 For the frozen selected team:
 
@@ -497,11 +577,7 @@ coverMargin < 0  -> loss
 
 Implementation may use an appropriately tiny numeric epsilon solely for floating representation. It may **not** use a different football settlement rule (including Official Bet’s half-point push band).
 
-`NO_SELECTION` snapshots are AVAILABLE observations and are **not** ATS-graded as wins/losses.
-
-If final scores are missing, ATS result is `unavailable`.
-
-If the T-30 benchmark is unavailable:
+If the T-30 benchmark is unavailable and selected side is `HOME`/`AWAY` with scores:
 
 - ATS result **may still be graded from scores**
 - CLV remains **unavailable**
@@ -517,6 +593,8 @@ clvPoints = predictionPickLine - closingTeamLine
 ```
 
 Positive CLV means the prediction snapshot captured the better ATS number.
+
+`NO_SELECTION` has **no ATS CLV** (`NOT_APPLICABLE`). Missing T-30 on a HOME/AWAY selection makes CLV `UNAVAILABLE`, not `NOT_APPLICABLE`.
 
 Examples:
 
@@ -538,7 +616,7 @@ It preserves comparability with the existing historical Hybrid / V4 synthetic ev
 - push PnL = `$0`
 - ROI = graded shadow PnL / graded shadow stake
 
-Do not mix ungraded or `NO_SELECTION` snapshots into graded stake without an explicit predeclared methodology.
+Do not mix `NOT_APPLICABLE` (`NO_SELECTION`) or ungraded snapshots into graded stake without an explicit predeclared methodology.
 
 ### 9.5 Score corrections
 
@@ -594,7 +672,7 @@ A formal capture must preserve the full eligible Game frame.
 
 Live mutable Hybrid UI remaining at 0 computed / 51 unavailable is **not** a prospective ledger. When a prospective capture later runs, unavailable Hybrid games remain in the Hybrid-prediction denominator with explicit reasons.
 
-Report Hybrid prediction coverage separately from Super Tier A qualification coverage.
+Report Hybrid prediction coverage separately from Super Tier A qualification determinacy, and report V4-comparator provenance coverage separately from both.
 
 Do not report Super Tier A performance on a subset whose V4 comparator was reconstructed later.
 
@@ -687,25 +765,30 @@ These are **not** guessed here:
 3. Exact deterministic capture-key encoding
 4. Eventual manual workflow naming / confirmation phrase
 5. Whether run-level expected Game IDs are normalized rows or frozen JSON
-6. Exact enum spellings for `predictionStatus` / `v4ComparisonStatus` / `qualificationStatus` (behavioral distinction is frozen)
+6. Exact enum spellings for `predictionStatus` / `v4ComparisonStatus` / `qualificationStatus` / ATS evaluation states (behavioral distinctions are frozen)
 7. Exact capture-context vocabulary / labels, provided they are declared **before** execution
 8. Broader book-selection policy version identifier, provided selector **behavior/version** is stored in section 13B
+9. Run-level versus per-row physical storage of `predictionTimestamp`, provided section 3.2 semantics remain true and explicit
 
 Not open questions (already frozen above):
 
 - `CORE_EVAL_V1` timing rules
+- authoritative `predictionTimestamp` is system-observed, immutable, not operator-backdated, and strictly pre-kickoff
 - `marketTimestamp <= predictionTimestamp` and `0 <= marketAge <= 30 minutes`
 - future-dated prediction markets cannot qualify
 - prediction-market selector order `timestamp DESC, then id DESC`
 - signed `spreadEdgeHma` and `0.1` Hybrid selection threshold
-- `NO_SELECTION` is AVAILABLE
+- `NO_SELECTION` is AVAILABLE Hybrid observation and ATS `NOT_APPLICABLE`
 - ATS `coverMargin` settlement signs
 - shadow `clvPoints = predictionPickLine - closingTeamLine`
 - shadow `$100` / `-110` / `+$90.90` research ROI convention
-- Super Tier A qualification (`hybrid_strong` and `absSpreadEdge >= 4.0`)
-- Hybrid prediction coverage distinct from qualification coverage
+- Super Tier A rule (`HOME`/`AWAY` and `hybrid_strong` and `absSpreadEdge >= 4.0`)
+- V4 provenance is decision-relevant only when HOME/AWAY and `absSpreadEdge >= 4.0`
+- `NO_SELECTION` or `absSpreadEdge < 4.0` is Super Tier A `NOT_QUALIFIED` even if V4 provenance is unavailable
+- Hybrid prediction coverage distinct from qualification determinacy and from V4-comparator provenance coverage
 - `hybrid_only` requires verified no-V4-selection; missing V4 provenance does not erase Hybrid
-- V4 as-of provenance at or before Hybrid prediction timestamp
+- V4 as-of provenance at or before Hybrid `predictionTimestamp`
+- AVAILABLE T-30 closing snapshot requires MarketLine technical ID and selector-policy provenance
 - Game-frame denominator / unavailable Hybrid input states
 - no retrospective 2026 backfill
 - append-only prediction and closing facts
