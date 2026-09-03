@@ -1,22 +1,23 @@
 # Season Status — Gridiron Edge
 
 **Status:** 2026 season active (manual guarded production)  
-**Updated:** 2026-08-30 (Phase **2C-2J-6D-2** — Core V1 lifecycle integrity + Serializable COMMIT hardening)  
-**Baseline `main`:** `2e8c167a15c9f5fc5dc4ea9683b18ae6258aecfc`
+**Updated:** 2026-09-03 (Phase 2 closeout — PR #88 Week Archive production-verified)  
+**Production `main`:** `9b6b97b362c52f64b2ceec2b09d2b11b4c98b663`
 
-Operator-facing current state for the active 2026 season. Complements `docs/2026-workflow-reactivation-matrix.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
+Operator-facing current state for the active 2026 season. Complements `STATUS.md`, `HANDOFF.md`, `docs/2026-workflow-reactivation-matrix.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
 Sections below the current-state block retain useful preseason/phase chronology. Treat dated **NOT AUTHORIZED** language in those historical notes as phase archaeology unless restated above.
 
 ---
 
-## CURRENT STATE (2026-08-30)
+## CURRENT STATE (2026-09-03)
 
 ### Season posture
 
 | Item | Status |
 |------|--------|
 | **Season** | **2026 active** |
+| **Production `main`** | `9b6b97b362c52f64b2ceec2b09d2b11b4c98b663` |
 | **Provider Week 1** | Opening **Aug. 29** tranche + remaining **Sep. 3–7** games |
 | **Effective production spread model** | **Core V1** (`official_flat_100`) |
 | **Hybrid V2** | **Held** for additional same-season validation |
@@ -24,6 +25,50 @@ Sections below the current-state block retain useful preseason/phase chronology.
 | **Recurring production schedules** | Operator-stopped / **not authorized** |
 | **Schedule reactivation recommended** | **0** workflows |
 | **Core V1 lifecycle blend** | Candidate A / `GLOBAL_BLEND_W3_W6` — canonical weight **0** through completed Week **2**; first non-zero canonical contribution after completed Week **3** |
+
+### Site truth phases
+
+| Phase | Status | PR |
+|------|--------|----|
+| **1A** Production-write containment | **COMPLETE** | #84 |
+| **1B** Official Card persisted-Bet truth | **COMPLETE** | #85 |
+| **1C** Current Slate live/dynamic truth labeling | **COMPLETE** | #86 |
+| **2A** Week Review + Season Review persisted-Bet truth | **COMPLETE** | #87 |
+| **2B** Week Archive / Browse Weeks persisted-history truth | **COMPLETE** | #88 |
+| **2** (1A–2B site truth) | **COMPLETE** | — |
+| **3** Ratings Page Truthfulness | **NEXT** — not started | — |
+
+Phase 1 COMPLETE — `/picks` is persisted locked Official Card truth (`official_flat_100` Bet rows). Current Slate remains live/dynamic and is not the Official Card.
+Phase 2A COMPLETE — Week/Season Review is persisted Bet review truth (read-only).
+Phase 2B COMPLETE — `/weeks` Week Archive for 2026 is persisted Game + Official Card Bet truth. Seasons through 2025 remain the legacy reconstructed model view if retained.
+Core V1 (`official_flat_100`) is the default 2026 review strategy.
+Hybrid remains held for 2026.
+
+**Next engineering priority:** Phase 3 Ratings Page Truthfulness (source/provenance/presentation only). No Core V1 formula or lifecycle policy change is authorized. No Phase 3 implementation has started.
+
+### Phase 2B production verification (PR #88)
+
+Independent read-only check of `GET /api/weeks/archive?season=2026&week=1` after the merged Vercel deployment returned HTTP **200**:
+
+| Metric | Value |
+|--------|--------|
+| totalGames | **51** |
+| gamesScheduled | **43** |
+| gamesFinal | **8** |
+| gamesInProgress | **0** |
+| officialGames | **50** |
+| gamesWithoutOfficialWager | **1** |
+| no-wager game | North Carolina @ TCU |
+| totalBets | **98** |
+| spread / ML / totals | **50 / 48 / 0** |
+| graded / pending | **14 / 84** |
+| record | **6–8–0** |
+| gradedStake | **$1,400** |
+| totalPnL | **-223.76842105263165** |
+| ROI | **-0.15983458646616547** |
+| hit rate | **0.42857142857142855** |
+
+2026 Week Archive = persisted `Game` frame + `official_flat_100` / `strategy_run` Bet rows. Not a live slate. Not recalculated from today's model or market.
 
 ### Canonical guarded production entrypoints (manual only)
 
@@ -36,12 +81,6 @@ Sections below the current-state block retain useful preseason/phase chronology.
 | `.github/workflows/cfbd-team-game-stats-2026-manual.yml` | Guarded TeamGameStat PREVIEW/COMMIT (Core V1 lifecycle EPA feed) |
 
 All are **workflow_dispatch** only. No score/grading/TeamGameStat cron is authorized. TeamGameStat path is **prepared** — **not** production-run/authorized merely by merge.
-
-Phase 1 COMPLETE — `/picks` is persisted locked Official Card truth (`official_flat_100` Bet rows).
-Phase 2A COMPLETE — Week/Season Review is persisted Bet review truth (read-only).
-Phase 2B COMPLETE — `/weeks` Week Archive for 2026 is persisted Game + Official Card Bet truth. Seasons through 2025 remain the legacy reconstructed model view if retained.
-Core V1 (`official_flat_100`) is the default 2026 review strategy.
-Hybrid remains held for 2026.
 
 ### Workflow inventory (after 2C-2J-6D-2)
 
