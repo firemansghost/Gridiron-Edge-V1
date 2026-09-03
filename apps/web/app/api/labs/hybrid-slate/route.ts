@@ -15,7 +15,7 @@ import {
   buildHybridShadowGame,
   buildHybridShadowStatus,
   isFiniteRating,
-  type HybridShadowMarket,
+  type HybridShadowSelectedMarketLine,
   type HybridShadowUnitGrades,
 } from '@/lib/labs/hybrid-shadow-truth';
 
@@ -121,12 +121,12 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    const marketMap = new Map<string, HybridShadowMarket>();
+    const marketMap = new Map<string, HybridShadowSelectedMarketLine>();
     for (const line of marketLines) {
       if (!marketMap.has(line.gameId)) {
         marketMap.set(line.gameId, {
           value: toFiniteNumber(line.lineValue),
-          favoriteTeamId: line.teamId,
+          teamId: line.teamId,
           book: line.bookName || null,
           timestamp: line.timestamp ? line.timestamp.toISOString() : null,
           source: line.source || null,

@@ -179,24 +179,13 @@ export default function HybridLabsPage() {
       !game.hybridAvailable ||
       !game.hybridSpread ||
       !game.marketSpread ||
-      game.marketSpread.value === null
+      game.marketSpread.spreadHma == null
     ) {
       return null;
     }
 
     const hybridMargin = game.hybridSpread.hma;
-    const marketValue = game.marketSpread.value;
-    const marketFavoriteTeamId = game.marketSpread.favoriteTeamId;
-
-    let marketMargin: number;
-    if (marketFavoriteTeamId === game.homeTeamId) {
-      marketMargin = -marketValue;
-    } else if (marketFavoriteTeamId === game.awayTeamId) {
-      marketMargin = marketValue;
-    } else {
-      marketMargin = marketValue;
-    }
-
+    const marketMargin = game.marketSpread.spreadHma;
     const edge = hybridMargin - marketMargin;
     const pickHome = edge > 0;
     const pickTeamId = pickHome ? game.homeTeamId : game.awayTeamId;
@@ -206,8 +195,8 @@ export default function HybridLabsPage() {
     return {
       teamId: pickTeamId,
       teamName: pickTeamName,
-      marketSpread: marketValue,
-      marketFavoriteTeamId,
+      marketSpreadHma: marketMargin,
+      marketFavoriteTeamId: game.marketSpread.favoriteTeamId,
       edge: absEdge,
       edgeRaw: edge,
     };
@@ -268,13 +257,25 @@ export default function HybridLabsPage() {
         Hybrid_Spread: game.hybridSpread
           ? `${game.hybridSpread.favoriteName} ${formatSpread(game.hybridSpread.favoriteSpread)}`
           : '—',
-        Diff_Hybrid_V1:
+        Diff_Hybrid_Core_V1:
           game.diff == null
             ? '—'
             : game.diff > 0
               ? `+${game.diff.toFixed(1)}`
               : game.diff.toFixed(1),
-        Market_Line:
+        Market_HMA:
+          game.marketSpread && game.marketSpread.spreadHma != null
+            ? game.marketSpread.spreadHma.toFixed(1)
+            : '—',
+        Market_Favorite: game.marketSpread?.favoriteName
+          ? `${game.marketSpread.favoriteName} ${
+              game.marketSpread.spreadHma != null && game.marketSpread.spreadHma !== 0
+                ? formatSpread(-Math.abs(game.marketSpread.spreadHma))
+                : 'PK'
+            }`
+          : '—',
+        Market_Row_TeamId: game.marketSpread?.teamId || '—',
+        Market_Row_Value:
           game.marketSpread && game.marketSpread.value !== null
             ? formatSpread(game.marketSpread.value)
             : '—',
@@ -282,7 +283,7 @@ export default function HybridLabsPage() {
         Market_Timestamp: game.marketSpread?.timestamp || '—',
         Market_Source: game.marketSpread?.source || '—',
         Hybrid_Pick: pick ? pick.teamName : '—',
-        Pick_Line: pick ? formatSpread(pick.marketSpread) : '—',
+        Pick_Line: pick ? pick.marketSpreadHma.toFixed(1) : '—',
         Edge: pick ? pick.edge.toFixed(1) : '—',
       };
     });
@@ -554,7 +555,7 @@ export default function HybridLabsPage() {
                     Hybrid V2 Shadow
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Diff (Hybrid - V1)
+                    Diff (Hybrid − Core V1 HMA)
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Shadow Pick
@@ -706,7 +707,7 @@ export default function HybridLabsPage() {
                                   {pick.teamName}
                                 </div>
                                 <div className="text-sm text-gray-600">
-                                  {formatSpread(pick.marketSpread)}
+                                  HMA {pick.marketSpreadHma.toFixed(1)}
                                 </div>
                                 <span
                                   className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getEdgeBadgeColor(pick.edge)}`}
@@ -722,9 +723,34 @@ export default function HybridLabsPage() {
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-center">
                           {game.marketSpread &&
-                          game.marketSpread.value !== null ? (
+                          game.marketSpread.spreadHma != null ? (
                             <div className="text-sm text-gray-600">
-                              <div>{formatSpread(game.marketSpread.value)}</div>
+                              <div className="font-medium text-gray-900">
+                                {game.marketSpread.favoriteName
+                                  ? `${game.marketSpread.favoriteName} ${
+                                      game.marketSpread.spreadHma === 0
+                                        ? 'PK'
+                                        : formatSpread(
+                                            -Math.abs(game.marketSpread.spreadHma)
+                                          )
+                                    }`
+                                  : `HMA ${game.marketSpread.spreadHma.toFixed(1)}`}
+                              </div>
+                              <div className="text-[11px] text-gray-500">
+                                HMA {game.marketSpread.spreadHma.toFixed(1)}
+                              </div>
+                              {game.marketSpread.teamId &&
+                                game.marketSpread.value != null && (
+                                  <div className="text-[11px] text-gray-400">
+                                    row{' '}
+                                    {game.marketSpread.teamId === game.homeTeamId
+                                      ? game.homeTeamName
+                                      : game.marketSpread.teamId === game.awayTeamId
+                                        ? game.awayTeamName
+                                        : game.marketSpread.teamId}{' '}
+                                    {formatSpread(game.marketSpread.value)}
+                                  </div>
+                                )}
                               <div className="text-[11px] text-gray-500 mt-1">
                                 {game.marketSpread.book || 'book n/a'}
                               </div>
@@ -765,8 +791,13 @@ export default function HybridLabsPage() {
           </h3>
           <ul className="text-sm text-blue-800 space-y-1">
             <li>
-              <strong>Core V1:</strong> persisted V1 power-rating comparison when
-              ratings exist. This is not a Hybrid value.
+              <strong>Core V1:</strong> production Core V1 from persisted V1
+              ratings and season-aware HFA, matching Current Slate. Not Hybrid&apos;s
+              internal simple V1 component.
+            </li>
+            <li>
+              <strong>Diff:</strong> Hybrid HMA minus production Core V1 HMA.
+              Positive means Hybrid favors the home side more than Core V1.
             </li>
             <li>
               <strong>V2 / Hybrid:</strong> shown only when Hybrid inputs exist.

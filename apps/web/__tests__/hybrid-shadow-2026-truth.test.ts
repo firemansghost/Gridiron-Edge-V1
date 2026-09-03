@@ -10,6 +10,8 @@ import {
   HYBRID_V2_PRODUCTION_HOLD_REASON,
   isHybridV2ProductionAuthorized,
 } from '@/lib/config/hybrid-production-activation';
+import { calculateHybridSpread, calculateV1Spread } from '@/lib/core-v2-spread';
+import { computeEffectiveHfa } from '@/lib/core-v1-spread';
 import {
   CORE_V1_EFFECTIVE_PRODUCTION_LABEL,
   HYBRID_LIVE_MUTABLE_SHADOW,
@@ -23,10 +25,14 @@ import {
   buildHybridShadowCoverage,
   buildHybridShadowGame,
   buildHybridShadowStatus,
+  canonicalMarketSpreadHma,
+  canonicalizeLabsMarketSpread,
   classifyHybridShadowCoverage,
+  computeProductionCoreV1HmaFromV1Ratings,
   hybridShadowEmptyMessage,
   hybridUnavailableReasons,
   isFiniteRating,
+  toSpreadInfo,
   type HybridShadowGameInput,
   type HybridShadowUnitGrades,
 } from '@/lib/labs/hybrid-shadow-truth';
@@ -63,7 +69,7 @@ function baseGame(
     awayGrades: ZERO_GRADES,
     market: {
       value: -3.5,
-      favoriteTeamId: 'home',
+      teamId: 'home',
       book: 'FanDuel',
       timestamp: '2026-08-28T12:00:00.000Z',
       source: 'odds_api',
@@ -166,6 +172,9 @@ describe('Phase 4A Hybrid shadow Game frame', () => {
   it('carries market provenance when a market line is shown', () => {
     const row = buildHybridShadowGame(baseGame());
     expect(row.marketSpread?.value).toBe(-3.5);
+    expect(row.marketSpread?.teamId).toBe('home');
+    expect(row.marketSpread?.spreadHma).toBe(3.5);
+    expect(row.marketSpread?.favoriteTeamId).toBe('home');
     expect(row.marketSpread?.book).toBe('FanDuel');
     expect(row.marketSpread?.timestamp).toBe('2026-08-28T12:00:00.000Z');
     expect(row.marketSpread?.source).toBe('odds_api');
@@ -209,6 +218,159 @@ describe('Phase 4A Hybrid shadow Game frame', () => {
     );
     expect(classifyHybridShadowCoverage({ totalGames: 51, computedGames: 51 })).toBe(
       'full_hybrid'
+    );
+  });
+});
+
+describe('Phase 4A Core V1, market favorite, and V2 favorite repairs', () => {
+  it('does not present Hybrid calculateV1Spread as production Core V1', () => {
+    const homeRating = 12;
+    const awayRating = 4;
+    const homeTeamId = 'james-madison';
+    const simpleHybridV1 = calculateV1Spread(homeRating, awayRating, false);
+    const production = computeProductionCoreV1HmaFromV1Ratings({
+      homeTeamId,
+      homeRating,
+      awayRating,
+      neutralSite: false,
+    });
+    const expectedHfa = computeEffectiveHfa(homeTeamId, false).effectiveHfa;
+    expect(production).toBeCloseTo(homeRating - awayRating + expectedHfa, 10);
+    expect(production).not.toBeCloseTo(simpleHybridV1, 5);
+
+    const row = buildHybridShadowGame(
+      baseGame({
+        homeTeamId,
+        homeTeamName: 'James Madison',
+        homeRating,
+        awayRating,
+        homeGrades: null,
+        awayGrades: null,
+      })
+    );
+    expect(row.v1Spread?.hma).toBeCloseTo(production, 10);
+    expect(row.v1Spread?.hma).not.toBeCloseTo(simpleHybridV1, 5);
+  });
+
+  it('canonicalizes home and away rows of the same spread to the same HMA and actual favorite', () => {
+    const homeRow = canonicalizeLabsMarketSpread({
+      line: {
+        value: -24.5,
+        teamId: 'home',
+        book: 'FanDuel',
+        timestamp: '2026-08-28T12:00:00.000Z',
+        source: 'odds_api',
+      },
+      homeTeamId: 'home',
+      awayTeamId: 'away',
+      homeTeamName: 'Home',
+      awayTeamName: 'Away',
+    });
+    const awayUnderdogRow = canonicalizeLabsMarketSpread({
+      line: {
+        value: 24.5,
+        teamId: 'away',
+        book: 'FanDuel',
+        timestamp: '2026-08-28T12:00:00.000Z',
+        source: 'odds_api',
+      },
+      homeTeamId: 'home',
+      awayTeamId: 'away',
+      homeTeamName: 'Home',
+      awayTeamName: 'Away',
+    });
+
+    expect(canonicalMarketSpreadHma({
+      lineValue: -24.5,
+      teamId: 'home',
+      homeTeamId: 'home',
+      awayTeamId: 'away',
+    })).toBe(24.5);
+    expect(canonicalMarketSpreadHma({
+      lineValue: 24.5,
+      teamId: 'away',
+      homeTeamId: 'home',
+      awayTeamId: 'away',
+    })).toBe(24.5);
+    expect(homeRow.spreadHma).toBe(24.5);
+    expect(awayUnderdogRow.spreadHma).toBe(24.5);
+    expect(homeRow.favoriteTeamId).toBe('home');
+    expect(awayUnderdogRow.favoriteTeamId).toBe('home');
+    expect(awayUnderdogRow.teamId).toBe('away');
+    expect(awayUnderdogRow.favoriteTeamId).not.toBe(awayUnderdogRow.teamId);
+
+    const built = buildHybridShadowGame(
+      baseGame({
+        market: {
+          value: 24.5,
+          teamId: 'away',
+          book: 'FanDuel',
+          timestamp: '2026-08-28T12:00:00.000Z',
+          source: 'odds_api',
+        },
+      })
+    );
+    expect(built.marketSpread?.favoriteTeamId).toBe('home');
+    expect(built.marketSpread?.teamId).toBe('away');
+    expect(built.marketSpread?.spreadHma).toBe(24.5);
+  });
+
+  it('derives V2 favorite from v2SpreadHma independently of Hybrid favorite', () => {
+    const homeGrades: HybridShadowUnitGrades = {
+      offRunGrade: 1,
+      defRunGrade: 1,
+      offPassGrade: 1,
+      defPassGrade: 1,
+      offExplosiveness: 1,
+      defExplosiveness: 1,
+    };
+    const awayGrades: HybridShadowUnitGrades = {
+      offRunGrade: 0,
+      defRunGrade: 0,
+      offPassGrade: 0,
+      defPassGrade: 0,
+      offExplosiveness: 0,
+      defExplosiveness: 0,
+    };
+    const hybridResult = calculateHybridSpread(
+      -20,
+      20,
+      homeGrades,
+      awayGrades,
+      false,
+      'home',
+      'away'
+    );
+    expect(hybridResult.v2SpreadHma).toBeGreaterThan(0);
+    expect(hybridResult.hybridSpreadHma).toBeLessThan(0);
+
+    const row = buildHybridShadowGame(
+      baseGame({
+        homeRating: -20,
+        awayRating: 20,
+        homeGrades,
+        awayGrades,
+      })
+    );
+    expect(row.v2Spread?.favoriteTeamId).toBe('home');
+    expect(row.v2Spread?.favoriteName).toBe('Home');
+    expect(row.hybridSpread?.favoriteTeamId).toBe('away');
+    expect(row.hybridSpread?.favoriteName).toBe('Away');
+    expect(row.v2Spread?.favoriteTeamId).not.toBe(row.hybridSpread?.favoriteTeamId);
+
+    const v2FromHma = toSpreadInfo(hybridResult.v2SpreadHma, 'home', 'away', 'Home', 'Away');
+    const hybridFromHma = toSpreadInfo(
+      hybridResult.hybridSpreadHma,
+      'home',
+      'away',
+      'Home',
+      'Away'
+    );
+    expect(row.v2Spread).toEqual(v2FromHma);
+    expect(row.hybridSpread).toEqual(hybridFromHma);
+    expect(row.diff).toBeCloseTo(
+      hybridResult.hybridSpreadHma - (row.v1Spread?.hma ?? 0),
+      10
     );
   });
 });
@@ -261,6 +423,13 @@ describe('Phase 4A Models / Hybrid static source gates', () => {
     expect(route).toContain('export async function GET');
     expect(route).not.toContain('export async function POST');
     expect(helper).toContain("from '@/lib/core-v2-spread'");
+    expect(helper).toContain("from '@/lib/core-v1-spread'");
+    expect(helper).toContain('computeEffectiveHfa');
+    expect(helper).toContain('computeProductionCoreV1HmaFromV1Ratings');
+    expect(helper).not.toContain('calculateV1Spread');
+    expect(route).not.toContain('favoriteTeamId: line.teamId');
+    expect(page).toContain('Diff (Hybrid − Core V1 HMA)');
+    expect(page).toContain('spreadHma');
   });
 
   it('V4/Fade is explicitly historical/backtest and Super Tier A remains shadow/held', () => {

@@ -8,7 +8,8 @@ import {
   HYBRID_V2_PRODUCTION_HOLD_REASON,
   isHybridV2ProductionAuthorized,
 } from '@/lib/config/hybrid-production-activation';
-import { calculateHybridSpread, calculateV1Spread } from '@/lib/core-v2-spread';
+import { computeEffectiveHfa } from '@/lib/core-v1-spread';
+import { calculateHybridSpread } from '@/lib/core-v2-spread';
 
 export const HYBRID_SHADOW_STATUS_LABEL = 'HYBRID V2 — SHADOW / HELD';
 export const HYBRID_NOT_OFFICIAL_2026_BET = 'NOT AN OFFICIAL 2026 BET';
@@ -43,12 +44,19 @@ export interface HybridShadowSpread {
   favoriteName: string | null;
 }
 
-export interface HybridShadowMarket {
+/** Latest Labs-selected MarketLine row. teamId is the signed-row side, not the favorite. */
+export interface HybridShadowSelectedMarketLine {
   value: number | null;
-  favoriteTeamId: string | null;
+  teamId: string | null;
   book: string | null;
   timestamp: string | null;
   source: string | null;
+}
+
+export interface HybridShadowMarket extends HybridShadowSelectedMarketLine {
+  spreadHma: number | null;
+  favoriteTeamId: string | null;
+  favoriteName: string | null;
 }
 
 export interface HybridShadowUnitGrades {
@@ -75,7 +83,7 @@ export interface HybridShadowGameInput {
   awayRating: number | null | undefined;
   homeGrades: HybridShadowUnitGrades | null | undefined;
   awayGrades: HybridShadowUnitGrades | null | undefined;
-  market: HybridShadowMarket | null;
+  market: HybridShadowSelectedMarketLine | null;
 }
 
 export interface HybridShadowGame {
@@ -236,6 +244,82 @@ function toSpreadInfo(
   };
 }
 
+export { toSpreadInfo };
+
+/**
+ * Production Core V1 HMA for already-loaded persisted V1 ratings.
+ * Matches getCoreV1SpreadFromTeams when V1 ratings exist:
+ * (homeRating - awayRating) + computeEffectiveHfa.
+ * Hybrid's internal simple V1 component (legacy +2.5 HFA) is not used here.
+ */
+export function computeProductionCoreV1HmaFromV1Ratings(input: {
+  homeTeamId: string;
+  homeRating: number;
+  awayRating: number;
+  neutralSite: boolean;
+}): number {
+  const hfaPoints = computeEffectiveHfa(input.homeTeamId, input.neutralSite)
+    .effectiveHfa;
+  return input.homeRating - input.awayRating + hfaPoints;
+}
+
+/**
+ * Convert a team-sided MarketLine spread row to canonical HMA
+ * (positive = home favored). teamId is the row's side, not the favorite.
+ */
+export function canonicalMarketSpreadHma(input: {
+  lineValue: number;
+  teamId: string | null | undefined;
+  homeTeamId: string;
+  awayTeamId: string;
+}): number | null {
+  if (!Number.isFinite(input.lineValue)) return null;
+  if (input.teamId === input.homeTeamId) return -input.lineValue;
+  if (input.teamId === input.awayTeamId) return input.lineValue;
+  return null;
+}
+
+export function canonicalizeLabsMarketSpread(input: {
+  line: HybridShadowSelectedMarketLine;
+  homeTeamId: string;
+  awayTeamId: string;
+  homeTeamName: string;
+  awayTeamName: string;
+}): HybridShadowMarket {
+  const spreadHma =
+    input.line.value != null
+      ? canonicalMarketSpreadHma({
+          lineValue: input.line.value,
+          teamId: input.line.teamId,
+          homeTeamId: input.homeTeamId,
+          awayTeamId: input.awayTeamId,
+        })
+      : null;
+  const favorite =
+    spreadHma == null
+      ? { favoriteTeamId: null, favoriteName: null }
+      : spreadHma === 0
+        ? { favoriteTeamId: null, favoriteName: null }
+        : toSpreadInfo(
+            spreadHma,
+            input.homeTeamId,
+            input.awayTeamId,
+            input.homeTeamName,
+            input.awayTeamName
+          );
+
+  return {
+    value: input.line.value,
+    teamId: input.line.teamId,
+    book: input.line.book,
+    timestamp: input.line.timestamp,
+    source: input.line.source,
+    spreadHma,
+    favoriteTeamId: favorite.favoriteTeamId,
+    favoriteName: favorite.favoriteName,
+  };
+}
+
 export function buildHybridShadowGame(input: HybridShadowGameInput): HybridShadowGame {
   const reasons = hybridUnavailableReasons(input);
   const hybridAvailable = reasons.length === 0;
@@ -248,13 +332,14 @@ export function buildHybridShadowGame(input: HybridShadowGameInput): HybridShado
   let diff: number | null = null;
 
   if (homeRating != null && awayRating != null) {
-    const v1Hma = calculateV1Spread(
+    const coreV1Hma = computeProductionCoreV1HmaFromV1Ratings({
+      homeTeamId: input.homeTeamId,
       homeRating,
       awayRating,
-      input.neutralSite
-    );
+      neutralSite: input.neutralSite,
+    });
     v1Spread = toSpreadInfo(
-      v1Hma,
+      coreV1Hma,
       input.homeTeamId,
       input.awayTeamId,
       input.homeTeamName,
@@ -267,44 +352,42 @@ export function buildHybridShadowGame(input: HybridShadowGameInput): HybridShado
         awayRating,
         input.homeGrades,
         input.awayGrades,
-      input.neutralSite,
-      input.homeTeamId,
-      input.awayTeamId
-    );
-    const v2FavoriteName =
-      hybridResult.favoriteTeamId === input.homeTeamId
-        ? input.homeTeamName
-        : input.awayTeamName;
-    const hybridFavoriteName =
-      hybridResult.favoriteTeamId === input.homeTeamId
-        ? input.homeTeamName
-        : input.awayTeamName;
-
-    v2Spread = {
-      hma: hybridResult.v2SpreadHma,
-      favoriteSpread: hybridResult.v2FavoriteSpread,
-      favoriteTeamId: hybridResult.favoriteTeamId,
-      favoriteName: v2FavoriteName,
-    };
-    hybridSpread = {
-      hma: hybridResult.hybridSpreadHma,
-      favoriteSpread: hybridResult.hybridFavoriteSpread,
-      favoriteTeamId: hybridResult.favoriteTeamId,
-      favoriteName: hybridFavoriteName,
-    };
-    if (v1Spread) {
-      diff = hybridResult.hybridFavoriteSpread - v1Spread.favoriteSpread;
-    }
+        input.neutralSite,
+        input.homeTeamId,
+        input.awayTeamId
+      );
+      v2Spread = toSpreadInfo(
+        hybridResult.v2SpreadHma,
+        input.homeTeamId,
+        input.awayTeamId,
+        input.homeTeamName,
+        input.awayTeamName
+      );
+      hybridSpread = toSpreadInfo(
+        hybridResult.hybridSpreadHma,
+        input.homeTeamId,
+        input.awayTeamId,
+        input.homeTeamName,
+        input.awayTeamName
+      );
+      diff = hybridResult.hybridSpreadHma - coreV1Hma;
     }
   }
 
+  const marketSpread = input.market
+    ? canonicalizeLabsMarketSpread({
+        line: input.market,
+        homeTeamId: input.homeTeamId,
+        awayTeamId: input.awayTeamId,
+        homeTeamName: input.homeTeamName,
+        awayTeamName: input.awayTeamName,
+      })
+    : null;
+
   let favoritesDisagree: boolean | null = null;
-  if (
-    hybridSpread?.favoriteTeamId &&
-    input.market?.favoriteTeamId
-  ) {
+  if (hybridSpread?.favoriteTeamId && marketSpread?.favoriteTeamId) {
     favoritesDisagree =
-      hybridSpread.favoriteTeamId !== input.market.favoriteTeamId;
+      hybridSpread.favoriteTeamId !== marketSpread.favoriteTeamId;
   }
 
   const missingRatingTeamIds = [
@@ -336,7 +419,7 @@ export function buildHybridShadowGame(input: HybridShadowGameInput): HybridShado
     v2Spread,
     hybridSpread,
     diff,
-    marketSpread: input.market,
+    marketSpread,
     favoritesDisagree,
   };
 }
