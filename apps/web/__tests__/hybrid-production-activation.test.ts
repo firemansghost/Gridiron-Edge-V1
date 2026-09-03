@@ -198,21 +198,26 @@ describe('Hybrid V2 production activation hold', () => {
     );
   });
 
-  it('Picks and Homepage use effective activeModel; hold from authorization helper', () => {
+  it('Official Card /picks does not use live slate or Hybrid filters', () => {
     const fs = require('fs');
     const path = require('path');
     const picks = fs.readFileSync(
       path.join(__dirname, '../app/picks/page.tsx'),
       'utf8'
     );
-    expect(picks).toContain('slateMeta?.activeModel ?? model');
-    expect(picks).toContain('effectiveModelLabel');
-    expect(picks).toContain(
-      'Hybrid V2 is not active for 2026 yet; Core V1 is being used.'
-    );
-    expect(picks).toContain('shouldShowHybridPlaybookFilters(effectiveModel)');
-    expect(picks).toContain('hasAnyBets && hybridRuntimeActive');
+    expect(picks).toContain('/api/official-card');
+    expect(picks).toContain('Core V1 — OFFICIAL / LOCKED');
+    expect(picks).not.toContain('ProductionModelSelector');
+    expect(picks).not.toContain('useProductionModel');
+    expect(picks).not.toContain('/api/weeks/slate');
+    expect(picks).not.toContain('shouldShowHybridPlaybookFilters');
+    expect(picks).not.toContain('slateMeta?.activeModel ?? model');
+    expect(picks).not.toContain('Super Tier A');
+  });
 
+  it('Homepage uses effective activeModel; hold from authorization helper', () => {
+    const fs = require('fs');
+    const path = require('path');
     const home = fs.readFileSync(
       path.join(__dirname, '../app/page.tsx'),
       'utf8'

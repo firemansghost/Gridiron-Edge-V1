@@ -7,7 +7,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * My Card API - Returns tracked bets with current best lines and CLV
+ * My Card API - Returns tracked bets with current best lines and CLV.
+ * Not Official Card truth. Persisted 2026 official_flat_100 cards are GET /api/official-card.
  */
 export async function GET(request: NextRequest) {
   try {
