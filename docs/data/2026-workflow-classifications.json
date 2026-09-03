@@ -13,6 +13,7 @@
     "Core V1 lifecycle path: Game finals → TeamGameStat ingest → Core V1 lifecycle. cfbd-feature-ingest writes parallel cfbdEff* feature-store (not the lifecycle EPA feed).",
     "Opening provider Week 1 Saturday tranche proven end-to-end; recurring score/grading schedules remain NOT AUTHORIZED.",
     "Deleting workflow YAML does not delete historical Actions run records or historical implementation code.",
+    "Retired ingest-2026-schedules.yml (unsafe production writer). Replacement: write-cfbd-schedules-2026-manual.yml (MANUAL_SAFE; not production-authorized merely by merge).",
     "sync-weekly-bets is LEGACY <=2025; 2026 uses write-core-v1-weekly-card-2026.yml."
   ],
   "allowedClassifications": [
@@ -147,10 +148,10 @@
       "purpose2026": "Canonical guarded official_flat_100 grading PREVIEW/COMMIT; manual-only; no provider calls; production Week 1 path successfully proven; recurring schedule not authorized"
     },
     {
-      "file": "ingest-2026-schedules.yml",
-      "classification": "COMPLETED_LEAVE_OFF",
+      "file": "write-cfbd-schedules-2026-manual.yml",
+      "classification": "MANUAL_SAFE",
       "scheduleReactivationRecommended": false,
-      "purpose2026": "Guarded one-week schedule writer; baseline already written"
+      "purpose2026": "Guarded 2026 weekly CFBD schedule rollover PREVIEW/COMMIT; replaces retired ingest-2026-schedules.yml; not production-authorized merely by merge"
     },
     {
       "file": "init-2026-fbs-membership.yml",

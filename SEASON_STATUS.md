@@ -237,12 +237,14 @@ Audit of `node apps/jobs/dist/ingest.js cfbd ...` found stop conditions (always 
 | `scripts/preview-cfbd-schedules.ts` | Forces preview |
 | `.github/workflows/preview-2026-schedules.yml` | Manual read-only preview |
 
-### 2C-1B guarded one-week write (merged — PR #38)
+### 2C-1B guarded one-week write (merged — PR #38; **NOT AUTHORIZED for Week 2+**)
 
 | Artifact | Role |
 |----------|------|
-| `apps/jobs/write-schedules.ts` | Dedicated write CLI — `--confirm-write WRITE_2026_WEEK_<n>` |
-| `.github/workflows/ingest-2026-schedules.yml` | Manual one-week write (`workflow_dispatch` only) |
+| `apps/jobs/write-schedules.ts` | **LEGACY / REPAIR_BEFORE_USE / NOT AUTHORIZED** — `skipDuplicates`, outer Prisma client inside `$transaction`, post-write verify after commit |
+| `.github/workflows/ingest-2026-schedules.yml` | **Retired** — deleted from active workflows |
+
+Use the guarded 2026 rollover instead: `apps/jobs/write-cfbd-schedules-2026.ts` + `.github/workflows/write-cfbd-schedules-2026-manual.yml` (`WRITE_2026_WEEK_<n>_SCHEDULES`). Not production-authorized merely by merge. Keep `.github/workflows/preview-2026-schedules.yml` as the existing read-only preview.
 
 **Operator-reported production writes (2026):** Weeks **1–13** written individually; CFBD returned **no provider Week 14** (not written); Week **15** contains Navy at Army (**1** game). Expected production total: **761**.
 

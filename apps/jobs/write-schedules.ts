@@ -1,14 +1,19 @@
 #!/usr/bin/env node
 /**
+ * LEGACY / REPAIR_BEFORE_USE / NOT AUTHORIZED for 2026 Week 2+.
+ *
+ * Replaced by:
+ *   apps/jobs/write-cfbd-schedules-2026.ts
+ *   .github/workflows/write-cfbd-schedules-2026-manual.yml
+ *
+ * Retained as historical code only. No production workflow may invoke this CLI.
+ * Known defects: skipDuplicates, outer Prisma client inside $transaction,
+ * post-write verification after commit (cannot roll back).
+ *
  * Phase 2C-1B one-week CFBD schedule WRITE CLI.
  *
- * Separate from preview-only ingest-schedules.ts.
- *
- * Usage:
+ * Usage (NOT AUTHORIZED):
  *   npx tsx apps/jobs/write-schedules.ts --season 2026 --week 1 --confirm-write WRITE_2026_WEEK_1
- *
- * Does not import monolithic ingest.ts, seed-ratings, odds, or mock adapters.
- * Do not run against production without explicit operator approval.
  */
 
 import { PrismaClient, Prisma } from '@prisma/client';

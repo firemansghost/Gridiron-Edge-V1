@@ -123,9 +123,10 @@ Confirm these exist in GitHub Secrets / local `.env` for dry runs. Treat **provi
 
 | Tool | Purpose |
 |------|---------|
-| Preview CLI / workflow | Read-only (`--preview` required) |
-| `apps/jobs/write-schedules.ts` | One-week write — `--confirm-write WRITE_2026_WEEK_<n>` |
-| `Ingest 2026 CFBD Schedules (Manual, One Week)` | `workflow_dispatch` only; week 0 prohibited |
+| Preview CLI / workflow | Read-only (`--preview` required); `.github/workflows/preview-2026-schedules.yml` remains |
+| `apps/jobs/write-cfbd-schedules-2026.ts` | Guarded 2026 weekly rollover PREVIEW/COMMIT — `--confirm WRITE_2026_WEEK_<n>_SCHEDULES` |
+| `2026 CFBD Schedules (Manual, Guarded)` | `workflow_dispatch` only; week 0 prohibited; replaces retired `ingest-2026-schedules.yml` |
+| `apps/jobs/write-schedules.ts` | LEGACY / REPAIR_BEFORE_USE / NOT AUTHORIZED — no production workflow may invoke it |
 | `apps/jobs/audit-schedule-inventory.ts` | Full-season read-only inventory audit |
 | `Audit 2026 Schedule Inventory (Manual, Read Only)` | `workflow_dispatch` only; season `2026` |
 | `apps/jobs/audit-ratings-readiness.ts` | Read-only ratings-input readiness audit |
