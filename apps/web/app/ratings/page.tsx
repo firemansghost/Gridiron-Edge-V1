@@ -1,7 +1,8 @@
 /**
  * Power Ratings Page
- * 
- * Displays all FBS teams ranked by their V1 model power ratings
+ *
+ * Displays persisted Core V1 (modelVersion=v1) FBS power ratings.
+ * 2026 conference is season-membership truth, not stale Team.conference.
  */
 
 'use client';
@@ -9,6 +10,15 @@
 import { useState, useEffect, useMemo } from 'react';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
+import {
+  CORE_V1_RATINGS_PAGE_COPY,
+  isCoreV12026LifecycleSeason,
+  isSeasonAwareConferenceSeason,
+  ratingsGamesColumnLabel,
+  ratingsPageCopyKind,
+  showRatingsOffenseDefenseColumns,
+  type RatingsProvenance,
+} from '@/lib/ratings-truth';
 
 interface TeamRating {
   teamId: string;
@@ -18,6 +28,7 @@ interface TeamRating {
   offenseRating: number | null;
   defenseRating: number | null;
   games: number;
+  gamesSample: number | null;
   confidence: number | null;
   dataSource: string | null;
   rank: number;
@@ -26,8 +37,10 @@ interface TeamRating {
 interface RatingsResponse {
   success: boolean;
   season: number;
+  provenance?: RatingsProvenance;
   ratings: TeamRating[];
   count: number;
+  error?: string;
 }
 
 type SortField = 'rank' | 'team' | 'rating' | 'conference';
@@ -49,12 +62,11 @@ export default function RatingsPage() {
       try {
         const seasonParam = season ? `?season=${season}` : '';
         const response = await fetch(`/api/ratings${seasonParam}`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch ratings');
+        const result = (await response.json()) as RatingsResponse;
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || 'Failed to fetch ratings');
         }
-        const result = await response.json();
         setData(result);
-        // Only set season if it wasn't explicitly provided by user
         if (season === null) {
           setSeason(result.season);
         }
@@ -69,23 +81,31 @@ export default function RatingsPage() {
     fetchRatings();
   }, [season]);
 
-  // Filter and sort ratings
+  const seasonAware = data ? isSeasonAwareConferenceSeason(data.season) : false;
+  const lifecycle2026 = data ? isCoreV12026LifecycleSeason(data.season) : false;
+  const copyKind = data ? ratingsPageCopyKind(data.season) : 'legacy';
+  const showOffenseDefense =
+    data != null &&
+    showRatingsOffenseDefenseColumns({
+      season: data.season,
+      ratings: data.ratings,
+    });
+  const gamesColumnLabel = data ? ratingsGamesColumnLabel(data.season) : 'Games';
+
   const filteredAndSortedRatings = useMemo(() => {
     if (!data?.ratings) return [];
 
     let filtered = data.ratings;
 
-    // Apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(
-        r =>
+        (r) =>
           r.team.toLowerCase().includes(query) ||
           r.conference.toLowerCase().includes(query)
       );
     }
 
-    // Apply sorting
     const sorted = [...filtered].sort((a, b) => {
       let aVal: string | number;
       let bVal: string | number;
@@ -143,14 +163,14 @@ export default function RatingsPage() {
     <div className="min-h-screen bg-gray-50">
       <HeaderNav />
       <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Header */}
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             Power Ratings (V1 Model)
           </h1>
           <p className="text-gray-600 mb-4">
-            Team strength ratings used to generate model spreads. Ratings represent
-            points above an average FBS team on a neutral field.
+            {seasonAware
+              ? CORE_V1_RATINGS_PAGE_COPY.headline
+              : 'Team strength ratings used to generate model spreads. Ratings represent points above an average FBS team on a neutral field.'}
           </p>
           {data && (
             <p className="text-sm text-gray-500">
@@ -159,7 +179,6 @@ export default function RatingsPage() {
           )}
         </div>
 
-        {/* Search and Season Selector */}
         <div className="bg-white rounded-lg shadow p-4 mb-6">
           <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1">
@@ -185,28 +204,25 @@ export default function RatingsPage() {
                   const val = e.target.value;
                   setSeason(val ? parseInt(val, 10) : null);
                 }}
-                placeholder="2025"
+                placeholder="2026"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
           </div>
         </div>
 
-        {/* Error State */}
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg mb-6">
             Error: {error}
           </div>
         )}
 
-        {/* Loading State */}
         {loading && (
           <div className="bg-white rounded-lg shadow p-8 text-center">
             <p className="text-gray-600">Loading ratings...</p>
           </div>
         )}
 
-        {/* Ratings Table */}
         {!loading && !error && filteredAndSortedRatings.length > 0 && (
           <div className="bg-white rounded-lg shadow overflow-hidden">
             <div className="overflow-x-auto">
@@ -249,14 +265,18 @@ export default function RatingsPage() {
                         <SortIcon field="rating" />
                       </div>
                     </th>
+                    {showOffenseDefense && (
+                      <>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Offense
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Defense
+                        </th>
+                      </>
+                    )}
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Offense
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Defense
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Games
+                      {gamesColumnLabel}
                     </th>
                   </tr>
                 </thead>
@@ -278,18 +298,26 @@ export default function RatingsPage() {
                       <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-blue-600">
                         {formatRating(rating.rating)}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                        {rating.offenseRating !== null
-                          ? formatRating(rating.offenseRating)
-                          : '—'}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                        {rating.defenseRating !== null
-                          ? formatRating(rating.defenseRating)
-                          : '—'}
-                      </td>
+                      {showOffenseDefense && (
+                        <>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+                            {rating.offenseRating !== null
+                              ? formatRating(rating.offenseRating)
+                              : '—'}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+                            {rating.defenseRating !== null
+                              ? formatRating(rating.defenseRating)
+                              : '—'}
+                          </td>
+                        </>
+                      )}
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                        {rating.games}
+                        {lifecycle2026
+                          ? rating.gamesSample != null
+                            ? rating.gamesSample
+                            : '—'
+                          : rating.games}
                       </td>
                     </tr>
                   ))}
@@ -299,7 +327,6 @@ export default function RatingsPage() {
           </div>
         )}
 
-        {/* Empty State */}
         {!loading && !error && filteredAndSortedRatings.length === 0 && (
           <div className="bg-white rounded-lg shadow p-8 text-center">
             <p className="text-gray-600">
@@ -310,30 +337,44 @@ export default function RatingsPage() {
           </div>
         )}
 
-        {/* Info Box */}
         {!loading && !error && (
           <div className="mt-6 bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
             <h3 className="text-sm font-semibold text-blue-900 mb-2">
               About Power Ratings
             </h3>
-            <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
-              <li>
-                Ratings represent points above/below an average FBS team on a
-                neutral field
-              </li>
-              <li>
-                A team with a +14.2 rating would be expected to beat an average
-                team by 14.2 points on a neutral field
-              </li>
-              <li>
-                Ratings are calculated using offensive and defensive statistics
-                (yards per play, success rate, EPA, etc.)
-              </li>
-              <li>
-                These ratings are used to generate model spreads for game
-                predictions
-              </li>
-            </ul>
+            {copyKind === 'core_v1_2026_lifecycle' ? (
+              <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+                <li>{CORE_V1_RATINGS_PAGE_COPY.headline}</li>
+                <li>{CORE_V1_RATINGS_PAGE_COPY.baseline}</li>
+                <li>{CORE_V1_RATINGS_PAGE_COPY.components}</li>
+                <li>{CORE_V1_RATINGS_PAGE_COPY.conference}</li>
+                <li>{CORE_V1_RATINGS_PAGE_COPY.ratingSample}</li>
+              </ul>
+            ) : copyKind === 'membership_conference' ? (
+              <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+                <li>{CORE_V1_RATINGS_PAGE_COPY.headline}</li>
+                <li>{CORE_V1_RATINGS_PAGE_COPY.conference}</li>
+              </ul>
+            ) : (
+              <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+                <li>
+                  Ratings represent points above/below an average FBS team on a
+                  neutral field
+                </li>
+                <li>
+                  A team with a +14.2 rating would be expected to beat an average
+                  team by 14.2 points on a neutral field
+                </li>
+                <li>
+                  Ratings are calculated using offensive and defensive statistics
+                  (yards per play, success rate, EPA, etc.)
+                </li>
+                <li>
+                  These ratings are used to generate model spreads for game
+                  predictions
+                </li>
+              </ul>
+            )}
           </div>
         )}
       </div>
@@ -341,4 +382,3 @@ export default function RatingsPage() {
     </div>
   );
 }
-
