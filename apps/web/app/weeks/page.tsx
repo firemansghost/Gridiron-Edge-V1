@@ -1,17 +1,18 @@
 /**
- * M4 Review Previous Weeks Page
- * 
- * Shows historical week data with filters and profitability analysis.
+ * /weeks — 2026 Week Archive (persisted Game + Official Card bets)
+ *         and <=2025 legacy reconstructed slate view.
  */
 
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import SlateTable from '@/components/SlateTable';
+import { WeekArchiveTable } from '@/components/WeekArchiveTable';
+import type { WeekArchiveGameView, WeekArchiveSummary } from '@/lib/week-archive';
 
 interface WeekData {
   gameId: string;
@@ -54,8 +55,6 @@ interface WeekData {
   maxEdge: number;
   confidence: string;
   modelVersion: string;
-  
-  // New explicit pick fields
   favoredSide: 'home' | 'away';
   favoredTeamId: string;
   favoredTeamName: string;
@@ -69,13 +68,9 @@ interface WeekData {
   totalPick: 'Over' | 'Under' | null;
   totalPickLabel: string | null;
   totalEdgePts: number;
-  
-  // Game results (if available)
   homeScore: number | null;
   awayScore: number | null;
   status: string;
-  
-  // M6 Adjustments
   adjustments?: {
     injuryAdjPts: number;
     weatherAdjPts: number;
@@ -92,41 +87,83 @@ interface WeekData {
 }
 
 interface WeekSummary {
-    totalGames: number;
-    confidenceBreakdown: {
-      A: number;
-      B: number;
-      C: number;
-    };
-    hasResults: boolean;
+  totalGames: number;
+  confidenceBreakdown: {
+    A: number;
+    B: number;
+    C: number;
+  };
+  hasResults: boolean;
   roi?: {
-      wins: number;
-      losses: number;
-      pushes: number;
-      winRate: number;
-      roi: number;
-    } | null;
-    avgClv: number | null;
+    wins: number;
+    losses: number;
+    pushes: number;
+    winRate: number;
+    roi: number;
+  } | null;
+  avgClv: number | null;
+}
+
+function formatCurrency(value: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+  }).format(value);
+}
+
+function formatPercent(value: number | null): string {
+  if (value === null) return '—';
+  return `${(value * 100).toFixed(2)}%`;
 }
 
 function WeekPageContent() {
-  const [data, setData] = useState<{ week: number; season: number; games: WeekData[]; summary: WeekSummary } | null>(null);
+  const [legacyData, setLegacyData] = useState<{
+    week: number;
+    season: number;
+    games: WeekData[];
+    summary: WeekSummary;
+  } | null>(null);
+  const [archiveGames, setArchiveGames] = useState<WeekArchiveGameView[]>([]);
+  const [archiveSummary, setArchiveSummary] = useState<WeekArchiveSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [season, setSeason] = useState(2025);
-  const [week, setWeek] = useState(9);
+  const [season, setSeason] = useState(0);
+  const [week, setWeek] = useState(0);
+  const [paramsReady, setParamsReady] = useState(false);
+  const urlParamsApplied = useRef(false);
 
   const searchParams = useSearchParams();
+  const isArchiveSeason = season >= 2026;
 
   useEffect(() => {
+    if (urlParamsApplied.current) return;
     const seasonParam = searchParams.get('season');
     const weekParam = searchParams.get('week');
-    
-    if (seasonParam) setSeason(parseInt(seasonParam, 10));
-    if (weekParam) setWeek(parseInt(weekParam, 10));
+
+    if (seasonParam && weekParam) {
+      setSeason(parseInt(seasonParam, 10));
+      setWeek(parseInt(weekParam, 10));
+      urlParamsApplied.current = true;
+      setParamsReady(true);
+      return;
+    }
+
+    fetch('/api/current-season-week')
+      .then((r) => r.json())
+      .then((cur) => {
+        setSeason(seasonParam ? parseInt(seasonParam, 10) : cur?.season || 2026);
+        setWeek(weekParam ? parseInt(weekParam, 10) : cur?.week || 1);
+      })
+      .catch(() => {
+        setSeason((s) => s || 2026);
+        setWeek((w) => w || 1);
+      })
+      .finally(() => {
+        urlParamsApplied.current = true;
+        setParamsReady(true);
+      });
   }, [searchParams]);
 
-  // Update URL when filters change
   const updateURL = (newSeason: number, newWeek: number) => {
     const url = new URL(window.location.href);
     url.searchParams.set('season', newSeason.toString());
@@ -134,39 +171,48 @@ function WeekPageContent() {
     window.history.pushState({}, '', url.toString());
   };
 
-  useEffect(() => {
-    fetchWeekData();
-  }, [season, week]);
-
-  const fetchWeekData = async () => {
+  const fetchWeekData = async (nextSeason: number, nextWeek: number) => {
+    if (!nextSeason || !nextWeek) return;
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/weeks?season=${season}&week=${week}`);
-      const data = await response.json();
-      
-      if (data.success) {
-        setData(data);
+      if (nextSeason >= 2026) {
+        const response = await fetch(`/api/weeks/archive?season=${nextSeason}&week=${nextWeek}`);
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error || 'Failed to fetch week archive');
+        }
+        setArchiveGames(payload.games || []);
+        setArchiveSummary(payload.summary || null);
+        setLegacyData(null);
       } else {
-        setError(data.error || 'Failed to fetch week data');
+        const response = await fetch(`/api/weeks?season=${nextSeason}&week=${nextWeek}`);
+        const payload = await response.json();
+        if (payload.success) {
+          setLegacyData(payload);
+          setArchiveGames([]);
+          setArchiveSummary(null);
+        } else {
+          throw new Error(payload.error || 'Failed to fetch week data');
+        }
       }
     } catch (err) {
       setError('Network error: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      setArchiveGames([]);
+      setArchiveSummary(null);
+      setLegacyData(null);
     } finally {
       setLoading(false);
     }
   };
 
-  const getConfidenceColor = (confidence: string) => {
-    switch (confidence) {
-      case 'A': return 'bg-green-100 text-green-800';
-      case 'B': return 'bg-yellow-100 text-yellow-800';
-      case 'C': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
+  useEffect(() => {
+    if (!paramsReady) return;
+    if (!season || !week) return;
+    void fetchWeekData(season, week);
+  }, [paramsReady, season, week]);
 
-  if (loading) {
+  if (!paramsReady || loading) {
     return (
       <div className="flex-1">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -196,8 +242,8 @@ function WeekPageContent() {
                   <p>{error}</p>
                 </div>
                 <div className="mt-4">
-                  <button 
-                    onClick={fetchWeekData}
+                  <button
+                    onClick={() => void fetchWeekData(season, week)}
                     className="bg-red-100 text-red-800 px-3 py-2 rounded-md text-sm font-medium hover:bg-red-200"
                   >
                     Try Again
@@ -215,13 +261,56 @@ function WeekPageContent() {
     <div className="flex-1">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Browse Weeks</h1>
-          <p className="mt-2 text-gray-600">
-            Historical week data with profitability analysis
-          </p>
+          {isArchiveSeason ? (
+            <>
+              <h1 className="text-3xl font-bold text-gray-900">Week Archive</h1>
+              <p className="mt-2 text-gray-600">
+                2026 archive data comes from the persisted schedule and locked Official
+                Card. Wagers, results, PnL and CLV are historical records and are not
+                recalculated from today&apos;s model or market.
+              </p>
+              <p className="mt-3 text-sm text-gray-700">
+                <span className="font-semibold">Week Archive</span>
+                {' '}
+                = game-by-game historical record.
+                {' '}
+                <span className="font-semibold">Week Review</span>
+                {' '}
+                = betting-performance analysis.
+                {' '}
+                <span className="font-semibold">Current Slate</span>
+                {' '}
+                = live/dynamic recalculation.
+              </p>
+              <p className="mt-3 text-sm flex flex-wrap gap-x-4 gap-y-1">
+                <Link href="/picks" className="text-blue-600 hover:text-blue-800 underline">
+                  Official Card
+                </Link>
+                <Link href="/weeks/review" className="text-blue-600 hover:text-blue-800 underline">
+                  Week Review
+                </Link>
+                <Link href="/season-review" className="text-blue-600 hover:text-blue-800 underline">
+                  Season Review
+                </Link>
+                <Link href="/" className="text-blue-600 hover:text-blue-800 underline">
+                  Current Slate
+                </Link>
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-3xl font-bold text-gray-900">Browse Weeks</h1>
+              <p className="mt-2 text-sm font-semibold text-amber-800">
+                LEGACY / RECONSTRUCTED
+              </p>
+              <p className="mt-2 text-gray-600">
+                Historical seasons through 2025 use the legacy reconstructed model
+                view and are not persisted Official Card records.
+              </p>
+            </>
+          )}
         </div>
 
-        {/* Filter Controls */}
         <div className="mb-6 bg-white p-4 rounded-lg shadow">
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center space-x-2">
@@ -242,9 +331,10 @@ function WeekPageContent() {
                 <option value={2023}>2023</option>
                 <option value={2024}>2024</option>
                 <option value={2025}>2025</option>
+                <option value={2026}>2026</option>
               </select>
             </div>
-            
+
             <div className="flex items-center space-x-2">
               <label htmlFor="week-select" className="text-sm font-medium text-gray-700">
                 Week:
@@ -259,7 +349,7 @@ function WeekPageContent() {
                 }}
                 className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
               >
-                {Array.from({ length: 15 }, (_, i) => i + 1).map(w => (
+                {Array.from({ length: 16 }, (_, i) => i + 1).map((w) => (
                   <option key={w} value={w}>Week {w}</option>
                 ))}
               </select>
@@ -267,93 +357,130 @@ function WeekPageContent() {
 
             <div className="flex items-center space-x-2">
               <span className="text-sm text-gray-500">
-                {loading ? 'Loading...' : `${data?.games?.length || 0} games`}
+                {isArchiveSeason
+                  ? `${archiveGames.length} games`
+                  : `${legacyData?.games?.length || 0} games`}
               </span>
             </div>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          {/* Games Table */}
           <div className="lg:col-span-3">
-            <SlateTable 
-              season={season} 
-              week={week} 
-              title={`Week ${week} Games`}
-              showDateHeaders={true}
-              showAdvanced={false}
-            />
+            {season >= 2026 ? (
+              <WeekArchiveTable games={archiveGames} />
+            ) : (
+              <SlateTable
+                season={season}
+                week={week}
+                title={`Week ${week} Games`}
+                showDateHeaders={true}
+                showAdvanced={false}
+              />
+            )}
           </div>
 
-          {/* Summary Card */}
           <div className="lg:col-span-1">
-            <div className="bg-white p-6 rounded-lg shadow">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Summary</h3>
-              
-              {/* Confidence Breakdown */}
-              <div className="mb-6">
-                <h4 className="text-md font-medium text-gray-900 mb-3">Confidence Tiers</h4>
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">Tier A</span>
-                    <span className="text-lg font-semibold text-green-600">{data?.summary?.confidenceBreakdown?.A || 0}</span>
+            {isArchiveSeason && archiveSummary ? (
+              <div className="bg-white p-6 rounded-lg shadow">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Archive Summary</h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between"><span className="text-gray-600">Games</span><span className="font-semibold">{archiveSummary.totalGames}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">Scheduled</span><span className="font-semibold">{archiveSummary.gamesScheduled}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">Final</span><span className="font-semibold">{archiveSummary.gamesFinal}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">In progress</span><span className="font-semibold">{archiveSummary.gamesInProgress}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">Official games</span><span className="font-semibold">{archiveSummary.officialGames}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">No official wager</span><span className="font-semibold">{archiveSummary.gamesWithoutOfficialWager}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">Official bets</span><span className="font-semibold">{archiveSummary.totalBets}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">Graded / pending</span><span className="font-semibold">{archiveSummary.gradedBets} / {archiveSummary.pendingBets}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">Record</span><span className="font-semibold">{archiveSummary.wins}-{archiveSummary.losses}-{archiveSummary.pushes}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">Spread / ML / Total</span><span className="font-semibold">{archiveSummary.spreadBets} / {archiveSummary.moneylineBets} / {archiveSummary.totalsBets}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">Graded stake</span><span className="font-semibold">{formatCurrency(archiveSummary.gradedStake)}</span></div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">PnL</span>
+                    <span className={`font-semibold ${archiveSummary.totalPnL >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                      {formatCurrency(archiveSummary.totalPnL)}
+                    </span>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">Tier B</span>
-                    <span className="text-lg font-semibold text-yellow-600">{data?.summary?.confidenceBreakdown?.B || 0}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">Tier C</span>
-                    <span className="text-lg font-semibold text-red-600">{data?.summary?.confidenceBreakdown?.C || 0}</span>
-                  </div>
+                  <div className="flex justify-between"><span className="text-gray-600">ROI</span><span className="font-semibold">{formatPercent(archiveSummary.roi)}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">Hit rate</span><span className="font-semibold">{formatPercent(archiveSummary.hitRate)}</span></div>
+                  {archiveSummary.avgCLV !== null && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Avg CLV</span>
+                      <span className={`font-semibold ${archiveSummary.avgCLV >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                        {archiveSummary.avgCLV > 0 ? '+' : ''}
+                        {archiveSummary.avgCLV.toFixed(3)}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
-
-              {/* ROI Analysis */}
-              <div>
-                <h4 className="text-md font-medium text-gray-900 mb-3">Performance</h4>
-                {data?.summary?.hasResults ? (
-                  data.summary.roi ? (
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Wins</span>
-                        <span className="text-sm font-semibold text-green-600">{data.summary.roi.wins}</span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Losses</span>
-                        <span className="text-sm font-semibold text-red-600">{data.summary.roi.losses}</span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Pushes</span>
-                        <span className="text-sm font-semibold text-gray-600">{data.summary.roi.pushes}</span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Win Rate</span>
-                        <span className="text-sm font-semibold text-gray-900">{(data.summary.roi.winRate * 100).toFixed(1)}%</span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">ROI</span>
-                        <span className={`text-sm font-semibold ${data.summary.roi.roi >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {(data.summary.roi.roi * 100).toFixed(1)}%
-                        </span>
-                      </div>
-                      {data.summary.avgClv !== null && (
+            ) : (
+              <div className="bg-white p-6 rounded-lg shadow">
+                <h3 className="text-lg font-semibold text-gray-900 mb-1">Summary</h3>
+                <p className="text-xs font-semibold text-amber-800 mb-4">LEGACY / RECONSTRUCTED</p>
+                <div className="mb-6">
+                  <h4 className="text-md font-medium text-gray-900 mb-3">Confidence Tiers</h4>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Tier A</span>
+                      <span className="text-lg font-semibold text-green-600">{legacyData?.summary?.confidenceBreakdown?.A || 0}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Tier B</span>
+                      <span className="text-lg font-semibold text-yellow-600">{legacyData?.summary?.confidenceBreakdown?.B || 0}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Tier C</span>
+                      <span className="text-lg font-semibold text-red-600">{legacyData?.summary?.confidenceBreakdown?.C || 0}</span>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-md font-medium text-gray-900 mb-3">Performance</h4>
+                  {legacyData?.summary?.hasResults ? (
+                    legacyData.summary.roi ? (
+                      <div className="space-y-2">
                         <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600">Avg CLV</span>
-                          <span className={`text-sm font-semibold ${data.summary.avgClv >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {data.summary.avgClv >= 0 ? '+' : ''}{data.summary.avgClv.toFixed(1)}
+                          <span className="text-sm text-gray-600">Wins</span>
+                          <span className="text-sm font-semibold text-green-600">{legacyData.summary.roi.wins}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-gray-600">Losses</span>
+                          <span className="text-sm font-semibold text-red-600">{legacyData.summary.roi.losses}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-gray-600">Pushes</span>
+                          <span className="text-sm font-semibold text-gray-600">{legacyData.summary.roi.pushes}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-gray-600">Win Rate</span>
+                          <span className="text-sm font-semibold text-gray-900">{(legacyData.summary.roi.winRate * 100).toFixed(1)}%</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-gray-600">ROI</span>
+                          <span className={`text-sm font-semibold ${legacyData.summary.roi.roi >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {(legacyData.summary.roi.roi * 100).toFixed(1)}%
                           </span>
                         </div>
-                      )}
-                    </div>
+                        {legacyData.summary.avgClv !== null && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">Avg CLV</span>
+                            <span className={`text-sm font-semibold ${legacyData.summary.avgClv >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {legacyData.summary.avgClv >= 0 ? '+' : ''}{legacyData.summary.avgClv.toFixed(1)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-gray-500">No spread picks with sufficient edge</div>
+                    )
                   ) : (
-                    <div className="text-sm text-gray-500">No spread picks with sufficient edge</div>
-                  )
-                ) : (
-                  <div className="text-sm text-gray-500">No results yet — scores not seeded</div>
-                )}
+                    <div className="text-sm text-gray-500">No results yet — scores not seeded</div>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
