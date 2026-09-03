@@ -573,6 +573,12 @@ describe('auditRatingsReadiness', () => {
       (f) => f.code === 'stats_season_cfbd_yml'
     )!;
     expect(seasonStats.message).toMatch(/active nightly schedule/);
+    const statsAdvanced = DEFAULT_WORKFLOW_RISK_FINDINGS.find(
+      (f) => f.code === 'stats_advanced_cfbd_yml'
+    )!;
+    expect(statsAdvanced.message).toMatch(/workflow_dispatch ONLY/);
+    expect(statsAdvanced.message).toMatch(/nightly schedule removed/);
+    expect(statsAdvanced.message).not.toMatch(/active nightly schedule remains/);
   });
 
   it('existing ratings do not authorize a write', () => {

@@ -1,3 +1,9 @@
+# LEGACY / MANUAL-USE ONLY.
+# Old TeamSeasonStat aggregation path via /stats/game/advanced.
+# Not the guarded 2026 Core V1 TeamGameStat source
+# (cfbd-team-game-stats-2026-manual.yml).
+# workflow_dispatch only — nightly schedule removed to avoid extra
+# account-level concurrency and replica-lag exposure.
 name: CFBD Advanced Stats Sync
 
 on:
@@ -8,9 +14,10 @@ on:
         required: true
         default: '2025'
         type: string
-  schedule:
-    # Run nightly at 3 AM UTC (after season stats)
-    - cron: '0 3 * * *'
+
+concurrency:
+  group: cfbd-stats-game-advanced
+  cancel-in-progress: false
 
 jobs:
   sync-advanced-stats:

@@ -411,7 +411,7 @@ export const DEFAULT_WORKFLOW_RISK_FINDINGS: AuditFinding[] = [
     code: 'stats_advanced_cfbd_yml',
     severity: 'review',
     message:
-      'stats-advanced-cfbd.yml: active nightly schedule remains in YAML; season default 2025; arbitrary season; checkout@v4 + setup-node@v4 + Node 18; calls CFBD and writes advanced/season stats; NOT safe for direct 2026 execution. UI enable/disable not proven from source',
+      'stats-advanced-cfbd.yml: workflow_dispatch ONLY (nightly schedule removed); legacy TeamSeasonStat aggregation / manual-use only; season default 2025; arbitrary season; checkout@v4 + setup-node@v4 + Node 18; calls CFBD and writes advanced/season stats; NOT the guarded 2026 TeamGameStat path; NOT safe for direct 2026 execution. UI enable/disable not proven from source',
   },
   {
     code: 'nightly_ingest_yml',

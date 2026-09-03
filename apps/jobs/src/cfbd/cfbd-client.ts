@@ -6,7 +6,13 @@
  * - Retry with jittered backoff
  * - Per-endpoint concurrency caps
  * - Error handling
+ *
+ * Process-level maxConcurrency is a conservative ceiling compatible with
+ * CFBD heavy-read endpoint concurrency (notably /stats/game/advanced).
  */
+
+/** Conservative process-level concurrent-request ceiling for this client. */
+export const CFBD_PROCESS_MAX_CONCURRENCY = 2;
 
 interface RateLimitConfig {
   burst: number; // Requests per burst window
@@ -79,12 +85,13 @@ export class CFBDClient {
     
     // Rate limits: Free tier ~1000/day, Paid ~10k/day
     // Conservative defaults: 50 burst, 500 sustained per hour
+    // maxConcurrency is a process-level ceiling (not a redesigned retry system).
     this.rateLimiter = new RateLimiter({
       burst: 50,
       sustained: 500,
       burstWindowMs: 60 * 1000, // 1 minute
       sustainedWindowMs: 60 * 60 * 1000, // 1 hour
-      maxConcurrency: 5, // 5 concurrent requests per endpoint
+      maxConcurrency: CFBD_PROCESS_MAX_CONCURRENCY,
     });
   }
   

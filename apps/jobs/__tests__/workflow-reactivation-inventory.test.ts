@@ -33,7 +33,6 @@ const EXPECTED_SCHEDULED = [
   'nightly-ingest.yml',
   'roster-churn-cfbd.yml',
   'sgo-team-stats.yml',
-  'stats-advanced-cfbd.yml',
   'stats-season-cfbd.yml',
   'talent-commits-sync.yml',
   'v3-totals-nightly.yml',
@@ -143,7 +142,7 @@ describe('2C-2J-6D-2 workflow reactivation inventory', () => {
     expect(result.status).toBe(0);
     const inv = JSON.parse(result.stdout);
     expect(inv.count).toBe(49);
-    expect(inv.scheduled_count).toBe(8);
+    expect(inv.scheduled_count).toBe(7);
     const scheduled = inv.workflows
       .filter((w: { has_active_schedule_yaml: boolean }) => w.has_active_schedule_yaml)
       .map((w: { file: string }) => w.file)
@@ -157,6 +156,7 @@ describe('2C-2J-6D-2 workflow reactivation inventory', () => {
     expect(scheduled).not.toContain('grade-bets-2026-manual.yml');
     expect(scheduled).not.toContain('cfbd-team-game-stats-2026-manual.yml');
     expect(scheduled).not.toContain('stats-cfbd.yml');
+    expect(scheduled).not.toContain('stats-advanced-cfbd.yml');
 
     const statsCfbd = inv.workflows.find(
       (w: { file: string }) => w.file === 'stats-cfbd.yml'
