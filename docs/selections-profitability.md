@@ -32,58 +32,7 @@ The `bets` table stores all betting selections with the following key fields:
 
 ## API Endpoints
 
-### POST /api/bets/import
-
-Import betting selections into the ledger.
-
-**Request Body:**
-```json
-[
-  {
-    "season": 2025,
-    "week": 9,
-    "gameId": "2025-wk9-alabama-south-carolina",
-    "marketType": "spread",
-    "side": "home",
-    "modelPrice": -7.5,
-    "stake": 100,
-    "strategyTag": "edge-detector",
-    "source": "strategy-run",
-    "notes": "Strong edge on Alabama"
-  }
-]
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "count": 1,
-  "bets": [
-    {
-      "id": "bet_123",
-      "season": 2025,
-      "week": 9,
-      "gameId": "2025-wk9-alabama-south-carolina",
-      "marketType": "spread",
-      "side": "home",
-      "modelPrice": -7.5,
-      "closePrice": -7.0,
-      "stake": 100,
-      "result": null,
-      "pnl": null,
-      "clv": null,
-      "strategyTag": "edge-detector",
-      "source": "strategy-run",
-      "notes": "Strong edge on Alabama",
-      "game": {
-        "homeTeam": { "name": "Alabama" },
-        "awayTeam": { "name": "South Carolina" }
-      }
-    }
-  ]
-}
-```
+Public `/api/bets/import` is **retired**. Direct public-site Bet creation is not a 2026 production write path. Guarded GitHub Actions remain canonical for official 2026 writes.
 
 ### GET /api/bets/summary
 
@@ -226,22 +175,7 @@ The grading job (`jobs/grade-bets`) automatically:
 
 ## Usage Examples
 
-### Import Strategy Results
-```bash
-curl -X POST /api/bets/import \
-  -H "Content-Type: application/json" \
-  -d '[{
-    "season": 2025,
-    "week": 9,
-    "gameId": "2025-wk9-alabama-south-carolina",
-    "marketType": "spread",
-    "side": "home",
-    "modelPrice": -7.5,
-    "stake": 100,
-    "strategyTag": "edge-detector",
-    "source": "strategy-run"
-  }]'
-```
+Public `/api/bets/import` is retired and is not an active production write path.
 
 ### Get Week 9 Performance
 ```bash

@@ -215,8 +215,9 @@ describe('2C-2J-6A side-aware close line + official invariant (web)', () => {
 
 describe('2C-2J-6A web consolidation (static)', () => {
   const root = path.resolve(__dirname, '../../..');
-  const route = fs.readFileSync(
-    path.join(root, 'apps/web/app/api/bets/grade/route.ts'),
+  const publicGradeRoute = path.join(root, 'apps/web/app/api/bets/grade/route.ts');
+  const adminGradeWeek = fs.readFileSync(
+    path.join(root, 'apps/web/app/api/admin/grade-week/route.ts'),
     'utf8'
   );
   const script = fs.readFileSync(
@@ -224,11 +225,17 @@ describe('2C-2J-6A web consolidation (static)', () => {
     'utf8'
   );
 
-  it('API route delegates to gradeAvailableBets; no modelPrice ML payout math', () => {
-    expect(route).toContain('gradeAvailableBets');
-    expect(route).not.toMatch(/pnl\s*=\s*.*bet\.modelPrice/);
-    expect(route).not.toMatch(/const odds = Number\(bet\.modelPrice\)/);
-    expect(route).not.toMatch(/pnl\s*\?\s*Number\(pnl\)\s*:\s*null/);
+  it('does not expose public /api/bets/grade', () => {
+    expect(fs.existsSync(publicGradeRoute)).toBe(false);
+  });
+
+  it('authenticated grade-week delegates to gradeAvailableBets; no modelPrice ML payout math', () => {
+    expect(adminGradeWeek).toContain('gradeAvailableBets');
+    expect(adminGradeWeek).toMatch(/ADMIN_SECRET/);
+    expect(adminGradeWeek).toContain('x-admin-secret');
+    expect(adminGradeWeek).not.toMatch(/pnl\s*=\s*.*bet\.modelPrice/);
+    expect(adminGradeWeek).not.toMatch(/const odds = Number\(bet\.modelPrice\)/);
+    expect(adminGradeWeek).not.toMatch(/pnl\s*\?\s*Number\(pnl\)\s*:\s*null/);
   });
 
   it('manual week script delegates to grading service; no independent ML payout', () => {

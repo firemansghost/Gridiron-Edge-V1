@@ -40,7 +40,6 @@ export default function BetsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showChart, setShowChart] = useState(false);
-  const [seeding, setSeeding] = useState(false);
   const [filters, setFilters] = useState<BetFilters>({
     season: 2025,
     week: null,
@@ -78,25 +77,6 @@ export default function BetsPage() {
   useEffect(() => {
     fetchBets();
   }, [filters]);
-
-  const handleSeed = async () => {
-    setSeeding(true);
-    try {
-      const response = await fetch('/api/bets/seed', { method: 'GET' });
-      const result = await response.json();
-      
-      if (result.success) {
-        alert(`Seeded ${result.inserted} demo bets`);
-        fetchBets(); // Refresh the data
-      } else {
-        alert(`Error: ${result.error}`);
-      }
-    } catch (err) {
-      alert(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally {
-      setSeeding(false);
-    }
-  };
 
   const exportCSV = () => {
     const params = new URLSearchParams({
@@ -317,15 +297,6 @@ export default function BetsPage() {
             </label>
           </div>
           <div className="flex gap-2">
-            {process.env.NEXT_PUBLIC_ENABLE_BETS_SEED === 'true' && (
-              <button 
-                onClick={handleSeed}
-                disabled={seeding}
-                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
-              >
-                {seeding ? 'Seeding...' : 'Insert Demo Bets'}
-              </button>
-            )}
             <button
               onClick={exportCSV}
               className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
@@ -383,7 +354,7 @@ export default function BetsPage() {
                 <div className="text-gray-400 text-5xl mb-4">📊</div>
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No bets found</h3>
                 <p className="text-gray-600 mb-4">
-                  No bets found for the current filters. Try adjusting your selection or add some demo bets.
+                  No bets found for the current filters. Try adjusting your selection.
                 </p>
                 <div className="space-y-2 mb-6">
                   <p className="text-sm text-gray-500">
@@ -397,15 +368,6 @@ export default function BetsPage() {
                     </a>
                   </p>
                 </div>
-                {process.env.NEXT_PUBLIC_ENABLE_BETS_SEED === 'true' && (
-                  <button 
-                    onClick={handleSeed}
-                    disabled={seeding}
-                    className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
-                  >
-                    {seeding ? 'Seeding...' : 'Insert Demo Bets'}
-                  </button>
-                )}
               </div>
           ) : (
             <div className="overflow-x-auto">
