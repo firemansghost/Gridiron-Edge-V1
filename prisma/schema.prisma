@@ -251,20 +251,20 @@ model TeamUnitGrades {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // The "Trench" Grades (Z-Scores)
-  offRunGrade   Float @map("off_run_grade")   // From Line Yards, Rush PPA
-  defRunGrade   Float @map("def_run_grade")   // From Stuff Rate, Rush PPA Allowed
+  offRunGrade Float @map("off_run_grade") // From Line Yards, Rush PPA
+  defRunGrade Float @map("def_run_grade") // From Stuff Rate, Rush PPA Allowed
 
   // The "Air" Grades
-  offPassGrade  Float @map("off_pass_grade")  // From Pass PPA, Success Rate
-  defPassGrade  Float @map("def_pass_grade")  // From Pass PPA Allowed, Success Rate Allowed
+  offPassGrade Float @map("off_pass_grade") // From Pass PPA, Success Rate
+  defPassGrade Float @map("def_pass_grade") // From Pass PPA Allowed, Success Rate Allowed
 
   // The "Chaos/Finishing" Grades
   offExplosiveness Float @map("off_explosiveness") // From IsoPPP
   defExplosiveness Float @map("def_explosiveness")
-  havocGrade       Float @map("havoc_grade")       // From Season Havoc
+  havocGrade       Float @map("havoc_grade") // From Season Havoc
 
   // Legacy field (preserved for existing data)
-  barnesRating     Float? @map("barnes_rating")
+  barnesRating Float? @map("barnes_rating")
 
   // Relations
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
@@ -350,25 +350,25 @@ model MatchupOutput {
 }
 
 model Bet {
-  id          String     @id @default(cuid())
-  createdAt   DateTime   @default(now()) @map("created_at")
-  season      Int
-  week        Int
-  gameId      String     @map("game_id")
-  marketType  BetType    @map("market_type")
-  side        BetSide
-  modelPrice  Decimal    @map("model_price")
-  closePrice  Decimal?   @map("close_price")
-  stake       Decimal
-  result      BetResult?
-  pnl         Decimal?
-  clv         Decimal?
-  strategyTag String     @map("strategy_tag")
-  source      BetSource
-  notes       String?
-  hybridConflictType String? @map("hybrid_conflict_type")
-  updatedAt   DateTime   @updatedAt @map("updated_at")
-  game        Game       @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  id                 String     @id @default(cuid())
+  createdAt          DateTime   @default(now()) @map("created_at")
+  season             Int
+  week               Int
+  gameId             String     @map("game_id")
+  marketType         BetType    @map("market_type")
+  side               BetSide
+  modelPrice         Decimal    @map("model_price")
+  closePrice         Decimal?   @map("close_price")
+  stake              Decimal
+  result             BetResult?
+  pnl                Decimal?
+  clv                Decimal?
+  strategyTag        String     @map("strategy_tag")
+  source             BetSource
+  notes              String?
+  hybridConflictType String?    @map("hybrid_conflict_type")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
+  game               Game       @relation(fields: [gameId], references: [id], onDelete: Cascade)
 
   @@index([season, week])
   @@index([strategyTag])
@@ -955,4 +955,221 @@ model ModelCalibration {
   @@index([gatesPassed])
   @@index([season])
   @@map("model_calibration")
+}
+
+// ---------------------------------------------------------------------------
+// Shadow Snapshot V1 — append-only prospective evidence (Phase 4B storage).
+// No foreign keys to operational Game / Team / MarketLine / Bet / MatchupOutput.
+// No @updatedAt. Conditional field presence is enforced by the future writer.
+// ---------------------------------------------------------------------------
+
+enum ShadowCaptureStatus {
+  COMPLETE
+  REJECTED
+  FAILED
+}
+
+enum ShadowAvailabilityStatus {
+  AVAILABLE
+  UNAVAILABLE
+}
+
+enum ShadowSelectionSide {
+  HOME
+  AWAY
+  NO_SELECTION
+}
+
+enum ShadowTeamSide {
+  HOME
+  AWAY
+}
+
+enum ShadowV4ComparisonStatus {
+  SIDE_AVAILABLE
+  VERIFIED_NO_SELECTION
+  PROVENANCE_UNAVAILABLE
+}
+
+enum ShadowQualificationStatus {
+  QUALIFIED
+  NOT_QUALIFIED
+  UNAVAILABLE
+}
+
+enum ShadowAtsResult {
+  WIN
+  LOSS
+  PUSH
+  NOT_APPLICABLE
+  UNAVAILABLE
+}
+
+enum ShadowMarketType {
+  SPREAD
+}
+
+model ShadowCaptureRun {
+  id                             String                     @id @default(cuid())
+  season                         Int
+  week                           Int
+  evaluationProtocol             String                     @map("evaluation_protocol")
+  captureContext                 String                     @map("capture_context")
+  modelFamily                    String                     @map("model_family")
+  modelDefinitionId              String                     @map("model_definition_id")
+  modelDefinitionHash            String                     @map("model_definition_hash")
+  modelDefinitionManifest        Json                       @map("model_definition_manifest")
+  policyDefinitionId             String                     @map("policy_definition_id")
+  policyDefinitionHash           String                     @map("policy_definition_hash")
+  policyDefinitionManifest       Json                       @map("policy_definition_manifest")
+  repoCommitSha                  String                     @map("repo_commit_sha")
+  captureTimestamp               DateTime                   @map("capture_timestamp")
+  expectedGameIds                Json                       @map("expected_game_ids")
+  totalGames                     Int                        @map("total_games")
+  hybridAvailableCount           Int                        @map("hybrid_available_count")
+  hybridUnavailableCount         Int                        @map("hybrid_unavailable_count")
+  qualificationQualifiedCount    Int                        @map("qualification_qualified_count")
+  qualificationNotQualifiedCount Int                        @map("qualification_not_qualified_count")
+  qualificationUnavailableCount  Int                        @map("qualification_unavailable_count")
+  v4SideAvailableCount           Int                        @map("v4_side_available_count")
+  v4VerifiedNoSelectionCount     Int                        @map("v4_verified_no_selection_count")
+  v4ProvenanceUnavailableCount   Int                        @map("v4_provenance_unavailable_count")
+  status                         ShadowCaptureStatus
+  failureReason                  String?                    @map("failure_reason")
+  createdAt                      DateTime                   @default(now()) @map("created_at")
+  predictions                    ShadowPredictionSnapshot[]
+
+  @@unique([season, week, evaluationProtocol, modelDefinitionHash, policyDefinitionHash, captureContext], map: "shadow_capture_runs_cohort_key")
+  @@index([season, week])
+  @@index([captureTimestamp])
+  @@index([modelDefinitionHash])
+  @@index([policyDefinitionHash])
+  @@index([captureContext])
+  @@index([status])
+  @@map("shadow_capture_runs")
+}
+
+model ShadowPredictionSnapshot {
+  id                  String                   @id @default(cuid())
+  captureRunId        String                   @map("capture_run_id")
+  gameId              String                   @map("game_id")
+  season              Int
+  week                Int
+  homeTeamId          String                   @map("home_team_id")
+  awayTeamId          String                   @map("away_team_id")
+  kickoffTimestamp    DateTime                 @map("kickoff_timestamp")
+  neutralSite         Boolean                  @map("neutral_site")
+  predictionTimestamp DateTime                 @map("prediction_timestamp")
+  predictionStatus    ShadowAvailabilityStatus @map("prediction_status")
+  unavailableReasons  String[]                 @default([]) @map("unavailable_reasons")
+  createdAt           DateTime                 @default(now()) @map("created_at")
+
+  homeV1Rating        Float? @map("home_v1_rating")
+  awayV1Rating        Float? @map("away_v1_rating")
+  ratingProvenance    Json?  @map("rating_provenance")
+  homeUnitGrades      Json?  @map("home_unit_grades")
+  awayUnitGrades      Json?  @map("away_unit_grades")
+  unitGradeProvenance Json?  @map("unit_grade_provenance")
+  weatherState        Json?  @map("weather_state")
+  inputPayload        Json   @map("input_payload")
+  inputHash           String @map("input_hash")
+
+  coreV1Hma           Float?               @map("core_v1_hma")
+  v2Hma               Float?               @map("v2_hma")
+  hybridHma           Float?               @map("hybrid_hma")
+  predictionMarketHma Float?               @map("prediction_market_hma")
+  spreadEdgeHma       Float?               @map("spread_edge_hma")
+  absSpreadEdge       Float?               @map("abs_spread_edge")
+  selectedSide        ShadowSelectionSide? @map("selected_side")
+  selectedTeamId      String?              @map("selected_team_id")
+  predictionPickLine  Float?               @map("prediction_pick_line")
+
+  selectedMarketLineId    String?   @map("selected_market_line_id")
+  selectedMarketTeamId    String?   @map("selected_market_team_id")
+  selectedMarketLineValue Float?    @map("selected_market_line_value")
+  marketBook              String?   @map("market_book")
+  marketSource            String?   @map("market_source")
+  marketTimestamp         DateTime? @map("market_timestamp")
+  marketAgeSeconds        Int?      @map("market_age_seconds")
+  marketFavoriteTeamId    String?   @map("market_favorite_team_id")
+
+  v4ComparisonStatus   ShadowV4ComparisonStatus?  @map("v4_comparison_status")
+  v4ComparisonSide     ShadowTeamSide?            @map("v4_comparison_side")
+  v4Provenance         Json?                      @map("v4_provenance")
+  hybridConflictType   String?                    @map("hybrid_conflict_type")
+  tierBucket           String?                    @map("tier_bucket")
+  qualificationStatus  ShadowQualificationStatus? @map("qualification_status")
+  qualificationReasons String[]                   @default([]) @map("qualification_reasons")
+  isSuperTierA         Boolean?                   @map("is_super_tier_a")
+
+  captureRun        ShadowCaptureRun         @relation(fields: [captureRunId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  evaluationResults ShadowEvaluationResult[]
+
+  @@unique([captureRunId, gameId], map: "shadow_prediction_snapshots_run_game_key")
+  @@index([captureRunId])
+  @@index([season, week])
+  @@index([gameId])
+  @@index([predictionTimestamp])
+  @@index([predictionStatus])
+  @@index([qualificationStatus])
+  @@index([isSuperTierA])
+  @@map("shadow_prediction_snapshots")
+}
+
+model ShadowClosingMarketSnapshot {
+  id                         String                   @id @default(cuid())
+  gameId                     String                   @map("game_id")
+  evaluationProtocol         String                   @map("evaluation_protocol")
+  policyDefinitionId         String                   @map("policy_definition_id")
+  policyDefinitionHash       String                   @map("policy_definition_hash")
+  marketType                 ShadowMarketType         @map("market_type")
+  targetTimestamp            DateTime                 @map("target_timestamp")
+  status                     ShadowAvailabilityStatus
+  unavailableReason          String?                  @map("unavailable_reason")
+  selectedMarketLineId       String?                  @map("selected_market_line_id")
+  selectedMarketTeamId       String?                  @map("selected_market_team_id")
+  selectedMarketLineValue    Float?                   @map("selected_market_line_value")
+  canonicalMarketHma         Float?                   @map("canonical_market_hma")
+  book                       String?
+  source                     String?
+  marketObservationTimestamp DateTime?                @map("market_observation_timestamp")
+  capturedAt                 DateTime                 @map("captured_at")
+  createdAt                  DateTime                 @default(now()) @map("created_at")
+  evaluations                ShadowEvaluationResult[]
+
+  @@unique([gameId, evaluationProtocol, policyDefinitionHash, marketType, targetTimestamp], map: "shadow_closing_market_snapshots_identity_key")
+  @@index([gameId])
+  @@index([targetTimestamp])
+  @@index([policyDefinitionHash])
+  @@index([status])
+  @@map("shadow_closing_market_snapshots")
+}
+
+model ShadowEvaluationResult {
+  id                      String          @id @default(cuid())
+  predictionSnapshotId    String          @map("prediction_snapshot_id")
+  closingMarketSnapshotId String?         @map("closing_market_snapshot_id")
+  revision                Int
+  finalHomeScore          Int?            @map("final_home_score")
+  finalAwayScore          Int?            @map("final_away_score")
+  atsResult               ShadowAtsResult @map("ats_result")
+  sideMargin              Float?          @map("side_margin")
+  coverMargin             Float?          @map("cover_margin")
+  clvPoints               Float?          @map("clv_points")
+  shadowStake             Decimal?        @map("shadow_stake")
+  shadowPnl               Decimal?        @map("shadow_pnl")
+  evaluatedAt             DateTime        @map("evaluated_at")
+  resultSource            String?         @map("result_source")
+  resultProvenance        Json?           @map("result_provenance")
+  createdAt               DateTime        @default(now()) @map("created_at")
+
+  predictionSnapshot    ShadowPredictionSnapshot     @relation(fields: [predictionSnapshotId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  closingMarketSnapshot ShadowClosingMarketSnapshot? @relation(fields: [closingMarketSnapshotId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([predictionSnapshotId, revision], map: "shadow_evaluation_results_revision_key")
+  @@index([predictionSnapshotId])
+  @@index([closingMarketSnapshotId])
+  @@index([atsResult])
+  @@index([evaluatedAt])
+  @@map("shadow_evaluation_results")
 }
