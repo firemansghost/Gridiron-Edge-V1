@@ -86,8 +86,42 @@ const EXPLICIT_REVIEW_STRATEGY_TAGS = new Set([
 ]);
 
 /**
+ * Preserve an explicit URL/requested strategy tag before availability is known.
+ * Custom persisted tags (not in the hardcoded label set) must survive until
+ * strategyTagsAvailable is returned.
+ */
+export function preserveExplicitReviewStrategyRequest(
+  urlStrategy: string | null | undefined
+): string | null {
+  const trimmed = urlStrategy?.trim();
+  if (!trimmed) return null;
+  return trimmed;
+}
+
+/**
+ * After persisted tags are known: keep the requested tag if it exists (or `all`);
+ * otherwise fall back to the review-specific default for that season.
+ */
+export function resolveReviewStrategyAfterAvailability(
+  requested: string | null | undefined,
+  season: number,
+  availableTags: string[]
+): string {
+  const trimmed = requested?.trim() ?? '';
+  const normalized = trimmed === '' ? 'all' : trimmed;
+  if (normalized === 'all') {
+    return 'all';
+  }
+  if (availableTags.includes(normalized)) {
+    return normalized;
+  }
+  return getDefaultReviewStrategyTag(season, availableTags);
+}
+
+/**
  * Resolve review strategy from URL param and available tags.
- * Explicit URL wins; otherwise uses getDefaultStrategyTag (hybrid_v2 first).
+ * When availableTags is empty, an explicit URL tag is preserved for the initial fetch.
+ * Once tags are known, unknown tags fall back via getDefaultStrategyTag.
  */
 export function resolveReviewStrategySelection(
   urlStrategy: string | null | undefined,
@@ -101,7 +135,7 @@ export function resolveReviewStrategySelection(
     if (EXPLICIT_REVIEW_STRATEGY_TAGS.has(trimmed)) {
       return trimmed;
     }
-    if (availableTags.includes(trimmed)) {
+    if (availableTags.length === 0 || availableTags.includes(trimmed)) {
       return trimmed;
     }
   }

@@ -16,9 +16,9 @@ import { Footer } from '@/components/Footer';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import {
   getStrategyLabel,
-  getDefaultStrategyTag,
   getDefaultReviewStrategyTag,
-  resolveReviewStrategySelection,
+  preserveExplicitReviewStrategyRequest,
+  resolveReviewStrategyAfterAvailability,
 } from '@/lib/strategy-utils';
 
 interface WeekBreakdown {
@@ -135,7 +135,7 @@ export default function SeasonReviewPage() {
     }
 
     if (strategyParam !== null) {
-      setStrategyTag(resolveReviewStrategySelection(strategyParam, []));
+      setStrategyTag(preserveExplicitReviewStrategyRequest(strategyParam) ?? 'all');
       defaultStrategySet.current = true;
     }
     urlParamsApplied.current = true;
@@ -164,8 +164,13 @@ export default function SeasonReviewPage() {
     const available = data.meta.strategyTagsAvailable;
 
     if (defaultStrategySet.current) {
-      if (strategyTag !== 'all' && !available.includes(strategyTag)) {
-        setStrategyTag(getDefaultReviewStrategyTag(effectiveSeason || 0, available));
+      const resolved = resolveReviewStrategyAfterAvailability(
+        strategyTag,
+        effectiveSeason || 0,
+        available
+      );
+      if (resolved !== strategyTag) {
+        setStrategyTag(resolved);
       }
       return;
     }

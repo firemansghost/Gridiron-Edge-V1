@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getOfficialStrategyTagsForFilter, isExcludedStrategyTag } from '@/lib/config/official-strategies';
+import { isExcludedStrategyTag } from '@/lib/config/official-strategies';
+import {
+  computeMarketBreakdownByMarketType,
+  computeWeekReviewMetrics,
+  type ReviewBetRow,
+} from '@/lib/review-truth-week';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -167,88 +172,29 @@ export async function GET(request: NextRequest) {
       ...(Object.keys(conflictBreakdown).length > 0 && { conflictBreakdown }),
     };
 
-    // Calculate metrics from the FULL matching Bet population (not the paginated page).
-    const totalBets = allBets.length;
-    const gradedBets = allBets.filter((bet) => bet.result !== null);
-    const pendingBets = totalBets - gradedBets.length;
-
-    const wins = gradedBets.filter((bet) => bet.result === 'win').length;
-    const losses = gradedBets.filter((bet) => bet.result === 'loss').length;
-    const pushes = gradedBets.filter((bet) => bet.result === 'push').length;
-
-    const gradedStake = gradedBets.reduce((sum, bet) => sum + Number(bet.stake), 0);
-    const totalPnL = gradedBets.reduce((sum, bet) => sum + Number(bet.pnl ?? 0), 0);
-
-    // ROI is graded PnL / graded stake (decimal, not percent).
-    const roi = gradedStake > 0 ? totalPnL / gradedStake : 0;
-
-    // Hit rate excludes pushes: wins / (wins + losses)
-    const hitDenom = wins + losses;
-    const hitRate = hitDenom > 0 ? wins / hitDenom : 0;
-
-    const clvValues = gradedBets
-      .filter((bet) => bet.clv !== null)
-      .map((bet) => Number(bet.clv));
-    const avgCLV = clvValues.length > 0
-      ? clvValues.reduce((sum, clv) => sum + clv, 0) / clvValues.length
-      : 0;
-
-    // Market breakdown (byMarketType) derived from ALL matched rows.
-    const byMarketTypeMap: Record<
-      string,
-      {
-        totalBets: number;
-        gradedBets: number;
-        pendingBets: number;
-        wins: number;
-        losses: number;
-        pushes: number;
-        gradedStake: number;
-        pnl: number;
-        roi: number;
-        hitRate: number;
-      }
-    > = {};
-
-    const ensure = (marketType: string) => {
-      if (byMarketTypeMap[marketType]) return;
-      byMarketTypeMap[marketType] = {
-        totalBets: 0,
-        gradedBets: 0,
-        pendingBets: 0,
-        wins: 0,
-        losses: 0,
-        pushes: 0,
-        gradedStake: 0,
-        pnl: 0,
-        roi: 0,
-        hitRate: 0,
-      };
-    };
-
-    for (const bet of allBets) {
-      const mt = String(bet.marketType);
-      ensure(mt);
-      byMarketTypeMap[mt].totalBets += 1;
-
-      if (bet.result === null) continue;
-      byMarketTypeMap[mt].gradedBets += 1;
-      if (bet.result === 'win') byMarketTypeMap[mt].wins += 1;
-      if (bet.result === 'loss') byMarketTypeMap[mt].losses += 1;
-      if (bet.result === 'push') byMarketTypeMap[mt].pushes += 1;
-      byMarketTypeMap[mt].gradedStake += Number(bet.stake);
-      byMarketTypeMap[mt].pnl += Number(bet.pnl ?? 0);
-    }
-
-    for (const mt of Object.keys(byMarketTypeMap)) {
-      const m = byMarketTypeMap[mt];
-      m.pendingBets = m.totalBets - m.gradedBets;
-      m.roi = m.gradedStake > 0 ? m.pnl / m.gradedStake : 0;
-      const denom = m.wins + m.losses;
-      m.hitRate = denom > 0 ? m.wins / denom : 0;
-    }
-
-    const byMarketType = byMarketTypeMap;
+    // Full matching Bet population → tested pure helpers (pagination is table-only).
+    const metricRows: ReviewBetRow[] = allBets.map((bet) => ({
+      marketType: String(bet.marketType),
+      result: bet.result == null ? null : (bet.result as ReviewBetRow['result']),
+      stake: Number(bet.stake),
+      pnl: bet.pnl === null ? null : Number(bet.pnl),
+      clv: bet.clv === null ? null : Number(bet.clv),
+    }));
+    const summaryMetrics = computeWeekReviewMetrics(metricRows);
+    const byMarketType = computeMarketBreakdownByMarketType(metricRows);
+    const {
+      totalBets,
+      gradedBets,
+      pendingBets,
+      wins,
+      losses,
+      pushes,
+      gradedStake,
+      totalPnL,
+      roi,
+      hitRate,
+      avgCLV,
+    } = summaryMetrics;
 
     // Average edge is only safe as a unit-consistent review metric for a subset.
     // For 2026 official_flat_100, we return null to avoid recomputing from live market.
@@ -312,7 +258,7 @@ export async function GET(request: NextRequest) {
       },
       summary: {
         totalBets,
-        gradedBets: gradedBets.length,
+        gradedBets,
         pendingBets,
         wins,
         losses,

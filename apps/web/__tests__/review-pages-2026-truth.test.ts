@@ -5,7 +5,12 @@ import {
   computeWeekReviewMetrics,
   type ReviewBetRow,
 } from '@/lib/review-truth-week';
-import { getDefaultReviewStrategyTag } from '@/lib/strategy-utils';
+import {
+  getDefaultReviewStrategyTag,
+  preserveExplicitReviewStrategyRequest,
+  resolveReviewStrategyAfterAvailability,
+  resolveReviewStrategySelection,
+} from '@/lib/strategy-utils';
 
 const webRoot = path.join(__dirname, '..');
 const repoRoot = path.join(__dirname, '../..');
@@ -38,6 +43,43 @@ describe('Phase 2A review-truth: defaults + metrics', () => {
     it('does not default to demo/test tags when nothing else exists', () => {
       expect(
         getDefaultReviewStrategyTag(2026, ['demo_seed', 'test_grader', 'experimental_x'])
+      ).toBe('all');
+    });
+  });
+
+  describe('explicit URL strategy preservation', () => {
+    it('preserves custom persisted tag until availability is known', () => {
+      expect(preserveExplicitReviewStrategyRequest('custom_ruleset_v1')).toBe(
+        'custom_ruleset_v1'
+      );
+      expect(resolveReviewStrategySelection('custom_ruleset_v1', [])).toBe(
+        'custom_ruleset_v1'
+      );
+    });
+
+    it('keeps custom persisted tag after availability validation when present', () => {
+      expect(
+        resolveReviewStrategyAfterAvailability('custom_ruleset_v1', 2026, [
+          'official_flat_100',
+          'custom_ruleset_v1',
+          'hybrid_v2',
+        ])
+      ).toBe('custom_ruleset_v1');
+    });
+
+    it('falls back to season review default when custom tag is not persisted', () => {
+      expect(
+        resolveReviewStrategyAfterAvailability('custom_ruleset_v1', 2026, [
+          'official_flat_100',
+          'hybrid_v2',
+        ])
+      ).toBe('official_flat_100');
+    });
+
+    it('keeps all as a valid explicit selection', () => {
+      expect(preserveExplicitReviewStrategyRequest('all')).toBe('all');
+      expect(
+        resolveReviewStrategyAfterAvailability('all', 2026, ['official_flat_100'])
       ).toBe('all');
     });
   });
@@ -178,10 +220,38 @@ describe('Phase 2A review-truth: static UI/API gates', () => {
     expect(weekSummaryApi).toContain('if (!isOfficial2026Review)');
   });
 
-  it('Week Review summary/breakdown are derived from allBets (not paginated bets)', () => {
-    expect(weekSummaryApi).toContain('const byMarketType = byMarketTypeMap');
-    expect(weekSummaryApi).toContain('for (const bet of allBets)');
-    expect(weekSummaryApi).toContain('const totalBets = allBets.length');
+  it('Week Review summary/breakdown use the tested metric helpers on the full population', () => {
+    expect(weekSummaryApi).toContain("from '@/lib/review-truth-week'");
+    expect(weekSummaryApi).toContain('computeWeekReviewMetrics');
+    expect(weekSummaryApi).toContain('computeMarketBreakdownByMarketType');
+    expect(weekSummaryApi).toContain('const metricRows: ReviewBetRow[] = allBets.map');
+    expect(weekSummaryApi).not.toContain('const byMarketType = byMarketTypeMap');
+  });
+
+  it('market breakdown UI uses currency PnL and graded/pending counts, not units', () => {
+    expect(weekReviewPage).not.toMatch(/toFixed\(2\)\} units/);
+    expect(weekReviewPage).not.toContain('units');
+    expect(weekReviewPage).toContain('formatCurrency(spread.pnl)');
+    expect(weekReviewPage).toContain('formatCurrency(moneyline.pnl)');
+    expect(weekReviewPage).toContain(
+      '{spread.totalBets} {spread.totalBets === 1 ? \'play\' : \'plays\'} · {spread.gradedBets} graded · {spread.pendingBets} pending'
+    );
+    expect(weekReviewPage).toContain(
+      '{moneyline.totalBets} {moneyline.totalBets === 1 ? \'play\' : \'plays\'} · {moneyline.gradedBets} graded · {moneyline.pendingBets} pending'
+    );
+  });
+
+  it('preserves explicit URL strategy until availability validation', () => {
+    expect(weekReviewPage).toContain('preserveExplicitReviewStrategyRequest');
+    expect(weekReviewPage).toContain('resolveReviewStrategyAfterAvailability');
+    expect(weekReviewPage).not.toContain('resolveReviewStrategySelection(strategyParam, [])');
+    const seasonReviewPage = fs.readFileSync(
+      path.join(webRoot, 'app/season-review/page.tsx'),
+      'utf8'
+    );
+    expect(seasonReviewPage).toContain('preserveExplicitReviewStrategyRequest');
+    expect(seasonReviewPage).toContain('resolveReviewStrategyAfterAvailability');
+    expect(seasonReviewPage).not.toContain('resolveReviewStrategySelection(strategyParam, [])');
   });
 
   it('Season Summary avoids unsafe avgEdge recomputation for 2026 official_flat_100', () => {

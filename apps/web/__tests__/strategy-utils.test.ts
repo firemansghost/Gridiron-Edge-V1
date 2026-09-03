@@ -72,6 +72,12 @@ describe('strategy-utils', () => {
       expect(resolveReviewStrategySelection('all', available)).toBe('all');
     });
 
+    it('preserves a custom persisted tag until available tags are known', () => {
+      expect(resolveReviewStrategySelection('custom_ruleset_v1', [])).toBe(
+        'custom_ruleset_v1'
+      );
+    });
+
     it('keeps historical official_flat_100 queryable when present in available tags', () => {
       expect(resolveReviewStrategySelection('official_flat_100', available)).toBe(
         'official_flat_100'

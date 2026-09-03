@@ -7,7 +7,8 @@ import { Footer } from '@/components/Footer';
 import {
   getStrategyLabel,
   getDefaultReviewStrategyTag,
-  resolveReviewStrategySelection,
+  preserveExplicitReviewStrategyRequest,
+  resolveReviewStrategyAfterAvailability,
   reviewStrategyToWeekReviewState,
 } from '@/lib/strategy-utils';
 import {
@@ -119,8 +120,8 @@ export default function WeekReviewPage() {
     }
 
     if (strategyParam !== null) {
-      const resolved = resolveReviewStrategySelection(strategyParam, []);
-      setStrategy(reviewStrategyToWeekReviewState(resolved));
+      const preserved = preserveExplicitReviewStrategyRequest(strategyParam);
+      setStrategy(reviewStrategyToWeekReviewState(preserved ?? 'all'));
       defaultStrategySet.current = true;
     }
 
@@ -196,10 +197,10 @@ export default function WeekReviewPage() {
     const available = data.meta.strategyTagsAvailable;
 
     if (defaultStrategySet.current) {
-      if (strategy && strategy !== 'all' && !available.includes(strategy)) {
-        setStrategy(
-          reviewStrategyToWeekReviewState(getDefaultReviewStrategyTag(season, available))
-        );
+      const requested = strategy === '' ? 'all' : strategy;
+      const resolved = resolveReviewStrategyAfterAvailability(requested, season, available);
+      if (resolved !== requested) {
+        setStrategy(reviewStrategyToWeekReviewState(resolved));
       }
       return;
     }
@@ -439,13 +440,13 @@ export default function WeekReviewPage() {
                         {spread.pushes > 0 ? `-${spread.pushes}` : ''}
                       </div>
                       <div className="text-sm text-gray-600 mb-2">
-                        {spread.totalBets} {spread.totalBets === 1 ? 'play' : 'plays'}
+                        {spread.totalBets} {spread.totalBets === 1 ? 'play' : 'plays'} · {spread.gradedBets} graded · {spread.pendingBets} pending
                       </div>
                       <div
                         className={`text-sm font-medium ${spread.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}
                       >
-                        {spread.pnl >= 0 ? '+' : ''}
-                        {spread.pnl.toFixed(2)} units
+                        {spread.pnl > 0 ? '+' : ''}
+                        {formatCurrency(spread.pnl)}
                       </div>
                       <div className="text-xs text-gray-500 mt-2">
                         Counts all strategy-run ATS picks for this week.
@@ -475,13 +476,13 @@ export default function WeekReviewPage() {
                         {moneyline.pushes > 0 ? `-${moneyline.pushes}` : ''}
                       </div>
                       <div className="text-sm text-gray-600 mb-2">
-                        {moneyline.totalBets} {moneyline.totalBets === 1 ? 'play' : 'plays'}
+                        {moneyline.totalBets} {moneyline.totalBets === 1 ? 'play' : 'plays'} · {moneyline.gradedBets} graded · {moneyline.pendingBets} pending
                       </div>
                       <div
                         className={`text-sm font-medium ${moneyline.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}
                       >
-                        {moneyline.pnl >= 0 ? '+' : ''}
-                        {moneyline.pnl.toFixed(2)} units
+                        {moneyline.pnl > 0 ? '+' : ''}
+                        {formatCurrency(moneyline.pnl)}
                       </div>
                       <div className="text-xs text-gray-500 mt-2">
                         Counts all strategy-run moneyline picks for this week.
