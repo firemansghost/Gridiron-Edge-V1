@@ -1,6 +1,7 @@
 /**
- * Labs Hybrid Slate API Route
- * Returns games with V1, V2, and Hybrid spread predictions for comparison
+ * Labs Hybrid Slate API
+ * Read-only Game-frame shadow comparison. Does not authorize Hybrid,
+ * persist records, or substitute Core V1 as Hybrid.
  */
 
 export const runtime = 'nodejs';
@@ -8,49 +9,34 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { calculateHybridSpread, calculateV1Spread } from '@/lib/core-v2-spread';
-import { getCoreV1SpreadFromTeams } from '@/lib/core-v1-spread';
+import {
+  HYBRID_LIVE_MUTABLE_SHADOW,
+  buildHybridShadowCoverage,
+  buildHybridShadowGame,
+  buildHybridShadowStatus,
+  isFiniteRating,
+  type HybridShadowSelectedMarketLine,
+  type HybridShadowUnitGrades,
+} from '@/lib/labs/hybrid-shadow-truth';
 
-interface HybridGame {
-  gameId: string;
-  date: string;
-  kickoffLocal: string;
-  status: 'final' | 'scheduled' | 'in_progress';
-  awayTeamId: string;
-  awayTeamName: string;
-  homeTeamId: string;
-  homeTeamName: string;
-  awayScore: number | null;
-  homeScore: number | null;
-  neutralSite: boolean;
-  // Spread predictions
-  v1Spread: {
-    hma: number; // Home minus Away
-    favoriteSpread: number; // Favorite-centric (negative)
-    favoriteTeamId: string | null;
-    favoriteName: string | null;
+function toFiniteNumber(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function toUnitGrades(row: unknown): HybridShadowUnitGrades | null {
+  if (row == null || typeof row !== 'object') return null;
+  const grades = row as Record<string, unknown>;
+  const mapped: HybridShadowUnitGrades = {
+    offRunGrade: Number(grades.offRunGrade),
+    defRunGrade: Number(grades.defRunGrade),
+    offPassGrade: Number(grades.offPassGrade),
+    defPassGrade: Number(grades.defPassGrade),
+    offExplosiveness: Number(grades.offExplosiveness),
+    defExplosiveness: Number(grades.defExplosiveness),
   };
-  v2Spread: {
-    hma: number;
-    favoriteSpread: number;
-    favoriteTeamId: string | null;
-    favoriteName: string | null;
-  };
-  hybridSpread: {
-    hma: number;
-    favoriteSpread: number;
-    favoriteTeamId: string | null;
-    favoriteName: string | null;
-  };
-  // Difference between Hybrid and V1
-  diff: number; // Hybrid - V1 (in favorite-centric terms)
-  // Market line for comparison
-  marketSpread: {
-    value: number | null;
-    favoriteTeamId: string | null;
-  } | null;
-  // Validation flags
-  favoritesDisagree?: boolean;
+  return Object.values(mapped).every(isFiniteRating) ? mapped : null;
 }
 
 export async function GET(request: NextRequest) {
@@ -66,9 +52,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log(`🔬 Fetching hybrid slate for ${season} Week ${week}`);
-
-    // Fetch games with teams and unit grades
     const games = await prisma.game.findMany({
       where: {
         season,
@@ -95,9 +78,8 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Fetch V1 ratings for all teams
     const teamIds = new Set<string>();
-    games.forEach(game => {
+    games.forEach((game) => {
       teamIds.add(game.homeTeamId);
       teamIds.add(game.awayTeamId);
     });
@@ -117,16 +99,18 @@ export async function GET(request: NextRequest) {
 
     const ratingsMap = new Map<string, number>();
     for (const rating of v1Ratings) {
-      const value = rating.powerRating !== null 
-        ? Number(rating.powerRating) 
-        : (rating.rating !== null ? Number(rating.rating) : null);
-      if (value !== null) {
+      const value =
+        rating.powerRating !== null && rating.powerRating !== undefined
+          ? Number(rating.powerRating)
+          : rating.rating !== null && rating.rating !== undefined
+            ? Number(rating.rating)
+            : NaN;
+      if (isFiniteRating(value)) {
         ratingsMap.set(rating.teamId, value);
       }
     }
 
-    // Fetch market spreads
-    const gameIds = games.map(g => g.id);
+    const gameIds = games.map((g) => g.id);
     const marketLines = await prisma.marketLine.findMany({
       where: {
         gameId: { in: gameIds },
@@ -137,102 +121,30 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Group by game and get most recent
-    const marketMap = new Map<string, { value: number; favoriteTeamId: string | null }>();
+    const marketMap = new Map<string, HybridShadowSelectedMarketLine>();
     for (const line of marketLines) {
       if (!marketMap.has(line.gameId)) {
         marketMap.set(line.gameId, {
-          value: line.lineValue,
-          favoriteTeamId: line.teamId,
+          value: toFiniteNumber(line.lineValue),
+          teamId: line.teamId,
+          book: line.bookName || null,
+          timestamp: line.timestamp ? line.timestamp.toISOString() : null,
+          source: line.source || null,
         });
       }
     }
 
-    // Calculate hybrid spreads for each game
-    const hybridGames: HybridGame[] = [];
-
-    for (const game of games) {
-      const homeRating = ratingsMap.get(game.homeTeamId);
-      const awayRating = ratingsMap.get(game.awayTeamId);
-      const homeGrades = game.homeTeam.unitGrades.find(g => g.season === season);
-      const awayGrades = game.awayTeam.unitGrades.find(g => g.season === season);
-
-      // Skip if missing required data
-      if (!homeRating || !awayRating || !homeGrades || !awayGrades) {
-        console.log(`⚠️  Skipping game ${game.id}: missing ratings or unit grades`);
-        continue;
-      }
-
-      // Calculate V1 spread using the same logic as hybrid blend
-      // This ensures consistency between V1 display and hybrid calculation
-      const v1SpreadHma = calculateV1Spread(
-        homeRating,
-        awayRating,
-        game.neutralSite || false
+    const shadowGames = games.map((game) => {
+      const homeGrades = toUnitGrades(
+        game.homeTeam.unitGrades.find((g) => g.season === season)
       );
-      
-      // Determine favorite for V1
-      const isV1HomeFavorite = v1SpreadHma > 0;
-      const v1FavoriteTeamId = isV1HomeFavorite ? game.homeTeamId : game.awayTeamId;
-      const v1FavoriteName = isV1HomeFavorite ? game.homeTeam.name : game.awayTeam.name;
-      
-      // Convert to favorite-centric: if home favored (HMA > 0), favorite spread = -HMA; if away favored (HMA < 0), favorite spread = HMA (already negative)
-      const v1FavoriteSpread = v1SpreadHma > 0 ? -v1SpreadHma : v1SpreadHma;
-
-      // Calculate Hybrid spread
-      const hybridResult = calculateHybridSpread(
-        homeRating,
-        awayRating,
-        {
-          offRunGrade: homeGrades.offRunGrade,
-          defRunGrade: homeGrades.defRunGrade,
-          offPassGrade: homeGrades.offPassGrade,
-          defPassGrade: homeGrades.defPassGrade,
-          offExplosiveness: homeGrades.offExplosiveness,
-          defExplosiveness: homeGrades.defExplosiveness,
-        },
-        {
-          offRunGrade: awayGrades.offRunGrade,
-          defRunGrade: awayGrades.defRunGrade,
-          offPassGrade: awayGrades.offPassGrade,
-          defPassGrade: awayGrades.defPassGrade,
-          offExplosiveness: awayGrades.offExplosiveness,
-          defExplosiveness: awayGrades.defExplosiveness,
-        },
-        game.neutralSite || false,
-        game.homeTeamId,
-        game.awayTeamId
+      const awayGrades = toUnitGrades(
+        game.awayTeam.unitGrades.find((g) => g.season === season)
       );
 
-      // Get favorite names
-      const v2FavoriteName = hybridResult.favoriteTeamId === game.homeTeamId 
-        ? game.homeTeam.name 
-        : game.awayTeam.name;
-      const hybridFavoriteName = hybridResult.favoriteTeamId === game.homeTeamId 
-        ? game.homeTeam.name 
-        : game.awayTeam.name;
-
-      // Calculate difference (Hybrid - V1) in favorite-centric terms
-      const diff = hybridResult.hybridFavoriteSpread - v1FavoriteSpread;
-
-      // Get market spread
-      const marketData = marketMap.get(game.id);
-
-      // Compute favoritesDisagree: Check if hybrid model and market favor different teams
-      let favoritesDisagree = false;
-      if (hybridResult.favoriteTeamId && marketData?.favoriteTeamId) {
-        favoritesDisagree = hybridResult.favoriteTeamId !== marketData.favoriteTeamId;
-      }
-
-      hybridGames.push({
+      return buildHybridShadowGame({
         gameId: game.id,
         date: game.date.toISOString(),
-        kickoffLocal: game.date.toLocaleString('en-US', {
-          timeZone: 'America/Chicago',
-          hour: 'numeric',
-          minute: '2-digit',
-          hour12: true,
-        }),
         status: game.status,
         awayTeamId: game.awayTeamId,
         awayTeamName: game.awayTeam.name,
@@ -241,42 +153,46 @@ export async function GET(request: NextRequest) {
         awayScore: game.awayScore,
         homeScore: game.homeScore,
         neutralSite: game.neutralSite || false,
-        v1Spread: {
-          hma: v1SpreadHma,
-          favoriteSpread: v1FavoriteSpread,
-          favoriteTeamId: v1FavoriteTeamId,
-          favoriteName: v1FavoriteName,
-        },
-        v2Spread: {
-          hma: hybridResult.v2SpreadHma,
-          favoriteSpread: hybridResult.v2FavoriteSpread,
-          favoriteTeamId: hybridResult.favoriteTeamId,
-          favoriteName: v2FavoriteName,
-        },
-        hybridSpread: {
-          hma: hybridResult.hybridSpreadHma,
-          favoriteSpread: hybridResult.hybridFavoriteSpread,
-          favoriteTeamId: hybridResult.favoriteTeamId,
-          favoriteName: hybridFavoriteName,
-        },
-        diff,
-        marketSpread: marketData || null,
-        favoritesDisagree,
+        homeRating: ratingsMap.has(game.homeTeamId)
+          ? ratingsMap.get(game.homeTeamId)
+          : null,
+        awayRating: ratingsMap.has(game.awayTeamId)
+          ? ratingsMap.get(game.awayTeamId)
+          : null,
+        homeGrades,
+        awayGrades,
+        market: marketMap.get(game.id) || null,
       });
-    }
+    });
+
+    const coverage = buildHybridShadowCoverage(shadowGames);
+    const status = buildHybridShadowStatus(season);
 
     return NextResponse.json({
       season,
       week,
-      games: hybridGames,
-      count: hybridGames.length,
+      liveMutable: HYBRID_LIVE_MUTABLE_SHADOW,
+      status,
+      coverage,
+      games: shadowGames.map((game) => ({
+        ...game,
+        kickoffLocal: new Date(game.date).toLocaleString('en-US', {
+          timeZone: 'America/Chicago',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        }),
+      })),
+      count: shadowGames.length,
     });
   } catch (error) {
-    console.error('❌ Error fetching hybrid slate:', error);
+    console.error('Error fetching hybrid slate:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch hybrid slate', details: error instanceof Error ? error.message : String(error) },
+      {
+        error: 'Failed to fetch hybrid slate',
+        details: error instanceof Error ? error.message : String(error),
+      },
       { status: 500 }
     );
   }
 }
-
