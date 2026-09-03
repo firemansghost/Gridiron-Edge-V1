@@ -25,6 +25,7 @@ import {
   ratingsGamesColumnLabel,
   ratingsPageCopyKind,
   resolveRatingsPageConference,
+  showRatingsOffenseDefenseColumns,
 } from '@/lib/ratings-truth';
 
 const webRoot = path.join(__dirname, '..');
@@ -283,6 +284,48 @@ describe('Phase 3 Ratings numerical source and lifecycle presentation', () => {
       'does not mean canonical in-season weight has begun'
     );
   });
+
+  it('keeps legacy Offense/Defense columns and only hides 2026+ columns when components are unavailable', () => {
+    const legacyRows = [
+      { offenseRating: 4.1, defenseRating: -2.2 },
+    ];
+    const lifecycleNullRows = [
+      { offenseRating: null, defenseRating: null },
+    ];
+    const futureComponentRows = [
+      { offenseRating: 3.2, defenseRating: null },
+    ];
+
+    expect(
+      showRatingsOffenseDefenseColumns({ season: 2025, ratings: legacyRows })
+    ).toBe(true);
+    expect(
+      showRatingsOffenseDefenseColumns({
+        season: 2025,
+        ratings: [{ offenseRating: null, defenseRating: null }],
+      })
+    ).toBe(true);
+    expect(
+      showRatingsOffenseDefenseColumns({
+        season: 2026,
+        ratings: lifecycleNullRows,
+      })
+    ).toBe(false);
+    expect(
+      showRatingsOffenseDefenseColumns({
+        season: 2027,
+        ratings: futureComponentRows,
+      })
+    ).toBe(true);
+    expect(
+      showRatingsOffenseDefenseColumns({
+        season: 2027,
+        ratings: lifecycleNullRows,
+      })
+    ).toBe(false);
+    expect(buildRatingsProvenance(2027).lifecyclePolicy).toBeNull();
+    expect(isSeasonAwareConferenceSeason(2027)).toBe(true);
+  });
 });
 
 describe('Phase 3 Ratings static API/page gates', () => {
@@ -333,6 +376,8 @@ describe('Phase 3 Ratings static API/page gates', () => {
   it('2026 page suppresses lifecycle Offense/Defense and zero games as current evidence', () => {
     expect(page).toContain('CORE_V1_RATINGS_PAGE_COPY');
     expect(page).toContain('showOffenseDefense');
+    expect(page).toContain('showRatingsOffenseDefenseColumns');
+    expect(page).not.toContain('data != null && !seasonAware');
     expect(page).toContain('ratingsGamesColumnLabel');
     expect(page).toContain('gamesSample');
     expect(page).toContain('CORE_V1_RATINGS_PAGE_COPY.baseline');

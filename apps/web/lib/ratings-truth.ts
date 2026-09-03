@@ -254,6 +254,24 @@ export function ratingsPageCopyKind(season: number): RatingsPageCopyKind {
   return 'legacy';
 }
 
+/**
+ * Offense/Defense columns follow returned component availability, not the
+ * 2026+ conference-source era. Legacy seasons keep the columns. 2026+ only
+ * shows them when a persisted non-null offense or defense value is present.
+ */
+export function showRatingsOffenseDefenseColumns(input: {
+  season: number;
+  ratings: Array<{
+    offenseRating: number | null;
+    defenseRating: number | null;
+  }>;
+}): boolean {
+  if (!isSeasonAwareConferenceSeason(input.season)) return true;
+  return input.ratings.some(
+    (row) => row.offenseRating !== null || row.defenseRating !== null
+  );
+}
+
 export const CORE_V1_RATINGS_PAGE_COPY = {
   headline:
     'Persisted Core V1 power ratings. Points above or below an average FBS team on a neutral field.',

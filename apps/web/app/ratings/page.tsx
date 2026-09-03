@@ -16,6 +16,7 @@ import {
   isSeasonAwareConferenceSeason,
   ratingsGamesColumnLabel,
   ratingsPageCopyKind,
+  showRatingsOffenseDefenseColumns,
   type RatingsProvenance,
 } from '@/lib/ratings-truth';
 
@@ -83,7 +84,12 @@ export default function RatingsPage() {
   const seasonAware = data ? isSeasonAwareConferenceSeason(data.season) : false;
   const lifecycle2026 = data ? isCoreV12026LifecycleSeason(data.season) : false;
   const copyKind = data ? ratingsPageCopyKind(data.season) : 'legacy';
-  const showOffenseDefense = data != null && !seasonAware;
+  const showOffenseDefense =
+    data != null &&
+    showRatingsOffenseDefenseColumns({
+      season: data.season,
+      ratings: data.ratings,
+    });
   const gamesColumnLabel = data ? ratingsGamesColumnLabel(data.season) : 'Games';
 
   const filteredAndSortedRatings = useMemo(() => {
