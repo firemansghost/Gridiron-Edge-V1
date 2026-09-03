@@ -56,7 +56,7 @@ function collectRunBodies(src: string): string {
 
 function transactionCallback(src: string): string {
   const start = src.indexOf('prisma.$transaction');
-  const iso = src.indexOf('isolationLevel');
+  const iso = src.indexOf('isolationLevel', start);
   expect(start).toBeGreaterThanOrEqual(0);
   expect(iso).toBeGreaterThan(start);
   return src.slice(start, iso);
@@ -154,7 +154,10 @@ describe('write-cfbd-schedules-2026-manual workflow', () => {
     );
     expect(cli).not.toContain('verifyScheduleRolloverPostWrite');
     expect(cli).toContain('transactionalVerification');
-    expect(cli).toContain('buildRolledBackExecution');
+    expect(cli).toContain('buildPrePlanFailureReport');
+    expect(cli).toContain('failureStage');
+    expect(lib).toContain('canonicalExistingGameSnapshot');
+    expect(lib).toContain('existingGames');
   });
 
   it('does not write Odds/Core/Bet/ratings/scores/grading/TeamGameStat', () => {

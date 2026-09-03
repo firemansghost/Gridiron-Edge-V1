@@ -2,8 +2,12 @@
  * Guarded 2026 CFBD schedule rollover — mocked provider, no network, no DB.
  */
 
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import {
   EXPECTED_2026_FBS_COUNT,
+  buildPrePlanFailureReport,
   buildPreviewExecution,
   buildRolledBackExecution,
   buildSuccessfulCommitExecution,
@@ -13,6 +17,7 @@ import {
   fetchGuardedCfbdScheduleWeek,
   finalizeScheduleRolloverReport,
   parseScheduleRolloverCliArgs,
+  planFingerprint,
   planScheduleRollover,
   verifyScheduleRolloverPostWrite,
   type DbScheduleGameRow,
@@ -23,6 +28,7 @@ import {
   type CfbdProviderGame,
   type TeamResolutionResult,
 } from '../src/preseason/cfbd-schedule-ingest';
+import { runGuardedScheduleRollover } from '../write-cfbd-schedules-2026';
 
 const WEEK = 2;
 const KICKOFF = '2026-09-12T16:00:00.000Z';
@@ -250,12 +256,55 @@ describe('cfbd-schedule-rollover-2026 provider fetch (mocked)', () => {
       }) as typeof fetch,
     });
     expect(result.providerCalls).toBe(2);
+    expect(result.providerAttempts).toBe(2);
     expect(result.providerHttpStatus).toBe(200);
     expect(result.providerVenueHttpStatus).toBe(404);
     expect(result.games).toHaveLength(1);
     expect(urls.some((u) => u.includes('seasonType=regular'))).toBe(true);
     expect(urls.some((u) => u.includes('division=fbs'))).toBe(true);
     expect(urls.some((u) => u.includes('week=2'))).toBe(true);
+  });
+
+  it('counts a thrown /venues attempt and continues without enrichment', async () => {
+    const result = await fetchGuardedCfbdScheduleWeek({
+      season: 2026,
+      week: 2,
+      apiKey: 'test-key',
+      fetchImpl: (async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/venues')) {
+          throw new Error('socket hang up');
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [providerGame()],
+        } as unknown as Response;
+      }) as typeof fetch,
+    });
+    expect(result.providerAttempts).toBe(2);
+    expect(result.providerCalls).toBe(2);
+    expect(result.providerHttpStatus).toBe(200);
+    expect(result.providerVenueHttpStatus).toBeNull();
+    expect(result.venueCityByName.size).toBe(0);
+    expect(result.games).toHaveLength(1);
+    const plan = planScheduleRollover({
+      season: 2026,
+      week: WEEK,
+      mode: 'PREVIEW',
+      confirmation: '',
+      providerGames: result.games,
+      venueCityByName: result.venueCityByName,
+      providerHttpStatus: result.providerHttpStatus,
+      providerVenueHttpStatus: result.providerVenueHttpStatus,
+      providerCalls: result.providerCalls,
+      providerAttempts: result.providerAttempts,
+      fbsTeamIds: buildFbsIds(HOME_ID, AWAY_ID),
+      existingGames: [],
+      teamResolutions: resolutions(),
+    });
+    expect(plan.normalizedFbsVsFbsCount).toBe(1);
+    expect(plan.providerAttempts).toBe(2);
   });
 });
 
@@ -649,5 +698,355 @@ describe('cfbd-schedule-rollover-2026 verification + artifact', () => {
     expect(report).not.toHaveProperty('plannedUpdates');
     expect(report).not.toHaveProperty('normalizedGames');
     expect(report.writeSafe).toBe(true);
+  });
+});
+
+describe('cfbd-schedule-rollover-2026 strengthened fingerprint', () => {
+  const staleUpdate = dbRow({ venue: 'Old Stadium', city: 'Old City' });
+
+  async function commitAgainst(options: {
+    outerExisting: DbScheduleGameRow[];
+    innerExisting: DbScheduleGameRow[];
+    innerFbs?: string[];
+  }): Promise<{ mutated: boolean; error: unknown }> {
+    const plan = basePlan({
+      mode: 'COMMIT',
+      confirmation: expectedScheduleRolloverConfirmation(WEEK),
+      existingGames: options.outerExisting,
+    });
+    let mutated = false;
+    try {
+      await executeAtomicScheduleRolloverCommit({
+        plan,
+        providerGames: [providerGame()],
+        venueCityByName: new Map([['sanford stadium', 'Athens']]),
+        teamResolutions: resolutions(),
+        reReadFbsTeamIds: async () =>
+          options.innerFbs ?? buildFbsIds(HOME_ID, AWAY_ID),
+        reReadGames: async () => options.innerExisting,
+        createRow: async () => {
+          mutated = true;
+        },
+        updateRow: async () => {
+          mutated = true;
+        },
+      });
+      return { mutated, error: null };
+    } catch (error) {
+      return { mutated, error };
+    }
+  }
+
+  it('is independent of FBS and existing-row iteration order', () => {
+    const a = dbRow();
+    const b = dbRow({
+      id: '2026-wk2-aaa-bbb',
+      homeTeamId: 'bbb',
+      awayTeamId: 'aaa',
+    });
+    const fbs = buildFbsIds(HOME_ID, AWAY_ID);
+    const left = planFingerprint({
+      createIds: ['c2', 'c1'],
+      updateIds: ['u1'],
+      unchangedIds: [],
+      dbOnlyIds: [],
+      fbsTeamIds: fbs,
+      existingGames: [a, b],
+    });
+    const right = planFingerprint({
+      createIds: ['c1', 'c2'],
+      updateIds: ['u1'],
+      unchangedIds: [],
+      dbOnlyIds: [],
+      fbsTeamIds: [...fbs].reverse(),
+      existingGames: [b, a],
+    });
+    expect(left).toBe(right);
+  });
+
+  it('venue changes but row remains a planned update -> abort before mutation', async () => {
+    const { mutated, error } = await commitAgainst({
+      outerExisting: [staleUpdate],
+      innerExisting: [dbRow({ venue: 'Even Older', city: 'Old City' })],
+    });
+    expect(String(error)).toMatch(/DB state differs from PREVIEW plan fingerprint/);
+    expect(mutated).toBe(false);
+    expect(basePlan({ existingGames: [staleUpdate] }).proposedMetadataUpdates).toBe(
+      1
+    );
+  });
+
+  it('kickoff changes but row remains a planned update -> abort', async () => {
+    const { mutated, error } = await commitAgainst({
+      outerExisting: [staleUpdate],
+      innerExisting: [
+        dbRow({
+          venue: 'Old Stadium',
+          city: 'Old City',
+          date: new Date('2026-09-12T23:00:00.000Z'),
+        }),
+      ],
+    });
+    expect(String(error)).toMatch(/DB state differs from PREVIEW plan fingerprint/);
+    expect(mutated).toBe(false);
+  });
+
+  it('status changes -> abort', async () => {
+    const { mutated, error } = await commitAgainst({
+      outerExisting: [dbRow()],
+      innerExisting: [dbRow({ status: 'in_progress' })],
+    });
+    expect(String(error)).toMatch(/DB state differs from PREVIEW plan fingerprint/);
+    expect(mutated).toBe(false);
+  });
+
+  it('score changes -> abort', async () => {
+    const { mutated, error } = await commitAgainst({
+      outerExisting: [dbRow()],
+      innerExisting: [dbRow({ homeScore: 21, awayScore: 17 })],
+    });
+    expect(String(error)).toMatch(/DB state differs from PREVIEW plan fingerprint/);
+    expect(mutated).toBe(false);
+  });
+
+  it('neutralSite/conferenceGame changes -> abort', async () => {
+    const site = await commitAgainst({
+      outerExisting: [staleUpdate],
+      innerExisting: [
+        dbRow({ venue: 'Old Stadium', city: 'Old City', neutralSite: true }),
+      ],
+    });
+    expect(String(site.error)).toMatch(
+      /DB state differs from PREVIEW plan fingerprint/
+    );
+    expect(site.mutated).toBe(false);
+
+    const conf = await commitAgainst({
+      outerExisting: [staleUpdate],
+      innerExisting: [
+        dbRow({
+          venue: 'Old Stadium',
+          city: 'Old City',
+          conferenceGame: true,
+        }),
+      ],
+    });
+    expect(String(conf.error)).toMatch(
+      /DB state differs from PREVIEW plan fingerprint/
+    );
+    expect(conf.mutated).toBe(false);
+  });
+
+  it('unchanged authoritative state proceeds', async () => {
+    const { mutated, error } = await commitAgainst({
+      outerExisting: [dbRow()],
+      innerExisting: [dbRow()],
+    });
+    expect(error).toBeNull();
+    expect(mutated).toBe(false);
+  });
+
+  it('FBS membership drift still aborts', async () => {
+    const outerFbs = buildFbsIds(HOME_ID, AWAY_ID);
+    const innerFbs = outerFbs.map((id, i) =>
+      i === outerFbs.length - 1 ? 'fbs-drifted' : id
+    );
+    const plan = basePlan({
+      mode: 'COMMIT',
+      confirmation: expectedScheduleRolloverConfirmation(WEEK),
+      existingGames: [],
+      fbsTeamIds: outerFbs,
+    });
+    let mutated = false;
+    await expect(
+      executeAtomicScheduleRolloverCommit({
+        plan,
+        providerGames: [providerGame()],
+        venueCityByName: new Map([['sanford stadium', 'Athens']]),
+        teamResolutions: resolutions(),
+        reReadFbsTeamIds: async () => innerFbs,
+        reReadGames: async () => [],
+        createRow: async () => {
+          mutated = true;
+        },
+        updateRow: async () => {
+          mutated = true;
+        },
+      })
+    ).rejects.toThrow(/DB state differs from PREVIEW plan fingerprint/);
+    expect(mutated).toBe(false);
+  });
+});
+
+describe('cfbd-schedule-rollover-2026 pre-plan failure audit', () => {
+  it('builds a deterministic failure schema without secrets', () => {
+    const report = buildPrePlanFailureReport({
+      season: 2026,
+      week: 2,
+      mode: 'PREVIEW',
+      generatedAt: '2026-09-03T00:00:00.000Z',
+      providerAttempts: 1,
+      providerHttpStatus: 503,
+      error: 'CFBD games HTTP 503 Bearer abc postgresql://x:y@host/db',
+      failureStage: 'cfbd_games_http',
+    });
+    expect(report.phase).toBe('cfbd-schedule-rollover-2026');
+    expect(report.writeSafe).toBe(false);
+    expect(report.mutationsInvoked).toBe(false);
+    expect(report.commitAttempted).toBe(false);
+    expect(report.transactionStarted).toBe(false);
+    expect(report.commitSucceeded).toBe(false);
+    expect(report.postWriteVerificationSucceeded).toBeNull();
+    expect(report.providerCalls).toBe(1);
+    expect(report.providerAttempts).toBe(1);
+    expect(report.providerHttpStatus).toBe(503);
+    expect(report.failureStage).toBe('cfbd_games_http');
+    expect(report.error).not.toMatch(/Bearer abc/);
+    expect(report.error).not.toMatch(/postgresql:\/\//);
+    expect(report).not.toHaveProperty('confirmation');
+  });
+});
+
+describe('cfbd-schedule-rollover-2026 CLI pre-plan failure reports', () => {
+  function tmpReport(): string {
+    return path.join(
+      os.tmpdir(),
+      `cfbd-schedules-failure-${Date.now()}-${Math.random().toString(16).slice(2)}.json`
+    );
+  }
+
+  function mockPrisma(options?: { failRead?: boolean }) {
+    return {
+      teamMembership: {
+        findMany: async () => {
+          if (options?.failRead) {
+            throw new Error(
+              'db read failed postgresql://user:secret@localhost:5432/gridiron'
+            );
+          }
+          return [];
+        },
+      },
+      game: {
+        findMany: async () => [],
+      },
+      team: {
+        findUnique: async () => null,
+        findMany: async () => [],
+      },
+      $disconnect: async () => {},
+    };
+  }
+
+  function readReport(reportPath: string): Record<string, unknown> {
+    expect(fs.existsSync(reportPath)).toBe(true);
+    const parsed = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+    try {
+      fs.unlinkSync(reportPath);
+    } catch {
+      /* ignore */
+    }
+    return parsed;
+  }
+
+  const args = {
+    season: 2026,
+    week: 2,
+    mode: 'PREVIEW' as const,
+    confirmation: '',
+  };
+
+  it('CFBD HTTP 503 writes a JSON failure report with no mutation attempt', async () => {
+    const reportPath = tmpReport();
+    let fetchCalls = 0;
+    const result = await runGuardedScheduleRollover(
+      { ...args, reportPath },
+      {
+        prisma: mockPrisma(),
+        apiKey: 'test-key',
+        fetchImpl: (async () => {
+          fetchCalls += 1;
+          return {
+            ok: false,
+            status: 503,
+            json: async () => [],
+          } as unknown as Response;
+        }) as typeof fetch,
+      }
+    );
+    expect(result.exitCode).toBe(1);
+    const report = readReport(reportPath);
+    expect(report.writeSafe).toBe(false);
+    expect(report.mutationsInvoked).toBe(false);
+    expect(report.commitAttempted).toBe(false);
+    expect(report.commitSucceeded).toBe(false);
+    expect(report.postWriteVerificationSucceeded).toBeNull();
+    expect(report.failureStage).toBe('cfbd_games_http');
+    expect(report.providerAttempts).toBe(1);
+    expect(report.providerCalls).toBe(1);
+    expect(report.providerHttpStatus).toBe(503);
+    expect(report.error).toMatch(/HTTP 503/);
+    expect(JSON.stringify(report)).not.toMatch(/test-key/);
+    expect(report).not.toHaveProperty('confirmation');
+    expect(fetchCalls).toBe(1);
+  });
+
+  it('invalid CFBD JSON writes a JSON failure report with no mutation attempt', async () => {
+    const reportPath = tmpReport();
+    const result = await runGuardedScheduleRollover(
+      { ...args, reportPath },
+      {
+        prisma: mockPrisma(),
+        apiKey: 'test-key',
+        fetchImpl: (async () =>
+          ({
+            ok: true,
+            status: 200,
+            json: async () => {
+              throw new Error('bad json');
+            },
+          }) as unknown as Response) as typeof fetch,
+      }
+    );
+    expect(result.exitCode).toBe(1);
+    const report = readReport(reportPath);
+    expect(report.writeSafe).toBe(false);
+    expect(report.mutationsInvoked).toBe(false);
+    expect(report.commitSucceeded).toBe(false);
+    expect(report.failureStage).toBe('cfbd_games_json');
+    expect(report.providerAttempts).toBe(1);
+    expect(report.providerHttpStatus).toBe(200);
+    expect(String(report.error)).toMatch(/not valid JSON/);
+  });
+
+  it('DB read failure writes a JSON failure report with no mutation attempt', async () => {
+    const reportPath = tmpReport();
+    let fetchCalls = 0;
+    const result = await runGuardedScheduleRollover(
+      { ...args, reportPath },
+      {
+        prisma: mockPrisma({ failRead: true }),
+        apiKey: 'test-key',
+        fetchImpl: (async () => {
+          fetchCalls += 1;
+          return {
+            ok: true,
+            status: 200,
+            json: async () => [],
+          } as unknown as Response;
+        }) as typeof fetch,
+      }
+    );
+    expect(result.exitCode).toBe(1);
+    expect(fetchCalls).toBe(0);
+    const report = readReport(reportPath);
+    expect(report.writeSafe).toBe(false);
+    expect(report.mutationsInvoked).toBe(false);
+    expect(report.commitAttempted).toBe(false);
+    expect(report.failureStage).toBe('db_read');
+    expect(report.providerAttempts).toBe(0);
+    expect(report.providerCalls).toBe(0);
+    expect(String(report.error)).not.toMatch(/postgresql:\/\//);
+    expect(String(report.error)).not.toMatch(/secret@/);
   });
 });

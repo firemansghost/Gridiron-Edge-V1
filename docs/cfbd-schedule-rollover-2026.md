@@ -26,6 +26,12 @@ No production workflow may invoke it.
   `city`, `neutralSite`, `conferenceGame`. Serializable transaction. All
   transaction reads/writes use the transaction client. Post-write verification
   runs inside the transaction and throws to roll back.
+- In-transaction fingerprint covers full existing Game state (identity,
+  kickoff, venue/city, flags, scores, status) plus FBS membership. Any material
+  DB drift aborts before mutation.
+- Pre-plan failures (provider HTTP/JSON, DB read, resolver) always write a JSON
+  failure audit (`writeSafe=false`, `mutationsInvoked=false`) so the workflow
+  artifact upload has a file after CLI execution has begun.
 - DB-only rows absent from the provider are write blockers. No automatic delete.
 - Protected rows (score present or status `final` / `completed` / `in_progress`)
   block metadata updates.

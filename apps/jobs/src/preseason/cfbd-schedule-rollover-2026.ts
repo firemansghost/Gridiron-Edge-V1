@@ -81,6 +81,7 @@ export interface ScheduleRolloverPlan {
   generatedAt: string;
   mode: ScheduleRolloverMode;
   providerCalls: number;
+  providerAttempts: number;
   providerHttpStatus: number | null;
   providerVenueHttpStatus: number | null;
   providerRowCount: number;
@@ -297,21 +298,142 @@ export function validateAuthoritativeFbsMembership(fbsTeamIds: string[]): {
   };
 }
 
+export function canonicalExistingGameSnapshot(
+  row: DbScheduleGameRow
+): Record<string, string | number | boolean | null> {
+  const date = toDate(row.date);
+  return {
+    id: String(row.id),
+    season: row.season,
+    week: row.week,
+    homeTeamId: String(row.homeTeamId),
+    awayTeamId: String(row.awayTeamId),
+    date: Number.isNaN(date.getTime()) ? 'invalid' : date.toISOString(),
+    venue: String(row.venue ?? ''),
+    city: String(row.city ?? ''),
+    neutralSite: Boolean(row.neutralSite),
+    conferenceGame: Boolean(row.conferenceGame),
+    homeScore: row.homeScore ?? null,
+    awayScore: row.awayScore ?? null,
+    status: String(row.status ?? ''),
+  };
+}
+
 export function planFingerprint(parts: {
   createIds: string[];
   updateIds: string[];
   unchangedIds: string[];
   dbOnlyIds: string[];
   fbsTeamIds: string[];
+  existingGames: DbScheduleGameRow[];
 }): string {
-  const sort = (a: string[]) => [...a].sort().join(',');
-  return [
-    sort(parts.createIds),
-    sort(parts.updateIds),
-    sort(parts.unchangedIds),
-    sort(parts.dbOnlyIds),
-    sort(parts.fbsTeamIds),
-  ].join('||');
+  const sortIds = (a: string[]) =>
+    [...a].sort((x, y) => (x < y ? -1 : x > y ? 1 : 0));
+  const existing = [...parts.existingGames]
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .map((row) => JSON.stringify(canonicalExistingGameSnapshot(row)));
+  return JSON.stringify({
+    createIds: sortIds(parts.createIds),
+    updateIds: sortIds(parts.updateIds),
+    unchangedIds: sortIds(parts.unchangedIds),
+    dbOnlyIds: sortIds(parts.dbOnlyIds),
+    fbsTeamIds: sortIds(parts.fbsTeamIds),
+    existingGames: existing,
+  });
+}
+
+export type ScheduleRolloverFailureStage =
+  | 'env'
+  | 'confirmation'
+  | 'db_read'
+  | 'cfbd_games_transport'
+  | 'cfbd_games_http'
+  | 'cfbd_games_json'
+  | 'resolver'
+  | 'plan'
+  | 'commit'
+  | 'unknown';
+
+export interface ScheduleRolloverFailureAudit {
+  phase: typeof PHASE;
+  season: number;
+  week: number;
+  mode: ScheduleRolloverMode;
+  generatedAt: string;
+  writeSafe: false;
+  providerCalls: number;
+  providerAttempts: number;
+  providerHttpStatus: number | null;
+  providerVenueHttpStatus: number | null;
+  commitAttempted: boolean;
+  transactionStarted: boolean;
+  mutationsInvoked: false;
+  createCount: null;
+  updateCount: null;
+  commitSucceeded: false;
+  postWriteVerificationSucceeded: null;
+  error: string;
+  failureStage: ScheduleRolloverFailureStage | string;
+}
+
+export function buildPrePlanFailureReport(options: {
+  season: number;
+  week: number;
+  mode: ScheduleRolloverMode;
+  generatedAt?: string;
+  providerCalls?: number;
+  providerAttempts?: number;
+  providerHttpStatus?: number | null;
+  providerVenueHttpStatus?: number | null;
+  commitAttempted?: boolean;
+  transactionStarted?: boolean;
+  error: string;
+  failureStage: ScheduleRolloverFailureStage | string;
+}): ScheduleRolloverFailureAudit {
+  const attempts = options.providerAttempts ?? options.providerCalls ?? 0;
+  return {
+    phase: PHASE,
+    season: options.season,
+    week: options.week,
+    mode: options.mode,
+    generatedAt: options.generatedAt ?? new Date().toISOString(),
+    writeSafe: false,
+    providerCalls: attempts,
+    providerAttempts: attempts,
+    providerHttpStatus: options.providerHttpStatus ?? null,
+    providerVenueHttpStatus: options.providerVenueHttpStatus ?? null,
+    commitAttempted: options.commitAttempted ?? false,
+    transactionStarted: options.transactionStarted ?? false,
+    mutationsInvoked: false,
+    createCount: null,
+    updateCount: null,
+    commitSucceeded: false,
+    postWriteVerificationSucceeded: null,
+    error: redactSecretLike(options.error),
+    failureStage: options.failureStage,
+  };
+}
+
+export class CfbdScheduleProviderError extends Error {
+  readonly failureStage: ScheduleRolloverFailureStage;
+  readonly providerAttempts: number;
+  readonly providerHttpStatus: number | null;
+  readonly providerVenueHttpStatus: number | null;
+
+  constructor(options: {
+    message: string;
+    failureStage: ScheduleRolloverFailureStage;
+    providerAttempts: number;
+    providerHttpStatus?: number | null;
+    providerVenueHttpStatus?: number | null;
+  }) {
+    super(redactSecretLike(options.message));
+    this.name = 'CfbdScheduleProviderError';
+    this.failureStage = options.failureStage;
+    this.providerAttempts = options.providerAttempts;
+    this.providerHttpStatus = options.providerHttpStatus ?? null;
+    this.providerVenueHttpStatus = options.providerVenueHttpStatus ?? null;
+  }
 }
 
 export function kickoffRangeFromProvider(
@@ -342,6 +464,7 @@ export async function fetchGuardedCfbdScheduleWeek(options: {
   games: CfbdProviderGame[];
   venueCityByName: Map<string, string>;
   providerCalls: number;
+  providerAttempts: number;
   providerHttpStatus: number;
   providerVenueHttpStatus: number | null;
 }> {
@@ -352,10 +475,14 @@ export async function fetchGuardedCfbdScheduleWeek(options: {
   const timeoutMs = options.timeoutMs ?? CFBD_SCHEDULE_TIMEOUT_MS;
   const baseUrl = options.baseUrl ?? CFBD_BASE_URL_DEFAULT;
   const url = buildCfbdWeekGamesUrl(options.season, options.week, baseUrl);
+  let providerAttempts = 0;
+  let providerHttpStatus: number | null = null;
+  let providerVenueHttpStatus: number | null = null;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
+  providerAttempts += 1;
   try {
     res = await fetchImpl(url, {
       headers: {
@@ -367,37 +494,58 @@ export async function fetchGuardedCfbdScheduleWeek(options: {
   } catch (err) {
     const name = err instanceof Error ? err.name : '';
     const msg = err instanceof Error ? err.message : String(err);
-    if (name === 'AbortError' || /aborted/i.test(msg)) {
-      throw new Error(
-        redactSecretLike(
-          `CFBD games request timed out after ${timeoutMs}ms`
-        )
-      );
-    }
-    throw new Error(redactSecretLike(`CFBD games fetch failed: ${msg}`));
+    const message =
+      name === 'AbortError' || /aborted/i.test(msg)
+        ? `CFBD games request timed out after ${timeoutMs}ms`
+        : `CFBD games fetch failed: ${msg}`;
+    throw new CfbdScheduleProviderError({
+      message,
+      failureStage: 'cfbd_games_transport',
+      providerAttempts,
+      providerHttpStatus: null,
+      providerVenueHttpStatus: null,
+    });
   } finally {
     clearTimeout(timer);
   }
 
+  providerHttpStatus = res.status;
   if (!res.ok) {
-    throw new Error(`CFBD games HTTP ${res.status}`);
+    throw new CfbdScheduleProviderError({
+      message: `CFBD games HTTP ${res.status}`,
+      failureStage: 'cfbd_games_http',
+      providerAttempts,
+      providerHttpStatus,
+      providerVenueHttpStatus: null,
+    });
   }
 
   let body: unknown;
   try {
     body = await res.json();
   } catch {
-    throw new Error('CFBD games payload is not valid JSON');
+    throw new CfbdScheduleProviderError({
+      message: 'CFBD games payload is not valid JSON',
+      failureStage: 'cfbd_games_json',
+      providerAttempts,
+      providerHttpStatus,
+      providerVenueHttpStatus: null,
+    });
   }
   if (!Array.isArray(body)) {
-    throw new Error('CFBD games payload is not an array');
+    throw new CfbdScheduleProviderError({
+      message: 'CFBD games payload is not an array',
+      failureStage: 'cfbd_games_json',
+      providerAttempts,
+      providerHttpStatus,
+      providerVenueHttpStatus: null,
+    });
   }
 
   const games = body as CfbdProviderGame[];
-  let providerCalls = 1;
-  let providerVenueHttpStatus: number | null = null;
   const venueCityByName = new Map<string, string>();
 
+  providerAttempts += 1;
   try {
     const venuesRes = await fetchImpl(buildCfbdVenuesUrl(baseUrl), {
       headers: {
@@ -405,7 +553,6 @@ export async function fetchGuardedCfbdScheduleWeek(options: {
         Accept: 'application/json',
       },
     });
-    providerCalls += 1;
     providerVenueHttpStatus = venuesRes.status;
     if (venuesRes.ok) {
       const venues = (await venuesRes.json()) as CfbdVenue[];
@@ -418,13 +565,14 @@ export async function fetchGuardedCfbdScheduleWeek(options: {
       }
     }
   } catch {
-    // Venues remain optional enrichment.
+    // Venues remain optional enrichment. Attempt is still counted.
   }
 
   return {
     games,
     venueCityByName,
-    providerCalls,
+    providerCalls: providerAttempts,
+    providerAttempts,
     providerHttpStatus: res.status,
     providerVenueHttpStatus,
   };
@@ -440,6 +588,7 @@ export function planScheduleRollover(options: {
   providerHttpStatus: number | null;
   providerVenueHttpStatus?: number | null;
   providerCalls: number;
+  providerAttempts?: number;
   fbsTeamIds: string[];
   existingGames: DbScheduleGameRow[];
   teamResolutions: Map<string, TeamResolutionResult>;
@@ -583,6 +732,7 @@ export function planScheduleRollover(options: {
     unchangedIds,
     dbOnlyIds,
     fbsTeamIds: options.fbsTeamIds,
+    existingGames: options.existingGames,
   });
 
   return {
@@ -592,6 +742,7 @@ export function planScheduleRollover(options: {
     generatedAt: options.generatedAt ?? new Date().toISOString(),
     mode: options.mode,
     providerCalls: options.providerCalls,
+    providerAttempts: options.providerAttempts ?? options.providerCalls,
     providerHttpStatus: options.providerHttpStatus,
     providerVenueHttpStatus: options.providerVenueHttpStatus ?? null,
     providerRowCount: options.providerGames.length,
@@ -834,6 +985,7 @@ export async function executeAtomicScheduleRolloverCommit(options: {
     providerHttpStatus: options.plan.providerHttpStatus,
     providerVenueHttpStatus: options.plan.providerVenueHttpStatus,
     providerCalls: options.plan.providerCalls,
+    providerAttempts: options.plan.providerAttempts,
     fbsTeamIds,
     existingGames: beforeRows,
     teamResolutions: options.teamResolutions,
