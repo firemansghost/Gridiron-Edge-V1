@@ -1,8 +1,11 @@
 # Season Status — Gridiron Edge
 
 **Status:** 2026 season active (manual guarded production)  
-**Updated:** 2026-09-03 (Phase 4A Models / Hybrid shadow truth — active)  
-**Production `main`:** `985220966d9b65a642631c197ed2f697e4a92017`
+**Updated:** 2026-09-03 (Phase 4A COMPLETE — PR #91)
+
+**Verified production baseline entering this closeout:** `e8dfa90c4e3510a363694cfe6fb4605a00181361`
+
+This docs-only closeout PR will advance `main` when merged; the exact closeout merge SHA is intentionally not guessed in advance.
 
 Operator-facing current state for the active 2026 season. Complements `docs/2026-workflow-reactivation-matrix.md`, `docs/preseason-reactivation-checklist.md`, and `docs/2026-betting-playbook.md`.
 
@@ -17,14 +20,15 @@ Sections below the current-state block retain useful preseason/phase chronology.
 | Item | Status |
 |------|--------|
 | **Season** | **2026 active** |
-| **Production `main`** | `985220966d9b65a642631c197ed2f697e4a92017` |
-| **Provider Week 1** | Opening **Aug. 29** tranche + remaining **Sep. 3–7** games |
-| **Effective production spread model** | **Core V1** (`official_flat_100`) |
-| **Hybrid V2** | **Held** / shadow-research only — not official |
+| **Verified Phase 4A production baseline** | `e8dfa90c4e3510a363694cfe6fb4605a00181361` (PR #91 merge) |
+| **Provider Week 1** | Opening **Aug. 29** tranche complete; remaining **Sep. 3–7** games are still pending on the **locked** Official Card |
+| **Effective production spread model** | **Core V1** (`official_flat_100`) — official |
+| **Hybrid V2** | **SHADOW / HELD / NOT OFFICIAL** |
+| **Hybrid page** | `/labs/hybrid` — **LIVE / MUTABLE SHADOW** |
 | **Totals / moneylines** | Current Core logic |
 | **Recurring production schedules** | Operator-stopped / **not authorized** |
 | **Schedule reactivation recommended** | **0** workflows |
-| **Core V1 lifecycle blend** | Candidate A / `GLOBAL_BLEND_W3_W6` — canonical weight **0** through completed Week **2**; first non-zero canonical contribution after completed Week **3** |
+| **Core V1 lifecycle blend** | Candidate A / `GLOBAL_BLEND_W3_W6` — canonical weight **0** through completed Week **2**; first material / non-zero canonical contribution after completed Week **3** |
 
 ### Site truth phases
 
@@ -38,23 +42,81 @@ Sections below the current-state block retain useful preseason/phase chronology.
 | **2** (1A–2B site truth) | **COMPLETE** | — |
 | **3** Ratings Page Truthfulness | **COMPLETE** | #90 |
 | **4** Models / Hybrid product-truth audit | **COMPLETE** | — |
-| **4A** Models / Hybrid Shadow truth | **ACTIVE** | this PR |
+| **4A** Models / Hybrid Shadow truth | **COMPLETE** | #91 |
+| **4B** Prospective Shadow Snapshot contract/design | **NEXT** | — |
+| **4C** Remaining Labs truth cleanup | after 4B contract | — |
 
 Phase 1 COMPLETE — `/picks` is persisted locked Official Card truth (`official_flat_100` Bet rows). Current Slate remains live/dynamic and is not the Official Card.
 Phase 2A COMPLETE — Week/Season Review is persisted Bet review truth (read-only).
 Phase 2B COMPLETE — `/weeks` Week Archive for 2026 is persisted Game + Official Card Bet truth. Seasons through 2025 remain the legacy reconstructed model view if retained.
 Phase 3 COMPLETE — `/ratings` displays season-membership conference and persisted Core V1 `modelVersion=v1` provenance. Ratings production verification is complete.
 Phase 4 audit COMPLETE — Hybrid remains held; a live Hybrid recalculation is not a frozen shadow record.
+Phase 4A COMPLETE — PR #91 merge `e8dfa90c4e3510a363694cfe6fb4605a00181361`. Top navigation visible label is **Models**. Hybrid V2 is live/mutable shadow research, not an official 2026 bet. No prospective Hybrid performance record exists.
 Core V1 (`official_flat_100`) is the default 2026 review strategy.
-Hybrid remains held for 2026. Hybrid Super Tier A remains SHADOW / HELD. No recurring workflow authorization change.
+Hybrid remains held for 2026. Hybrid Super Tier A remains SHADOW / HELD. V4/Fade remains historical/backtest. No Hybrid production authorization change. No recurring workflow authorization change.
 
-**Verified production baseline before Phase 4A:** `985220966d9b65a642631c197ed2f697e4a92017`
+**Verified production baseline after Phase 4A:** `e8dfa90c4e3510a363694cfe6fb4605a00181361`
 
-**Active engineering task:** Phase 4A Models / Hybrid Shadow truth (read-only product-truth repair). No Core V1 formula, Hybrid formula, Hybrid authorization, lifecycle, or Prisma change is authorized.
+**Historical baseline before Phase 4A:** `985220966d9b65a642631c197ed2f697e4a92017`
 
-### Phase 2B production verification (PR #88)
+**Active engineering task:** Phase 4B — prospective Shadow Snapshot contract/design. Phase 4B is a separately reviewed append-only prospective shadow-record design. It is **not implemented**. No shadow ledger exists yet. No Core V1 formula, Hybrid formula, Hybrid authorization, lifecycle, or Prisma change is authorized by this closeout.
 
-Independent read-only check of `GET /api/weeks/archive?season=2026&week=1` after the merged Vercel deployment returned HTTP **200**:
+### Frozen boundaries (still in force)
+
+- `CORE_EVAL_V1` unchanged
+- Prediction-time market freshness **≤ 30 minutes**
+- Closing-market snapshot **30 minutes** pre-kickoff
+- Core V1 remains official
+- Hybrid V2 remains held
+- Super Tier A remains **SHADOW / HELD**
+- V4/Fade remains historical/backtest
+- No Hybrid Bet writes
+- No model formula changes
+- No Hybrid activation changes
+
+### Phase 4A production verification (PR #91)
+
+Independent post-merge production check:
+
+- `/labs/hybrid` returns HTTP **200**
+- Top navigation visible label is **Models**
+- Core V1 remains the effective official 2026 spread model
+- Hybrid V2 remains **SHADOW / HELD / NOT OFFICIAL**
+- Hybrid page is **LIVE / MUTABLE SHADOW**
+- Week 1 Hybrid API preserves the full **51**-game Game frame
+- Hybrid computed games = **0**
+- Hybrid unavailable games = **51**
+- Missing Core V1 rating team IDs = **none**
+- Missing 2026 unit-grade inputs are explicitly reported
+- No Core value is labeled Hybrid
+- Market signed-row side and actual favorite remain distinct
+- Team-sided Shadow Pick spread signs are correct
+- No Hybrid production authorization changed
+- No prospective Hybrid performance record exists
+
+### Week 1 Official Card — locked persisted state
+
+The complete Week 1 Official Card is already persisted and locked (`official_flat_100`). Remaining Sep. 3–7 games are pending on that locked card. They are **not** a PREVIEW-only continuation. Fresh Odds → Core V1 Card is **not** the next production operation.
+
+| Metric | Value |
+|--------|--------|
+| total Game rows | **51** |
+| official wager games | **50** |
+| games without official wager | **1** |
+| official bets | **98** |
+| spreads | **50** |
+| moneylines | **48** |
+| totals | **0** |
+| graded | **14** |
+| pending | **84** |
+| record | **6-8-0** |
+| graded stake | **$1,400** |
+| PnL | **-223.76842105263165** |
+| ROI | **-0.15983458646616547** |
+
+### Phase 2B production verification (PR #88) — historical snapshot
+
+Independent read-only check of `GET /api/weeks/archive?season=2026&week=1` after the merged Vercel deployment returned HTTP **200**. Retained as the PR #88 post-merge archive snapshot; current locked Official Card counts are in the section above.
 
 | Metric | Value |
 |--------|--------|
@@ -137,28 +199,37 @@ Opening Aug. 29 Saturday path completed the full guarded chain (Live Odds → Co
 
 Grading / PnL / CLV issues found during PREVIEW were repaired before official COMMIT.
 
-### Remaining Week 1 continuation — PREVIEW only (not committed)
+### Historical — Remaining Week 1 continuation PREVIEW (obsolete as current guidance)
 
-A later Core card PREVIEW against the then-current MarketLine snapshot (plumbing check only):
+A later Core card PREVIEW against a then-current MarketLine snapshot was a plumbing check only:
 
 * **51** provider Week 1 games tracked; **8** opening games excluded → **43** Sep. 3–7 games eligible
 * **14** prior official bets detected and preserved; Hybrid rows = **0**; append safety clean
 * Snapshot would have proposed **83** new bets (**43** spread / **40** ML / **0** total)
-* **Intentionally not committed** — market data was stale
+* **Intentionally not committed** at that time — market data was stale
 
-### Next production operation
+**Obsolete as operating guidance:** that PREVIEW-only continuation was superseded when the complete Week 1 Official Card was persisted and locked. Retained as chronology.
 
-**Fresh Live Odds COMMIT → Core V1 PREVIEW → independent audit → append-only Core V1 COMMIT**
+### Next production lane
 
-Planned for **Wednesday evening / Thursday morning** before the Sep. 3 openers. Manual only — **not** an automated schedule.
+As remaining Week 1 games become final (manual only; **not** an automated schedule):
 
-### Known / deferred (not current blockers for the next Odds→card pass)
+1. Scores PREVIEW
+2. independent audit
+3. Scores COMMIT
+4. Grading PREVIEW
+5. independent audit
+6. Grading COMMIT
+
+Do **not** run TeamGameStat / lifecycle merely because games finish. Lifecycle canonical weight remains **0** through completed Week **2**. First material lifecycle use remains after completed Week **3**.
+
+### Known / deferred (not current blockers for scores/grading)
 
 * Zero totals remains known current Core behavior; a real totals model is deferred
-* TeamGameStat guarded path prepared (6D-1); production PREVIEW/COMMIT still requires explicit operator authorization
+* TeamGameStat guarded path prepared (6D-1); production PREVIEW/COMMIT still requires explicit operator authorization and is **not** triggered merely by finals
 * `cfbd-feature-ingest` remains `REPAIR_BEFORE_USE` (parallel `cfbdEff*` — not Core lifecycle)
-* After full Week 1 completion: `scores → grading → TeamGameStat → lifecycle` (separate stages)
-* npm/Node maintenance deferred until after the remaining Week 1 card:
+* After completed Week 3: TeamGameStat PREVIEW/COMMIT → lifecycle PREVIEW → audit → lifecycle COMMIT (separate stages)
+* npm/Node maintenance deferred:
   * npm audit currently reports **19** vulnerabilities
   * GitHub Actions Node 20 deprecation / Node 24 forcing warning
 * Recurring workflow cadence remains a later explicit operator decision
@@ -170,7 +241,7 @@ Planned for **Wednesday evening / Thursday morning** before the Sep. 3 openers. 
 | Model | Role | DB `strategyTag` | UI label |
 |-------|------|------------------|----------|
 | **Core V1** | **Active production spread card** | `official_flat_100` (historical tag — do not rename) | Core V1 Card (Flat $100) |
-| **Hybrid V2** | Held pending same-season validation | `hybrid_v2` | Hybrid V2 (Flat $100) |
+| **Hybrid V2** | **SHADOW / HELD / NOT OFFICIAL** | `hybrid_v2` | Hybrid V2 (Flat $100) |
 | **V4** | Labs only | `v4_labs` | V4 Labs (Flat $100) |
 | **Fade V4** | Labs only | `fade_v4_labs` | Fade V4 Labs (Flat $100) |
 
@@ -767,11 +838,12 @@ Shared `market-line-snapshot` selector (timestamp DESC, id DESC); slate + game d
 
 ## Next phases (current)
 
-1. **Fresh Live Odds COMMIT** for remaining Week 1 (manual) — Wed evening / Thu morning before Sep. 3
-2. **Core V1 PREVIEW → independent audit → append-only Core V1 COMMIT** (manual; preserve existing 14 official bets)
-3. After full Week 1 completion: scores → grading → feature ingest → lifecycle (separate operator decisions)
+1. **Phase 4B** — prospective Shadow Snapshot contract/design (separately reviewed append-only design; no shadow ledger exists yet; not implemented in this docs PR)
+2. As remaining Week 1 games become final: Scores PREVIEW → independent audit → COMMIT → Grading PREVIEW → independent audit → COMMIT (manual only)
+3. Do **not** run TeamGameStat / lifecycle merely because games finish; first material lifecycle use remains after completed Week **3**
 4. Do **not** activate Hybrid, enable recurring Odds polling, or authorize score/grading cron without an explicit later decision
-5. Deferred maintenance: npm audit (19 vulns) + Actions Node 20→24 — after remaining Week 1 card
+5. **Phase 4C** Remaining Labs truth cleanup — after the 4B contract
+6. Deferred maintenance: npm audit (19 vulns) + Actions Node 20→24
 
 See [Preseason Reactivation Checklist](docs/preseason-reactivation-checklist.md) and [2026 Workflow Reactivation Matrix](docs/2026-workflow-reactivation-matrix.md).
 
