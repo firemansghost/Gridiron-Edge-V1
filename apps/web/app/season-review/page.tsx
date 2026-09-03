@@ -17,6 +17,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import {
   getStrategyLabel,
   getDefaultStrategyTag,
+  getDefaultReviewStrategyTag,
   resolveReviewStrategySelection,
 } from '@/lib/strategy-utils';
 
@@ -75,8 +76,8 @@ interface SeasonSummaryData {
 
 export default function SeasonReviewPage() {
   const router = useRouter();
-  const [season, setSeason] = useState<number>(2025);
-  const [strategyTag, setStrategyTag] = useState<string>('hybrid_v2');
+  const [season, setSeason] = useState<number>(2026);
+  const [strategyTag, setStrategyTag] = useState<string>('');
   const [selectedMarket, setSelectedMarket] = useState<string>('ALL');
   const [data, setData] = useState<SeasonSummaryData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -91,6 +92,7 @@ export default function SeasonReviewPage() {
     : 'server';
 
   const fetchData = async () => {
+    if (!season) return;
     setLoading(true);
     setError(null);
     try {
@@ -122,7 +124,16 @@ export default function SeasonReviewPage() {
       return;
     }
     const params = new URLSearchParams(window.location.search);
+    const seasonParam = params.get('season');
     const strategyParam = params.get('strategyTag') ?? params.get('strategy');
+
+    if (seasonParam) {
+      const parsedSeason = parseInt(seasonParam, 10);
+      if (Number.isFinite(parsedSeason)) {
+        setSeason(parsedSeason);
+      }
+    }
+
     if (strategyParam !== null) {
       setStrategyTag(resolveReviewStrategySelection(strategyParam, []));
       defaultStrategySet.current = true;
@@ -136,11 +147,14 @@ export default function SeasonReviewPage() {
 
   // Initialize season and strategy defaults from available data on first load
   useEffect(() => {
+    let effectiveSeason = season;
     if (data?.meta.seasonsAvailable && data.meta.seasonsAvailable.length > 0) {
       const latestSeason = data.meta.seasonsAvailable[data.meta.seasonsAvailable.length - 1];
       if (!data.meta.seasonsAvailable.includes(season)) {
         setSeason(latestSeason);
+        effectiveSeason = latestSeason;
       }
+      if (season) effectiveSeason = season;
     }
 
     if (!data?.meta.strategyTagsAvailable || data.meta.strategyTagsAvailable.length === 0) {
@@ -151,14 +165,14 @@ export default function SeasonReviewPage() {
 
     if (defaultStrategySet.current) {
       if (strategyTag !== 'all' && !available.includes(strategyTag)) {
-        setStrategyTag(getDefaultStrategyTag(available));
+        setStrategyTag(getDefaultReviewStrategyTag(effectiveSeason || 0, available));
       }
       return;
     }
 
-    setStrategyTag(getDefaultStrategyTag(available));
+    setStrategyTag(getDefaultReviewStrategyTag(effectiveSeason || 0, available));
     defaultStrategySet.current = true;
-  }, [data?.meta.seasonsAvailable, data?.meta.strategyTagsAvailable]);
+  }, [data?.meta.seasonsAvailable, data?.meta.strategyTagsAvailable, season]);
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);

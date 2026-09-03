@@ -12,6 +12,7 @@ import {
   getDefaultProductionStrategyTag,
   getStrategyTagLabel,
 } from '@/lib/config/production-models';
+import { isExcludedStrategyTag } from '@/lib/config/official-strategies';
 
 /** @deprecated Prefer STRATEGY_TAG_LABELS from production-models — kept for imports. */
 export const STRATEGY_LABELS: Record<string, string> = STRATEGY_TAG_LABELS;
@@ -30,6 +31,50 @@ export function getStrategyLabel(tag: string): string {
  */
 export function getDefaultStrategyTag(availableTags: string[]): string {
   return getDefaultProductionStrategyTag(availableTags);
+}
+
+/**
+ * REVIEW-SPECIFIC default strategy tag for Week/Season Review truth (Phase 2A+).
+ *
+ * Rules:
+ * - 2026+:
+ *   1) official_flat_100 if available
+ *   2) otherwise a valid persisted non-demo strategy (excluding hybrid_v2 which is held)
+ *   3) otherwise 'all'
+ * - Historical <= 2025:
+ *   1) hybrid_v2 when available
+ *   2) then official_flat_100
+ *   3) otherwise 'all'
+ *
+ * Demo/test tags never become the automatic production-review default.
+ */
+export function getDefaultReviewStrategyTag(
+  season: number,
+  availableTags: string[]
+): string {
+  const tags = Array.from(new Set(availableTags)).filter(Boolean);
+
+  const has = (t: string) => tags.includes(t);
+  const isNonDemo = (t: string) => !isExcludedStrategyTag(t);
+
+  if (season >= 2026) {
+    if (has('official_flat_100') && isNonDemo('official_flat_100')) {
+      return 'official_flat_100';
+    }
+
+    // Hybrid V2 is explicitly held for 2026; do not activate as an automatic default.
+    const fallback = tags.filter((t) => isNonDemo(t) && t !== 'hybrid_v2');
+    return fallback.length > 0 ? fallback[0] : 'all';
+  }
+
+  // Historical seasons (<= 2025)
+  if (has('hybrid_v2') && isNonDemo('hybrid_v2')) {
+    return 'hybrid_v2';
+  }
+  if (has('official_flat_100') && isNonDemo('official_flat_100')) {
+    return 'official_flat_100';
+  }
+  return 'all';
 }
 
 const EXPLICIT_REVIEW_STRATEGY_TAGS = new Set([

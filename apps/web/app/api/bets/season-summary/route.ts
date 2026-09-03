@@ -114,6 +114,8 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       );
     }
+    const isOfficial2026Review =
+      season >= 2026 && strategyTagParam === 'official_flat_100';
 
     // Build base where clause
     const where: any = {
@@ -171,31 +173,37 @@ export async function GET(request: NextRequest) {
     const roi = totalStake > 0 ? totalPnl / totalStake : 0;
     const winRate = (wins + losses) > 0 ? wins / (wins + losses) : 0;
 
-    // Calculate average edge (optional)
+    // Calculate average edge (optional).
+    // For 2026 official_flat_100, we avoid recomputing an unsafe mixed-market
+    // review metric derived from live closePrice/modelPrice.
     let avgEdge: number | null = null;
-    const edgeValues = gradedBets
-      .filter(b => b.closePrice !== null)
-      .map(b => {
-        const modelPrice = Number(b.modelPrice);
-        const closePrice = Number(b.closePrice);
-        
-        if (b.marketType === 'moneyline') {
-          // For moneyline, calculate implied probability difference
-          const modelImplied = modelPrice > 0 
-            ? 100 / (modelPrice + 100) 
-            : Math.abs(modelPrice) / (Math.abs(modelPrice) + 100);
-          const closeImplied = closePrice! > 0 
-            ? 100 / (closePrice! + 100) 
-            : Math.abs(closePrice!) / (Math.abs(closePrice!) + 100);
-          return modelImplied - closeImplied;
-        } else {
+    if (!isOfficial2026Review) {
+      const edgeValues = gradedBets
+        .filter((b) => b.closePrice !== null)
+        .map((b) => {
+          const modelPrice = Number(b.modelPrice);
+          const closePrice = Number(b.closePrice);
+
+          if (b.marketType === 'moneyline') {
+            // For moneyline, calculate implied probability difference
+            const modelImplied =
+              modelPrice > 0
+                ? 100 / (modelPrice + 100)
+                : Math.abs(modelPrice) / (Math.abs(modelPrice) + 100);
+            const closeImplied =
+              closePrice > 0
+                ? 100 / (closePrice + 100)
+                : Math.abs(closePrice) / (Math.abs(closePrice) + 100);
+            return modelImplied - closeImplied;
+          }
+
           // For spread/total, calculate line difference
-          return modelPrice - closePrice!;
-        }
-      });
-    
-    if (edgeValues.length > 0) {
-      avgEdge = edgeValues.reduce((sum, edge) => sum + edge, 0) / edgeValues.length;
+          return modelPrice - closePrice;
+        });
+
+      if (edgeValues.length > 0) {
+        avgEdge = edgeValues.reduce((sum, edge) => sum + edge, 0) / edgeValues.length;
+      }
     }
 
     // Group by week
