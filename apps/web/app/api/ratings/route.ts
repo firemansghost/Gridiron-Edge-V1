@@ -12,7 +12,9 @@ import { getCurrentSeasonWeek } from '@/lib/current-week';
 import {
   CORE_V1_RATINGS_MODEL_VERSION,
   RatingsConferenceIntegrityError,
+  RatingsFrameIntegrityError,
   assertRatingsPageConferences,
+  assertRatingsPopulationFrame,
   buildRatingsProvenance,
   isSeasonAwareConferenceSeason,
   lifecycleGamesSample,
@@ -23,6 +25,15 @@ function toFiniteNumber(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   const n = typeof value === 'number' ? value : Number(String(value));
   return Number.isFinite(n) ? n : null;
+}
+
+function isRatingsReadIntegrityError(
+  error: unknown
+): error is RatingsConferenceIntegrityError | RatingsFrameIntegrityError {
+  return (
+    error instanceof RatingsConferenceIntegrityError ||
+    error instanceof RatingsFrameIntegrityError
+  );
 }
 
 export async function GET(request: NextRequest) {
@@ -69,6 +80,14 @@ export async function GET(request: NextRequest) {
       if (duplicateTeamIds.length > 0) {
         throw new RatingsConferenceIntegrityError(season, duplicateTeamIds);
       }
+
+      assertRatingsPageConferences(
+        season,
+        fbsMemberships.map((row) => ({
+          teamId: row.teamId,
+          membershipConference: row.conference,
+        }))
+      );
     }
 
     const membershipConferenceByTeamId = new Map(
@@ -77,20 +96,27 @@ export async function GET(request: NextRequest) {
     const fbsTeamIds = Array.from(membershipConferenceByTeamId.keys());
 
     const ratings = await prisma.teamSeasonRating.findMany({
-      where: {
-        season,
-        modelVersion: CORE_V1_RATINGS_MODEL_VERSION,
-        teamId: {
-          in: fbsTeamIds,
-        },
-      },
+      where: seasonAware
+        ? {
+            season,
+            modelVersion: CORE_V1_RATINGS_MODEL_VERSION,
+          }
+        : {
+            season,
+            modelVersion: CORE_V1_RATINGS_MODEL_VERSION,
+            teamId: {
+              in: fbsTeamIds,
+            },
+          },
     });
 
-    const teamIds = Array.from(new Set(ratings.map((r) => r.teamId)));
+    const displayTeamIds = seasonAware
+      ? fbsTeamIds
+      : Array.from(new Set(ratings.map((r) => r.teamId)));
     const teams = await prisma.team.findMany({
       where: {
         id: {
-          in: teamIds,
+          in: displayTeamIds,
         },
       },
       select: seasonAware
@@ -100,28 +126,46 @@ export async function GET(request: NextRequest) {
 
     const teamMap = new Map(teams.map((t) => [t.id.toLowerCase(), t]));
 
-    const withTeams = ratings
-      .map((rating) => {
-        const team = teamMap.get(rating.teamId.toLowerCase());
-        if (!team) return null;
-        return { rating, team };
-      })
-      .filter((row): row is NonNullable<typeof row> => row !== null);
+    if (seasonAware) {
+      assertRatingsPopulationFrame({
+        season,
+        membershipTeamIds: fbsMemberships.map((row) => row.teamId),
+        ratingTeamIds: ratings.map((row) => row.teamId),
+        displayTeamIds: teams.map((row) => row.id),
+      });
+    }
 
-    const conferences = assertRatingsPageConferences(
-      season,
-      withTeams.map(({ rating, team }) => ({
-        teamId: rating.teamId,
-        membershipConference: membershipConferenceByTeamId.get(
-          rating.teamId.toLowerCase()
-        ),
-        teamConference: seasonAware
-          ? undefined
-          : 'conference' in team
-            ? (team.conference as string | null)
-            : undefined,
-      }))
-    );
+    const withTeams = ratings.map((rating) => {
+      const team = teamMap.get(rating.teamId.toLowerCase());
+      if (!team) {
+        throw new RatingsFrameIntegrityError(season, {
+          missingDisplayTeamIds: [rating.teamId],
+        });
+      }
+      return { rating, team };
+    });
+
+    const conferences = seasonAware
+      ? assertRatingsPageConferences(
+          season,
+          withTeams.map(({ rating }) => ({
+            teamId: rating.teamId,
+            membershipConference: membershipConferenceByTeamId.get(
+              rating.teamId.toLowerCase()
+            ),
+          }))
+        )
+      : assertRatingsPageConferences(
+          season,
+          withTeams.map(({ rating, team }) => ({
+            teamId: rating.teamId,
+            membershipConference: membershipConferenceByTeamId.get(
+              rating.teamId.toLowerCase()
+            ),
+            teamConference:
+              'conference' in team ? (team.conference as string | null) : undefined,
+          }))
+        );
 
     const mapped = withTeams.map(({ rating, team }, index) => {
       const dataSource = rating.dataSource || null;
@@ -160,7 +204,7 @@ export async function GET(request: NextRequest) {
       count: ratingsWithRanks.length,
     });
   } catch (error) {
-    if (error instanceof RatingsConferenceIntegrityError) {
+    if (isRatingsReadIntegrityError(error)) {
       return NextResponse.json(
         {
           success: false,

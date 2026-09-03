@@ -13,13 +13,17 @@ import {
   CORE_V1_RATINGS_MODEL_VERSION,
   CORE_V1_RATINGS_PAGE_COPY,
   RatingsConferenceIntegrityError,
+  RatingsFrameIntegrityError,
   assertRatingsPageConferences,
+  assertRatingsPopulationFrame,
   buildRatingsProvenance,
+  isCoreV12026LifecycleSeason,
   isSeasonAwareConferenceSeason,
   lifecycleGamesSample,
   lifecycleOffenseDefenseAvailable,
   ratingsConferenceSource,
   ratingsGamesColumnLabel,
+  ratingsPageCopyKind,
   resolveRatingsPageConference,
 } from '@/lib/ratings-truth';
 
@@ -82,6 +86,28 @@ describe('Phase 3 Ratings conference policy', () => {
     ).toThrow(RatingsConferenceIntegrityError);
   });
 
+  it('fails closed on a 2026 blank membership conference even when that team has no rating', () => {
+    expect(() =>
+      assertRatingsPageConferences(2026, [
+        { teamId: 'texas', membershipConference: 'SEC' },
+        { teamId: 'no-rating-yet', membershipConference: '   ' },
+      ])
+    ).toThrow(RatingsConferenceIntegrityError);
+
+    try {
+      assertRatingsPageConferences(2026, [
+        { teamId: 'texas', membershipConference: 'SEC' },
+        { teamId: 'no-rating-yet', membershipConference: null },
+      ]);
+      throw new Error('expected integrity failure');
+    } catch (error) {
+      expect(error).toBeInstanceOf(RatingsConferenceIntegrityError);
+      expect((error as RatingsConferenceIntegrityError).teamIds).toContain(
+        'no-rating-yet'
+      );
+    }
+  });
+
   it('retains legacy Team.conference semantics for seasons before 2026', () => {
     expect(
       resolveRatingsPageConference({
@@ -104,6 +130,76 @@ describe('Phase 3 Ratings conference policy', () => {
   });
 });
 
+describe('Phase 3 Ratings 2026+ population frame', () => {
+  it('fails closed when 2026 membership and v1 rating team IDs do not match', () => {
+    expect(() =>
+      assertRatingsPopulationFrame({
+        season: 2026,
+        membershipTeamIds: ['texas', 'oregon'],
+        ratingTeamIds: ['texas'],
+        displayTeamIds: ['texas', 'oregon'],
+      })
+    ).toThrow(RatingsFrameIntegrityError);
+
+    try {
+      assertRatingsPopulationFrame({
+        season: 2026,
+        membershipTeamIds: ['texas', 'oregon'],
+        ratingTeamIds: ['texas', 'oregon', 'extra-v1'],
+        displayTeamIds: ['texas', 'oregon'],
+      });
+      throw new Error('expected integrity failure');
+    } catch (error) {
+      expect(error).toBeInstanceOf(RatingsFrameIntegrityError);
+      expect((error as RatingsFrameIntegrityError).extraRatingTeamIds).toEqual([
+        'extra-v1',
+      ]);
+      expect((error as RatingsFrameIntegrityError).missingRatingTeamIds).toEqual(
+        []
+      );
+    }
+  });
+
+  it('fails closed when 2026 rating/membership teams are missing Team display rows', () => {
+    try {
+      assertRatingsPopulationFrame({
+        season: 2026,
+        membershipTeamIds: ['texas', 'oregon'],
+        ratingTeamIds: ['texas', 'oregon'],
+        displayTeamIds: ['texas'],
+      });
+      throw new Error('expected integrity failure');
+    } catch (error) {
+      expect(error).toBeInstanceOf(RatingsFrameIntegrityError);
+      expect((error as RatingsFrameIntegrityError).missingDisplayTeamIds).toEqual(
+        ['oregon']
+      );
+    }
+  });
+
+  it('succeeds when the 2026 membership, v1 rating, and Team display sets match exactly', () => {
+    expect(() =>
+      assertRatingsPopulationFrame({
+        season: 2026,
+        membershipTeamIds: ['oregon', 'texas'],
+        ratingTeamIds: ['texas', 'oregon'],
+        displayTeamIds: ['TEXAS', 'Oregon'],
+      })
+    ).not.toThrow();
+  });
+
+  it('does not apply 2026+ frame equality to legacy seasons', () => {
+    expect(() =>
+      assertRatingsPopulationFrame({
+        season: 2025,
+        membershipTeamIds: ['texas'],
+        ratingTeamIds: [],
+        displayTeamIds: [],
+      })
+    ).not.toThrow();
+  });
+});
+
 describe('Phase 3 Ratings numerical source and lifecycle presentation', () => {
   it('keeps TeamSeasonRating modelVersion v1 as the numerical source', () => {
     const provenance = buildRatingsProvenance(2026);
@@ -115,6 +211,19 @@ describe('Phase 3 Ratings numerical source and lifecycle presentation', () => {
     expect(CORE_V1_2026_LIFECYCLE_POLICY).toBe('GLOBAL_BLEND_W3_W6');
     expect(buildRatingsProvenance(2025).lifecyclePolicy).toBeNull();
     expect(buildRatingsProvenance(2025).conferenceSource).toBe('Team.conference');
+  });
+
+  it('keeps 2027 on TeamMembership.conference without claiming GLOBAL_BLEND_W3_W6', () => {
+    expect(isSeasonAwareConferenceSeason(2027)).toBe(true);
+    expect(isCoreV12026LifecycleSeason(2027)).toBe(false);
+    expect(isCoreV12026LifecycleSeason(2026)).toBe(true);
+    expect(buildRatingsProvenance(2027).conferenceSource).toBe(
+      'TeamMembership.conference'
+    );
+    expect(buildRatingsProvenance(2027).lifecyclePolicy).toBeNull();
+    expect(buildRatingsProvenance(2026).lifecyclePolicy).toBe(
+      'GLOBAL_BLEND_W3_W6'
+    );
   });
 
   it('does not treat Core V1 lifecycle offense/defense zeros as components', () => {
@@ -131,6 +240,7 @@ describe('Phase 3 Ratings numerical source and lifecycle presentation', () => {
     expect(lifecycleGamesSample(8)).toBe(8);
     expect(ratingsGamesColumnLabel(2026)).toBe('Rating sample');
     expect(ratingsGamesColumnLabel(2025)).toBe('Games');
+    expect(ratingsGamesColumnLabel(2027)).toBe('Games');
   });
 
   it('documents the durable W3–W6 lifecycle weights', () => {
@@ -151,6 +261,28 @@ describe('Phase 3 Ratings numerical source and lifecycle presentation', () => {
       '100% after Week 6 and later'
     );
   });
+
+  it('shows 2026 lifecycle copy only for the authorized 2026 season', () => {
+    expect(ratingsPageCopyKind(2026)).toBe('core_v1_2026_lifecycle');
+    expect(ratingsPageCopyKind(2027)).toBe('membership_conference');
+    expect(ratingsPageCopyKind(2025)).toBe('legacy');
+    expect(CORE_V1_RATINGS_PAGE_COPY.conference).toBe(
+      'Conference is the season-specific TeamMembership conference.'
+    );
+    expect(CORE_V1_RATINGS_PAGE_COPY.conference).not.toContain(
+      '2026 season membership'
+    );
+    expect(CORE_V1_RATINGS_PAGE_COPY.baseline).toContain('2026 ratings begin');
+    expect(CORE_V1_RATINGS_PAGE_COPY.ratingSample).toContain(
+      'FBS-vs-FBS final games through the persisted lifecycle cutoff'
+    );
+    expect(CORE_V1_RATINGS_PAGE_COPY.ratingSample).toContain(
+      'persisted sample count is zero or unavailable'
+    );
+    expect(CORE_V1_RATINGS_PAGE_COPY.ratingSample).toContain(
+      'does not mean canonical in-season weight has begun'
+    );
+  });
 });
 
 describe('Phase 3 Ratings static API/page gates', () => {
@@ -169,16 +301,33 @@ describe('Phase 3 Ratings static API/page gates', () => {
     expect(route).toContain('prisma.teamSeasonRating.findMany');
     expect(route).toContain('CORE_V1_RATINGS_MODEL_VERSION');
     expect(route).toContain('assertRatingsPageConferences');
+    expect(route).toContain('assertRatingsPopulationFrame');
     expect(route).toContain('buildRatingsProvenance');
     expect(route).toContain('status: 409');
-    expect(route).toContain('teamConference: seasonAware');
-    expect(route).toContain('? undefined');
+    expect(route).toContain('RatingsFrameIntegrityError');
     expect(route).not.toContain('prisma.teamSeasonRating.create');
     expect(route).not.toContain('prisma.teamSeasonRating.update');
     expect(route).not.toContain("from '@/jobs");
     expect(route).not.toContain('core-v1-lifecycle');
     expect(route).not.toContain('compute_balanced_v1');
     expect(helper).not.toContain('apps/jobs');
+    expect(helper).toContain('isCoreV12026LifecycleSeason');
+    expect(helper).toContain('isSeasonAwareConferenceSeason');
+  });
+
+  it('validates 2026+ membership conferences before loading ratings, then requires exact frame parity', () => {
+    const membershipConferenceAssert = route.indexOf(
+      'assertRatingsPageConferences('
+    );
+    const ratingsQuery = route.indexOf('prisma.teamSeasonRating.findMany');
+    const frameAssert = route.indexOf('assertRatingsPopulationFrame({');
+    expect(membershipConferenceAssert).toBeGreaterThan(-1);
+    expect(ratingsQuery).toBeGreaterThan(-1);
+    expect(frameAssert).toBeGreaterThan(-1);
+    expect(membershipConferenceAssert).toBeLessThan(ratingsQuery);
+    expect(ratingsQuery).toBeLessThan(frameAssert);
+    expect(route).toContain('fbsMemberships.map((row) => ({');
+    expect(route).toContain('membershipConference: row.conference');
   });
 
   it('2026 page suppresses lifecycle Offense/Defense and zero games as current evidence', () => {
@@ -188,7 +337,11 @@ describe('Phase 3 Ratings static API/page gates', () => {
     expect(page).toContain('gamesSample');
     expect(page).toContain('CORE_V1_RATINGS_PAGE_COPY.baseline');
     expect(page).toContain('CORE_V1_RATINGS_PAGE_COPY.components');
+    expect(page).toContain('ratingsPageCopyKind');
+    expect(page).toContain("copyKind === 'core_v1_2026_lifecycle'");
+    expect(page).toContain("copyKind === 'membership_conference'");
     expect(page).not.toContain('the current lifecycle weight is 0');
+    expect(page).not.toContain('2026 season membership conference');
     expect(page).toContain("placeholder=\"2026\"");
   });
 });

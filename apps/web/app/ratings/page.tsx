@@ -12,8 +12,10 @@ import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
 import {
   CORE_V1_RATINGS_PAGE_COPY,
+  isCoreV12026LifecycleSeason,
   isSeasonAwareConferenceSeason,
   ratingsGamesColumnLabel,
+  ratingsPageCopyKind,
   type RatingsProvenance,
 } from '@/lib/ratings-truth';
 
@@ -79,6 +81,8 @@ export default function RatingsPage() {
   }, [season]);
 
   const seasonAware = data ? isSeasonAwareConferenceSeason(data.season) : false;
+  const lifecycle2026 = data ? isCoreV12026LifecycleSeason(data.season) : false;
+  const copyKind = data ? ratingsPageCopyKind(data.season) : 'legacy';
   const showOffenseDefense = data != null && !seasonAware;
   const gamesColumnLabel = data ? ratingsGamesColumnLabel(data.season) : 'Games';
 
@@ -303,7 +307,7 @@ export default function RatingsPage() {
                         </>
                       )}
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                        {seasonAware
+                        {lifecycle2026
                           ? rating.gamesSample != null
                             ? rating.gamesSample
                             : '—'
@@ -332,16 +336,18 @@ export default function RatingsPage() {
             <h3 className="text-sm font-semibold text-blue-900 mb-2">
               About Power Ratings
             </h3>
-            {seasonAware ? (
+            {copyKind === 'core_v1_2026_lifecycle' ? (
               <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
                 <li>{CORE_V1_RATINGS_PAGE_COPY.headline}</li>
                 <li>{CORE_V1_RATINGS_PAGE_COPY.baseline}</li>
                 <li>{CORE_V1_RATINGS_PAGE_COPY.components}</li>
                 <li>{CORE_V1_RATINGS_PAGE_COPY.conference}</li>
-                <li>
-                  Rating sample is the FBS-vs-FBS final-game count used in the
-                  lifecycle rating. A dash means no sample has been applied yet.
-                </li>
+                <li>{CORE_V1_RATINGS_PAGE_COPY.ratingSample}</li>
+              </ul>
+            ) : copyKind === 'membership_conference' ? (
+              <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+                <li>{CORE_V1_RATINGS_PAGE_COPY.headline}</li>
+                <li>{CORE_V1_RATINGS_PAGE_COPY.conference}</li>
               </ul>
             ) : (
               <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
