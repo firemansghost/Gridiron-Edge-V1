@@ -40,8 +40,8 @@ Static inventory script: `scripts/inventory-workflows-2026.py`
 
 | Classification | Count |
 |----------------|------:|
-| COMPLETED_LEAVE_OFF | 18 |
-| MANUAL_SAFE | 11 |
+| COMPLETED_LEAVE_OFF | 17 |
+| MANUAL_SAFE | 12 |
 | MANUAL_REVIEW_REQUIRED | 6 |
 | REPAIR_BEFORE_USE | 8 |
 | REPLACE | 4 |
@@ -72,6 +72,7 @@ Static inventory script: `scripts/inventory-workflows-2026.py`
 | `cfbd-scores-2026-manual.yml` | Guarded CFBD score PREVIEW/COMMIT |
 | `grade-bets-2026-manual.yml` | Guarded official bet grading PREVIEW/COMMIT |
 | `cfbd-team-game-stats-2026-manual.yml` | Guarded TeamGameStat PREVIEW/COMMIT (Core V1 lifecycle EPA feed; not yet production-authorized) |
+| `write-cfbd-schedules-2026-manual.yml` | Guarded 2026 weekly CFBD schedule rollover PREVIEW/COMMIT (replaces retired `ingest-2026-schedules.yml`; not production-authorized by merge) |
 
 ### BLOCKED
 
@@ -90,6 +91,7 @@ Schedule write/inventory, FBS membership, season conferences, talent init, Core 
 | `cfbd-scores-sync.yml` (`CFBD Scores Sync`) | `cfbd-scores-2026-manual.yml` |
 | `grade-bets.yml` (`Grade Bets`) | `grade-bets-2026-manual.yml` |
 | `one-time-week1-odds-core-preview-2026-08-29.yml` | none (expired one-time) |
+| `ingest-2026-schedules.yml` (`Ingest 2026 Schedules`) | `write-cfbd-schedules-2026-manual.yml` |
 
 ---
 
@@ -148,7 +150,6 @@ Legend: **Class** = classification; **Sched?** = YAML schedule present; **SchedO
 | evaluate-balanced-v1-transition-blends.yml | Evaluate Transition Blends | dispatch | COMPLETED_LEAVE_OFF | N | N |
 | evaluate-balanced-v1-transition-timing.yml | Evaluate Transition Timing | dispatch | COMPLETED_LEAVE_OFF | N | N |
 | grade-bets-2026-manual.yml | 2026 Grade Bets (Manual, Guarded) | dispatch | MANUAL_SAFE | N | N |
-| ingest-2026-schedules.yml | Ingest 2026 Schedules | dispatch | COMPLETED_LEAVE_OFF | N | N |
 | init-2026-fbs-membership.yml | Init 2026 FBS Membership | dispatch | COMPLETED_LEAVE_OFF | N | N |
 | initialize-2026-season-conferences.yml | Init Season Conferences | dispatch | COMPLETED_LEAVE_OFF | N | N |
 | initialize-2026-team-talent.yml | Init Team Talent | dispatch | COMPLETED_LEAVE_OFF | N | N |
@@ -174,6 +175,7 @@ Legend: **Class** = classification; **Sched?** = YAML schedule present; **SchedO
 | talent-roster-sync.yml | Talent Roster Sync | dispatch | MANUAL_REVIEW_REQUIRED | N | N |
 | v3-totals-nightly.yml | V3 Totals Nightly | dispatch+schedule | BLOCKED | Y | N |
 | validate-preseason-providers.yml | Validate Preseason Providers | dispatch | MANUAL_SAFE | N | N |
+| write-cfbd-schedules-2026-manual.yml | 2026 CFBD Schedules (Manual, Guarded) | dispatch | MANUAL_SAFE | N | N |
 | write-live-odds-2026.yml | Preview/Write 2026 Live Odds | dispatch | MANUAL_SAFE | N | N |
 | write-core-v1-weekly-card-2026.yml | Write Core V1 Weekly Card 2026 | dispatch | MANUAL_SAFE | N | N |
 | write-core-v1-lifecycle-ratings.yml | Write Core V1 Lifecycle | dispatch | MANUAL_SAFE | N | N |
@@ -194,7 +196,7 @@ Keep **score → grading → TeamGameStat ingest → Core V1 lifecycle** as sepa
 
 | Stage | Required? | Cadence | Provider | Writes | Canonical path |
 |-------|-----------|---------|----------|--------|----------------|
-| Schedule maintenance | As needed | Manual | CFBD | Game schedule | `preview-2026-schedules` + guarded ingest |
+| Schedule maintenance | As needed | Manual | CFBD | Game schedule | `preview-2026-schedules` (read-only) + `write-cfbd-schedules-2026-manual` (guarded PREVIEW/COMMIT; not authorized by merge) |
 | **Live Odds** | Yes for card | Manual guarded | Odds API | MarketLine append | `write-live-odds-2026.yml` (**proven**) |
 | Official slate/card | Yes | Manual guarded | none (DB) | Bet (`official_flat_100`) | `write-core-v1-weekly-card-2026.yml` (**proven**) |
 

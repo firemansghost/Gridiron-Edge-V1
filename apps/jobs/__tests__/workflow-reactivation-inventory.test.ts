@@ -42,6 +42,7 @@ const ABSENT_WORKFLOWS = [
   'cfbd-scores-sync.yml',
   'grade-bets.yml',
   'one-time-week1-odds-core-preview-2026-08-29.yml',
+  'ingest-2026-schedules.yml',
 ];
 
 function runPythonSnippet(snippet: string): unknown {
@@ -96,8 +97,8 @@ describe('2C-2J-6D-2 workflow reactivation inventory', () => {
       counts[w.classification] = (counts[w.classification] || 0) + 1;
     }
     expect(counts).toEqual({
-      COMPLETED_LEAVE_OFF: 18,
-      MANUAL_SAFE: 11,
+      COMPLETED_LEAVE_OFF: 17,
+      MANUAL_SAFE: 12,
       MANUAL_REVIEW_REQUIRED: 6,
       REPAIR_BEFORE_USE: 8,
       REPLACE: 4,
@@ -127,6 +128,8 @@ describe('2C-2J-6D-2 workflow reactivation inventory', () => {
     expect(byFile['cfbd-scores-2026-manual.yml']).toBe('MANUAL_SAFE');
     expect(byFile['grade-bets-2026-manual.yml']).toBe('MANUAL_SAFE');
     expect(byFile['cfbd-team-game-stats-2026-manual.yml']).toBe('MANUAL_SAFE');
+    expect(byFile['write-cfbd-schedules-2026-manual.yml']).toBe('MANUAL_SAFE');
+    expect(byFile['ingest-2026-schedules.yml']).toBeUndefined();
     expect(byFile['audit-2026-marketline-consumer-readiness.yml']).toBe(
       'MANUAL_SAFE'
     );
@@ -169,6 +172,7 @@ describe('2C-2J-6D-2 workflow reactivation inventory', () => {
       'cfbd-scores-2026-manual.yml',
       'grade-bets-2026-manual.yml',
       'cfbd-team-game-stats-2026-manual.yml',
+      'write-cfbd-schedules-2026-manual.yml',
     ]) {
       const row = inv.workflows.find((w: { file: string }) => w.file === file);
       expect(row).toBeTruthy();
@@ -249,6 +253,8 @@ print(json.dumps({
     expect(md).toContain('cfbd-team-game-stats-2026-manual.yml');
     expect(md).not.toMatch(/\| cfbd-scores-sync\.yml \|/);
     expect(md).not.toMatch(/\| grade-bets\.yml \|/);
+    expect(md).not.toMatch(/\| ingest-2026-schedules\.yml \|/);
+    expect(md).toContain('write-cfbd-schedules-2026-manual.yml');
     expect(md).toContain('recurring schedule');
     expect(md).toContain('NOT AUTHORIZED');
     expect(md).toContain('historical Actions run records');

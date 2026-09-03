@@ -47,6 +47,7 @@
     "validate:preseason-providers": "tsx scripts/validate-preseason-providers.ts",
     "preview:cfbd-schedules": "tsx scripts/preview-cfbd-schedules.ts",
     "write:cfbd-schedules": "tsx apps/jobs/write-schedules.ts",
+    "write:cfbd-schedules-2026": "tsx apps/jobs/write-cfbd-schedules-2026.ts",
     "audit:2026-schedules": "tsx apps/jobs/audit-schedule-inventory.ts",
     "audit:2026-ratings-readiness": "tsx apps/jobs/audit-ratings-readiness.ts",
     "preview:2026-fbs-membership": "tsx apps/jobs/preview-fbs-membership.ts",

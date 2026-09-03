@@ -524,41 +524,31 @@ describe('phase 2C-1B isolation', () => {
   });
 });
 
-describe('ingest-2026-schedules workflow static safety', () => {
-  const text = fs.readFileSync(
-    path.join(process.cwd(), '.github/workflows/ingest-2026-schedules.yml'),
-    'utf8'
+describe('legacy ingest-2026-schedules retired', () => {
+  const ingestPath = path.join(
+    process.cwd(),
+    '.github/workflows/ingest-2026-schedules.yml'
   );
 
-  it('is workflow_dispatch only with read contents permission', () => {
-    expect(text).toMatch(/workflow_dispatch:/);
-    expect(text).not.toMatch(/^\s*schedule:/m);
-    expect(text).not.toMatch(/^\s*push:/m);
-    expect(text).not.toMatch(/^\s*pull_request:/m);
-    expect(text).toMatch(/permissions:\s*\n\s*contents:\s*read/);
+  it('is no longer an active workflow file', () => {
+    expect(fs.existsSync(ingestPath)).toBe(false);
   });
 
-  it('uses checkout/setup-node v6 and Node 20', () => {
-    expect(text).toMatch(/actions\/checkout@v6/);
-    expect(text).toMatch(/actions\/setup-node@v6/);
-    expect(text).toMatch(/node-version:\s*'20'/);
+  it('no active workflow invokes write-schedules.ts', () => {
+    const workflowsDir = path.join(process.cwd(), '.github/workflows');
+    for (const file of fs.readdirSync(workflowsDir)) {
+      if (!file.endsWith('.yml') && !file.endsWith('.yaml')) continue;
+      const body = fs.readFileSync(path.join(workflowsDir, file), 'utf8');
+      expect(body).not.toMatch(/npx tsx apps\/jobs\/write-schedules\.ts/);
+    }
   });
 
-  it('defaults and confirmation', () => {
-    expect(text).toMatch(/default:\s*'2026'/);
-    expect(text).toMatch(/default:\s*'1'/);
-    expect(text).toMatch(/confirm_write:/);
-    expect(text).toMatch(/WRITE_2026_WEEK_/);
-    expect(text).toMatch(/week 0 is prohibited/);
-  });
-
-  it('runs dedicated write CLI only', () => {
-    expect(text).toMatch(/apps\/jobs\/write-schedules\.ts/);
-    expect(text).not.toMatch(/apps\/jobs\/dist\/ingest\.js/);
-    expect(text).not.toMatch(/ingest-schedules\.ts/);
-    expect(text).not.toMatch(/seed-ratings|ratings:v|oddsapi/i);
-    expect(text).not.toMatch(/secrets\.ODDS_API_KEY/);
-    expect(text).not.toMatch(/prisma migrate|ingest-simple\.js\s+mock/);
-    expect(text).not.toMatch(/grade-bets|sync-hybrid-bets/);
+  it('legacy CLI is marked NOT AUTHORIZED / REPAIR_BEFORE_USE', () => {
+    const src = fs.readFileSync(
+      path.join(__dirname, '../write-schedules.ts'),
+      'utf8'
+    );
+    expect(src).toMatch(/NOT AUTHORIZED/);
+    expect(src).toMatch(/REPAIR_BEFORE_USE/);
   });
 });

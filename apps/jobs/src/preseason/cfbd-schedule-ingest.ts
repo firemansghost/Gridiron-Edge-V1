@@ -2,7 +2,8 @@
  * Isolated CFBD schedule-only helpers (preseason).
  *
  * Phase 2C-1A2 executable surface (ingest-schedules / preview script) is PREVIEW-ONLY.
- * Phase 2C-1B write surface is apps/jobs/write-schedules.ts (separate confirmation-gated CLI).
+ * Guarded 2026 write surface is apps/jobs/write-cfbd-schedules-2026.ts.
+ * apps/jobs/write-schedules.ts is legacy / REPAIR_BEFORE_USE / NOT AUTHORIZED.
  * Preview pathway must never call writeValidatedScheduleBatch.
  *
  * No ratings, odds, weather, injuries, talent, bets, scores, grading, or PBP.
