@@ -12,6 +12,31 @@ const WORKFLOW = path.join(
   '../../../.github/workflows/prisma-migrate.yml'
 );
 
+/** Extract a named job step (from `- name:` through the next sibling step). */
+function extractStep(yaml: string, stepName: string): string {
+  const lines = yaml.split(/\r?\n/);
+  const start = lines.findIndex((line) =>
+    new RegExp(`^\\s+- name:\\s*${stepName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`).test(
+      line
+    )
+  );
+  if (start < 0) return '';
+  const nameIndent = (lines[start].match(/^(\s*)/)?.[1] ?? '').length;
+  const body: string[] = [];
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i];
+    const indent = (line.match(/^(\s*)/)?.[1] ?? '').length;
+    if (/^\s+- name:/.test(line) && indent <= nameIndent) break;
+    body.push(line);
+  }
+  return body.join('\n');
+}
+
+function jobPreambleBeforeSteps(yaml: string): string {
+  const afterJobs = yaml.split(/^jobs:\s*$/m)[1] ?? '';
+  return afterJobs.split(/^\s+steps:\s*$/m)[0] ?? '';
+}
+
 /** Extract YAML `run: |` block bodies (shell scripts), not `env:` mappings. */
 function extractRunBlocks(yaml: string): string[] {
   const blocks: string[] = [];
@@ -114,7 +139,9 @@ describe('prisma-migrate workflow hardening', () => {
   const runBodies = runBlocks.join('\n---\n');
   const preflightBlock =
     runBlocks.find((b) =>
-      b.includes('Preflight status acceptable for migrate deploy')
+      b.includes(
+        'Preflight: exactly one expected pending migration; proceeding to migrate deploy.'
+      )
     ) ?? '';
   const postDeployBlock =
     runBlocks.find((b) => b.includes('Post-deploy migration status healthy')) ??
@@ -135,15 +162,37 @@ describe('prisma-migrate workflow hardening', () => {
     );
   });
 
+  it('requires expected_main_sha and expected_migration inputs', () => {
+    expect(text).toMatch(/expected_main_sha:/);
+    expect(text).toMatch(/expected_migration:/);
+    expect(text).toMatch(
+      /Exact main commit SHA authorized for this deployment/
+    );
+    expect(text).toMatch(
+      /Exact single pending migration expected to be deployed/
+    );
+    expect(text).toMatch(/required:\s*true/);
+  });
+
   it('passes workflow inputs through env mappings, not shell interpolation', () => {
     expect(text).toMatch(/MIGRATION_CONFIRM:\s*\$\{\{\s*inputs\.confirm\s*\}\}/);
     expect(text).toMatch(
       /MIGRATION_REASON:\s*\$\{\{\s*inputs\.migration_reason\s*\}\}/
     );
+    expect(text).toMatch(
+      /EXPECTED_MAIN_SHA:\s*\$\{\{\s*inputs\.expected_main_sha\s*\}\}/
+    );
+    expect(text).toMatch(
+      /EXPECTED_MIGRATION:\s*\$\{\{\s*inputs\.expected_migration\s*\}\}/
+    );
     expect(runBodies).not.toMatch(/\$\{\{\s*inputs\.confirm\s*\}\}/);
     expect(runBodies).not.toMatch(/\$\{\{\s*inputs\.migration_reason\s*\}\}/);
+    expect(runBodies).not.toMatch(/\$\{\{\s*inputs\.expected_main_sha\s*\}\}/);
+    expect(runBodies).not.toMatch(/\$\{\{\s*inputs\.expected_migration\s*\}\}/);
     expect(runBodies).toMatch(/\$MIGRATION_CONFIRM/);
     expect(runBodies).toMatch(/\$MIGRATION_REASON/);
+    expect(runBodies).toMatch(/\$EXPECTED_MAIN_SHA/);
+    expect(runBodies).toMatch(/\$EXPECTED_MIGRATION/);
   });
 
   it('uses checkout@v6, setup-node@v6, Node 20, contents read', () => {
@@ -159,6 +208,8 @@ describe('prisma-migrate workflow hardening', () => {
     expect(text).not.toMatch(/UPDATE\s+_prisma_migrations/i);
     expect(text).not.toMatch(/prisma migrate resolve/);
     expect(text).not.toMatch(/migrate resolve --/);
+    expect(text).not.toMatch(/prisma migrate dev/);
+    expect(text).not.toMatch(/prisma db push/);
     expect(text).toMatch(/_prisma_migrations repair: not invoked/);
     expect(text).toMatch(/NOT part of the normal deploy path/);
   });
@@ -171,21 +222,158 @@ describe('prisma-migrate workflow hardening', () => {
     expect(text).toMatch(/Database schema is up to date/);
   });
 
-  it('detects history divergence before accepting pending/up-to-date', () => {
+  it('detects history divergence before accepting a matching pending migration', () => {
     expect(preflightBlock).toBeTruthy();
+    const failedIdx = preflightBlock.search(/P3009/);
     const divergenceIdx = preflightBlock.search(
       /migrations from the database are not found locally|local migration history and the migrations table/
     );
     const acceptIdx = preflightBlock.search(
-      /Preflight status acceptable for migrate deploy/
+      /Preflight: exactly one expected pending migration; proceeding to migrate deploy/
     );
-    expect(divergenceIdx).toBeGreaterThanOrEqual(0);
+    expect(failedIdx).toBeGreaterThanOrEqual(0);
+    expect(divergenceIdx).toBeGreaterThan(failedIdx);
     expect(acceptIdx).toBeGreaterThan(divergenceIdx);
     expect(preflightBlock).toMatch(
       /Do not auto-repair or modify _prisma_migrations/
     );
     expect(postDeployBlock).toMatch(
       /migrations from the database are not found locally|local migration history and the migrations table/
+    );
+  });
+
+  it('fails closed on SHA mismatch or non-main ref before any DB status/deploy', () => {
+    const shaStep = extractStep(text, 'Source SHA guard');
+    const statusStep = extractStep(
+      text,
+      'Prisma migrate status (fail closed on failed/unsafe state)'
+    );
+    const deployStep = extractStep(text, 'Prisma migrate deploy');
+    expect(shaStep).toMatch(/git rev-parse HEAD/);
+    expect(shaStep).toMatch(/ACTUAL_SHA/);
+    expect(shaStep).toMatch(/EXPECTED_MAIN_SHA/);
+    expect(shaStep).toMatch(/refs\/heads\/main/);
+    expect(shaStep).toMatch(
+      /Checked-out SHA does not match expected_main_sha/
+    );
+    expect(shaStep).not.toMatch(/prisma migrate status/);
+    expect(shaStep).not.toMatch(/prisma migrate deploy/);
+    expect(shaStep).not.toMatch(/secrets\.DATABASE_URL|secrets\.DIRECT_URL/);
+    expect(statusStep).toMatch(/prisma migrate status/);
+    expect(deployStep).toMatch(/prisma migrate deploy/);
+    const shaIdx = text.indexOf('Source SHA guard');
+    const statusIdx = text.indexOf(
+      'Prisma migrate status (fail closed on failed/unsafe state)'
+    );
+    const deployIdx = text.indexOf('Prisma migrate deploy');
+    expect(shaIdx).toBeGreaterThan(text.indexOf('Checkout'));
+    expect(statusIdx).toBeGreaterThan(shaIdx);
+    expect(deployIdx).toBeGreaterThan(statusIdx);
+  });
+
+  it('accepts only exactly one pending migration matching expected_migration', () => {
+    expect(preflightBlock).toMatch(/pending_count/);
+    expect(preflightBlock).toMatch(/pending_migration/);
+    expect(preflightBlock).toMatch(/expected_migration/);
+    expect(preflightBlock).toMatch(/To apply migrations/);
+    expect(preflightBlock).toMatch(
+      /\^\[0-9\]\{8\}\[0-9\]\*_\[A-Za-z0-9_\]\+\$/
+    );
+    expect(preflightBlock).toMatch(
+      /prisma\/migrations\/\$\{name\}\/migration\.sql/
+    );
+    expect(preflightBlock).toMatch(
+      /Zero pending migrations\. This is a production deployment workflow, not a no-op/
+    );
+    expect(preflightBlock).toMatch(
+      /Exactly one pending migration is required/
+    );
+    expect(preflightBlock).toMatch(
+      /Pending migration does not match expected_migration/
+    );
+    expect(preflightBlock).toMatch(/PENDING_COUNT\}" -eq 0/);
+    expect(preflightBlock).toMatch(/PENDING_COUNT\}" -ne 1/);
+    expect(preflightBlock).toMatch(
+      /PENDING_MIGRATION\}" != "\$\{EXPECTED_MIGRATION\}"/
+    );
+    expect(preflightBlock).not.toMatch(
+      /Preflight status acceptable for migrate deploy \(pending or up-to-date\)/
+    );
+  });
+
+  it('does not set DATABASE_URL or DIRECT_URL at job scope', () => {
+    const preamble = jobPreambleBeforeSteps(text);
+    expect(preamble).not.toMatch(/DATABASE_URL/);
+    expect(preamble).not.toMatch(/DIRECT_URL/);
+  });
+
+  it('scopes production DB secrets only to presence, status, and deploy steps', () => {
+    const confirm = extractStep(
+      text,
+      'Confirm production migration authorization'
+    );
+    const checkout = extractStep(text, 'Checkout');
+    const setupNode = extractStep(text, 'Setup Node');
+    const npmCi = extractStep(text, 'Install dependencies');
+    const prismaVersion = extractStep(text, 'Prisma version');
+    const listMigrations = extractStep(text, 'Verify migration directory');
+    const waitPooled = extractStep(text, 'Wait for pooled (6543)');
+    const waitDirect = extractStep(text, 'Wait for direct (5432)');
+    const generate = extractStep(text, 'Prisma generate');
+    const summary = extractStep(text, 'Summary');
+    const preflightSecrets = extractStep(
+      text,
+      'Preflight secrets (names/presence only)'
+    );
+    const preStatus = extractStep(
+      text,
+      'Prisma migrate status (fail closed on failed/unsafe state)'
+    );
+    const deploy = extractStep(text, 'Prisma migrate deploy');
+    const postStatus = extractStep(
+      text,
+      'Post-deploy migrate status (must be healthy)'
+    );
+
+    for (const step of [
+      confirm,
+      checkout,
+      setupNode,
+      npmCi,
+      prismaVersion,
+      listMigrations,
+      waitPooled,
+      waitDirect,
+      generate,
+      summary,
+    ]) {
+      expect(step).not.toMatch(/secrets\.DATABASE_URL/);
+      expect(step).not.toMatch(/secrets\.DIRECT_URL/);
+    }
+
+    expect(npmCi).toMatch(/npm ci/);
+    expect(generate).toMatch(/prisma generate/);
+    expect(preflightSecrets).toMatch(
+      /DATABASE_URL:\s*\$\{\{\s*secrets\.DATABASE_URL\s*\}\}/
+    );
+    expect(preflightSecrets).toMatch(
+      /DIRECT_URL:\s*\$\{\{\s*secrets\.DIRECT_URL\s*\}\}/
+    );
+    expect(preStatus).toMatch(
+      /DATABASE_URL:\s*\$\{\{\s*secrets\.DATABASE_URL\s*\}\}/
+    );
+    expect(preStatus).toMatch(
+      /DIRECT_URL:\s*\$\{\{\s*secrets\.DIRECT_URL\s*\}\}/
+    );
+    expect(deploy).toMatch(
+      /DATABASE_URL:\s*\$\{\{\s*secrets\.DATABASE_URL\s*\}\}/
+    );
+    expect(deploy).toMatch(/DIRECT_URL:\s*\$\{\{\s*secrets\.DIRECT_URL\s*\}\}/);
+    expect(postStatus).toMatch(
+      /DATABASE_URL:\s*\$\{\{\s*secrets\.DATABASE_URL\s*\}\}/
+    );
+    expect(postStatus).toMatch(
+      /DIRECT_URL:\s*\$\{\{\s*secrets\.DIRECT_URL\s*\}\}/
     );
   });
 

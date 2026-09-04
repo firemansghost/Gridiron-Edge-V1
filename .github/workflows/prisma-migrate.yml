@@ -25,6 +25,14 @@ on:
         description: 'Type MIGRATE_PRODUCTION to authorize production migrate deploy'
         required: true
         type: string
+      expected_main_sha:
+        description: 'Exact main commit SHA authorized for this deployment'
+        required: true
+        type: string
+      expected_migration:
+        description: 'Exact single pending migration expected to be deployed'
+        required: true
+        type: string
       migration_reason:
         description: 'Short reason for this production migration (log context only)'
         required: false
@@ -42,22 +50,31 @@ jobs:
   migrate:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      DIRECT_URL: ${{ secrets.DIRECT_URL }}
 
     steps:
       - name: Confirm production migration authorization
         env:
           MIGRATION_CONFIRM: ${{ inputs.confirm }}
           MIGRATION_REASON: ${{ inputs.migration_reason }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          EXPECTED_MIGRATION: ${{ inputs.expected_migration }}
         run: |
           set -euo pipefail
           if [ "$MIGRATION_CONFIRM" != "MIGRATE_PRODUCTION" ]; then
             echo "::error::Refusing migrate deploy. confirm must equal MIGRATE_PRODUCTION."
             exit 1
           fi
+          if [ -z "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing migrate deploy. expected_main_sha is required."
+            exit 1
+          fi
+          if [ -z "${EXPECTED_MIGRATION}" ]; then
+            echo "::error::Refusing migrate deploy. expected_migration is required."
+            exit 1
+          fi
           echo "confirm: MIGRATE_PRODUCTION"
+          printf 'expected_main_sha: %s\n' "$EXPECTED_MAIN_SHA"
+          printf 'expected_migration: %s\n' "$EXPECTED_MIGRATION"
           if [ -n "$MIGRATION_REASON" ]; then
             printf 'migration_reason: %s\n' "$MIGRATION_REASON"
           else
@@ -71,6 +88,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Source SHA guard
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA=$(git rev-parse HEAD)
+          echo "ACTUAL_SHA=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+          echo "actual_sha: ${ACTUAL_SHA}"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          echo "github_ref: ${GITHUB_REF:-}"
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Refusing migrate deploy. Workflow must run from main."
+            echo "::error::github_ref=${GITHUB_REF:-}"
+            exit 1
+          fi
+          if [ "${ACTUAL_SHA}" != "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing migrate deploy. Checked-out SHA does not match expected_main_sha."
+            echo "::error::actual_sha=${ACTUAL_SHA}"
+            echo "::error::expected_main_sha=${EXPECTED_MAIN_SHA}"
+            exit 1
+          fi
+          echo "Source SHA guard passed."
+
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
@@ -78,6 +118,9 @@ jobs:
           cache: 'npm'
 
       - name: Preflight secrets (names/presence only)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
         run: |
           set -euo pipefail
           if [ -z "${DATABASE_URL:-}" ]; then
@@ -135,6 +178,10 @@ jobs:
           exit 1
 
       - name: Prisma migrate status (fail closed on failed/unsafe state)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          EXPECTED_MIGRATION: ${{ inputs.expected_migration }}
         shell: bash
         run: |
           set -uo pipefail
@@ -151,7 +198,7 @@ jobs:
           fi
 
           # 2) Migration-history divergence (DB has migrations absent from repo) → fail closed
-          # Must run BEFORE accepting pending/up-to-date: real production status can contain BOTH.
+          # Must run BEFORE accepting pending: real production status can contain BOTH.
           if echo "$STATUS_OUTPUT" | grep -Eqi 'Your local migration history and the migrations table from your database are different|The migrations from the database are not found locally in prisma/migrations'; then
             echo "::error::Production migration history contains migrations that are not present in the repository."
             echo "::error::Refusing migrate deploy. Investigate migration history before applying new migrations."
@@ -159,23 +206,86 @@ jobs:
             exit 1
           fi
 
-          # 3) Expected before deliberate deploy: up to date OR pending migrations only
-          if echo "$STATUS_OUTPUT" | grep -Eqi 'Database schema is up to date|have not yet been applied|Following migration|not yet been applied'; then
-            echo "Preflight status acceptable for migrate deploy (pending or up-to-date)."
-            exit 0
+          if [ -z "${EXPECTED_MIGRATION}" ]; then
+            echo "::error::expected_migration is required."
+            exit 1
           fi
 
-          # 4) Unknown / connection / other errors — fail closed
-          echo "::error::Unexpected prisma migrate status output (exit=${STATUS_CODE}). Refusing deploy."
-          exit 1
+          PENDING_NAMES=$(printf '%s\n' "$STATUS_OUTPUT" | awk '
+            BEGIN { pending = 0 }
+            tolower($0) ~ /have not yet been applied/ {
+              pending = 1
+              next
+            }
+            pending && $0 ~ /^To apply migrations/ {
+              pending = 0
+              next
+            }
+            pending && $0 ~ /^[[:space:]]*$/ { next }
+            pending { print }
+          ')
+
+          PENDING_COUNT=0
+          PENDING_MIGRATION=""
+          if [ -n "${PENDING_NAMES}" ]; then
+            while IFS= read -r name; do
+              [ -z "${name}" ] && continue
+              if ! printf '%s\n' "$name" | grep -Eq '^[0-9]{8}[0-9]*_[A-Za-z0-9_]+$'; then
+                echo "::error::Ambiguous pending-migration parse; refusing prose as a migration name."
+                printf 'parsed_line: %s\n' "$name"
+                exit 1
+              fi
+              if [ ! -f "prisma/migrations/${name}/migration.sql" ]; then
+                echo "::error::Parsed pending name has no prisma/migrations/<name>/migration.sql."
+                printf 'parsed_line: %s\n' "$name"
+                exit 1
+              fi
+              PENDING_COUNT=$((PENDING_COUNT + 1))
+              if [ -n "${PENDING_MIGRATION}" ]; then
+                PENDING_MIGRATION="${PENDING_MIGRATION}"$'\n'"${name}"
+              else
+                PENDING_MIGRATION="${name}"
+              fi
+            done < <(printf '%s\n' "$PENDING_NAMES")
+          fi
+
+          echo "pending_count=${PENDING_COUNT}"
+          echo "pending_migration=${PENDING_MIGRATION}"
+          echo "expected_migration=${EXPECTED_MIGRATION}"
+
+          if [ "${PENDING_COUNT}" -eq 0 ]; then
+            echo "::error::Zero pending migrations. This is a production deployment workflow, not a no-op."
+            exit 1
+          fi
+
+          if [ "${PENDING_COUNT}" -ne 1 ]; then
+            echo "::error::Refusing migrate deploy. Exactly one pending migration is required."
+            echo "::error::pending_count=${PENDING_COUNT}"
+            exit 1
+          fi
+
+          if [ "${PENDING_MIGRATION}" != "${EXPECTED_MIGRATION}" ]; then
+            echo "::error::Refusing migrate deploy. Pending migration does not match expected_migration."
+            echo "::error::pending_migration=${PENDING_MIGRATION}"
+            echo "::error::expected_migration=${EXPECTED_MIGRATION}"
+            exit 1
+          fi
+
+          echo "Preflight: exactly one expected pending migration; proceeding to migrate deploy."
 
       - name: Prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
         run: npx prisma migrate deploy --schema=prisma/schema.prisma
 
       - name: Prisma generate
         run: npx prisma generate --schema=prisma/schema.prisma
 
       - name: Post-deploy migrate status (must be healthy)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
         shell: bash
         run: |
           set -uo pipefail
@@ -214,12 +324,21 @@ jobs:
         env:
           MIGRATION_CONFIRM: ${{ inputs.confirm }}
           MIGRATION_REASON: ${{ inputs.migration_reason }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          EXPECTED_MIGRATION: ${{ inputs.expected_migration }}
           JOB_STATUS: ${{ job.status }}
         run: |
           echo "============================================"
           echo "PRISMA MIGRATE (MANUAL PRODUCTION)"
           echo "============================================"
           printf 'confirm: %s\n' "$MIGRATION_CONFIRM"
+          printf 'expected_main_sha: %s\n' "$EXPECTED_MAIN_SHA"
+          if [ -n "${ACTUAL_SHA:-}" ]; then
+            printf 'actual_sha: %s\n' "$ACTUAL_SHA"
+          else
+            echo "actual_sha: (unavailable)"
+          fi
+          printf 'expected_migration: %s\n' "$EXPECTED_MIGRATION"
           if [ -n "$MIGRATION_REASON" ]; then
             printf 'migration_reason: %s\n' "$MIGRATION_REASON"
           else
