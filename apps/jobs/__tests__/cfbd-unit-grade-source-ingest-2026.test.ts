@@ -9,19 +9,30 @@ import {
   CFBD_LEASE_SEMANTICS,
   CFBD_UNIT_GRADE_SOURCE_MAX_RETRIES,
   CFBD_UNIT_GRADE_SOURCE_PROCESS_MAX_CONCURRENCY,
+  EFF_METRIC_FIELD_KEYS,
   TARGET_SEASON,
   UNIT_GRADE_SOURCE_CONFIRMATION,
   SequentialJsonFetcher,
+  buildAdvancedGameUrl,
+  buildAdvancedSeasonUrl,
+  buildGamesUrl,
+  buildPpaGameUrl,
   fetchUnitGradeSourcePayloads,
   mapAdvancedMetrics,
+  mutationTelemetryAfterCommitAttempt,
   parseRetryAfterMs,
   parseUnitGradeSourceIngestArgs,
   parseWeeks,
+  pickEffMetricFields,
   planUnitGradeSourceIngest,
+  snapshotProviderTelemetry,
   toFiniteOrNull,
   type MembershipRow,
+  type PlannedEffGameRow,
+  type PlannedEffSeasonRow,
   type UnitGradeSourceIngestPlan,
 } from '../src/v2/cfbd-unit-grade-source-ingest-2026';
+import { LEGACY_COMPATIBILITY_DISCLAIMER } from '../src/v2/unit-grade-source-readiness';
 
 const KICK = '2026-09-05T19:00:00Z';
 
@@ -73,17 +84,17 @@ function advRow(id: string, team: string, overrides: Record<string, unknown> = {
     id,
     team,
     offense: {
-      epa: 0.1,
+      ppa: 0.1,
       successRate: 0.4,
       explosiveness: 1.2,
       lineYards: 3.4,
-      rushingPlays: { epa: 0.05, successRate: 0.42 },
-      passingPlays: { epa: 0.08, successRate: 0.45 },
+      rushingPlays: { ppa: 0.05, successRate: 0.42 },
+      passingPlays: { ppa: 0.08, successRate: 0.45 },
       havoc: { total: 0.11, frontSeven: 0.07, db: 0.04 },
       ...((overrides.offense as object) || {}),
     },
     defense: {
-      epa: -0.1,
+      ppa: -0.1,
       successRate: 0.38,
       explosiveness: 1.0,
       stuffRate: 0.22,
@@ -306,7 +317,7 @@ describe('unit-grade source ingest planner', () => {
     expect(toFiniteOrNull(Number.POSITIVE_INFINITY)).toBeNull();
     expect(toFiniteOrNull(0)).toBe(0);
     const metrics = mapAdvancedMetrics({
-      offense: { lineYards: Number.NaN, explosiveness: 1.5, epa: 'nope' },
+      offense: { lineYards: Number.NaN, explosiveness: 1.5, ppa: 'nope' },
       defense: { stuffRate: Number.POSITIVE_INFINITY },
     });
     expect(metrics.lineYardsOff).toBeNull();
@@ -376,7 +387,8 @@ describe('unit-grade source ingest provider safety', () => {
   it('configured process concurrency <=1 for this writer', () => {
     expect(CFBD_UNIT_GRADE_SOURCE_PROCESS_MAX_CONCURRENCY).toBe(1);
     expect(new SequentialJsonFetcher().maxConcurrency).toBe(1);
-    expect(CFBD_LEASE_SEMANTICS).toMatch(/uncertain/);
+    expect(CFBD_LEASE_SEMANTICS).toMatch(/maxConcurrency=1/);
+    expect(CFBD_LEASE_SEMANTICS).toMatch(/leaseMs=75000/);
   });
 
   it('Retry-After respected and fail closed after retry exhaustion', async () => {
@@ -459,5 +471,281 @@ describe('unit-grade source ingest provider safety', () => {
       return 'games';
     });
     expect(labels).toEqual(['games', 'games', 'season', 'adv', 'ppa', 'adv', 'ppa']);
+  });
+
+  it('retains providerCalls and invoked endpoint after a later fetch fails', async () => {
+    const fetcher = new SequentialJsonFetcher();
+    await expect(
+      fetchUnitGradeSourcePayloads({
+        season: 2026,
+        weeks: [1],
+        apiKey: 'k',
+        fetcher,
+        fetchImpl: (async (input: RequestInfo | URL) => {
+          const url = String(input);
+          if (url.includes('/stats/season/advanced')) {
+            throw new Error('season boom');
+          }
+          return {
+            status: 200,
+            ok: true,
+            headers: { get: () => null },
+            json: async () => [{ id: 401 }],
+          } as unknown as Response;
+        }) as typeof fetch,
+      })
+    ).rejects.toThrow(/season boom/);
+    expect(fetcher.providerCalls).toBeGreaterThan(0);
+    expect(fetcher.endpointsInvoked).toContain('/games');
+    const tel = snapshotProviderTelemetry(fetcher);
+    expect(tel.providerCalls).toBeGreaterThan(0);
+    expect(tel.endpointsInvoked).toContain('/games');
+    expect(tel.responseRowCounts).not.toEqual({ status: 'partial_unavailable' });
+    if (!('status' in tel.responseRowCounts)) {
+      expect(tel.responseRowCounts.games).toBe(1);
+    }
+  });
+});
+
+describe('unit-grade source ingest Prisma metric projection', () => {
+  it('pickEffMetricFields drops planner metadata from PlannedEff rows', () => {
+    const metrics = mapAdvancedMetrics(advRow('401', 'Alpha'));
+    const gameRow: PlannedEffGameRow = {
+      kind: 'CREATE',
+      gameIdCfbd: '401',
+      teamIdInternal: 'alpha-id',
+      ...metrics,
+    };
+    const seasonRow: PlannedEffSeasonRow = {
+      kind: 'UPDATE',
+      season: 2026,
+      teamIdInternal: 'alpha-id',
+      ...metrics,
+    };
+    const fromGame = pickEffMetricFields(gameRow);
+    const fromSeason = pickEffMetricFields(seasonRow);
+    expect(Object.prototype.hasOwnProperty.call(fromGame, 'kind')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(fromGame, 'gameIdCfbd')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(fromGame, 'teamIdInternal')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(fromGame, 'season')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(fromSeason, 'kind')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(fromSeason, 'gameIdCfbd')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(fromSeason, 'teamIdInternal')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(fromSeason, 'season')).toBe(false);
+    expect(Object.keys(fromGame).sort()).toEqual(EFF_METRIC_FIELD_KEYS.slice().sort());
+    expect(fromGame.offEpa).toBe(0.1);
+    expect(fromSeason.runEpa).toBe(0.05);
+  });
+});
+
+describe('unit-grade source ingest CFBD v2 URL contract', () => {
+  it('/games uses classification=fbs and not division', () => {
+    const url = new URL(buildGamesUrl(2026, 3));
+    expect(url.pathname.endsWith('/games')).toBe(true);
+    expect(url.searchParams.get('year')).toBe('2026');
+    expect(url.searchParams.get('week')).toBe('3');
+    expect(url.searchParams.get('seasonType')).toBe('regular');
+    expect(url.searchParams.get('classification')).toBe('fbs');
+    expect(url.searchParams.has('division')).toBe(false);
+  });
+
+  it('/stats/season/advanced uses explicit classification=fbs', () => {
+    const url = new URL(buildAdvancedSeasonUrl(2026));
+    expect(url.pathname.endsWith('/stats/season/advanced')).toBe(true);
+    expect(url.searchParams.get('year')).toBe('2026');
+    expect(url.searchParams.get('classification')).toBe('fbs');
+  });
+
+  it('/stats/game/advanced has no classification or division', () => {
+    const url = new URL(buildAdvancedGameUrl(2026, 2));
+    expect(url.pathname.endsWith('/stats/game/advanced')).toBe(true);
+    expect(url.searchParams.get('year')).toBe('2026');
+    expect(url.searchParams.get('week')).toBe('2');
+    expect(url.searchParams.get('seasonType')).toBe('regular');
+    expect(url.searchParams.has('classification')).toBe(false);
+    expect(url.searchParams.has('division')).toBe(false);
+  });
+
+  it('/ppa/games uses explicit classification=fbs', () => {
+    const url = new URL(buildPpaGameUrl(2026, 4));
+    expect(url.pathname.endsWith('/ppa/games')).toBe(true);
+    expect(url.searchParams.get('year')).toBe('2026');
+    expect(url.searchParams.get('week')).toBe('4');
+    expect(url.searchParams.get('seasonType')).toBe('regular');
+    expect(url.searchParams.get('classification')).toBe('fbs');
+  });
+});
+
+describe('unit-grade source ingest current CFBD ppa mapping', () => {
+  it('maps current advanced ppa into legacy persisted EPA-named columns, including zero', () => {
+    const nonzero = mapAdvancedMetrics({
+      offense: {
+        ppa: 0.21,
+        successRate: 0.4,
+        explosiveness: 1.2,
+        lineYards: 3.4,
+        rushingPlays: { ppa: 0.07, successRate: 0.42 },
+        passingPlays: { ppa: 0.09, successRate: 0.45 },
+        havoc: { total: 0.11 },
+      },
+      defense: {
+        ppa: -0.18,
+        successRate: 0.38,
+        explosiveness: 1.0,
+        stuffRate: 0.22,
+        havoc: { total: 0.2 },
+      },
+    });
+    expect(nonzero.offEpa).toBe(0.21);
+    expect(nonzero.defEpa).toBe(-0.18);
+    expect(nonzero.runEpa).toBe(0.07);
+    expect(nonzero.passEpa).toBe(0.09);
+    expect(nonzero.offSr).toBe(0.4);
+    expect(nonzero.defSr).toBe(0.38);
+    expect(nonzero.isoPppOff).toBe(1.2);
+    expect(nonzero.isoPppDef).toBe(1.0);
+    expect(nonzero.lineYardsOff).toBe(3.4);
+    expect(nonzero.runSr).toBe(0.42);
+    expect(nonzero.passSr).toBe(0.45);
+    expect(nonzero.stuffRate).toBe(0.22);
+    expect(nonzero.havocOff).toBe(0.11);
+    expect(nonzero.havocDef).toBe(0.2);
+    expect(nonzero.earlyDownEpa).toBeNull();
+    expect(nonzero.lateDownEpa).toBeNull();
+    expect(nonzero.avgFieldPosition).toBeNull();
+
+    const zeros = mapAdvancedMetrics({
+      offense: {
+        ppa: 0,
+        rushingPlays: { ppa: 0 },
+        passingPlays: { ppa: 0 },
+      },
+      defense: { ppa: 0 },
+    });
+    expect(zeros.offEpa).toBe(0);
+    expect(zeros.defEpa).toBe(0);
+    expect(zeros.runEpa).toBe(0);
+    expect(zeros.passEpa).toBe(0);
+  });
+});
+
+describe('unit-grade source ingest proposed coverage', () => {
+  it('schedule-only proposal leaves raw and legacy coverage incomplete', () => {
+    const r = basePlan();
+    const cov = r.proposedSourceCoverage;
+    expect(cov.rawMetricCoverageComplete).toBe(false);
+    expect(cov.legacyComputeCompatibleCoverageComplete).toBe(false);
+    expect(cov.safeToRunExistingCompute).toBe(false);
+    expect(cov.legacyCompatibilityDisclaimer).toBe(LEGACY_COMPATIBILITY_DISCLAIMER);
+    expect(cov.rawMetricCoverage.lineYardsOff.distinctTeams).toBe(0);
+    expect(cov.rawMetricCoverage.runEpa.finiteRows).toBe(0);
+    expect(cov.rawMetricCoverage.passEpa.distinctTeams).toBe(0);
+    expect(cov.legacyComputeCompatibleCoverage.offRun.coveredTeamCount).toBe(0);
+    expect(cov.rawMetricCoverage.lineYardsOff.missingTeamIds).toHaveLength(138);
+    expect(r.writeSafe).toBe(true);
+  });
+
+  it('current-shaped advanced ppa increases the matching raw coverage', () => {
+    const r = basePlan({
+      advancedGameByWeek: { 1: [advRow('401', 'Alpha')] },
+    });
+    const cov = r.proposedSourceCoverage;
+    expect(cov.rawMetricCoverage.runEpa.distinctTeams).toBe(1);
+    expect(cov.rawMetricCoverage.passEpa.distinctTeams).toBe(1);
+    expect(cov.rawMetricCoverage.lineYardsOff.distinctTeams).toBe(1);
+    expect(cov.rawMetricCoverage.isoPppOff.distinctTeams).toBe(1);
+    expect(cov.rawMetricCoverage.isoPppDef.distinctTeams).toBe(1);
+    expect(cov.rawMetricCoverage.defSr.distinctTeams).toBe(1);
+    expect(cov.rawMetricCoverage.passSr.distinctTeams).toBe(1);
+    expect(cov.rawMetricCoverage.ppaOffense.distinctTeams).toBe(0);
+    expect(cov.safeToRunExistingCompute).toBe(false);
+    expect(cov.rawMetricCoverageComplete).toBe(false);
+  });
+
+  it('PPA fallback covers legacy without marking raw runEpa/passEpa present', () => {
+    const r = basePlan({
+      ppaGameByWeek: {
+        1: [{ id: '401', team: 'Alpha', offense: { ppa: 0.2 }, defense: { ppa: -0.1 } }],
+      },
+    });
+    const cov = r.proposedSourceCoverage;
+    expect(cov.rawMetricCoverage.ppaOffense.distinctTeams).toBe(1);
+    expect(cov.rawMetricCoverage.ppaDefense.distinctTeams).toBe(1);
+    expect(cov.rawMetricCoverage.runEpa.distinctTeams).toBe(0);
+    expect(cov.rawMetricCoverage.passEpa.distinctTeams).toBe(0);
+    expect(cov.legacyComputeCompatibleCoverage.offRun.coveredTeamCount).toBe(1);
+    expect(cov.legacyComputeCompatibleCoverage.defRun.coveredTeamCount).toBe(1);
+    expect(cov.legacyComputeCompatibleCoverage.offPass.coveredTeamCount).toBe(1);
+    expect(cov.legacyComputeCompatibleCoverage.defPass.coveredTeamCount).toBe(1);
+    expect(cov.safeToRunExistingCompute).toBe(false);
+    expect(cov.rawMetricCoverageComplete).toBe(false);
+  });
+
+  it('does not zero-fill missing metrics', () => {
+    const r = basePlan({
+      advancedGameByWeek: {
+        1: [
+          {
+            id: '401',
+            team: 'Alpha',
+            offense: { successRate: 0.4 },
+            defense: {},
+          },
+        ],
+      },
+    });
+    const cov = r.proposedSourceCoverage;
+    expect(cov.rawMetricCoverage.lineYardsOff.finiteRows).toBe(0);
+    expect(cov.rawMetricCoverage.runEpa.finiteRows).toBe(0);
+    expect(cov.rawMetricCoverage.passEpa.finiteRows).toBe(0);
+    expect(r.effGames[0].lineYardsOff).toBeNull();
+    expect(r.effGames[0].runEpa).toBeNull();
+    expect(cov.safeToRunExistingCompute).toBe(false);
+  });
+});
+
+describe('unit-grade source ingest reporting integrity', () => {
+  it('team mapping inventory uses all payloads and ignores out-of-frame advanced teams', () => {
+    const teams = fbs();
+    const r = basePlan({
+      teamResolutions: resolutions({
+        Alpha: teams[0],
+        Beta: teams[1],
+        SeasonTeam: teams[2],
+      }),
+      advancedGameByWeek: {
+        1: [advRow('999', 'GhostTeam')],
+      },
+      advancedSeason: [advRow('s', 'SeasonTeam')],
+    });
+    expect(r.providerTeamNamesEncountered).toEqual(
+      expect.arrayContaining(['Alpha', 'Beta', 'GhostTeam', 'SeasonTeam'])
+    );
+    expect(r.unmappedProviderTeams).not.toContain('GhostTeam');
+    expect(r.unmappedProviderTeams).toEqual([]);
+    expect(r.mappedProviderTeamCount).toBeGreaterThanOrEqual(3);
+    expect(r.distinctMappedInternalIds).toEqual(
+      expect.arrayContaining([teams[0], teams[1], teams[2]])
+    );
+    expect(r.skipped.some((s) => s.includes('game_not_in_frame'))).toBe(true);
+  });
+
+  it('rolled-back commit telemetry records a mutation attempt without persisted writes', () => {
+    const rolled = mutationTelemetryAfterCommitAttempt({
+      commitReached: true,
+      commitSucceeded: false,
+    });
+    expect(rolled.mutationsInvoked).toBe(true);
+    expect(rolled.commitSucceeded).toBe(false);
+    expect(rolled.transactionRolledBack).toBe(true);
+    expect(rolled.persistedWrites).toBe(false);
+    const ok = mutationTelemetryAfterCommitAttempt({
+      commitReached: true,
+      commitSucceeded: true,
+    });
+    expect(ok.mutationsInvoked).toBe(true);
+    expect(ok.commitSucceeded).toBe(true);
+    expect(ok.transactionRolledBack).toBe(false);
+    expect(ok.persistedWrites).toBe(true);
   });
 });

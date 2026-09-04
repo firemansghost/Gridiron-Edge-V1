@@ -5,11 +5,13 @@
  * cfbd_eff_team_season. Does not write TeamUnitGrades, priors, Shadow, Bet,
  * or MatchupOutput. Does not compute grades.
  *
- * CFBD account-wide heavy-endpoint risk (ops note): max 2 in-flight and a
- * reported 75-second lease. Exact 75s lease semantics are NOT implemented in
- * this repository and are not invented here. This writer substitutes a more
- * conservative model: one process, one in-flight request, sequential week
- * fetches, Retry-After on 429, fail closed after retry exhaustion.
+ * Verified CFBD API v2 concurrency (ops note only — not a lock redesign):
+ * /stats/season/advanced and /stats/game/advanced maxConcurrent = 2;
+ * key is METHOD + endpoint + user; leaseMs = 75000 is a fallback release
+ * lease; normal release occurs on response finish; rejected concurrency
+ * returns Retry-After: 1. This writer stays conservative: one process,
+ * maxConcurrency=1, sequential fetches, Retry-After on 429, fail closed
+ * after retry exhaustion.
  */
 
 import {
@@ -20,6 +22,18 @@ import {
   type TeamResolutionResult,
 } from '../preseason/cfbd-schedule-ingest';
 import { EXPECTED_2026_FBS_COUNT } from '../preseason/balanced-v1-preseason-bridge-eval';
+import {
+  LEGACY_COMPATIBILITY_DISCLAIMER,
+  SAFE_TO_RUN_EXISTING_COMPUTE,
+  buildUnitGradeSourceReadinessReport,
+  type CfbdGameRow,
+  type EffTeamGameRow,
+  type EffTeamSeasonRow,
+  type LegacyCategory,
+  type PpaTeamGameRow,
+  type RawMetric,
+  type SourceReadinessStatus,
+} from './unit-grade-source-readiness';
 
 export const TARGET_SEASON = 2026 as const;
 export const UNIT_GRADE_SOURCE_CONFIRMATION =
@@ -28,7 +42,7 @@ export const CFBD_UNIT_GRADE_SOURCE_PROCESS_MAX_CONCURRENCY = 1 as const;
 export const CFBD_UNIT_GRADE_SOURCE_TIMEOUT_MS = 30_000;
 export const CFBD_UNIT_GRADE_SOURCE_MAX_RETRIES = 5;
 export const CFBD_LEASE_SEMANTICS =
-  '75-second CFBD account lease semantics are uncertain in this repo; writer uses sequential single-in-flight requests plus Retry-After instead of inventing a lease';
+  'CFBD heavy endpoints maxConcurrent=2; leaseMs=75000 is fallback release; normal release on response finish; rejected concurrency Retry-After: 1; this writer uses sequential maxConcurrency=1 and Retry-After without a cross-workflow lock';
 
 export const PROVIDER_ENDPOINTS = [
   '/games',
@@ -84,6 +98,67 @@ export type EffMetricFields = {
   lateDownEpa: number | null;
   avgFieldPosition: number | null;
 };
+
+export const EFF_METRIC_FIELD_KEYS = [
+  'offEpa',
+  'offSr',
+  'isoPppOff',
+  'ppoOff',
+  'lineYardsOff',
+  'havocOff',
+  'havocFront7Off',
+  'havocDbOff',
+  'defEpa',
+  'defSr',
+  'isoPppDef',
+  'ppoDef',
+  'stuffRate',
+  'powerSuccess',
+  'havocDef',
+  'havocFront7Def',
+  'havocDbDef',
+  'runEpa',
+  'passEpa',
+  'runSr',
+  'passSr',
+  'earlyDownEpa',
+  'lateDownEpa',
+  'avgFieldPosition',
+] as const;
+
+/**
+ * Explicit Prisma-safe projection. Callers pass PlannedEffGameRow /
+ * PlannedEffSeasonRow which also carry planner metadata (kind, gameIdCfbd,
+ * teamIdInternal, season). Never spread those rows into Prisma payloads.
+ */
+export function pickEffMetricFields(row: EffMetricFields): EffMetricFields {
+  return {
+    offEpa: row.offEpa,
+    offSr: row.offSr,
+    isoPppOff: row.isoPppOff,
+    ppoOff: row.ppoOff,
+    lineYardsOff: row.lineYardsOff,
+    havocOff: row.havocOff,
+    havocFront7Off: row.havocFront7Off,
+    havocDbOff: row.havocDbOff,
+    defEpa: row.defEpa,
+    defSr: row.defSr,
+    isoPppDef: row.isoPppDef,
+    ppoDef: row.ppoDef,
+    stuffRate: row.stuffRate,
+    powerSuccess: row.powerSuccess,
+    havocDef: row.havocDef,
+    havocFront7Def: row.havocFront7Def,
+    havocDbDef: row.havocDbDef,
+    runEpa: row.runEpa,
+    passEpa: row.passEpa,
+    runSr: row.runSr,
+    passSr: row.passSr,
+    earlyDownEpa: row.earlyDownEpa,
+    lateDownEpa: row.lateDownEpa,
+    avgFieldPosition: row.avgFieldPosition,
+  };
+}
 
 export interface ExistingEffTeamGameRow extends EffMetricFields {
   gameIdCfbd: string;
@@ -148,6 +223,30 @@ export interface MutationCounts {
   noChange: number;
 }
 
+export interface ProposedRawMetricCoverage {
+  finiteRows: number;
+  distinctTeams: number;
+  missingTeamIds: string[];
+  pct: number;
+}
+
+export interface ProposedLegacyCategoryCoverage {
+  coveredTeamCount: number;
+  missingTeamIds: string[];
+  pct: number;
+}
+
+export interface ProposedSourceCoverageReport {
+  status: SourceReadinessStatus;
+  rawMetricCoverage: Record<RawMetric, ProposedRawMetricCoverage>;
+  legacyComputeCompatibleCoverage: Record<LegacyCategory, ProposedLegacyCategoryCoverage>;
+  rawMetricCoverageComplete: boolean;
+  legacyComputeCompatibleCoverageComplete: boolean;
+  safeToRunExistingCompute: false;
+  legacyCompatibilityDisclaimer: typeof LEGACY_COMPATIBILITY_DISCLAIMER;
+  auditOk: boolean;
+}
+
 export interface UnitGradeSourceIngestPlan {
   season: number;
   requestedWeeks: number[];
@@ -159,7 +258,10 @@ export interface UnitGradeSourceIngestPlan {
   warnings: string[];
   skipped: string[];
   providerTeamNames: string[];
+  providerTeamNamesEncountered: string[];
+  mappedProviderTeamCount: number;
   mappedInternalIds: string[];
+  distinctMappedInternalIds: string[];
   unmappedProviderTeams: string[];
   games: PlannedGameRow[];
   effGames: PlannedEffGameRow[];
@@ -169,6 +271,7 @@ export interface UnitGradeSourceIngestPlan {
   effGameCounts: MutationCounts;
   ppaGameCounts: MutationCounts;
   effSeasonCounts: MutationCounts;
+  proposedSourceCoverage: ProposedSourceCoverageReport;
   cfbdLeaseSemantics: typeof CFBD_LEASE_SEMANTICS;
   processMaxConcurrency: typeof CFBD_UNIT_GRADE_SOURCE_PROCESS_MAX_CONCURRENCY;
 }
@@ -299,6 +402,12 @@ export class SequentialJsonFetcher {
   private inFlight = 0;
   providerCalls = 0;
   endpointsInvoked: string[] = [];
+  partialResponseRowCounts: Record<string, number> = {};
+
+  recordRows(bucket: string, n: number): void {
+    this.partialResponseRowCounts[bucket] =
+      (this.partialResponseRowCounts[bucket] || 0) + n;
+  }
 
   async getJson(options: {
     url: string;
@@ -406,7 +515,7 @@ export function buildGamesUrl(season: number, week: number, baseUrl = CFBD_BASE_
   url.searchParams.set('year', String(season));
   url.searchParams.set('week', String(week));
   url.searchParams.set('seasonType', 'regular');
-  url.searchParams.set('division', 'fbs');
+  url.searchParams.set('classification', 'fbs');
   return url.toString();
 }
 
@@ -419,7 +528,6 @@ export function buildAdvancedGameUrl(
   url.searchParams.set('year', String(season));
   url.searchParams.set('week', String(week));
   url.searchParams.set('seasonType', 'regular');
-  url.searchParams.set('classification', 'fbs');
   return url.toString();
 }
 
@@ -432,6 +540,7 @@ export function buildPpaGameUrl(
   url.searchParams.set('year', String(season));
   url.searchParams.set('week', String(week));
   url.searchParams.set('seasonType', 'regular');
+  url.searchParams.set('classification', 'fbs');
   return url.toString();
 }
 
@@ -442,7 +551,44 @@ export function buildAdvancedSeasonUrl(
   const url = new URL(`${baseUrl.replace(/\/$/, '')}/stats/season/advanced`);
   url.searchParams.set('year', String(season));
   url.searchParams.set('seasonType', 'regular');
+  url.searchParams.set('classification', 'fbs');
   return url.toString();
+}
+
+export function mutationTelemetryAfterCommitAttempt(options: {
+  commitReached: boolean;
+  commitSucceeded: boolean;
+}): {
+  mutationsInvoked: boolean;
+  commitSucceeded: boolean;
+  transactionRolledBack: boolean;
+  persistedWrites: boolean;
+} {
+  const mutationsInvoked = options.commitReached;
+  const commitSucceeded = options.commitReached && options.commitSucceeded;
+  const transactionRolledBack = options.commitReached && !options.commitSucceeded;
+  return {
+    mutationsInvoked,
+    commitSucceeded,
+    transactionRolledBack,
+    persistedWrites: commitSucceeded,
+  };
+}
+
+export function snapshotProviderTelemetry(fetcher: SequentialJsonFetcher): {
+  providerCalls: number;
+  endpointsInvoked: string[];
+  responseRowCounts: Record<string, number> | { status: 'partial_unavailable' };
+} {
+  const keys = Object.keys(fetcher.partialResponseRowCounts);
+  return {
+    providerCalls: fetcher.providerCalls,
+    endpointsInvoked: fetcher.endpointsInvoked.slice(),
+    responseRowCounts:
+      keys.length === 0
+        ? { status: 'partial_unavailable' }
+        : { ...fetcher.partialResponseRowCounts },
+  };
 }
 
 export async function fetchUnitGradeSourcePayloads(options: {
@@ -480,6 +626,7 @@ export async function fetchUnitGradeSourcePayloads(options: {
       sleepImpl: options.sleepImpl,
     });
     gamesByWeek[week] = games.body as unknown[];
+    fetcher.recordRows('games', (games.body as unknown[]).length);
   }
 
   const seasonAdv = await fetcher.getJson({
@@ -490,6 +637,7 @@ export async function fetchUnitGradeSourcePayloads(options: {
     timeoutMs: options.timeoutMs,
     sleepImpl: options.sleepImpl,
   });
+  fetcher.recordRows('advancedSeason', (seasonAdv.body as unknown[]).length);
 
   for (let i = 0; i < options.weeks.length; i++) {
     const week = options.weeks[i];
@@ -502,6 +650,7 @@ export async function fetchUnitGradeSourcePayloads(options: {
       sleepImpl: options.sleepImpl,
     });
     advancedGameByWeek[week] = adv.body as unknown[];
+    fetcher.recordRows('advancedGame', (adv.body as unknown[]).length);
     const ppa = await fetcher.getJson({
       url: buildPpaGameUrl(options.season, week, baseUrl),
       endpointLabel: '/ppa/games',
@@ -511,6 +660,7 @@ export async function fetchUnitGradeSourcePayloads(options: {
       sleepImpl: options.sleepImpl,
     });
     ppaGameByWeek[week] = ppa.body as unknown[];
+    fetcher.recordRows('ppaGame', (ppa.body as unknown[]).length);
   }
 
   return {
@@ -552,15 +702,6 @@ function sideName(row: Record<string, unknown>, side: 'home' | 'away'): string {
   return str(row.awayTeam ?? row.away_team ?? row.awayTeamName);
 }
 
-function nest(obj: unknown, path: string[]): unknown {
-  let cur: unknown = obj;
-  for (let i = 0; i < path.length; i++) {
-    if (!cur || typeof cur !== 'object') return undefined;
-    cur = (cur as Record<string, unknown>)[path[i]];
-  }
-  return cur;
-}
-
 export function extractHavoc(raw: unknown): {
   total: number | null;
   front7: number | null;
@@ -587,9 +728,11 @@ export function mapAdvancedMetrics(row: Record<string, unknown>): EffMetricField
   const passing = (offense.passingPlays ?? {}) as Record<string, unknown>;
   const havocOff = extractHavoc(offense.havoc);
   const havocDef = extractHavoc(defense.havoc);
-  const fieldPos = (row.fieldPosition ?? {}) as Record<string, unknown>;
+  // These are legacy persisted column names. Current CFBD advanced stats exposes
+  // the underlying points-added metric as `ppa`. This mapping is source-schema
+  // compatibility and does NOT authorize or change Hybrid/unit-grade methodology.
   return {
-    offEpa: toFiniteOrNull(offense.epa),
+    offEpa: toFiniteOrNull(offense.ppa),
     offSr: toFiniteOrNull(offense.successRate),
     isoPppOff: toFiniteOrNull(offense.explosiveness),
     ppoOff: toFiniteOrNull(
@@ -599,7 +742,7 @@ export function mapAdvancedMetrics(row: Record<string, unknown>): EffMetricField
     havocOff: havocOff.total,
     havocFront7Off: havocOff.front7,
     havocDbOff: havocOff.db,
-    defEpa: toFiniteOrNull(defense.epa),
+    defEpa: toFiniteOrNull(defense.ppa),
     defSr: toFiniteOrNull(defense.successRate),
     isoPppDef: toFiniteOrNull(defense.explosiveness),
     ppoDef: toFiniteOrNull(
@@ -610,13 +753,13 @@ export function mapAdvancedMetrics(row: Record<string, unknown>): EffMetricField
     havocDef: havocDef.total,
     havocFront7Def: havocDef.front7,
     havocDbDef: havocDef.db,
-    runEpa: toFiniteOrNull(rushing.epa),
-    passEpa: toFiniteOrNull(passing.epa),
+    runEpa: toFiniteOrNull(rushing.ppa),
+    passEpa: toFiniteOrNull(passing.ppa),
     runSr: toFiniteOrNull(rushing.successRate),
     passSr: toFiniteOrNull(passing.successRate),
-    earlyDownEpa: toFiniteOrNull(nest(offense, ['firstDown', 'epa'])),
-    lateDownEpa: toFiniteOrNull(nest(offense, ['secondDown', 'epa'])),
-    avgFieldPosition: toFiniteOrNull(fieldPos.averageStartingFieldPosition),
+    earlyDownEpa: null,
+    lateDownEpa: null,
+    avgFieldPosition: null,
   };
 }
 
@@ -725,9 +868,11 @@ function sameStr(a: string | null, b: string | null): boolean {
 }
 
 function sameEff(a: EffMetricFields, b: EffMetricFields): boolean {
-  const keys = Object.keys(a) as Array<keyof EffMetricFields>;
+  const left = pickEffMetricFields(a);
+  const right = pickEffMetricFields(b);
+  const keys = EFF_METRIC_FIELD_KEYS;
   for (let i = 0; i < keys.length; i++) {
-    if (!sameNum(a[keys[i]], b[keys[i]])) return false;
+    if (!sameNum(left[keys[i]], right[keys[i]])) return false;
   }
   return true;
 }
@@ -753,6 +898,8 @@ export function planUnitGradeSourceIngest(options: {
   advancedGameByWeek: Record<number, unknown[]>;
   ppaGameByWeek: Record<number, unknown[]>;
   advancedSeason: unknown[];
+  coverageRepoCommitSha?: string;
+  coverageObservedAt?: string;
 }): UnitGradeSourceIngestPlan {
   const blockers: string[] = [];
   const warnings: string[] = [];
@@ -801,9 +948,7 @@ export function planUnitGradeSourceIngest(options: {
     existingSeasonByTeam.set(r.teamIdInternal.toLowerCase(), r);
   }
 
-  const providerTeamNames: string[] = [];
   const unmapped: string[] = [];
-  const mappedIds: string[] = [];
   const plannedGames: PlannedGameRow[] = [];
   const plannedById = new Map<string, PlannedGameRow>();
 
@@ -827,7 +972,6 @@ export function planUnitGradeSourceIngest(options: {
         blockers.push(`missing_mapped_home_away:${gid}`);
         continue;
       }
-      providerTeamNames.push(homeName, awayName);
       const homeRes = resolvedId(options.teamResolutions.get(homeName));
       const awayRes = resolvedId(options.teamResolutions.get(awayName));
       if (!homeRes || !awayRes) {
@@ -849,7 +993,6 @@ export function planUnitGradeSourceIngest(options: {
       }
       const homeId = homeRes.toLowerCase();
       const awayId = awayRes.toLowerCase();
-      mappedIds.push(homeId, awayId);
       const existing = existingGameById.get(gid);
       const planned: Omit<PlannedGameRow, 'kind'> = {
         gameIdCfbd: gid,
@@ -913,15 +1056,15 @@ export function planUnitGradeSourceIngest(options: {
         skipped.push(`week_${week}:skipped_unknown_eff_shape`);
         continue;
       }
+      const game = plannedById.get(gid);
+      if (!game) {
+        skipped.push(`eff_${gid}:game_not_in_frame`);
+        continue;
+      }
       const teamId = resolvedId(options.teamResolutions.get(teamName));
       if (!teamId) {
         if (unmapped.indexOf(teamName) < 0) unmapped.push(teamName);
         skipped.push(`eff_${gid}:unmapped_provider_team`);
-        continue;
-      }
-      const game = plannedById.get(gid);
-      if (!game) {
-        skipped.push(`eff_${gid}:game_not_in_frame`);
         continue;
       }
       const tid = teamId.toLowerCase();
@@ -961,15 +1104,15 @@ export function planUnitGradeSourceIngest(options: {
         skipped.push(`week_${week}:skipped_unknown_ppa_shape`);
         continue;
       }
+      const game = plannedById.get(row.gameIdCfbd);
+      if (!game) {
+        skipped.push(`ppa_${row.gameIdCfbd}:game_not_in_frame`);
+        continue;
+      }
       const teamId = resolvedId(options.teamResolutions.get(row.teamName));
       if (!teamId) {
         if (unmapped.indexOf(row.teamName) < 0) unmapped.push(row.teamName);
         skipped.push(`ppa_${row.gameIdCfbd}:unmapped_provider_team`);
-        continue;
-      }
-      const game = plannedById.get(row.gameIdCfbd);
-      if (!game) {
-        skipped.push(`ppa_${row.gameIdCfbd}:game_not_in_frame`);
         continue;
       }
       const tid = teamId.toLowerCase();
@@ -1036,8 +1179,33 @@ export function planUnitGradeSourceIngest(options: {
     });
   }
 
-  const uniqueNames = uniqueSorted(providerTeamNames);
+  const mapping = summarizeTeamMappingInventory({
+    gamesByWeek: options.gamesByWeek,
+    advancedGameByWeek: options.advancedGameByWeek,
+    ppaGameByWeek: options.ppaGameByWeek,
+    advancedSeason: options.advancedSeason,
+    plannedGameIds: new Set(Array.from(plannedById.keys())),
+    teamResolutions: options.teamResolutions,
+    unmappedFromPlan: unmapped,
+  });
+  const uniqueNames = mapping.providerTeamNamesEncountered;
   unmapped.sort();
+  const proposedSourceCoverage = buildProposedSourceCoverage({
+    fbsTeamIds: uniqueFbs,
+    existingGames: options.existingGames,
+    existingEffGames: options.existingEffGames,
+    existingPpaGames: options.existingPpaGames,
+    existingEffSeasons: options.existingEffSeasons,
+    games: plannedGames,
+    effGames: plannedEff,
+    ppaGames: plannedPpa,
+    effSeasons: plannedSeason,
+    repoCommitSha: options.coverageRepoCommitSha ?? 'ingest-plan',
+    observedAt: options.coverageObservedAt ?? '1970-01-01T00:00:00.000Z',
+  });
+  if (proposedSourceCoverage.status === 'FRAME_INVALID') {
+    blockers.push('proposed_source_frame_invalid');
+  }
   const writeSafe = blockers.length === 0 && confirmationValid;
   if (plannedGames.length === 0) {
     warnings.push('empty_provider_schedule');
@@ -1054,8 +1222,11 @@ export function planUnitGradeSourceIngest(options: {
     warnings: uniqueSorted(warnings),
     skipped: skipped.slice().sort(),
     providerTeamNames: uniqueNames,
-    mappedInternalIds: uniqueSorted(mappedIds),
-    unmappedProviderTeams: unmapped,
+    providerTeamNamesEncountered: uniqueNames,
+    mappedProviderTeamCount: mapping.mappedProviderTeamCount,
+    mappedInternalIds: mapping.distinctMappedInternalIds,
+    distinctMappedInternalIds: mapping.distinctMappedInternalIds,
+    unmappedProviderTeams: mapping.unmappedProviderTeams,
     games: plannedGames,
     effGames: plannedEff,
     ppaGames: plannedPpa,
@@ -1064,6 +1235,7 @@ export function planUnitGradeSourceIngest(options: {
     effGameCounts: countsOf(plannedEff.map((r) => r.kind)),
     ppaGameCounts: countsOf(plannedPpa.map((r) => r.kind)),
     effSeasonCounts: countsOf(plannedSeason.map((r) => r.kind)),
+    proposedSourceCoverage,
     cfbdLeaseSemantics: CFBD_LEASE_SEMANTICS,
     processMaxConcurrency: CFBD_UNIT_GRADE_SOURCE_PROCESS_MAX_CONCURRENCY,
   };
@@ -1075,41 +1247,312 @@ export function collectProviderNamesFromPayloads(payloads: {
   ppaGameByWeek: Record<number, unknown[]>;
   advancedSeason: unknown[];
 }): string[] {
+  return uniqueSorted(collectProviderNameEntries(payloads).map((e) => e.name));
+}
+
+function collectNamesFromRow(row: Record<string, unknown>): string[] {
   const names: string[] = [];
-  const weekMaps = [
-    payloads.gamesByWeek,
-    payloads.advancedGameByWeek,
-    payloads.ppaGameByWeek,
-  ];
-  for (let m = 0; m < weekMaps.length; m++) {
-    const map = weekMaps[m];
+  const home = sideName(row, 'home');
+  const away = sideName(row, 'away');
+  const team = providerTeam(row);
+  if (home) names.push(home);
+  if (away) names.push(away);
+  if (team) names.push(team);
+  if (Array.isArray(row.teams)) {
+    for (const t of row.teams as unknown[]) {
+      if (t && typeof t === 'object') {
+        const n = providerTeam(t as Record<string, unknown>);
+        if (n) names.push(n);
+      }
+    }
+  }
+  return names;
+}
+
+function collectProviderNameEntries(payloads: {
+  gamesByWeek: Record<number, unknown[]>;
+  advancedGameByWeek: Record<number, unknown[]>;
+  ppaGameByWeek: Record<number, unknown[]>;
+  advancedSeason: unknown[];
+}): Array<{ name: string; source: 'games' | 'advancedGame' | 'ppaGame' | 'advancedSeason'; gameId: string }> {
+  const out: Array<{
+    name: string;
+    source: 'games' | 'advancedGame' | 'ppaGame' | 'advancedSeason';
+    gameId: string;
+  }> = [];
+  const pushRows = (
+    map: Record<number, unknown[]>,
+    source: 'games' | 'advancedGame' | 'ppaGame'
+  ) => {
     const weeks = Object.keys(map);
     for (let i = 0; i < weeks.length; i++) {
       const rows = map[Number(weeks[i])] || [];
       for (const raw of rows) {
         if (!raw || typeof raw !== 'object') continue;
         const row = raw as Record<string, unknown>;
-        const home = sideName(row, 'home');
-        const away = sideName(row, 'away');
-        const team = providerTeam(row);
-        if (home) names.push(home);
-        if (away) names.push(away);
-        if (team) names.push(team);
-        if (Array.isArray(row.teams)) {
-          for (const t of row.teams as unknown[]) {
-            if (t && typeof t === 'object') {
-              const n = providerTeam(t as Record<string, unknown>);
-              if (n) names.push(n);
-            }
-          }
+        const gid = providerId(row);
+        const names = collectNamesFromRow(row);
+        for (let n = 0; n < names.length; n++) {
+          out.push({ name: names[n], source, gameId: gid });
         }
       }
     }
-  }
+  };
+  pushRows(payloads.gamesByWeek, 'games');
+  pushRows(payloads.advancedGameByWeek, 'advancedGame');
+  pushRows(payloads.ppaGameByWeek, 'ppaGame');
   for (const raw of payloads.advancedSeason) {
     if (!raw || typeof raw !== 'object') continue;
-    const n = providerTeam(raw as Record<string, unknown>);
-    if (n) names.push(n);
+    const names = collectNamesFromRow(raw as Record<string, unknown>);
+    for (let n = 0; n < names.length; n++) {
+      out.push({ name: names[n], source: 'advancedSeason', gameId: '' });
+    }
   }
-  return uniqueSorted(names);
+  return out;
+}
+
+export function summarizeTeamMappingInventory(options: {
+  gamesByWeek: Record<number, unknown[]>;
+  advancedGameByWeek: Record<number, unknown[]>;
+  ppaGameByWeek: Record<number, unknown[]>;
+  advancedSeason: unknown[];
+  plannedGameIds: Set<string>;
+  teamResolutions: Map<string, TeamResolutionResult>;
+  unmappedFromPlan: string[];
+}): {
+  providerTeamNamesEncountered: string[];
+  mappedProviderTeamCount: number;
+  distinctMappedInternalIds: string[];
+  unmappedProviderTeams: string[];
+} {
+  const entries = collectProviderNameEntries({
+    gamesByWeek: options.gamesByWeek,
+    advancedGameByWeek: options.advancedGameByWeek,
+    ppaGameByWeek: options.ppaGameByWeek,
+    advancedSeason: options.advancedSeason,
+  });
+  const encountered = uniqueSorted(entries.map((e) => e.name));
+  const relevantUnmapped = new Set<string>();
+  const mappedIds: string[] = [];
+  let mappedProviderTeamCount = 0;
+  for (let i = 0; i < encountered.length; i++) {
+    const name = encountered[i];
+    const id = resolvedId(options.teamResolutions.get(name));
+    if (id) {
+      mappedProviderTeamCount += 1;
+      mappedIds.push(id.toLowerCase());
+      continue;
+    }
+    const relevant = entries.some((e) => {
+      if (e.name !== name) return false;
+      if (e.source === 'advancedGame') {
+        return options.plannedGameIds.has(e.gameId);
+      }
+      return true;
+    });
+    if (relevant) relevantUnmapped.add(name);
+  }
+  for (let i = 0; i < options.unmappedFromPlan.length; i++) {
+    const name = options.unmappedFromPlan[i];
+    if (name) relevantUnmapped.add(name);
+  }
+  const unmappedProviderTeams = uniqueSorted(Array.from(relevantUnmapped));
+  return {
+    providerTeamNamesEncountered: encountered,
+    mappedProviderTeamCount,
+    distinctMappedInternalIds: uniqueSorted(mappedIds),
+    unmappedProviderTeams,
+  };
+}
+
+function overlayKey(gameId: string, teamId: string): string {
+  return `${gameId}\0${String(teamId).toLowerCase()}`;
+}
+
+export function overlayProposedSourceState(options: {
+  existingGames: ExistingCfbdGameRow[];
+  existingEffGames: ExistingEffTeamGameRow[];
+  existingPpaGames: ExistingPpaTeamGameRow[];
+  existingEffSeasons: ExistingEffTeamSeasonRow[];
+  games: PlannedGameRow[];
+  effGames: PlannedEffGameRow[];
+  ppaGames: PlannedPpaGameRow[];
+  effSeasons: PlannedEffSeasonRow[];
+}): {
+  cfbdGames: CfbdGameRow[];
+  effTeamGames: EffTeamGameRow[];
+  ppaTeamGames: PpaTeamGameRow[];
+  effTeamSeasons: EffTeamSeasonRow[];
+} {
+  const gamesById = new Map<string, CfbdGameRow>();
+  for (const g of options.existingGames) {
+    gamesById.set(String(g.gameIdCfbd), {
+      gameIdCfbd: String(g.gameIdCfbd),
+      homeTeamIdInternal: g.homeTeamIdInternal,
+      awayTeamIdInternal: g.awayTeamIdInternal,
+    });
+  }
+  for (const g of options.games) {
+    if (g.kind === 'NO_CHANGE') continue;
+    gamesById.set(g.gameIdCfbd, {
+      gameIdCfbd: g.gameIdCfbd,
+      homeTeamIdInternal: g.homeTeamIdInternal,
+      awayTeamIdInternal: g.awayTeamIdInternal,
+    });
+  }
+
+  const effByKey = new Map<string, EffTeamGameRow>();
+  for (const r of options.existingEffGames) {
+    const metrics = pickEffMetricFields(r);
+    effByKey.set(overlayKey(r.gameIdCfbd, r.teamIdInternal), {
+      gameIdCfbd: r.gameIdCfbd,
+      teamIdInternal: r.teamIdInternal,
+      lineYardsOff: metrics.lineYardsOff,
+      runEpa: metrics.runEpa,
+      passEpa: metrics.passEpa,
+      passSr: metrics.passSr,
+      defSr: metrics.defSr,
+      isoPppOff: metrics.isoPppOff,
+      isoPppDef: metrics.isoPppDef,
+    });
+  }
+  for (const r of options.effGames) {
+    if (r.kind === 'NO_CHANGE') continue;
+    const metrics = pickEffMetricFields(r);
+    effByKey.set(overlayKey(r.gameIdCfbd, r.teamIdInternal), {
+      gameIdCfbd: r.gameIdCfbd,
+      teamIdInternal: r.teamIdInternal,
+      lineYardsOff: metrics.lineYardsOff,
+      runEpa: metrics.runEpa,
+      passEpa: metrics.passEpa,
+      passSr: metrics.passSr,
+      defSr: metrics.defSr,
+      isoPppOff: metrics.isoPppOff,
+      isoPppDef: metrics.isoPppDef,
+    });
+  }
+
+  const ppaByKey = new Map<string, PpaTeamGameRow>();
+  for (const r of options.existingPpaGames) {
+    ppaByKey.set(overlayKey(r.gameIdCfbd, r.teamIdInternal), {
+      gameIdCfbd: r.gameIdCfbd,
+      teamIdInternal: r.teamIdInternal,
+      ppaOffense: r.ppaOffense,
+      ppaDefense: r.ppaDefense,
+    });
+  }
+  for (const r of options.ppaGames) {
+    if (r.kind === 'NO_CHANGE') continue;
+    ppaByKey.set(overlayKey(r.gameIdCfbd, r.teamIdInternal), {
+      gameIdCfbd: r.gameIdCfbd,
+      teamIdInternal: r.teamIdInternal,
+      ppaOffense: r.ppaOffense,
+      ppaDefense: r.ppaDefense,
+    });
+  }
+
+  const seasonByTeam = new Map<string, EffTeamSeasonRow>();
+  for (const r of options.existingEffSeasons) {
+    const metrics = pickEffMetricFields(r);
+    seasonByTeam.set(r.teamIdInternal.toLowerCase(), {
+      teamIdInternal: r.teamIdInternal,
+      stuffRate: metrics.stuffRate,
+      havocOff: metrics.havocOff,
+      havocDef: metrics.havocDef,
+    });
+  }
+  for (const r of options.effSeasons) {
+    if (r.kind === 'NO_CHANGE') continue;
+    const metrics = pickEffMetricFields(r);
+    seasonByTeam.set(r.teamIdInternal.toLowerCase(), {
+      teamIdInternal: r.teamIdInternal,
+      stuffRate: metrics.stuffRate,
+      havocOff: metrics.havocOff,
+      havocDef: metrics.havocDef,
+    });
+  }
+
+  return {
+    cfbdGames: Array.from(gamesById.values()),
+    effTeamGames: Array.from(effByKey.values()),
+    ppaTeamGames: Array.from(ppaByKey.values()),
+    effTeamSeasons: Array.from(seasonByTeam.values()),
+  };
+}
+
+function slimRawCoverage(
+  coverage: Record<RawMetric, { finiteRows: number; distinctTeams: number; missingTeamIds: string[]; pct: number }>
+): Record<RawMetric, ProposedRawMetricCoverage> {
+  const out = {} as Record<RawMetric, ProposedRawMetricCoverage>;
+  const keys = Object.keys(coverage) as RawMetric[];
+  for (let i = 0; i < keys.length; i++) {
+    const metric = keys[i];
+    out[metric] = {
+      finiteRows: coverage[metric].finiteRows,
+      distinctTeams: coverage[metric].distinctTeams,
+      missingTeamIds: coverage[metric].missingTeamIds.slice(),
+      pct: coverage[metric].pct,
+    };
+  }
+  return out;
+}
+
+function slimLegacyCoverage(
+  coverage: Record<
+    LegacyCategory,
+    { coveredTeamCount: number; missingTeamIds: string[]; pct: number }
+  >
+): Record<LegacyCategory, ProposedLegacyCategoryCoverage> {
+  const out = {} as Record<LegacyCategory, ProposedLegacyCategoryCoverage>;
+  const keys = Object.keys(coverage) as LegacyCategory[];
+  for (let i = 0; i < keys.length; i++) {
+    const cat = keys[i];
+    out[cat] = {
+      coveredTeamCount: coverage[cat].coveredTeamCount,
+      missingTeamIds: coverage[cat].missingTeamIds.slice(),
+      pct: coverage[cat].pct,
+    };
+  }
+  return out;
+}
+
+export function buildProposedSourceCoverage(options: {
+  fbsTeamIds: string[];
+  existingGames: ExistingCfbdGameRow[];
+  existingEffGames: ExistingEffTeamGameRow[];
+  existingPpaGames: ExistingPpaTeamGameRow[];
+  existingEffSeasons: ExistingEffTeamSeasonRow[];
+  games: PlannedGameRow[];
+  effGames: PlannedEffGameRow[];
+  ppaGames: PlannedPpaGameRow[];
+  effSeasons: PlannedEffSeasonRow[];
+  repoCommitSha: string;
+  observedAt: string;
+}): ProposedSourceCoverageReport {
+  const overlay = overlayProposedSourceState(options);
+  const report = buildUnitGradeSourceReadinessReport({
+    season: TARGET_SEASON,
+    repoCommitSha: options.repoCommitSha,
+    observedAt: options.observedAt,
+    fbsTeamIds: options.fbsTeamIds,
+    cfbdGames: overlay.cfbdGames,
+    effTeamGames: overlay.effTeamGames,
+    ppaTeamGames: overlay.ppaTeamGames,
+    effTeamSeasons: overlay.effTeamSeasons,
+    teamUnitGrades: [],
+    priorsTeamSeasonCount: 0,
+  });
+  return {
+    status: report.status,
+    rawMetricCoverage: slimRawCoverage(report.rawMetricCoverage),
+    legacyComputeCompatibleCoverage: slimLegacyCoverage(
+      report.legacyComputeCompatibleCoverage
+    ),
+    rawMetricCoverageComplete: report.readiness.rawMetricCoverageComplete,
+    legacyComputeCompatibleCoverageComplete:
+      report.readiness.legacyComputeCompatibleCoverageComplete,
+    safeToRunExistingCompute: SAFE_TO_RUN_EXISTING_COMPUTE,
+    legacyCompatibilityDisclaimer: LEGACY_COMPATIBILITY_DISCLAIMER,
+    auditOk: report.auditOk,
+  };
 }

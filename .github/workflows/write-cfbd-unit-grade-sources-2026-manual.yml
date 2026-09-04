@@ -9,8 +9,10 @@
 # Does NOT run Prisma migrate.
 #
 # CFBD execution model: one job, no matrix, sequential single-in-flight
-# provider requests. 75-second account lease semantics are uncertain in this
-# repo and are NOT invented here; Retry-After is respected.
+# provider requests (maxConcurrency=1). CFBD v2 heavy endpoints allow
+# maxConcurrent=2; leaseMs=75000 is a fallback release lease; normal
+# release is on response finish; rejected concurrency returns Retry-After: 1.
+# This writer does not invent a cross-workflow lock.
 #
 # Security:
 # - Dispatch inputs reach shell only via step-level env (never ${{ inputs.* }} inside run:).

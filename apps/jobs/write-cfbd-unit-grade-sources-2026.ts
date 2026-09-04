@@ -25,10 +25,14 @@ import {
 import {
   TARGET_SEASON,
   UNIT_GRADE_SOURCE_CONFIRMATION,
+  SequentialJsonFetcher,
   collectProviderNamesFromPayloads,
   fetchUnitGradeSourcePayloads,
+  mutationTelemetryAfterCommitAttempt,
   parseUnitGradeSourceIngestArgs,
+  pickEffMetricFields,
   planUnitGradeSourceIngest,
+  snapshotProviderTelemetry,
   type EffMetricFields,
   type ExistingCfbdGameRow,
   type ExistingEffTeamGameRow,
@@ -137,10 +141,6 @@ function mapEff(row: Record<string, unknown>): EffMetricFields {
   };
 }
 
-function effWriteData(row: EffMetricFields) {
-  return { ...row };
-}
-
 function sanitizeError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
   return redactSecretLike(msg);
@@ -153,13 +153,16 @@ function buildReport(options: {
   mode: string;
   providerCalls: number;
   endpointsInvoked: string[];
-  responseRowCounts: Record<string, number>;
+  responseRowCounts: Record<string, number> | { status: 'partial_unavailable' };
   mutationsInvoked: boolean;
-  committed?: Record<string, number>;
-  postWrite?: Record<string, number>;
+  commitSucceeded: boolean;
+  transactionRolledBack: boolean;
+  committed?: Record<string, number> | null;
+  postWrite?: Record<string, number> | null;
   error?: string;
 }): object {
   const plan = options.plan;
+  const persistedWrites = options.mutationsInvoked && options.commitSucceeded && !options.transactionRolledBack;
   return {
     season: TARGET_SEASON,
     requestedWeeks: plan ? plan.requestedWeeks : [],
@@ -171,30 +174,45 @@ function buildReport(options: {
     responseRowCounts: options.responseRowCounts,
     teamMappingCounts: plan
       ? {
-          providerTeams: plan.providerTeamNames.length,
-          mappedInternalIds: plan.mappedInternalIds.length,
-          unmapped: plan.unmappedProviderTeams.length,
+          providerTeamNamesEncountered: plan.providerTeamNamesEncountered.length,
+          mappedProviderTeamCount: plan.mappedProviderTeamCount,
+          distinctMappedInternalIds: plan.distinctMappedInternalIds.length,
+          unmappedProviderTeams: plan.unmappedProviderTeams.length,
         }
       : null,
+    providerTeamNamesEncountered: plan ? plan.providerTeamNamesEncountered : [],
+    mappedProviderTeamCount: plan ? plan.mappedProviderTeamCount : 0,
+    distinctMappedInternalIds: plan ? plan.distinctMappedInternalIds : [],
     unmappedTeams: plan ? plan.unmappedProviderTeams : [],
     gameCounts: plan ? plan.gameCounts : null,
     effGameCounts: plan ? plan.effGameCounts : null,
     ppaGameCounts: plan ? plan.ppaGameCounts : null,
     effSeasonCounts: plan ? plan.effSeasonCounts : null,
+    proposedSourceCoverage: plan ? plan.proposedSourceCoverage : null,
     skipped: plan ? plan.skipped : [],
     warnings: plan ? plan.warnings : [],
     blockers: plan ? plan.blockers : [],
     writeSafe: plan ? plan.writeSafe : false,
     mutationsInvoked: options.mutationsInvoked,
+    commitSucceeded: options.commitSucceeded,
+    transactionRolledBack: options.transactionRolledBack,
+    persistedWrites,
     teamUnitGradesWrites: false,
     shadowWrites: false,
     priorsWrites: false,
-    committed: options.committed ?? null,
-    postWriteSelect: options.postWrite ?? null,
+    committed: persistedWrites ? options.committed ?? null : null,
+    postWriteSelect: persistedWrites ? options.postWrite ?? null : null,
     cfbdLeaseSemantics: plan ? plan.cfbdLeaseSemantics : null,
     processMaxConcurrency: plan ? plan.processMaxConcurrency : 1,
     error: options.error ?? null,
   };
+}
+
+function emptyMutationTelemetry() {
+  return mutationTelemetryAfterCommitAttempt({
+    commitReached: false,
+    commitSucceeded: false,
+  });
 }
 
 async function commitPlan(
@@ -284,11 +302,11 @@ async function upsertEffGame(
         teamIdInternal: r.teamIdInternal,
       },
     },
-    update: { ...effWriteData(r), source: 'cfbd', asOf },
+    update: { ...pickEffMetricFields(r), source: 'cfbd', asOf },
     create: {
       gameIdCfbd: r.gameIdCfbd,
       teamIdInternal: r.teamIdInternal,
-      ...effWriteData(r),
+      ...pickEffMetricFields(r),
       source: 'cfbd',
       asOf,
     },
@@ -338,11 +356,11 @@ async function upsertEffSeason(
         teamIdInternal: r.teamIdInternal,
       },
     },
-    update: { ...effWriteData(r), source: 'cfbd', asOf },
+    update: { ...pickEffMetricFields(r), source: 'cfbd', asOf },
     create: {
       season: r.season,
       teamIdInternal: r.teamIdInternal,
-      ...effWriteData(r),
+      ...pickEffMetricFields(r),
       source: 'cfbd',
       asOf,
     },
@@ -472,6 +490,7 @@ async function main() {
 
   const url = process.env.DIRECT_URL;
   const apiKey = process.env.CFBD_API_KEY || '';
+  const idleMutation = emptyMutationTelemetry();
   if (!url) {
     writeJson(
       reportPath,
@@ -482,8 +501,8 @@ async function main() {
         mode: args.mode,
         providerCalls: 0,
         endpointsInvoked: [],
-        responseRowCounts: {},
-        mutationsInvoked: false,
+        responseRowCounts: { status: 'partial_unavailable' },
+        ...idleMutation,
         error: 'DIRECT_URL required',
       })
     );
@@ -499,8 +518,8 @@ async function main() {
         mode: args.mode,
         providerCalls: 0,
         endpointsInvoked: [],
-        responseRowCounts: {},
-        mutationsInvoked: false,
+        responseRowCounts: { status: 'partial_unavailable' },
+        ...idleMutation,
         error: 'CFBD_API_KEY is missing or empty',
       })
     );
@@ -511,20 +530,23 @@ async function main() {
     datasources: { db: { url } },
   });
 
-  let mutationsInvoked = false;
+  const fetcher = new SequentialJsonFetcher();
+  let plan: UnitGradeSourceIngestPlan | null = null;
+  let mutationState = emptyMutationTelemetry();
   try {
     const existing = await loadExisting(prisma, args.season);
     const payloads = await fetchUnitGradeSourcePayloads({
       season: args.season,
       weeks: args.weeks,
       apiKey,
+      fetcher,
     });
     const store = createPrismaReadOnlyScheduleStore(prisma);
     const lookup = teamLookupFromStore(store);
     const aliases = loadCfbdTeamAliases();
     const names = collectProviderNamesFromPayloads(payloads);
     const teamResolutions = await resolveAllTeams(names, lookup, aliases);
-    const plan = planUnitGradeSourceIngest({
+    plan = planUnitGradeSourceIngest({
       season: args.season,
       weeks: args.weeks,
       mode: args.mode,
@@ -539,6 +561,8 @@ async function main() {
       advancedGameByWeek: payloads.advancedGameByWeek,
       ppaGameByWeek: payloads.ppaGameByWeek,
       advancedSeason: payloads.advancedSeason,
+      coverageRepoCommitSha: repoCommitSha,
+      coverageObservedAt: observedAt,
     });
 
     if (!plan.writeSafe) {
@@ -552,7 +576,7 @@ async function main() {
           providerCalls: payloads.providerCalls,
           endpointsInvoked: payloads.endpointsInvoked,
           responseRowCounts: payloads.responseRowCounts,
-          mutationsInvoked: false,
+          ...idleMutation,
         })
       );
       process.exit(1);
@@ -569,14 +593,21 @@ async function main() {
           providerCalls: payloads.providerCalls,
           endpointsInvoked: payloads.endpointsInvoked,
           responseRowCounts: payloads.responseRowCounts,
-          mutationsInvoked: false,
+          ...idleMutation,
         })
       );
       process.exit(0);
     }
 
+    mutationState = mutationTelemetryAfterCommitAttempt({
+      commitReached: true,
+      commitSucceeded: false,
+    });
     const { committed } = await commitPlan(prisma, plan, new Date(observedAt));
-    mutationsInvoked = true;
+    mutationState = mutationTelemetryAfterCommitAttempt({
+      commitReached: true,
+      commitSucceeded: true,
+    });
     const postWrite = await postWriteCounts(prisma, args.season);
     writeJson(
       reportPath,
@@ -588,24 +619,32 @@ async function main() {
         providerCalls: payloads.providerCalls,
         endpointsInvoked: payloads.endpointsInvoked,
         responseRowCounts: payloads.responseRowCounts,
-        mutationsInvoked: true,
+        ...mutationState,
         committed,
         postWrite,
       })
     );
     process.exit(0);
   } catch (err) {
+    if (mutationState.mutationsInvoked && !mutationState.commitSucceeded) {
+      mutationState = mutationTelemetryAfterCommitAttempt({
+        commitReached: true,
+        commitSucceeded: false,
+      });
+    }
+    const tel = snapshotProviderTelemetry(fetcher);
     writeJson(
       reportPath,
       buildReport({
-        plan: null,
+        plan,
         repoCommitSha,
         observedAt,
         mode: args.mode,
-        providerCalls: 0,
-        endpointsInvoked: [],
-        responseRowCounts: {},
-        mutationsInvoked,
+        providerCalls: tel.providerCalls,
+        endpointsInvoked: tel.endpointsInvoked,
+        responseRowCounts: tel.responseRowCounts,
+        ...mutationState,
+        committed: null,
         error: sanitizeError(err),
       })
     );
