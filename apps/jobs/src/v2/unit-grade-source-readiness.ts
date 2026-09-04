@@ -252,6 +252,23 @@ function identityKey(gameId: string, teamId: string): string {
   return `${gameId}\u0000${teamId}`;
 }
 
+function normalizeId(raw: unknown): string {
+  return String(raw ?? '')
+    .trim()
+    .toLowerCase();
+}
+
+interface GameIdentity {
+  home: string;
+  away: string;
+  valid: boolean;
+}
+
+function teamBelongsToGame(game: GameIdentity | undefined, teamId: string): boolean {
+  if (!game || !game.valid || !teamId) return false;
+  return teamId === game.home || teamId === game.away;
+}
+
 function duplicateNonempty(ids: string[]): { empty: boolean; duplicate: boolean } {
   const seen = new Set<string>();
   let empty = false;
@@ -357,22 +374,35 @@ export function buildUnitGradeSourceReadinessReport(
 ): UnitGradeSourceReadinessReport {
   const blockers: string[] = [];
   const warnings: string[] = [];
+  const expected = EXPECTED_FBS_COUNT;
+
+  if (input.fbsTeamIds.length !== expected) {
+    blockers.push('fbs_membership_row_count_not_138');
+  }
+  let fbsMissingId = false;
+  for (const raw of input.fbsTeamIds) {
+    if (String(raw ?? '').trim() === '') fbsMissingId = true;
+  }
+  if (fbsMissingId) {
+    blockers.push('fbs_team_membership_missing_id');
+  }
 
   const fbsRaw = input.fbsTeamIds
-    .map((id) =>
-      String(id ?? '')
-        .trim()
-        .toLowerCase()
-    )
+    .map((id) => normalizeId(id))
     .filter((id) => id.length > 0);
   const fbs = uniqueSorted(input.fbsTeamIds);
   if (fbsRaw.length !== fbs.length) {
     blockers.push('duplicate_fbs_team_membership');
   }
-  if (fbs.length !== EXPECTED_FBS_COUNT) {
+  if (fbs.length !== expected) {
     blockers.push('fbs_population_not_138');
   }
   const fbsSet = new Set(fbs);
+  const membershipFrameExact =
+    input.fbsTeamIds.length === expected &&
+    fbsMissingId === false &&
+    fbs.length === expected &&
+    fbsRaw.length === fbs.length;
 
   const gameIdRaw = input.cfbdGames.map((g) => String(g.gameIdCfbd ?? '').trim());
   const gameDup = duplicateNonempty(gameIdRaw);
@@ -381,34 +411,65 @@ export function buildUnitGradeSourceReadinessReport(
   const uniqueGameIds = uniqueSorted(gameIdRaw);
   const gameIdSet = new Set(uniqueGameIds);
 
+  const gameById = new Map<string, GameIdentity>();
+  for (const g of input.cfbdGames) {
+    const gid = normalizeId(g.gameIdCfbd);
+    const home = normalizeId(g.homeTeamIdInternal);
+    const away = normalizeId(g.awayTeamIdInternal);
+    if (!home || !away) {
+      blockers.push('cfbd_game_missing_team_identity');
+    } else if (home === away) {
+      blockers.push('cfbd_game_same_team_identity');
+    }
+    if (!gid) continue;
+    const valid = home.length > 0 && away.length > 0 && home !== away;
+    if (!gameById.has(gid)) {
+      gameById.set(gid, { home, away, valid });
+    }
+  }
+
   const effKeys: string[] = [];
   for (const row of input.effTeamGames) {
-    const gid = String(row.gameIdCfbd ?? '').trim().toLowerCase();
-    const tid = String(row.teamIdInternal ?? '').trim().toLowerCase();
+    const gid = normalizeId(row.gameIdCfbd);
+    const tid = normalizeId(row.teamIdInternal);
     if (!gid || !tid) {
       blockers.push('eff_team_game_missing_identity');
       continue;
     }
+    effKeys.push(identityKey(gid, tid));
     if (!gameIdSet.has(gid)) {
       blockers.push('eff_team_game_unlinked_game_id');
+      continue;
     }
-    effKeys.push(identityKey(gid, tid));
+    if (!teamBelongsToGame(gameById.get(gid), tid)) {
+      const game = gameById.get(gid);
+      if (game && game.valid) {
+        blockers.push('eff_team_game_team_not_in_game');
+      }
+    }
   }
   const effDup = duplicateNonempty(effKeys);
   if (effDup.duplicate) blockers.push('duplicate_eff_team_game_identity');
 
   const ppaKeys: string[] = [];
   for (const row of input.ppaTeamGames) {
-    const gid = String(row.gameIdCfbd ?? '').trim().toLowerCase();
-    const tid = String(row.teamIdInternal ?? '').trim().toLowerCase();
+    const gid = normalizeId(row.gameIdCfbd);
+    const tid = normalizeId(row.teamIdInternal);
     if (!gid || !tid) {
       blockers.push('ppa_team_game_missing_identity');
       continue;
     }
+    ppaKeys.push(identityKey(gid, tid));
     if (!gameIdSet.has(gid)) {
       blockers.push('ppa_team_game_unlinked_game_id');
+      continue;
     }
-    ppaKeys.push(identityKey(gid, tid));
+    if (!teamBelongsToGame(gameById.get(gid), tid)) {
+      const game = gameById.get(gid);
+      if (game && game.valid) {
+        blockers.push('ppa_team_game_team_not_in_game');
+      }
+    }
   }
   const ppaDup = duplicateNonempty(ppaKeys);
   if (ppaDup.duplicate) blockers.push('duplicate_ppa_team_game_identity');
@@ -464,9 +525,9 @@ export function buildUnitGradeSourceReadinessReport(
   };
 
   for (const row of input.effTeamGames) {
-    const gid = String(row.gameIdCfbd ?? '').trim().toLowerCase();
-    if (!gameIdSet.has(gid)) continue;
-    const tid = String(row.teamIdInternal ?? '').trim().toLowerCase();
+    const gid = normalizeId(row.gameIdCfbd);
+    const tid = normalizeId(row.teamIdInternal);
+    if (!teamBelongsToGame(gameById.get(gid), tid)) continue;
     mark('lineYardsOff', tid, row.lineYardsOff);
     mark('runEpa', tid, row.runEpa);
     mark('passEpa', tid, row.passEpa);
@@ -477,9 +538,9 @@ export function buildUnitGradeSourceReadinessReport(
   }
 
   for (const row of input.ppaTeamGames) {
-    const gid = String(row.gameIdCfbd ?? '').trim().toLowerCase();
-    if (!gameIdSet.has(gid)) continue;
-    const tid = String(row.teamIdInternal ?? '').trim().toLowerCase();
+    const gid = normalizeId(row.gameIdCfbd);
+    const tid = normalizeId(row.teamIdInternal);
+    if (!teamBelongsToGame(gameById.get(gid), tid)) continue;
     mark('ppaOffense', tid, row.ppaOffense);
     mark('ppaDefense', tid, row.ppaDefense);
   }
@@ -491,7 +552,6 @@ export function buildUnitGradeSourceReadinessReport(
     mark('havocDef', tid, row.havocDef);
   }
 
-  const expected = EXPECTED_FBS_COUNT;
   const rawMetricCoverage = {} as Record<RawMetric, MetricCoverage>;
   for (const metric of RAW_METRICS) {
     const teams = uniqueSorted(Array.from(rawTeams[metric]));
@@ -556,25 +616,25 @@ export function buildUnitGradeSourceReadinessReport(
   }
 
   const teamsOnGames = new Set<string>();
-  for (const g of input.cfbdGames) {
-    const home = String(g.homeTeamIdInternal ?? '').trim().toLowerCase();
-    const away = String(g.awayTeamIdInternal ?? '').trim().toLowerCase();
-    if (fbsSet.has(home)) teamsOnGames.add(home);
-    if (fbsSet.has(away)) teamsOnGames.add(away);
+  const gameIdentities = Array.from(gameById.values());
+  for (let i = 0; i < gameIdentities.length; i++) {
+    const g = gameIdentities[i];
+    if (!g.valid) continue;
+    if (fbsSet.has(g.home)) teamsOnGames.add(g.home);
+    if (fbsSet.has(g.away)) teamsOnGames.add(g.away);
   }
 
   const sourcePopulationComplete =
-    fbs.length === expected &&
-    fbsRaw.length === fbs.length &&
+    membershipFrameExact &&
     uniqueGameIds.length > 0 &&
     teamsOnGames.size === expected;
 
   const rawMetricCoverageComplete =
-    fbs.length === expected &&
+    membershipFrameExact &&
     RAW_METRICS.every((m) => rawMetricCoverage[m].distinctTeams === expected);
 
   const legacyComputeCompatibleCoverageComplete =
-    fbs.length === expected &&
+    membershipFrameExact &&
     LEGACY_CATEGORIES.every(
       (c) => legacyComputeCompatibleCoverage[c].coveredTeamCount === expected
     );

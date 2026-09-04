@@ -408,6 +408,159 @@ describe('2026 unit-grade source readiness — frame integrity', () => {
     expect(orphan.rawMetricCoverage.lineYardsOff.distinctTeams).toBe(0);
   });
 
+  it('EffTeamGame team not on the game is FRAME_INVALID and counts zero evidence', () => {
+    const fbs = fbs138();
+    const games: CfbdGameRow[] = [
+      { gameIdCfbd: 'g-1', homeTeamIdInternal: fbs[0], awayTeamIdInternal: fbs[1] },
+    ];
+    const r = buildUnitGradeSourceReadinessReport(
+      emptyInput({
+        cfbdGames: games,
+        effTeamGames: [{ ...emptyEff('g-1', fbs[2]), lineYardsOff: 4.4 }],
+      })
+    );
+    expect(r.status).toBe('FRAME_INVALID');
+    expect(r.auditOk).toBe(false);
+    expect(r.blockers).toContain('eff_team_game_team_not_in_game');
+    expect(r.rawMetricCoverage.lineYardsOff.distinctTeams).toBe(0);
+    expect(r.rawMetricCoverage.lineYardsOff.finiteRows).toBe(0);
+    expect(r.perTeamRawEvidence.find((row) => row.teamId === fbs[2])?.lineYardsOff).toBe(
+      false
+    );
+    expect(r.legacyComputeCompatibleCoverage.offRun.coveredTeamCount).toBe(0);
+  });
+
+  it('PpaTeamGame team not on the game is FRAME_INVALID and counts zero evidence', () => {
+    const fbs = fbs138();
+    const games: CfbdGameRow[] = [
+      { gameIdCfbd: 'g-1', homeTeamIdInternal: fbs[0], awayTeamIdInternal: fbs[1] },
+    ];
+    const r = buildUnitGradeSourceReadinessReport(
+      emptyInput({
+        cfbdGames: games,
+        ppaTeamGames: [{ ...emptyPpa('g-1', fbs[2]), ppaOffense: 0.4, ppaDefense: -0.4 }],
+      })
+    );
+    expect(r.status).toBe('FRAME_INVALID');
+    expect(r.auditOk).toBe(false);
+    expect(r.blockers).toContain('ppa_team_game_team_not_in_game');
+    expect(r.rawMetricCoverage.ppaOffense.distinctTeams).toBe(0);
+    expect(r.rawMetricCoverage.ppaDefense.distinctTeams).toBe(0);
+    expect(r.legacyComputeCompatibleCoverage.offRun.coveredTeamCount).toBe(0);
+  });
+
+  it('correctly matched home source row counts normally', () => {
+    const fbs = fbs138();
+    const games: CfbdGameRow[] = [
+      { gameIdCfbd: 'g-1', homeTeamIdInternal: fbs[0], awayTeamIdInternal: 'fcs-opponent' },
+    ];
+    const r = buildUnitGradeSourceReadinessReport(
+      emptyInput({
+        cfbdGames: games,
+        effTeamGames: [{ ...emptyEff('g-1', fbs[0]), lineYardsOff: 5.1 }],
+      })
+    );
+    expect(r.auditOk).toBe(true);
+    expect(r.status).toBe('SOURCE_PARTIAL');
+    expect(r.blockers).not.toContain('eff_team_game_team_not_in_game');
+    expect(r.rawMetricCoverage.lineYardsOff.distinctTeams).toBe(1);
+    expect(r.rawMetricCoverage.lineYardsOff.finiteRows).toBe(1);
+    expect(r.perTeamRawEvidence.find((row) => row.teamId === fbs[0])?.lineYardsOff).toBe(
+      true
+    );
+  });
+
+  it('correctly matched away source row counts normally', () => {
+    const fbs = fbs138();
+    const games: CfbdGameRow[] = [
+      { gameIdCfbd: 'g-1', homeTeamIdInternal: 'fcs-opponent', awayTeamIdInternal: fbs[1] },
+    ];
+    const r = buildUnitGradeSourceReadinessReport(
+      emptyInput({
+        cfbdGames: games,
+        ppaTeamGames: [{ ...emptyPpa('g-1', fbs[1]), ppaOffense: 0.2 }],
+      })
+    );
+    expect(r.auditOk).toBe(true);
+    expect(r.status).toBe('SOURCE_PARTIAL');
+    expect(r.blockers).not.toContain('ppa_team_game_team_not_in_game');
+    expect(r.rawMetricCoverage.ppaOffense.distinctTeams).toBe(1);
+    expect(r.perTeamRawEvidence.find((row) => row.teamId === fbs[1])?.ppaOffense).toBe(
+      true
+    );
+  });
+
+  it('138 valid memberships + one blank membership row fails exact-row frame', () => {
+    const fbs = fbs138();
+    fbs.push('   ');
+    const r = buildUnitGradeSourceReadinessReport(emptyInput({ fbsTeamIds: fbs }));
+    expect(r.fbs.actual).toBe(139);
+    expect(r.fbs.unique).toBe(138);
+    expect(r.blockers).toContain('fbs_membership_row_count_not_138');
+    expect(r.blockers).toContain('fbs_team_membership_missing_id');
+    expect(r.status).toBe('FRAME_INVALID');
+    expect(r.auditOk).toBe(false);
+    expect(r.readiness.sourcePopulationComplete).toBe(false);
+  });
+
+  it('139 real membership rows fails exact-row frame', () => {
+    const fbs = fbs138();
+    fbs.push('team-extra');
+    const r = buildUnitGradeSourceReadinessReport(emptyInput({ fbsTeamIds: fbs }));
+    expect(r.fbs.actual).toBe(139);
+    expect(r.fbs.unique).toBe(139);
+    expect(r.blockers).toContain('fbs_membership_row_count_not_138');
+    expect(r.blockers).toContain('fbs_population_not_138');
+    expect(r.status).toBe('FRAME_INVALID');
+    expect(r.auditOk).toBe(false);
+    expect(r.readiness.sourcePopulationComplete).toBe(false);
+  });
+
+  it('CfbdGame with blank home team fails', () => {
+    const fbs = fbs138();
+    const r = buildUnitGradeSourceReadinessReport(
+      emptyInput({
+        cfbdGames: [
+          { gameIdCfbd: 'g-1', homeTeamIdInternal: '  ', awayTeamIdInternal: fbs[1] },
+        ],
+      })
+    );
+    expect(r.blockers).toContain('cfbd_game_missing_team_identity');
+    expect(r.status).toBe('FRAME_INVALID');
+    expect(r.auditOk).toBe(false);
+  });
+
+  it('CfbdGame with blank away team fails', () => {
+    const fbs = fbs138();
+    const r = buildUnitGradeSourceReadinessReport(
+      emptyInput({
+        cfbdGames: [
+          { gameIdCfbd: 'g-1', homeTeamIdInternal: fbs[0], awayTeamIdInternal: '' },
+        ],
+      })
+    );
+    expect(r.blockers).toContain('cfbd_game_missing_team_identity');
+    expect(r.status).toBe('FRAME_INVALID');
+    expect(r.auditOk).toBe(false);
+  });
+
+  it('CfbdGame with same home/away team fails', () => {
+    const fbs = fbs138();
+    const r = buildUnitGradeSourceReadinessReport(
+      emptyInput({
+        cfbdGames: [
+          { gameIdCfbd: 'g-1', homeTeamIdInternal: fbs[0], awayTeamIdInternal: fbs[0] },
+        ],
+        effTeamGames: [{ ...emptyEff('g-1', fbs[0]), lineYardsOff: 2.2 }],
+      })
+    );
+    expect(r.blockers).toContain('cfbd_game_same_team_identity');
+    expect(r.blockers).not.toContain('eff_team_game_team_not_in_game');
+    expect(r.status).toBe('FRAME_INVALID');
+    expect(r.auditOk).toBe(false);
+    expect(r.rawMetricCoverage.lineYardsOff.distinctTeams).toBe(0);
+  });
+
   it('existing TeamUnitGrades are reported, not overwritten', () => {
     const fbs = fbs138();
     const r = buildUnitGradeSourceReadinessReport(
