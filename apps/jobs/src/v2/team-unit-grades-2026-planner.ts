@@ -36,7 +36,6 @@ import {
   computeLegacyTeamUnitGrades,
   type LegacyAggregateResult,
   type LegacyTeamUnitGradeMetric,
-  type LegacyTeamUnitGradeOutput,
   type LegacyTeamUnitGrades,
   type LegacyTeamUnitGradesComputeResult,
   type LegacyZStatSummary,
@@ -72,18 +71,6 @@ export interface TeamUnitGrades2026Calculation {
   proposedRowCount: number;
   zStats: Record<LegacyTeamUnitGradeMetric, LegacyZStatSummary> | null;
 }
-
-export interface TeamUnitGrades2026PlannerMath {
-  aggregate: typeof aggregateLegacyTeamUnitGradeInputs;
-  complete: typeof completeLegacyTeamUnitGradeInputs;
-  compute: typeof computeLegacyTeamUnitGrades;
-}
-
-const DEFAULT_PLANNER_MATH: TeamUnitGrades2026PlannerMath = {
-  aggregate: aggregateLegacyTeamUnitGradeInputs,
-  complete: completeLegacyTeamUnitGradeInputs,
-  compute: computeLegacyTeamUnitGrades,
-};
 
 export interface TeamUnitGrades2026Plan {
   season: number;
@@ -295,8 +282,7 @@ function proposedPopulationBlockers(
 }
 
 function attemptLegacyProposal(
-  input: UnitGradeSourceReadinessInput,
-  math: TeamUnitGrades2026PlannerMath
+  input: UnitGradeSourceReadinessInput
 ): {
   ok: boolean;
   rows: ProposedGradeRow[];
@@ -304,7 +290,7 @@ function attemptLegacyProposal(
   zStats: Record<LegacyTeamUnitGradeMetric, LegacyZStatSummary> | null;
   blockers: string[];
 } {
-  const aggregated: LegacyAggregateResult = math.aggregate({
+  const aggregated: LegacyAggregateResult = aggregateLegacyTeamUnitGradeInputs({
     teamIds: input.fbsTeamIds,
     effTeamGames: input.effTeamGames,
     ppaTeamGames: input.ppaTeamGames,
@@ -319,7 +305,7 @@ function attemptLegacyProposal(
       blockers: namespaceCalculationBlockers(aggregated.blockers),
     };
   }
-  const completed = math.complete(aggregated.rows);
+  const completed = completeLegacyTeamUnitGradeInputs(aggregated.rows);
   if (completed.ok === false) {
     return {
       ok: false,
@@ -329,7 +315,9 @@ function attemptLegacyProposal(
       blockers: namespaceCalculationBlockers(completed.blockers),
     };
   }
-  const computed: LegacyTeamUnitGradesComputeResult = math.compute(completed.rows);
+  const computed: LegacyTeamUnitGradesComputeResult = computeLegacyTeamUnitGrades(
+    completed.rows
+  );
   if (computed.ok === false) {
     return {
       ok: false,
@@ -376,8 +364,7 @@ function attemptLegacyProposal(
  * Write/compute/Shadow authorization is always false.
  */
 export function planTeamUnitGrades2026(
-  input: UnitGradeSourceReadinessInput,
-  options?: { math?: TeamUnitGrades2026PlannerMath }
+  input: UnitGradeSourceReadinessInput
 ): TeamUnitGrades2026Plan {
   const source = buildUnitGradeSourceReadinessReport(input);
   const seasonInvalid = input.season !== TARGET_SEASON;
@@ -393,10 +380,7 @@ export function planTeamUnitGrades2026(
   const mayCalculate =
     seasonInvalid === false && plannerStatus === 'PLANNING_ELIGIBLE';
   if (mayCalculate) {
-    const proposal = attemptLegacyProposal(
-      input,
-      options && options.math ? options.math : DEFAULT_PLANNER_MATH
-    );
+    const proposal = attemptLegacyProposal(input);
     calculation = {
       attempted: true,
       mathKind: LEGACY_TEAM_UNIT_GRADES_MATH_KIND,

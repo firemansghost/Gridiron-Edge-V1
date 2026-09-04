@@ -3,6 +3,8 @@
  * Pure. No network. No DB. No providers. No writes.
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import { buildBaseFbsFixture } from '../src/preseason/fbs-membership-init';
 import {
   LEGACY_COMPATIBILITY_DISCLAIMER,
@@ -173,6 +175,23 @@ describe('2026 TeamUnitGrades preview args', () => {
     expect(parseTeamUnitGrades2026PreviewArgs(['--season', '2025']).ok).toBe(false);
     expect(parseTeamUnitGrades2026PreviewArgs(['--mode', 'COMMIT']).ok).toBe(false);
     expect(parseTeamUnitGrades2026PreviewArgs(['--mode', 'PREVIEW']).ok).toBe(true);
+  });
+
+  it('exported planner has no caller-supplied math override', () => {
+    expect(planTeamUnitGrades2026.length).toBe(1);
+    const src = fs.readFileSync(
+      path.join(__dirname, '../src/v2/team-unit-grades-2026-planner.ts'),
+      'utf8'
+    );
+    expect(src).not.toContain('TeamUnitGrades2026PlannerMath');
+    expect(src).not.toContain('DEFAULT_PLANNER_MATH');
+    expect(src).not.toMatch(/options\?:\s*\{\s*math\?/);
+    expect(src).toMatch(
+      /export function planTeamUnitGrades2026\(\s*input: UnitGradeSourceReadinessInput\s*\): TeamUnitGrades2026Plan/
+    );
+    expect(src).toContain('aggregateLegacyTeamUnitGradeInputs');
+    expect(src).toContain('completeLegacyTeamUnitGradeInputs');
+    expect(src).toContain('computeLegacyTeamUnitGrades');
   });
 });
 
@@ -458,13 +477,18 @@ describe('2026 TeamUnitGrades preview planner', () => {
   });
 
   it('calculation contract failure after eligible source fail-closes with zero rows', () => {
-    const plan = planTeamUnitGrades2026(completeRawInput(), {
-      math: {
-        aggregate: aggregateLegacyTeamUnitGradeInputs,
-        complete: () => ({ ok: false, blockers: ['nonfinite:havocDef'] }),
-        compute: computeLegacyTeamUnitGrades,
-      },
-    });
+    const input = completeRawInput();
+    const originalId = input.fbsTeamIds[0];
+    input.fbsTeamIds = input.fbsTeamIds.slice();
+    input.fbsTeamIds[0] = originalId.toUpperCase();
+    expect(input.fbsTeamIds[0]).not.toBe(originalId);
+    expect(input.effTeamGames.some((r) => r.teamIdInternal === originalId)).toBe(
+      true
+    );
+    expect(input.effTeamGames.some((r) => r.teamIdInternal === input.fbsTeamIds[0])).toBe(
+      false
+    );
+    const plan = planTeamUnitGrades2026(input);
     expect(plan.coverage.rawMetricCoverageComplete).toBe(true);
     expect(plan.plannerStatus).toBe('BLOCKED_CALCULATION_INPUT_INVALID');
     expect(plan.planning.authoritativePlanningAllowed).toBe(false);
@@ -475,7 +499,7 @@ describe('2026 TeamUnitGrades preview planner', () => {
     expect(plan.calculation.zStats).toBeNull();
     expect(plan.failClosed).toBe(true);
     expect(plan.previewOk).toBe(false);
-    expect(plan.blockers).toContain('calculation:nonfinite:havocDef');
+    expect(plan.blockers).toContain('calculation:nonfinite:lineYardsOff');
     assertNeverAuthorize(plan);
   });
 
