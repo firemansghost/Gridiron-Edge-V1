@@ -17,6 +17,14 @@ const LIB = path.join(
   'apps/jobs/src/v2/cfbd-unit-grade-source-ingest-2026.ts'
 );
 
+function commitPlanSource(cliSrc: string): string {
+  const idx = cliSrc.indexOf('async function commitPlan');
+  if (idx < 0) return '';
+  const rest = cliSrc.slice(idx);
+  const next = rest.search(/\nasync function /);
+  return next === -1 ? rest : rest.slice(0, next);
+}
+
 function stepBlock(src: string, stepName: string): string {
   const marker = `- name: ${stepName}`;
   const idx = src.indexOf(marker);
@@ -124,8 +132,19 @@ describe('2026 CFBD unit-grade source ingest workflow', () => {
     expect(cli).not.toContain('shadowCaptureRun.create');
     expect(cli).not.toContain('migrate deploy');
     expect(cli).toContain('TransactionIsolationLevel.Serializable');
+    expect(cli).toContain('timeout: CFBD_UNIT_GRADE_SOURCE_TRANSACTION_TIMEOUT_MS');
+    expect(lib).toContain('CFBD_UNIT_GRADE_SOURCE_TRANSACTION_TIMEOUT_MS = 30_000');
     expect(lib).toContain('CFBD_UNIT_GRADE_SOURCE_PROCESS_MAX_CONCURRENCY = 1');
     expect(lib).not.toMatch(/Promise\.all\([\s\S]{0,200}getJson/);
     expect(lib).not.toMatch(/Promise\.all\([\s\S]{0,200}fetchUnitGradeSourcePayloads/);
+    const commit = commitPlanSource(cli);
+    expect(commit).toContain('isolationLevel: Prisma.TransactionIsolationLevel.Serializable');
+    expect(commit).toContain('timeout: CFBD_UNIT_GRADE_SOURCE_TRANSACTION_TIMEOUT_MS');
+    expect(commit).not.toMatch(/Promise\.all/);
+    expect(commit).not.toMatch(/chunk/i);
+    expect(commit).not.toMatch(/partial.?commit/i);
+    expect(commit).not.toMatch(/partial.?recover/i);
+    expect(commit).not.toMatch(/retryFailedCommit/i);
+    expect(cli.split('$transaction(').length).toBe(2);
   });
 });

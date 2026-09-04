@@ -9,6 +9,7 @@ import {
   CFBD_LEASE_SEMANTICS,
   CFBD_UNIT_GRADE_SOURCE_MAX_RETRIES,
   CFBD_UNIT_GRADE_SOURCE_PROCESS_MAX_CONCURRENCY,
+  CFBD_UNIT_GRADE_SOURCE_TRANSACTION_TIMEOUT_MS,
   EFF_METRIC_FIELD_KEYS,
   TARGET_SEASON,
   UNIT_GRADE_SOURCE_CONFIRMATION,
@@ -807,6 +808,47 @@ describe('unit-grade source ingest reporting integrity', () => {
     expect(wrote.mutationsInvoked).toBe(true);
     expect(wrote.commitSucceeded).toBe(true);
     expect(wrote.transactionRolledBack).toBe(false);
+    expect(wrote.persistedWrites).toBe(true);
+  });
+});
+
+describe('unit-grade source ingest transaction timeout', () => {
+  it('transaction timeout constant is exactly 30000', () => {
+    expect(CFBD_UNIT_GRADE_SOURCE_TRANSACTION_TIMEOUT_MS).toBe(30000);
+    expect(basePlan().transactionTimeoutMs).toBe(30000);
+  });
+
+  it('PREVIEW remains mutation-free and reports configured timeout', () => {
+    const r = basePlan({ mode: 'PREVIEW' });
+    expect(r.mode).toBe('PREVIEW');
+    expect(r.writeSafe).toBe(true);
+    expect(r.gameCounts.create).toBe(1);
+    expect(r.transactionTimeoutMs).toBe(CFBD_UNIT_GRADE_SOURCE_TRANSACTION_TIMEOUT_MS);
+  });
+
+  it('timed-out/failed COMMIT telemetry still reports rollback without persisted writes', () => {
+    const timedOut = mutationTelemetryAfterCommitAttempt({
+      commitReached: true,
+      commitSucceeded: false,
+    });
+    expect(timedOut.mutationsInvoked).toBe(true);
+    expect(timedOut.commitSucceeded).toBe(false);
+    expect(timedOut.transactionRolledBack).toBe(true);
+    expect(timedOut.persistedWrites).toBe(false);
+  });
+
+  it('persistedWrites remains true only for successful nonzero commits', () => {
+    const noop = mutationTelemetryAfterCommitAttempt({
+      commitReached: true,
+      commitSucceeded: true,
+      totalCommitted: 0,
+    });
+    const wrote = mutationTelemetryAfterCommitAttempt({
+      commitReached: true,
+      commitSucceeded: true,
+      totalCommitted: 199,
+    });
+    expect(noop.persistedWrites).toBe(false);
     expect(wrote.persistedWrites).toBe(true);
   });
 });
