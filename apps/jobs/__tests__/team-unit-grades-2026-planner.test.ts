@@ -15,6 +15,14 @@ import {
   type UnitGradeSourceReadinessInput,
 } from '../src/v2/unit-grade-source-readiness';
 import {
+  LEGACY_TEAM_UNIT_GRADE_OUTPUTS,
+  LEGACY_TEAM_UNIT_GRADES_MATH_DISCLAIMER,
+  LEGACY_TEAM_UNIT_GRADES_MATH_KIND,
+  aggregateLegacyTeamUnitGradeInputs,
+  completeLegacyTeamUnitGradeInputs,
+  computeLegacyTeamUnitGrades,
+} from '../src/v2/team-unit-grades-legacy-math';
+import {
   SEASON_MUST_BE_2026_BLOCKER,
   parseTeamUnitGrades2026PreviewArgs,
   planTeamUnitGrades2026,
@@ -115,6 +123,47 @@ function assertNeverAuthorize(
   expect(plan.mutationCount).toBe(0);
   expect(plan.mode).toBe('PREVIEW');
   expect(plan.legacyCompatibilityDisclaimer).toBe(LEGACY_COMPATIBILITY_DISCLAIMER);
+  expect(plan.calculationDisclaimer).toBe(LEGACY_TEAM_UNIT_GRADES_MATH_DISCLAIMER);
+  expect(plan.calculation.mathKind).toBe(LEGACY_TEAM_UNIT_GRADES_MATH_KIND);
+}
+
+function assertNoCalculation(plan: ReturnType<typeof planTeamUnitGrades2026>): void {
+  expect(plan.calculation.attempted).toBe(false);
+  expect(plan.calculation.inputRowCount).toBe(0);
+  expect(plan.calculation.proposedRowCount).toBe(0);
+  expect(plan.calculation.zStats).toBeNull();
+  expect(plan.planning.proposedGradeRowCount).toBe(0);
+  expect(plan.planning.proposedGradeRows).toEqual([]);
+}
+
+function assertExactDeep(left: unknown, right: unknown): void {
+  if (typeof left === 'number' && typeof right === 'number') {
+    expect(Object.is(left, right)).toBe(true);
+    return;
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    expect(Array.isArray(left) && Array.isArray(right)).toBe(true);
+    if (!Array.isArray(left) || !Array.isArray(right)) return;
+    expect(left.length).toBe(right.length);
+    for (let i = 0; i < left.length; i++) {
+      assertExactDeep(left[i], right[i]);
+    }
+    return;
+  }
+  if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object') {
+    expect(left).toEqual(right);
+    return;
+  }
+  const leftKeys = Object.keys(left as object).sort();
+  const rightKeys = Object.keys(right as object).sort();
+  expect(leftKeys).toEqual(rightKeys);
+  for (let i = 0; i < leftKeys.length; i++) {
+    const key = leftKeys[i];
+    assertExactDeep(
+      (left as Record<string, unknown>)[key],
+      (right as Record<string, unknown>)[key]
+    );
+  }
 }
 
 describe('2026 TeamUnitGrades preview args', () => {
@@ -148,8 +197,7 @@ describe('2026 TeamUnitGrades preview planner', () => {
     expect(plan.sourceReadinessStatus).toBe('SOURCE_PARTIAL');
     expect(plan.plannerStatus).toBe('BLOCKED_SOURCE_INCOMPLETE');
     expect(plan.planning.authoritativePlanningAllowed).toBe(false);
-    expect(plan.planning.proposedGradeRowCount).toBe(0);
-    expect(plan.planning.proposedGradeRows).toEqual([]);
+    assertNoCalculation(plan);
     expect(plan.failClosed).toBe(false);
     expect(plan.previewOk).toBe(true);
     expect(plan.coverage.rawMetricCoverageComplete).toBe(false);
@@ -161,8 +209,8 @@ describe('2026 TeamUnitGrades preview planner', () => {
     const plan = planTeamUnitGrades2026(emptyInput());
     expect(plan.sourceReadinessStatus).toBe('SOURCE_EMPTY');
     expect(plan.plannerStatus).toBe('BLOCKED_SOURCE_INCOMPLETE');
-    expect(plan.planning.proposedGradeRows).toEqual([]);
     expect(plan.planning.authoritativePlanningAllowed).toBe(false);
+    assertNoCalculation(plan);
     expect(plan.failClosed).toBe(false);
     expect(plan.previewOk).toBe(true);
     assertNeverAuthorize(plan);
@@ -174,7 +222,7 @@ describe('2026 TeamUnitGrades preview planner', () => {
     );
     expect(plan.sourceReadinessStatus).toBe('FRAME_INVALID');
     expect(plan.plannerStatus).toBe('BLOCKED_FRAME_INVALID');
-    expect(plan.planning.proposedGradeRows).toEqual([]);
+    assertNoCalculation(plan);
     expect(plan.failClosed).toBe(true);
     expect(plan.previewOk).toBe(false);
     assertNeverAuthorize(plan);
@@ -196,7 +244,7 @@ describe('2026 TeamUnitGrades preview planner', () => {
     );
     expect(plan.sourceReadinessStatus).toBe('FRAME_INVALID');
     expect(plan.plannerStatus).toBe('BLOCKED_FRAME_INVALID');
-    expect(plan.planning.proposedGradeRows).toEqual([]);
+    assertNoCalculation(plan);
     expect(plan.failClosed).toBe(true);
     assertNeverAuthorize(plan);
   });
@@ -213,7 +261,7 @@ describe('2026 TeamUnitGrades preview planner', () => {
     );
     expect(dupGames.plannerStatus).toBe('BLOCKED_FRAME_INVALID');
     expect(dupGames.failClosed).toBe(true);
-    expect(dupGames.planning.proposedGradeRows).toEqual([]);
+    assertNoCalculation(dupGames);
 
     const dupEff = planTeamUnitGrades2026(
       emptyInput({
@@ -226,7 +274,7 @@ describe('2026 TeamUnitGrades preview planner', () => {
     );
     expect(dupEff.plannerStatus).toBe('BLOCKED_FRAME_INVALID');
     expect(dupEff.failClosed).toBe(true);
-    expect(dupEff.planning.proposedGradeRows).toEqual([]);
+    assertNoCalculation(dupEff);
   });
 
   it('unexpected existing 2026 TeamUnitGrades blocks without overwrite', () => {
@@ -236,25 +284,49 @@ describe('2026 TeamUnitGrades preview planner', () => {
     expect(plan.sourceReadinessStatus).toBe('UNIT_GRADES_ALREADY_PRESENT_UNEXPECTEDLY');
     expect(plan.plannerStatus).toBe('BLOCKED_EXISTING_GRADES');
     expect(plan.sourceInventory.existingTeamUnitGradesRows).toBe(1);
-    expect(plan.planning.proposedGradeRows).toEqual([]);
     expect(plan.planning.authoritativePlanningAllowed).toBe(false);
+    assertNoCalculation(plan);
     expect(plan.failClosed).toBe(true);
     assertNeverAuthorize(plan);
   });
 
-  it('hypothetical complete raw source becomes planning-eligible without write authorization', () => {
-    const plan = planTeamUnitGrades2026(completeRawInput());
+  it('hypothetical complete raw source becomes planning-eligible with 138 proposed rows and no write authorization', () => {
+    const input = completeRawInput();
+    const plan = planTeamUnitGrades2026(input);
     expect(plan.season).toBe(TARGET_SEASON);
     expect(plan.coverage.rawMetricCoverageComplete).toBe(true);
     expect(plan.plannerStatus).toBe('PLANNING_ELIGIBLE');
     expect(plan.planning.authoritativePlanningAllowed).toBe(true);
-    expect(plan.planning.proposedGradeRowCount).toBe(0);
-    expect(plan.planning.proposedGradeRows).toEqual([]);
+    expect(plan.calculation.attempted).toBe(true);
+    expect(plan.calculation.inputRowCount).toBe(138);
+    expect(plan.calculation.proposedRowCount).toBe(138);
+    expect(plan.planning.proposedGradeRowCount).toBe(138);
+    expect(plan.planning.proposedGradeRows.length).toBe(138);
     expect(plan.failClosed).toBe(false);
     expect(plan.previewOk).toBe(true);
-    expect(plan.warnings).toContain(
+    expect(plan.warnings).not.toContain(
       'authoritative_grade_generation_not_implemented_in_this_preview'
     );
+    const ids = plan.planning.proposedGradeRows.map((r) => r.teamId);
+    const unique = ids.filter((id, i) => ids.indexOf(id) === i).sort();
+    expect(unique.length).toBe(138);
+    expect(unique).toEqual(input.fbsTeamIds.slice().sort());
+    expect(ids).toEqual(unique);
+    for (let i = 0; i < plan.planning.proposedGradeRows.length; i++) {
+      const row = plan.planning.proposedGradeRows[i];
+      expect(typeof row.teamId).toBe('string');
+      expect(row.teamId.trim()).not.toBe('');
+      for (let o = 0; o < LEGACY_TEAM_UNIT_GRADE_OUTPUTS.length; o++) {
+        expect(Number.isFinite(row[LEGACY_TEAM_UNIT_GRADE_OUTPUTS[o]])).toBe(true);
+      }
+    }
+    expect(plan.calculation.zStats).not.toBeNull();
+    expect(Object.prototype.hasOwnProperty.call(plan.planning.proposedGradeRows[0], 'id')).toBe(
+      false
+    );
+    expect(
+      Object.prototype.hasOwnProperty.call(plan.planning.proposedGradeRows[0], 'createdAt')
+    ).toBe(false);
     assertNeverAuthorize(plan);
   });
 
@@ -266,8 +338,7 @@ describe('2026 TeamUnitGrades preview planner', () => {
     expect(plan.season).toBe(2025);
     expect(plan.plannerStatus).toBe('BLOCKED_SEASON_INVALID');
     expect(plan.planning.authoritativePlanningAllowed).toBe(false);
-    expect(plan.planning.proposedGradeRowCount).toBe(0);
-    expect(plan.planning.proposedGradeRows).toEqual([]);
+    assertNoCalculation(plan);
     expect(plan.failClosed).toBe(true);
     expect(plan.previewOk).toBe(false);
     expect(plan.blockers).toContain(SEASON_MUST_BE_2026_BLOCKER);
@@ -297,7 +368,7 @@ describe('2026 TeamUnitGrades preview planner', () => {
     expect(plan.coverage.rawMetricCoverageComplete).toBe(false);
     expect(plan.plannerStatus).toBe('BLOCKED_SOURCE_INCOMPLETE');
     expect(plan.planning.authoritativePlanningAllowed).toBe(false);
-    expect(plan.planning.proposedGradeRows).toEqual([]);
+    assertNoCalculation(plan);
     assertNeverAuthorize(plan);
   });
 
@@ -323,7 +394,7 @@ describe('2026 TeamUnitGrades preview planner', () => {
       fbs[0]
     );
     expect(plan.plannerStatus).toBe('BLOCKED_SOURCE_INCOMPLETE');
-    expect(plan.planning.proposedGradeRows).toEqual([]);
+    assertNoCalculation(plan);
   });
 
   it('null/undefined/NaN/nonfinite evidence remains missing and is never zero-filled', () => {
@@ -355,5 +426,89 @@ describe('2026 TeamUnitGrades preview planner', () => {
     expect(plan.coverage.rawMetricCoverage.lineYardsOff.distinctTeams).toBe(0);
     expect(plan.planning.proposedGradeRows).toEqual([]);
     expect(plan.plannerStatus).toBe('BLOCKED_SOURCE_INCOMPLETE');
+    assertNoCalculation(plan);
+  });
+
+  it('complete fixture permutations yield identical proposed rows and zStats', () => {
+    const base = completeRawInput();
+    const reversed: UnitGradeSourceReadinessInput = {
+      ...base,
+      fbsTeamIds: base.fbsTeamIds.slice().reverse(),
+      cfbdGames: base.cfbdGames.slice().reverse(),
+      effTeamGames: base.effTeamGames.slice().reverse(),
+      ppaTeamGames: base.ppaTeamGames.slice().reverse(),
+      effTeamSeasons: base.effTeamSeasons.slice().reverse(),
+    };
+    const a = planTeamUnitGrades2026(base);
+    const b = planTeamUnitGrades2026(reversed);
+    expect(a.plannerStatus).toBe('PLANNING_ELIGIBLE');
+    expect(b.plannerStatus).toBe('PLANNING_ELIGIBLE');
+    if (a.plannerStatus !== 'PLANNING_ELIGIBLE' || b.plannerStatus !== 'PLANNING_ELIGIBLE') {
+      return;
+    }
+    assertExactDeep(a.planning.proposedGradeRows, b.planning.proposedGradeRows);
+    assertExactDeep(a.calculation.zStats, b.calculation.zStats);
+    assertExactDeep(a.calculation, {
+      attempted: true,
+      mathKind: LEGACY_TEAM_UNIT_GRADES_MATH_KIND,
+      inputRowCount: 138,
+      proposedRowCount: 138,
+      zStats: a.calculation.zStats,
+    });
+  });
+
+  it('calculation contract failure after eligible source fail-closes with zero rows', () => {
+    const plan = planTeamUnitGrades2026(completeRawInput(), {
+      math: {
+        aggregate: aggregateLegacyTeamUnitGradeInputs,
+        complete: () => ({ ok: false, blockers: ['nonfinite:havocDef'] }),
+        compute: computeLegacyTeamUnitGrades,
+      },
+    });
+    expect(plan.coverage.rawMetricCoverageComplete).toBe(true);
+    expect(plan.plannerStatus).toBe('BLOCKED_CALCULATION_INPUT_INVALID');
+    expect(plan.planning.authoritativePlanningAllowed).toBe(false);
+    expect(plan.planning.proposedGradeRows).toEqual([]);
+    expect(plan.planning.proposedGradeRowCount).toBe(0);
+    expect(plan.calculation.attempted).toBe(true);
+    expect(plan.calculation.proposedRowCount).toBe(0);
+    expect(plan.calculation.zStats).toBeNull();
+    expect(plan.failClosed).toBe(true);
+    expect(plan.previewOk).toBe(false);
+    expect(plan.blockers).toContain('calculation:nonfinite:havocDef');
+    assertNeverAuthorize(plan);
+  });
+
+  it('complete fixture literal zero remains a real metric and proposed grades stay finite', () => {
+    const input = completeRawInput();
+    expect(input.effTeamGames[0].lineYardsOff).toBe(0);
+    const plan = planTeamUnitGrades2026(input);
+    expect(plan.plannerStatus).toBe('PLANNING_ELIGIBLE');
+    const zeroTeam = input.effTeamGames[0].teamIdInternal;
+    const row = plan.planning.proposedGradeRows.filter((r) => r.teamId === zeroTeam)[0];
+    expect(row).toBeTruthy();
+    expect(Number.isFinite(row.offRunGrade)).toBe(true);
+  });
+
+  it('proposed rows match direct pure-module output for the same complete fixture', () => {
+    const input = completeRawInput();
+    const aggregated = aggregateLegacyTeamUnitGradeInputs({
+      teamIds: input.fbsTeamIds,
+      effTeamGames: input.effTeamGames,
+      ppaTeamGames: input.ppaTeamGames,
+      effTeamSeasons: input.effTeamSeasons,
+    });
+    expect(aggregated.ok).toBe(true);
+    if (aggregated.ok === false) return;
+    const completed = completeLegacyTeamUnitGradeInputs(aggregated.rows);
+    expect(completed.ok).toBe(true);
+    if (completed.ok === false) return;
+    const math = computeLegacyTeamUnitGrades(completed.rows);
+    expect(math.ok).toBe(true);
+    if (math.ok === false) return;
+    const plan = planTeamUnitGrades2026(input);
+    expect(plan.plannerStatus).toBe('PLANNING_ELIGIBLE');
+    assertExactDeep(plan.planning.proposedGradeRows, math.grades);
+    assertExactDeep(plan.calculation.zStats, math.zStats);
   });
 });
