@@ -1,0 +1,224 @@
+# Manual GUARDED 2026 CFBD unit-grade SOURCE ingest.
+# workflow_dispatch ONLY — no schedule, push, or pull_request.
+# PREVIEW by default. COMMIT requires confirm=INGEST_2026_CFBD_UNIT_GRADE_SOURCES.
+#
+# Writes (COMMIT only): cfbd_games, cfbd_eff_team_game, cfbd_ppa_team_game,
+# cfbd_eff_team_season.
+# Does NOT write TeamUnitGrades, CfbdPriorsTeamSeason, Shadow, Bet, or MatchupOutput.
+# Does NOT run compute_unit_grades.ts or cfbd-feature-ingest.yml.
+# Does NOT run Prisma migrate.
+#
+# CFBD execution model: one job, no matrix, sequential single-in-flight
+# provider requests (maxConcurrency=1). CFBD v2 heavy endpoints allow
+# maxConcurrent=2; leaseMs=75000 is a fallback release lease; normal
+# release is on response finish; rejected concurrency returns Retry-After: 1.
+# This writer does not invent a cross-workflow lock.
+#
+# Security:
+# - Dispatch inputs reach shell only via step-level env (never ${{ inputs.* }} inside run:).
+# - Production DIRECT_URL is NOT job-wide; optional presence preflight + execution.
+# - CFBD_API_KEY only on the execution step.
+# - Confirmation is never echoed.
+# - No ODDS_API_KEY.
+
+name: Ingest 2026 CFBD Unit-Grade Sources (Manual, Guarded)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (must be 2026)'
+        required: true
+        type: string
+        default: '2026'
+      weeks:
+        description: 'Comma-separated CFB weeks (no silent default)'
+        required: true
+        type: string
+      mode:
+        description: 'PREVIEW (CFBD + DB reads) or COMMIT (source-table upserts)'
+        required: true
+        type: choice
+        options:
+          - PREVIEW
+          - COMMIT
+        default: PREVIEW
+      expected_main_sha:
+        description: 'Exact main commit SHA authorized for this ingest'
+        required: true
+        type: string
+      confirm:
+        description: 'For COMMIT, type INGEST_2026_CFBD_UNIT_GRADE_SOURCES exactly'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cfbd-unit-grade-source-ingest-2026
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Source SHA guard
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA=$(git rev-parse HEAD)
+          echo "ACTUAL_SHA=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+          echo "actual_sha: ${ACTUAL_SHA}"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          echo "github_ref: ${GITHUB_REF:-}"
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Refusing unit-grade source ingest. Workflow must run from main."
+            echo "::error::github_ref=${GITHUB_REF:-}"
+            exit 1
+          fi
+          if [ -z "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing unit-grade source ingest. expected_main_sha is required."
+            exit 1
+          fi
+          if [ "${ACTUAL_SHA}" != "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing unit-grade source ingest. Checked-out SHA does not match expected_main_sha."
+            echo "::error::actual_sha=${ACTUAL_SHA}"
+            echo "::error::expected_main_sha=${EXPECTED_MAIN_SHA}"
+            exit 1
+          fi
+          echo "Source SHA guard passed."
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight (names/presence only)
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEKS: ${{ inputs.weeks }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          echo "season=${INPUT_SEASON}"
+          echo "weeks=${INPUT_WEEKS}"
+          echo "mode=${INPUT_MODE}"
+          echo "PREVIEW IS DATABASE READ-ONLY except CFBD provider reads"
+          echo "ODDS_API_KEY: not provided"
+          echo "compute_unit_grades: not invoked"
+          echo "cfbd-feature-ingest: not invoked"
+          echo "TeamUnitGrades writes: false"
+          echo "Shadow PREVIEW: not invoked"
+          echo "Shadow COMMIT: not invoked"
+          echo "prisma migrate: not invoked"
+
+          if [ "$INPUT_SEASON" != "2026" ]; then
+            echo "::error::season must equal 2026 (got ${INPUT_SEASON})"
+            exit 1
+          fi
+          if [ -z "$INPUT_WEEKS" ]; then
+            echo "::error::weeks is required"
+            exit 1
+          fi
+          if [ "$INPUT_MODE" != "PREVIEW" ] && [ "$INPUT_MODE" != "COMMIT" ]; then
+            echo "::error::mode must be PREVIEW or COMMIT"
+            exit 1
+          fi
+          if [ "$INPUT_MODE" = "COMMIT" ] && [ "$INPUT_CONFIRM" != "INGEST_2026_CFBD_UNIT_GRADE_SOURCES" ]; then
+            echo "::error::COMMIT requires confirm=INGEST_2026_CFBD_UNIT_GRADE_SOURCES"
+            exit 1
+          fi
+          if [ -z "${DIRECT_URL:-}" ]; then
+            echo "::error::DIRECT_URL secret is missing"
+            exit 1
+          fi
+          echo "DIRECT_URL: present (value not printed)"
+          echo "Preflight OK"
+
+      - name: Install dependencies
+        env:
+          DATABASE_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+          DIRECT_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+        run: npm ci
+
+      - name: Generate Prisma client
+        env:
+          DATABASE_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+          DIRECT_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+        run: npm run prisma:generate
+
+      - name: Run guarded 2026 CFBD unit-grade source ingest
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEKS: ${{ inputs.weeks }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          if [ "$INPUT_MODE" = "COMMIT" ]; then
+            npx tsx apps/jobs/write-cfbd-unit-grade-sources-2026.ts \
+              --season "$INPUT_SEASON" \
+              --weeks "$INPUT_WEEKS" \
+              --mode "$INPUT_MODE" \
+              --confirm "$INPUT_CONFIRM" \
+              --report "reports/cfbd-unit-grade-sources-2026-commit.json"
+          else
+            npx tsx apps/jobs/write-cfbd-unit-grade-sources-2026.ts \
+              --season "$INPUT_SEASON" \
+              --weeks "$INPUT_WEEKS" \
+              --mode "$INPUT_MODE" \
+              --report "reports/cfbd-unit-grade-sources-2026-preview.json"
+          fi
+
+      - name: Upload unit-grade source ingest report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfbd-unit-grade-sources-2026-${{ inputs.mode }}
+          path: reports/cfbd-unit-grade-sources-2026-*.json
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEKS: ${{ inputs.weeks }}
+          INPUT_MODE: ${{ inputs.mode }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "============================================"
+          echo "INGEST 2026 CFBD UNIT-GRADE SOURCES (GUARDED)"
+          echo "============================================"
+          echo "season: ${INPUT_SEASON}"
+          echo "weeks: ${INPUT_WEEKS}"
+          echo "mode: ${INPUT_MODE}"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          if [ -n "${ACTUAL_SHA:-}" ]; then
+            echo "actual_sha: ${ACTUAL_SHA}"
+          else
+            echo "actual_sha: (unavailable)"
+          fi
+          echo "status: ${JOB_STATUS}"
+          echo "compute_unit_grades: not invoked"
+          echo "cfbd-feature-ingest: not invoked"
+          echo "TeamUnitGrades writes: false"
+          echo "Shadow PREVIEW: not invoked"
+          echo "Shadow COMMIT: not invoked"
+          echo "prisma migrate: not invoked"
+          echo "ODDS_API_KEY: not provided"
+          echo "============================================"
