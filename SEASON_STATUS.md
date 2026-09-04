@@ -33,7 +33,7 @@ The project is **not** blocked globally. Core V1 production, locked Official Car
 | **Recurring production schedules** | Operator-stopped / **not authorized** |
 | **Schedule reactivation recommended** | **0** workflows |
 | **Core V1 lifecycle blend** | Candidate A / `GLOBAL_BLEND_W3_W6` — canonical weight **0** through completed Week **2**; first material / non-zero canonical contribution after completed Week **3** |
-| **Phase 4B** | Contract + storage + prediction writer **complete**; first capture **HELD** |
+| **Phase 4B** | Prediction-capture foundation implemented; first capture **HELD**; T-30 closing / ATS evaluation **not implemented** |
 | **2026 TeamUnitGrades** | Source **SOURCE_PARTIAL** (31/138); **0** grade rows; existing `compute_unit_grades.ts` **unsafe / not authorized** |
 
 ### Site truth phases
@@ -49,7 +49,7 @@ The project is **not** blocked globally. Core V1 production, locked Official Car
 | **3** Ratings Page Truthfulness | **COMPLETE** | #90 |
 | **4** Models / Hybrid product-truth audit | **COMPLETE** | — |
 | **4A** Models / Hybrid Shadow truth | **COMPLETE** | #91 |
-| **4B** Prospective Shadow Snapshot V1 | **COMPLETE** (execution held) | #93–#97 |
+| **4B** Prospective Shadow Snapshot V1 | **PREDICTION CAPTURE IMPLEMENTED / EXECUTION HELD** | #93–#97 |
 | **4C** Remaining Labs truth cleanup | after first legitimate Shadow capture | — |
 
 Phase 1 COMPLETE — `/picks` is persisted locked Official Card truth (`official_flat_100` Bet rows). Current Slate remains live/dynamic and is not the Official Card.
@@ -58,7 +58,7 @@ Phase 2B COMPLETE — `/weeks` Week Archive for 2026 is persisted Game + Officia
 Phase 3 COMPLETE — `/ratings` displays season-membership conference and persisted Core V1 `modelVersion=v1` provenance. Ratings production verification is complete.
 Phase 4 audit COMPLETE — Hybrid remains held; a live Hybrid recalculation is not a frozen shadow record.
 Phase 4A COMPLETE — PR #91 merge `e8dfa90c4e3510a363694cfe6fb4605a00181361`. Top navigation visible label is **Models**. Hybrid V2 is live/mutable shadow research, not an official 2026 bet. No prospective Hybrid performance record exists.
-Phase 4B COMPLETE as implementation: contract frozen (PR #93), append-only storage deployed (PRs #94–#96), prediction writer merged (PR #97). First Shadow PREVIEW/COMMIT remains **HELD** until legitimate complete 2026 TeamUnitGrades exist. No retrospective/backdated Shadow evidence may be created.
+Phase 4B prediction-capture foundation is implemented: contract frozen (PR #93), append-only storage deployed (PRs #94–#96), and the prospective prediction writer merged (PR #97). First prediction capture remains **HELD** pending legitimate complete 2026 TeamUnitGrades. T-30 closing-market capture and ATS/CLV/evaluation remain separate later implementation steps after the first legitimate prediction capture is proven. No retrospective/backdated Shadow evidence may be created.
 Core V1 (`official_flat_100`) is the default 2026 review strategy.
 Hybrid remains held for 2026. Hybrid Super Tier A remains SHADOW / HELD. V4/Fade remains historical/backtest. No Hybrid production authorization change. No recurring workflow authorization change.
 
@@ -66,7 +66,7 @@ Hybrid remains held for 2026. Hybrid Super Tier A remains SHADOW / HELD. V4/Fade
 
 **Historical baseline before Phase 4A:** `985220966d9b65a642631c197ed2f697e4a92017`
 
-**Current engineering posture:** Phase 4B contract, storage, and prediction writer are implemented. The writer has **not** been used to manufacture evidence. Upstream 2026 TeamUnitGrades source/planner work (PRs #98–#103) is proven through read-only proposal generation. Production source coverage remains **SOURCE_PARTIAL at 31/138**. First legitimate Shadow capture waits for complete grades. Near-term operations are manual Week 1 score maintenance and accumulation of Week 1 CFBD advanced/PPA evidence. This is **not** a global project hold.
+**Current engineering posture:** Phase 4B contract, storage, and prediction-capture writer are implemented. The writer has **not** been used to manufacture evidence. T-30 closing-market capture and ATS/CLV/evaluation are **not implemented**. Upstream 2026 TeamUnitGrades source/planner work (PRs #98–#103) is proven through read-only proposal generation. Production source coverage remains **SOURCE_PARTIAL at 31/138**. First legitimate Shadow prediction capture waits for complete grades. Near-term operations are manual Week 1 score maintenance and accumulation of Week 1 CFBD advanced/PPA evidence. This is **not** a global project hold.
 
 ### Frozen boundaries (still in force)
 
@@ -109,7 +109,15 @@ Production storage verification at deploy time, and still true as current eviden
 | `shadow_closing_market_snapshots` / ShadowClosingMarketSnapshot | **0** |
 | `shadow_evaluation_results` / ShadowEvaluationResult | **0** |
 
-PR #97 is **implemented**, not the current implementation task. The writer has **not** been used to manufacture retrospective evidence. No legitimate 2026 Shadow prediction capture exists yet. First Shadow PREVIEW remains **HELD** until legitimate 2026 TeamUnitGrades exist.
+PR #97 is **implemented**, not the current implementation task. The writer has **not** been used to manufacture retrospective evidence. No legitimate 2026 Shadow prediction capture exists yet. First Shadow prediction PREVIEW remains **HELD** until legitimate 2026 TeamUnitGrades exist.
+
+The frozen `SHADOW_SNAPSHOT_CONTRACT_V1` retains its original PR #93 "design only / not implemented" header as historical freeze context. Current implementation status is recorded here; do not interpret that frozen header as the live operator status.
+
+Not yet implemented, and not implied by the prediction-capture foundation:
+
+- T-30 closing-market snapshot writer
+- ATS / CLV / evaluation writer
+- Shadow automation (not authorized)
 
 ### 2026 TeamUnitGrades source / readiness chain
 
@@ -220,9 +228,9 @@ Next Shadow sequence remains:
 2. Guarded Shadow prediction PREVIEW
 3. Independent audit
 4. Separately authorized first Shadow COMMIT
-5. Only after prediction capture is proven: T-30 closing-market snapshot work
-6. Evaluation / ATS / CLV / research ROI afterward
-7. Automation only after the manual path is proven
+5. Only after prediction capture is proven: T-30 closing-market snapshot work (**not implemented yet**)
+6. Evaluation / ATS / CLV / research ROI afterward (**not implemented yet**)
+7. Automation only after the manual path is proven (**not authorized**)
 
 ### Phase 4A production verification (PR #91)
 
@@ -383,7 +391,7 @@ Do **not** run TeamGameStat / lifecycle merely because games finish. Lifecycle c
 * `cfbd-feature-ingest` remains `REPAIR_BEFORE_USE` (parallel `cfbdEff*` — not Core lifecycle)
 * After completed Week 3: TeamGameStat PREVIEW/COMMIT → lifecycle PREVIEW → audit → lifecycle COMMIT (separate stages)
 * npm/Node maintenance deferred:
-  * npm audit currently reports **19** vulnerabilities
+  * npm audit dependency findings
   * GitHub Actions Node 20 deprecation / Node 24 forcing warning
 * Recurring workflow cadence remains a later explicit operator decision
 
@@ -993,11 +1001,11 @@ Shared `market-line-snapshot` selector (timestamp DESC, id DESC); slate + game d
 
 1. **Near-term operations** — maintain Week 1 scores through guarded manual score PREVIEW → audit → COMMIT; allow Week 1 games and provider advanced/PPA evidence to accumulate; rerun guarded unit-grade source ingestion after material new data exists
 2. **TeamUnitGrades** — no COMMIT path yet; existing `compute_unit_grades.ts` remains prohibited; 31/138 is incomplete evidence and must not be zero-filled
-3. **Phase 4B execution** — contract / storage / prediction writer are complete; first Shadow PREVIEW remains HELD until legitimate complete 2026 TeamUnitGrades exist; production Shadow rows remain **0**
+3. **Phase 4B execution** — prediction-capture foundation is implemented (contract / storage / prediction writer); first Shadow prediction PREVIEW remains HELD until legitimate complete 2026 TeamUnitGrades exist; production Shadow rows remain **0**; T-30 closing-market capture and ATS/CLV/evaluation remain **not implemented**
 4. Do **not** run TeamGameStat / lifecycle merely because games finish; first material lifecycle use remains after completed Week **3**
 5. Do **not** activate Hybrid, enable recurring Odds polling, or authorize score/grading cron without an explicit later decision
 6. **Phase 4C** Remaining Labs truth cleanup — after first legitimate Shadow capture
-7. Deferred maintenance: npm audit (19 vulns) + Actions Node 20→24
+7. Deferred maintenance: npm audit dependency findings + Actions Node 20→24
 
 See [Preseason Reactivation Checklist](docs/preseason-reactivation-checklist.md) and [2026 Workflow Reactivation Matrix](docs/2026-workflow-reactivation-matrix.md).
 

@@ -4,7 +4,7 @@
 **Date:** 2026-09-04
 **Main SHA (this overlay):** `cb254f33eb2db1d91e854b4f65a9986ecafb6eb2`
 **Historical inventory SHA:** `2e8c167a15c9f5fc5dc4ea9683b18ae6258aecfc`
-**Status:** Core V1 remains official; Hybrid V2 HELD; Phase 4B writer complete but capture held; TeamUnitGrades source SOURCE_PARTIAL
+**Status:** Core V1 remains official; Hybrid V2 HELD; Phase 4B prediction capture implemented / execution held; TeamUnitGrades source SOURCE_PARTIAL
 
 **This overlay does NOT:**
 - enable any GitHub workflow schedule
@@ -38,7 +38,7 @@ The repository is in **manual guarded production**, not a global hold. Recurring
 | Scores | Manual guarded, proven; Sep 4 Week 1 PREVIEW **33914124130** + COMMIT **33914862318** persisted 4 Thursday finals; **12** Week 1 Game rows now have final scores |
 | Official grading | Manual guarded, proven; separate from scores; recurring **NOT AUTHORIZED** |
 | TeamGameStat / lifecycle | Prepared; not triggered merely by finals; weight 0 through completed Week 2 |
-| Phase 4B Shadow Snapshot V1 | Contract + storage + prediction writer **complete**; production Shadow rows = **0**; first PREVIEW **HELD** |
+| Phase 4B Shadow Snapshot V1 | Prediction-capture foundation implemented; first PREVIEW **HELD**; production Shadow rows = **0**; T-30 closing / ATS evaluation **not implemented** |
 | 2026 TeamUnitGrades | Source **SOURCE_PARTIAL** **31/138** (22.5%); grade rows = **0**; planner PREVIEW proven fail-closed against partial evidence; **no COMMIT path** |
 | `compute_unit_grades.ts` | **UNSAFE / NOT AUTHORIZED** for 2026 |
 
@@ -270,7 +270,7 @@ Keep **score → grading → TeamGameStat ingest → Core V1 lifecycle** as sepa
 | Same-season CFBD unit-grade source | No | Guarded source ingest exists; production is **SOURCE_PARTIAL** 31/138 |
 | TeamUnitGrades planner PREVIEW | No | Read-only; calculation only if `rawMetricCoverageComplete === true` |
 | TeamUnitGrades write / `compute_unit_grades.ts` | No | **Not authorized**. Do not copy 2025 bridge. Do not zero-fill. No COMMIT path yet |
-| Shadow Snapshot V1 capture | No | Writer exists; first PREVIEW **HELD** until complete 2026 grades |
+| Shadow Snapshot V1 capture | No | Prediction writer exists; first PREVIEW **HELD** until complete 2026 grades; T-30 closing / ATS evaluation **not implemented** |
 | Hybrid readiness audit | Optional re-run | `audit-hybrid-v2-preseason-readiness` MANUAL_SAFE |
 | Explicit Hybrid activation | Separate human phase | Do not guess week |
 
