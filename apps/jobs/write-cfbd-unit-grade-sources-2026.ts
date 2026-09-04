@@ -27,6 +27,7 @@ import {
   UNIT_GRADE_SOURCE_CONFIRMATION,
   SequentialJsonFetcher,
   collectProviderNamesFromPayloads,
+  committedMutationTotal,
   fetchUnitGradeSourcePayloads,
   mutationTelemetryAfterCommitAttempt,
   parseUnitGradeSourceIngestArgs,
@@ -157,12 +158,13 @@ function buildReport(options: {
   mutationsInvoked: boolean;
   commitSucceeded: boolean;
   transactionRolledBack: boolean;
+  persistedWrites: boolean;
   committed?: Record<string, number> | null;
   postWrite?: Record<string, number> | null;
   error?: string;
 }): object {
   const plan = options.plan;
-  const persistedWrites = options.mutationsInvoked && options.commitSucceeded && !options.transactionRolledBack;
+  const persistedWrites = options.persistedWrites;
   return {
     season: TARGET_SEASON,
     requestedWeeks: plan ? plan.requestedWeeks : [],
@@ -183,6 +185,7 @@ function buildReport(options: {
     providerTeamNamesEncountered: plan ? plan.providerTeamNamesEncountered : [],
     mappedProviderTeamCount: plan ? plan.mappedProviderTeamCount : 0,
     distinctMappedInternalIds: plan ? plan.distinctMappedInternalIds : [],
+    unmappedProviderTeams: plan ? plan.unmappedProviderTeams : [],
     unmappedTeams: plan ? plan.unmappedProviderTeams : [],
     gameCounts: plan ? plan.gameCounts : null,
     effGameCounts: plan ? plan.effGameCounts : null,
@@ -200,8 +203,8 @@ function buildReport(options: {
     teamUnitGradesWrites: false,
     shadowWrites: false,
     priorsWrites: false,
-    committed: persistedWrites ? options.committed ?? null : null,
-    postWriteSelect: persistedWrites ? options.postWrite ?? null : null,
+    committed: options.commitSucceeded ? options.committed ?? null : null,
+    postWriteSelect: options.commitSucceeded ? options.postWrite ?? null : null,
     cfbdLeaseSemantics: plan ? plan.cfbdLeaseSemantics : null,
     processMaxConcurrency: plan ? plan.processMaxConcurrency : 1,
     error: options.error ?? null,
@@ -607,6 +610,7 @@ async function main() {
     mutationState = mutationTelemetryAfterCommitAttempt({
       commitReached: true,
       commitSucceeded: true,
+      totalCommitted: committedMutationTotal(committed),
     });
     const postWrite = await postWriteCounts(prisma, args.season);
     writeJson(

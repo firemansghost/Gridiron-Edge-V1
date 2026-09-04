@@ -381,6 +381,49 @@ describe('unit-grade source ingest planner', () => {
     });
     expect(ok.writeSafe).toBe(true);
   });
+
+  it('exactly 138 valid FBS membership rows is a valid frame', () => {
+    const r = basePlan();
+    expect(r.writeSafe).toBe(true);
+    expect(r.blockers.some((b) => b.includes('fbs_membership'))).toBe(false);
+    expect(r.blockers).not.toContain('fbs_team_membership_missing_id');
+    expect(r.blockers).not.toContain('duplicate_fbs_team_membership');
+    expect(r.blockers.some((b) => b.startsWith('fbs_population_not_138'))).toBe(false);
+    expect(r.proposedSourceCoverage.status).not.toBe('FRAME_INVALID');
+  });
+
+  it('138 valid FBS rows plus one blank FBS row is FRAME_INVALID', () => {
+    const r = basePlan({
+      memberships: [...memberships(), { teamId: '   ', level: 'fbs' }],
+    });
+    expect(r.writeSafe).toBe(false);
+    expect(r.proposedSourceCoverage.status).toBe('FRAME_INVALID');
+    expect(r.blockers).toContain('fbs_membership_row_count_not_138:139');
+    expect(r.blockers).toContain('fbs_team_membership_missing_id');
+    expect(r.blockers).toContain('proposed_source_frame_invalid');
+  });
+
+  it('138 FBS rows with a duplicate (137 unique IDs) is invalid', () => {
+    const teams = fbs();
+    const rows = memberships();
+    rows[137] = { teamId: teams[0], level: 'fbs' };
+    const r = basePlan({ memberships: rows });
+    expect(r.writeSafe).toBe(false);
+    expect(r.proposedSourceCoverage.status).toBe('FRAME_INVALID');
+    expect(r.blockers).toContain('duplicate_fbs_team_membership');
+    expect(r.blockers).toContain('fbs_population_not_138:137');
+    expect(r.blockers).toContain('proposed_source_frame_invalid');
+  });
+
+  it('extra FCS membership rows do not alter the 138-FBS exact-row rule', () => {
+    const r = basePlan({
+      memberships: [...memberships(), { teamId: 'fcs-extra', level: 'fcs' }],
+    });
+    expect(r.writeSafe).toBe(true);
+    expect(r.blockers.some((b) => b.includes('fbs_membership'))).toBe(false);
+    expect(r.blockers).not.toContain('fbs_team_membership_missing_id');
+    expect(r.proposedSourceCoverage.status).not.toBe('FRAME_INVALID');
+  });
 });
 
 describe('unit-grade source ingest provider safety', () => {
@@ -554,6 +597,8 @@ describe('unit-grade source ingest CFBD v2 URL contract', () => {
     expect(url.pathname.endsWith('/stats/season/advanced')).toBe(true);
     expect(url.searchParams.get('year')).toBe('2026');
     expect(url.searchParams.get('classification')).toBe('fbs');
+    expect(url.searchParams.has('seasonType')).toBe(false);
+    expect(url.searchParams.has('division')).toBe(false);
   });
 
   it('/stats/game/advanced has no classification or division', () => {
@@ -739,13 +784,29 @@ describe('unit-grade source ingest reporting integrity', () => {
     expect(rolled.commitSucceeded).toBe(false);
     expect(rolled.transactionRolledBack).toBe(true);
     expect(rolled.persistedWrites).toBe(false);
-    const ok = mutationTelemetryAfterCommitAttempt({
+  });
+
+  it('successful all-NO_CHANGE COMMIT does not claim persisted writes', () => {
+    const noop = mutationTelemetryAfterCommitAttempt({
       commitReached: true,
       commitSucceeded: true,
+      totalCommitted: 0,
     });
-    expect(ok.mutationsInvoked).toBe(true);
-    expect(ok.commitSucceeded).toBe(true);
-    expect(ok.transactionRolledBack).toBe(false);
-    expect(ok.persistedWrites).toBe(true);
+    expect(noop.mutationsInvoked).toBe(true);
+    expect(noop.commitSucceeded).toBe(true);
+    expect(noop.transactionRolledBack).toBe(false);
+    expect(noop.persistedWrites).toBe(false);
+  });
+
+  it('successful COMMIT with at least one CREATE/UPDATE claims persisted writes', () => {
+    const wrote = mutationTelemetryAfterCommitAttempt({
+      commitReached: true,
+      commitSucceeded: true,
+      totalCommitted: 1,
+    });
+    expect(wrote.mutationsInvoked).toBe(true);
+    expect(wrote.commitSucceeded).toBe(true);
+    expect(wrote.transactionRolledBack).toBe(false);
+    expect(wrote.persistedWrites).toBe(true);
   });
 });

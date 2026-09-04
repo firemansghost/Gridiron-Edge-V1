@@ -550,14 +550,24 @@ export function buildAdvancedSeasonUrl(
 ): string {
   const url = new URL(`${baseUrl.replace(/\/$/, '')}/stats/season/advanced`);
   url.searchParams.set('year', String(season));
-  url.searchParams.set('seasonType', 'regular');
   url.searchParams.set('classification', 'fbs');
   return url.toString();
+}
+
+export function committedMutationTotal(committed: {
+  games: number;
+  effGames: number;
+  ppaGames: number;
+  effSeasons: number;
+} | null | undefined): number {
+  if (!committed) return 0;
+  return committed.games + committed.effGames + committed.ppaGames + committed.effSeasons;
 }
 
 export function mutationTelemetryAfterCommitAttempt(options: {
   commitReached: boolean;
   commitSucceeded: boolean;
+  totalCommitted?: number;
 }): {
   mutationsInvoked: boolean;
   commitSucceeded: boolean;
@@ -567,11 +577,13 @@ export function mutationTelemetryAfterCommitAttempt(options: {
   const mutationsInvoked = options.commitReached;
   const commitSucceeded = options.commitReached && options.commitSucceeded;
   const transactionRolledBack = options.commitReached && !options.commitSucceeded;
+  const totalCommitted = options.totalCommitted ?? 0;
   return {
     mutationsInvoked,
     commitSucceeded,
     transactionRolledBack,
-    persistedWrites: commitSucceeded,
+    persistedWrites:
+      commitSucceeded && !transactionRolledBack && totalCommitted > 0,
   };
 }
 
@@ -914,13 +926,27 @@ export function planUnitGradeSourceIngest(options: {
     blockers.push(`season must be ${TARGET_SEASON}`);
   }
 
-  const fbsIds = options.memberships
+  const rawFbsMembershipIds = options.memberships
     .filter((m) => String(m.level).toLowerCase() === 'fbs')
-    .map((m) => m.teamId.trim().toLowerCase())
-    .filter(Boolean);
-  const uniqueFbs = uniqueSorted(fbsIds);
-  if (fbsIds.length !== EXPECTED_2026_FBS_COUNT) {
-    blockers.push(`fbs_membership_row_count_not_138:${fbsIds.length}`);
+    .map((m) => String(m.teamId ?? ''));
+  if (rawFbsMembershipIds.length !== EXPECTED_2026_FBS_COUNT) {
+    blockers.push(`fbs_membership_row_count_not_138:${rawFbsMembershipIds.length}`);
+  }
+  let fbsMissingId = false;
+  for (let i = 0; i < rawFbsMembershipIds.length; i++) {
+    if (String(rawFbsMembershipIds[i]).trim() === '') fbsMissingId = true;
+  }
+  if (fbsMissingId) {
+    blockers.push('fbs_team_membership_missing_id');
+  }
+  const normalizedNonemptyFbs: string[] = [];
+  for (let i = 0; i < rawFbsMembershipIds.length; i++) {
+    const id = String(rawFbsMembershipIds[i]).trim().toLowerCase();
+    if (id) normalizedNonemptyFbs.push(id);
+  }
+  const uniqueFbs = uniqueSorted(normalizedNonemptyFbs);
+  if (normalizedNonemptyFbs.length !== uniqueFbs.length) {
+    blockers.push('duplicate_fbs_team_membership');
   }
   if (uniqueFbs.length !== EXPECTED_2026_FBS_COUNT) {
     blockers.push(`fbs_population_not_138:${uniqueFbs.length}`);
@@ -1191,7 +1217,7 @@ export function planUnitGradeSourceIngest(options: {
   const uniqueNames = mapping.providerTeamNamesEncountered;
   unmapped.sort();
   const proposedSourceCoverage = buildProposedSourceCoverage({
-    fbsTeamIds: uniqueFbs,
+    fbsTeamIds: rawFbsMembershipIds,
     existingGames: options.existingGames,
     existingEffGames: options.existingEffGames,
     existingPpaGames: options.existingPpaGames,
