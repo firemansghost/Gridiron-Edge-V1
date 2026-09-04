@@ -59,6 +59,27 @@ function byTeam(
   return map;
 }
 
+function assertExactDeep(left: unknown, right: unknown): void {
+  if (typeof left === 'number' && typeof right === 'number') {
+    expect(Object.is(left, right)).toBe(true);
+    return;
+  }
+  if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object') {
+    expect(left).toEqual(right);
+    return;
+  }
+  const leftKeys = Object.keys(left as object).sort();
+  const rightKeys = Object.keys(right as object).sort();
+  expect(leftKeys).toEqual(rightKeys);
+  for (let i = 0; i < leftKeys.length; i++) {
+    const key = leftKeys[i];
+    assertExactDeep(
+      (left as Record<string, unknown>)[key],
+      (right as Record<string, unknown>)[key]
+    );
+  }
+}
+
 /**
  * Test-only reference copied/reduced from the numerical sections of
  * apps/jobs/src/v2/compute_unit_grades.ts (calculateZScoreStats,
@@ -259,7 +280,7 @@ describe('legacy TeamUnitGrades calculation parity', () => {
     for (let i = 0; i < result.grades.length; i++) {
       const g = result.grades[i];
       for (let o = 0; o < LEGACY_TEAM_UNIT_GRADE_OUTPUTS.length; o++) {
-        expect(g[LEGACY_TEAM_UNIT_GRADE_OUTPUTS[o]]).toBe(0);
+        expect(g[LEGACY_TEAM_UNIT_GRADE_OUTPUTS[o]] === 0).toBe(true);
       }
     }
   });
@@ -342,6 +363,31 @@ describe('legacy TeamUnitGrades calculation parity', () => {
     if (!a.ok || !b.ok) return;
     expect(a.grades.map((g) => g.teamId)).toEqual(['a', 'm', 'z']);
     expect(byTeam(a.grades)).toEqual(byTeam(b.grades));
+  });
+
+  it('canonical teamId order makes adversarial finite summation order-independent', () => {
+    const aRow = row('A', { lineYardsOff: 1e16 });
+    const bRow = row('B', { lineYardsOff: -1e16 });
+    const cRow = row('C', { lineYardsOff: 1 });
+    const perm1 = [aRow, bRow, cRow];
+    const perm2 = [cRow, aRow, bRow];
+    const perm3 = [bRow, cRow, aRow];
+    const frozen1 = JSON.stringify(perm1);
+    const frozen2 = JSON.stringify(perm2);
+    const frozen3 = JSON.stringify(perm3);
+    const r1 = computeLegacyTeamUnitGrades(perm1);
+    const r2 = computeLegacyTeamUnitGrades(perm2);
+    const r3 = computeLegacyTeamUnitGrades(perm3);
+    expect(r1.ok && r2.ok && r3.ok).toBe(true);
+    if (!r1.ok || !r2.ok || !r3.ok) return;
+    expect(JSON.stringify(perm1)).toBe(frozen1);
+    expect(JSON.stringify(perm2)).toBe(frozen2);
+    expect(JSON.stringify(perm3)).toBe(frozen3);
+    expect(r1.grades.map((g) => g.teamId)).toEqual(['A', 'B', 'C']);
+    assertExactDeep(r1.zStats, r2.zStats);
+    assertExactDeep(r1.zStats, r3.zStats);
+    assertExactDeep(byTeam(r1.grades), byTeam(r2.grades));
+    assertExactDeep(byTeam(r1.grades), byTeam(r3.grades));
   });
 
   it('grade identities match the exact 50/50 and sign formulas', () => {
@@ -442,6 +488,22 @@ describe('legacy TeamUnitGrades calculation parity', () => {
     const frozen = JSON.stringify(input);
     computeLegacyTeamUnitGrades(input);
     expect(JSON.stringify(input)).toBe(frozen);
+  });
+
+  it('preserves legacy IEEE signed zero on negated zero z-scores', () => {
+    const fixture = [row('a'), row('b'), row('c')];
+    const result = computeLegacyTeamUnitGrades(fixture);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const reference = byTeam(legacyReferenceGrades(fixture));
+    const actual = byTeam(result.grades);
+    expect(Object.is(reference.a.defExplosiveness, -0)).toBe(true);
+    expect(Object.is(actual.a.defExplosiveness, -0)).toBe(true);
+    expect(Object.is(actual.b.defExplosiveness, -0)).toBe(true);
+    expect(Object.is(actual.c.defExplosiveness, -0)).toBe(true);
+    expect(Object.is(actual.a.defExplosiveness, 0)).toBe(false);
+    expect(Object.is(actual.a.defPassGrade, -0)).toBe(true);
+    expect(Object.is(reference.a.defPassGrade, -0)).toBe(true);
   });
 });
 

@@ -21,6 +21,8 @@
  *   instead of zero-filling.
  * - Defense PPA is overall ppaDefense for both rush and pass; runEpaDef /
  *   passEpaDef buckets exist in the writer but are never populated.
+ * Canonical teamId order of a defensive copy drives all means/z-scores/grades.
+ * Grade outputs are the direct IEEE results of the seven legacy formulas.
  */
 
 export const LEGACY_TEAM_UNIT_GRADES_MATH_KIND =
@@ -211,18 +213,14 @@ function gradesFromZ(teamId: string, z: Record<LegacyTeamUnitGradeMetric, number
   const w = LEGACY_GRADE_BLEND_WEIGHT;
   return {
     teamId,
-    offRunGrade: canonicalNumber(w * z.lineYardsOff + w * z.rushPpaOff),
-    defRunGrade: canonicalNumber(w * z.stuffRate + w * -z.rushPpaDef),
-    offPassGrade: canonicalNumber(w * z.passPpaOff + w * z.passSrOff),
-    defPassGrade: canonicalNumber(w * -z.passPpaDef + w * -z.passSrDef),
-    offExplosiveness: canonicalNumber(z.isoPppOff),
-    defExplosiveness: canonicalNumber(-z.isoPppDef),
-    havocGrade: canonicalNumber(w * z.havocDef - w * z.havocOff),
+    offRunGrade: w * z.lineYardsOff + w * z.rushPpaOff,
+    defRunGrade: w * z.stuffRate + w * -z.rushPpaDef,
+    offPassGrade: w * z.passPpaOff + w * z.passSrOff,
+    defPassGrade: w * -z.passPpaDef + w * -z.passSrDef,
+    offExplosiveness: z.isoPppOff,
+    defExplosiveness: -z.isoPppDef,
+    havocGrade: w * z.havocDef - w * z.havocOff,
   };
-}
-
-function canonicalNumber(value: number): number {
-  return value === 0 ? 0 : value;
 }
 
 /**
@@ -248,13 +246,15 @@ export function computeLegacyTeamUnitGrades(
   for (let i = 0; i < rows.length; i++) {
     complete.push(readCompleteRow(rows[i]));
   }
+  const canonical = complete.slice();
+  canonical.sort((a, b) => compareTeamId(a.teamId, b.teamId));
 
   const zStats = {} as Record<LegacyTeamUnitGradeMetric, LegacyZStatSummary>;
   const zByMetric = {} as Record<LegacyTeamUnitGradeMetric, number[]>;
   for (let m = 0; m < LEGACY_TEAM_UNIT_GRADE_METRICS.length; m++) {
     const metric = LEGACY_TEAM_UNIT_GRADE_METRICS[m];
     const values: number[] = [];
-    for (let i = 0; i < complete.length; i++) values.push(complete[i][metric]);
+    for (let i = 0; i < canonical.length; i++) values.push(canonical[i][metric]);
     const computed = computeLegacyPopulationZScores(values);
     if (computed.ok === false) {
       return { ok: false, blockers: computed.blockers };
@@ -268,15 +268,14 @@ export function computeLegacyTeamUnitGrades(
   }
 
   const grades: LegacyTeamUnitGrades[] = [];
-  for (let i = 0; i < complete.length; i++) {
+  for (let i = 0; i < canonical.length; i++) {
     const z = {} as Record<LegacyTeamUnitGradeMetric, number>;
     for (let m = 0; m < LEGACY_TEAM_UNIT_GRADE_METRICS.length; m++) {
       const metric = LEGACY_TEAM_UNIT_GRADE_METRICS[m];
       z[metric] = zByMetric[metric][i];
     }
-    grades.push(gradesFromZ(complete[i].teamId, z));
+    grades.push(gradesFromZ(canonical[i].teamId, z));
   }
-  grades.sort((a, b) => compareTeamId(a.teamId, b.teamId));
   return { ok: true, grades, zStats };
 }
 
