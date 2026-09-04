@@ -4,11 +4,13 @@ Operator checklist for **manual** preseason workflow reactivation. Do not bulk-e
 
 Complements `SEASON_STATUS.md` and `WORKFLOW_DISABLE_REPORT.md`.
 
+**Current operator status (2026-09-04):** the season is **active under manual guarded production**. Treat [`SEASON_STATUS.md`](../SEASON_STATUS.md) as the live operator document. Unchecked items below are preseason archaeology unless restated there. Recurring schedules remain **not authorized**. `compute_unit_grades.ts` remains **not authorized**. TeamUnitGrades 2026 source is **SOURCE_PARTIAL (31/138)** with **0** grade rows; do not zero-fill or copy 2025 grades.
+
 ---
 
 ## Before you start
 
-- [ ] Read `SEASON_STATUS.md` P0 blockers — bulk reactivation is **not** ready until Phase 2C-1+
+- [ ] Read `SEASON_STATUS.md` **CURRENT STATE** (not the historical P0 table) before any production dispatch
 - [ ] Confirm target season is **2026** (`TARGET_SEASON` repo variable recommended — see [preseason-season-parameterization.md](preseason-season-parameterization.md))
 - [ ] Leave `v3-totals-nightly.yml` **disabled** (`sync-v3-bets.ts` is missing)
 - [ ] Keep historical odds backfill **manual only** with `dry_run` and credit limits

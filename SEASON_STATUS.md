@@ -1,9 +1,9 @@
 # Season Status — Gridiron Edge
 
 **Status:** 2026 season active (manual guarded production)  
-**Updated:** 2026-09-03 (Phase 4A COMPLETE — PR #91)
+**Updated:** 2026-09-04 (post-PR #103 / post-score-refresh continuity)
 
-**Verified production baseline entering this closeout:** `e8dfa90c4e3510a363694cfe6fb4605a00181361`
+**Verified production baseline entering this closeout:** `cb254f33eb2db1d91e854b4f65a9986ecafb6eb2`
 
 This docs-only closeout PR will advance `main` when merged; the exact closeout merge SHA is intentionally not guessed in advance.
 
@@ -13,22 +13,28 @@ Sections below the current-state block retain useful preseason/phase chronology.
 
 ---
 
-## CURRENT STATE (2026-09-03)
+## CURRENT STATE (2026-09-04)
+
+The project is **not** blocked globally. Core V1 production, locked Official Card review, and manual score maintenance continue. The Hybrid / Shadow / TeamUnitGrades lane is waiting on complete same-season evidence, not on contract or planner implementation.
 
 ### Season posture
 
 | Item | Status |
 |------|--------|
 | **Season** | **2026 active** |
-| **Verified Phase 4A production baseline** | `e8dfa90c4e3510a363694cfe6fb4605a00181361` (PR #91 merge) |
-| **Provider Week 1** | Opening **Aug. 29** tranche complete; remaining **Sep. 3–7** games are still pending on the **locked** Official Card |
+| **Verified production baseline** | `cb254f33eb2db1d91e854b4f65a9986ecafb6eb2` |
+| **Provider Week 1** | Opening **Aug. 29** tranche complete; Thursday **Sep. 3** finals now scored; remaining **Sep. 4–7** games are still pending on the **locked** Official Card |
 | **Effective production spread model** | **Core V1** (`official_flat_100`) — official |
 | **Hybrid V2** | **SHADOW / HELD / NOT OFFICIAL** |
+| **Hybrid Super Tier A** | **SHADOW / HELD** |
 | **Hybrid page** | `/labs/hybrid` — **LIVE / MUTABLE SHADOW** |
+| **V4 / Fade** | Labs / backtest only |
 | **Totals / moneylines** | Current Core logic |
 | **Recurring production schedules** | Operator-stopped / **not authorized** |
 | **Schedule reactivation recommended** | **0** workflows |
 | **Core V1 lifecycle blend** | Candidate A / `GLOBAL_BLEND_W3_W6` — canonical weight **0** through completed Week **2**; first material / non-zero canonical contribution after completed Week **3** |
+| **Phase 4B** | Contract + storage + prediction writer **complete**; first capture **HELD** |
+| **2026 TeamUnitGrades** | Source **SOURCE_PARTIAL** (31/138); **0** grade rows; existing `compute_unit_grades.ts` **unsafe / not authorized** |
 
 ### Site truth phases
 
@@ -43,8 +49,8 @@ Sections below the current-state block retain useful preseason/phase chronology.
 | **3** Ratings Page Truthfulness | **COMPLETE** | #90 |
 | **4** Models / Hybrid product-truth audit | **COMPLETE** | — |
 | **4A** Models / Hybrid Shadow truth | **COMPLETE** | #91 |
-| **4B** Prospective Shadow Snapshot contract/design | **NEXT** | — |
-| **4C** Remaining Labs truth cleanup | after 4B contract | — |
+| **4B** Prospective Shadow Snapshot V1 | **COMPLETE** (execution held) | #93–#97 |
+| **4C** Remaining Labs truth cleanup | after first legitimate Shadow capture | — |
 
 Phase 1 COMPLETE — `/picks` is persisted locked Official Card truth (`official_flat_100` Bet rows). Current Slate remains live/dynamic and is not the Official Card.
 Phase 2A COMPLETE — Week/Season Review is persisted Bet review truth (read-only).
@@ -52,6 +58,7 @@ Phase 2B COMPLETE — `/weeks` Week Archive for 2026 is persisted Game + Officia
 Phase 3 COMPLETE — `/ratings` displays season-membership conference and persisted Core V1 `modelVersion=v1` provenance. Ratings production verification is complete.
 Phase 4 audit COMPLETE — Hybrid remains held; a live Hybrid recalculation is not a frozen shadow record.
 Phase 4A COMPLETE — PR #91 merge `e8dfa90c4e3510a363694cfe6fb4605a00181361`. Top navigation visible label is **Models**. Hybrid V2 is live/mutable shadow research, not an official 2026 bet. No prospective Hybrid performance record exists.
+Phase 4B COMPLETE as implementation: contract frozen (PR #93), append-only storage deployed (PRs #94–#96), prediction writer merged (PR #97). First Shadow PREVIEW/COMMIT remains **HELD** until legitimate complete 2026 TeamUnitGrades exist. No retrospective/backdated Shadow evidence may be created.
 Core V1 (`official_flat_100`) is the default 2026 review strategy.
 Hybrid remains held for 2026. Hybrid Super Tier A remains SHADOW / HELD. V4/Fade remains historical/backtest. No Hybrid production authorization change. No recurring workflow authorization change.
 
@@ -59,7 +66,7 @@ Hybrid remains held for 2026. Hybrid Super Tier A remains SHADOW / HELD. V4/Fade
 
 **Historical baseline before Phase 4A:** `985220966d9b65a642631c197ed2f697e4a92017`
 
-**Active engineering task:** Phase 4B — prospective Shadow Snapshot contract/design. Phase 4B is a separately reviewed append-only prospective shadow-record design. It is **not implemented**. No shadow ledger exists yet. No Core V1 formula, Hybrid formula, Hybrid authorization, lifecycle, or Prisma change is authorized by this closeout.
+**Current engineering posture:** Phase 4B contract, storage, and prediction writer are implemented. The writer has **not** been used to manufacture evidence. Upstream 2026 TeamUnitGrades source/planner work (PRs #98–#103) is proven through read-only proposal generation. Production source coverage remains **SOURCE_PARTIAL at 31/138**. First legitimate Shadow capture waits for complete grades. Near-term operations are manual Week 1 score maintenance and accumulation of Week 1 CFBD advanced/PPA evidence. This is **not** a global project hold.
 
 ### Frozen boundaries (still in force)
 
@@ -73,6 +80,149 @@ Hybrid remains held for 2026. Hybrid Super Tier A remains SHADOW / HELD. V4/Fade
 - No Hybrid Bet writes
 - No model formula changes
 - No Hybrid activation changes
+- No Core V1 formula, Hybrid formula, or lifecycle changes are authorized by this docs closeout
+- No TeamUnitGrades methodology is newly authorized
+- Existing `apps/jobs/src/v2/compute_unit_grades.ts` remains **UNSAFE / NOT AUTHORIZED** for 2026 production execution
+
+### Phase 4B — verified implementation history
+
+Merged code is not the same thing as production Shadow evidence.
+
+| PR | What landed |
+|----|-------------|
+| **#93** | Froze `SHADOW_SNAPSHOT_CONTRACT_V1` |
+| **#94** | Added append-only Shadow Snapshot V1 Prisma schema + migration |
+| **#95** | Restored exact production migration history; added read-only migration-history audit |
+| **#96** | Hardened guarded production Prisma migration workflow |
+| **#97** | Prospective Shadow prediction writer (manual guarded PREVIEW/COMMIT) |
+
+Read-only migration audit: run **33866083162** — passed.
+
+Production Phase 4B migration: run **33869243230** — successfully deployed `20260903220000_add_shadow_snapshot_v1`.
+
+Production storage verification at deploy time, and still true as current evidence:
+
+| Table | Rows |
+|-------|------:|
+| `shadow_capture_runs` / ShadowCaptureRun | **0** |
+| `shadow_prediction_snapshots` / ShadowPredictionSnapshot | **0** |
+| `shadow_closing_market_snapshots` / ShadowClosingMarketSnapshot | **0** |
+| `shadow_evaluation_results` / ShadowEvaluationResult | **0** |
+
+PR #97 is **implemented**, not the current implementation task. The writer has **not** been used to manufacture retrospective evidence. No legitimate 2026 Shadow prediction capture exists yet. First Shadow PREVIEW remains **HELD** until legitimate 2026 TeamUnitGrades exist.
+
+### 2026 TeamUnitGrades source / readiness chain
+
+Existing `apps/jobs/src/v2/compute_unit_grades.ts` remains **unsafe** for 2026. Do **not** tell operators to run it. Do **not** zero-fill missing teams. Do **not** borrow prior-season grades.
+
+| PR | What landed |
+|----|-------------|
+| **#98** | Read-only 2026 unit-grade source-readiness audit; no writes; `safeToRunExistingCompute=false` by design |
+| **#99** | Guarded 2026 CFBD source ingestion (PREVIEW/COMMIT). Writes only `cfbd_games`, `cfbd_eff_team_game`, `cfbd_ppa_team_game`, `cfbd_eff_team_season`. No TeamUnitGrades / Bet / MatchupOutput / Shadow |
+| **#100** | Narrow transaction-timeout fix; preserved one Serializable transaction; no chunking / retry / alternate semantics |
+| **#101** | Pure/read-only 2026 TeamUnitGrades planner; no provider calls; no mutations; no COMMIT mode |
+| **#102** | Pure deterministic legacy TeamUnitGrades calculation-parity module; no DB / network / workflow / writer; no methodology authorization |
+| **#103** | Wired proven pure math into the read-only planner; calculation only after `rawMetricCoverageComplete === true` |
+
+Verified production runs:
+
+| Step | Run | Result |
+|------|-----|--------|
+| Initial source-readiness audit | **33887317324** | `SOURCE_EMPTY`; FBS=138; TeamUnitGrades=0; CFBD source rows=0; Shadow rows=0 |
+| Initial PR #99 PREVIEW | **33896328090** | passed; `SOURCE_PARTIAL` preview; zero writes |
+| Initial PR #99 COMMIT | **33897204884** | failed on Prisma interactive transaction timeout; rollback verified; zero persisted source rows from the failed transaction |
+| Post-PR #100 source PREVIEW | **33899512038** | passed |
+| Post-PR #100 source COMMIT | **33900455161** | passed |
+| Post-COMMIT read-only source audit | **33901404161** | passed |
+| First planner PREVIEW (PR #101) | **33905104503** | passed as expected; `SOURCE_PARTIAL`; `BLOCKED_SOURCE_INCOMPLETE`; `proposedGradeRows=[]`; all write/compute/Shadow authorizations false |
+| Post-PR #103 planner PREVIEW | **33913080723** | passed; `SOURCE_PARTIAL`; `BLOCKED_SOURCE_INCOMPLETE`; `calculation.attempted=false`; `proposedGradeRowCount=0`; `proposedGradeRows=[]`; `authoritativePlanningAllowed=false`; `failClosed=false`; `previewOk=true`; providers/mutations false; TeamUnitGrades write / compute / Shadow PREVIEW / Shadow COMMIT all false |
+
+Current persisted source inventory:
+
+| Source | Rows |
+|--------|------:|
+| `cfbd_games` | **99** |
+| `cfbd_eff_team_game` | **38** |
+| `cfbd_ppa_team_game` | **31** |
+| `cfbd_eff_team_season` | **31** |
+| TeamUnitGrades 2026 | **0** |
+
+Current readiness: **SOURCE_PARTIAL**. Required raw metric coverage = **31 / 138** FBS teams (**22.5%**). `rawMetricCoverageComplete = false`. Existing compute remains unauthorized.
+
+**31/138 is incomplete evidence.** Missing teams are **not** zero-filled. Prior-season grades are **not** borrowed. No TeamUnitGrades write is authorized.
+
+The post-PR #103 planner PREVIEW proves the wired calculation path does **not** execute against partial production evidence. A complete 138-team **test fixture** can emit 138 proposed rows; that is fixture capability, not a production grade set. Production proposed rows remain **[]**.
+
+### Current TeamUnitGrades hold
+
+**Do not build or run a TeamUnitGrades COMMIT path yet.** The current blocker is evidence availability, not planner/math implementation.
+
+After more Week 1 CFBD advanced/PPA data becomes available, the next legitimate sequence is:
+
+1. Guarded CFBD unit-grade source PREVIEW
+2. Independent audit
+3. Guarded source COMMIT only if clean
+4. Read-only source/readiness audit
+5. TeamUnitGrades planner PREVIEW
+6. Only if `rawMetricCoverageComplete === true` and the planner emits a valid 138-row proposed grade set should a guarded TeamUnitGrades write design be considered
+
+Do **not** run until the appropriate gates are satisfied:
+
+- `compute_unit_grades.ts`
+- partial grade calculation
+- zero-fill
+- prior-year grade fallback
+- Shadow PREVIEW
+- Shadow COMMIT
+
+### September 4 score maintenance
+
+Canonical score workflow: `.github/workflows/cfbd-scores-2026-manual.yml`
+
+Display name: **2026 CFBD Scores (Manual, Guarded)**
+
+It remains **MANUAL ONLY**. Recurring score automation is **not** currently authorized.
+
+| Step | Run | Result |
+|------|-----|--------|
+| Week 1 score PREVIEW | **33914124130** | success; provider FBS games=51; DB games=51; completed provider games=12; planned score updates=4; score conflicts=0; missing DB games=0; unresolved teams=0; blockers=0; `writeSafe=true`; zero mutations |
+| Week 1 score COMMIT | **33914862318** | success; exact confirmation `WRITE_2026_WEEK_1_SCORES`; planned updates=4; Game update count=4; post-write verification passed; transaction=Serializable |
+
+Four newly persisted Thursday finals:
+
+| Game | Score |
+|------|-------|
+| Massachusetts @ Rutgers | Massachusetts **37**, Rutgers **21** |
+| Akron @ Wake Forest | Akron **16**, Wake Forest **38** |
+| Colorado @ Georgia Tech | Colorado **14**, Georgia Tech **13** |
+| UAB @ Illinois | UAB **23**, Illinois **42** |
+
+Production Week 1 Game rows with final scores after this COMMIT: **12**. Week 1 is **not** fully complete.
+
+Score writer mutation boundary remains only `Game.homeScore`, `Game.awayScore`, and `Game.status`. No Odds / ratings / Bet / MarketLine / grading writes.
+
+During the current manual-only period, operators must run guarded score PREVIEW → audit → COMMIT as additional games become final if the site is expected to display current final scores. Safe recurring score automation belongs to a future automation phase. Do **not** enable a schedule from this docs PR.
+
+### Current Shadow state
+
+Production Shadow evidence remains empty by intention:
+
+- ShadowCaptureRun = **0**
+- ShadowPredictionSnapshot = **0**
+- ShadowClosingMarketSnapshot = **0**
+- ShadowEvaluationResult = **0**
+
+No retrospective/backdated Shadow evidence may be created.
+
+Next Shadow sequence remains:
+
+1. Legitimate complete 2026 TeamUnitGrades
+2. Guarded Shadow prediction PREVIEW
+3. Independent audit
+4. Separately authorized first Shadow COMMIT
+5. Only after prediction capture is proven: T-30 closing-market snapshot work
+6. Evaluation / ATS / CLV / research ROI afterward
+7. Automation only after the manual path is proven
 
 ### Phase 4A production verification (PR #91)
 
@@ -96,19 +246,22 @@ Independent post-merge production check:
 
 ### Week 1 Official Card — locked persisted state
 
-The complete Week 1 Official Card is already persisted and locked (`official_flat_100`). Remaining Sep. 3–7 games are pending on that locked card. They are **not** a PREVIEW-only continuation. Fresh Odds → Core V1 Card is **not** the next production operation.
+The complete Week 1 Official Card is already persisted and locked (`official_flat_100`). Remaining later-week games are pending on that locked card. They are **not** a PREVIEW-only continuation. Fresh Odds → Core V1 Card is **not** the next production operation.
+
+The Bet settlement counts below are the last recorded Official Card review snapshot after opening-tranche grading. The September 4 score COMMIT updated Game scores/status only; it did **not** grade bets.
 
 | Metric | Value |
 |--------|--------|
 | total Game rows | **51** |
+| Week 1 Game rows with final scores (after 2026-09-04 COMMIT) | **12** |
 | official wager games | **50** |
 | games without official wager | **1** |
 | official bets | **98** |
 | spreads | **50** |
 | moneylines | **48** |
 | totals | **0** |
-| graded | **14** |
-| pending | **84** |
+| graded (last recorded Official Card snapshot) | **14** |
+| pending (last recorded Official Card snapshot) | **84** |
 | record | **6-8-0** |
 | graded stake | **$1,400** |
 | PnL | **-223.76842105263165** |
@@ -147,16 +300,17 @@ Independent read-only check of `GET /api/weeks/archive?season=2026&week=1` after
 | `.github/workflows/cfbd-scores-2026-manual.yml` | Guarded CFBD scores PREVIEW/COMMIT |
 | `.github/workflows/grade-bets-2026-manual.yml` | Guarded official bet grading PREVIEW/COMMIT |
 | `.github/workflows/cfbd-team-game-stats-2026-manual.yml` | Guarded TeamGameStat PREVIEW/COMMIT (Core V1 lifecycle EPA feed) |
+| `.github/workflows/audit-2026-unit-grade-source-readiness.yml` | Read-only 2026 unit-grade source readiness |
+| `.github/workflows/write-cfbd-unit-grade-sources-2026-manual.yml` | Guarded CFBD unit-grade **source** PREVIEW/COMMIT |
+| `.github/workflows/preview-team-unit-grades-2026-manual.yml` | Read-only TeamUnitGrades planner PREVIEW (no COMMIT) |
+| `.github/workflows/capture-shadow-snapshot-v1-2026-manual.yml` | Guarded Shadow Snapshot V1 capture — **HELD** until complete 2026 TeamUnitGrades |
+| `.github/workflows/audit-prisma-migration-history.yml` | Read-only Prisma migration-history audit |
 
-All are **workflow_dispatch** only. No score/grading/TeamGameStat cron is authorized. TeamGameStat path is **prepared** — **not** production-run/authorized merely by merge.
+All are **workflow_dispatch** only. No score/grading/TeamGameStat/unit-grade/Shadow cron is authorized. TeamGameStat path is **prepared** — **not** production-run/authorized merely by merge. TeamUnitGrades planner has **no COMMIT mode**. First Shadow PREVIEW remains HELD. `compute_unit_grades.ts` is not an entrypoint.
 
 ### Workflow inventory (after 2C-2J-6D-2)
 
-| Metric | Value |
-|--------|------:|
-| Workflow YAML files | **49** |
-| Active YAML schedules | **8** |
-| `scheduleReactivationRecommended=true` | **0** |
+Historical inventory at that phase close: **49** workflow YAML files, **8** active YAML schedules, `scheduleReactivationRecommended=true` for **0**. Later guarded manuals (unit-grade source, TeamUnitGrades planner PREVIEW, Shadow capture, Prisma migration-history audit) were added after that snapshot; see CURRENT STATE entrypoints. Do not treat the 49-file count as the live file inventory.
 
 **Deleted workflow identities (YAML only — historical Actions runs / legacy code may remain):**
 
@@ -210,16 +364,15 @@ A later Core card PREVIEW against a then-current MarketLine snapshot was a plumb
 
 **Obsolete as operating guidance:** that PREVIEW-only continuation was superseded when the complete Week 1 Official Card was persisted and locked. Retained as chronology.
 
-### Next production lane
+### Next production lanes
 
-As remaining Week 1 games become final (manual only; **not** an automated schedule):
+The model/grade lane is waiting on evidence. Score maintenance and documentation/operations can continue. Week 1 is not fully complete.
 
-1. Scores PREVIEW
-2. independent audit
-3. Scores COMMIT
-4. Grading PREVIEW
-5. independent audit
-6. Grading COMMIT
+**Scores (manual only; not an automated schedule):** as additional Week 1 games become final, run guarded score PREVIEW → independent audit → COMMIT if the site should display current finals. Then grading PREVIEW → independent audit → COMMIT as a separate stage.
+
+**TeamUnitGrades (evidence-gated; no COMMIT path yet):** after material new Week 1 CFBD advanced/PPA data exists, rerun guarded unit-grade source PREVIEW → audit → COMMIT if clean → read-only readiness audit → planner PREVIEW. Do **not** run `compute_unit_grades.ts`. Do **not** design a TeamUnitGrades writer until `rawMetricCoverageComplete === true` and the planner emits a valid 138-row proposed set.
+
+**Shadow:** first PREVIEW remains HELD until legitimate complete 2026 TeamUnitGrades exist.
 
 Do **not** run TeamGameStat / lifecycle merely because games finish. Lifecycle canonical weight remains **0** through completed Week **2**. First material lifecycle use remains after completed Week **3**.
 
@@ -807,7 +960,7 @@ Shared `market-line-snapshot` selector (timestamp DESC, id DESC); slate + game d
 | **Prisma migrate history divergence** | **PASSED (2C-2G-2B / PR #49)** | Fail closed; DB-only names unresolved (no auto-repair) |
 | **CFBD resolver hardening** | **PASSED (2C-2E)** | 138/138 FBS + recruitingResolverSafe |
 | **Season 2025 hardcoding** | Open | Scheduled paths still 2025 — repair/replace before UI re-enable |
-| **Empty 2026 DB** | **Partial** | Schedule + membership + talent + Core V1 ratings; MarketLine Week1=2281; unit grades 0 |
+| **Empty 2026 DB** | **Partial** | Schedule + membership + talent + Core V1 ratings; MarketLine Week1=2281; CFBD unit-grade source **SOURCE_PARTIAL** (31/138); TeamUnitGrades 2026 = **0** |
 | **Provider secrets** | **Validated** | GitHub secrets worked 2026-08-04 |
 | **Weekly bet sync** | **NOT AUTHORIZED** | Dual Hybrid+Core sync invalid while Hybrid held — REPLACE |
 | **Live Odds** | **Week1 snapshot PERSISTED** | Run 33192011833; recurring polling NOT AUTHORIZED; second COMMIT NOT AUTHORIZED |
@@ -838,12 +991,13 @@ Shared `market-line-snapshot` selector (timestamp DESC, id DESC); slate + game d
 
 ## Next phases (current)
 
-1. **Phase 4B** — prospective Shadow Snapshot contract/design (separately reviewed append-only design; no shadow ledger exists yet; not implemented in this docs PR)
-2. As remaining Week 1 games become final: Scores PREVIEW → independent audit → COMMIT → Grading PREVIEW → independent audit → COMMIT (manual only)
-3. Do **not** run TeamGameStat / lifecycle merely because games finish; first material lifecycle use remains after completed Week **3**
-4. Do **not** activate Hybrid, enable recurring Odds polling, or authorize score/grading cron without an explicit later decision
-5. **Phase 4C** Remaining Labs truth cleanup — after the 4B contract
-6. Deferred maintenance: npm audit (19 vulns) + Actions Node 20→24
+1. **Near-term operations** — maintain Week 1 scores through guarded manual score PREVIEW → audit → COMMIT; allow Week 1 games and provider advanced/PPA evidence to accumulate; rerun guarded unit-grade source ingestion after material new data exists
+2. **TeamUnitGrades** — no COMMIT path yet; existing `compute_unit_grades.ts` remains prohibited; 31/138 is incomplete evidence and must not be zero-filled
+3. **Phase 4B execution** — contract / storage / prediction writer are complete; first Shadow PREVIEW remains HELD until legitimate complete 2026 TeamUnitGrades exist; production Shadow rows remain **0**
+4. Do **not** run TeamGameStat / lifecycle merely because games finish; first material lifecycle use remains after completed Week **3**
+5. Do **not** activate Hybrid, enable recurring Odds polling, or authorize score/grading cron without an explicit later decision
+6. **Phase 4C** Remaining Labs truth cleanup — after first legitimate Shadow capture
+7. Deferred maintenance: npm audit (19 vulns) + Actions Node 20→24
 
 See [Preseason Reactivation Checklist](docs/preseason-reactivation-checklist.md) and [2026 Workflow Reactivation Matrix](docs/2026-workflow-reactivation-matrix.md).
 

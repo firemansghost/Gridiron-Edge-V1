@@ -1,22 +1,60 @@
 # 2026 Workflow Reactivation Matrix + Live Odds Architecture Audit
 
-**Phase:** 2C-2J-6D-2  
-**Date:** 2026-08-30  
-**Main SHA:** `2e8c167a15c9f5fc5dc4ea9683b18ae6258aecfc`  
-**Status:** Core V1 lifecycle integrity + Serializable COMMIT hardening; TeamGameStat feed path unchanged  
+**Phase:** 2C-2J-6D-2 (historical inventory) + 2026-09-04 operator overlay
+**Date:** 2026-09-04
+**Main SHA (this overlay):** `cb254f33eb2db1d91e854b4f65a9986ecafb6eb2`
+**Historical inventory SHA:** `2e8c167a15c9f5fc5dc4ea9683b18ae6258aecfc`
+**Status:** Core V1 remains official; Hybrid V2 HELD; Phase 4B writer complete but capture held; TeamUnitGrades source SOURCE_PARTIAL
 
-**This phase does NOT:**
+**This overlay does NOT:**
 - enable any GitHub workflow schedule
-- authorize production TeamGameStat / lifecycle execution merely by merge
+- authorize production TeamGameStat / lifecycle / TeamUnitGrades COMMIT / Shadow PREVIEW
 - add or reactivate cron schedules for score/grading/stats
 - call CFBD / Odds / SGO / weather providers
 - write production DB rows
 - change Hybrid or Core V1 formulas, card selections, settlement, or CLV
 
+The compact 49-file inventory below is the **2C-2J-6D-2 historical snapshot**. Later guarded manuals exist; use the current-state overlay for operator entrypoints.
+
 Deleting workflow YAML files does **not** delete historical Actions run records or historical implementation code under `apps/jobs/`.
 
 Machine-readable companion: [`docs/data/2026-workflow-classifications.json`](./data/2026-workflow-classifications.json)  
 Static inventory script: `scripts/inventory-workflows-2026.py`
+
+---
+
+## CURRENT STATE (2026-09-04)
+
+The repository is in **manual guarded production**, not a global hold. Recurring score automation remains **NOT AUTHORIZED**.
+
+### Current operator lanes
+
+| Lane | Status |
+|------|--------|
+| Core V1 / `official_flat_100` | Official 2026 production spread model |
+| Hybrid V2 / Super Tier A | **SHADOW / HELD** |
+| V4 / Fade | Labs / backtest only |
+| Live Odds / Core card | Manual guarded, proven |
+| Scores | Manual guarded, proven; Sep 4 Week 1 PREVIEW **33914124130** + COMMIT **33914862318** persisted 4 Thursday finals; **12** Week 1 Game rows now have final scores |
+| Official grading | Manual guarded, proven; separate from scores; recurring **NOT AUTHORIZED** |
+| TeamGameStat / lifecycle | Prepared; not triggered merely by finals; weight 0 through completed Week 2 |
+| Phase 4B Shadow Snapshot V1 | Contract + storage + prediction writer **complete**; production Shadow rows = **0**; first PREVIEW **HELD** |
+| 2026 TeamUnitGrades | Source **SOURCE_PARTIAL** **31/138** (22.5%); grade rows = **0**; planner PREVIEW proven fail-closed against partial evidence; **no COMMIT path** |
+| `compute_unit_grades.ts` | **UNSAFE / NOT AUTHORIZED** for 2026 |
+
+### Additional guarded entrypoints after the 2C-2J-6D-2 inventory
+
+| Workflow | Role | Current authorization |
+|----------|------|------------------------|
+| `audit-2026-unit-grade-source-readiness.yml` | Read-only source/readiness audit | MANUAL_SAFE |
+| `write-cfbd-unit-grade-sources-2026-manual.yml` | CFBD source PREVIEW/COMMIT (`cfbd_games` / `cfbd_eff_team_game` / `cfbd_ppa_team_game` / `cfbd_eff_team_season` only) | MANUAL_SAFE; rerun only after material new Week 1 advanced/PPA data |
+| `preview-team-unit-grades-2026-manual.yml` | Read-only planner PREVIEW; **no COMMIT mode** | MANUAL_SAFE; calculation does not run unless `rawMetricCoverageComplete === true` |
+| `capture-shadow-snapshot-v1-2026-manual.yml` | Shadow Snapshot V1 prediction capture | **HELD** until legitimate complete 2026 TeamUnitGrades |
+| `audit-prisma-migration-history.yml` | Read-only migration-history audit | MANUAL_SAFE |
+
+Score writer mutation boundary remains `Game.homeScore` / `Game.awayScore` / `Game.status` only. Operators must keep running guarded score PREVIEW → audit → COMMIT as additional games become final if the site should show current finals. Do **not** enable a score schedule from this overlay.
+
+Do **not** copy 2025 TeamUnitGrades, zero-fill missing teams, or run `compute_unit_grades.ts`. 31/138 is incomplete evidence.
 
 ---
 
@@ -225,12 +263,14 @@ Keep **score → grading → TeamGameStat ingest → Core V1 lifecycle** as sepa
 * independent audit of JSON artifact
 * lifecycle COMMIT only if all gates pass (first nonzero canonical weight = **0.25**)
 
-### HYBRID READINESS (future)
+### HYBRID / UNIT-GRADE READINESS (current)
 
-| Stage | Required for Week1? | Notes |
+| Stage | Required for Week1 Core? | Notes |
 |-------|---------------------|-------|
-| Same-season CFBD unit features | No | Needed before Hybrid activation |
-| TeamUnitGrades compute | No | **Not authorized** to copy 2025 bridge |
+| Same-season CFBD unit-grade source | No | Guarded source ingest exists; production is **SOURCE_PARTIAL** 31/138 |
+| TeamUnitGrades planner PREVIEW | No | Read-only; calculation only if `rawMetricCoverageComplete === true` |
+| TeamUnitGrades write / `compute_unit_grades.ts` | No | **Not authorized**. Do not copy 2025 bridge. Do not zero-fill. No COMMIT path yet |
+| Shadow Snapshot V1 capture | No | Writer exists; first PREVIEW **HELD** until complete 2026 grades |
 | Hybrid readiness audit | Optional re-run | `audit-hybrid-v2-preseason-readiness` MANUAL_SAFE |
 | Explicit Hybrid activation | Separate human phase | Do not guess week |
 
@@ -345,7 +385,8 @@ Legacy `sync-weekly-bets.yml` is labeled **LEGACY (<=2025)** and rejects season�
 
 - `workflow_dispatch` only (no schedule)
 - Guarded `write-cfbd-scores-2026.ts`; one CFBD `/games` call
-- Production Week 1 PREVIEW + COMMIT proven
+- Production Week 1 PREVIEW + COMMIT proven (opening tranche and 2026-09-04 Thursday refresh)
+- Latest score PREVIEW **33914124130** / COMMIT **33914862318**; 4 Thursday finals persisted; **12** Week 1 Game rows with final scores
 - Recurring score schedule **NOT AUTHORIZED**
 
 ### Canonical grading path — `grade-bets-2026-manual.yml`
@@ -404,6 +445,8 @@ Preferred standard: **PR #60 / lifecycle** (step env inputs, scoped DB secret, i
 
 ---
 
-## K. Next phase
+## K. Next phase (historical 2C-2J-6D-2 note)
 
-Authorize recurring score/grading cadence only after explicit operator review (separate from this inventory cleanup). TeamGameStat ingest and Core V1 lifecycle remain separate stages from the parallel `cfbd-feature-ingest` path.
+The 2026-08-30 inventory close said: authorize recurring score/grading cadence only after explicit operator review. That remains true.
+
+**Current (2026-09-04) next operations** are in the overlay at the top: keep running manual score PREVIEW/COMMIT as games finalize; accumulate Week 1 CFBD advanced/PPA evidence; rerun guarded unit-grade source ingestion after material new data. Recurring score automation is still **NOT AUTHORIZED**. TeamGameStat ingest, Core V1 lifecycle, TeamUnitGrades COMMIT, and first Shadow PREVIEW remain separately gated.
