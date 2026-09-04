@@ -1,0 +1,224 @@
+# Manual GUARDED 2026 Shadow Snapshot V1 prospective prediction capture.
+# workflow_dispatch ONLY — no schedule, push, or pull_request.
+# PREVIEW by default. COMMIT requires mode=COMMIT and
+# confirm=CAPTURE_2026_WEEK_<week>_SHADOW_V1.
+#
+# Writes ShadowCaptureRun + ShadowPredictionSnapshot only.
+# Does NOT write Bet, MatchupOutput, closing snapshots, or evaluation rows.
+# Does NOT call CFBD / Odds / weather. Does NOT run Prisma migrate.
+#
+# Production COMMIT remains NOT AUTHORIZED until independent writer audit.
+#
+# Security:
+# - Dispatch inputs reach shell only via step-level env (never ${{ inputs.* }} inside run:).
+# - Production DIRECT_URL is NOT job-wide; scoped to the capture CLI step only.
+# - Confirmation is never echoed.
+# - No ODDS_API_KEY / CFBD_API_KEY / weather keys.
+# - No operator prediction/capture/as-of timestamp input.
+
+name: Capture Shadow Snapshot V1 (Manual, Guarded)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (must be 2026)'
+        required: true
+        type: string
+        default: '2026'
+      week:
+        description: 'CFB week (positive integer)'
+        required: true
+        type: string
+      mode:
+        description: 'PREVIEW (DB read-only) or COMMIT (atomic Shadow prediction capture)'
+        required: true
+        type: choice
+        options:
+          - PREVIEW
+          - COMMIT
+        default: PREVIEW
+      capture_context:
+        description: 'Declared capture context / cohort identity (^[a-z0-9][a-z0-9_-]{0,63}$). Required before execution. Not invented by the workflow.'
+        required: true
+        type: string
+      expected_main_sha:
+        description: 'Exact main commit SHA authorized for this capture'
+        required: true
+        type: string
+      confirm:
+        description: 'For COMMIT, type CAPTURE_2026_WEEK_<week>_SHADOW_V1 exactly'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shadow-snapshot-v1-production-capture
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Source SHA guard
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA=$(git rev-parse HEAD)
+          echo "ACTUAL_SHA=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+          echo "actual_sha: ${ACTUAL_SHA}"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          echo "github_ref: ${GITHUB_REF:-}"
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Refusing shadow capture. Workflow must run from main."
+            echo "::error::github_ref=${GITHUB_REF:-}"
+            exit 1
+          fi
+          if [ -z "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing shadow capture. expected_main_sha is required."
+            exit 1
+          fi
+          if [ "${ACTUAL_SHA}" != "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing shadow capture. Checked-out SHA does not match expected_main_sha."
+            echo "::error::actual_sha=${ACTUAL_SHA}"
+            echo "::error::expected_main_sha=${EXPECTED_MAIN_SHA}"
+            exit 1
+          fi
+          echo "Source SHA guard passed."
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight (names/presence only)
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CAPTURE_CONTEXT: ${{ inputs.capture_context }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          echo "season=${INPUT_SEASON}"
+          echo "week=${INPUT_WEEK}"
+          echo "mode=${INPUT_MODE}"
+          echo "capture_context=${INPUT_CAPTURE_CONTEXT}"
+          echo "PREVIEW IS DATABASE READ-ONLY"
+          echo "providerCalls=0"
+          echo "PREVIEW timestamp will NOT become the COMMIT prediction timestamp"
+          echo "ODDS_API_KEY: not provided"
+          echo "CFBD_API_KEY: not provided"
+          echo "SGO_API_KEY: not provided"
+          echo "VISUALCROSSING_API_KEY: not provided"
+
+          if [ "$INPUT_SEASON" != "2026" ]; then
+            echo "::error::season must equal 2026 (got ${INPUT_SEASON})"
+            exit 1
+          fi
+          if ! [[ "$INPUT_WEEK" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::week must be a positive integer"
+            exit 1
+          fi
+          if [ "$INPUT_MODE" != "PREVIEW" ] && [ "$INPUT_MODE" != "COMMIT" ]; then
+            echo "::error::mode must be PREVIEW or COMMIT"
+            exit 1
+          fi
+          if [ -z "$INPUT_CAPTURE_CONTEXT" ]; then
+            echo "::error::capture_context is required"
+            exit 1
+          fi
+          if ! [[ "$INPUT_CAPTURE_CONTEXT" =~ ^[a-z0-9][a-z0-9_-]{0,63}$ ]]; then
+            echo "::error::capture_context must match ^[a-z0-9][a-z0-9_-]{0,63}$"
+            exit 1
+          fi
+          EXPECTED="CAPTURE_2026_WEEK_${INPUT_WEEK}_SHADOW_V1"
+          if [ "$INPUT_MODE" = "COMMIT" ] && [ "$INPUT_CONFIRM" != "$EXPECTED" ]; then
+            echo "::error::COMMIT requires confirm=${EXPECTED}"
+            exit 1
+          fi
+          echo "Preflight OK (no production DB secret in this step)"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prisma version
+        run: npx prisma -v
+
+      - name: Run guarded Shadow Snapshot V1 capture
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CAPTURE_CONTEXT: ${{ inputs.capture_context }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          if [ "$INPUT_MODE" = "COMMIT" ]; then
+            npx tsx apps/jobs/capture-shadow-snapshot-v1-2026.ts \
+              --season "$INPUT_SEASON" \
+              --week "$INPUT_WEEK" \
+              --mode "$INPUT_MODE" \
+              --capture-context "$INPUT_CAPTURE_CONTEXT" \
+              --confirm "$INPUT_CONFIRM" \
+              --report "reports/shadow-snapshot-v1-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-commit.json"
+          else
+            npx tsx apps/jobs/capture-shadow-snapshot-v1-2026.ts \
+              --season "$INPUT_SEASON" \
+              --week "$INPUT_WEEK" \
+              --mode "$INPUT_MODE" \
+              --capture-context "$INPUT_CAPTURE_CONTEXT" \
+              --report "reports/shadow-snapshot-v1-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-preview.json"
+          fi
+
+      - name: Upload Shadow Snapshot V1 report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shadow-snapshot-v1-2026-w${{ inputs.week }}-${{ inputs.mode }}
+          path: reports/shadow-snapshot-v1-2026-*.json
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CAPTURE_CONTEXT: ${{ inputs.capture_context }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "============================================"
+          echo "CAPTURE SHADOW SNAPSHOT V1 (MANUAL, GUARDED)"
+          echo "============================================"
+          echo "season: ${INPUT_SEASON}"
+          echo "week: ${INPUT_WEEK}"
+          echo "mode: ${INPUT_MODE}"
+          echo "capture_context: ${INPUT_CAPTURE_CONTEXT}"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          if [ -n "${ACTUAL_SHA:-}" ]; then
+            echo "actual_sha: ${ACTUAL_SHA}"
+          else
+            echo "actual_sha: (unavailable)"
+          fi
+          echo "status: ${JOB_STATUS}"
+          echo "providerCalls=0"
+          echo "Bet writes: false"
+          echo "MatchupOutput writes: false"
+          echo "closing/evaluation writes: false"
+          echo "prisma migrate: not invoked"
+          echo "PREVIEW timestamp will NOT become COMMIT timestamp"
+          echo "============================================"
