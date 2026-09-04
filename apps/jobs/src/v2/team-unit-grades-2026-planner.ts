@@ -33,11 +33,13 @@ import {
 } from './unit-grade-source-readiness';
 
 export const TEAM_UNIT_GRADES_2026_MODE = 'PREVIEW' as const;
+export const SEASON_MUST_BE_2026_BLOCKER = 'season_must_be_2026' as const;
 
 export type TeamUnitGrades2026PlannerStatus =
   | 'BLOCKED_FRAME_INVALID'
   | 'BLOCKED_SOURCE_INCOMPLETE'
   | 'BLOCKED_EXISTING_GRADES'
+  | 'BLOCKED_SEASON_INVALID'
   | 'PLANNING_ELIGIBLE';
 
 export interface ProposedGradeRow {
@@ -161,12 +163,19 @@ function plannerStatusFromSource(
  * B. source coverage (rawMetricCoverageComplete)
  * C. whether grade planning is allowed (authoritativePlanningAllowed)
  * D. whether any future write is authorized (always false here)
+ *
+ * Season authorization is independent of source-readiness: a non-2026
+ * input never becomes PLANNING_ELIGIBLE, even if coverage is complete.
+ * Returned season is the caller's input.season (provenance), not a rewrite.
  */
 export function planTeamUnitGrades2026(
   input: UnitGradeSourceReadinessInput
 ): TeamUnitGrades2026Plan {
   const source = buildUnitGradeSourceReadinessReport(input);
-  const plannerStatus = plannerStatusFromSource(source);
+  const seasonInvalid = input.season !== TARGET_SEASON;
+  const plannerStatus: TeamUnitGrades2026PlannerStatus = seasonInvalid
+    ? 'BLOCKED_SEASON_INVALID'
+    : plannerStatusFromSource(source);
   const authoritativePlanningAllowed = plannerStatus === 'PLANNING_ELIGIBLE';
   const proposedGradeRows: ProposedGradeRow[] = [];
   const warnings = source.warnings.slice();
@@ -176,12 +185,16 @@ export function planTeamUnitGrades2026(
   warnings.push('team_unit_grades_write_authorized_is_always_false');
   warnings.push('compute_unit_grades_ts_is_not_invoked');
 
+  const blockers = source.blockers.slice();
+  if (seasonInvalid) blockers.unshift(SEASON_MUST_BE_2026_BLOCKER);
+
   const failClosed =
     plannerStatus === 'BLOCKED_FRAME_INVALID' ||
-    plannerStatus === 'BLOCKED_EXISTING_GRADES';
+    plannerStatus === 'BLOCKED_EXISTING_GRADES' ||
+    plannerStatus === 'BLOCKED_SEASON_INVALID';
 
   return {
-    season: TARGET_SEASON,
+    season: input.season,
     repoCommitSha: input.repoCommitSha,
     observedAt: input.observedAt,
     mode: TEAM_UNIT_GRADES_2026_MODE,
@@ -226,7 +239,7 @@ export function planTeamUnitGrades2026(
       computeUnitGradesAuthorized: false,
     },
     legacyCompatibilityDisclaimer: LEGACY_COMPATIBILITY_DISCLAIMER,
-    blockers: source.blockers.slice(),
+    blockers,
     warnings,
     failClosed,
     previewOk: failClosed === false,

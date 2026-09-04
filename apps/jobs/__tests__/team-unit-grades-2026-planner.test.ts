@@ -15,6 +15,7 @@ import {
   type UnitGradeSourceReadinessInput,
 } from '../src/v2/unit-grade-source-readiness';
 import {
+  SEASON_MUST_BE_2026_BLOCKER,
   parseTeamUnitGrades2026PreviewArgs,
   planTeamUnitGrades2026,
 } from '../src/v2/team-unit-grades-2026-planner';
@@ -243,6 +244,7 @@ describe('2026 TeamUnitGrades preview planner', () => {
 
   it('hypothetical complete raw source becomes planning-eligible without write authorization', () => {
     const plan = planTeamUnitGrades2026(completeRawInput());
+    expect(plan.season).toBe(TARGET_SEASON);
     expect(plan.coverage.rawMetricCoverageComplete).toBe(true);
     expect(plan.plannerStatus).toBe('PLANNING_ELIGIBLE');
     expect(plan.planning.authoritativePlanningAllowed).toBe(true);
@@ -253,6 +255,23 @@ describe('2026 TeamUnitGrades preview planner', () => {
     expect(plan.warnings).toContain(
       'authoritative_grade_generation_not_implemented_in_this_preview'
     );
+    assertNeverAuthorize(plan);
+  });
+
+  it('direct planner call with complete raw 2025 input fail-closes as BLOCKED_SEASON_INVALID', () => {
+    const plan = planTeamUnitGrades2026({
+      ...completeRawInput(),
+      season: 2025,
+    });
+    expect(plan.season).toBe(2025);
+    expect(plan.plannerStatus).toBe('BLOCKED_SEASON_INVALID');
+    expect(plan.planning.authoritativePlanningAllowed).toBe(false);
+    expect(plan.planning.proposedGradeRowCount).toBe(0);
+    expect(plan.planning.proposedGradeRows).toEqual([]);
+    expect(plan.failClosed).toBe(true);
+    expect(plan.previewOk).toBe(false);
+    expect(plan.blockers).toContain(SEASON_MUST_BE_2026_BLOCKER);
+    expect(plan.coverage.rawMetricCoverageComplete).toBe(true);
     assertNeverAuthorize(plan);
   });
 
