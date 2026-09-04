@@ -25,6 +25,7 @@ import {
 import {
   TARGET_SEASON,
   UNIT_GRADE_SOURCE_CONFIRMATION,
+  CFBD_UNIT_GRADE_SOURCE_TRANSACTION_TIMEOUT_MS,
   SequentialJsonFetcher,
   collectProviderNamesFromPayloads,
   committedMutationTotal,
@@ -207,6 +208,7 @@ function buildReport(options: {
     postWriteSelect: options.commitSucceeded ? options.postWrite ?? null : null,
     cfbdLeaseSemantics: plan ? plan.cfbdLeaseSemantics : null,
     processMaxConcurrency: plan ? plan.processMaxConcurrency : 1,
+    transactionTimeoutMs: CFBD_UNIT_GRADE_SOURCE_TRANSACTION_TIMEOUT_MS,
     error: options.error ?? null,
   };
 }
@@ -243,7 +245,10 @@ async function commitPlan(
         await upsertEffSeason(tx, r, asOf);
       }
     },
-    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      timeout: CFBD_UNIT_GRADE_SOURCE_TRANSACTION_TIMEOUT_MS,
+    }
   );
 
   return {

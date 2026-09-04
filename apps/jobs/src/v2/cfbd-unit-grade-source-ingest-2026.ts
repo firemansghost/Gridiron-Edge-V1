@@ -40,6 +40,7 @@ export const UNIT_GRADE_SOURCE_CONFIRMATION =
   'INGEST_2026_CFBD_UNIT_GRADE_SOURCES' as const;
 export const CFBD_UNIT_GRADE_SOURCE_PROCESS_MAX_CONCURRENCY = 1 as const;
 export const CFBD_UNIT_GRADE_SOURCE_TIMEOUT_MS = 30_000;
+export const CFBD_UNIT_GRADE_SOURCE_TRANSACTION_TIMEOUT_MS = 30_000;
 export const CFBD_UNIT_GRADE_SOURCE_MAX_RETRIES = 5;
 export const CFBD_LEASE_SEMANTICS =
   'CFBD heavy endpoints maxConcurrent=2; leaseMs=75000 is fallback release; normal release on response finish; rejected concurrency Retry-After: 1; this writer uses sequential maxConcurrency=1 and Retry-After without a cross-workflow lock';
@@ -274,6 +275,7 @@ export interface UnitGradeSourceIngestPlan {
   proposedSourceCoverage: ProposedSourceCoverageReport;
   cfbdLeaseSemantics: typeof CFBD_LEASE_SEMANTICS;
   processMaxConcurrency: typeof CFBD_UNIT_GRADE_SOURCE_PROCESS_MAX_CONCURRENCY;
+  transactionTimeoutMs: typeof CFBD_UNIT_GRADE_SOURCE_TRANSACTION_TIMEOUT_MS;
 }
 
 export interface UnitGradeSourceIngestCliArgs {
@@ -1264,6 +1266,7 @@ export function planUnitGradeSourceIngest(options: {
     proposedSourceCoverage,
     cfbdLeaseSemantics: CFBD_LEASE_SEMANTICS,
     processMaxConcurrency: CFBD_UNIT_GRADE_SOURCE_PROCESS_MAX_CONCURRENCY,
+    transactionTimeoutMs: CFBD_UNIT_GRADE_SOURCE_TRANSACTION_TIMEOUT_MS,
   };
 }
 
