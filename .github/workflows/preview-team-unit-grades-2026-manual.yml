@@ -1,0 +1,180 @@
+# Manual READ-ONLY 2026 TeamUnitGrades PREVIEW planner.
+# workflow_dispatch ONLY — no schedule, push, or pull_request.
+# SELECT-only. No providers. No CFBD. No Odds. No writes.
+# PREVIEW only — there is no COMMIT mode.
+#
+# Does NOT run compute_unit_grades.ts.
+# Does NOT write TeamUnitGrades or cfbd_* rows.
+# Does NOT run Shadow PREVIEW or COMMIT.
+# Does NOT run Prisma migrate.
+# Does NOT authorize Hybrid activation.
+#
+# Incomplete source coverage is a successful blocked PREVIEW.
+# Structural frame/integrity corruption fail-closes.
+#
+# Security:
+# - Dispatch inputs reach shell only via step-level env (never ${{ inputs.* }} inside run:).
+# - Production DIRECT_URL is NOT job-wide; scoped only to optional secret-presence
+#   preflight + actual preview execution.
+# - No CFBD_API_KEY / ODDS_API_KEY.
+
+name: Preview 2026 TeamUnitGrades Planner (Manual, Read Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (must be 2026)'
+        required: true
+        type: string
+        default: '2026'
+      expected_main_sha:
+        description: 'Exact main commit SHA authorized for this preview'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-team-unit-grades-2026
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Source SHA guard
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA=$(git rev-parse HEAD)
+          echo "ACTUAL_SHA=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+          echo "actual_sha: ${ACTUAL_SHA}"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          echo "github_ref: ${GITHUB_REF:-}"
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Refusing 2026 TeamUnitGrades preview. Workflow must run from main."
+            echo "::error::github_ref=${GITHUB_REF:-}"
+            exit 1
+          fi
+          if [ -z "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing 2026 TeamUnitGrades preview. expected_main_sha is required."
+            exit 1
+          fi
+          if [ "${ACTUAL_SHA}" != "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing 2026 TeamUnitGrades preview. Checked-out SHA does not match expected_main_sha."
+            echo "::error::actual_sha=${ACTUAL_SHA}"
+            echo "::error::expected_main_sha=${EXPECTED_MAIN_SHA}"
+            exit 1
+          fi
+          echo "Source SHA guard passed."
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight (names/presence only)
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          SEASON="$INPUT_SEASON"
+          echo "season=${SEASON}"
+          echo "mode=PREVIEW"
+          echo "providersInvoked=false"
+          echo "providerCalls=0"
+          echo "mutationsInvoked=false"
+          echo "CFBD_API_KEY: not provided"
+          echo "ODDS_API_KEY: not provided"
+          echo "teamUnitGradesWriteAuthorized=false"
+          echo "compute_unit_grades: not invoked"
+          echo "TeamUnitGrades writes: false"
+          echo "Shadow PREVIEW: not invoked"
+          echo "Shadow COMMIT: not invoked"
+          echo "prisma migrate: not invoked"
+          echo "COMMIT mode: not present"
+
+          if [ "$SEASON" != "2026" ]; then
+            echo "::error::season must equal 2026 (got ${SEASON})"
+            exit 1
+          fi
+          if [ -z "${DIRECT_URL:-}" ]; then
+            echo "::error::DIRECT_URL secret is missing"
+            exit 1
+          fi
+          echo "DIRECT_URL: present (value not printed)"
+
+      - name: Install dependencies
+        env:
+          DATABASE_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+          DIRECT_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+        run: npm ci
+
+      - name: Generate Prisma client
+        env:
+          DATABASE_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+          DIRECT_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+        run: npm run prisma:generate
+
+      - name: Run 2026 TeamUnitGrades PREVIEW planner
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          npx tsx apps/jobs/preview-team-unit-grades-2026.ts \
+            --season "$INPUT_SEASON" \
+            --report "reports/team-unit-grades-2026-preview.json"
+
+      - name: Upload 2026 TeamUnitGrades preview report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: team-unit-grades-2026-preview
+          path: reports/team-unit-grades-2026-preview.json
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "============================================"
+          echo "PREVIEW 2026 TEAM UNIT GRADES (READ ONLY)"
+          echo "============================================"
+          echo "season: ${INPUT_SEASON}"
+          echo "mode: PREVIEW"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          if [ -n "${ACTUAL_SHA:-}" ]; then
+            echo "actual_sha: ${ACTUAL_SHA}"
+          else
+            echo "actual_sha: (unavailable)"
+          fi
+          echo "status: ${JOB_STATUS}"
+          echo "providersInvoked: false"
+          echo "providerCalls=0"
+          echo "mutationsInvoked: false"
+          echo "teamUnitGradesWriteAuthorized: false"
+          echo "compute_unit_grades: not invoked"
+          echo "TeamUnitGrades writes: false"
+          echo "Shadow PREVIEW: not invoked"
+          echo "Shadow COMMIT: not invoked"
+          echo "prisma migrate: not invoked"
+          echo "COMMIT mode: not present"
+          echo "CFBD_API_KEY: not provided"
+          echo "ODDS_API_KEY: not provided"
+          echo "LEGACY COMPATIBILITY IS NOT METHODOLOGY AUTHORIZATION."
+          echo "============================================"
