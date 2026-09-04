@@ -143,8 +143,6 @@ function mapExisting(run: {
       v4ProvenanceUnavailableCount: run.v4ProvenanceUnavailableCount,
     },
     snapshots: run.predictions,
-    closingCount: 0,
-    evaluationCount: 0,
   };
 }
 
@@ -462,9 +460,10 @@ function createPrismaAdapter(
       });
       return run ? mapExisting(run) : null;
     },
-    // This writer never inserts closing/evaluation rows.
-    countClosingSnapshots: async () => 0,
-    countEvaluationResults: async () => 0,
+    countEvaluationResultsForPredictionIds: async (ids: string[]) =>
+      prisma.shadowEvaluationResult.count({
+        where: { predictionSnapshotId: { in: ids } },
+      }),
   };
 }
 
@@ -537,6 +536,7 @@ async function main(): Promise<void> {
       writeSafe: plan.writeSafe,
       writeBlockers: plan.writeBlockers,
       mutationsInvoked: execution.mutationsInvoked,
+      closingMutationsInvoked: execution.closingMutationsInvoked,
       commitSucceeded: execution.commitSucceeded,
       persistenceCommitted: execution.persistenceCommitted,
       rolledBack: execution.rolledBack,

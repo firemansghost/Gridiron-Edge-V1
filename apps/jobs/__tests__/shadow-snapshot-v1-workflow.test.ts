@@ -12,6 +12,7 @@ const WF = path.join(
   '.github/workflows/capture-shadow-snapshot-v1-2026-manual.yml'
 );
 const CLI = path.join(ROOT, 'apps/jobs/capture-shadow-snapshot-v1-2026.ts');
+const LIB = path.join(ROOT, 'apps/web/lib/shadow-snapshot-v1.ts');
 
 function stepBlock(src: string, stepName: string): string {
   const marker = `- name: ${stepName}`;
@@ -50,6 +51,7 @@ function extractRunBodies(yaml: string): string {
 describe('Shadow Snapshot V1 capture workflow', () => {
   const wf = fs.readFileSync(WF, 'utf8');
   const cli = fs.readFileSync(CLI, 'utf8');
+  const lib = fs.readFileSync(LIB, 'utf8');
   const runText = extractRunBodies(wf);
 
   it('workflow_dispatch only; no push / PR / schedule', () => {
@@ -139,6 +141,17 @@ describe('Shadow Snapshot V1 capture workflow', () => {
     expect(cli).not.toContain('matchupOutput');
     expect(cli).not.toContain('shadowClosingMarketSnapshot.create');
     expect(cli).not.toContain('shadowEvaluationResult.create');
+    expect(cli).not.toContain('countClosingSnapshots');
+    expect(lib).not.toContain('countClosingSnapshots');
+    expect(cli).not.toMatch(/countEvaluationResults:\s*async\s*\(\)\s*=>\s*0/);
+    expect(lib).not.toMatch(/countEvaluationResults:\s*async\s*\(\)\s*=>\s*0/);
+    expect(lib).not.toContain('closingCount: 0');
+    expect(lib).not.toContain('evaluationCount: 0');
+    expect(cli).toContain('shadowEvaluationResult.count');
+    expect(cli).toContain('predictionSnapshotId: { in: ids }');
+    expect(cli).toContain('closingMutationsInvoked');
+    expect(cli).not.toContain('skipDuplicates');
+    expect(cli).not.toContain('.upsert(');
     expect(wf).not.toMatch(/grade-bets/);
     expect(wf).not.toMatch(/cron:/);
   });

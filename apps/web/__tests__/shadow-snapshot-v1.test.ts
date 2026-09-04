@@ -27,9 +27,12 @@ import {
   planShadowGameSnapshot,
   reconcileShadowRunCounts,
   deriveShadowRunCounts,
+  deriveShadowConflictType,
   validateExistingCompleteCohort,
   executeShadowCapture,
   computeProductionCoreV1HmaFromV1Ratings,
+  SHADOW_MODEL_AUTHORIZATION_NOTE,
+  MAX_PREDICTION_MARKET_AGE_MS,
   type OperationalShadowFrame,
   type ExistingShadowCohort,
   type ShadowCaptureAdapter,
@@ -49,10 +52,14 @@ const ZERO_GRADES = {
   defExplosiveness: 0,
 };
 
-const PINNED_MODEL_HASH =
+const PREVIOUS_MODEL_HASH =
   'fc4c9ba8d22fd13a99aa1ed5f910fc9de25a0d22e1d9b3fa4de989d57aeb13da';
-const PINNED_POLICY_HASH =
+const PREVIOUS_POLICY_HASH =
   'daf88ac0a7e409e519b6e256af3c07f317bf0a1e4d43d078062f894579e93cd4';
+const PINNED_MODEL_HASH =
+  '1532c6440a0751317e74606c648201d104de03acaec4bf2ee31a6d3d0d3d6104';
+const PINNED_POLICY_HASH =
+  'f770f9eb3abe7bac8f6d2ed30d435063facc344a2381e56c471d4f428c1b7d52';
 
 function rating(
   teamId: string,
@@ -130,17 +137,21 @@ function createMemoryAdapter(opts: {
   existing?: ExistingShadowCohort | null;
   now?: Date;
   failAfterCreateRun?: boolean;
+  evaluationResults?: Array<{ predictionSnapshotId: string }>;
+  corruptReadback?: boolean;
 }): {
   adapter: ShadowCaptureAdapter;
   state: {
     runs: PlannedShadowCaptureRun[];
     snapshots: PlannedShadowPredictionSnapshot[];
+    evaluationResults: Array<{ predictionSnapshotId: string }>;
   };
 } {
   const state = {
     runs: [] as PlannedShadowCaptureRun[],
     snapshots: [] as PlannedShadowPredictionSnapshot[],
     existing: opts.existing ?? null,
+    evaluationResults: [...(opts.evaluationResults ?? [])],
   };
   let idSeq = 0;
   const clock = () => opts.now ?? NOW;
@@ -183,7 +194,7 @@ function createMemoryAdapter(opts: {
       const run = state.runs.find((r) => r.id === id);
       if (!run) return null;
       const snapshots = state.snapshots.filter((s) => s.captureRunId === id);
-      return {
+      const cohort: ExistingShadowCohort = {
         run: {
           ...run,
           expectedGameIds: run.expectedGameIds,
@@ -195,12 +206,20 @@ function createMemoryAdapter(opts: {
           qualificationStatus: s.qualificationStatus,
           v4ComparisonStatus: s.v4ComparisonStatus,
         })),
-        closingCount: 0,
-        evaluationCount: 0,
       };
+      if (opts.corruptReadback) {
+        return {
+          ...cohort,
+          run: { ...cohort.run, modelDefinitionHash: '0'.repeat(64) },
+        };
+      }
+      return cohort;
     },
-    countClosingSnapshots: async () => 0,
-    countEvaluationResults: async () => 0,
+    countEvaluationResultsForPredictionIds: async (ids) => {
+      const idSet = new Set(ids);
+      return state.evaluationResults.filter((row) => idSet.has(row.predictionSnapshotId))
+        .length;
+    },
   };
 
   return { adapter, state };
@@ -220,14 +239,34 @@ describe('canonical hashing', () => {
     expect(SHADOW_MODEL_DEFINITION_ID).toBe('hybrid_v2_shadow_snapshot_v1');
     expect(sha256CanonicalJson(SHADOW_MODEL_DEFINITION_MANIFEST)).toBe(PINNED_MODEL_HASH);
     expect(SHADOW_MODEL_DEFINITION_HASH).toBe(PINNED_MODEL_HASH);
+    expect(SHADOW_MODEL_DEFINITION_HASH).not.toBe(PREVIOUS_MODEL_HASH);
     expect(SHADOW_MODEL_DEFINITION_MANIFEST.weather.used).toBe(false);
+    expect(SHADOW_MODEL_DEFINITION_MANIFEST.weather.behavior).toBe('NONE');
+    expect('official' in SHADOW_MODEL_DEFINITION_MANIFEST).toBe(false);
+    expect('productionHold' in SHADOW_MODEL_DEFINITION_MANIFEST).toBe(false);
+    expect(SHADOW_MODEL_AUTHORIZATION_NOTE).toEqual({
+      official: false,
+      productionHold: true,
+      status: 'SHADOW / HELD / NOT OFFICIAL',
+    });
   });
 
   it('pins policy definition hash', () => {
     expect(SHADOW_POLICY_DEFINITION_ID).toBe('core_eval_v1_shadow_policy_v1');
     expect(sha256CanonicalJson(SHADOW_POLICY_DEFINITION_MANIFEST)).toBe(PINNED_POLICY_HASH);
     expect(SHADOW_POLICY_DEFINITION_HASH).toBe(PINNED_POLICY_HASH);
+    expect(SHADOW_POLICY_DEFINITION_HASH).not.toBe(PREVIOUS_POLICY_HASH);
     expect(SHADOW_POLICY_DEFINITION_MANIFEST.evaluationProtocol).toBe('CORE_EVAL_V1');
+    expect('noClosingCapture' in SHADOW_POLICY_DEFINITION_MANIFEST).toBe(false);
+    expect('noAtsEvaluation' in SHADOW_POLICY_DEFINITION_MANIFEST).toBe(false);
+    expect(SHADOW_POLICY_DEFINITION_MANIFEST.closingMarket.target).toBe(
+      'kickoffTimestamp - 30 minutes'
+    );
+    expect(SHADOW_POLICY_DEFINITION_MANIFEST.atsSettlement.noOfficialBetHalfPointPushBand).toBe(
+      true
+    );
+    expect(SHADOW_POLICY_DEFINITION_MANIFEST.researchRoi.researchOnly).toBe(true);
+    expect(SHADOW_POLICY_DEFINITION_MANIFEST.noRetrospectiveBackfill).toBe(true);
   });
 });
 
@@ -273,6 +312,80 @@ describe('frozen Hybrid math alignment', () => {
     });
     expect(writer).toBe(live);
     expect(writer).toBeCloseTo(5 - 0 + computeEffectiveHfa('any-team', false).effectiveHfa, 10);
+  });
+
+  it('Core V1 comparison uses team-specific clipped HFA for james-madison', () => {
+    const hfa = computeEffectiveHfa('james-madison', false);
+    expect(hfa.effectiveHfa).toBe(3.5);
+    const writer = computeProductionCoreV1HmaFromV1Ratings({
+      homeTeamId: 'james-madison',
+      homeRating: 5,
+      awayRating: 0,
+      neutralSite: false,
+    });
+    const live = liveCoreV1Hma({
+      homeTeamId: 'james-madison',
+      homeRating: 5,
+      awayRating: 0,
+      neutralSite: false,
+    });
+    expect(writer).toBe(live);
+    expect(writer).toBeCloseTo(8.5, 10);
+  });
+
+  it('run-only matchup differential matches frozen 40/40/20 manifest math', () => {
+    const homeGrades = { ...ZERO_GRADES, offRunGrade: 1 };
+    const live = calculateHybridSpread(0, 0, homeGrades, ZERO_GRADES, false, 'home', 'away', null);
+    const m = FROZEN_HYBRID_V2_MODEL_MATH;
+    expect(SHADOW_MODEL_DEFINITION_MANIFEST.hybridV2.v2Component.weights).toEqual({
+      run: m.runWeight,
+      pass: m.passWeight,
+      explosiveness: m.explosivenessWeight,
+    });
+    const netRunAdv = 1;
+    const compositeZ = netRunAdv * m.runWeight;
+    const v1 = m.hybridHfaPoints;
+    const v2 = compositeZ * m.v2Scale + m.hybridHfaPoints;
+    const hybrid = v1 * m.v1Weight + v2 * m.v2Weight;
+    expect(live.v2SpreadHma).toBeCloseTo(v2, 10);
+    expect(live.hybridSpreadHma).toBeCloseTo(hybrid, 10);
+    expect(live.hybridSpreadHma).toBeCloseTo(3.58, 10);
+  });
+
+  it('pass-only matchup differential matches frozen 40/40/20 manifest math', () => {
+    const homeGrades = { ...ZERO_GRADES, offPassGrade: 1 };
+    const live = calculateHybridSpread(0, 0, homeGrades, ZERO_GRADES, false, 'home', 'away', null);
+    const m = FROZEN_HYBRID_V2_MODEL_MATH;
+    const v1 = m.hybridHfaPoints;
+    const v2 = 1 * m.passWeight * m.v2Scale + m.hybridHfaPoints;
+    const hybrid = v1 * m.v1Weight + v2 * m.v2Weight;
+    expect(live.v2SpreadHma).toBeCloseTo(v2, 10);
+    expect(live.hybridSpreadHma).toBeCloseTo(hybrid, 10);
+    expect(live.hybridSpreadHma).toBeCloseTo(3.58, 10);
+  });
+
+  it('explosiveness-only differential matches frozen 20% matchup weight', () => {
+    const homeGrades = { ...ZERO_GRADES, offExplosiveness: 1 };
+    const live = calculateHybridSpread(0, 0, homeGrades, ZERO_GRADES, false, 'home', 'away', null);
+    const m = FROZEN_HYBRID_V2_MODEL_MATH;
+    const v1 = m.hybridHfaPoints;
+    const v2 = 1 * m.explosivenessWeight * m.v2Scale + m.hybridHfaPoints;
+    const hybrid = v1 * m.v1Weight + v2 * m.v2Weight;
+    expect(live.v2SpreadHma).toBeCloseTo(v2, 10);
+    expect(live.hybridSpreadHma).toBeCloseTo(hybrid, 10);
+    expect(live.hybridSpreadHma).toBeCloseTo(3.04, 10);
+  });
+
+  it('home vs neutral-site Hybrid HFA is 2.5 vs 0', () => {
+    const homeGrades = { ...ZERO_GRADES, offRunGrade: 1 };
+    const home = calculateHybridSpread(0, 0, homeGrades, ZERO_GRADES, false, 'home', 'away', null);
+    const neutral = calculateHybridSpread(0, 0, homeGrades, ZERO_GRADES, true, 'home', 'away', null);
+    const m = FROZEN_HYBRID_V2_MODEL_MATH;
+    expect(m.hybridHfaPoints).toBe(2.5);
+    expect(SHADOW_MODEL_DEFINITION_MANIFEST.hybridV2.v1Component.hybridHfaNeutralSite).toBe(0);
+    expect(home.hybridSpreadHma - neutral.hybridSpreadHma).toBeCloseTo(m.hybridHfaPoints, 10);
+    expect(neutral.v1SpreadHma).toBeCloseTo(0, 10);
+    expect(home.v1SpreadHma).toBeCloseTo(2.5, 10);
   });
 });
 
@@ -411,17 +524,31 @@ describe('prediction market selector', () => {
     expect(result.selected?.marketAgeSeconds).toBeGreaterThan(1800);
   });
 
-  it('exactly 30m market is eligible', () => {
+  it('exactly 1,800,000 ms is eligible and stores 1800 seconds', () => {
     const result = selectPredictionMarket({
       ...base,
       rows: [
         homeMarket('g1', 6, {
-          timestamp: new Date(NOW.getTime() - 1800 * 1000),
+          timestamp: new Date(NOW.getTime() - MAX_PREDICTION_MARKET_AGE_MS),
         }),
       ],
     });
     expect(result.status).toBe('selected');
     expect(result.selected?.marketAgeSeconds).toBe(1800);
+  });
+
+  it('1,800,001 ms is stale and stores 1801 seconds, not floored 1800', () => {
+    const result = selectPredictionMarket({
+      ...base,
+      rows: [
+        homeMarket('g1', 6, {
+          timestamp: new Date(NOW.getTime() - (MAX_PREDICTION_MARKET_AGE_MS + 1)),
+        }),
+      ],
+    });
+    expect(result.status).toBe('stale_market');
+    expect(result.selected?.marketAgeSeconds).toBe(1801);
+    expect(result.selected?.marketAgeSeconds).not.toBe(1800);
   });
 
   it('selects timestamp DESC', () => {
@@ -571,8 +698,76 @@ describe('selection, pick line, and qualification', () => {
     expect(snap.absSpreadEdge).toBeCloseTo(3, 5);
     expect(snap.selectedSide).toBe('HOME');
     expect(snap.v4ComparisonStatus).toBe('PROVENANCE_UNAVAILABLE');
+    expect(snap.hybridConflictType).toBeNull();
     expect(snap.qualificationStatus).toBe('NOT_QUALIFIED');
     expect(snap.isSuperTierA).toBe(false);
+  });
+
+  it('edge 2.0 + opposite SIDE_AVAILABLE is hybrid_strong but NOT_QUALIFIED', () => {
+    const q = qualifyShadowSnapshot({
+      predictionStatus: 'AVAILABLE',
+      selectedSide: 'HOME',
+      absSpreadEdge: 2.0,
+      v4ComparisonStatus: 'SIDE_AVAILABLE',
+      v4ComparisonSide: 'AWAY',
+    });
+    expect(deriveShadowConflictType({
+      predictionStatus: 'AVAILABLE',
+      selectedSide: 'HOME',
+      v4ComparisonStatus: 'SIDE_AVAILABLE',
+      v4ComparisonSide: 'AWAY',
+    })).toBe('hybrid_strong');
+    expect(q).toMatchObject({
+      hybridConflictType: 'hybrid_strong',
+      qualificationStatus: 'NOT_QUALIFIED',
+      isSuperTierA: false,
+      tierBucket: 'none',
+    });
+  });
+
+  it('edge 2.0 + same SIDE_AVAILABLE is hybrid_weak / NOT_QUALIFIED / false', () => {
+    const q = qualifyShadowSnapshot({
+      predictionStatus: 'AVAILABLE',
+      selectedSide: 'HOME',
+      absSpreadEdge: 2.0,
+      v4ComparisonStatus: 'SIDE_AVAILABLE',
+      v4ComparisonSide: 'HOME',
+    });
+    expect(q).toMatchObject({
+      hybridConflictType: 'hybrid_weak',
+      qualificationStatus: 'NOT_QUALIFIED',
+      isSuperTierA: false,
+    });
+  });
+
+  it('edge 2.0 + VERIFIED_NO_SELECTION is hybrid_only / NOT_QUALIFIED / false', () => {
+    const q = qualifyShadowSnapshot({
+      predictionStatus: 'AVAILABLE',
+      selectedSide: 'AWAY',
+      absSpreadEdge: 2.0,
+      v4ComparisonStatus: 'VERIFIED_NO_SELECTION',
+      v4ComparisonSide: null,
+    });
+    expect(q).toMatchObject({
+      hybridConflictType: 'hybrid_only',
+      qualificationStatus: 'NOT_QUALIFIED',
+      isSuperTierA: false,
+    });
+  });
+
+  it('edge 2.0 + PROVENANCE_UNAVAILABLE keeps conflict null and NOT_QUALIFIED', () => {
+    const q = qualifyShadowSnapshot({
+      predictionStatus: 'AVAILABLE',
+      selectedSide: 'HOME',
+      absSpreadEdge: 2.0,
+      v4ComparisonStatus: 'PROVENANCE_UNAVAILABLE',
+      v4ComparisonSide: null,
+    });
+    expect(q).toMatchObject({
+      hybridConflictType: null,
+      qualificationStatus: 'NOT_QUALIFIED',
+      isSuperTierA: false,
+    });
   });
 
   it('>=4 + opposite V4 -> hybrid_strong / QUALIFIED / true', () => {
@@ -707,44 +902,51 @@ describe('run invariants', () => {
   });
 });
 
+function validExistingCohort(extra: Partial<ExistingShadowCohort['run']> = {}): ExistingShadowCohort {
+  return {
+    run: {
+      id: 'run-1',
+      status: 'COMPLETE',
+      season: 2026,
+      week: 2,
+      evaluationProtocol: 'CORE_EVAL_V1',
+      captureContext: 'friday_am',
+      modelDefinitionId: SHADOW_MODEL_DEFINITION_ID,
+      modelDefinitionHash: PINNED_MODEL_HASH,
+      policyDefinitionId: SHADOW_POLICY_DEFINITION_ID,
+      policyDefinitionHash: PINNED_POLICY_HASH,
+      expectedGameIds: ['g1'],
+      totalGames: 1,
+      hybridAvailableCount: 1,
+      hybridUnavailableCount: 0,
+      qualificationQualifiedCount: 0,
+      qualificationNotQualifiedCount: 1,
+      qualificationUnavailableCount: 0,
+      v4SideAvailableCount: 0,
+      v4VerifiedNoSelectionCount: 0,
+      v4ProvenanceUnavailableCount: 1,
+      ...extra,
+    },
+    snapshots: [
+      {
+        id: 's1',
+        gameId: 'g1',
+        predictionStatus: 'AVAILABLE',
+        qualificationStatus: 'NOT_QUALIFIED',
+        v4ComparisonStatus: 'PROVENANCE_UNAVAILABLE',
+      },
+    ],
+  };
+}
+
 describe('existing cohort and atomic commit', () => {
   it('existing valid COMPLETE cohort is an idempotent no-op', async () => {
-    const existing: ExistingShadowCohort = {
-      run: {
-        id: 'run-1',
-        status: 'COMPLETE',
-        season: 2026,
-        week: 2,
-        evaluationProtocol: 'CORE_EVAL_V1',
-        captureContext: 'friday_am',
-        modelDefinitionId: SHADOW_MODEL_DEFINITION_ID,
-        modelDefinitionHash: PINNED_MODEL_HASH,
-        policyDefinitionId: SHADOW_POLICY_DEFINITION_ID,
-        policyDefinitionHash: PINNED_POLICY_HASH,
-        expectedGameIds: ['g1'],
-        totalGames: 1,
-        hybridAvailableCount: 1,
-        hybridUnavailableCount: 0,
-        qualificationQualifiedCount: 0,
-        qualificationNotQualifiedCount: 1,
-        qualificationUnavailableCount: 0,
-        v4SideAvailableCount: 0,
-        v4VerifiedNoSelectionCount: 0,
-        v4ProvenanceUnavailableCount: 1,
-      },
-      snapshots: [
-        {
-          id: 's1',
-          gameId: 'g1',
-          predictionStatus: 'AVAILABLE',
-          qualificationStatus: 'NOT_QUALIFIED',
-          v4ComparisonStatus: 'PROVENANCE_UNAVAILABLE',
-        },
-      ],
-      closingCount: 0,
-      evaluationCount: 0,
-    };
-    expect(validateExistingCompleteCohort(existing)).toEqual([]);
+    const existing = validExistingCohort();
+    expect(validateExistingCompleteCohort(existing, {
+      season: 2026,
+      week: 2,
+      captureContext: 'friday_am',
+    })).toEqual([]);
     const { adapter, state } = createMemoryAdapter({
       frame: availableFrame('g1', 6),
       existing,
@@ -760,38 +962,38 @@ describe('existing cohort and atomic commit', () => {
     });
     expect(result.execution.transactionalIdempotentNoOp).toBe(true);
     expect(result.execution.mutationsInvoked).toBe(false);
+    expect(result.execution.closingMutationsInvoked).toBe(false);
     expect(state.runs).toHaveLength(0);
     expect(state.snapshots).toHaveLength(0);
   });
 
-  it('existing malformed/non-COMPLETE cohort fails closed', async () => {
-    const existing: ExistingShadowCohort = {
-      run: {
-        id: 'run-bad',
-        status: 'FAILED',
+  it('existing COMPLETE with null qualification is malformed, not synthesized', () => {
+    const existing = validExistingCohort();
+    existing.snapshots[0].qualificationStatus = null;
+    const blockers = validateExistingCompleteCohort(existing, {
+      season: 2026,
+      week: 2,
+      captureContext: 'friday_am',
+    });
+    expect(blockers).toContain('existing_qualification_status_missing');
+    expect(blockers).not.toContain('existing_qualified_mismatch');
+  });
+
+  it('existing COMPLETE with null V4 comparison is malformed, not synthesized', () => {
+    const existing = validExistingCohort();
+    existing.snapshots[0].v4ComparisonStatus = null;
+    expect(
+      validateExistingCompleteCohort(existing, {
         season: 2026,
         week: 2,
-        evaluationProtocol: 'CORE_EVAL_V1',
         captureContext: 'friday_am',
-        modelDefinitionId: SHADOW_MODEL_DEFINITION_ID,
-        modelDefinitionHash: PINNED_MODEL_HASH,
-        policyDefinitionId: SHADOW_POLICY_DEFINITION_ID,
-        policyDefinitionHash: PINNED_POLICY_HASH,
-        expectedGameIds: ['g1'],
-        totalGames: 1,
-        hybridAvailableCount: 1,
-        hybridUnavailableCount: 0,
-        qualificationQualifiedCount: 0,
-        qualificationNotQualifiedCount: 1,
-        qualificationUnavailableCount: 0,
-        v4SideAvailableCount: 0,
-        v4VerifiedNoSelectionCount: 0,
-        v4ProvenanceUnavailableCount: 1,
-      },
-      snapshots: [],
-      closingCount: 0,
-      evaluationCount: 0,
-    };
+      })
+    ).toContain('existing_v4_comparison_status_missing');
+  });
+
+  it('existing malformed/non-COMPLETE cohort fails closed', async () => {
+    const existing = validExistingCohort({ status: 'FAILED' });
+    existing.snapshots = [];
     expect(existing.run.status).toBe('FAILED');
     expect(validateExistingCompleteCohort(existing)).toContain(
       'existing_cohort_not_complete'
@@ -840,6 +1042,8 @@ describe('existing cohort and atomic commit', () => {
     });
     expect(result.execution.mutationsInvoked).toBe(false);
     expect(result.report.mutationsInvoked).toBe(false);
+    expect(result.execution.closingMutationsInvoked).toBe(false);
+    expect(result.report.closingMutationsInvoked).toBe(false);
     expect(result.report.providerCalls).toBe(0);
     expect(state.runs).toHaveLength(0);
     expect(state.snapshots).toHaveLength(0);
@@ -850,6 +1054,17 @@ describe('existing cohort and atomic commit', () => {
     expect(result.report.counts.qualificationNotQualifiedCount).toBe(1);
     expect(result.report.counts.v4ProvenanceUnavailableCount).toBe(1);
     expect(result.report.counts.v4VerifiedNoSelectionCount).toBe(0);
+    expect(result.report.games[0]).toMatchObject({
+      gameId: 'g1',
+      kickoffTimestamp: KICKOFF.toISOString(),
+      hybridHma: expect.any(Number),
+      coreV1Hma: expect.any(Number),
+      v2Hma: expect.any(Number),
+      selectedMarketLineId: 'ml-g1',
+      predictionMarketHma: 6,
+      qualificationStatus: 'NOT_QUALIFIED',
+    });
+    expect(result.report.games[0].inputHash).toEqual(expect.any(String));
   });
 
   it('transaction failure leaves no partial run', async () => {
@@ -869,5 +1084,91 @@ describe('existing cohort and atomic commit', () => {
     expect(result.execution.rolledBack).toBe(true);
     expect(state.runs).toHaveLength(0);
     expect(state.snapshots).toHaveLength(0);
+  });
+
+  it('COMMIT readback verifies the inserted run and scoped evaluation count', async () => {
+    const { adapter, state } = createMemoryAdapter({
+      frame: availableFrame('g1', 6),
+    });
+    const result = await executeShadowCapture({
+      season: 2026,
+      week: 2,
+      mode: 'COMMIT',
+      captureContext: 'friday_am',
+      confirmation: expectedWriteConfirmation(2),
+      repoCommitSha: 'a'.repeat(40),
+      adapter,
+    });
+    expect(result.execution.commitSucceeded).toBe(true);
+    expect(result.execution.verificationOk).toBe(true);
+    expect(result.execution.closingMutationsInvoked).toBe(false);
+    expect(result.execution.insertedRunId).toBe(state.runs[0].id);
+    expect(state.snapshots).toHaveLength(1);
+    expect(result.execution.verificationReasons).toEqual([]);
+  });
+
+  it('evaluation rows for inserted prediction IDs fail post-commit readback', async () => {
+    const { adapter, state } = createMemoryAdapter({
+      frame: availableFrame('g1', 6),
+      evaluationResults: [{ predictionSnapshotId: 'id-2' }],
+    });
+    const result = await executeShadowCapture({
+      season: 2026,
+      week: 2,
+      mode: 'COMMIT',
+      captureContext: 'friday_am',
+      confirmation: expectedWriteConfirmation(2),
+      repoCommitSha: 'a'.repeat(40),
+      adapter,
+    });
+    expect(state.snapshots.map((s) => s.id)).toEqual(['id-2']);
+    expect(result.execution.persistenceCommitted).toBe(true);
+    expect(result.execution.commitSucceeded).toBe(false);
+    expect(result.execution.verificationOk).toBe(false);
+    expect(result.execution.verificationReasons).toContain(
+      'evaluation_rows_created_for_inserted_predictions'
+    );
+    expect(state.runs).toHaveLength(1);
+    expect(state.snapshots).toHaveLength(1);
+  });
+
+  it('evaluation rows for unrelated prediction IDs do not fail this cohort', async () => {
+    const { adapter } = createMemoryAdapter({
+      frame: availableFrame('g1', 6),
+      evaluationResults: [{ predictionSnapshotId: 'some-other-prediction' }],
+    });
+    const result = await executeShadowCapture({
+      season: 2026,
+      week: 2,
+      mode: 'COMMIT',
+      captureContext: 'friday_am',
+      confirmation: expectedWriteConfirmation(2),
+      repoCommitSha: 'a'.repeat(40),
+      adapter,
+    });
+    expect(result.execution.commitSucceeded).toBe(true);
+    expect(result.execution.verificationOk).toBe(true);
+  });
+
+  it('post-commit identity mismatch fails closed without repair', async () => {
+    const { adapter, state } = createMemoryAdapter({
+      frame: availableFrame('g1', 6),
+      corruptReadback: true,
+    });
+    const result = await executeShadowCapture({
+      season: 2026,
+      week: 2,
+      mode: 'COMMIT',
+      captureContext: 'friday_am',
+      confirmation: expectedWriteConfirmation(2),
+      repoCommitSha: 'a'.repeat(40),
+      adapter,
+    });
+    expect(result.execution.persistenceCommitted).toBe(true);
+    expect(result.execution.commitSucceeded).toBe(false);
+    expect(result.execution.verificationOk).toBe(false);
+    expect(result.execution.verificationReasons.length).toBeGreaterThan(0);
+    expect(state.runs).toHaveLength(1);
+    expect(state.snapshots).toHaveLength(1);
   });
 });

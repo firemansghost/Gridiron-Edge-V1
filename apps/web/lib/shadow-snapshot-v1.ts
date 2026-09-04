@@ -18,6 +18,7 @@ export const SHADOW_MODEL_DEFINITION_ID = 'hybrid_v2_shadow_snapshot_v1';
 export const SHADOW_POLICY_DEFINITION_ID = 'core_eval_v1_shadow_policy_v1';
 export const SHADOW_V4_STRATEGY_TAG = 'v4_labs';
 export const MAX_PREDICTION_MARKET_AGE_SECONDS = 1800;
+export const MAX_PREDICTION_MARKET_AGE_MS = 1_800_000;
 export const HYBRID_SELECTION_ABS_THRESHOLD = 0.1;
 export const SUPER_TIER_A_ABS_EDGE_THRESHOLD = 4.0;
 export const CAPTURE_CONTEXT_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -102,12 +103,17 @@ export function sha256CanonicalJson(value: unknown): string {
   return createHash('sha256').update(canonicalJsonString(value), 'utf8').digest('hex');
 }
 
+/** Product authorization is not hashed model identity. */
+export const SHADOW_MODEL_AUTHORIZATION_NOTE = {
+  official: false,
+  productionHold: true,
+  status: 'SHADOW / HELD / NOT OFFICIAL',
+} as const;
+
 export const SHADOW_MODEL_DEFINITION_MANIFEST = {
   id: SHADOW_MODEL_DEFINITION_ID,
   version: 'shadow_snapshot_v1',
   family: SHADOW_MODEL_FAMILY,
-  official: false,
-  productionHold: true,
   coreV1Comparison: {
     identity: 'production_core_v1',
     formula:
@@ -149,7 +155,10 @@ export const SHADOW_POLICY_DEFINITION_MANIFEST = {
   evaluationProtocol: SHADOW_EVALUATION_PROTOCOL,
   predictionMarket: {
     marketType: 'spread',
+    selectorId: 'shadow_snapshot_v1_prediction_market_selector',
+    selectorVersion: 'v1',
     freshnessMaxSeconds: MAX_PREDICTION_MARKET_AGE_SECONDS,
+    freshnessMaxMilliseconds: MAX_PREDICTION_MARKET_AGE_MS,
     eligibility: 'marketTimestamp <= predictionTimestamp',
     ordering: ['timestamp DESC', 'id DESC'],
     noFutureMarketFallback: true,
@@ -164,11 +173,20 @@ export const SHADOW_POLICY_DEFINITION_MANIFEST = {
       away: 'spreadEdgeHma <= -0.1',
     },
     noSelectionRemainsAvailable: true,
+    teamSidedPickLine: {
+      HOME: '-predictionMarketHma',
+      AWAY: '+predictionMarketHma',
+      NO_SELECTION: null,
+    },
   },
-  teamSidedPickLine: {
-    HOME: '-predictionMarketHma',
-    AWAY: '+predictionMarketHma',
-    NO_SELECTION: null,
+  v4Comparison: {
+    strategyTag: SHADOW_V4_STRATEGY_TAG,
+    marketType: 'spread',
+    states: ['SIDE_AVAILABLE', 'VERIFIED_NO_SELECTION', 'PROVENANCE_UNAVAILABLE'],
+    sideAvailableRequiresCreatedAtAndUpdatedAtAtOrBeforePredictionTimestamp: true,
+    verifiedNoSelectionNotInferredFromAbsence: true,
+    hybridOnlyRequiresVerifiedNoSelection: true,
+    absenceIsProvenanceUnavailable: true,
   },
   superTierA: {
     absEdgeThreshold: SUPER_TIER_A_ABS_EDGE_THRESHOLD,
@@ -176,12 +194,44 @@ export const SHADOW_POLICY_DEFINITION_MANIFEST = {
     requiresHybridStrong: true,
     v4DecisionRelevantOnlyWhenHomeOrAwayAndAbsEdgeAtLeast4: true,
   },
-  v4Comparison: {
-    strategyTag: SHADOW_V4_STRATEGY_TAG,
+  closingMarket: {
     marketType: 'spread',
-    sideAvailableRequiresCreatedAtAndUpdatedAtAtOrBeforePredictionTimestamp: true,
-    verifiedNoSelectionNotInferredFromAbsence: true,
-    hybridOnlyRequiresVerifiedNoSelection: true,
+    target: 'kickoffTimestamp - 30 minutes',
+    eligibility: 'latest eligible observation at or before targetTimestamp',
+    ordering: ['timestamp DESC', 'id DESC'],
+    noFallForwardAfterTarget: true,
+    availableRequiresSelectedMarketLineId: true,
+    policyHashProvenanceRequired: true,
+  },
+  atsSettlement: {
+    noSelection: 'NOT_APPLICABLE',
+    selectedMissingFinalScore: 'UNAVAILABLE',
+    homeSideMargin: 'homeScore - awayScore',
+    awaySideMargin: 'awayScore - homeScore',
+    coverMargin: 'sideMargin + predictionPickLine',
+    win: 'coverMargin > 0',
+    push: 'coverMargin = 0',
+    loss: 'coverMargin < 0',
+    floatingPointEpsilonOnly: true,
+    noOfficialBetHalfPointPushBand: true,
+  },
+  shadowClv: {
+    homeClosingTeamLine: '-closingMarketHma',
+    awayClosingTeamLine: '+closingMarketHma',
+    clvPoints: 'predictionPickLine - closingTeamLine',
+    positiveClv: 'better captured ATS number',
+    noSelection: 'NOT_APPLICABLE',
+    missingT30OnSelectedSide: 'UNAVAILABLE',
+  },
+  researchRoi: {
+    researchOnly: true,
+    flatStake: 100,
+    assumedAmericanPrice: -110,
+    winPnl: 90.9,
+    lossPnl: -100,
+    pushPnl: 0,
+    roi: 'graded shadow PnL / graded shadow stake',
+    noSelectionExcludedFromGradedStake: true,
   },
   captureContext: {
     required: true,
@@ -189,8 +239,6 @@ export const SHADOW_POLICY_DEFINITION_MANIFEST = {
     pattern: '^[a-z0-9][a-z0-9_-]{0,63}$',
   },
   noRetrospectiveBackfill: true,
-  noClosingCapture: true,
-  noAtsEvaluation: true,
 } as const;
 
 export const SHADOW_MODEL_DEFINITION_HASH = sha256CanonicalJson(
@@ -458,13 +506,13 @@ export function selectPredictionMarket(input: {
     marketBook: firstUsable.bookName,
     marketSource: firstUsable.source,
     marketTimestamp,
-    marketAgeSeconds: Math.floor(ageMs / 1000),
+    marketAgeSeconds: ageMs < 0 ? Math.floor(ageMs / 1000) : Math.ceil(ageMs / 1000),
     predictionMarketHma: hma,
     marketFavoriteTeamId:
       hma > 0 ? input.homeTeamId : hma < 0 ? input.awayTeamId : null,
   };
 
-  if (ageMs < 0 || ageMs > MAX_PREDICTION_MARKET_AGE_SECONDS * 1000) {
+  if (ageMs < 0 || ageMs > MAX_PREDICTION_MARKET_AGE_MS) {
     return { status: 'stale_market', selected };
   }
   return { status: 'selected', selected };
@@ -528,6 +576,21 @@ export function resolveV4Comparison(input: {
   };
 }
 
+export function deriveShadowConflictType(input: {
+  predictionStatus: ShadowPredictionStatus;
+  selectedSide: ShadowSelectedSide | null;
+  v4ComparisonStatus: ShadowV4ComparisonStatus;
+  v4ComparisonSide: ShadowTeamSide | null;
+}): ShadowHybridConflictType | null {
+  if (input.predictionStatus !== 'AVAILABLE') return null;
+  if (input.selectedSide !== 'HOME' && input.selectedSide !== 'AWAY') return null;
+  if (input.v4ComparisonStatus === 'SIDE_AVAILABLE' && input.v4ComparisonSide) {
+    return input.selectedSide === input.v4ComparisonSide ? 'hybrid_weak' : 'hybrid_strong';
+  }
+  if (input.v4ComparisonStatus === 'VERIFIED_NO_SELECTION') return 'hybrid_only';
+  return null;
+}
+
 export function qualifyShadowSnapshot(input: {
   predictionStatus: ShadowPredictionStatus;
   selectedSide: ShadowSelectedSide | null;
@@ -541,6 +604,8 @@ export function qualifyShadowSnapshot(input: {
   tierBucket: ShadowTierBucket | null;
   qualificationReasons: string[];
 } {
+  const hybridConflictType = deriveShadowConflictType(input);
+
   if (input.predictionStatus === 'UNAVAILABLE') {
     return {
       qualificationStatus: 'UNAVAILABLE',
@@ -566,37 +631,26 @@ export function qualifyShadowSnapshot(input: {
     return {
       qualificationStatus: 'NOT_QUALIFIED',
       isSuperTierA: false,
-      hybridConflictType: null,
+      hybridConflictType,
       tierBucket: 'none',
       qualificationReasons: [],
     };
   }
 
-  if (input.v4ComparisonStatus === 'SIDE_AVAILABLE' && input.v4ComparisonSide) {
-    const sameSide = input.selectedSide === input.v4ComparisonSide;
-    if (sameSide) {
-      return {
-        qualificationStatus: 'NOT_QUALIFIED',
-        isSuperTierA: false,
-        hybridConflictType: 'hybrid_weak',
-        tierBucket: 'none',
-        qualificationReasons: [],
-      };
-    }
+  if (hybridConflictType === 'hybrid_strong') {
     return {
       qualificationStatus: 'QUALIFIED',
       isSuperTierA: true,
-      hybridConflictType: 'hybrid_strong',
+      hybridConflictType,
       tierBucket: 'super_tier_a',
       qualificationReasons: [],
     };
   }
-
-  if (input.v4ComparisonStatus === 'VERIFIED_NO_SELECTION') {
+  if (hybridConflictType === 'hybrid_weak' || hybridConflictType === 'hybrid_only') {
     return {
       qualificationStatus: 'NOT_QUALIFIED',
       isSuperTierA: false,
-      hybridConflictType: 'hybrid_only',
+      hybridConflictType,
       tierBucket: 'none',
       qualificationReasons: [],
     };
@@ -1287,44 +1341,132 @@ export interface ExistingShadowCohort {
     qualificationStatus: string | null;
     v4ComparisonStatus: string | null;
   }>;
-  closingCount: number;
-  evaluationCount: number;
 }
 
-export function validateExistingCompleteCohort(existing: ExistingShadowCohort): string[] {
+const PREDICTION_STATUSES: ShadowPredictionStatus[] = ['AVAILABLE', 'UNAVAILABLE'];
+const QUALIFICATION_STATUSES: ShadowQualificationStatus[] = [
+  'QUALIFIED',
+  'NOT_QUALIFIED',
+  'UNAVAILABLE',
+];
+const V4_STATUSES: ShadowV4ComparisonStatus[] = [
+  'SIDE_AVAILABLE',
+  'VERIFIED_NO_SELECTION',
+  'PROVENANCE_UNAVAILABLE',
+];
+
+function isPredictionStatus(value: unknown): value is ShadowPredictionStatus {
+  return PREDICTION_STATUSES.indexOf(value as ShadowPredictionStatus) >= 0;
+}
+
+function isQualificationStatus(value: unknown): value is ShadowQualificationStatus {
+  return QUALIFICATION_STATUSES.indexOf(value as ShadowQualificationStatus) >= 0;
+}
+
+function isV4Status(value: unknown): value is ShadowV4ComparisonStatus {
+  return V4_STATUSES.indexOf(value as ShadowV4ComparisonStatus) >= 0;
+}
+
+export function validateExistingCompleteCohort(
+  existing: ExistingShadowCohort,
+  expectedIdentity?: {
+    season: number;
+    week: number;
+    captureContext: string;
+  }
+): string[] {
   const blockers: string[] = [];
   if (existing.run.status !== 'COMPLETE') {
     blockers.push('existing_cohort_not_complete');
   }
-  if (existing.closingCount !== 0) {
-    blockers.push('existing_cohort_has_closing_snapshots');
-  }
-  if (existing.evaluationCount !== 0) {
-    blockers.push('existing_cohort_has_evaluation_rows');
-  }
-  if (existing.run.modelDefinitionHash !== SHADOW_MODEL_DEFINITION_HASH) {
-    blockers.push('existing_cohort_model_definition_mismatch');
-  }
-  if (existing.run.policyDefinitionHash !== SHADOW_POLICY_DEFINITION_HASH) {
-    blockers.push('existing_cohort_policy_definition_mismatch');
+  if (expectedIdentity) {
+    if (existing.run.season !== expectedIdentity.season) {
+      blockers.push('existing_cohort_season_mismatch');
+    }
+    if (existing.run.week !== expectedIdentity.week) {
+      blockers.push('existing_cohort_week_mismatch');
+    }
+    if (existing.run.captureContext !== expectedIdentity.captureContext) {
+      blockers.push('existing_cohort_capture_context_mismatch');
+    }
   }
   if (existing.run.evaluationProtocol !== SHADOW_EVALUATION_PROTOCOL) {
     blockers.push('existing_cohort_protocol_mismatch');
   }
-  const expected = Array.isArray(existing.run.expectedGameIds)
-    ? (existing.run.expectedGameIds as string[])
-    : [];
+  if (existing.run.modelDefinitionId !== SHADOW_MODEL_DEFINITION_ID) {
+    blockers.push('existing_cohort_model_definition_id_mismatch');
+  }
+  if (existing.run.modelDefinitionHash !== SHADOW_MODEL_DEFINITION_HASH) {
+    blockers.push('existing_cohort_model_definition_mismatch');
+  }
+  if (existing.run.policyDefinitionId !== SHADOW_POLICY_DEFINITION_ID) {
+    blockers.push('existing_cohort_policy_definition_id_mismatch');
+  }
+  if (existing.run.policyDefinitionHash !== SHADOW_POLICY_DEFINITION_HASH) {
+    blockers.push('existing_cohort_policy_definition_mismatch');
+  }
+
+  if (!Array.isArray(existing.run.expectedGameIds)) {
+    blockers.push('existing_expected_game_ids_not_array');
+    return uniqueStrings(blockers);
+  }
+  const expectedRaw = existing.run.expectedGameIds;
+  const expectedStrings = expectedRaw.filter((id): id is string => typeof id === 'string' && id.length > 0);
+  if (expectedStrings.length !== expectedRaw.length) {
+    blockers.push('existing_expected_game_ids_not_strings');
+  }
+  if (uniqueStrings(expectedStrings).length !== expectedStrings.length) {
+    blockers.push('existing_expected_game_ids_not_unique');
+  }
+  if (expectedStrings.length !== existing.run.totalGames) {
+    blockers.push('existing_expected_game_count_mismatch');
+  }
+
+  if (existing.snapshots.length !== existing.run.totalGames) {
+    blockers.push('existing_prediction_row_count_mismatch');
+  }
+  const snapshotGameIds = existing.snapshots.map((s) => s.gameId);
+  if (uniqueStrings(snapshotGameIds).length !== snapshotGameIds.length) {
+    blockers.push('existing_duplicate_prediction_game');
+  }
+  if (canonicalJsonString(sortIds(expectedStrings)) !== canonicalJsonString(sortIds(snapshotGameIds))) {
+    blockers.push('existing_prediction_game_set_mismatch');
+  }
+
+  let semanticOk = true;
+  for (const snap of existing.snapshots) {
+    if (!isPredictionStatus(snap.predictionStatus)) {
+      blockers.push('existing_prediction_status_unrecognized');
+      semanticOk = false;
+    }
+    if (snap.qualificationStatus == null) {
+      blockers.push('existing_qualification_status_missing');
+      semanticOk = false;
+    } else if (!isQualificationStatus(snap.qualificationStatus)) {
+      blockers.push('existing_qualification_status_unrecognized');
+      semanticOk = false;
+    }
+    if (snap.v4ComparisonStatus == null) {
+      blockers.push('existing_v4_comparison_status_missing');
+      semanticOk = false;
+    } else if (!isV4Status(snap.v4ComparisonStatus)) {
+      blockers.push('existing_v4_comparison_status_unrecognized');
+      semanticOk = false;
+    }
+  }
+
+  if (!semanticOk) {
+    return uniqueStrings(blockers);
+  }
+
   const counts = deriveShadowRunCounts(
     existing.snapshots.map((s) => ({
       predictionStatus: s.predictionStatus as ShadowPredictionStatus,
-      qualificationStatus: (s.qualificationStatus ?? 'UNAVAILABLE') as ShadowQualificationStatus,
-      v4ComparisonStatus: (s.v4ComparisonStatus ??
-        'PROVENANCE_UNAVAILABLE') as ShadowV4ComparisonStatus,
+      qualificationStatus: s.qualificationStatus as ShadowQualificationStatus,
+      v4ComparisonStatus: s.v4ComparisonStatus as ShadowV4ComparisonStatus,
     }))
   );
-  blockers.push(
-    ...reconcileShadowRunCounts(counts, existing.snapshots, expected)
-  );
+  blockers.push(...reconcileShadowRunCounts(counts, existing.snapshots, expectedStrings));
   if (counts.totalGames !== existing.run.totalGames) blockers.push('existing_total_games_mismatch');
   if (counts.hybridAvailableCount !== existing.run.hybridAvailableCount) {
     blockers.push('existing_hybrid_available_mismatch');
@@ -1369,14 +1511,14 @@ export interface ShadowCaptureAdapter {
   loadFrame(): Promise<OperationalShadowFrame>;
   runTransaction<T>(fn: (tx: ShadowMutationTx) => Promise<T>): Promise<T>;
   readRun(id: string): Promise<ExistingShadowCohort | null>;
-  countClosingSnapshots(): Promise<number>;
-  countEvaluationResults(): Promise<number>;
+  countEvaluationResultsForPredictionIds(ids: string[]): Promise<number>;
 }
 
 export interface ShadowCaptureExecution {
   mode: ShadowCaptureMode;
   providerCalls: 0;
   mutationsInvoked: boolean;
+  closingMutationsInvoked: false;
   commitSucceeded: boolean;
   persistenceCommitted: boolean;
   rolledBack: boolean;
@@ -1386,6 +1528,36 @@ export interface ShadowCaptureExecution {
   error: string | null;
   verificationOk: boolean | null;
   verificationReasons: string[];
+}
+
+export interface ShadowGameReportRow {
+  gameId: string;
+  kickoffTimestamp: string | null;
+  inputHash: string | null;
+  coreV1Hma: number | null;
+  v2Hma: number | null;
+  hybridHma: number | null;
+  selectedMarketLineId: string | null;
+  selectedMarketTeamId: string | null;
+  selectedMarketLineValue: number | null;
+  predictionMarketHma: number | null;
+  marketBook: string | null;
+  marketSource: string | null;
+  marketTimestamp: string | null;
+  marketAgeSeconds: number | null;
+  spreadEdgeHma: number | null;
+  absSpreadEdge: number | null;
+  selectedSide: ShadowSelectedSide | null;
+  selectedTeamId: string | null;
+  predictionPickLine: number | null;
+  predictionStatus: ShadowPredictionStatus;
+  unavailableReasons: string[];
+  v4ComparisonStatus: ShadowV4ComparisonStatus | null;
+  v4ComparisonSide: ShadowTeamSide | null;
+  v4Provenance: Record<string, unknown> | null;
+  qualificationStatus: ShadowQualificationStatus | null;
+  isSuperTierA: boolean | null;
+  hybridConflictType: ShadowHybridConflictType | null;
 }
 
 export interface ShadowCaptureReport {
@@ -1405,48 +1577,169 @@ export interface ShadowCaptureReport {
   counts: ShadowRunCounts;
   writeSafe: boolean;
   writeBlockers: string[];
-  games: Array<{
-    gameId: string;
-    predictionStatus: ShadowPredictionStatus;
-    unavailableReasons: string[];
-    selectedSide: ShadowSelectedSide | null;
-    qualificationStatus: ShadowQualificationStatus | null;
-    isSuperTierA: boolean | null;
-    v4ComparisonStatus: ShadowV4ComparisonStatus;
-    hybridConflictType: ShadowHybridConflictType | null;
-  }>;
+  games: ShadowGameReportRow[];
   providerCalls: 0;
   mutationsInvoked: boolean;
+  closingMutationsInvoked: false;
   existingCohort: 'none' | 'complete_valid_noop' | 'malformed';
 }
 
-function snapshotSummaries(snapshots: PlannedShadowPredictionSnapshot[]) {
+function snapshotSummaries(snapshots: PlannedShadowPredictionSnapshot[]): ShadowGameReportRow[] {
   return snapshots.map((s) => ({
     gameId: s.gameId,
+    kickoffTimestamp: s.kickoffTimestamp.toISOString(),
+    inputHash: s.inputHash,
+    coreV1Hma: s.coreV1Hma,
+    v2Hma: s.v2Hma,
+    hybridHma: s.hybridHma,
+    selectedMarketLineId: s.selectedMarketLineId,
+    selectedMarketTeamId: s.selectedMarketTeamId,
+    selectedMarketLineValue: s.selectedMarketLineValue,
+    predictionMarketHma: s.predictionMarketHma,
+    marketBook: s.marketBook,
+    marketSource: s.marketSource,
+    marketTimestamp: s.marketTimestamp ? s.marketTimestamp.toISOString() : null,
+    marketAgeSeconds: s.marketAgeSeconds,
+    spreadEdgeHma: s.spreadEdgeHma,
+    absSpreadEdge: s.absSpreadEdge,
+    selectedSide: s.selectedSide,
+    selectedTeamId: s.selectedTeamId,
+    predictionPickLine: s.predictionPickLine,
     predictionStatus: s.predictionStatus,
     unavailableReasons: s.unavailableReasons,
-    selectedSide: s.selectedSide,
+    v4ComparisonStatus: s.v4ComparisonStatus,
+    v4ComparisonSide: s.v4ComparisonSide,
+    v4Provenance: s.v4Provenance,
     qualificationStatus: s.qualificationStatus,
     isSuperTierA: s.isSuperTierA,
-    v4ComparisonStatus: s.v4ComparisonStatus,
     hybridConflictType: s.hybridConflictType,
   }));
 }
 
+function existingSnapshotSummaries(existing: ExistingShadowCohort): ShadowGameReportRow[] {
+  return existing.snapshots.map((s) => ({
+    gameId: s.gameId,
+    kickoffTimestamp: null,
+    inputHash: null,
+    coreV1Hma: null,
+    v2Hma: null,
+    hybridHma: null,
+    selectedMarketLineId: null,
+    selectedMarketTeamId: null,
+    selectedMarketLineValue: null,
+    predictionMarketHma: null,
+    marketBook: null,
+    marketSource: null,
+    marketTimestamp: null,
+    marketAgeSeconds: null,
+    spreadEdgeHma: null,
+    absSpreadEdge: null,
+    selectedSide: null,
+    selectedTeamId: null,
+    predictionPickLine: null,
+    predictionStatus: isPredictionStatus(s.predictionStatus)
+      ? s.predictionStatus
+      : 'UNAVAILABLE',
+    unavailableReasons: [],
+    v4ComparisonStatus: isV4Status(s.v4ComparisonStatus) ? s.v4ComparisonStatus : null,
+    v4ComparisonSide: null,
+    v4Provenance: null,
+    qualificationStatus: isQualificationStatus(s.qualificationStatus)
+      ? s.qualificationStatus
+      : null,
+    isSuperTierA: null,
+    hybridConflictType: null,
+  }));
+}
+
+function countsFromValidExisting(existing: ExistingShadowCohort): ShadowRunCounts {
+  return deriveShadowRunCounts(
+    existing.snapshots.map((s) => ({
+      predictionStatus: s.predictionStatus as ShadowPredictionStatus,
+      qualificationStatus: s.qualificationStatus as ShadowQualificationStatus,
+      v4ComparisonStatus: s.v4ComparisonStatus as ShadowV4ComparisonStatus,
+    }))
+  );
+}
+
 function verifyCommittedCohort(
   existing: ExistingShadowCohort,
-  plan: ShadowCapturePlan
+  plan: ShadowCapturePlan,
+  expectedIdentity: { season: number; week: number; captureContext: string }
 ): string[] {
-  const reasons = validateExistingCompleteCohort(existing);
+  const reasons = validateExistingCompleteCohort(existing, expectedIdentity);
   if (!plan.run) {
     reasons.push('missing_planned_run');
-    return reasons;
+    return uniqueStrings(reasons);
   }
   if (existing.run.id !== plan.run.id) reasons.push('committed_run_id_mismatch');
+  if (existing.run.season !== plan.run.season) reasons.push('committed_season_mismatch');
+  if (existing.run.week !== plan.run.week) reasons.push('committed_week_mismatch');
+  if (existing.run.evaluationProtocol !== plan.run.evaluationProtocol) {
+    reasons.push('committed_protocol_mismatch');
+  }
+  if (existing.run.captureContext !== plan.run.captureContext) {
+    reasons.push('committed_capture_context_mismatch');
+  }
+  if (existing.run.modelDefinitionId !== plan.run.modelDefinitionId) {
+    reasons.push('committed_model_definition_id_mismatch');
+  }
+  if (existing.run.modelDefinitionHash !== plan.run.modelDefinitionHash) {
+    reasons.push('committed_model_definition_hash_mismatch');
+  }
+  if (existing.run.policyDefinitionId !== plan.run.policyDefinitionId) {
+    reasons.push('committed_policy_definition_id_mismatch');
+  }
+  if (existing.run.policyDefinitionHash !== plan.run.policyDefinitionHash) {
+    reasons.push('committed_policy_definition_hash_mismatch');
+  }
   if (existing.snapshots.length !== plan.snapshots.length) {
     reasons.push('committed_snapshot_count_mismatch');
   }
-  return reasons;
+  if (
+    canonicalJsonString(sortIds(existing.snapshots.map((s) => s.id))) !==
+    canonicalJsonString(sortIds(plan.snapshots.map((s) => s.id)))
+  ) {
+    reasons.push('committed_prediction_id_set_mismatch');
+  }
+  if (
+    canonicalJsonString(sortIds(existing.snapshots.map((s) => s.gameId))) !==
+    canonicalJsonString(sortIds(plan.snapshots.map((s) => s.gameId)))
+  ) {
+    reasons.push('committed_prediction_game_set_mismatch');
+  }
+  if (
+    canonicalJsonString(existing.run.expectedGameIds) !==
+    canonicalJsonString(plan.run.expectedGameIds)
+  ) {
+    reasons.push('committed_expected_game_ids_mismatch');
+  }
+  if (existing.run.totalGames !== plan.run.totalGames) reasons.push('committed_total_games_mismatch');
+  if (existing.run.hybridAvailableCount !== plan.run.hybridAvailableCount) {
+    reasons.push('committed_hybrid_available_mismatch');
+  }
+  if (existing.run.hybridUnavailableCount !== plan.run.hybridUnavailableCount) {
+    reasons.push('committed_hybrid_unavailable_mismatch');
+  }
+  if (existing.run.qualificationQualifiedCount !== plan.run.qualificationQualifiedCount) {
+    reasons.push('committed_qualified_mismatch');
+  }
+  if (existing.run.qualificationNotQualifiedCount !== plan.run.qualificationNotQualifiedCount) {
+    reasons.push('committed_not_qualified_mismatch');
+  }
+  if (existing.run.qualificationUnavailableCount !== plan.run.qualificationUnavailableCount) {
+    reasons.push('committed_qualification_unavailable_mismatch');
+  }
+  if (existing.run.v4SideAvailableCount !== plan.run.v4SideAvailableCount) {
+    reasons.push('committed_v4_side_mismatch');
+  }
+  if (existing.run.v4VerifiedNoSelectionCount !== plan.run.v4VerifiedNoSelectionCount) {
+    reasons.push('committed_v4_verified_mismatch');
+  }
+  if (existing.run.v4ProvenanceUnavailableCount !== plan.run.v4ProvenanceUnavailableCount) {
+    reasons.push('committed_v4_unavailable_mismatch');
+  }
+  return uniqueStrings(reasons);
 }
 
 export async function executeShadowCapture(input: {
@@ -1462,6 +1755,12 @@ export async function executeShadowCapture(input: {
   execution: ShadowCaptureExecution;
   report: ShadowCaptureReport;
 }> {
+  const expectedIdentity = {
+    season: input.season,
+    week: input.week,
+    captureContext: input.captureContext,
+  };
+
   const emptyExecution = (partial: Partial<ShadowCaptureExecution>): ShadowCaptureExecution => ({
     mode: input.mode,
     providerCalls: 0,
@@ -1476,6 +1775,7 @@ export async function executeShadowCapture(input: {
     verificationOk: null,
     verificationReasons: [],
     ...partial,
+    closingMutationsInvoked: false,
   });
 
   const buildReport = (
@@ -1506,25 +1806,19 @@ export async function executeShadowCapture(input: {
     games: snapshotSummaries(plan.snapshots),
     providerCalls: 0,
     mutationsInvoked: execution.mutationsInvoked,
+    closingMutationsInvoked: false,
     existingCohort,
   });
 
   if (input.mode === 'PREVIEW') {
     const existingPreview = await input.adapter.findCohort();
     if (existingPreview) {
-      const integrity = validateExistingCompleteCohort(existingPreview);
+      const integrity = validateExistingCompleteCohort(existingPreview, expectedIdentity);
       const expected = Array.isArray(existingPreview.run.expectedGameIds)
-        ? (existingPreview.run.expectedGameIds as string[])
+        ? existingPreview.run.expectedGameIds.filter(
+            (id): id is string => typeof id === 'string'
+          )
         : [];
-      const counts = deriveShadowRunCounts(
-        existingPreview.snapshots.map((s) => ({
-          predictionStatus: s.predictionStatus as ShadowPredictionStatus,
-          qualificationStatus: (s.qualificationStatus ??
-            'UNAVAILABLE') as ShadowQualificationStatus,
-          v4ComparisonStatus: (s.v4ComparisonStatus ??
-            'PROVENANCE_UNAVAILABLE') as ShadowV4ComparisonStatus,
-        }))
-      );
       const plan: ShadowCapturePlan = {
         ok: integrity.length === 0,
         writeSafe: integrity.length === 0,
@@ -1540,7 +1834,10 @@ export async function executeShadowCapture(input: {
         policyDefinitionId: SHADOW_POLICY_DEFINITION_ID,
         policyDefinitionHash: SHADOW_POLICY_DEFINITION_HASH,
         expectedGameIds: sortIds(expected),
-        counts,
+        counts:
+          integrity.length === 0
+            ? countsFromValidExisting(existingPreview)
+            : deriveShadowRunCounts([]),
         snapshots: [],
         run: null,
         confirmationValid: true,
@@ -1557,17 +1854,7 @@ export async function executeShadowCapture(input: {
         execution,
         integrity.length === 0 ? 'complete_valid_noop' : 'malformed'
       );
-      report.games = existingPreview.snapshots.map((s) => ({
-        gameId: s.gameId,
-        predictionStatus: s.predictionStatus as ShadowPredictionStatus,
-        unavailableReasons: [],
-        selectedSide: null,
-        qualificationStatus: (s.qualificationStatus as ShadowQualificationStatus) ?? null,
-        isSuperTierA: null,
-        v4ComparisonStatus:
-          (s.v4ComparisonStatus as ShadowV4ComparisonStatus) ?? 'PROVENANCE_UNAVAILABLE',
-        hybridConflictType: null,
-      }));
+      report.games = existingSnapshotSummaries(existingPreview);
       return { plan, execution, report };
     }
 
@@ -1615,7 +1902,7 @@ export async function executeShadowCapture(input: {
 
   const existing = await input.adapter.findCohort();
   if (existing) {
-    const integrity = validateExistingCompleteCohort(existing);
+    const integrity = validateExistingCompleteCohort(existing, expectedIdentity);
     if (integrity.length > 0) {
       const plan: ShadowCapturePlan = {
         ok: false,
@@ -1632,7 +1919,9 @@ export async function executeShadowCapture(input: {
         policyDefinitionId: SHADOW_POLICY_DEFINITION_ID,
         policyDefinitionHash: SHADOW_POLICY_DEFINITION_HASH,
         expectedGameIds: Array.isArray(existing.run.expectedGameIds)
-          ? sortIds(existing.run.expectedGameIds as string[])
+          ? sortIds(
+              existing.run.expectedGameIds.filter((id): id is string => typeof id === 'string')
+            )
           : [],
         counts: deriveShadowRunCounts([]),
         snapshots: [],
@@ -1643,20 +1932,14 @@ export async function executeShadowCapture(input: {
       const execution = emptyExecution({
         error: `existing_cohort_malformed: ${integrity.join('; ')}`,
       });
-      return { plan, execution, report: buildReport(plan, execution, 'malformed') };
+      const report = buildReport(plan, execution, 'malformed');
+      report.games = existingSnapshotSummaries(existing);
+      return { plan, execution, report };
     }
 
     const expected = Array.isArray(existing.run.expectedGameIds)
-      ? (existing.run.expectedGameIds as string[])
+      ? existing.run.expectedGameIds.filter((id): id is string => typeof id === 'string')
       : [];
-    const counts = deriveShadowRunCounts(
-      existing.snapshots.map((s) => ({
-        predictionStatus: s.predictionStatus as ShadowPredictionStatus,
-        qualificationStatus: (s.qualificationStatus ?? 'UNAVAILABLE') as ShadowQualificationStatus,
-        v4ComparisonStatus: (s.v4ComparisonStatus ??
-          'PROVENANCE_UNAVAILABLE') as ShadowV4ComparisonStatus,
-      }))
-    );
     const plan: ShadowCapturePlan = {
       ok: true,
       writeSafe: true,
@@ -1672,7 +1955,7 @@ export async function executeShadowCapture(input: {
       policyDefinitionId: SHADOW_POLICY_DEFINITION_ID,
       policyDefinitionHash: SHADOW_POLICY_DEFINITION_HASH,
       expectedGameIds: sortIds(expected),
-      counts,
+      counts: countsFromValidExisting(existing),
       snapshots: [],
       run: null,
       confirmationValid: true,
@@ -1686,17 +1969,7 @@ export async function executeShadowCapture(input: {
       verificationOk: true,
     });
     const report = buildReport(plan, execution, 'complete_valid_noop');
-    report.games = existing.snapshots.map((s) => ({
-      gameId: s.gameId,
-      predictionStatus: s.predictionStatus as ShadowPredictionStatus,
-      unavailableReasons: [],
-      selectedSide: null,
-      qualificationStatus: (s.qualificationStatus as ShadowQualificationStatus) ?? null,
-      isSuperTierA: null,
-      v4ComparisonStatus: (s.v4ComparisonStatus as ShadowV4ComparisonStatus) ??
-        'PROVENANCE_UNAVAILABLE',
-      hybridConflictType: null,
-    }));
+    report.games = existingSnapshotSummaries(existing);
     return { plan, execution, report };
   }
 
@@ -1766,13 +2039,17 @@ export async function executeShadowCapture(input: {
 
   const plan = planned as ShadowCapturePlan;
   const readBack = insertedRunId ? await input.adapter.readRun(insertedRunId) : null;
-  const closingCount = await input.adapter.countClosingSnapshots();
-  const evaluationCount = await input.adapter.countEvaluationResults();
+  const insertedPredictionIds = plan.snapshots.map((s) => s.id);
+  const evaluationCount = await input.adapter.countEvaluationResultsForPredictionIds(
+    insertedPredictionIds
+  );
   const verificationReasons: string[] = [];
+  if (!insertedRunId) verificationReasons.push('committed_run_id_missing');
   if (!readBack) verificationReasons.push('committed_run_not_readable');
-  else verificationReasons.push(...verifyCommittedCohort(readBack, plan));
-  if (closingCount !== 0) verificationReasons.push('closing_snapshots_created');
-  if (evaluationCount !== 0) verificationReasons.push('evaluation_rows_created');
+  else verificationReasons.push(...verifyCommittedCohort(readBack, plan, expectedIdentity));
+  if (evaluationCount !== 0) {
+    verificationReasons.push('evaluation_rows_created_for_inserted_predictions');
+  }
 
   const verificationOk = verificationReasons.length === 0;
   const execution = emptyExecution({
