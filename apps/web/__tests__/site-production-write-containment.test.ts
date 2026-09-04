@@ -166,11 +166,11 @@ describe('Phase 1A retired public mutation routes', () => {
   });
 });
 
-describe('Phase 1A no workflow or formula drift', () => {
-  it('does not modify guarded 2026 GitHub workflow files', () => {
-    expect(gitDiffNames(['.github/workflows'])).toEqual([]);
-  });
-
+describe('Phase 1A no formula or production-writer drift', () => {
+  // Phase 1A itself prohibited workflow changes. Later phases add
+  // separately reviewed guarded workflows; workflow safety is covered by
+  // those workflow-specific static tests. Phase 1A production-write and
+  // formula protections remain.
   it('does not modify Core/Hybrid/ratings/Odds/scores/grading calculation code', () => {
     expect(
       gitDiffNames([

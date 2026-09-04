@@ -110,11 +110,11 @@ describe('Phase 1C Official Card remains persisted truth', () => {
   });
 });
 
-describe('Phase 1C no formula / workflow / market-selection drift', () => {
-  it('does not modify guarded 2026 GitHub workflow files', () => {
-    expect(gitDiffNames(['.github/workflows'])).toEqual([]);
-  });
-
+describe('Phase 1C no formula / market-selection drift', () => {
+  // Phase 1C itself prohibited workflow changes. Later phases add
+  // separately reviewed guarded workflows; workflow safety is covered by
+  // those workflow-specific static tests. Phase 1C formula and
+  // market-selection protections remain.
   it('does not modify model or market-selection calculation files', () => {
     expect(
       gitDiffNames([

@@ -496,11 +496,17 @@ describe('Phase 4A does not modify formulas, authorization, schema, or writers',
     ).toEqual([]);
   });
 
-  it('Prisma schema, workflows, official card, slate, and writers are unchanged', () => {
+  // Phase 4A prohibited workflow changes because that slice had none in
+  // scope. Later phases add separately reviewed guarded workflows (for
+  // example capture-shadow-snapshot-v1-2026-manual.yml). Workflow safety
+  // is covered by those workflow-specific static tests. This assertion
+  // still protects model authorization, Prisma schema, Official Card,
+  // current slate, and existing production writers, but must not ban
+  // every future workflow file.
+  it('Prisma schema, official card, slate, and production writers are unchanged', () => {
     expect(
       gitDiffNames([
         'prisma',
-        '.github/workflows',
         'apps/web/app/api/weeks/slate/route.ts',
         'apps/web/lib/official-card.ts',
         'apps/web/scripts/sync-hybrid-bets.ts',

@@ -391,7 +391,7 @@ describe('Phase 3 Ratings static API/page gates', () => {
   });
 });
 
-describe('Phase 3 does not modify model, persistence, workflows, or providers', () => {
+describe('Phase 3 does not modify model, persistence, or providers', () => {
   function gitDiffNames(paths: string[]): string[] {
     const result = spawnSync(
       'git',
@@ -405,10 +405,12 @@ describe('Phase 3 does not modify model, persistence, workflows, or providers', 
       .filter(Boolean);
   }
 
-  it('does not modify guarded workflows or Prisma schema', () => {
-    expect(gitDiffNames(['.github/workflows', 'prisma', 'apps/web/prisma'])).toEqual(
-      []
-    );
+  // Phase 3 itself prohibited workflow changes. Later phases add
+  // separately reviewed guarded workflows; workflow safety is covered by
+  // those workflow-specific static tests. Phase 3 Prisma schema and
+  // calculation/persistence protections remain.
+  it('does not modify Prisma schema', () => {
+    expect(gitDiffNames(['prisma', 'apps/web/prisma'])).toEqual([]);
   });
 
   it('does not modify Core/Hybrid/Odds/scores/grading/lifecycle calculation or persistence', () => {
