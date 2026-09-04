@@ -1229,7 +1229,7 @@ export function planShadowCaptureRun(input: {
     season: input.season,
     week: input.week,
     evaluationProtocol: SHADOW_EVALUATION_PROTOCOL,
-    captureContext: context.value,
+    captureContext: base.captureContext,
     modelFamily: SHADOW_MODEL_FAMILY,
     modelDefinitionId: SHADOW_MODEL_DEFINITION_ID,
     modelDefinitionHash: SHADOW_MODEL_DEFINITION_HASH,
