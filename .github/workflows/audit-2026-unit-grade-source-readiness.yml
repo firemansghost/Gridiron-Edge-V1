@@ -1,0 +1,180 @@
+# Manual READ-ONLY 2026 unit-grade SOURCE readiness audit.
+# workflow_dispatch ONLY — no schedule, push, or pull_request.
+# SELECT-only. No providers. No CFBD. No Odds. No writes.
+#
+# Does NOT run compute_unit_grades.ts.
+# Does NOT run ingest-cfbd-features.ts / cfbd-feature-ingest.yml.
+# Does NOT write TeamUnitGrades or cfbd_* rows.
+# Does NOT run Shadow PREVIEW or COMMIT.
+# Does NOT run Prisma migrate.
+# Does NOT authorize Hybrid activation.
+#
+# Existing compute_unit_grades.ts is NOT SAFE for 2026 with current
+# production inputs (would manufacture zero-grade rows). This audit
+# inventories source evidence only. safeToRunExistingCompute remains false.
+#
+# Security:
+# - Dispatch inputs reach shell only via step-level env (never ${{ inputs.* }} inside run:).
+# - Production DIRECT_URL is NOT job-wide; scoped only to optional secret-presence
+#   preflight + actual audit execution.
+# - No CFBD_API_KEY / ODDS_API_KEY.
+
+name: Audit 2026 Unit-Grade Source Readiness (Manual, Read Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (must be 2026)'
+        required: true
+        type: string
+        default: '2026'
+      expected_main_sha:
+        description: 'Exact main commit SHA authorized for this audit'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-2026-unit-grade-source-readiness-${{ inputs.season }}
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Source SHA guard
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA=$(git rev-parse HEAD)
+          echo "ACTUAL_SHA=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+          echo "actual_sha: ${ACTUAL_SHA}"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          echo "github_ref: ${GITHUB_REF:-}"
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Refusing unit-grade source readiness audit. Workflow must run from main."
+            echo "::error::github_ref=${GITHUB_REF:-}"
+            exit 1
+          fi
+          if [ -z "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing unit-grade source readiness audit. expected_main_sha is required."
+            exit 1
+          fi
+          if [ "${ACTUAL_SHA}" != "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing unit-grade source readiness audit. Checked-out SHA does not match expected_main_sha."
+            echo "::error::actual_sha=${ACTUAL_SHA}"
+            echo "::error::expected_main_sha=${EXPECTED_MAIN_SHA}"
+            exit 1
+          fi
+          echo "Source SHA guard passed."
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight (names/presence only)
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          SEASON="$INPUT_SEASON"
+          echo "season=${SEASON}"
+          echo "providersInvoked=false"
+          echo "providerCalls=0"
+          echo "mutationsInvoked=false"
+          echo "CFBD_API_KEY: not provided"
+          echo "ODDS_API_KEY: not provided"
+          echo "safeToRunExistingCompute=false"
+          echo "compute_unit_grades: not invoked"
+          echo "ingest-cfbd-features: not invoked"
+          echo "TeamUnitGrades writes: false"
+          echo "cfbd_* writes: false"
+          echo "Shadow PREVIEW: not invoked"
+          echo "Shadow COMMIT: not invoked"
+          echo "prisma migrate: not invoked"
+
+          if [ "$SEASON" != "2026" ]; then
+            echo "::error::season must equal 2026 (got ${SEASON})"
+            exit 1
+          fi
+          if [ -z "${DIRECT_URL:-}" ]; then
+            echo "::error::DIRECT_URL secret is missing"
+            exit 1
+          fi
+          echo "DIRECT_URL: present (value not printed)"
+
+      - name: Install dependencies
+        env:
+          DATABASE_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+          DIRECT_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+        run: npm ci
+
+      - name: Generate Prisma client
+        env:
+          DATABASE_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+          DIRECT_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+        run: npm run prisma:generate
+
+      - name: Run 2026 unit-grade source readiness audit
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          npx tsx apps/jobs/audit-2026-unit-grade-source-readiness.ts \
+            --season "$INPUT_SEASON" \
+            --report "reports/unit-grade-source-readiness-${INPUT_SEASON}.json"
+
+      - name: Upload unit-grade source readiness report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-grade-source-readiness-${{ inputs.season }}
+          path: reports/unit-grade-source-readiness-*.json
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "============================================"
+          echo "AUDIT 2026 UNIT-GRADE SOURCE READINESS (READ ONLY)"
+          echo "============================================"
+          echo "season: ${INPUT_SEASON}"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          if [ -n "${ACTUAL_SHA:-}" ]; then
+            echo "actual_sha: ${ACTUAL_SHA}"
+          else
+            echo "actual_sha: (unavailable)"
+          fi
+          echo "status: ${JOB_STATUS}"
+          echo "providersInvoked: false"
+          echo "providerCalls=0"
+          echo "mutationsInvoked: false"
+          echo "safeToRunExistingCompute: false"
+          echo "compute_unit_grades: not invoked"
+          echo "ingest-cfbd-features: not invoked"
+          echo "TeamUnitGrades writes: false"
+          echo "cfbd_* writes: false"
+          echo "Shadow PREVIEW: not invoked"
+          echo "Shadow COMMIT: not invoked"
+          echo "prisma migrate: not invoked"
+          echo "CFBD_API_KEY: not provided"
+          echo "ODDS_API_KEY: not provided"
+          echo "============================================"
