@@ -23,9 +23,6 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      DATABASE_URL: ${{ secrets.DIRECT_URL }}
-      DIRECT_URL: ${{ secrets.DIRECT_URL }}
 
     steps:
       - name: Checkout
@@ -38,6 +35,8 @@ jobs:
           cache: 'npm'
 
       - name: Preflight secret (name/presence only)
+        env:
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
         run: |
           set -euo pipefail
           if [ -z "${DIRECT_URL:-}" ]; then
@@ -45,7 +44,7 @@ jobs:
             exit 1
           fi
           echo "DIRECT_URL: present (value not printed)"
-          echo "DATABASE_URL: set from DIRECT_URL (value not printed)"
+          echo "DATABASE_URL: not exposed outside migrate-status step"
           echo "CFBD_API_KEY: not provided"
           echo "ODDS_API_KEY: not provided"
           echo "providers/ETL/ratings: not invoked"
@@ -81,6 +80,9 @@ jobs:
           exit 1
 
       - name: Prisma migrate status (read-only classification)
+        env:
+          DATABASE_URL: ${{ secrets.DIRECT_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
         shell: bash
         run: |
           set -uo pipefail
