@@ -437,7 +437,7 @@ describe('Official Card API/page static containment', () => {
   });
 });
 
-describe('Phase 1B does not modify workflows or model formulas', () => {
+describe('Phase 1B does not modify model formulas or production writers', () => {
   function gitDiffNames(paths: string[]): string[] {
     const result = spawnSync(
       'git',
@@ -451,10 +451,10 @@ describe('Phase 1B does not modify workflows or model formulas', () => {
       .filter(Boolean);
   }
 
-  it('does not modify guarded 2026 GitHub workflow files', () => {
-    expect(gitDiffNames(['.github/workflows'])).toEqual([]);
-  });
-
+  // Phase 1B itself prohibited workflow changes. Later phases add
+  // separately reviewed guarded workflows; workflow safety is covered by
+  // those workflow-specific static tests. Phase 1B formula and
+  // production-writer protections remain.
   it('does not modify Core/Hybrid/ratings/Odds/scores/grading calculation code', () => {
     expect(
       gitDiffNames([

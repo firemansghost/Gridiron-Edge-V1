@@ -530,7 +530,7 @@ describe('Phase 2B Week Archive static API/page gates', () => {
   });
 });
 
-describe('Phase 2B does not modify workflows, Current Slate, or model formulas', () => {
+describe('Phase 2B does not modify Current Slate or model formulas', () => {
   function gitDiffNames(paths: string[]): string[] {
     const result = spawnSync(
       'git',
@@ -544,10 +544,10 @@ describe('Phase 2B does not modify workflows, Current Slate, or model formulas',
       .filter(Boolean);
   }
 
-  it('does not modify guarded 2026 GitHub workflow files', () => {
-    expect(gitDiffNames(['.github/workflows'])).toEqual([]);
-  });
-
+  // Phase 2B itself prohibited workflow changes. Later phases add
+  // separately reviewed guarded workflows; workflow safety is covered by
+  // those workflow-specific static tests. Phase 2B Current Slate, Official
+  // Card, and formula protections remain.
   it('does not modify Core/Hybrid/ratings/Odds/scores/grading calculation code', () => {
     expect(
       gitDiffNames([
