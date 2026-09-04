@@ -1,0 +1,136 @@
+# Manual READ-ONLY production Prisma migration-history audit.
+# workflow_dispatch ONLY — never deploy, never resolve, never write.
+#
+# Restored applied-but-missing-from-repo migrations:
+#   20251009001406_init
+#   20250101_add_game_snapshots
+# This workflow verifies those files still match production checksums, then
+# runs `prisma migrate status` and classifies the text. There is no deploy step.
+
+name: Audit Prisma Migration History (Manual, Read Only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prisma-migrate-history-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DIRECT_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight secret (name/presence only)
+        run: |
+          set -euo pipefail
+          if [ -z "${DIRECT_URL:-}" ]; then
+            echo "::error::DIRECT_URL secret is missing"
+            exit 1
+          fi
+          echo "DIRECT_URL: present (value not printed)"
+          echo "DATABASE_URL: set from DIRECT_URL (value not printed)"
+          echo "CFBD_API_KEY: not provided"
+          echo "ODDS_API_KEY: not provided"
+          echo "providers/ETL/ratings: not invoked"
+          echo "migrate deploy: NOT RUN"
+          echo "migrate resolve: NOT RUN"
+          echo "_prisma_migrations writes: NOT RUN"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prisma version
+        run: npx prisma -v
+
+      - name: Verify recovered migration checksums
+        run: |
+          set -euo pipefail
+          echo "3b264ac8dd9c15665719d020c90335f66bcad0ade419daf405944c1aaa71f1d7  prisma/migrations/20251009001406_init/migration.sql" | sha256sum -c -
+          echo "b6fa7a2bdf8474854f1c3cf7cc49b678d6123cd07d9c781fb5eb14a0a6ff165d  prisma/migrations/20250101_add_game_snapshots/migration.sql" | sha256sum -c -
+
+      - name: Wait for direct (5432)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in {1..12}; do
+            if timeout 5 bash -lc "echo > /dev/tcp/aws-1-us-east-2.pooler.supabase.com/5432"; then
+              echo "Direct reachable"
+              exit 0
+            fi
+            echo "Waiting direct... ($i/12)"
+            sleep 5
+          done
+          echo "::error::Direct database endpoint not reachable"
+          exit 1
+
+      - name: Prisma migrate status (read-only classification)
+        shell: bash
+        run: |
+          set -uo pipefail
+          set +e
+          STATUS_OUTPUT=$(npx prisma migrate status --schema=prisma/schema.prisma 2>&1)
+          STATUS_CODE=$?
+          set -e
+          echo "$STATUS_OUTPUT"
+          echo "prisma_migrate_status_exit=${STATUS_CODE}"
+
+          # 1) Failed / P3009 / unresolved failed migration
+          if echo "$STATUS_OUTPUT" | grep -Eqi 'P3009|have failed|migration .* failed|failed migrations? in the (target )?database|The following migration\(s\) have failed'; then
+            echo "::error::Failed-migration state detected. READ-ONLY audit fails closed."
+            echo "classification: FAILED_MIGRATION"
+            exit 1
+          fi
+
+          # 2) Migration-history divergence (DB has migrations absent from repo)
+          # Must run BEFORE accepting pending/up-to-date: real production status can contain BOTH.
+          if echo "$STATUS_OUTPUT" | grep -Eqi 'Your local migration history and the migrations table from your database are different|The migrations from the database are not found locally in prisma/migrations'; then
+            echo "::error::Production migration history contains migrations that are not present in the repository."
+            echo "::error::READ-ONLY audit fails closed. Do not auto-repair or modify _prisma_migrations."
+            echo "classification: HISTORY_DIVERGENCE"
+            exit 1
+          fi
+
+          # 3) Acceptable read-only audit states: pending migrations OR up to date
+          if echo "$STATUS_OUTPUT" | grep -Eqi 'Database schema is up to date|have not yet been applied|Following migration|not yet been applied'; then
+            echo "classification: ACCEPTABLE_READ_ONLY_AUDIT_STATE"
+            echo "READ-ONLY audit complete. migrate deploy was not run."
+            exit 0
+          fi
+
+          # 4) Unknown / connection / other errors — fail closed
+          echo "::error::Unexpected prisma migrate status output (exit=${STATUS_CODE}). READ-ONLY audit fails closed."
+          echo "classification: UNKNOWN"
+          exit 1
+
+      - name: Summary
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "============================================"
+          echo "AUDIT PRISMA MIGRATION HISTORY"
+          echo "============================================"
+          echo "READ ONLY: true"
+          echo "migrate deploy: NOT RUN"
+          echo "migrate resolve: NOT RUN"
+          echo "_prisma_migrations writes: NOT RUN"
+          echo "providers: NOT INVOKED"
+          printf 'status: %s\n' "$JOB_STATUS"
+          echo "============================================"
