@@ -36,7 +36,9 @@ if ! git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
   exit 1
 fi
 
-CHANGED_FILES="$(git diff --name-only "${BASE_SHA}" "${HEAD_SHA}" -- 2>/dev/null)"
+# Disable rename detection so a runtime->docs move reports both the
+# deleted runtime path and the added docs path (fail open to BUILD).
+CHANGED_FILES="$(git diff --no-renames --name-only "${BASE_SHA}" "${HEAD_SHA}" -- 2>/dev/null)"
 DIFF_STATUS=$?
 
 if [[ ${DIFF_STATUS} -ne 0 ]]; then
