@@ -1,0 +1,45 @@
+---
+description: Enforce conservative Vercel deployment hygiene and prevent documentation-only changes from causing unnecessary builds.
+alwaysApply: true
+---
+
+# Vercel Deployment Hygiene
+
+Read `docs/VERCEL_DEPLOYMENT_POLICY.md` before changing Vercel deployment behavior, build filtering, or deployment-related configuration.
+
+## Mandatory behavior
+
+- Preserve the rule: **deploy runtime changes; do not deploy bookkeeping**.
+- Never assume `[skip ci]`, `docs:`, `chore:`, `research:`, or any other commit-message text suppresses Vercel.
+- Vercel BUILD/SKIP decisions must be based on changed paths and documented runtime relevance.
+- If any changed file is unknown, ambiguous, runtime-relevant, or outside the approved safe-skip allowlist, classify the deployment as **BUILD**.
+- Never broaden the safe-skip allowlist without explicit review and proof that the path is not consumed at runtime or build time.
+- Never disable Production or Preview deployments globally as a shortcut.
+- Never change the production branch, deployment retention, or production alias behavior unless explicitly authorized.
+- Never weaken tests, migration guards, production writer controls, model contracts, or research contracts to reduce Vercel usage.
+- A change to `scripts/vercel-ignore-build.sh`, Vercel configuration, Next configuration, dependencies, lockfiles, database schema/migrations, or runtime code must receive a normal build.
+- When preparing or reviewing a PR, report:
+  - `Vercel expected: BUILD` and why, or
+  - `Vercel expected: SKIP` and the exact approved non-runtime paths involved.
+- If classification cannot be proven, use **BUILD**.
+
+## Initial Gridiron Edge safe-skip set
+
+A build may be skipped only if every changed file is within:
+
+- `docs/**`
+- `README.md`
+- `SEASON_STATUS.md`
+- `WORKFLOW_DISABLE_REPORT.md`
+- `.cursor/rules/**`
+
+Do not infer that `research/**`, `data/**`, `artifacts/**`, JSON, CSV, YAML, Prisma, workflow, script, or generated files are safe to skip. They require separate dependency review.
+
+## Implementation invariant
+
+Vercel's ignored-build script uses:
+
+- exit `0` = SKIP
+- exit `1` = BUILD
+
+The script must fail open to **BUILD** on missing SHAs, Git errors, empty/ambiguous diffs, or unknown paths.
