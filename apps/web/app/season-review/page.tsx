@@ -21,6 +21,10 @@ import {
   preserveExplicitReviewStrategyRequest,
   resolveReviewStrategyAfterAvailability,
 } from '@/lib/strategy-utils';
+import {
+  persistedTruthFetchInit,
+  subscribePersistedTruthRefresh,
+} from '@/lib/persisted-truth-freshness';
 
 interface WeekBreakdown {
   week: number;
@@ -105,7 +109,10 @@ export default function SeasonReviewPage() {
         marketType: selectedMarket,
       });
 
-      const response = await fetch(`/api/bets/season-summary?${params}`);
+      const response = await fetch(
+        `/api/bets/season-summary?${params}`,
+        persistedTruthFetchInit
+      );
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         const errorMessage = errorData.detail || errorData.error || `HTTP ${response.status}: ${response.statusText}`;
@@ -148,6 +155,13 @@ export default function SeasonReviewPage() {
   useEffect(() => {
     if (!paramsReady) return;
     fetchData();
+  }, [paramsReady, season, strategyTag, selectedMarket]);
+
+  useEffect(() => {
+    if (!paramsReady) return;
+    return subscribePersistedTruthRefresh(() => {
+      void fetchData();
+    });
   }, [paramsReady, season, strategyTag, selectedMarket]);
 
   // Initialize season and strategy defaults from available data on first load
@@ -293,6 +307,17 @@ export default function SeasonReviewPage() {
                   <option value="TOTAL">Total (O/U)</option>
                   <option value="MONEYLINE">Moneyline</option>
                 </select>
+              </div>
+
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={() => void fetchData()}
+                  disabled={loading || !paramsReady}
+                  className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {loading ? 'Loading...' : 'Refresh'}
+                </button>
               </div>
             </div>
           </div>

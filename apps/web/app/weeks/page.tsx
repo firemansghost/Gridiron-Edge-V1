@@ -13,6 +13,10 @@ import { Footer } from '@/components/Footer';
 import SlateTable from '@/components/SlateTable';
 import { WeekArchiveTable } from '@/components/WeekArchiveTable';
 import type { WeekArchiveGameView, WeekArchiveSummary } from '@/lib/week-archive';
+import {
+  persistedTruthFetchInit,
+  subscribePersistedTruthRefresh,
+} from '@/lib/persisted-truth-freshness';
 
 interface WeekData {
   gameId: string;
@@ -131,6 +135,10 @@ function WeekPageContent() {
   const [week, setWeek] = useState(0);
   const [paramsReady, setParamsReady] = useState(false);
   const urlParamsApplied = useRef(false);
+  const seasonRef = useRef(season);
+  const weekRef = useRef(week);
+  seasonRef.current = season;
+  weekRef.current = week;
 
   const searchParams = useSearchParams();
   const isArchiveSeason = season >= 2026;
@@ -177,7 +185,10 @@ function WeekPageContent() {
     setError(null);
     try {
       if (nextSeason >= 2026) {
-        const response = await fetch(`/api/weeks/archive?season=${nextSeason}&week=${nextWeek}`);
+        const response = await fetch(
+          `/api/weeks/archive?season=${nextSeason}&week=${nextWeek}`,
+          persistedTruthFetchInit
+        );
         const payload = await response.json();
         if (!response.ok || !payload.ok) {
           throw new Error(payload.error || 'Failed to fetch week archive');
@@ -211,6 +222,14 @@ function WeekPageContent() {
     if (!season || !week) return;
     void fetchWeekData(season, week);
   }, [paramsReady, season, week]);
+
+  useEffect(() => {
+    return subscribePersistedTruthRefresh(() => {
+      if (!paramsReady) return;
+      if (!seasonRef.current || !weekRef.current) return;
+      void fetchWeekData(seasonRef.current, weekRef.current);
+    });
+  }, [paramsReady]);
 
   if (!paramsReady || loading) {
     return (
@@ -354,6 +373,15 @@ function WeekPageContent() {
                 ))}
               </select>
             </div>
+
+            <button
+              type="button"
+              onClick={() => void fetchWeekData(season, week)}
+              disabled={loading || !season || !week}
+              className="px-3 py-1.5 border border-gray-300 bg-white text-gray-800 rounded-md hover:bg-gray-50 text-sm font-medium disabled:opacity-50"
+            >
+              Refresh
+            </button>
 
             <div className="flex items-center space-x-2">
               <span className="text-sm text-gray-500">

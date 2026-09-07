@@ -9,6 +9,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { persistedTruthResponseHeaders } from '@/lib/persisted-truth-freshness';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -78,6 +79,7 @@ interface SeasonSummaryResponse {
 }
 
 export async function GET(request: NextRequest) {
+  const freshness = persistedTruthResponseHeaders();
   try {
     const { searchParams } = new URL(request.url);
     const seasonParam = searchParams.get('season');
@@ -103,7 +105,7 @@ export async function GET(request: NextRequest) {
     if (!seasonParam) {
       return NextResponse.json(
         { error: 'season parameter is required' },
-        { status: 400 }
+        { status: 400, headers: freshness }
       );
     }
 
@@ -111,7 +113,7 @@ export async function GET(request: NextRequest) {
     if (isNaN(season)) {
       return NextResponse.json(
         { error: 'season must be a valid number' },
-        { status: 400 }
+        { status: 400, headers: freshness }
       );
     }
     const isOfficial2026Review =
@@ -374,7 +376,7 @@ export async function GET(request: NextRequest) {
       },
     };
 
-    return NextResponse.json(response);
+    return NextResponse.json(response, { headers: freshness });
 
   } catch (error) {
     console.error('SEASON_SUMMARY_API_ERROR', error);
@@ -384,7 +386,7 @@ export async function GET(request: NextRequest) {
         error: 'Internal error',
         detail: errorMessage,
       },
-      { status: 500 }
+      { status: 500, headers: freshness }
     );
   }
 }

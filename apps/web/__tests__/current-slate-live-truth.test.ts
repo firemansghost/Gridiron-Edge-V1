@@ -100,13 +100,18 @@ describe('Phase 1C Official Card remains persisted truth', () => {
     expect(picks).not.toContain('useProductionModel');
   });
 
-  it('does not change Official Card API/helper', () => {
-    expect(
-      gitDiffNames([
-        'apps/web/lib/official-card.ts',
-        'apps/web/app/api/official-card/route.ts',
-      ])
-    ).toEqual([]);
+  it('keeps Official Card helper semantics and GET/read-only API', () => {
+    expect(gitDiffNames(['apps/web/lib/official-card.ts'])).toEqual([]);
+    const route = fs.readFileSync(
+      path.join(webRoot, 'app/api/official-card/route.ts'),
+      'utf8'
+    );
+    expect(route).toContain('export async function GET');
+    expect(route).not.toMatch(/export async function (POST|PUT|PATCH|DELETE)/);
+    expect(route).toContain('persistedTruthResponseHeaders');
+    expect(route).not.toContain('/api/weeks/slate');
+    expect(route).not.toContain('prisma.bet.create');
+    expect(route).not.toContain('prisma.bet.update');
   });
 });
 

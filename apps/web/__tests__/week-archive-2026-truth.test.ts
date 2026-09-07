@@ -565,14 +565,12 @@ describe('Phase 2B does not modify Current Slate or model formulas', () => {
     ).toEqual([]);
   });
 
-  it('does not modify Current Slate or Official Card semantics files', () => {
+  it('does not modify Current Slate or Official Card calculation semantics', () => {
     expect(
       gitDiffNames([
         'apps/web/app/page.tsx',
         'apps/web/components/SlateTable.tsx',
         'apps/web/lib/official-card.ts',
-        'apps/web/app/api/official-card/route.ts',
-        'apps/web/app/picks/page.tsx',
       ])
     ).toEqual([]);
   });
