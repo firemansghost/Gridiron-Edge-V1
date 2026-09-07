@@ -6,11 +6,13 @@ import {
   computeWeekReviewMetrics,
   type ReviewBetRow,
 } from '@/lib/review-truth-week';
+import { persistedTruthResponseHeaders } from '@/lib/persisted-truth-freshness';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
+  const freshness = persistedTruthResponseHeaders();
   try {
     const { searchParams } = new URL(request.url);
     const season = searchParams.get('season');
@@ -248,7 +250,8 @@ export async function GET(request: NextRequest) {
         }));
     }
 
-    return NextResponse.json({
+    return NextResponse.json(
+      {
       success: true,
       pagination: {
         currentPage: page,
@@ -281,7 +284,9 @@ export async function GET(request: NextRequest) {
         pnl: bet.pnl === null ? null : Number(bet.pnl),
         clv: bet.clv === null ? null : Number(bet.clv),
       })),
-    });
+      },
+      { headers: freshness }
+    );
 
   } catch (error) {
     console.error('BETS_API_ERROR summary', error);
@@ -292,7 +297,7 @@ export async function GET(request: NextRequest) {
         error: 'Internal error', 
         detail: errorMessage 
       },
-      { status: 500 }
+      { status: 500, headers: freshness }
     );
   }
 }

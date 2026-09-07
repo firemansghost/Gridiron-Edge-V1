@@ -7,7 +7,7 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { HeaderNav } from '@/components/HeaderNav';
 import { Footer } from '@/components/Footer';
@@ -24,6 +24,10 @@ import {
   type OfficialCardSummary,
   type OfficialCardWager,
 } from '@/lib/official-card';
+import {
+  persistedTruthFetchInit,
+  subscribePersistedTruthRefresh,
+} from '@/lib/persisted-truth-freshness';
 
 interface OfficialCardResponse {
   ok: boolean;
@@ -97,6 +101,8 @@ export default function OfficialCardPage() {
   const [emptyMessage, setEmptyMessage] = useState<string | null>(null);
   const [summary, setSummary] = useState<OfficialCardSummary | null>(null);
   const [games, setGames] = useState<OfficialCardGameView[]>([]);
+  const weekRef = useRef<number | null>(null);
+  weekRef.current = week;
 
   const loadCard = async (nextWeek?: number) => {
     try {
@@ -106,7 +112,10 @@ export default function OfficialCardPage() {
       const params = new URLSearchParams();
       if (nextWeek != null) params.set('week', String(nextWeek));
       const qs = params.toString();
-      const response = await fetch(qs ? `/api/official-card?${qs}` : '/api/official-card');
+      const response = await fetch(
+        qs ? `/api/official-card?${qs}` : '/api/official-card',
+        persistedTruthFetchInit
+      );
       const data = (await response.json()) as OfficialCardResponse;
       if (!response.ok || !data.ok) {
         throw new Error(data.error || `Failed to load Official Card (${response.status})`);
@@ -131,6 +140,12 @@ export default function OfficialCardPage() {
     const fromUrl = params.get('week');
     const parsed = fromUrl ? Number.parseInt(fromUrl, 10) : NaN;
     void loadCard(Number.isInteger(parsed) && parsed >= 1 && parsed <= 16 ? parsed : undefined);
+  }, []);
+
+  useEffect(() => {
+    return subscribePersistedTruthRefresh(() => {
+      void loadCard(weekRef.current ?? undefined);
+    });
   }, []);
 
   const handleExportCsv = () => {
@@ -192,6 +207,14 @@ export default function OfficialCardPage() {
                     ))}
                   </select>
                 </label>
+                <button
+                  type="button"
+                  onClick={() => void loadCard(week ?? undefined)}
+                  disabled={loading}
+                  className="px-3 py-2 border border-gray-300 bg-white text-gray-800 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium disabled:opacity-50"
+                >
+                  Refresh
+                </button>
                 {games.length > 0 && (
                   <button
                     onClick={handleExportCsv}

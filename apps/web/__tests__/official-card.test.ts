@@ -393,6 +393,8 @@ describe('Official Card API/page static containment', () => {
   it('API is GET/read-only and does not write or use live slate/MarketLine', () => {
     expect(route).toContain('export async function GET');
     expect(route).not.toMatch(/export async function (POST|PUT|PATCH|DELETE)/);
+    expect(route).toContain('persistedTruthResponseHeaders');
+    expect(route).toContain('headers: freshness');
     expect(helper).toContain('season: OFFICIAL_CARD_SEASON');
     expect(helper).toContain('strategyTag: OFFICIAL_CARD_STRATEGY_TAG');
     expect(helper).toContain('source: OFFICIAL_CARD_SOURCE');
@@ -415,6 +417,8 @@ describe('Official Card API/page static containment', () => {
     expect(nav).not.toContain('My Picks');
     expect(page).toContain('Official Card');
     expect(page).toContain('/api/official-card');
+    expect(page).toContain('persistedTruthFetchInit');
+    expect(page).toContain('subscribePersistedTruthRefresh');
     expect(page).toContain('View Live Model / Current Slate');
     expect(page).toContain('No official card has been locked');
     expect(page).not.toContain('ProductionModelSelector');

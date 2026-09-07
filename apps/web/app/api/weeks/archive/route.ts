@@ -22,8 +22,10 @@ import {
   weekArchiveGamePrismaSelect,
   type WeekArchiveGameInput,
 } from '@/lib/week-archive';
+import { persistedTruthResponseHeaders } from '@/lib/persisted-truth-freshness';
 
 export async function GET(request: NextRequest) {
+  const freshness = persistedTruthResponseHeaders();
   try {
     const { searchParams } = new URL(request.url);
     const season = parseWeekArchiveSeasonParam(searchParams.get('season'));
@@ -35,13 +37,13 @@ export async function GET(request: NextRequest) {
           ok: false,
           error: `season must be an integer >= ${WEEK_ARCHIVE_MIN_SEASON}`,
         },
-        { status: 400 }
+        { status: 400, headers: freshness }
       );
     }
     if (week == null) {
       return NextResponse.json(
         { ok: false, error: 'week must be an integer from 1 to 16' },
-        { status: 400 }
+        { status: 400, headers: freshness }
       );
     }
 
@@ -64,13 +66,16 @@ export async function GET(request: NextRequest) {
       week
     );
 
-    return NextResponse.json({
-      ok: true,
-      season,
-      week,
-      summary,
-      games,
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        season,
+        week,
+        summary,
+        games,
+      },
+      { headers: freshness }
+    );
   } catch (error) {
     if (error instanceof OfficialCardIntegrityError) {
       return NextResponse.json(
@@ -79,7 +84,7 @@ export async function GET(request: NextRequest) {
           error: `Week archive data integrity error: ${error.message}`,
           duplicates: error.duplicates,
         },
-        { status: 409 }
+        { status: 409, headers: freshness }
       );
     }
     if (error instanceof WeekArchiveIntegrityError) {
@@ -89,7 +94,7 @@ export async function GET(request: NextRequest) {
           error: `Week archive data integrity error: ${error.message}`,
           issues: error.issues,
         },
-        { status: 409 }
+        { status: 409, headers: freshness }
       );
     }
 
@@ -100,7 +105,7 @@ export async function GET(request: NextRequest) {
         error: 'Unable to load Week Archive',
         detail: String((error as Error)?.message ?? error),
       },
-      { status: 500 }
+      { status: 500, headers: freshness }
     );
   }
 }

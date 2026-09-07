@@ -18,6 +18,10 @@ import {
   formatLineNumber,
   formatSignedSpread,
 } from '@/lib/official-card';
+import {
+  persistedTruthFetchInit,
+  subscribePersistedTruthRefresh,
+} from '@/lib/persisted-truth-freshness';
 
 interface BetSummary {
   totalBets: number;
@@ -164,7 +168,7 @@ export default function WeekReviewPage() {
         params.append('strategy', strategy);
       }
       
-      const response = await fetch(`/api/bets/summary?${params}`);
+      const response = await fetch(`/api/bets/summary?${params}`, persistedTruthFetchInit);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         const errorMessage = errorData.detail || errorData.error || `HTTP ${response.status}: ${response.statusText}`;
@@ -187,6 +191,13 @@ export default function WeekReviewPage() {
 
   useEffect(() => {
     fetchData();
+  }, [season, week, strategy, page]);
+
+  useEffect(() => {
+    return subscribePersistedTruthRefresh(() => {
+      if (!season || !week) return;
+      void fetchData();
+    });
   }, [season, week, strategy, page]);
 
   // Default to Hybrid V2 when no URL strategy; validate explicit URL against available tags

@@ -21,8 +21,10 @@ import {
   parseOfficialCardWeekParam,
   type OfficialCardBetInput,
 } from '@/lib/official-card';
+import { persistedTruthResponseHeaders } from '@/lib/persisted-truth-freshness';
 
 export async function GET(request: NextRequest) {
+  const freshness = persistedTruthResponseHeaders();
   try {
     const { searchParams } = new URL(request.url);
     const requestedWeek = parseOfficialCardWeekParam(searchParams.get('week'));
@@ -42,15 +44,18 @@ export async function GET(request: NextRequest) {
     const { summary, games } = buildOfficialCardView(inputs);
     const empty = summary.totalBets === 0;
 
-    return NextResponse.json({
-      ok: true,
-      season: OFFICIAL_CARD_SEASON,
-      week,
-      empty,
-      emptyMessage: empty ? OFFICIAL_CARD_EMPTY_MESSAGE(week) : null,
-      summary,
-      games,
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        season: OFFICIAL_CARD_SEASON,
+        week,
+        empty,
+        emptyMessage: empty ? OFFICIAL_CARD_EMPTY_MESSAGE(week) : null,
+        summary,
+        games,
+      },
+      { headers: freshness }
+    );
   } catch (error) {
     if (error instanceof OfficialCardIntegrityError) {
       return NextResponse.json(
@@ -59,7 +64,7 @@ export async function GET(request: NextRequest) {
           error: error.message,
           duplicates: error.duplicates,
         },
-        { status: 409 }
+        { status: 409, headers: freshness }
       );
     }
 
@@ -70,7 +75,7 @@ export async function GET(request: NextRequest) {
         error: 'Unable to load Official Card',
         detail: String((error as Error)?.message ?? error),
       },
-      { status: 500 }
+      { status: 500, headers: freshness }
     );
   }
 }
