@@ -1,0 +1,35 @@
+name: TEMP Shadow T-30 PR Validation
+
+on:
+  pull_request:
+    branches: ['main']
+
+permissions:
+  contents: read
+
+jobs:
+  validate-shadow-t30:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Targeted Shadow T-30 tests
+        run: >-
+          npx jest
+          apps/web/__tests__/shadow-closing-market-v1.test.ts
+          apps/jobs/__tests__/shadow-t30-closing-workflow.test.ts
+          --runInBand
+      - name: Focused TypeScript check
+        run: >-
+          npx tsc --noEmit --skipLibCheck
+          --moduleResolution node --target ES2020 --module commonjs --esModuleInterop
+          apps/web/lib/shadow-closing-market-v1.ts
+          apps/jobs/capture-shadow-t30-closing-v1-2026.ts
