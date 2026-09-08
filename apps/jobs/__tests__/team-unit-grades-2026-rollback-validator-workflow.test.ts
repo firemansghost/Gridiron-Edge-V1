@@ -6,6 +6,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+  TEAM_UNIT_GRADES_2026_EXPECTED_GRADE_VALUE_COUNT,
+  TEAM_UNIT_GRADES_2026_PERSISTED_SIGNIFICANT_DIGITS,
+  canonicalizeProposedGradeRows,
+} from '../write-team-unit-grades-2026';
+import {
   TEAM_UNIT_GRADES_2026_ROLLBACK_VALIDATION_CONFIRMATION,
   firstGradeMismatch,
   parseRollbackValidationArgs,
@@ -96,16 +101,20 @@ describe('2026 TeamUnitGrades rollback-only validator', () => {
     expect(cli).not.toMatch(/prisma migrate deploy|capture-shadow-snapshot|write-cfbd-unit-grade-sources/);
   });
 
-  it('mirrors the TeamUnitGrades create path and deliberately rolls it back', () => {
+  it('mirrors canonical persistence and deliberately rolls it back', () => {
     expect(cli).toContain('Prisma.TransactionIsolationLevel.Serializable');
     expect(cli).toContain('runTeamUnitGrades2026Preview(store');
     expect(cli).toContain('validatePlanForTeamUnitGradesWrite(plan)');
+    expect(cli).toContain("stage = 'canonicalizing_rows'");
+    expect(cli).toContain('canonicalizeProposedGradeRows(plan.planning.proposedGradeRows)');
+    expect(cli).toContain('for (const row of canonicalized.rows)');
     expect(cli).toContain('tx.teamUnitGrades.create');
     expect(cli).not.toContain('teamUnitGrades.upsert');
     expect(cli).not.toContain('teamUnitGrades.update');
     expect(cli).not.toContain('teamUnitGrades.delete');
     expect(cli).toContain("stage = 'in_transaction_compare'");
-    expect(cli).toContain('firstGradeMismatch(');
+    expect(cli).toContain('firstGradeMismatch(\n            canonicalized.rows');
+    expect(cli).toContain("comparisonTarget: 'canonicalized_planner_values'");
     expect(cli).toContain("stage = 'intentional_rollback'");
     expect(cli).toContain('throw new RollbackOnlyValidationComplete()');
     expect(cli).toContain("stage = 'post_rollback_select'");
@@ -113,16 +122,31 @@ describe('2026 TeamUnitGrades rollback-only validator', () => {
     expect(cli).toContain('process.exit(validationSucceeded ? 0 : 1)');
   });
 
-  it('reports the first exact grade mismatch instead of weakening equality', () => {
+  it('requires the full 966-value canonicalization contract before validation can succeed', () => {
+    expect(TEAM_UNIT_GRADES_2026_PERSISTED_SIGNIFICANT_DIGITS).toBe(15);
+    expect(TEAM_UNIT_GRADES_2026_EXPECTED_GRADE_VALUE_COUNT).toBe(966);
+    expect(cli).toContain('canonicalization.valueCount === TEAM_UNIT_GRADES_2026_EXPECTED_GRADE_VALUE_COUNT');
+    expect(cli).toContain('canonicalization.withinDeltaGuard');
+
     const proposed = makeRows();
-    const persisted = proposed.map((row) => ({ ...row, season: 2026 }));
-    expect(firstGradeMismatch(proposed, persisted, 2026)).toBeNull();
+    proposed[0] = { ...proposed[0], offRunGrade: 1.4852971677973312 };
+    const canonicalized = canonicalizeProposedGradeRows(proposed);
+    expect(canonicalized.summary.valueCount).toBe(966);
+    expect(canonicalized.summary.withinDeltaGuard).toBe(true);
+    expect(canonicalized.rows[0].offRunGrade).toBe(1.48529716779733);
+  });
+
+  it('reports the first exact canonical grade mismatch instead of weakening equality', () => {
+    const proposed = makeRows();
+    const canonicalized = canonicalizeProposedGradeRows(proposed);
+    const persisted = canonicalized.rows.map((row) => ({ ...row, season: 2026 }));
+    expect(firstGradeMismatch(canonicalized.rows, persisted, 2026)).toBeNull();
 
     persisted[17] = {
       ...persisted[17],
       offPassGrade: persisted[17].offPassGrade + 1e-9,
     };
-    const mismatch = firstGradeMismatch(proposed, persisted, 2026);
+    const mismatch = firstGradeMismatch(canonicalized.rows, persisted, 2026);
     expect(mismatch).not.toBeNull();
     expect(mismatch?.reason).toBe('grade_value');
     expect(mismatch?.teamId).toBe(proposed[17].teamId);

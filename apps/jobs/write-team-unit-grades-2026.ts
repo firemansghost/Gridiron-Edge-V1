@@ -6,9 +6,9 @@
  * whether a first-write COMMIT would be safe.
  *
  * COMMIT: recomputes the complete proposal inside the same Serializable
- * transaction that performs the inserts, writes TeamUnitGrades only, verifies
- * exact agreement before commit, then independently post-verifies persisted
- * rows after commit.
+ * transaction that performs the inserts, canonicalizes grade values only at
+ * the persistence boundary, writes TeamUnitGrades only, verifies exact
+ * agreement before commit, then independently post-verifies persisted rows.
  *
  * No providers. No CFBD/Odds keys. No legacy compute writer. No Shadow.
  * No source-table, priors, Bet, MatchupOutput, ratings, or Prisma migrate writes.
@@ -34,6 +34,8 @@ import {
 
 export const TEAM_UNIT_GRADES_2026_CONFIRMATION = 'WRITE_2026_TEAM_UNIT_GRADES';
 export const TEAM_UNIT_GRADES_2026_TRANSACTION_TIMEOUT_MS = 120_000;
+export const TEAM_UNIT_GRADES_2026_PERSISTED_SIGNIFICANT_DIGITS = 15;
+export const TEAM_UNIT_GRADES_2026_CANONICALIZATION_EPSILON_FACTOR = 64;
 
 type WriterMode = 'PREVIEW' | 'COMMIT';
 
@@ -44,7 +46,7 @@ interface ParsedArgs {
   reportPath: string | null;
 }
 
-const GRADE_KEYS = [
+export const TEAM_UNIT_GRADES_2026_GRADE_KEYS = [
   'offRunGrade',
   'defRunGrade',
   'offPassGrade',
@@ -54,6 +56,30 @@ const GRADE_KEYS = [
   'havocGrade',
 ] as const;
 
+export type TeamUnitGradeKey = (typeof TEAM_UNIT_GRADES_2026_GRADE_KEYS)[number];
+
+export const TEAM_UNIT_GRADES_2026_EXPECTED_GRADE_VALUE_COUNT =
+  EXPECTED_FBS_COUNT * TEAM_UNIT_GRADES_2026_GRADE_KEYS.length;
+
+export interface TeamUnitGradesCanonicalizationSummary {
+  significantDigits: number;
+  epsilonFactorGuard: number;
+  valueCount: number;
+  changedValueCount: number;
+  maxAbsoluteDelta: number;
+  maxScaledEpsilonUnits: number;
+  maxDeltaTeamId: string | null;
+  maxDeltaField: TeamUnitGradeKey | null;
+  maxOriginalValue: number | null;
+  maxCanonicalValue: number | null;
+  withinDeltaGuard: boolean;
+}
+
+export interface CanonicalizedTeamUnitGradeRows {
+  rows: ProposedGradeRow[];
+  summary: TeamUnitGradesCanonicalizationSummary;
+}
+
 interface PersistedGradeRow extends ProposedGradeRow {
   season: number;
 }
@@ -62,17 +88,20 @@ class TeamUnitGradesCommitFailure extends Error {
   readonly plan: TeamUnitGrades2026Plan | null;
   readonly writeBlockers: string[];
   readonly mutationCallsAttempted: number;
+  readonly canonicalization: TeamUnitGradesCanonicalizationSummary | null;
 
   constructor(options: {
     plan: TeamUnitGrades2026Plan | null;
     writeBlockers: string[];
     mutationCallsAttempted: number;
+    canonicalization: TeamUnitGradesCanonicalizationSummary | null;
   }) {
     super('2026 TeamUnitGrades COMMIT transaction failed');
     this.name = 'TeamUnitGradesCommitFailure';
     this.plan = options.plan;
     this.writeBlockers = options.writeBlockers;
     this.mutationCallsAttempted = options.mutationCallsAttempted;
+    this.canonicalization = options.canonicalization;
   }
 }
 
@@ -152,6 +181,83 @@ function compareTeamId(a: { teamId: string }, b: { teamId: string }): number {
   return 0;
 }
 
+export function canonicalizeTeamUnitGradeValue(value: number): number {
+  if (!Number.isFinite(value)) {
+    throw new Error('team_unit_grade_canonicalization_requires_finite_value');
+  }
+  return Number(value.toPrecision(TEAM_UNIT_GRADES_2026_PERSISTED_SIGNIFICANT_DIGITS));
+}
+
+export function canonicalizeProposedGradeRows(
+  proposedRows: readonly ProposedGradeRow[]
+): CanonicalizedTeamUnitGradeRows {
+  let valueCount = 0;
+  let changedValueCount = 0;
+  let maxAbsoluteDelta = 0;
+  let maxScaledEpsilonUnits = 0;
+  let maxDeltaTeamId: string | null = null;
+  let maxDeltaField: TeamUnitGradeKey | null = null;
+  let maxOriginalValue: number | null = null;
+  let maxCanonicalValue: number | null = null;
+  let withinDeltaGuard = true;
+
+  const rows = proposedRows.map((row) => {
+    const canonical = { ...row };
+    for (const field of TEAM_UNIT_GRADES_2026_GRADE_KEYS) {
+      const original = row[field];
+      const persisted = canonicalizeTeamUnitGradeValue(original);
+      canonical[field] = persisted;
+      valueCount += 1;
+
+      const absoluteDelta = Math.abs(original - persisted);
+      const scale = Math.max(1, Math.abs(original), Math.abs(persisted));
+      const scaledEpsilonUnits = absoluteDelta / (Number.EPSILON * scale);
+      const allowedDelta =
+        Number.EPSILON * TEAM_UNIT_GRADES_2026_CANONICALIZATION_EPSILON_FACTOR * scale;
+
+      if (original !== persisted) changedValueCount += 1;
+      if (absoluteDelta > allowedDelta) withinDeltaGuard = false;
+      if (absoluteDelta > maxAbsoluteDelta) {
+        maxAbsoluteDelta = absoluteDelta;
+        maxScaledEpsilonUnits = scaledEpsilonUnits;
+        maxDeltaTeamId = row.teamId;
+        maxDeltaField = field;
+        maxOriginalValue = original;
+        maxCanonicalValue = persisted;
+      }
+    }
+    return canonical;
+  });
+
+  return {
+    rows,
+    summary: {
+      significantDigits: TEAM_UNIT_GRADES_2026_PERSISTED_SIGNIFICANT_DIGITS,
+      epsilonFactorGuard: TEAM_UNIT_GRADES_2026_CANONICALIZATION_EPSILON_FACTOR,
+      valueCount,
+      changedValueCount,
+      maxAbsoluteDelta,
+      maxScaledEpsilonUnits,
+      maxDeltaTeamId,
+      maxDeltaField,
+      maxOriginalValue,
+      maxCanonicalValue,
+      withinDeltaGuard,
+    },
+  };
+}
+
+function canonicalizationBlockers(summary: TeamUnitGradesCanonicalizationSummary): string[] {
+  const blockers: string[] = [];
+  if (summary.valueCount !== TEAM_UNIT_GRADES_2026_EXPECTED_GRADE_VALUE_COUNT) {
+    blockers.push('canonicalized_grade_value_count_not_966');
+  }
+  if (!summary.withinDeltaGuard) {
+    blockers.push('canonicalization_delta_guard_exceeded');
+  }
+  return blockers;
+}
+
 export function validatePlanForTeamUnitGradesWrite(plan: TeamUnitGrades2026Plan): string[] {
   const blockers: string[] = [];
   const rows = plan.planning.proposedGradeRows;
@@ -182,6 +288,7 @@ export function validatePlanForTeamUnitGradesWrite(plan: TeamUnitGrades2026Plan)
   if (plan.planning.proposedGradeRowCount !== EXPECTED_FBS_COUNT) blockers.push('planning_proposed_count_not_138');
   if (rows.length !== EXPECTED_FBS_COUNT) blockers.push('proposed_rows_not_138');
 
+  let allGradesFinite = true;
   for (const row of rows) {
     if (typeof row.teamId !== 'string' || row.teamId.trim() === '') {
       blockers.push('blank_team_id');
@@ -189,12 +296,19 @@ export function validatePlanForTeamUnitGradesWrite(plan: TeamUnitGrades2026Plan)
     }
     if (seen.has(row.teamId)) blockers.push(`duplicate_team_id:${row.teamId}`);
     seen.add(row.teamId);
-    for (const key of GRADE_KEYS) {
-      if (!Number.isFinite(row[key])) blockers.push(`nonfinite_grade:${row.teamId}:${key}`);
+    for (const key of TEAM_UNIT_GRADES_2026_GRADE_KEYS) {
+      if (!Number.isFinite(row[key])) {
+        allGradesFinite = false;
+        blockers.push(`nonfinite_grade:${row.teamId}:${key}`);
+      }
     }
   }
 
   if (seen.size !== EXPECTED_FBS_COUNT) blockers.push('unique_proposed_team_count_not_138');
+  if (rows.length === EXPECTED_FBS_COUNT && allGradesFinite) {
+    const canonicalized = canonicalizeProposedGradeRows(rows);
+    blockers.push(...canonicalizationBlockers(canonicalized.summary));
+  }
   return Array.from(new Set(blockers));
 }
 
@@ -210,7 +324,7 @@ export function exactGradeRowsMatch(
   const persisted = persistedRows.slice().sort(compareTeamId);
   for (let i = 0; i < proposed.length; i++) {
     if (persisted[i].season !== season || proposed[i].teamId !== persisted[i].teamId) return false;
-    for (const key of GRADE_KEYS) {
+    for (const key of TEAM_UNIT_GRADES_2026_GRADE_KEYS) {
       if (proposed[i][key] !== persisted[i][key]) return false;
     }
   }
@@ -256,7 +370,17 @@ async function runPreview(
     observedAt,
   });
   const writeBlockers = validatePlanForTeamUnitGradesWrite(plan);
-  return { plan, writeBlockers, writeSafe: writeBlockers.length === 0 };
+  const canonicalization =
+    writeBlockers.some((b) => b.startsWith('nonfinite_grade:')) ||
+    plan.planning.proposedGradeRows.length !== EXPECTED_FBS_COUNT
+      ? null
+      : canonicalizeProposedGradeRows(plan.planning.proposedGradeRows).summary;
+  return {
+    plan,
+    writeBlockers,
+    writeSafe: writeBlockers.length === 0,
+    canonicalization,
+  };
 }
 
 async function runCommit(
@@ -268,9 +392,12 @@ async function runCommit(
   let planForFailure: TeamUnitGrades2026Plan | null = null;
   let blockersForFailure: string[] = [];
   let mutationCallsAttempted = 0;
+  let canonicalizationForFailure: TeamUnitGradesCanonicalizationSummary | null = null;
 
   let txResult: {
     plan: TeamUnitGrades2026Plan;
+    canonicalization: TeamUnitGradesCanonicalizationSummary;
+    canonicalRows: ProposedGradeRow[];
     committedRowCount: number;
     transactionVerified: boolean;
   };
@@ -291,7 +418,15 @@ async function runCommit(
           throw new Error('team_unit_grades_write_blocked');
         }
 
-        for (const row of plan.planning.proposedGradeRows) {
+        const canonicalized = canonicalizeProposedGradeRows(plan.planning.proposedGradeRows);
+        canonicalizationForFailure = canonicalized.summary;
+        const persistenceBlockers = canonicalizationBlockers(canonicalized.summary);
+        if (persistenceBlockers.length > 0) {
+          blockersForFailure = Array.from(new Set([...blockersForFailure, ...persistenceBlockers]));
+          throw new Error('team_unit_grades_canonicalization_blocked');
+        }
+
+        for (const row of canonicalized.rows) {
           mutationCallsAttempted += 1;
           await tx.teamUnitGrades.create({
             data: {
@@ -310,7 +445,7 @@ async function runCommit(
 
         const persistedInsideTransaction = await selectPersistedRows(tx, args.season);
         const transactionVerified = exactGradeRowsMatch(
-          plan.planning.proposedGradeRows,
+          canonicalized.rows,
           persistedInsideTransaction,
           args.season
         );
@@ -318,7 +453,9 @@ async function runCommit(
 
         return {
           plan,
-          committedRowCount: plan.planning.proposedGradeRows.length,
+          canonicalization: canonicalized.summary,
+          canonicalRows: canonicalized.rows,
+          committedRowCount: canonicalized.rows.length,
           transactionVerified,
         };
       },
@@ -332,12 +469,13 @@ async function runCommit(
       plan: planForFailure,
       writeBlockers: blockersForFailure,
       mutationCallsAttempted,
+      canonicalization: canonicalizationForFailure,
     });
   }
 
   const postWriteRows = await selectPersistedRows(prisma, args.season);
   const postWriteExactMatch = exactGradeRowsMatch(
-    txResult.plan.planning.proposedGradeRows,
+    txResult.canonicalRows,
     postWriteRows,
     args.season
   );
@@ -346,6 +484,7 @@ async function runCommit(
     plan: txResult.plan,
     writeBlockers: [],
     writeSafe: true,
+    canonicalization: txResult.canonicalization,
     mutationCallsAttempted,
     committedRowCount: txResult.committedRowCount,
     transactionVerified: txResult.transactionVerified,
@@ -376,6 +515,7 @@ async function main() {
   let plan: TeamUnitGrades2026Plan | null = null;
   let writeBlockers: string[] = [];
   let writeSafe = false;
+  let canonicalization: TeamUnitGradesCanonicalizationSummary | null = null;
   let mutationsInvoked = false;
   let mutationCallsAttempted = 0;
   let mutationCount = 0;
@@ -394,6 +534,7 @@ async function main() {
       plan = result.plan;
       writeBlockers = result.writeBlockers;
       writeSafe = result.writeSafe;
+      canonicalization = result.canonicalization;
     } else {
       commitAttempted = true;
       try {
@@ -401,6 +542,7 @@ async function main() {
         plan = result.plan;
         writeBlockers = result.writeBlockers;
         writeSafe = result.writeSafe;
+        canonicalization = result.canonicalization;
         mutationCallsAttempted = result.mutationCallsAttempted;
         mutationsInvoked = mutationCallsAttempted > 0;
         mutationCount = result.committedRowCount;
@@ -417,6 +559,7 @@ async function main() {
           writeBlockers = err.writeBlockers;
           mutationCallsAttempted = err.mutationCallsAttempted;
           mutationsInvoked = mutationCallsAttempted > 0;
+          canonicalization = err.canonicalization;
         }
         error = sanitizeError(err);
       }
@@ -434,6 +577,14 @@ async function main() {
       planner: plan,
       writeBlockers,
       writeSafe,
+      persistenceContract: {
+        exactEqualityRequired: true,
+        comparisonTarget: 'canonicalized_planner_values',
+        significantDigits: TEAM_UNIT_GRADES_2026_PERSISTED_SIGNIFICANT_DIGITS,
+        epsilonFactorGuard: TEAM_UNIT_GRADES_2026_CANONICALIZATION_EPSILON_FACTOR,
+        expectedGradeValueCount: TEAM_UNIT_GRADES_2026_EXPECTED_GRADE_VALUE_COUNT,
+      },
+      canonicalization,
       writerAuthorization: {
         seasonAuthorized: args.season === TARGET_SEASON,
         confirmationSatisfied:
