@@ -3,10 +3,11 @@
  * Manual rollback-only validator for the guarded 2026 TeamUnitGrades writer.
  *
  * This is NOT PREVIEW and NOT COMMIT. It deliberately exercises the same
- * planner -> 138 TeamUnitGrades creates -> in-transaction exact comparison
- * path inside one Serializable transaction, then throws a sentinel so the
- * transaction MUST roll back. A post-rollback SELECT must confirm zero 2026
- * TeamUnitGrades rows before validation can succeed.
+ * planner -> persistence-boundary canonicalization -> 138 TeamUnitGrades
+ * creates -> in-transaction exact comparison path inside one Serializable
+ * transaction, then throws a sentinel so the transaction MUST roll back.
+ * A post-rollback SELECT must confirm zero 2026 TeamUnitGrades rows before
+ * validation can succeed.
  *
  * No providers. No source-table, priors, Shadow, Bet, MatchupOutput, ratings,
  * or Prisma migrate writes. No legacy compute writer.
@@ -21,8 +22,16 @@ import {
   runTeamUnitGrades2026Preview,
 } from './preview-team-unit-grades-2026';
 import {
+  TEAM_UNIT_GRADES_2026_CANONICALIZATION_EPSILON_FACTOR,
+  TEAM_UNIT_GRADES_2026_EXPECTED_GRADE_VALUE_COUNT,
+  TEAM_UNIT_GRADES_2026_PERSISTED_SIGNIFICANT_DIGITS,
   TEAM_UNIT_GRADES_2026_TRANSACTION_TIMEOUT_MS,
+  canonicalizeProposedGradeRows,
   validatePlanForTeamUnitGradesWrite,
+} from './write-team-unit-grades-2026';
+import type {
+  TeamUnitGradeKey,
+  TeamUnitGradesCanonicalizationSummary,
 } from './write-team-unit-grades-2026';
 import type { ProposedGradeRow, TeamUnitGrades2026Plan } from './src/v2/team-unit-grades-2026-planner';
 import {
@@ -38,31 +47,13 @@ type ValidationStage =
   | 'initializing'
   | 'planning'
   | 'validating_plan'
+  | 'canonicalizing_rows'
   | 'inserting_rows'
   | 'in_transaction_select'
   | 'in_transaction_compare'
   | 'intentional_rollback'
   | 'post_rollback_select'
   | 'complete';
-
-type GradeKey =
-  | 'offRunGrade'
-  | 'defRunGrade'
-  | 'offPassGrade'
-  | 'defPassGrade'
-  | 'offExplosiveness'
-  | 'defExplosiveness'
-  | 'havocGrade';
-
-const GRADE_KEYS: readonly GradeKey[] = [
-  'offRunGrade',
-  'defRunGrade',
-  'offPassGrade',
-  'defPassGrade',
-  'offExplosiveness',
-  'defExplosiveness',
-  'havocGrade',
-];
 
 interface PersistedGradeRow extends ProposedGradeRow {
   season: number;
@@ -78,7 +69,7 @@ interface MismatchDetail {
   reason: 'row_count' | 'season' | 'team_id' | 'grade_value';
   index?: number;
   teamId?: string;
-  field?: GradeKey;
+  field?: TeamUnitGradeKey;
   proposed?: number;
   persisted?: number;
   absoluteDelta?: number;
@@ -191,7 +182,15 @@ export function firstGradeMismatch(
     if (proposed[i].teamId !== persisted[i].teamId) {
       return { reason: 'team_id', index: i, teamId: proposed[i].teamId };
     }
-    for (const field of GRADE_KEYS) {
+    for (const field of [
+      'offRunGrade',
+      'defRunGrade',
+      'offPassGrade',
+      'defPassGrade',
+      'offExplosiveness',
+      'defExplosiveness',
+      'havocGrade',
+    ] as const) {
       const proposedValue = proposed[i][field];
       const persistedValue = persisted[i][field];
       if (proposedValue !== persistedValue) {
@@ -261,6 +260,7 @@ async function main() {
   let failureStage: ValidationStage | null = null;
   let plan: TeamUnitGrades2026Plan | null = null;
   let writeBlockers: string[] = [];
+  let canonicalization: TeamUnitGradesCanonicalizationSummary | null = null;
   let mutationCallsAttempted = 0;
   let insertCallsCompleted = 0;
   let inTransactionRowCount = 0;
@@ -289,8 +289,19 @@ async function main() {
           writeBlockers = validatePlanForTeamUnitGradesWrite(plan);
           if (writeBlockers.length > 0) throw new Error('write_path_validation_blocked');
 
+          stage = 'canonicalizing_rows';
+          const canonicalized = canonicalizeProposedGradeRows(plan.planning.proposedGradeRows);
+          canonicalization = canonicalized.summary;
+          if (canonicalized.summary.valueCount !== TEAM_UNIT_GRADES_2026_EXPECTED_GRADE_VALUE_COUNT) {
+            writeBlockers = [...writeBlockers, 'canonicalized_grade_value_count_not_966'];
+          }
+          if (!canonicalized.summary.withinDeltaGuard) {
+            writeBlockers = [...writeBlockers, 'canonicalization_delta_guard_exceeded'];
+          }
+          if (writeBlockers.length > 0) throw new Error('canonicalization_validation_blocked');
+
           stage = 'inserting_rows';
-          for (const row of plan.planning.proposedGradeRows) {
+          for (const row of canonicalized.rows) {
             mutationCallsAttempted += 1;
             await tx.teamUnitGrades.create({
               data: {
@@ -314,7 +325,7 @@ async function main() {
 
           stage = 'in_transaction_compare';
           firstMismatch = firstGradeMismatch(
-            plan.planning.proposedGradeRows,
+            canonicalized.rows,
             persisted,
             args.season
           );
@@ -355,7 +366,10 @@ async function main() {
       inTransactionRowCount === EXPECTED_FBS_COUNT &&
       inTransactionExactMatch &&
       firstMismatch === null &&
-      writeBlockers.length === 0;
+      writeBlockers.length === 0 &&
+      canonicalization !== null &&
+      canonicalization.valueCount === TEAM_UNIT_GRADES_2026_EXPECTED_GRADE_VALUE_COUNT &&
+      canonicalization.withinDeltaGuard;
 
     if (validationSucceeded) stage = 'complete';
   } catch (err) {
@@ -377,7 +391,20 @@ async function main() {
       sourceReadinessStatus: plan?.sourceReadinessStatus ?? null,
       planner: plan,
       writeBlockers,
-      writeSafe: plan !== null && writeBlockers.length === 0,
+      writeSafe:
+        plan !== null &&
+        writeBlockers.length === 0 &&
+        canonicalization !== null &&
+        canonicalization.valueCount === TEAM_UNIT_GRADES_2026_EXPECTED_GRADE_VALUE_COUNT &&
+        canonicalization.withinDeltaGuard,
+      persistenceContract: {
+        exactEqualityRequired: true,
+        comparisonTarget: 'canonicalized_planner_values',
+        significantDigits: TEAM_UNIT_GRADES_2026_PERSISTED_SIGNIFICANT_DIGITS,
+        epsilonFactorGuard: TEAM_UNIT_GRADES_2026_CANONICALIZATION_EPSILON_FACTOR,
+        expectedGradeValueCount: TEAM_UNIT_GRADES_2026_EXPECTED_GRADE_VALUE_COUNT,
+      },
+      canonicalization,
       providersInvoked: false,
       providerCalls: 0,
       mutationsInvoked: mutationCallsAttempted > 0,
