@@ -200,4 +200,4 @@ jobs:
           echo "no fall-forward after T-30"
           echo "no post-kickoff backfill"
           echo "PREVIEW timestamp will NOT become COMMIT timestamp"
-          echo "==================================================="n
+          echo "==================================================="
