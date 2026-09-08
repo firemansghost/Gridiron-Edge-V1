@@ -120,7 +120,7 @@ describe('2026 TeamUnitGrades rollback-only validator', () => {
 
     persisted[17] = {
       ...persisted[17],
-      offPassGrade: persisted[17].offPassGrade + Number.EPSILON,
+      offPassGrade: persisted[17].offPassGrade + 1e-9,
     };
     const mismatch = firstGradeMismatch(proposed, persisted, 2026);
     expect(mismatch).not.toBeNull();
