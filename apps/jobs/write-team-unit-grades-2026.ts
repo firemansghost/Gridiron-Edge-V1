@@ -2,13 +2,15 @@
 /**
  * Manual guarded 2026 TeamUnitGrades PREVIEW/COMMIT writer.
  *
- * PREVIEW: SELECT-only; recomputes the planner proposal and reports whether a
- * first-write COMMIT would be safe.
- * COMMIT: recomputes the complete 138-team proposal inside one Serializable
- * transaction, inserts TeamUnitGrades only, verifies exact agreement before
- * commit, then independently post-verifies the persisted rows.
+ * PREVIEW: SELECT-only; recomputes the proven planner proposal and reports
+ * whether a first-write COMMIT would be safe.
  *
- * No providers. No CFBD/Odds keys. No compute_unit_grades.ts. No Shadow.
+ * COMMIT: recomputes the complete proposal inside the same Serializable
+ * transaction that performs the inserts, writes TeamUnitGrades only, verifies
+ * exact agreement before commit, then independently post-verifies persisted
+ * rows after commit.
+ *
+ * No providers. No CFBD/Odds keys. No legacy compute writer. No Shadow.
  * No source-table, priors, Bet, MatchupOutput, ratings, or Prisma migrate writes.
  */
 
@@ -52,10 +54,26 @@ const GRADE_KEYS = [
   'havocGrade',
 ] as const;
 
-type GradeKey = (typeof GRADE_KEYS)[number];
-
 interface PersistedGradeRow extends ProposedGradeRow {
   season: number;
+}
+
+class TeamUnitGradesCommitFailure extends Error {
+  readonly plan: TeamUnitGrades2026Plan | null;
+  readonly writeBlockers: string[];
+  readonly mutationCallsAttempted: number;
+
+  constructor(options: {
+    plan: TeamUnitGrades2026Plan | null;
+    writeBlockers: string[];
+    mutationCallsAttempted: number;
+  }) {
+    super('2026 TeamUnitGrades COMMIT transaction failed');
+    this.name = 'TeamUnitGradesCommitFailure';
+    this.plan = options.plan;
+    this.writeBlockers = options.writeBlockers;
+    this.mutationCallsAttempted = options.mutationCallsAttempted;
+  }
 }
 
 function readRepoCommitSha(): string {
@@ -145,6 +163,9 @@ export function validatePlanForTeamUnitGradesWrite(plan: TeamUnitGrades2026Plan)
   if (plan.failClosed !== false) blockers.push('planner_fail_closed');
   if (plan.blockers.length !== 0) blockers.push('planner_blockers_present');
   if (plan.coverage.rawMetricCoverageComplete !== true) blockers.push('raw_metric_coverage_incomplete');
+  if (plan.coverage.legacyComputeCompatibleCoverageComplete !== true) {
+    blockers.push('legacy_compatible_coverage_incomplete');
+  }
   if (plan.fbs.expected !== EXPECTED_FBS_COUNT) blockers.push('expected_fbs_count_changed');
   if (plan.fbs.actual !== EXPECTED_FBS_COUNT || plan.fbs.unique !== EXPECTED_FBS_COUNT) {
     blockers.push('fbs_population_not_exactly_138');
@@ -190,7 +211,7 @@ export function exactGradeRowsMatch(
   for (let i = 0; i < proposed.length; i++) {
     if (persisted[i].season !== season || proposed[i].teamId !== persisted[i].teamId) return false;
     for (const key of GRADE_KEYS) {
-      if (!Object.is(proposed[i][key], persisted[i][key])) return false;
+      if (proposed[i][key] !== persisted[i][key]) return false;
     }
   }
   return true;
@@ -206,7 +227,7 @@ async function selectPersistedRows(
   db: PrismaClient | Prisma.TransactionClient,
   season: number
 ): Promise<PersistedGradeRow[]> {
-  const rows = await db.teamUnitGrades.findMany({
+  return db.teamUnitGrades.findMany({
     where: { season },
     select: {
       teamId: true,
@@ -221,7 +242,6 @@ async function selectPersistedRows(
     },
     orderBy: { teamId: 'asc' },
   });
-  return rows;
 }
 
 async function runPreview(
@@ -236,11 +256,7 @@ async function runPreview(
     observedAt,
   });
   const writeBlockers = validatePlanForTeamUnitGradesWrite(plan);
-  return {
-    plan,
-    writeBlockers,
-    writeSafe: writeBlockers.length === 0,
-  };
+  return { plan, writeBlockers, writeSafe: writeBlockers.length === 0 };
 }
 
 async function runCommit(
@@ -249,56 +265,75 @@ async function runCommit(
   repoCommitSha: string,
   observedAt: string
 ) {
-  let planForReport: TeamUnitGrades2026Plan | null = null;
-  const txResult = await prisma.$transaction(
-    async (tx) => {
-      const store = createTeamUnitGrades2026ReadStore(tx as unknown as PrismaClient);
-      const plan = await runTeamUnitGrades2026Preview(store, {
-        season: args.season,
-        repoCommitSha,
-        observedAt,
-      });
-      planForReport = plan;
-      const writeBlockers = validatePlanForTeamUnitGradesWrite(plan);
-      if (writeBlockers.length > 0) {
-        throw new Error(`write_blocked:${writeBlockers.join(',')}`);
-      }
+  let planForFailure: TeamUnitGrades2026Plan | null = null;
+  let blockersForFailure: string[] = [];
+  let mutationCallsAttempted = 0;
 
-      for (const row of plan.planning.proposedGradeRows) {
-        await tx.teamUnitGrades.create({
-          data: {
-            teamId: row.teamId,
-            season: args.season,
-            offRunGrade: row.offRunGrade,
-            defRunGrade: row.defRunGrade,
-            offPassGrade: row.offPassGrade,
-            defPassGrade: row.defPassGrade,
-            offExplosiveness: row.offExplosiveness,
-            defExplosiveness: row.defExplosiveness,
-            havocGrade: row.havocGrade,
-          },
+  let txResult: {
+    plan: TeamUnitGrades2026Plan;
+    committedRowCount: number;
+    transactionVerified: boolean;
+  };
+
+  try {
+    txResult = await prisma.$transaction(
+      async (tx) => {
+        const store = createTeamUnitGrades2026ReadStore(tx as unknown as PrismaClient);
+        const plan = await runTeamUnitGrades2026Preview(store, {
+          season: args.season,
+          repoCommitSha,
+          observedAt,
         });
+        planForFailure = plan;
+        const writeBlockers = validatePlanForTeamUnitGradesWrite(plan);
+        blockersForFailure = writeBlockers;
+        if (writeBlockers.length > 0) {
+          throw new Error('team_unit_grades_write_blocked');
+        }
+
+        for (const row of plan.planning.proposedGradeRows) {
+          mutationCallsAttempted += 1;
+          await tx.teamUnitGrades.create({
+            data: {
+              teamId: row.teamId,
+              season: args.season,
+              offRunGrade: row.offRunGrade,
+              defRunGrade: row.defRunGrade,
+              offPassGrade: row.offPassGrade,
+              defPassGrade: row.defPassGrade,
+              offExplosiveness: row.offExplosiveness,
+              defExplosiveness: row.defExplosiveness,
+              havocGrade: row.havocGrade,
+            },
+          });
+        }
+
+        const persistedInsideTransaction = await selectPersistedRows(tx, args.season);
+        const transactionVerified = exactGradeRowsMatch(
+          plan.planning.proposedGradeRows,
+          persistedInsideTransaction,
+          args.season
+        );
+        if (!transactionVerified) throw new Error('transaction_postwrite_exact_match_failed');
+
+        return {
+          plan,
+          committedRowCount: plan.planning.proposedGradeRows.length,
+          transactionVerified,
+        };
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        timeout: TEAM_UNIT_GRADES_2026_TRANSACTION_TIMEOUT_MS,
       }
-
-      const persistedInsideTransaction = await selectPersistedRows(tx, args.season);
-      const transactionVerified = exactGradeRowsMatch(
-        plan.planning.proposedGradeRows,
-        persistedInsideTransaction,
-        args.season
-      );
-      if (!transactionVerified) throw new Error('transaction_postwrite_exact_match_failed');
-
-      return {
-        plan,
-        committedRowCount: plan.planning.proposedGradeRows.length,
-        transactionVerified,
-      };
-    },
-    {
-      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-      timeout: TEAM_UNIT_GRADES_2026_TRANSACTION_TIMEOUT_MS,
-    }
-  );
+    );
+  } catch (_err) {
+    throw new TeamUnitGradesCommitFailure({
+      plan: planForFailure,
+      writeBlockers: blockersForFailure,
+      mutationCallsAttempted,
+    });
+  }
 
   const postWriteRows = await selectPersistedRows(prisma, args.season);
   const postWriteExactMatch = exactGradeRowsMatch(
@@ -306,12 +341,12 @@ async function runCommit(
     postWriteRows,
     args.season
   );
-  if (!postWriteExactMatch) throw new Error('postcommit_exact_match_failed');
 
   return {
-    plan: planForReport ?? txResult.plan,
+    plan: txResult.plan,
     writeBlockers: [],
     writeSafe: true,
+    mutationCallsAttempted,
     committedRowCount: txResult.committedRowCount,
     transactionVerified: txResult.transactionVerified,
     postWriteSelectRowCount: postWriteRows.length,
@@ -342,6 +377,7 @@ async function main() {
   let writeBlockers: string[] = [];
   let writeSafe = false;
   let mutationsInvoked = false;
+  let mutationCallsAttempted = 0;
   let mutationCount = 0;
   let commitAttempted = false;
   let commitSucceeded = false;
@@ -365,21 +401,28 @@ async function main() {
         plan = result.plan;
         writeBlockers = result.writeBlockers;
         writeSafe = result.writeSafe;
-        mutationsInvoked = true;
+        mutationCallsAttempted = result.mutationCallsAttempted;
+        mutationsInvoked = mutationCallsAttempted > 0;
         mutationCount = result.committedRowCount;
         committedRowCount = result.committedRowCount;
         transactionVerified = result.transactionVerified;
         postWriteSelectRowCount = result.postWriteSelectRowCount;
         postWriteExactMatch = result.postWriteExactMatch;
         commitSucceeded = true;
+        if (!postWriteExactMatch) error = 'postcommit_exact_match_failed';
       } catch (err) {
         transactionRolledBack = true;
+        if (err instanceof TeamUnitGradesCommitFailure) {
+          plan = err.plan;
+          writeBlockers = err.writeBlockers;
+          mutationCallsAttempted = err.mutationCallsAttempted;
+          mutationsInvoked = mutationCallsAttempted > 0;
+        }
         error = sanitizeError(err);
-        throw err;
       }
     }
   } catch (err) {
-    if (!error) error = sanitizeError(err);
+    error = sanitizeError(err);
   } finally {
     const report = {
       season: args.season,
@@ -391,9 +434,15 @@ async function main() {
       planner: plan,
       writeBlockers,
       writeSafe,
+      writerAuthorization: {
+        seasonAuthorized: args.season === TARGET_SEASON,
+        confirmationSatisfied:
+          args.mode === 'PREVIEW' || args.confirm === TEAM_UNIT_GRADES_2026_CONFIRMATION,
+      },
       providersInvoked: false,
       providerCalls: 0,
       mutationsInvoked,
+      mutationCallsAttempted,
       mutationCount,
       commitAttempted,
       commitSucceeded,
@@ -420,9 +469,7 @@ async function main() {
     await prisma.$disconnect();
   }
 
-  if (args.mode === 'PREVIEW') {
-    process.exit(writeSafe ? 0 : 1);
-  }
+  if (args.mode === 'PREVIEW') process.exit(writeSafe ? 0 : 1);
   process.exit(commitSucceeded && postWriteExactMatch ? 0 : 1);
 }
 
