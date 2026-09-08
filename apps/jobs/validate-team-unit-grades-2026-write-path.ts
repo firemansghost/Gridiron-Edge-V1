@@ -362,6 +362,10 @@ async function main() {
     if (failureStage === null) failureStage = stage;
     if (errorClassification === null) errorClassification = safeErrorClassification(err);
   } finally {
+    const persistentRowsDetectedAfterValidation =
+      postRollbackRowCount === null ? null : postRollbackRowCount > 0;
+    const persistenceProvenAbsent = rollbackVerified && postRollbackRowCount === 0;
+
     const report = {
       season: args.season,
       mode: 'ROLLBACK_ONLY_VALIDATION',
@@ -371,7 +375,9 @@ async function main() {
       failureStage,
       plannerStatus: plan?.plannerStatus ?? null,
       sourceReadinessStatus: plan?.sourceReadinessStatus ?? null,
+      planner: plan,
       writeBlockers,
+      writeSafe: plan !== null && writeBlockers.length === 0,
       providersInvoked: false,
       providerCalls: 0,
       mutationsInvoked: mutationCallsAttempted > 0,
@@ -386,8 +392,9 @@ async function main() {
       transactionTimeoutMs: TEAM_UNIT_GRADES_2026_TRANSACTION_TIMEOUT_MS,
       postRollbackRowCount,
       rollbackVerified,
-      persistedWrites: false,
-      teamUnitGradesWritesPersisted: false,
+      persistentRowsDetectedAfterValidation,
+      persistedWrites: persistenceProvenAbsent ? false : null,
+      teamUnitGradesWritesPersisted: persistenceProvenAbsent ? false : null,
       cfbdSourceWrites: false,
       priorsWrites: false,
       shadowWrites: false,
