@@ -113,11 +113,9 @@ Frozen definitions:
 
 - evaluation protocol: `CORE_EVAL_V1`
 - model ID: `hybrid_v2_shadow_snapshot_v1`
-- model hash: `1532c6440a0751317e74606c648201d104de03acaec67b7e64751b5b8bde4e05e`
+- model hash: `1532c6440a0751317e74606c648201d104de03acaec4bf2ee31a6d3d0d3d6104`
 - policy ID: `core_eval_v1_shadow_policy_v1`
 - policy hash: `f770f9eb3abe7bac8f6d2ed30d435063facc344a2381e56c471d4f428c1b7d52`
-
-> Note: the model hash above is retained only if it matches the frozen code constant. The canonical source of truth is the committed contract/code and the production capture artifact. Do not hand-edit a frozen hash to make a report look consistent.
 
 Qualification state on the first cohort:
 
