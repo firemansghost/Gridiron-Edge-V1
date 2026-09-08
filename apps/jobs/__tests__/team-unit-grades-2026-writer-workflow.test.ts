@@ -6,7 +6,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+  TEAM_UNIT_GRADES_2026_CANONICALIZATION_EPSILON_FACTOR,
   TEAM_UNIT_GRADES_2026_CONFIRMATION,
+  TEAM_UNIT_GRADES_2026_EXPECTED_GRADE_VALUE_COUNT,
+  TEAM_UNIT_GRADES_2026_PERSISTED_SIGNIFICANT_DIGITS,
+  canonicalizeProposedGradeRows,
+  canonicalizeTeamUnitGradeValue,
   exactGradeRowsMatch,
   parseTeamUnitGrades2026WriterArgs,
 } from '../write-team-unit-grades-2026';
@@ -109,16 +114,47 @@ describe('2026 TeamUnitGrades guarded writer', () => {
     expect(cli).not.toMatch(/tx\.(bet|matchupOutput|teamSeasonRating)\.(create|update|upsert|delete)/);
   });
 
-  it('replans and writes/verifies inside one Serializable transaction', () => {
+  it('replans, canonicalizes, and writes/verifies inside one Serializable transaction', () => {
     expect(cli).toContain('Prisma.TransactionIsolationLevel.Serializable');
     expect(cli).toContain('createTeamUnitGrades2026ReadStore(tx as unknown as PrismaClient)');
     expect(cli).toContain('runTeamUnitGrades2026Preview(store');
     expect(cli).toContain('validatePlanForTeamUnitGradesWrite(plan)');
-    expect(cli).toContain('for (const row of plan.planning.proposedGradeRows)');
+    expect(cli).toContain('canonicalizeProposedGradeRows(plan.planning.proposedGradeRows)');
+    expect(cli).toContain('for (const row of canonicalized.rows)');
+    expect(cli).toContain('exactGradeRowsMatch(\n          canonicalized.rows');
     expect(cli).toContain('persistedInsideTransaction');
     expect(cli).toContain('transaction_postwrite_exact_match_failed');
     expect(cli).toContain('postWriteExactMatch');
     expect(cli).toContain("error = 'postcommit_exact_match_failed'");
+    expect(cli).toContain("comparisonTarget: 'canonicalized_planner_values'");
+  });
+
+  it('uses the deterministic 15-significant-digit persistence contract without fuzzy equality', () => {
+    expect(TEAM_UNIT_GRADES_2026_PERSISTED_SIGNIFICANT_DIGITS).toBe(15);
+    expect(TEAM_UNIT_GRADES_2026_CANONICALIZATION_EPSILON_FACTOR).toBe(64);
+    expect(TEAM_UNIT_GRADES_2026_EXPECTED_GRADE_VALUE_COUNT).toBe(966);
+
+    const originalAirForce = 1.4852971677973312;
+    const canonicalAirForce = canonicalizeTeamUnitGradeValue(originalAirForce);
+    expect(canonicalAirForce).toBe(1.48529716779733);
+    expect(canonicalAirForce).not.toBe(originalAirForce);
+
+    const proposed = makeRows();
+    proposed[0] = { ...proposed[0], offRunGrade: originalAirForce };
+    const canonicalized = canonicalizeProposedGradeRows(proposed);
+    expect(canonicalized.rows[0].offRunGrade).toBe(canonicalAirForce);
+    expect(canonicalized.summary.significantDigits).toBe(15);
+    expect(canonicalized.summary.valueCount).toBe(966);
+    expect(canonicalized.summary.changedValueCount).toBeGreaterThan(0);
+    expect(canonicalized.summary.withinDeltaGuard).toBe(true);
+    expect(canonicalized.summary.maxScaledEpsilonUnits).toBeLessThanOrEqual(64);
+
+    const persisted = canonicalized.rows.map((row) => ({ ...row, season: 2026 }));
+    expect(exactGradeRowsMatch(canonicalized.rows, persisted, 2026)).toBe(true);
+    expect(exactGradeRowsMatch(proposed, persisted, 2026)).toBe(false);
+
+    persisted[0] = { ...persisted[0], havocGrade: persisted[0].havocGrade + 1e-9 };
+    expect(exactGradeRowsMatch(canonicalized.rows, persisted, 2026)).toBe(false);
   });
 
   it('requires exact 138-row, finite, identity-preserving persistence', () => {
@@ -127,10 +163,7 @@ describe('2026 TeamUnitGrades guarded writer', () => {
     expect(cli).toContain('calculation_input_count_not_138');
     expect(cli).toContain('proposed_rows_not_138');
     expect(cli).toContain('nonfinite_grade:');
-    const proposed = makeRows();
-    const persisted = proposed.map((row) => ({ ...row, season: 2026 }));
-    expect(exactGradeRowsMatch(proposed, persisted, 2026)).toBe(true);
-    persisted[0] = { ...persisted[0], havocGrade: persisted[0].havocGrade + 1 };
-    expect(exactGradeRowsMatch(proposed, persisted, 2026)).toBe(false);
+    expect(cli).toContain('canonicalized_grade_value_count_not_966');
+    expect(cli).toContain('canonicalization_delta_guard_exceeded');
   });
 });
