@@ -29,7 +29,7 @@ jobs:
           --runInBand
       - name: Focused TypeScript check
         run: >-
-          npx tsc --noEmit --skipLibCheck
+          npx tsc --noEmit --skipLibCheck --strict --resolveJsonModule
           --moduleResolution node --target ES2020 --module commonjs --esModuleInterop
           apps/web/lib/shadow-closing-market-v1.ts
           apps/jobs/capture-shadow-t30-closing-v1-2026.ts
