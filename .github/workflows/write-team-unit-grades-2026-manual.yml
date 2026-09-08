@@ -1,0 +1,199 @@
+# Manual GUARDED 2026 TeamUnitGrades writer.
+# workflow_dispatch ONLY — no schedule, push, or pull_request.
+# PREVIEW is SELECT-only. COMMIT requires confirm=WRITE_2026_TEAM_UNIT_GRADES.
+#
+# COMMIT writes TeamUnitGrades only, from the proven 2026 planner/parity path.
+# No providers. No source-table, priors, Shadow, Bet, MatchupOutput, or ratings writes.
+# Does NOT run compute_unit_grades.ts. Does NOT run Prisma migrate.
+
+name: Write 2026 TeamUnitGrades (Manual, Guarded)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (must be 2026)'
+        required: true
+        type: string
+        default: '2026'
+      mode:
+        description: 'PREVIEW (SELECT-only) or COMMIT (TeamUnitGrades inserts only)'
+        required: true
+        type: choice
+        options:
+          - PREVIEW
+          - COMMIT
+        default: PREVIEW
+      expected_main_sha:
+        description: 'Exact main commit SHA authorized for this run'
+        required: true
+        type: string
+      confirm:
+        description: 'For COMMIT, type WRITE_2026_TEAM_UNIT_GRADES exactly'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: write-team-unit-grades-2026
+  cancel-in-progress: false
+
+jobs:
+  write:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Source SHA guard
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA=$(git rev-parse HEAD)
+          echo "ACTUAL_SHA=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+          echo "actual_sha: ${ACTUAL_SHA}"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          echo "github_ref: ${GITHUB_REF:-}"
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Refusing TeamUnitGrades writer. Workflow must run from main."
+            exit 1
+          fi
+          if [ -z "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing TeamUnitGrades writer. expected_main_sha is required."
+            exit 1
+          fi
+          if [ "${ACTUAL_SHA}" != "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing TeamUnitGrades writer. Checked-out SHA does not match expected_main_sha."
+            echo "::error::actual_sha=${ACTUAL_SHA}"
+            echo "::error::expected_main_sha=${EXPECTED_MAIN_SHA}"
+            exit 1
+          fi
+          echo "Source SHA guard passed."
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight (names/presence only)
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          echo "season=${INPUT_SEASON}"
+          echo "mode=${INPUT_MODE}"
+          echo "providersInvoked=false"
+          echo "providerCalls=0"
+          echo "CFBD_API_KEY: not provided"
+          echo "ODDS_API_KEY: not provided"
+          echo "compute_unit_grades: not invoked"
+          echo "cfbd source writes: false"
+          echo "priors writes: false"
+          echo "Shadow writes: false"
+          echo "Bet writes: false"
+          echo "MatchupOutput writes: false"
+          echo "ratings writes: false"
+          echo "prisma migrate: not invoked"
+
+          if [ "$INPUT_SEASON" != "2026" ]; then
+            echo "::error::season must equal 2026 (got ${INPUT_SEASON})"
+            exit 1
+          fi
+          if [ "$INPUT_MODE" != "PREVIEW" ] && [ "$INPUT_MODE" != "COMMIT" ]; then
+            echo "::error::mode must be PREVIEW or COMMIT"
+            exit 1
+          fi
+          if [ "$INPUT_MODE" = "COMMIT" ] && [ "$INPUT_CONFIRM" != "WRITE_2026_TEAM_UNIT_GRADES" ]; then
+            echo "::error::COMMIT requires confirm=WRITE_2026_TEAM_UNIT_GRADES"
+            exit 1
+          fi
+          if [ -z "${DIRECT_URL:-}" ]; then
+            echo "::error::DIRECT_URL secret is missing"
+            exit 1
+          fi
+          echo "DIRECT_URL: present (value not printed)"
+          echo "Preflight OK"
+
+      - name: Install dependencies
+        env:
+          DATABASE_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+          DIRECT_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+        run: npm ci
+
+      - name: Generate Prisma client
+        env:
+          DATABASE_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+          DIRECT_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+        run: npm run prisma:generate
+
+      - name: Run guarded 2026 TeamUnitGrades writer
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          if [ "$INPUT_MODE" = "COMMIT" ]; then
+            npx tsx apps/jobs/write-team-unit-grades-2026.ts \
+              --season "$INPUT_SEASON" \
+              --mode "$INPUT_MODE" \
+              --confirm "$INPUT_CONFIRM" \
+              --report "reports/team-unit-grades-2026-commit.json"
+          else
+            npx tsx apps/jobs/write-team-unit-grades-2026.ts \
+              --season "$INPUT_SEASON" \
+              --mode "$INPUT_MODE" \
+              --report "reports/team-unit-grades-2026-preview.json"
+          fi
+
+      - name: Upload TeamUnitGrades writer report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: team-unit-grades-2026-${{ inputs.mode }}
+          path: reports/team-unit-grades-2026-*.json
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_MODE: ${{ inputs.mode }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "============================================"
+          echo "WRITE 2026 TEAM UNIT GRADES (GUARDED)"
+          echo "============================================"
+          echo "season: ${INPUT_SEASON}"
+          echo "mode: ${INPUT_MODE}"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          if [ -n "${ACTUAL_SHA:-}" ]; then
+            echo "actual_sha: ${ACTUAL_SHA}"
+          else
+            echo "actual_sha: (unavailable)"
+          fi
+          echo "status: ${JOB_STATUS}"
+          echo "providersInvoked: false"
+          echo "providerCalls=0"
+          echo "compute_unit_grades: not invoked"
+          echo "cfbd source writes: false"
+          echo "priors writes: false"
+          echo "Shadow writes: false"
+          echo "Bet writes: false"
+          echo "MatchupOutput writes: false"
+          echo "ratings writes: false"
+          echo "prisma migrate: not invoked"
+          echo "============================================"
