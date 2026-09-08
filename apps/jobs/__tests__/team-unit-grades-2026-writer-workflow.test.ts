@@ -58,10 +58,11 @@ describe('2026 TeamUnitGrades guarded writer', () => {
     expect(wf.indexOf('- name: Source SHA guard')).toBeLessThan(wf.indexOf('- name: Setup Node.js'));
   });
 
-  it('requires the exact COMMIT confirmation phrase', () => {
+  it('requires season 2026 and the exact COMMIT confirmation phrase', () => {
     expect(TEAM_UNIT_GRADES_2026_CONFIRMATION).toBe('WRITE_2026_TEAM_UNIT_GRADES');
     expect(wf).toContain('COMMIT requires confirm=WRITE_2026_TEAM_UNIT_GRADES');
     expect(parseTeamUnitGrades2026WriterArgs(['--season', '2026', '--mode', 'PREVIEW']).ok).toBe(true);
+    expect(parseTeamUnitGrades2026WriterArgs(['--season', '2025', '--mode', 'PREVIEW']).ok).toBe(false);
     expect(parseTeamUnitGrades2026WriterArgs(['--season', '2026', '--mode', 'COMMIT']).ok).toBe(false);
     expect(
       parseTeamUnitGrades2026WriterArgs([
@@ -75,7 +76,7 @@ describe('2026 TeamUnitGrades guarded writer', () => {
     ).toBe(true);
   });
 
-  it('has zero providers and no prohibited writer paths', () => {
+  it('has zero providers and no prohibited writer invocation paths', () => {
     expect(wf).toContain('providersInvoked=false');
     expect(wf).toContain('providerCalls=0');
     expect(wf).toContain('CFBD_API_KEY: not provided');
@@ -92,7 +93,7 @@ describe('2026 TeamUnitGrades guarded writer', () => {
     expect(wf).toContain('prisma migrate: not invoked');
     expect(cli).not.toMatch(/CFBD_API_KEY|ODDS_API_KEY/);
     expect(cli).not.toMatch(/collegefootballdata|api\.the-odds-api/i);
-    expect(cli).not.toMatch(/compute_unit_grades\.ts/);
+    expect(cli).not.toMatch(/npx tsx[^\n]*compute_unit_grades/i);
     expect(cli).not.toMatch(/capture-shadow-snapshot|write-cfbd-unit-grade-sources|prisma migrate deploy/);
   });
 
@@ -117,6 +118,7 @@ describe('2026 TeamUnitGrades guarded writer', () => {
     expect(cli).toContain('persistedInsideTransaction');
     expect(cli).toContain('transaction_postwrite_exact_match_failed');
     expect(cli).toContain('postWriteExactMatch');
+    expect(cli).toContain("error = 'postcommit_exact_match_failed'");
   });
 
   it('requires exact 138-row, finite, identity-preserving persistence', () => {
