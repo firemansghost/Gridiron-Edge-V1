@@ -13,7 +13,8 @@
 #
 # Security:
 # - Dispatch inputs reach shell only via step-level env (never ${{ inputs.* }} inside run:).
-# - Production DIRECT_URL is NOT job-wide; scoped to the capture CLI step only.
+# - Production DATABASE_URL / DIRECT_URL are NOT job-wide; both are scoped to the capture CLI step only
+#   (Prisma requires DATABASE_URL; both alias the same production DB secret).
 # - Confirmation is never echoed.
 # - No ODDS_API_KEY / CFBD_API_KEY / weather keys.
 # - No operator prediction/capture/as-of timestamp input.
@@ -177,6 +178,7 @@ jobs:
           INPUT_MODE: ${{ inputs.mode }}
           INPUT_CAPTURE_CONTEXT: ${{ inputs.capture_context }}
           INPUT_CONFIRM: ${{ inputs.confirm }}
+          DATABASE_URL: ${{ secrets.DIRECT_URL }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
         run: |
           set -euo pipefail
