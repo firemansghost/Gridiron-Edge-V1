@@ -67,13 +67,38 @@ describe('Shadow Model Capture V1 workflow', () => {
     expect(capture).not.toContain('git rev-parse HEAD');
   });
 
-  it('no job-level DB secret; capture gets DIRECT_URL only', () => {
+  it('no job-level DB secret; capture step provides DATABASE_URL and DIRECT_URL from secrets.DIRECT_URL', () => {
     const jobsPreamble = wf.split(/^\s+steps:\s*$/m)[0] ?? '';
     expect(jobsPreamble).not.toMatch(/secrets\.DIRECT_URL/);
+    expect(jobsPreamble).not.toMatch(/DATABASE_URL:/);
+    expect(jobsPreamble).not.toMatch(/DIRECT_URL:/);
+
+    const install = stepBlock(wf, 'Install dependencies');
+    const prismaVersion = stepBlock(wf, 'Prisma version');
+    const preflight = stepBlock(wf, 'Preflight (names/presence only)');
+    const guard = stepBlock(wf, 'Source SHA guard');
+    const upload = stepBlock(wf, 'Upload Shadow Model Capture report');
+    const summary = stepBlock(wf, 'Summary');
     const capture = stepBlock(wf, 'Run guarded Shadow Model capture');
-    expect(capture).toContain('DIRECT_URL');
+
+    expect(install).not.toMatch(/DIRECT_URL:/);
+    expect(install).not.toMatch(/DATABASE_URL:/);
+    expect(prismaVersion).not.toMatch(/DIRECT_URL:/);
+    expect(prismaVersion).not.toMatch(/DATABASE_URL:/);
+    expect(preflight).not.toMatch(/secrets\.DIRECT_URL/);
+    expect(guard).not.toMatch(/secrets\.DIRECT_URL/);
+    expect(upload).not.toMatch(/secrets\.DIRECT_URL/);
+    expect(summary).not.toMatch(/secrets\.DIRECT_URL/);
+
+    expect(capture).toMatch(/DATABASE_URL:\s*\$\{\{\s*secrets\.DIRECT_URL\s*\}\}/);
+    expect(capture).toMatch(/DIRECT_URL:\s*\$\{\{\s*secrets\.DIRECT_URL\s*\}\}/);
     expect(capture).toContain('capture-shadow-model-predictions-2026.ts');
     expect(capture).not.toContain('prisma migrate');
+
+    const databaseHits = wf.match(/DATABASE_URL:\s*\$\{\{\s*secrets\.DIRECT_URL\s*\}\}/g);
+    const directHits = wf.match(/DIRECT_URL:\s*\$\{\{\s*secrets\.DIRECT_URL\s*\}\}/g);
+    expect(databaseHits).toHaveLength(1);
+    expect(directHits).toHaveLength(1);
   });
 
   it('does not touch Hybrid Snapshot V1 writer paths', () => {
