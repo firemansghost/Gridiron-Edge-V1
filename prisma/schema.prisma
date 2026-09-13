@@ -1173,3 +1173,106 @@ model ShadowEvaluationResult {
   @@index([evaluatedAt])
   @@map("shadow_evaluation_results")
 }
+
+// ---------------------------------------------------------------------------
+// Shadow Model Capture V1 — additive multi-model prospective evidence.
+// Distinct from Hybrid-specific Shadow Snapshot V1 tables above.
+// No foreign keys to operational Game / Team / MarketLine / Bet / MatchupOutput.
+// No @updatedAt. Append-only triggers reject UPDATE/DELETE.
+// ---------------------------------------------------------------------------
+
+enum ShadowModelMarketType {
+  SPREAD
+  TOTAL
+}
+
+model ShadowModelCaptureRun {
+  id                       String                   @id @default(cuid())
+  season                   Int
+  week                     Int
+  captureContext           String                   @map("capture_context")
+  evaluationProtocol       String                   @map("evaluation_protocol")
+  modelFamily              String                   @map("model_family")
+  modelDefinitionId        String                   @map("model_definition_id")
+  modelDefinitionHash      String                   @map("model_definition_hash")
+  modelDefinitionManifest  Json                     @map("model_definition_manifest")
+  featureDefinitionId      String                   @map("feature_definition_id")
+  featureDefinitionVersion String                   @map("feature_definition_version")
+  featureDefinitionHash    String                   @map("feature_definition_hash")
+  featureDefinitionManifest Json                    @map("feature_definition_manifest")
+  policyDefinitionId       String                   @map("policy_definition_id")
+  policyDefinitionHash     String                   @map("policy_definition_hash")
+  policyDefinitionManifest Json                     @map("policy_definition_manifest")
+  repoCommitSha            String                   @map("repo_commit_sha")
+  captureTimestamp         DateTime                 @map("capture_timestamp")
+  expectedGameIds          Json                     @map("expected_game_ids")
+  totalGames               Int                      @map("total_games")
+  availableCount           Int                      @map("available_count")
+  unavailableCount         Int                      @map("unavailable_count")
+  selectionCount           Int                      @map("selection_count")
+  noSelectionCount         Int                      @map("no_selection_count")
+  status                   ShadowCaptureStatus
+  failureReason            String?                  @map("failure_reason")
+  createdAt                DateTime                 @default(now()) @map("created_at")
+  predictions              ShadowModelPrediction[]
+
+  @@unique([season, week, captureContext, evaluationProtocol, modelDefinitionHash, featureDefinitionHash, policyDefinitionHash], map: "shadow_model_capture_runs_cohort_key")
+  @@index([season, week])
+  @@index([captureTimestamp])
+  @@index([modelDefinitionId])
+  @@index([modelDefinitionHash])
+  @@index([featureDefinitionHash])
+  @@index([policyDefinitionHash])
+  @@index([captureContext])
+  @@index([status])
+  @@map("shadow_model_capture_runs")
+}
+
+model ShadowModelPrediction {
+  id                  String                   @id @default(cuid())
+  captureRunId        String                   @map("capture_run_id")
+  gameId              String                   @map("game_id")
+  season              Int
+  week                Int
+  homeTeamId          String                   @map("home_team_id")
+  awayTeamId          String                   @map("away_team_id")
+  kickoffTimestamp    DateTime                 @map("kickoff_timestamp")
+  neutralSite         Boolean                  @map("neutral_site")
+  predictionTimestamp DateTime                 @map("prediction_timestamp")
+  predictionStatus    ShadowAvailabilityStatus @map("prediction_status")
+  unavailableReasons  String[]                 @default([]) @map("unavailable_reasons")
+  createdAt           DateTime                 @default(now()) @map("created_at")
+
+  inputPayload        Json                     @map("input_payload")
+  inputHash           String                   @map("input_hash")
+  featureProvenance   Json                     @map("feature_provenance")
+  modelOutput         Json                     @map("model_output")
+
+  marketType              ShadowModelMarketType @map("market_type")
+  selectedMarketLineId    String?               @map("selected_market_line_id")
+  selectedMarketTeamId    String?               @map("selected_market_team_id")
+  selectedMarketLineValue Float?                @map("selected_market_line_value")
+  canonicalMarketValue    Float?                @map("canonical_market_value")
+  marketBook              String?               @map("market_book")
+  marketSource            String?               @map("market_source")
+  marketTimestamp         DateTime?             @map("market_timestamp")
+  marketAgeSeconds        Int?                  @map("market_age_seconds")
+
+  modelValue          Float?                   @map("model_value")
+  edgeValue           Float?                   @map("edge_value")
+  absEdgeValue        Float?                   @map("abs_edge_value")
+  selectedSide        ShadowSelectionSide?     @map("selected_side")
+  selectedTeamId      String?                  @map("selected_team_id")
+  predictionPickValue Float?                   @map("prediction_pick_value")
+
+  captureRun ShadowModelCaptureRun @relation(fields: [captureRunId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([captureRunId, gameId], map: "shadow_model_predictions_run_game_key")
+  @@index([captureRunId])
+  @@index([season, week])
+  @@index([gameId])
+  @@index([predictionTimestamp])
+  @@index([predictionStatus])
+  @@index([marketType])
+  @@map("shadow_model_predictions")
+}

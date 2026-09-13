@@ -38,6 +38,7 @@ The next real Phase 4B evidence event is the first due-window T−30 closing cap
 | Phase 4B prediction capture | **IMPLEMENTED + FIRST LEGITIMATE COMMIT PROVEN** |
 | Phase 4B T−30 closing | **IMPLEMENTED; production PREVIEW proven; first COMMIT not yet run** |
 | Phase 4B ATS / CLV / evaluation | **NOT IMPLEMENTED / NOT AUTHORIZED** |
+| Generic multi-model Shadow capture | **CODE PRESENT / ADDITIVE; migration not deployed; capture not authorized** |
 | Shadow automation | **NOT AUTHORIZED** |
 | Recurring production schedules | Operator-stopped unless separately authorized; no schedule reactivation from this closeout |
 
@@ -129,6 +130,7 @@ Live Odds remains a separate provider-backed stage. Shadow prediction and T−30
 - append-only evidence storage
 - Core V1 remains official
 - Hybrid remains held
+- Hybrid Snapshot V1 evidence remains frozen; generic multi-model capture is additive only (see [`docs/SHADOW_MODEL_CAPTURE_V1.md`](docs/SHADOW_MODEL_CAPTURE_V1.md))
 
 ### First legitimate prediction cohort
 

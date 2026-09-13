@@ -26,6 +26,8 @@ This documentation change does **not**:
 - authorize Super Tier A production use
 - authorize Shadow ATS/CLV/evaluation persistence
 - authorize Shadow prediction automation
+- authorize generic multi-model Shadow migration deploy or production COMMIT
+- authorize Candidate B / WEPA / other research-model adapters
 - authorize T−30 closing automation
 - change Core V1, Hybrid V2, or lifecycle formulas
 - change `CORE_EVAL_V1`
@@ -69,6 +71,7 @@ All workflows below are `workflow_dispatch` / manual unless a row explicitly say
 | `preview-team-unit-grades-2026-manual.yml` | TeamUnitGrades planner PREVIEW | 0 | none | **PROVEN / READ-ONLY** |
 | `write-team-unit-grades-2026-manual.yml` | TeamUnitGrades PREVIEW/COMMIT | 0 | TeamUnitGrades only | **PROVEN — 138/138 persisted** |
 | `capture-shadow-snapshot-v1-2026-manual.yml` | Prospective Shadow prediction PREVIEW/COMMIT | 0 | ShadowCaptureRun + ShadowPredictionSnapshot | **PROVEN — first 49-game cohort persisted** |
+| `capture-shadow-model-predictions-2026-manual.yml` | Generic multi-model Shadow PREVIEW/COMMIT (`core_v1_shadow_baseline_v1` allowlist) | 0 | ShadowModelCaptureRun + ShadowModelPrediction only | **CODE PRESENT; migration not deployed; COMMIT not authorized** |
 | `capture-shadow-t30-closing-v1-2026-manual.yml` | T−30 closing PREVIEW/COMMIT | 0 | ShadowClosingMarketSnapshot only | **PREVIEW PROVEN; COMMIT due-window only** |
 | `audit-prisma-migration-history.yml` | Migration-history audit | 0 | none | **MANUAL_SAFE / READ-ONLY** |
 | `write-cfbd-schedules-2026-manual.yml` | Guarded weekly schedule rollover | **Yes** — CFBD | Game schedule scope | Manual guarded; do not infer recurring authorization |
