@@ -19,6 +19,8 @@ It does **not** replace, migrate, or rewrite Hybrid Shadow Snapshot V1 evidence 
 - Not a claim that multi-model capture is production-proven merely because code merges
 - Not authorization to deploy the migration or run production COMMIT
 
+Core V1 baseline market selection reuses official-card coherent home/away pair selection (`selectBookSpreadSnapshots` + `pickDisplaySpread`) over authorized `oddsapi` observations only, then applies the frozen ≤1800s freshness gate.
+
 ## Tables
 
 - `shadow_model_capture_runs` (`ShadowModelCaptureRun`)

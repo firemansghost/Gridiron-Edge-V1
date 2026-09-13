@@ -21,6 +21,7 @@ import {
   SHADOW_MODEL_EVALUATION_PROTOCOL,
   executeShadowModelCapture,
   expectedShadowModelWriteConfirmation,
+  fingerprintOfficialFlat100BetRows,
   isShadowModelAllowlisted,
   marketAgeDistribution,
   resolvePreviewExitCode,
@@ -123,6 +124,7 @@ function mapExisting(run: {
   featureDefinitionHash: string;
   policyDefinitionId: string;
   policyDefinitionHash: string;
+  repoCommitSha: string;
   expectedGameIds: unknown;
   totalGames: number;
   availableCount: number;
@@ -150,6 +152,7 @@ function mapExisting(run: {
       featureDefinitionHash: run.featureDefinitionHash,
       policyDefinitionId: run.policyDefinitionId,
       policyDefinitionHash: run.policyDefinitionHash,
+      repoCommitSha: run.repoCommitSha,
       expectedGameIds: run.expectedGameIds,
       totalGames: run.totalGames,
       availableCount: run.availableCount,
@@ -188,6 +191,7 @@ function predictionCreateData(row: PlannedShadowModelPrediction) {
     marketSource: row.marketSource,
     marketTimestamp: row.marketTimestamp,
     marketAgeSeconds: row.marketAgeSeconds,
+    marketProvenance: row.marketProvenance as Prisma.InputJsonValue,
     modelValue: row.modelValue,
     edgeValue: row.edgeValue,
     absEdgeValue: row.absEdgeValue,
@@ -404,7 +408,44 @@ function createPrismaPersistence(
       if (!run) return null;
       return mapExisting(run);
     },
-    countOfficialBetsTouched: async () => 0,
+    fingerprintOfficialFlat100Bets: async () => {
+      const rows = await prisma.bet.findMany({
+        where: {
+          season: cohortArgs.season,
+          week: cohortArgs.week,
+          strategyTag: 'official_flat_100',
+        },
+        select: {
+          id: true,
+          season: true,
+          week: true,
+          gameId: true,
+          marketType: true,
+          side: true,
+          modelPrice: true,
+          closePrice: true,
+          stake: true,
+          strategyTag: true,
+          source: true,
+          result: true,
+          pnl: true,
+          clv: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: { id: 'asc' },
+      });
+      return fingerprintOfficialFlat100BetRows(
+        rows.map((r) => ({
+          ...r,
+          modelPrice: toFinite(r.modelPrice),
+          closePrice: toFinite(r.closePrice),
+          stake: toFinite(r.stake),
+          pnl: toFinite(r.pnl),
+          clv: toFinite(r.clv),
+        }))
+      );
+    },
   };
 }
 

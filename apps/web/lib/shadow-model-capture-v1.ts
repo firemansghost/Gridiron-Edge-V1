@@ -7,7 +7,12 @@
  */
 
 import { createHash, randomUUID } from 'crypto';
-import { compareMarketLineRecency } from './market-line-snapshot';
+import { LIVE_ODDS_SOURCE } from './core-v1-weekly-card';
+import {
+  pickDisplaySpread,
+  selectBookSpreadSnapshots,
+  type MarketLineObservation,
+} from './market-line-snapshot';
 
 export const SHADOW_MODEL_CAPTURE_SEASON = 2026;
 export const SHADOW_MODEL_EVALUATION_PROTOCOL = 'CORE_EVAL_V1';
@@ -20,7 +25,12 @@ export type ShadowModelAllowlistId = (typeof SHADOW_MODEL_ALLOWLIST)[number];
 
 export type ShadowModelCaptureMode = 'PREVIEW' | 'COMMIT';
 export type ShadowModelPredictionStatus = 'AVAILABLE' | 'UNAVAILABLE';
-export type ShadowModelSelectedSide = 'HOME' | 'AWAY' | 'NO_SELECTION';
+export type ShadowModelSelectedSide =
+  | 'HOME'
+  | 'AWAY'
+  | 'OVER'
+  | 'UNDER'
+  | 'NO_SELECTION';
 export type ShadowModelMarketType = 'SPREAD' | 'TOTAL';
 
 export const UNAVAILABLE_REASON_ORDER = [
@@ -28,8 +38,10 @@ export const UNAVAILABLE_REASON_ORDER = [
   'missing_rating',
   'rating_provenance_unavailable',
   'missing_market',
+  'incoherent_market',
   'stale_market',
   'invalid_model_output',
+  'market_selector_unimplemented',
 ] as const;
 
 export type ShadowModelUnavailableReason = (typeof UNAVAILABLE_REASON_ORDER)[number];
@@ -165,89 +177,156 @@ export interface OperationalShadowModelFrame {
   marketLines: ShadowModelMarketLineRow[];
 }
 
+export interface ShadowModelMarketProvenance {
+  selector: 'core_v1_coherent_spread_pair_v1';
+  sourceFilter: typeof LIVE_ODDS_SOURCE;
+  bookName: string;
+  marketTimestamp: string;
+  marketSource: typeof LIVE_ODDS_SOURCE;
+  homeTeamId: string;
+  awayTeamId: string;
+  homeRowId: string;
+  awayRowId: string;
+  homeLine: number;
+  awayLine: number;
+  marketSpreadHma: number;
+}
+
 export interface SelectedShadowModelMarket {
+  /** Pair anchor (home row) until a HOME/AWAY side is chosen. */
   selectedMarketLineId: string;
-  selectedMarketTeamId: string;
-  selectedMarketLineValue: number;
+  selectedMarketTeamId: string | null;
+  selectedMarketLineValue: number | null;
   marketBook: string | null;
   marketSource: string | null;
   marketTimestamp: Date;
   marketAgeSeconds: number;
   canonicalMarketValue: number;
+  homeRowId: string;
+  awayRowId: string;
+  homeLine: number;
+  awayLine: number;
+  marketProvenance: ShadowModelMarketProvenance;
 }
 
 export type ShadowModelMarketSelection =
   | { status: 'selected'; selected: SelectedShadowModelMarket }
   | { status: 'missing_market'; selected: SelectedShadowModelMarket | null }
+  | { status: 'incoherent_market'; selected: SelectedShadowModelMarket | null }
   | { status: 'stale_market'; selected: SelectedShadowModelMarket | null };
 
-export function selectSpreadPredictionMarket(input: {
+/**
+ * Official Core-card parity spread selector for Shadow Model Capture.
+ * - Authorized source only (`LIVE_ODDS_SOURCE` = oddsapi)
+ * - Coherent home/away pair via `selectBookSpreadSnapshots` + `pickDisplaySpread`
+ * - Observations at or before predictionTimestamp only (no future fallback)
+ * - Freshness gate applied after coherent selection
+ */
+export function selectAuthorizedCoherentSpreadMarket(input: {
   rows: ShadowModelMarketLineRow[];
   gameId: string;
   homeTeamId: string;
   awayTeamId: string;
   predictionTimestamp: Date;
+  authorizedSource?: string;
 }): ShadowModelMarketSelection {
-  const spreadRows = input.rows.filter(
-    (row) => row.gameId === input.gameId && String(row.lineType) === 'spread'
-  );
-  if (spreadRows.length === 0) {
-    return { status: 'missing_market', selected: null };
-  }
-
-  const sorted = [...spreadRows].sort(compareMarketLineRecency);
+  const authorizedSource = input.authorizedSource ?? LIVE_ODDS_SOURCE;
   const predictionMs = input.predictionTimestamp.getTime();
-  const preCutoff: ShadowModelMarketLineRow[] = [];
-  let futureCount = 0;
-  for (const row of sorted) {
+
+  const sourceRows = input.rows.filter(
+    (row) =>
+      row.gameId === input.gameId &&
+      String(row.lineType) === 'spread' &&
+      String(row.source) === authorizedSource
+  );
+
+  let futureOnlyCount = 0;
+  const asOfRows: ShadowModelMarketLineRow[] = [];
+  for (const row of sourceRows) {
     const ts = toDate(row.timestamp);
     if (!ts) continue;
-    if (ts.getTime() <= predictionMs) preCutoff.push(row);
-    else futureCount += 1;
+    if (ts.getTime() <= predictionMs) asOfRows.push(row);
+    else futureOnlyCount += 1;
   }
 
-  const firstUsable = preCutoff.find((row) => {
-    if (!isFiniteNumber(row.lineValue)) return false;
-    return row.teamId === input.homeTeamId || row.teamId === input.awayTeamId;
-  });
-
-  if (!firstUsable) {
-    if (futureCount > 0 && preCutoff.length === 0) {
+  if (asOfRows.length === 0) {
+    if (futureOnlyCount > 0) {
       return { status: 'stale_market', selected: null };
     }
     return { status: 'missing_market', selected: null };
   }
 
-  const marketTimestamp = toDate(firstUsable.timestamp);
+  const observations: MarketLineObservation[] = asOfRows.map((row) => ({
+    id: row.id,
+    gameId: row.gameId,
+    lineType: row.lineType,
+    lineValue: row.lineValue,
+    bookName: row.bookName ?? '',
+    timestamp: row.timestamp,
+    teamId: row.teamId,
+    source: row.source,
+  }));
+
+  const { snapshots, incoherent } = selectBookSpreadSnapshots(
+    observations,
+    input.homeTeamId,
+    input.awayTeamId
+  );
+  const display = pickDisplaySpread(snapshots);
+  if (!display) {
+    if (incoherent.length > 0) {
+      return { status: 'incoherent_market', selected: null };
+    }
+    return { status: 'missing_market', selected: null };
+  }
+
+  const marketTimestamp = toDate(display.timestamp);
   if (!marketTimestamp) {
     return { status: 'missing_market', selected: null };
   }
   const ageMs = predictionMs - marketTimestamp.getTime();
-  const hma = canonicalMarketSpreadHma({
-    lineValue: firstUsable.lineValue,
-    teamId: firstUsable.teamId,
+  const provenance: ShadowModelMarketProvenance = {
+    selector: 'core_v1_coherent_spread_pair_v1',
+    sourceFilter: LIVE_ODDS_SOURCE,
+    bookName: display.bookName,
+    marketTimestamp: marketTimestamp.toISOString(),
+    marketSource: LIVE_ODDS_SOURCE,
     homeTeamId: input.homeTeamId,
     awayTeamId: input.awayTeamId,
-  });
-  if (hma == null || !isFiniteNumber(hma)) {
-    return { status: 'missing_market', selected: null };
-  }
+    homeRowId: display.homeRowId,
+    awayRowId: display.awayRowId,
+    homeLine: display.homeLine,
+    awayLine: display.awayLine,
+    marketSpreadHma: display.marketSpreadHma,
+  };
 
   const selected: SelectedShadowModelMarket = {
-    selectedMarketLineId: firstUsable.id,
-    selectedMarketTeamId: firstUsable.teamId as string,
-    selectedMarketLineValue: firstUsable.lineValue,
-    marketBook: firstUsable.bookName,
-    marketSource: firstUsable.source,
+    selectedMarketLineId: display.homeRowId,
+    selectedMarketTeamId: null,
+    selectedMarketLineValue: null,
+    marketBook: display.bookName,
+    marketSource: authorizedSource,
     marketTimestamp,
     marketAgeSeconds: ageMs < 0 ? Math.floor(ageMs / 1000) : Math.ceil(ageMs / 1000),
-    canonicalMarketValue: hma,
+    canonicalMarketValue: display.marketSpreadHma,
+    homeRowId: display.homeRowId,
+    awayRowId: display.awayRowId,
+    homeLine: display.homeLine,
+    awayLine: display.awayLine,
+    marketProvenance: provenance,
   };
 
   if (ageMs < 0 || ageMs > MAX_SHADOW_MODEL_MARKET_AGE_MS) {
     return { status: 'stale_market', selected };
   }
   return { status: 'selected', selected };
+}
+
+/** @deprecated Use selectAuthorizedCoherentSpreadMarket — kept name alias for callers. */
+export function selectSpreadPredictionMarket(
+  input: Parameters<typeof selectAuthorizedCoherentSpreadMarket>[0]
+): ShadowModelMarketSelection {
+  return selectAuthorizedCoherentSpreadMarket(input);
 }
 
 export interface ShadowModelDefinition {
@@ -268,7 +347,12 @@ export interface ShadowModelDefinition {
     frame: OperationalShadowModelFrame;
     predictionTimestamp: Date;
     market: SelectedShadowModelMarket | null;
-    marketStatus: 'selected' | 'missing_market' | 'stale_market' | null;
+    marketStatus:
+      | 'selected'
+      | 'missing_market'
+      | 'incoherent_market'
+      | 'stale_market'
+      | null;
   }): {
     unavailableReasons: ShadowModelUnavailableReason[];
     inputPayload: Record<string, unknown>;
@@ -309,6 +393,7 @@ export interface PlannedShadowModelPrediction {
   marketSource: string | null;
   marketTimestamp: Date | null;
   marketAgeSeconds: number | null;
+  marketProvenance: Record<string, unknown>;
   modelValue: number | null;
   edgeValue: number | null;
   absEdgeValue: number | null;
@@ -336,7 +421,8 @@ export function deriveShadowModelRunCounts(
   const selectionCount = predictions.filter(
     (p) =>
       p.predictionStatus === 'AVAILABLE' &&
-      (p.selectedSide === 'HOME' || p.selectedSide === 'AWAY')
+      p.selectedSide != null &&
+      p.selectedSide !== 'NO_SELECTION'
   ).length;
   const noSelectionCount = predictions.filter(
     (p) => p.predictionStatus === 'AVAILABLE' && p.selectedSide === 'NO_SELECTION'
@@ -468,10 +554,15 @@ export function planShadowModelPrediction(input: {
     unavailable.add('post_kickoff');
   }
 
-  let marketStatus: 'selected' | 'missing_market' | 'stale_market' | null = null;
+  let marketStatus:
+    | 'selected'
+    | 'missing_market'
+    | 'incoherent_market'
+    | 'stale_market'
+    | null = null;
   let market: SelectedShadowModelMarket | null = null;
   if (input.model.marketType === 'SPREAD') {
-    const selection = selectSpreadPredictionMarket({
+    const selection = selectAuthorizedCoherentSpreadMarket({
       rows: input.frame.marketLines,
       gameId: input.game.id,
       homeTeamId: input.game.homeTeamId,
@@ -481,7 +572,10 @@ export function planShadowModelPrediction(input: {
     marketStatus = selection.status;
     market = selection.selected;
     if (selection.status === 'missing_market') unavailable.add('missing_market');
+    if (selection.status === 'incoherent_market') unavailable.add('incoherent_market');
     if (selection.status === 'stale_market') unavailable.add('stale_market');
+  } else {
+    unavailable.add('market_selector_unimplemented');
   }
 
   const evaluated = input.model.evaluateGame({
@@ -514,8 +608,23 @@ export function planShadowModelPrediction(input: {
   const absEdgeValue = finalStatus === 'AVAILABLE' ? evaluated.absEdgeValue : null;
   const selectedSide = finalStatus === 'AVAILABLE' ? evaluated.selectedSide : null;
   const selectedTeamId = finalStatus === 'AVAILABLE' ? evaluated.selectedTeamId : null;
-  const predictionPickValue =
+  let predictionPickValue =
     finalStatus === 'AVAILABLE' ? evaluated.predictionPickValue : null;
+
+  let selectedMarketLineId = market?.selectedMarketLineId ?? null;
+  let selectedMarketTeamId: string | null = null;
+  let selectedMarketLineValue: number | null = null;
+  if (finalStatus === 'AVAILABLE' && market && selectedSide === 'HOME') {
+    selectedMarketLineId = market.homeRowId;
+    selectedMarketTeamId = input.game.homeTeamId;
+    selectedMarketLineValue = market.homeLine;
+    predictionPickValue = market.homeLine;
+  } else if (finalStatus === 'AVAILABLE' && market && selectedSide === 'AWAY') {
+    selectedMarketLineId = market.awayRowId;
+    selectedMarketTeamId = input.game.awayTeamId;
+    selectedMarketLineValue = market.awayLine;
+    predictionPickValue = market.awayLine;
+  }
 
   const inputPayload = evaluated.inputPayload;
   const inputHash = sha256CanonicalJson(inputPayload);
@@ -532,20 +641,24 @@ export function planShadowModelPrediction(input: {
     neutralSite: Boolean(input.game.neutralSite),
     predictionTimestamp: input.predictionTimestamp,
     predictionStatus: finalStatus,
-    unavailableReasons: orderedReasons(unavailableReasons),
+    unavailableReasons,
     inputPayload,
     inputHash,
     featureProvenance: evaluated.featureProvenance,
     modelOutput: evaluated.modelOutput,
     marketType: input.model.marketType,
-    selectedMarketLineId: market?.selectedMarketLineId ?? null,
-    selectedMarketTeamId: market?.selectedMarketTeamId ?? null,
-    selectedMarketLineValue: market?.selectedMarketLineValue ?? null,
+    selectedMarketLineId,
+    selectedMarketTeamId,
+    selectedMarketLineValue,
     canonicalMarketValue: market?.canonicalMarketValue ?? null,
     marketBook: market?.marketBook ?? null,
     marketSource: market?.marketSource ?? null,
     marketTimestamp: market?.marketTimestamp ?? null,
     marketAgeSeconds: market?.marketAgeSeconds ?? null,
+    marketProvenance: (market?.marketProvenance ?? {
+      status: marketStatus,
+      note: 'no_coherent_authorized_spread_pair',
+    }) as Record<string, unknown>,
     modelValue,
     edgeValue,
     absEdgeValue,
@@ -582,6 +695,9 @@ export function planShadowModelCaptureRun(input: {
     ...frameCheck.blockers,
     ...ratingIndex.blockers,
   ];
+  if (input.model.marketType !== 'SPREAD') {
+    writeBlockers.push(`market_selector_unimplemented:${input.model.marketType}`);
+  }
   if (input.mode === 'COMMIT' && !confirmationValid) {
     writeBlockers.push('confirmation_invalid');
   }
@@ -718,6 +834,7 @@ export interface ExistingShadowModelCohort {
     featureDefinitionHash: string;
     policyDefinitionId: string;
     policyDefinitionHash: string;
+    repoCommitSha: string;
     expectedGameIds: unknown;
     totalGames: number;
     availableCount: number;
@@ -740,6 +857,7 @@ export function validateExistingCompleteCohort(
     season: number;
     week: number;
     captureContext: string;
+    repoCommitSha?: string;
   }
 ): string[] {
   const blockers: string[] = [];
@@ -755,6 +873,12 @@ export function validateExistingCompleteCohort(
     }
     if (existing.run.captureContext !== expectedIdentity.captureContext) {
       blockers.push('existing_cohort_capture_context_mismatch');
+    }
+    if (
+      expectedIdentity.repoCommitSha != null &&
+      existing.run.repoCommitSha !== expectedIdentity.repoCommitSha
+    ) {
+      blockers.push('existing_cohort_repo_commit_sha_mismatch');
     }
   }
   if (existing.run.evaluationProtocol !== SHADOW_MODEL_EVALUATION_PROTOCOL) {
@@ -860,6 +984,7 @@ function predictionSummaries(
     marketSource: p.marketSource,
     marketTimestamp: toIso(p.marketTimestamp),
     marketAgeSeconds: p.marketAgeSeconds,
+    marketProvenance: p.marketProvenance,
     modelValue: p.modelValue,
     edgeValue: p.edgeValue,
     absEdgeValue: p.absEdgeValue,
@@ -887,6 +1012,7 @@ function existingPredictionSummaries(
     marketSource: null,
     marketTimestamp: null,
     marketAgeSeconds: null,
+    marketProvenance: null,
     modelValue: null,
     edgeValue: null,
     absEdgeValue: null,
@@ -911,6 +1037,7 @@ export interface ShadowModelGameReportRow {
   marketSource: string | null;
   marketTimestamp: string | null;
   marketAgeSeconds: number | null;
+  marketProvenance: Record<string, unknown> | null;
   modelValue: number | null;
   edgeValue: number | null;
   absEdgeValue: number | null;
@@ -964,7 +1091,8 @@ export interface ShadowModelCapturePersistence {
   loadFrame(): Promise<OperationalShadowModelFrame>;
   runTransaction<T>(fn: (tx: ShadowModelMutationTx) => Promise<T>): Promise<T>;
   readRun(id: string): Promise<ExistingShadowModelCohort | null>;
-  countOfficialBetsTouched(): Promise<number>;
+  /** Read-only fingerprint of season/week official_flat_100 Bet rows. */
+  fingerprintOfficialFlat100Bets(): Promise<string>;
 }
 
 export interface ShadowModelCaptureExecution {
@@ -989,7 +1117,12 @@ function verifyCommittedCohort(
   existing: ExistingShadowModelCohort,
   plan: ShadowModelCapturePlan,
   model: ShadowModelDefinition,
-  expectedIdentity: { season: number; week: number; captureContext: string }
+  expectedIdentity: {
+    season: number;
+    week: number;
+    captureContext: string;
+    repoCommitSha: string;
+  }
 ): string[] {
   const reasons = validateExistingCompleteCohort(existing, model, expectedIdentity);
   if (!plan.run) {
@@ -997,6 +1130,9 @@ function verifyCommittedCohort(
     return uniqueStrings(reasons);
   }
   if (existing.run.id !== plan.run.id) reasons.push('committed_run_id_mismatch');
+  if (existing.run.repoCommitSha !== plan.run.repoCommitSha) {
+    reasons.push('committed_repo_commit_sha_mismatch');
+  }
   if (
     canonicalJsonString(existing.run.expectedGameIds) !==
     canonicalJsonString(plan.run.expectedGameIds)
@@ -1036,6 +1172,7 @@ export async function executeShadowModelCapture(input: {
     season: input.season,
     week: input.week,
     captureContext: input.captureContext,
+    repoCommitSha: input.repoCommitSha,
   };
 
   const emptyExecution = (
@@ -1246,6 +1383,7 @@ export async function executeShadowModelCapture(input: {
     const expected = Array.isArray(existing.run.expectedGameIds)
       ? existing.run.expectedGameIds.filter((id): id is string => typeof id === 'string')
       : [];
+    const betFingerprintBefore = await input.persistence.fingerprintOfficialFlat100Bets();
     const plan: ShadowModelCapturePlan = {
       ok: true,
       writeSafe: true,
@@ -1269,12 +1407,19 @@ export async function executeShadowModelCapture(input: {
       confirmationValid: true,
       previewTimestampWillNotBecomeCommitTimestamp: true,
     };
+    const betFingerprintAfter = await input.persistence.fingerprintOfficialFlat100Bets();
+    const fingerprintChanged =
+      betFingerprintBefore !== betFingerprintAfter
+        ? ['official_flat_100_bet_fingerprint_changed']
+        : [];
     const execution = emptyExecution({
-      commitSucceeded: true,
-      transactionalIdempotentNoOp: true,
+      commitSucceeded: fingerprintChanged.length === 0,
+      transactionalIdempotentNoOp: fingerprintChanged.length === 0,
       insertedRunId: existing.run.id,
       insertedPredictionCount: 0,
-      verificationOk: true,
+      verificationOk: fingerprintChanged.length === 0,
+      verificationReasons: fingerprintChanged,
+      error: fingerprintChanged.length ? fingerprintChanged.join('; ') : null,
     });
     const report = buildReport(plan, execution, 'complete_valid_noop');
     report.games = existingPredictionSummaries(existing);
@@ -1285,6 +1430,7 @@ export async function executeShadowModelCapture(input: {
   let insertedRunId: string | null = null;
   let insertedPredictionCount = 0;
   let planned: ShadowModelCapturePlan | null = null;
+  const betFingerprintBefore = await input.persistence.fingerprintOfficialFlat100Bets();
 
   try {
     const txResult = await input.persistence.runTransaction(async (tx) => {
@@ -1352,7 +1498,7 @@ export async function executeShadowModelCapture(input: {
 
   const plan = planned as ShadowModelCapturePlan;
   const readBack = insertedRunId ? await input.persistence.readRun(insertedRunId) : null;
-  const betTouches = await input.persistence.countOfficialBetsTouched();
+  const betFingerprintAfter = await input.persistence.fingerprintOfficialFlat100Bets();
   const verificationReasons: string[] = [];
   if (!insertedRunId) verificationReasons.push('committed_run_id_missing');
   if (!readBack) verificationReasons.push('committed_run_not_readable');
@@ -1360,7 +1506,9 @@ export async function executeShadowModelCapture(input: {
     verificationReasons.push(
       ...verifyCommittedCohort(readBack, plan, input.model, expectedIdentity)
     );
-  if (betTouches !== 0) verificationReasons.push('official_bet_rows_touched');
+  if (betFingerprintAfter !== betFingerprintBefore) {
+    verificationReasons.push('official_flat_100_bet_fingerprint_changed');
+  }
 
   const verificationOk = verificationReasons.length === 0;
   const execution = emptyExecution({
@@ -1374,6 +1522,49 @@ export async function executeShadowModelCapture(input: {
     error: verificationOk ? null : verificationReasons.join('; '),
   });
   return { plan, execution, report: buildReport(plan, execution, 'none') };
+}
+
+export function fingerprintOfficialFlat100BetRows(
+  rows: Array<{
+    id: string;
+    season: number;
+    week: number;
+    gameId: string;
+    marketType: string;
+    side: string;
+    modelPrice: number | null;
+    closePrice: number | null;
+    stake: number | null;
+    strategyTag: string;
+    source: string;
+    result: string | null;
+    pnl: number | null;
+    clv: number | null;
+    createdAt: Date | string;
+    updatedAt: Date | string;
+  }>
+): string {
+  const normalized = [...rows]
+    .map((row) => ({
+      id: row.id,
+      season: row.season,
+      week: row.week,
+      gameId: row.gameId,
+      marketType: row.marketType,
+      side: row.side,
+      modelPrice: row.modelPrice,
+      closePrice: row.closePrice,
+      stake: row.stake,
+      strategyTag: row.strategyTag,
+      source: row.source,
+      result: row.result,
+      pnl: row.pnl,
+      clv: row.clv,
+      createdAt: toIso(row.createdAt),
+      updatedAt: toIso(row.updatedAt),
+    }))
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return sha256CanonicalJson(normalized);
 }
 
 export function resolvePreviewExitCode(writeSafe: boolean): number {

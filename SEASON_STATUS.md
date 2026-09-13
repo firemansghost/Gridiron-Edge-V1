@@ -1,12 +1,12 @@
 # Season Status — Gridiron Edge
 
 **Status:** 2026 season active — manual guarded production  
-**Updated:** 2026-09-08 America/Chicago  
-**Verified operational code baseline:** `56a13bc4ae24472eac4427614143c8bc1c3ddda4` (PR #110 merge)  
+**Updated:** 2026-09-13 America/Chicago  
+**Verified operational code baseline entering generic Shadow work:** `5661fcee5bfe81449549e82766a2fb864bd9c237`  
 **Official production spread model:** Core V1 / `official_flat_100`  
 **Hybrid V2:** SHADOW / HELD / NOT OFFICIAL
 
-This file is the operator-facing current-state document. Detailed September 8 Phase 4B evidence is in [`docs/2026-09-08-phase4b-closeout.md`](docs/2026-09-08-phase4b-closeout.md). Current workflow authorization is in [`docs/2026-workflow-reactivation-matrix.md`](docs/2026-workflow-reactivation-matrix.md).
+This file is the operator-facing current-state document. Detailed September 8 Phase 4B evidence is in [`docs/2026-09-08-phase4b-closeout.md`](docs/2026-09-08-phase4b-closeout.md). Current workflow authorization is in [`docs/2026-workflow-reactivation-matrix.md`](docs/2026-workflow-reactivation-matrix.md). Generic multi-model Shadow capture notes are in [`docs/SHADOW_MODEL_CAPTURE_V1.md`](docs/SHADOW_MODEL_CAPTURE_V1.md).
 
 The prior long-form phase archaeology remains available in Git history at the exact pre-closeout baseline:
 
@@ -16,11 +16,9 @@ This consolidation intentionally removes stale historical sections from the live
 
 ---
 
-## CURRENT STATE — 2026-09-08
+## CURRENT STATE — 2026-09-13
 
-The project is **not** globally blocked. Week 1 is fully closed. Week 2 is active. Core V1 remains official. The same-season TeamUnitGrades dependency is satisfied, the first legitimate prospective Hybrid Shadow cohort is persisted, and the T−30 closing-market read path is production-proven.
-
-The next real Phase 4B evidence event is the first due-window T−30 closing capture. There is no reason to manufacture additional engineering work before that operational window.
+The project is **not** globally blocked. Week 2 is complete (scores final). Week 3 is active with incomplete Live Odds coverage blocking Official Card PREVIEW. Core V1 remains official. Hybrid remains held. The first legitimate prospective Hybrid Shadow cohort remains frozen at 49 games. T−30 closing evidence for Week 2 is complete (36 captures / 13 misses). The generic multi-model Shadow layer exists in code only.
 
 ### Season posture
 
@@ -33,34 +31,35 @@ The next real Phase 4B evidence event is the first due-window T−30 closing cap
 | V4 / Fade | Labs / backtest only |
 | Core V1 lifecycle | Candidate A / `GLOBAL_BLEND_W3_W6`; canonical weight **0 through completed Week 2**; first nonzero weight after completed Week 3 |
 | Week 1 | **CLOSED** — 51/51 games final; 98/98 official bets graded |
-| Week 2 | **ACTIVE** — 49 games; live market persisted; one legitimate 49-game Shadow prediction cohort persisted |
+| Week 2 | **CLOSED scores** — **49/49 final**; Official Card **0 Bets** (do not reconstruct) |
+| Week 2 Hybrid Shadow prediction cohort | **49** persisted |
+| Week 2 T−30 closing | **36 legitimate captures / 13 legitimate misses** |
+| Week 3 schedule | **57 games** |
+| Week 3 Live Odds (initial) | **469 rows / 46 games** |
+| Week 3 Official Card | Core PREVIEW **blocked** by incomplete market coverage; **no official bets written** |
 | 2026 TeamUnitGrades | **COMPLETE / PRODUCTION-PROVEN — 138/138** |
-| Phase 4B prediction capture | **IMPLEMENTED + FIRST LEGITIMATE COMMIT PROVEN** |
-| Phase 4B T−30 closing | **IMPLEMENTED; production PREVIEW proven; first COMMIT not yet run** |
+| Phase 4B Hybrid prediction capture | **IMPLEMENTED + FIRST LEGITIMATE COMMIT PROVEN** (Week 2 cohort frozen) |
+| Phase 4B T−30 closing | **Week 2 complete** (36 / 13) |
 | Phase 4B ATS / CLV / evaluation | **NOT IMPLEMENTED / NOT AUTHORIZED** |
-| Generic multi-model Shadow capture | **CODE PRESENT / ADDITIVE; migration not deployed; capture not authorized** |
+| Generic multi-model Shadow capture | **CODE ONLY / ADDITIVE**; migration **not deployed**; production capture **not authorized** |
 | Shadow automation | **NOT AUTHORIZED** |
-| Recurring production schedules | Operator-stopped unless separately authorized; no schedule reactivation from this closeout |
+| Recurring production schedules | Operator-stopped unless separately authorized |
 
 ## Verified production snapshot
 
-Read-only production verification on September 8:
+Historical September 8 verification remains valid for Week 1 / TeamUnitGrades / first Hybrid Shadow cohort. September 13 operator truth additions:
 
 | Metric | Value |
 |---|---:|
-| Week 1 Game rows | **51** |
-| Week 1 scored/final | **51 / 51** |
-| Week 1 official bets | **98** |
-| Week 1 graded / pending | **98 / 0** |
-| Week 1 record | **29–67–2** |
-| Week 1 stake | **$9,800** |
-| Week 1 PnL | **-$1,175.0130763340988** |
-| Week 1 ROI | **-11.9899%** |
-| 2026 TeamUnitGrades rows / teams | **138 / 138** |
-| Week 2 Shadow capture runs | **1** |
-| Week 2 Shadow prediction rows / games | **49 / 49** |
-| Shadow closing rows | **0** |
-| Shadow evaluation rows | **0** |
+| Week 2 Game rows final | **49 / 49** |
+| Week 2 Official Card bets | **0** (do not reconstruct) |
+| Week 2 Hybrid Shadow predictions | **49** |
+| Week 2 T−30 captures / misses | **36 / 13** |
+| Week 3 scheduled games | **57** |
+| Week 3 initial Live Odds rows / games | **469 / 46** |
+| Week 3 official bets written | **0** |
+| Generic Shadow migration deployed | **No** |
+| Generic Shadow production capture authorized | **No** |
 
 ## Week 1 — formally closed
 
@@ -161,55 +160,16 @@ No official Bet rows were created. Hybrid remains **SHADOW / HELD / NOT OFFICIAL
 
 ### T−30 closing layer
 
-PR #110 merged the guarded closing writer on SHA:
+Week 2 T−30 closing evidence is complete:
 
-`56a13bc4ae24472eac4427614143c8bc1c3ddda4`
+- legitimate captures: **36**
+- legitimate misses: **13**
 
 Canonical workflow:
 
 `.github/workflows/capture-shadow-t30-closing-v1-2026-manual.yml`
 
-First production PREVIEW run **34279785108** passed on that exact SHA:
-
-- total games: **49**
-- existing closings: **0**
-- FUTURE: **49**
-- DUE: **0**
-- MISSED: **0**
-- planned inserts: **0**
-- `writeSafe=true`
-- mutations: **false**
-- provider calls: **0**
-
-Artifact:
-
-- `shadow-t30-closing-v1-2026-w2-PREVIEW`
-- ID **10077155535**
-- SHA-256 `8894ffa2a2f7746c706634ad879efa61453581ea3c260361ae23a8e5b970a364`
-
-The T−30 read path is therefore **PRODUCTION-PROVEN**. The first T−30 COMMIT has not yet occurred.
-
-## Week 2 T−30 operating sequence
-
-The closing writer uses persisted MarketLine rows only. It does not call a provider.
-
-For each due window:
-
-1. run Week 2 Live Odds PREVIEW shortly before T−30;
-2. independently audit it;
-3. run Live Odds COMMIT before T−30 if clean;
-4. after the T−30 target, run T−30 PREVIEW;
-5. audit the chosen persisted MarketLine row and verify no fall-forward;
-6. only then run a separately authorized T−30 COMMIT before kickoff.
-
-First Friday windows:
-
-| Game | Kickoff CT | T−30 CT |
-|---|---|---|
-| Rutgers @ Boston College | Fri Sep 11, **6:30 PM** | **6:00 PM** |
-| Missouri @ Kansas | Fri Sep 11, **7:00 PM** | **6:30 PM** |
-
-Do **not** run T−30 COMMIT early. Do **not** backfill after kickoff if a due window is missed.
+Earlier production PREVIEW run **34279785108** on SHA `56a13bc4ae24472eac4427614143c8bc1c3ddda4` remains the first T−30 read-path proof. Do not revise frozen Week 2 Hybrid prediction evidence.
 
 ## Canonical guarded operator entrypoints
 
@@ -228,7 +188,8 @@ All entries below are manual unless explicitly stated otherwise.
 | `preview-team-unit-grades-2026-manual.yml` | Read-only TeamUnitGrades planner | **PROVEN** |
 | `write-team-unit-grades-2026-manual.yml` | Guarded TeamUnitGrades PREVIEW/COMMIT | **PROVEN — 138/138 persisted** |
 | `capture-shadow-snapshot-v1-2026-manual.yml` | Prospective Shadow prediction PREVIEW/COMMIT | **PROVEN — first 49-game cohort persisted** |
-| `capture-shadow-t30-closing-v1-2026-manual.yml` | T−30 closing PREVIEW/COMMIT | **PREVIEW PROVEN; first COMMIT pending due window** |
+| `capture-shadow-t30-closing-v1-2026-manual.yml` | T−30 closing PREVIEW/COMMIT | **Week 2 complete — 36 captures / 13 misses** |
+| `capture-shadow-model-predictions-2026-manual.yml` | Generic multi-model Shadow PREVIEW/COMMIT | **CODE ONLY; migration not deployed; COMMIT not authorized** |
 | `audit-prisma-migration-history.yml` | Read-only migration-history audit | MANUAL_SAFE |
 
 No Shadow cron is authorized. No score/grading automation is authorized by this document. Do not infer recurring cadence from a manual workflow being present.
@@ -240,10 +201,13 @@ No Shadow cron is authorized. No score/grading automation is authorized by this 
 - Shadow research ROI persistence
 - Shadow prediction automation
 - T−30 closing automation
+- generic multi-model Shadow migration deploy / production COMMIT
+- Candidate B / WEPA / other research-model adapters
 - official Hybrid activation
 - Hybrid Bet writes
 - Super Tier A production use
 - retrospective Shadow backfill
+- reconstructing Week 2 Official Card bets (0 persisted; do not invent)
 
 ## Deferred maintenance — separate workstreams
 

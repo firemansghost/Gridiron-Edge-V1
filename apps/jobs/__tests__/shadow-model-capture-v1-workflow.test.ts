@@ -81,6 +81,11 @@ describe('Shadow Model Capture V1 workflow', () => {
     expect(cli).not.toContain('shadowPredictionSnapshot');
     expect(cli).toContain('shadowModelCaptureRun');
     expect(cli).toContain('hybridShadowWrites');
+    expect(cli).toContain('fingerprintOfficialFlat100Bets');
+    expect(cli).not.toMatch(/\.bet\.create\b/);
+    expect(cli).not.toMatch(/\.bet\.update\b/);
+    expect(cli).not.toMatch(/\.bet\.delete\b/);
+    expect(cli).not.toMatch(/\.bet\.createMany\b/);
     expect(fs.existsSync(HYBRID_LIB)).toBe(true);
     expect(fs.existsSync(HYBRID_CLI)).toBe(true);
   });

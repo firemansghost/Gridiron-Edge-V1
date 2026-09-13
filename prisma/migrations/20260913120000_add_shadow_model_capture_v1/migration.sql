@@ -4,6 +4,9 @@
 -- CreateEnum
 CREATE TYPE "ShadowModelMarketType" AS ENUM ('SPREAD', 'TOTAL');
 
+-- CreateEnum
+CREATE TYPE "ShadowModelSelectionSide" AS ENUM ('HOME', 'AWAY', 'OVER', 'UNDER', 'NO_SELECTION');
+
 -- CreateTable
 CREATE TABLE "shadow_model_capture_runs" (
     "id" TEXT NOT NULL,
@@ -65,10 +68,11 @@ CREATE TABLE "shadow_model_predictions" (
     "market_source" TEXT,
     "market_timestamp" TIMESTAMP(3),
     "market_age_seconds" INTEGER,
+    "market_provenance" JSONB NOT NULL,
     "model_value" DOUBLE PRECISION,
     "edge_value" DOUBLE PRECISION,
     "abs_edge_value" DOUBLE PRECISION,
-    "selected_side" "ShadowSelectionSide",
+    "selected_side" "ShadowModelSelectionSide",
     "selected_team_id" TEXT,
     "prediction_pick_value" DOUBLE PRECISION,
 

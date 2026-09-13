@@ -1186,6 +1186,14 @@ enum ShadowModelMarketType {
   TOTAL
 }
 
+enum ShadowModelSelectionSide {
+  HOME
+  AWAY
+  OVER
+  UNDER
+  NO_SELECTION
+}
+
 model ShadowModelCaptureRun {
   id                       String                   @id @default(cuid())
   season                   Int
@@ -1257,13 +1265,14 @@ model ShadowModelPrediction {
   marketSource            String?               @map("market_source")
   marketTimestamp         DateTime?             @map("market_timestamp")
   marketAgeSeconds        Int?                  @map("market_age_seconds")
+  marketProvenance        Json                  @map("market_provenance")
 
-  modelValue          Float?                   @map("model_value")
-  edgeValue           Float?                   @map("edge_value")
-  absEdgeValue        Float?                   @map("abs_edge_value")
-  selectedSide        ShadowSelectionSide?     @map("selected_side")
-  selectedTeamId      String?                  @map("selected_team_id")
-  predictionPickValue Float?                   @map("prediction_pick_value")
+  modelValue          Float?                       @map("model_value")
+  edgeValue           Float?                       @map("edge_value")
+  absEdgeValue        Float?                       @map("abs_edge_value")
+  selectedSide        ShadowModelSelectionSide?    @map("selected_side")
+  selectedTeamId      String?                      @map("selected_team_id")
+  predictionPickValue Float?                       @map("prediction_pick_value")
 
   captureRun ShadowModelCaptureRun @relation(fields: [captureRunId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 

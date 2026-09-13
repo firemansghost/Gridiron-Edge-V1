@@ -117,11 +117,19 @@ export const CORE_V1_SHADOW_POLICY_DEFINITION_MANIFEST = {
   evaluationProtocol: SHADOW_MODEL_EVALUATION_PROTOCOL,
   predictionMarket: {
     marketType: 'spread',
+    selectorId: 'core_v1_coherent_spread_pair_v1',
+    authorizedSource: 'oddsapi',
+    coherentHomeAwayPairRequired: true,
+    reuseModules: [
+      'apps/web/lib/market-line-snapshot.ts#selectBookSpreadSnapshots',
+      'apps/web/lib/market-line-snapshot.ts#pickDisplaySpread',
+    ],
     freshnessMaxSeconds: MAX_SHADOW_MODEL_MARKET_AGE_SECONDS,
     freshnessMaxMilliseconds: MAX_SHADOW_MODEL_MARKET_AGE_MS,
     eligibility: 'marketTimestamp <= predictionTimestamp',
-    ordering: ['timestamp DESC', 'id DESC'],
+    ordering: ['timestamp DESC', 'homeRowId DESC (via pickDisplaySpread)'],
     noFutureMarketFallback: true,
+    loneTeamRowNotSufficient: true,
   },
   selection: {
     source: 'apps/web/lib/core-v1-spread.ts#getATSPick',
@@ -225,6 +233,8 @@ export function createCoreV1ShadowBaselineDefinition(): ShadowModelDefinition {
 
       if (input.marketStatus === 'missing_market') {
         // Engine already records missing_market; adapter does not invent a market.
+      } else if (input.marketStatus === 'incoherent_market') {
+        // Engine already records incoherent_market.
       } else if (input.marketStatus === 'stale_market') {
         // Engine already records stale_market.
       } else if (!input.market) {
@@ -346,6 +356,11 @@ export function createCoreV1ShadowBaselineDefinition(): ShadowModelDefinition {
               marketAgeSeconds: input.market.marketAgeSeconds,
               marketBook: input.market.marketBook,
               marketSource: input.market.marketSource,
+              marketProvenance: input.market.marketProvenance,
+              homeRowId: input.market.homeRowId,
+              awayRowId: input.market.awayRowId,
+              homeLine: input.market.homeLine,
+              awayLine: input.market.awayLine,
             }
           : null,
         modelDefinitionId: CORE_V1_SHADOW_BASELINE_MODEL_ID,
