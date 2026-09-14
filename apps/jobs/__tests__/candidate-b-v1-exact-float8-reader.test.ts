@@ -36,6 +36,7 @@ import {
   type CandidateBExactChildRawRow,
 } from '../src/research/candidate-b/candidate-b-v1-exact-float8-reader';
 import { createPrismaCandidateBFeatureSnapshotStore } from '../ingest-candidate-b-v1-feature-snapshot';
+import { encodeCandidateBNormalizationManifest } from '../src/research/candidate-b/candidate-b-v1-normalization-manifest-transport';
 import { sha256CanonicalJson } from '../../web/lib/shadow-model-capture-v1';
 
 const ROOT = path.resolve(__dirname, '../../..');
@@ -441,7 +442,10 @@ describe('Prisma store exact child load path', () => {
       sourceManifestHash: snapshot.sourceManifestHash,
       sourceProvenanceManifest: snapshot.sourceProvenanceManifest,
       sourceProvenanceManifestHash: snapshot.sourceProvenanceManifestHash,
-      normalizationManifest: snapshot.normalizationManifest,
+      normalizationManifest: encodeCandidateBNormalizationManifest(
+        snapshot.normalizationManifest,
+        snapshot.normalizationManifestHash
+      ),
       normalizationManifestHash: snapshot.normalizationManifestHash,
       populationManifest: snapshot.populationManifest,
       populationManifestHash: snapshot.populationManifestHash,
@@ -498,7 +502,10 @@ describe('Prisma store exact child load path', () => {
       sourceManifestHash: snapshot.sourceManifestHash,
       sourceProvenanceManifest: snapshot.sourceProvenanceManifest,
       sourceProvenanceManifestHash: snapshot.sourceProvenanceManifestHash,
-      normalizationManifest: snapshot.normalizationManifest,
+      normalizationManifest: encodeCandidateBNormalizationManifest(
+        snapshot.normalizationManifest,
+        snapshot.normalizationManifestHash
+      ),
       normalizationManifestHash: snapshot.normalizationManifestHash,
       populationManifest: snapshot.populationManifest,
       populationManifestHash: snapshot.populationManifestHash,

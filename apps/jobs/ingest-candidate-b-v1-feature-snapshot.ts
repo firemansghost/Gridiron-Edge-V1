@@ -58,6 +58,10 @@ import {
 } from './src/research/candidate-b/candidate-b-v1-feature-snapshot';
 import { insertCandidateBFeatureSnapshotTeamsExact } from './src/research/candidate-b/candidate-b-v1-exact-float8-writer';
 import { loadCandidateBFeatureSnapshotTeamsExact } from './src/research/candidate-b/candidate-b-v1-exact-float8-reader';
+import {
+  decodeCandidateBNormalizationManifest,
+  encodeCandidateBNormalizationManifest,
+} from './src/research/candidate-b/candidate-b-v1-normalization-manifest-transport';
 
 export function parseCandidateBIngestArgs(argv: string[]): {
   season: number;
@@ -205,7 +209,11 @@ export function createPrismaCandidateBFeatureSnapshotStore(
     });
     if (!row) return null;
     const teams = await loadCandidateBFeatureSnapshotTeamsExact(db, row.id);
-    return mapPersistedSnapshot(row, teams);
+    const normalizationManifest = decodeCandidateBNormalizationManifest(
+      row.normalizationManifest,
+      row.normalizationManifestHash
+    );
+    return mapPersistedSnapshot({ ...row, normalizationManifest }, teams);
   };
 
   return {
@@ -253,7 +261,10 @@ export function createPrismaCandidateBFeatureSnapshotStore(
                   sourceManifestHash: snapshot.sourceManifestHash,
                   sourceProvenanceManifest: snapshot.sourceProvenanceManifest as Prisma.InputJsonValue,
                   sourceProvenanceManifestHash: snapshot.sourceProvenanceManifestHash,
-                  normalizationManifest: snapshot.normalizationManifest as unknown as Prisma.InputJsonValue,
+                  normalizationManifest: encodeCandidateBNormalizationManifest(
+                    snapshot.normalizationManifest,
+                    snapshot.normalizationManifestHash
+                  ) as unknown as Prisma.InputJsonValue,
                   normalizationManifestHash: snapshot.normalizationManifestHash,
                   populationManifest: snapshot.populationManifest as unknown as Prisma.InputJsonValue,
                   populationManifestHash: snapshot.populationManifestHash,
