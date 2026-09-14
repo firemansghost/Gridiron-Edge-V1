@@ -52,7 +52,7 @@ Two **new additive append-only** Prisma models:
 
 Do not reuse or overload existing capture, Hybrid, or `team_season_talent` tables.
 
-Intended Candidate B V1 identity constants (descriptive / feature-derivation pins, **not** a Generic Shadow `modelDefinitionHash`):
+Intended Candidate B V1 identity constants (**stable intended-consumer scope** plus feature/derivation pins; **not** a Generic Shadow `modelDefinitionHash`):
 
 | Field | Frozen intended value |
 |---|---|
@@ -64,7 +64,7 @@ Intended Candidate B V1 identity constants (descriptive / feature-derivation pin
 | `featureDefinitionVersion` | `v1` |
 | `derivationDefinitionId` | `candidate_b_roster_prior_derivation_v1` |
 
-`featureDefinitionHash` and `derivationDefinitionHash` are computed from their canonical manifests at ingest time. They are not hardcoded in this design contract.
+`featureDefinitionHash` and `derivationDefinitionHash` are computed from the **persisted** canonical manifests at ingest time. They are not hardcoded in this design contract.
 
 ---
 
@@ -91,9 +91,17 @@ The snapshot **MUST** be bound to:
 - `populationManifestHash`
 - `snapshotHash`
 
-`modelFamily` and `modelDefinitionId` **MAY** be stored as descriptive / intended-consumer provenance.
+`modelFamily` and `modelDefinitionId` are **stable intended-consumer scope**. They **ARE** part of Candidate B V1 snapshot semantic scope — and therefore part of `snapshotHash` — because the snapshot contains Candidate-B-specific derived composite / rating values.
+
+They are **not** supporting provenance. They are also **not** a runtime adapter identity:
+
+- runtime `modelDefinitionHash` remains excluded
+- the feature artifact does not depend on a future adapter implementation hash
+- the eventual runtime model must pin the exact `snapshotHash`
 
 Do **NOT** store or require `modelDefinitionHash` as part of persistence identity.
+
+`sourceProvenanceManifestHash` is supporting operator/source timing metadata. It **MUST NOT** participate in snapshot semantic identity, `snapshotHash`, stable uniqueness, or semantic conflict determination.
 
 The eventual Candidate B runtime **MODEL** manifest must instead pin the exact:
 
@@ -117,14 +125,37 @@ runtime model hash required to create feature artifact
 
 ---
 
+## Feature identity
+
+```
+featureDefinitionId = candidate_b_roster_prior_features_v1
+featureDefinitionVersion = v1
+featureDefinitionHash = sha256CanonicalJson(featureDefinitionManifest)
+```
+
+The parent **must persist** `featureDefinitionManifest` as the exact semantic JSON payload used to produce `featureDefinitionHash`.
+
+Do **not** rely on repository docs alone, a future runtime adapter, or a source-code file hash to reconstruct this identity.
+
+The feature manifest should identify, at the appropriate feature-definition level:
+
+- the four frozen source feature concepts (`priorCore`, `talent`, `returning`, `portal`)
+- availability / unavailability semantics for those features
+- that missing numeric components remain null and are never zero-filled
+
+---
+
 ## Derivation identity
 
 ```
 derivationDefinitionId = candidate_b_roster_prior_derivation_v1
-derivationDefinitionHash = sha256CanonicalJson(canonical derivation manifest)
+derivationDefinitionHash = sha256CanonicalJson(derivationDefinitionManifest)
 ```
 
+The parent **must persist** `derivationDefinitionManifest` as the exact semantic JSON payload used to produce `derivationDefinitionHash`.
+
 Do **not** use a source-code file hash as the derivation definition.
+Do **not** rely on repository docs alone or a future runtime adapter to reconstruct this identity.
 
 The derivation manifest must pin at least:
 
@@ -138,7 +169,7 @@ The derivation manifest must pin at least:
 - second-stage population z-score
 - `3.5` point scale
 - null / unavailable semantics
-- deterministic canonicalization rules
+- deterministic hash / canonicalization rules
 
 ---
 
@@ -149,15 +180,19 @@ The derivation manifest must pin at least:
 | `id` | String cuid PK | DB identity; not the runtime pin |
 | `season` | Int | 2026 |
 | `snapshotKind` | String | `IMMUTABLE_DERIVED_TEAM_FEATURES_V1` |
-| `modelFamily` | String | descriptive intended consumer |
-| `modelDefinitionId` | String | descriptive intended consumer |
+| `modelFamily` | String | stable intended-consumer scope; in `snapshotHash` |
+| `modelDefinitionId` | String | stable intended-consumer scope; in `snapshotHash` |
 | `featureDefinitionId` | String | |
-| `featureDefinitionVersion` | String | |
-| `featureDefinitionHash` | String | |
+| `featureDefinitionVersion` | String | `v1` |
+| `featureDefinitionManifest` | Json | exact payload hashed into `featureDefinitionHash` |
+| `featureDefinitionHash` | String | `sha256CanonicalJson(featureDefinitionManifest)` |
 | `derivationDefinitionId` | String | `candidate_b_roster_prior_derivation_v1` |
-| `derivationDefinitionHash` | String | |
-| `sourceManifest` | Json | |
-| `sourceManifestHash` | String | |
+| `derivationDefinitionManifest` | Json | exact payload hashed into `derivationDefinitionHash` |
+| `derivationDefinitionHash` | String | `sha256CanonicalJson(derivationDefinitionManifest)` |
+| `sourceManifest` | Json | semantic source identity only |
+| `sourceManifestHash` | String | `sha256CanonicalJson(sourceManifest)`; in `snapshotHash` |
+| `sourceProvenanceManifest` | Json | supporting operator/source timing metadata |
+| `sourceProvenanceManifestHash` | String | excluded from `snapshotHash` and semantic conflict |
 | `normalizationManifest` | Json | |
 | `normalizationManifestHash` | String | |
 | `populationManifest` | Json | |
@@ -256,51 +291,85 @@ Unavailable numeric components remain **NULL**. Never encode unavailable as zero
 
 ---
 
-## Source manifest
+## Source identity vs supporting provenance
 
-Canonical source manifest (hashed with `sha256CanonicalJson`) must contain explicit provenance for:
+Semantic source identity and supporting provenance **must not** be mixed in the same hashed manifest.
 
-### 2025 CFBD CORE
+### A. `sourceManifest` — semantic source identity
+
+This is the **semantic source-identity** manifest. It contains only data that defines the frozen Candidate B numerical evidence.
+
+#### 2025 CFBD CORE
 
 - provider
 - endpoint
 - year
 - field (`overall`)
-- private snapshot ID
-- explicit retrieval timestamp if available
+- frozen private snapshot ID
 - raw payload SHA-256
 
-### Sep 1 returning
+#### Sep 1 returning
 
 - provider
-- endpoint / source identity
+- source / endpoint identity
 - designation `ONE_TIME_OPENING_WEEK_BASELINE`
-- private snapshot ID
-- explicit retrieval timestamp
+- frozen private snapshot ID
 - field `percentPPA`
 - raw payload SHA-256
 
-### Sep 1 portal
+#### Sep 1 portal
 
 - provider
 - source identity
 - designation `ONE_TIME_OPENING_WEEK_BASELINE`
-- private snapshot ID
-- explicit retrieval timestamp
+- frozen private snapshot ID
 - raw payload SHA-256
 - calculated `muPortal`
-- expected `muPortal` parity value
+- `muPortal` parity reference
 
-### Talent
+#### Talent
 
-- table / source identity (`team_season_talent`)
+- source table identity (`team_season_talent`)
 - season 2026
 - field `talentComposite`
 - n = 138
 - `talentValueHash`
-- `talentProvenanceHash`
 
-Raw local file paths **MAY** be recorded for operator provenance but **must not** be required runtime identifiers.
+```
+sourceManifestHash = sha256CanonicalJson(sourceManifest)
+```
+
+`sourceManifestHash` **IS** part of:
+
+- semantic snapshot identity
+- `snapshotHash`
+- conflict detection
+
+### B. `sourceProvenanceManifest` — supporting provenance
+
+This is **supporting** operator / source timing metadata. It may contain:
+
+- CFBD retrieval timestamps
+- local / private snapshot retrieval metadata
+- optional raw local file paths
+- `talentProvenanceHash`
+- talent row `createdAt` / `updatedAt` provenance semantics
+- any other non-numerical operator / source timing metadata
+
+Raw local file paths **MAY** be recorded here for operator provenance but **must not** be required runtime identifiers.
+
+```
+sourceProvenanceManifestHash = sha256CanonicalJson(sourceProvenanceManifest)
+```
+
+`sourceProvenanceManifestHash` **MUST NOT** participate in:
+
+- `sourceManifestHash`
+- `snapshotHash`
+- stable semantic uniqueness
+- semantic conflict determination
+
+Reason: supporting provenance may differ without changing the exact frozen numerical feature artifact.
 
 ---
 
@@ -340,8 +409,8 @@ sha256CanonicalJson(
 
 Use explicit JSON `null` for unavailable provenance fields.
 
-Candidate B **semantic source identity** depends on `talentValueHash`.  
-`talentProvenanceHash` is supporting provenance and **MUST NOT** cause a numerically identical talent population to become a different semantic source solely because an operational timestamp changed.
+Candidate B **semantic source identity** depends on `talentValueHash`, which lives in `sourceManifest`.  
+`talentProvenanceHash` lives only in `sourceProvenanceManifest`. It is supporting provenance and **MUST NOT** cause a numerically identical talent population to become a different semantic source solely because an operational timestamp changed.
 
 ---
 
@@ -479,9 +548,17 @@ sha256CanonicalJson({
 })
 ```
 
-Exclude: DB `id`, `createdAt`, `derivedAt`, `repoCommitSha`.
+Exclude:
 
-`repoCommitSha` is derivation-code provenance. `snapshotHash` is semantic content identity. Two machines deriving identical numbers from the same frozen sources must produce the same `snapshotHash`.
+- `sourceProvenanceManifestHash`
+- DB `id`
+- `createdAt`
+- `derivedAt`
+- `repoCommitSha`
+
+`snapshotHash` includes only **hashes** of the semantic manifests, not the bulky manifests themselves.
+
+`repoCommitSha` is derivation-code provenance. `sourceProvenanceManifestHash` is supporting operator/source timing metadata. `snapshotHash` is semantic content identity. Two machines deriving identical numbers from the same frozen semantic sources must produce the same `snapshotHash` even if retrieval timestamps or talent operational timestamps differ.
 
 ---
 
@@ -509,6 +586,8 @@ UNIQUE(snapshotId, teamId)
 ```
 
 The exact Prisma index names may be chosen during implementation.
+
+`sourceProvenanceManifestHash` is **not** part of this uniqueness constraint.
 
 This uniqueness key **must not** allow a changed `sourceManifestHash` or `derivationDefinitionHash` to create a second snapshot under the **same** V1 identity.
 
@@ -580,17 +659,55 @@ Use the full 64-character `snapshotHash`, not a prefix.
 
 ## Idempotency / conflict behavior
 
+Semantic V1 conflict is based on:
+
+- stable V1 identity
+- `featureDefinitionHash`
+- `derivationDefinitionHash`
+- `sourceManifestHash`
+- `normalizationManifestHash`
+- `populationManifestHash`
+- `snapshotHash`
+- team row hashes
+
+A `sourceProvenanceManifestHash`-only difference is **NOT** a semantic conflict.
+
 | Case | Behavior |
 |---|---|
-| Exact stable identity + exact `snapshotHash` + 138 exact row hashes | **VERIFIED NO-OP** |
+| Exact stable identity + exact semantic hashes + exact `snapshotHash` + 138 exact row hashes | **VERIFIED NO-OP** |
+| Same as above, but later local re-derivation observes a different `sourceProvenanceManifestHash` only | **VERIFIED NO-OP** |
 | Stable V1 identity + any semantic / hash difference | **FAIL CLOSED** |
 | Existing partial / corrupt state | **FAIL CLOSED** |
 
-Specifically FAIL CLOSED when the V1 identity already exists and any of these differ:
+Provenance-only rerun rule:
+
+If an already-persisted snapshot has:
+
+- same stable V1 identity
+- same `sourceManifestHash`
+- same `featureDefinitionHash`
+- same `derivationDefinitionHash`
+- same `normalizationManifestHash`
+- same `populationManifestHash`
+- same `snapshotHash`
+- exact 138 row hashes
+
+but a later local re-derivation observes a different `sourceProvenanceManifestHash` only:
+
+- **VERIFIED NO-OP**
+- Do **NOT** update the persisted provenance
+- Report the provenance-only difference diagnostically
+- It is **NOT** a competing semantic Candidate B V1 snapshot
+
+This specifically prevents later `TeamSeasonTalent` timestamp changes from creating a false V1 conflict.
+
+Specifically FAIL CLOSED when the V1 identity already exists and any of these semantic identities differ:
 
 - `sourceManifestHash`
 - `derivationDefinitionHash`
 - `featureDefinitionHash`
+- `normalizationManifestHash`
+- `populationManifestHash`
 - `snapshotHash`
 
 Never silently supersede Candidate B V1.
