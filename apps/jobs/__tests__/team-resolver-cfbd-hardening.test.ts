@@ -83,6 +83,54 @@ describe('TeamResolver CFBD hardening', () => {
     });
   });
 
+  describe('strictFullIdentity is additive and default CFBD behavior is unchanged', () => {
+    const strictCfbd = (name: string) =>
+      resolver.resolveTeamDetailed(name, 'college-football', {
+        provider: 'cfbd',
+        strictFullIdentity: true,
+      });
+
+    it('default CFBD still resolves California (PA) after parenthetical stripping', () => {
+      const result = resolver.resolveTeamDetailed('California (PA)', 'college-football', {
+        provider: 'cfbd',
+      });
+      expect(result.teamId).toBe('california');
+      expect(result.method).toBe('cfbd_alias');
+      expect(
+        resolver.resolveTeamDetailed('California (PA)', 'NCAAF', { provider: 'cfbd' }).teamId
+      ).toBe('california');
+    });
+
+    it('strict CFBD leaves California (PA) unresolved and keeps explicit full-identity maps', () => {
+      expect(strictCfbd('California (PA)')).toEqual({ teamId: null, method: null });
+      expect(strictCfbd('California').teamId).toBe('california');
+      expect(strictCfbd('Miami (OH)').teamId).toBe('miami-oh');
+      expect(strictCfbd('Miami (FL)').teamId).toBe('miami');
+      expect(strictCfbd('Texas A&M').teamId).toBe('texas-a-m');
+      expect(strictCfbd('San José State').teamId).toBe('san-jos-state');
+      expect(strictCfbd('San Diego State').teamId).toBe('san-diego-state');
+    });
+
+    it('strict CFBD rejects substring/prefix guard hits that default mode still accepts', () => {
+      expect(strictCfbd('Texas A&M (Fake)')).toEqual({ teamId: null, method: null });
+      expect(strictCfbd('Miami (OH) (Fake)')).toEqual({ teamId: null, method: null });
+      expect(strictCfbd('San José State (Fake)')).toEqual({ teamId: null, method: null });
+      expect(strictCfbd('San Diego State (Fake)')).toEqual({ teamId: null, method: null });
+      expect(strictCfbd('Texas A&M Corpus Christi')).toEqual({ teamId: null, method: null });
+
+      expect(cfbd('Texas A&M (Fake)')).toBe('texas-a-m');
+      expect(cfbd('Miami (OH) (Fake)')).toBe('miami-oh');
+      expect(cfbd('San José State (Fake)')).toBe('san-jos-state');
+      expect(cfbd('San Diego State (Fake)')).toBe('san-diego-state');
+      expect(cfbd('Texas A&M Corpus Christi')).toBe('texas-a-m');
+    });
+
+    it('synthetic parenthetical-only alias is rejected in strict mode and accepted by default CFBD', () => {
+      expect(cfbd('Boise State (Fake)')).toBe('boise-state');
+      expect(strictCfbd('Boise State (Fake)')).toEqual({ teamId: null, method: null });
+    });
+  });
+
   describe('San Diego mis-map guard', () => {
     it('plain San Diego does not map via guard', () => {
       expect(cfbd('San Diego')).toBeNull();

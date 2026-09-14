@@ -26,6 +26,17 @@ export interface TeamResolveResult {
   method: TeamResolveMethod;
 }
 
+export interface TeamResolveOptions {
+  provider?: string;
+  /**
+   * Candidate B V1 opt-in. Default/absent preserves current behavior.
+   * When provider === 'cfbd' and this is true, only full-string guard /
+   * CFBD alias / general exact alias are accepted. Parenthetical stripping,
+   * normalized_alias, and fuzzy are skipped.
+   */
+  strictFullIdentity?: boolean;
+}
+
 export class TeamResolver {
   private aliases: Map<string, string> = new Map();
   private cfbdAliases: Map<string, string> = new Map();
@@ -305,7 +316,8 @@ export class TeamResolver {
   }
 
   /**
-   * Apply mis-map guards to prevent common fuzzy matching errors
+   * Apply mis-map guards to prevent common fuzzy matching errors.
+   * Legacy/default behavior. Not used for Candidate B strictFullIdentity.
    */
   private applyMisMapGuards(providerName: string): string | null {
     const name = providerName.toLowerCase();
@@ -347,13 +359,40 @@ export class TeamResolver {
   }
 
   /**
+   * Candidate B strictFullIdentity guards: exact reviewed school identities
+   * after harmless pre-normalization only. No substring/prefix matching.
+   */
+  private applyStrictFullIdentityGuards(preNormalizedLower: string): string | null {
+    switch (preNormalizedLower) {
+      case 'texas a&m':
+        return 'texas-a-m';
+      case 'miami':
+        return 'miami';
+      case 'miami (oh)':
+      case 'miami (ohio)':
+        return 'miami-oh';
+      case 'georgia state':
+        return 'georgia-state';
+      case 'georgia southern':
+        return 'georgia-southern';
+      case 'san jose state':
+      case 'san josé state':
+        return 'san-jos-state';
+      case 'san diego state':
+        return 'san-diego-state';
+      default:
+        return null;
+    }
+  }
+
+  /**
    * Resolve a provider team name to a canonical team ID
    * @param providerName - Team name from the provider (e.g., "Alabama Crimson Tide")
    * @param providerSport - Sport from the provider (e.g., "NCAAF")
    * @param options - Optional provider-specific options
    * @returns Canonical team ID or null if not found/denylisted
    */
-  resolveTeam(providerName: string, providerSport: string, options?: { provider?: string }): string | null {
+  resolveTeam(providerName: string, providerSport: string, options?: TeamResolveOptions): string | null {
     return this.resolveTeamDetailed(providerName, providerSport, options).teamId;
   }
 
@@ -364,7 +403,7 @@ export class TeamResolver {
   resolveTeamDetailed(
     providerName: string,
     providerSport: string,
-    options?: { provider?: string }
+    options?: TeamResolveOptions
   ): TeamResolveResult {
     if (!providerName || !providerSport) {
       return { teamId: null, method: null };
@@ -373,6 +412,7 @@ export class TeamResolver {
     // Pre-normalize: strip diacritics and unify A&M forms
     const preNormalized = this.preNormalizeName(providerName);
     const normalizedName = preNormalized.toLowerCase().trim();
+    const strictCfbd = options?.provider === 'cfbd' && options?.strictFullIdentity === true;
     
     // Debug logging for Miami and Texas A&M
     const needsDebug = providerName.toLowerCase().includes('miami') || 
@@ -385,8 +425,9 @@ export class TeamResolver {
       return { teamId: null, method: null };
     }
 
-    // Apply mis-map guards for common pitfalls
-    const guardedResult = this.applyMisMapGuards(providerName);
+    const guardedResult = strictCfbd
+      ? this.applyStrictFullIdentityGuards(normalizedName)
+      : this.applyMisMapGuards(providerName);
     if (guardedResult) {
       return { teamId: guardedResult, method: 'guard' };
     }
@@ -395,8 +436,9 @@ export class TeamResolver {
     if (options?.provider === 'cfbd') {
       let cfbdMatch = this.cfbdAliases.get(normalizedName);
       
-      // If no match, try with fallback normalization
-      if (!cfbdMatch) {
+      // Default CFBD: parenthetical fallback remains for existing callers.
+      // Strict full-identity mode must not strip "(PA)" / "(OH)" as evidence.
+      if (!cfbdMatch && !strictCfbd) {
         const fallbackName = this.postFallbackNormalize(normalizedName);
         cfbdMatch = this.cfbdAliases.get(fallbackName);
       }
@@ -428,8 +470,7 @@ export class TeamResolver {
     // Step 2: Exact alias match (general aliases)
     let exactMatch = this.aliases.get(normalizedName);
     
-    // If no match, try with fallback normalization
-    if (!exactMatch) {
+    if (!exactMatch && !strictCfbd) {
       const fallbackName = this.postFallbackNormalize(normalizedName);
       exactMatch = this.aliases.get(fallbackName);
     }
@@ -448,6 +489,10 @@ export class TeamResolver {
       }
       
       return { teamId: exactMatch, method: 'alias' };
+    }
+
+    if (strictCfbd) {
+      return { teamId: null, method: null };
     }
 
     // Step 2: Name normalization (strip mascots, punctuation, etc.)
