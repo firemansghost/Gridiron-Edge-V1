@@ -303,6 +303,22 @@ export function createCandidateBCfbdFbsResolver(
   };
 }
 
+export function hasExpectedTeamResolutionPolicyPin(sourceManifest: unknown): boolean {
+  if (sourceManifest == null || typeof sourceManifest !== 'object' || Array.isArray(sourceManifest)) {
+    return false;
+  }
+  const teamResolution = (sourceManifest as Record<string, unknown>).teamResolution;
+  if (teamResolution == null || typeof teamResolution !== 'object' || Array.isArray(teamResolution)) {
+    return false;
+  }
+  const pin = teamResolution as Record<string, unknown>;
+  return (
+    pin.policyId === TEAM_RESOLUTION_POLICY_ID &&
+    pin.policyHash === TEAM_RESOLUTION_POLICY_HASH &&
+    pin.policyHash === FROZEN_TEAM_RESOLUTION_POLICY_HASH
+  );
+}
+
 const CORE_KEYS = [
   'year',
   'throughSeasonType',
@@ -1279,6 +1295,9 @@ export function assessCandidateBV1Invariants(snapshot: DerivedSnapshot, options?
   if (snapshot.derivationDefinitionHash !== DERIVATION_DEFINITION_HASH) {
     blockers.push('derivation_definition_hash_mismatch');
   }
+  if (!hasExpectedTeamResolutionPolicyPin(snapshot.sourceManifest)) {
+    blockers.push('team_resolution_policy_mismatch');
+  }
   if (snapshot.rowCount !== snapshot.teams.length) blockers.push('row_count_mismatch');
   if (snapshot.teams.length !== snapshot.expectedTeamCount) blockers.push('team_count_mismatch');
   if (new Set(snapshot.teams.map((t) => t.teamId)).size !== snapshot.teams.length) {
@@ -1375,6 +1394,7 @@ export function verifyPersistedSnapshotIntegrity(
     return false;
   }
   if (sha256CanonicalJson(existing.sourceManifest) !== existing.sourceManifestHash) return false;
+  if (!hasExpectedTeamResolutionPolicyPin(existing.sourceManifest)) return false;
   if (sha256CanonicalJson(existing.sourceProvenanceManifest) !== existing.sourceProvenanceManifestHash) {
     return false;
   }

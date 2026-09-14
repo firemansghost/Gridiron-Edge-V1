@@ -17,6 +17,7 @@ import {
   TEAM_RESOLUTION_POLICY_MANIFEST,
   aggregatePortalByTeam,
   aggregatePortalDirection,
+  assessCandidateBV1Invariants,
   assertAuthoritativeFbsPopulation,
   buildSourceManifest,
   buildSourceProvenanceManifest,
@@ -31,6 +32,7 @@ import {
   expectedCandidateBFeatureSnapshotConfirmation,
   hashTalentProvenance,
   hashTalentValues,
+  hasExpectedTeamResolutionPolicyPin,
   isCandidateBAcceptedTeamResolutionMethod,
   parseFrozenPortalPayload,
   parseVerifiedFrozenJson,
@@ -87,6 +89,7 @@ function deriveThreeTeamSnapshot(overrides?: {
   provenanceExtra?: string;
   talentValues?: Record<string, number>;
   sourceManifestPatch?: Record<string, unknown>;
+  sourceManifestTransform?: (manifest: Record<string, unknown>) => Record<string, unknown>;
 }): DerivedSnapshot {
   const ids = teamIds();
   const talentValues = overrides?.talentValues ?? { alpha: 10, beta: 20, gamma: 30 };
@@ -129,7 +132,7 @@ function deriveThreeTeamSnapshot(overrides?: {
       sourceUpdatedAt: null,
     }))
   );
-  const sourceManifest = {
+  let sourceManifest: Record<string, unknown> = {
     ...buildSourceManifest({
       coreSha256: 'c'.repeat(64),
       returningSha256: 'd'.repeat(64),
@@ -139,6 +142,9 @@ function deriveThreeTeamSnapshot(overrides?: {
     }),
     ...overrides?.sourceManifestPatch,
   };
+  if (overrides?.sourceManifestTransform) {
+    sourceManifest = overrides.sourceManifestTransform(sourceManifest);
+  }
   const sourceProvenanceManifest = {
     ...buildSourceProvenanceManifest({
       coreRetrievedAt: iso(3_000),
@@ -848,6 +854,7 @@ describe('Candidate B V1 strict team resolution', () => {
       'san-jos-state',
       'marshall',
       'boise-state',
+      'san-diego-state',
     ]);
     expect(resolve('California (PA)')).toBeNull();
     expect(resolve('California')).toBe('california');
@@ -855,7 +862,13 @@ describe('Candidate B V1 strict team resolution', () => {
     expect(resolve('Miami (FL)')).toBe('miami');
     expect(resolve('Texas A&M')).toBe('texas-a-m');
     expect(resolve('San José State')).toBe('san-jos-state');
+    expect(resolve('San Diego State')).toBe('san-diego-state');
     expect(resolve('Boise State (Fake)')).toBeNull();
+    expect(resolve('Texas A&M (Fake)')).toBeNull();
+    expect(resolve('Miami (OH) (Fake)')).toBeNull();
+    expect(resolve('San José State (Fake)')).toBeNull();
+    expect(resolve('San Diego State (Fake)')).toBeNull();
+    expect(resolve('Texas A&M Corpus Christi')).toBeNull();
   });
 
   it('California (PA) origin does not count outbound for Cal; Marshall inbound remains', () => {
@@ -904,5 +917,132 @@ describe('Candidate B V1 strict team resolution', () => {
     expect(cli).not.toContain(rejected);
     expect(cli).toContain('createCandidateBCfbdFbsResolver');
     expect(pure).toContain('strictFullIdentity: true');
+  });
+});
+
+describe('Candidate B V1 team-resolution policy pin invariant', () => {
+  it('normal buildSourceManifest carries the exact frozen policy pin', () => {
+    const snapshot = deriveThreeTeamSnapshot();
+    expect(hasExpectedTeamResolutionPolicyPin(snapshot.sourceManifest)).toBe(true);
+    expect(hasExpectedTeamResolutionPolicyPin(buildSourceManifest({
+      coreSha256: 'c'.repeat(64),
+      returningSha256: 'd'.repeat(64),
+      portalSha256: 'e'.repeat(64),
+      muPortal: 0.5,
+      talentValueHash: snapshot.talentValueHash,
+    }))).toBe(true);
+    expect(assessCandidateBV1Invariants(snapshot, { requireFrozenCounts: false })).not.toContain(
+      'team_resolution_policy_mismatch'
+    );
+  });
+
+  it('missing teamResolution is a PREVIEW/COMMIT blocker', () => {
+    const snapshot = deriveThreeTeamSnapshot({
+      sourceManifestTransform: (manifest) => {
+        const next = { ...manifest };
+        delete next.teamResolution;
+        return next;
+      },
+    });
+    expect(hasExpectedTeamResolutionPolicyPin(snapshot.sourceManifest)).toBe(false);
+    expect(assessCandidateBV1Invariants(snapshot, { requireFrozenCounts: false })).toContain(
+      'team_resolution_policy_mismatch'
+    );
+  });
+
+  it('wrong policyId is a PREVIEW/COMMIT blocker', () => {
+    const snapshot = deriveThreeTeamSnapshot({
+      sourceManifestPatch: {
+        teamResolution: {
+          policyId: 'not_the_frozen_policy',
+          policyHash: TEAM_RESOLUTION_POLICY_HASH,
+        },
+      },
+    });
+    expect(assessCandidateBV1Invariants(snapshot, { requireFrozenCounts: false })).toContain(
+      'team_resolution_policy_mismatch'
+    );
+  });
+
+  it('wrong policyHash is a PREVIEW/COMMIT blocker even if it is 64 hex chars', () => {
+    const snapshot = deriveThreeTeamSnapshot({
+      sourceManifestPatch: {
+        teamResolution: {
+          policyId: TEAM_RESOLUTION_POLICY_ID,
+          policyHash: '0'.repeat(64),
+        },
+      },
+    });
+    expect(assessCandidateBV1Invariants(snapshot, { requireFrozenCounts: false })).toContain(
+      'team_resolution_policy_mismatch'
+    );
+  });
+
+  it('PREVIEW with the wrong policy pin is not commitEligible', async () => {
+    const snapshot = deriveThreeTeamSnapshot({
+      sourceManifestPatch: {
+        teamResolution: {
+          policyId: TEAM_RESOLUTION_POLICY_ID,
+          policyHash: '0'.repeat(64),
+        },
+      },
+    });
+    const { report } = await executeCandidateBFeatureSnapshotIngest({
+      mode: 'PREVIEW',
+      snapshot,
+      store: memoryStore(null),
+      repoCommitSha: 'a'.repeat(40),
+      derivedAt: new Date(),
+      requireFrozenCounts: false,
+    });
+    expect(report.blockers).toContain('team_resolution_policy_mismatch');
+    expect(report.commitEligible).toBe(false);
+    expect(report.writeSafe).toBe(false);
+  });
+
+  it('self-consistent persisted snapshot with the wrong policy is CORRUPT_EXISTING', () => {
+    const snapshot = deriveThreeTeamSnapshot();
+    const wrongManifest = {
+      ...snapshot.sourceManifest,
+      teamResolution: {
+        policyId: TEAM_RESOLUTION_POLICY_ID,
+        policyHash: '0'.repeat(64),
+      },
+    };
+    const sourceManifestHash = sha256CanonicalJson(wrongManifest);
+    const snapshotHash = computeSnapshotHash({
+      season: snapshot.season,
+      snapshotKind: snapshot.snapshotKind,
+      modelFamily: snapshot.modelFamily,
+      modelDefinitionId: snapshot.modelDefinitionId,
+      featureDefinitionId: snapshot.featureDefinitionId,
+      featureDefinitionVersion: snapshot.featureDefinitionVersion,
+      featureDefinitionHash: snapshot.featureDefinitionHash,
+      derivationDefinitionId: snapshot.derivationDefinitionId,
+      derivationDefinitionHash: snapshot.derivationDefinitionHash,
+      sourceManifestHash,
+      normalizationManifestHash: snapshot.normalizationManifestHash,
+      populationManifestHash: snapshot.populationManifestHash,
+      expectedTeamCount: snapshot.expectedTeamCount,
+      rowCount: snapshot.rowCount,
+      completeVectorCount: snapshot.completeVectorCount,
+      unavailableVectorCount: snapshot.unavailableVectorCount,
+      portalAvailableCount: snapshot.portalAvailableCount,
+      teams: snapshot.teams,
+    });
+    const persisted = toPersisted({
+      ...snapshot,
+      sourceManifest: wrongManifest,
+      sourceManifestHash,
+      snapshotHash,
+    });
+    expect(sha256CanonicalJson(persisted.sourceManifest)).toBe(persisted.sourceManifestHash);
+    expect(hasExpectedTeamResolutionPolicyPin(persisted.sourceManifest)).toBe(false);
+    expect(
+      verifyPersistedSnapshotIntegrity(persisted, { expectedTeamCount: snapshot.expectedTeamCount })
+    ).toBe(false);
+    expect(
+      classifyExistingSnapshot(persisted, snapshot, { expectedTeamCount: snapshot.expectedTeamCount })
+    ).toBe('CORRUPT_EXISTING');
   });
 });

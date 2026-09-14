@@ -316,7 +316,8 @@ export class TeamResolver {
   }
 
   /**
-   * Apply mis-map guards to prevent common fuzzy matching errors
+   * Apply mis-map guards to prevent common fuzzy matching errors.
+   * Legacy/default behavior. Not used for Candidate B strictFullIdentity.
    */
   private applyMisMapGuards(providerName: string): string | null {
     const name = providerName.toLowerCase();
@@ -355,6 +356,33 @@ export class TeamResolver {
     }
     
     return null; // No guard applied
+  }
+
+  /**
+   * Candidate B strictFullIdentity guards: exact reviewed school identities
+   * after harmless pre-normalization only. No substring/prefix matching.
+   */
+  private applyStrictFullIdentityGuards(preNormalizedLower: string): string | null {
+    switch (preNormalizedLower) {
+      case 'texas a&m':
+        return 'texas-a-m';
+      case 'miami':
+        return 'miami';
+      case 'miami (oh)':
+      case 'miami (ohio)':
+        return 'miami-oh';
+      case 'georgia state':
+        return 'georgia-state';
+      case 'georgia southern':
+        return 'georgia-southern';
+      case 'san jose state':
+      case 'san josé state':
+        return 'san-jos-state';
+      case 'san diego state':
+        return 'san-diego-state';
+      default:
+        return null;
+    }
   }
 
   /**
@@ -397,8 +425,9 @@ export class TeamResolver {
       return { teamId: null, method: null };
     }
 
-    // Apply mis-map guards for common pitfalls
-    const guardedResult = this.applyMisMapGuards(providerName);
+    const guardedResult = strictCfbd
+      ? this.applyStrictFullIdentityGuards(normalizedName)
+      : this.applyMisMapGuards(providerName);
     if (guardedResult) {
       return { teamId: guardedResult, method: 'guard' };
     }
