@@ -70,6 +70,35 @@ is **REJECTED FOR COMMIT**. It must never be treated as Candidate B V1 frozen fe
 
 ---
 
+## Why team-resolution policy identity is required
+
+Candidate B V1 feature persistence already treats `sourceManifestHash` as part of semantic snapshot identity and `snapshotHash`.
+
+Team resolution is upstream of team-level feature construction. A different resolution policy can change:
+
+- transfer counts
+- coverage
+- `portalRaw`
+- normalization populations / statistics
+- `zPortal`
+- composite
+- `teamRatingPoints`
+- `rowHash`
+- `snapshotHash`
+
+Therefore the team-resolution policy must itself be content-addressed and included in semantic source identity.
+
+Do **not** rely only on:
+
+- prose documentation
+- `repoCommitSha`
+- implementation source code
+- the final row hashes
+
+to identify the resolution semantics.
+
+---
+
 ## Authoritative target population
 
 Candidate B V1 canonical targets are only:
@@ -400,7 +429,181 @@ The rejected provisional snapshot was never persisted, so no immutable V1 featur
 
 ---
 
-## Implementation direction — not authorized by this document alone
+## Frozen team-resolution policy identity
+
+```
+teamResolutionPolicyId = candidate_b_v1_team_resolution_policy_v1
+```
+
+The canonical semantic policy manifest is exactly this object. It contains only stable semantic strings and counts. It does **not** include timestamps, repo SHA, provisional `snapshotHash`, historical rounded statistics, runtime paths, or implementation filenames.
+
+```json
+{
+  "policyId": "candidate_b_v1_team_resolution_policy_v1",
+  "provider": "cfbd",
+  "authoritativePopulation": {
+    "source": "TeamMembership",
+    "season": 2026,
+    "level": "FBS",
+    "expectedUniqueCount": 138
+  },
+  "preNormalization": {
+    "trim": true,
+    "unicodeDiacriticNormalization": true,
+    "normalizeAandMToken": true,
+    "preserveParentheticalQualifier": true
+  },
+  "acceptedResolutionClasses": [
+    "FULL_STRING_GUARD",
+    "FULL_STRING_CFBD_ALIAS",
+    "FULL_STRING_GENERAL_EXACT_ALIAS"
+  ],
+  "rejectedResolutionClasses": [
+    "FUZZY",
+    "NORMALIZED_ALIAS",
+    "PARENTHETICAL_STRIPPING_ALIAS",
+    "SILENT_NON_FBS_TO_FBS_INFERENCE",
+    "INVENTED_ALIAS",
+    "MANUAL_DERIVATION_REMAP"
+  ],
+  "parentheticalRule": "IDENTITY_BEARING_UNLESS_EXPLICIT_FULL_STRING_ALIAS_OR_GUARD",
+  "teamLevelSources": {
+    "priorCore": {
+      "requireEverySourceRowResolved": true,
+      "expectedSourceRows": 136,
+      "requireUniqueTargetTeamIds": true
+    },
+    "returning": {
+      "requireEverySourceRowResolved": true,
+      "expectedSourceRows": 136,
+      "requireUniqueTargetTeamIds": true
+    }
+  },
+  "portal": {
+    "resolveOriginAndDestinationIndependently": true,
+    "unresolvedCounterpartyAllowed": true,
+    "retainValidFbsSideWhenCounterpartyUnresolved": true,
+    "bothSidesRequired": false
+  },
+  "knownDisposition": {
+    "California (PA)": "UNRESOLVED_NON_FBS",
+    "Miami (OH)": "EXPLICIT_FULL_IDENTITY_RESOLUTION_ALLOWED"
+  }
+}
+```
+
+Call this object `TEAM_RESOLUTION_POLICY_MANIFEST`.
+
+These known-disposition strings freeze the already-stated California / Miami rules; they do not change them:
+
+- `California (PA)` remains `UNRESOLVED_NON_FBS`.
+- `Miami (OH)` remains allowed only because its full identity is explicitly supported.
+- Parenthetical stripping is never sufficient evidence.
+
+---
+
+## Canonical policy hash
+
+```
+teamResolutionPolicyHash = sha256CanonicalJson(TEAM_RESOLUTION_POLICY_MANIFEST)
+```
+
+Use the repository helper `sha256CanonicalJson` (`canonicalJsonString` of key-sorted JSON, then SHA-256 hex). Do **not** use raw `JSON.stringify`, the markdown-file SHA, a git blob SHA, or a source-code SHA.
+
+Frozen value:
+
+```
+de627563f2c4c2b1e195182bcd6b66dd3226daf9800e209e5f55244f94ea0efe
+```
+
+---
+
+## SourceManifest pin
+
+The future corrected Candidate B V1 ingest **MUST** include this object in the semantic `sourceManifest`:
+
+```json
+{
+  "teamResolution": {
+    "policyId": "candidate_b_v1_team_resolution_policy_v1",
+    "policyHash": "de627563f2c4c2b1e195182bcd6b66dd3226daf9800e209e5f55244f94ea0efe"
+  }
+}
+```
+
+Then:
+
+```
+sourceManifestHash = sha256CanonicalJson(sourceManifest)
+```
+
+continues to be part of:
+
+- semantic snapshot identity
+- conflict detection
+- `snapshotHash`
+
+No new Prisma column is required. `sourceManifest` is already persisted JSON.
+
+---
+
+## Identity boundary
+
+`featureDefinitionHash` remains unchanged.  
+`derivationDefinitionHash` remains unchanged.
+
+Reason:
+
+- the four feature concepts are unchanged
+- the numerical formula is unchanged
+- the new hash pins source-name → canonical-team resolution semantics as a **separate** semantic source / canonicalization identity
+
+The **next** corrected PREVIEW is expected to produce a **NEW**:
+
+- `sourceManifestHash`
+- `normalizationManifestHash`
+- `snapshotHash`
+- affected `rowHash` values
+
+because:
+
+1. the team-resolution policy is now semantically pinned
+2. `California (PA)` is no longer assigned to Cal
+
+This is expected and correct.
+
+The old provisional snapshot remains rejected.
+
+---
+
+## No schema change
+
+No schema migration is needed for this policy identity.
+
+The existing parent already persists:
+
+- `sourceManifest`
+- `sourceManifestHash`
+
+and `snapshotHash` already includes `sourceManifestHash`.
+
+---
+
+## Future implementation requirement
+
+After this PR is merged, the ingest-only repair must:
+
+1. define the exact same canonical `TEAM_RESOLUTION_POLICY_MANIFEST`
+2. assert `sha256CanonicalJson(manifest) ===` frozen `teamResolutionPolicyHash`
+3. add the ID + hash into `sourceManifest`
+4. implement Candidate-B-specific strict CFBD resolution acceptance
+5. keep default shared `TeamResolver` behavior unchanged for other workflows
+6. reject parenthetical-strip-only mappings such as `California (PA) -> california`
+7. preserve explicit full-string / guard mapping such as `Miami (OH) -> miami-oh`
+8. rerun two real PREVIEWs
+9. require deterministic new semantic hashes
+
+Still **no COMMIT** until separately authorized.
 
 The shared `TeamResolver` may retain its existing behavior for other workflows.
 
