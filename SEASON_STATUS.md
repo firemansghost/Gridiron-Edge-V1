@@ -257,7 +257,7 @@ No Shadow cron is authorized. No score/grading automation is authorized by this 
 
 ## Deferred maintenance — separate workstreams
 
-These are real issues but are **not** blockers for the current Week 2 Shadow/T−30 path:
+These are real issues but are **not** blockers for current Week 3 operations:
 
 - npm audit: **21 vulnerabilities** (2 low, 1 moderate, 17 high, 1 critical)
 - GitHub Actions Node 20 deprecation / Node 24 forcing warning on some actions

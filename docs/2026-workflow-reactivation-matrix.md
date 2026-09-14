@@ -301,4 +301,4 @@ For the detailed pre-September-8 workflow inventory, classifications, scheduled-
 
 `git show 56a13bc4ae24472eac4427614143c8bc1c3ddda4:docs/2026-workflow-reactivation-matrix.md`
 
-That history remains authoritative for what was known **at those phase closes**. This file is authoritative for current operator guidance as of September 8.
+That history remains authoritative for what was known **at those phase closes**. This file is authoritative for current operator guidance as of September 13, 2026.
