@@ -250,6 +250,76 @@ if (TEAM_RESOLUTION_POLICY_HASH !== FROZEN_TEAM_RESOLUTION_POLICY_HASH) {
   );
 }
 
+export const PERSISTENCE_ENCODING_CONTRACT_ID = 'candidate_b_v1_exact_float8_text_encoding_v1' as const;
+
+export const PERSISTENCE_ENCODING_CONTRACT_MANIFEST = {
+  contractId: PERSISTENCE_ENCODING_CONTRACT_ID,
+  semanticRole: 'NON_SEMANTIC_PERSISTENCE_TRANSPORT',
+  targetDatabaseType: 'POSTGRESQL_DOUBLE_PRECISION',
+  sourceNumericType: 'JAVASCRIPT_NUMBER_BINARY64',
+  finiteRequired: true,
+  negativeZeroEncoding: 'POSITIVE_ZERO',
+  nullEncoding: 'SQL_NULL',
+  decimalTextEncoding: 'JSON_STRINGIFY_FINITE_NUMBER',
+  sqlParameterType: 'TEXT',
+  postgresConversion: 'EXPLICIT_TEXT_TO_DOUBLE_PRECISION_CAST',
+  postReadRepresentation: 'PRISMA_NUMBER',
+  integrityRequirement: 'EXACT_BINARY64_EQUALITY',
+  rowHashVerification: 'EXACT_138_OF_138',
+  snapshotHashVerification: 'EXACT',
+  schemaMigrationRequired: false,
+} as const;
+
+export const FROZEN_PERSISTENCE_ENCODING_CONTRACT_HASH =
+  '644f51274d1630746e579f861ebd22f4e82921be7adb8372cf2fef9d9dbcd343';
+
+export const PERSISTENCE_ENCODING_CONTRACT_HASH = sha256CanonicalJson(PERSISTENCE_ENCODING_CONTRACT_MANIFEST);
+
+if (PERSISTENCE_ENCODING_CONTRACT_HASH !== FROZEN_PERSISTENCE_ENCODING_CONTRACT_HASH) {
+  throw new Error(
+    `persistence_encoding_contract_hash_mismatch:${PERSISTENCE_ENCODING_CONTRACT_HASH}!=${FROZEN_PERSISTENCE_ENCODING_CONTRACT_HASH}`
+  );
+}
+
+export const CANDIDATE_B_FLOAT8_TRANSPORT_FIELDS = [
+  'priorCoreRaw',
+  'talentRaw',
+  'returningRaw',
+  'portalRaw',
+  'zCore',
+  'zTalent',
+  'zReturning',
+  'zPortal',
+  'candidateBRawComposite',
+  'candidateBCompositeZ',
+  'candidateBTeamRatingPoints',
+  'inboundRatedCoverage',
+  'inboundMeanRating',
+  'outboundRatedCoverage',
+  'outboundMeanRating',
+] as const;
+
+export type CandidateBFloat8TransportField = (typeof CANDIDATE_B_FLOAT8_TRANSPORT_FIELDS)[number];
+
+export function candidateBFloat8StorageText(value: number): string {
+  if (!Number.isFinite(value)) {
+    throw new Error('non_finite_float8_storage_value');
+  }
+  if (Object.is(value, -0)) {
+    return '0';
+  }
+  const text = JSON.stringify(value);
+  if (typeof text !== 'string') {
+    throw new Error('float8_storage_text_generation_failed');
+  }
+  return text;
+}
+
+export function candidateBNullableFloat8StorageText(value: number | null): string | null {
+  if (value === null) return null;
+  return candidateBFloat8StorageText(value);
+}
+
 export const CANDIDATE_B_ACCEPTED_TEAM_RESOLUTION_METHODS = [
   'guard',
   'cfbd_alias',
