@@ -51,6 +51,12 @@ import {
   type TeamFeatureRow,
 } from '../src/research/candidate-b/candidate-b-v1-feature-snapshot';
 import { TeamResolver, type TeamResolveResult } from '../adapters/TeamResolver';
+import {
+  FROZEN_PERSISTENCE_READ_CONTRACT_HASH,
+  PERSISTENCE_READ_CONTRACT_HASH,
+  PERSISTENCE_READ_CONTRACT_ID,
+  PERSISTENCE_READ_CONTRACT_MANIFEST,
+} from '../src/research/candidate-b/candidate-b-v1-exact-float8-reader';
 import { sha256CanonicalJson } from '../../web/lib/shadow-model-capture-v1';
 
 const ROOT = path.resolve(__dirname, '../../..');
@@ -297,6 +303,38 @@ describe('Candidate B V1 feature snapshot hashing', () => {
     expect(TEAM_RESOLUTION_POLICY_HASH).toBe(
       'de627563f2c4c2b1e195182bcd6b66dd3226daf9800e209e5f55244f94ea0efe'
     );
+  });
+
+  it('persistence read contract is frozen, content-addressed, and non-semantic', () => {
+    expect(PERSISTENCE_READ_CONTRACT_ID).toBe('candidate_b_v1_exact_float8_binary_read_v1');
+    expect(PERSISTENCE_READ_CONTRACT_HASH).toBe(
+      '88e6f3ac4b2761cf56509842be8c9d52f342d3b9f611cf3add655b68f448592e'
+    );
+    expect(FROZEN_PERSISTENCE_READ_CONTRACT_HASH).toBe(PERSISTENCE_READ_CONTRACT_HASH);
+    expect(sha256CanonicalJson(PERSISTENCE_READ_CONTRACT_MANIFEST)).toBe(
+      PERSISTENCE_READ_CONTRACT_HASH
+    );
+    const snapshot = deriveThreeTeamSnapshot();
+    expect(JSON.stringify(snapshot.sourceManifest)).not.toContain(PERSISTENCE_READ_CONTRACT_ID);
+    expect(JSON.stringify(snapshot.sourceManifest)).not.toContain(PERSISTENCE_READ_CONTRACT_HASH);
+    expect(JSON.stringify(snapshot.featureDefinitionManifest)).not.toContain(
+      PERSISTENCE_READ_CONTRACT_ID
+    );
+    expect(JSON.stringify(snapshot.derivationDefinitionManifest)).not.toContain(
+      PERSISTENCE_READ_CONTRACT_ID
+    );
+    expect(JSON.stringify(snapshot.sourceProvenanceManifest)).not.toContain(
+      PERSISTENCE_READ_CONTRACT_ID
+    );
+    expect(JSON.stringify(snapshot.normalizationManifest)).not.toContain(
+      PERSISTENCE_READ_CONTRACT_HASH
+    );
+    expect(JSON.stringify(snapshot.populationManifest)).not.toContain(PERSISTENCE_READ_CONTRACT_HASH);
+    expect(snapshot.teams.every((t) => !t.rowHash.includes(PERSISTENCE_READ_CONTRACT_HASH))).toBe(
+      true
+    );
+    expect(snapshot.snapshotHash).not.toContain(PERSISTENCE_READ_CONTRACT_HASH);
+    expect(snapshot.snapshotHash).not.toContain(PERSISTENCE_READ_CONTRACT_ID);
   });
 
   it('sourceManifest pins teamResolution and provenance does not', () => {
@@ -956,6 +994,8 @@ describe('Candidate B V1 strict team resolution', () => {
     expect(pure).toContain('strictFullIdentity: true');
     expect(cli).not.toMatch(/teams:\s*\{\s*create:/);
     expect(cli).toContain('insertCandidateBFeatureSnapshotTeamsExact');
+    expect(cli).not.toMatch(/include:\s*\{\s*teams:\s*true\s*\}/);
+    expect(cli).toContain('loadCandidateBFeatureSnapshotTeamsExact');
   });
 });
 

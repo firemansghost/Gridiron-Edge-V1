@@ -57,6 +57,7 @@ import {
   type TalentSourceRow,
 } from './src/research/candidate-b/candidate-b-v1-feature-snapshot';
 import { insertCandidateBFeatureSnapshotTeamsExact } from './src/research/candidate-b/candidate-b-v1-exact-float8-writer';
+import { loadCandidateBFeatureSnapshotTeamsExact } from './src/research/candidate-b/candidate-b-v1-exact-float8-reader';
 
 export function parseCandidateBIngestArgs(argv: string[]): {
   season: number;
@@ -66,7 +67,7 @@ export function parseCandidateBIngestArgs(argv: string[]): {
   coreSnapshotDir: string;
   openingSnapshotDir: string;
 } {
-  let season = CANDIDATE_B_SEASON;
+  let season: number = CANDIDATE_B_SEASON;
   let mode: IngestMode = 'PREVIEW';
   let confirmation = '';
   let reportPath: string | undefined;
@@ -149,69 +150,40 @@ export function createCfbdFbsResolver(
   return createCandidateBCfbdFbsResolver(resolver, authoritativeTeamIds);
 }
 
-function mapPersistedTeam(row: {
-  teamId: string;
-  season: number;
-  availabilityStatus: string;
-  unavailableReasons: string[];
-  priorCoreRaw: number | null;
-  talentRaw: number | null;
-  returningRaw: number | null;
-  portalRaw: number | null;
-  zCore: number | null;
-  zTalent: number | null;
-  zReturning: number | null;
-  zPortal: number | null;
-  candidateBRawComposite: number | null;
-  candidateBCompositeZ: number | null;
-  candidateBTeamRatingPoints: number | null;
-  inboundTransferCount: number;
-  inboundRatedCount: number;
-  inboundRatedCoverage: number | null;
-  inboundDirectionStatus: string;
-  inboundMeanRating: number | null;
-  outboundTransferCount: number;
-  outboundRatedCount: number;
-  outboundRatedCoverage: number | null;
-  outboundDirectionStatus: string;
-  outboundMeanRating: number | null;
-  rowHash: string;
-}): PersistedTeamRow {
-  return { ...row };
-}
-
-function mapPersistedSnapshot(row: {
-  id: string;
-  season: number;
-  snapshotKind: string;
-  modelFamily: string;
-  modelDefinitionId: string;
-  featureDefinitionId: string;
-  featureDefinitionVersion: string;
-  featureDefinitionHash: string;
-  featureDefinitionManifest: unknown;
-  derivationDefinitionId: string;
-  derivationDefinitionHash: string;
-  derivationDefinitionManifest: unknown;
-  sourceManifest: unknown;
-  sourceManifestHash: string;
-  sourceProvenanceManifest: unknown;
-  sourceProvenanceManifestHash: string;
-  normalizationManifest: unknown;
-  normalizationManifestHash: string;
-  populationManifest: unknown;
-  populationManifestHash: string;
-  expectedTeamCount: number;
-  rowCount: number;
-  completeVectorCount: number;
-  unavailableVectorCount: number;
-  portalAvailableCount: number;
-  snapshotHash: string;
-  teams: Parameters<typeof mapPersistedTeam>[0][];
-}): PersistedSnapshot {
+function mapPersistedSnapshot(
+  row: {
+    id: string;
+    season: number;
+    snapshotKind: string;
+    modelFamily: string;
+    modelDefinitionId: string;
+    featureDefinitionId: string;
+    featureDefinitionVersion: string;
+    featureDefinitionHash: string;
+    featureDefinitionManifest: unknown;
+    derivationDefinitionId: string;
+    derivationDefinitionHash: string;
+    derivationDefinitionManifest: unknown;
+    sourceManifest: unknown;
+    sourceManifestHash: string;
+    sourceProvenanceManifest: unknown;
+    sourceProvenanceManifestHash: string;
+    normalizationManifest: unknown;
+    normalizationManifestHash: string;
+    populationManifest: unknown;
+    populationManifestHash: string;
+    expectedTeamCount: number;
+    rowCount: number;
+    completeVectorCount: number;
+    unavailableVectorCount: number;
+    portalAvailableCount: number;
+    snapshotHash: string;
+  },
+  teams: PersistedTeamRow[]
+): PersistedSnapshot {
   return {
     ...row,
-    teams: row.teams.map(mapPersistedTeam),
+    teams,
   };
 }
 
@@ -230,9 +202,10 @@ export function createPrismaCandidateBFeatureSnapshotStore(
       where: {
         season_featureDefinitionId_featureDefinitionVersion_derivationDefinitionId: STABLE_IDENTITY,
       },
-      include: { teams: true },
     });
-    return row ? mapPersistedSnapshot(row) : null;
+    if (!row) return null;
+    const teams = await loadCandidateBFeatureSnapshotTeamsExact(db, row.id);
+    return mapPersistedSnapshot(row, teams);
   };
 
   return {
@@ -280,9 +253,9 @@ export function createPrismaCandidateBFeatureSnapshotStore(
                   sourceManifestHash: snapshot.sourceManifestHash,
                   sourceProvenanceManifest: snapshot.sourceProvenanceManifest as Prisma.InputJsonValue,
                   sourceProvenanceManifestHash: snapshot.sourceProvenanceManifestHash,
-                  normalizationManifest: snapshot.normalizationManifest as Prisma.InputJsonValue,
+                  normalizationManifest: snapshot.normalizationManifest as unknown as Prisma.InputJsonValue,
                   normalizationManifestHash: snapshot.normalizationManifestHash,
-                  populationManifest: snapshot.populationManifest as Prisma.InputJsonValue,
+                  populationManifest: snapshot.populationManifest as unknown as Prisma.InputJsonValue,
                   populationManifestHash: snapshot.populationManifestHash,
                   expectedTeamCount: snapshot.expectedTeamCount,
                   rowCount: snapshot.rowCount,
