@@ -402,11 +402,17 @@ export interface PersistedSnapshot {
   featureDefinitionId: string;
   featureDefinitionVersion: string;
   featureDefinitionHash: string;
+  featureDefinitionManifest: unknown;
   derivationDefinitionId: string;
   derivationDefinitionHash: string;
+  derivationDefinitionManifest: unknown;
+  sourceManifest: unknown;
   sourceManifestHash: string;
+  sourceProvenanceManifest: unknown;
   sourceProvenanceManifestHash: string;
+  normalizationManifest: unknown;
   normalizationManifestHash: string;
+  populationManifest: unknown;
   populationManifestHash: string;
   expectedTeamCount: number;
   rowCount: number;
@@ -419,7 +425,7 @@ export interface PersistedSnapshot {
 
 export interface CandidateBFeatureSnapshotTx {
   loadExistingByStableIdentity(): Promise<PersistedSnapshot | null>;
-  insertSnapshot(snapshot: DerivedSnapshot, repoCommitSha: string, derivedAt: Date): Promise<PersistedSnapshot>;
+  insertSnapshot(snapshot: DerivedSnapshot, repoCommitSha: string, derivedAt: Date): Promise<void>;
 }
 
 export interface CandidateBFeatureSnapshotStore {
@@ -511,6 +517,18 @@ function requireNullableNumber(value: unknown, label: string): number | null {
 
 export function sha256RawBytes(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
+}
+
+export function parseVerifiedFrozenJson(
+  bytes: Buffer,
+  expectedSha256: string,
+  label: string
+): { bytes: Buffer; sha256: string; json: unknown } {
+  const sha256 = sha256RawBytes(bytes);
+  if (sha256 !== expectedSha256) {
+    throw new Error(`${label}_sha_mismatch:${sha256}`);
+  }
+  return { bytes, sha256, json: JSON.parse(bytes.toString('utf8')) };
 }
 
 export function toIsoStringOrNull(value: Date | string | null | undefined): string | null {
@@ -633,7 +651,16 @@ export function parseFrozenPortalPayload(json: unknown): ParsedPortalRow[] {
 export function calculateMuPortal(rows: Array<{ rating: number | null }>): number {
   const finite = rows.map((r) => r.rating).filter(isFiniteNumber);
   if (finite.length === 0) throw new Error('mu_portal_no_finite_ratings');
-  return finite.reduce((sum, n) => sum + n, 0) / finite.length;
+  // Compensated summation keeps payload order and matches the frozen audit mean.
+  let sum = 0;
+  let compensation = 0;
+  for (const value of finite) {
+    const y = value - compensation;
+    const t = sum + y;
+    compensation = t - sum - y;
+    sum = t;
+  }
+  return sum / finite.length;
 }
 
 export function assertMuPortalParity(muPortal: number): void {
@@ -870,6 +897,15 @@ export function computeRowHash(row: Omit<TeamFeatureRow, 'rowHash'>): string {
 }
 
 export function computeSnapshotHash(input: {
+  season: number;
+  snapshotKind: string;
+  modelFamily: string;
+  modelDefinitionId: string;
+  featureDefinitionId: string;
+  featureDefinitionVersion: string;
+  featureDefinitionHash: string;
+  derivationDefinitionId: string;
+  derivationDefinitionHash: string;
   sourceManifestHash: string;
   normalizationManifestHash: string;
   populationManifestHash: string;
@@ -884,15 +920,15 @@ export function computeSnapshotHash(input: {
     .map((t) => ({ teamId: t.teamId, rowHash: t.rowHash }))
     .sort((a, b) => (a.teamId < b.teamId ? -1 : a.teamId > b.teamId ? 1 : 0));
   return sha256CanonicalJson({
-    season: CANDIDATE_B_SEASON,
-    snapshotKind: SNAPSHOT_KIND,
-    modelFamily: MODEL_FAMILY,
-    modelDefinitionId: MODEL_DEFINITION_ID,
-    featureDefinitionId: FEATURE_DEFINITION_ID,
-    featureDefinitionVersion: FEATURE_DEFINITION_VERSION,
-    featureDefinitionHash: FEATURE_DEFINITION_HASH,
-    derivationDefinitionId: DERIVATION_DEFINITION_ID,
-    derivationDefinitionHash: DERIVATION_DEFINITION_HASH,
+    season: input.season,
+    snapshotKind: input.snapshotKind,
+    modelFamily: input.modelFamily,
+    modelDefinitionId: input.modelDefinitionId,
+    featureDefinitionId: input.featureDefinitionId,
+    featureDefinitionVersion: input.featureDefinitionVersion,
+    featureDefinitionHash: input.featureDefinitionHash,
+    derivationDefinitionId: input.derivationDefinitionId,
+    derivationDefinitionHash: input.derivationDefinitionHash,
     sourceManifestHash: input.sourceManifestHash,
     normalizationManifestHash: input.normalizationManifestHash,
     populationManifestHash: input.populationManifestHash,
@@ -1064,6 +1100,15 @@ export function deriveCandidateBSnapshot(input: {
   const normalizationManifestHash = sha256CanonicalJson(normalizationManifest);
   const populationManifestHash = sha256CanonicalJson(populationManifest);
   const snapshotHash = computeSnapshotHash({
+    season: CANDIDATE_B_SEASON,
+    snapshotKind: SNAPSHOT_KIND,
+    modelFamily: MODEL_FAMILY,
+    modelDefinitionId: MODEL_DEFINITION_ID,
+    featureDefinitionId: FEATURE_DEFINITION_ID,
+    featureDefinitionVersion: FEATURE_DEFINITION_VERSION,
+    featureDefinitionHash: FEATURE_DEFINITION_HASH,
+    derivationDefinitionId: DERIVATION_DEFINITION_ID,
+    derivationDefinitionHash: DERIVATION_DEFINITION_HASH,
     sourceManifestHash,
     normalizationManifestHash,
     populationManifestHash,
@@ -1190,15 +1235,59 @@ function persistedTeamSemantics(row: PersistedTeamRow): Omit<TeamFeatureRow, 'ro
   };
 }
 
-export function verifyPersistedSnapshotIntegrity(existing: PersistedSnapshot): boolean {
-  if (existing.teams.length !== existing.rowCount) return false;
+export function verifyPersistedSnapshotIntegrity(
+  existing: PersistedSnapshot,
+  options?: { expectedTeamCount?: number }
+): boolean {
+  const requiredTeamCount = options?.expectedTeamCount ?? CANDIDATE_B_EXPECTED_TEAM_COUNT;
+  if (existing.season !== CANDIDATE_B_SEASON) return false;
+  if (existing.snapshotKind !== SNAPSHOT_KIND) return false;
+  if (existing.modelFamily !== MODEL_FAMILY) return false;
+  if (existing.modelDefinitionId !== MODEL_DEFINITION_ID) return false;
+  if (existing.featureDefinitionId !== FEATURE_DEFINITION_ID) return false;
+  if (existing.featureDefinitionVersion !== FEATURE_DEFINITION_VERSION) return false;
+  if (existing.featureDefinitionHash !== FEATURE_DEFINITION_HASH) return false;
+  if (existing.derivationDefinitionId !== DERIVATION_DEFINITION_ID) return false;
+  if (existing.derivationDefinitionHash !== DERIVATION_DEFINITION_HASH) return false;
+
+  if (sha256CanonicalJson(existing.featureDefinitionManifest) !== existing.featureDefinitionHash) {
+    return false;
+  }
+  if (sha256CanonicalJson(existing.derivationDefinitionManifest) !== existing.derivationDefinitionHash) {
+    return false;
+  }
+  if (sha256CanonicalJson(existing.sourceManifest) !== existing.sourceManifestHash) return false;
+  if (sha256CanonicalJson(existing.sourceProvenanceManifest) !== existing.sourceProvenanceManifestHash) {
+    return false;
+  }
+  if (sha256CanonicalJson(existing.normalizationManifest) !== existing.normalizationManifestHash) {
+    return false;
+  }
+  if (sha256CanonicalJson(existing.populationManifest) !== existing.populationManifestHash) return false;
+
+  if (existing.expectedTeamCount !== requiredTeamCount) return false;
   if (existing.expectedTeamCount !== existing.rowCount) return false;
+  if (existing.rowCount !== existing.teams.length) return false;
+  if (existing.completeVectorCount + existing.unavailableVectorCount !== existing.rowCount) {
+    return false;
+  }
   const ids = existing.teams.map((t) => t.teamId);
   if (new Set(ids).size !== ids.length) return false;
   for (const team of existing.teams) {
+    if (team.season !== CANDIDATE_B_SEASON) return false;
     if (computeRowHash(persistedTeamSemantics(team)) !== team.rowHash) return false;
   }
+
   const recomputed = computeSnapshotHash({
+    season: existing.season,
+    snapshotKind: existing.snapshotKind,
+    modelFamily: existing.modelFamily,
+    modelDefinitionId: existing.modelDefinitionId,
+    featureDefinitionId: existing.featureDefinitionId,
+    featureDefinitionVersion: existing.featureDefinitionVersion,
+    featureDefinitionHash: existing.featureDefinitionHash,
+    derivationDefinitionId: existing.derivationDefinitionId,
+    derivationDefinitionHash: existing.derivationDefinitionHash,
     sourceManifestHash: existing.sourceManifestHash,
     normalizationManifestHash: existing.normalizationManifestHash,
     populationManifestHash: existing.populationManifestHash,
@@ -1209,20 +1298,22 @@ export function verifyPersistedSnapshotIntegrity(existing: PersistedSnapshot): b
     portalAvailableCount: existing.portalAvailableCount,
     teams: existing.teams,
   });
-  if (recomputed !== existing.snapshotHash) return false;
-  if (existing.featureDefinitionId !== FEATURE_DEFINITION_ID) return false;
-  if (existing.featureDefinitionVersion !== FEATURE_DEFINITION_VERSION) return false;
-  if (existing.derivationDefinitionId !== DERIVATION_DEFINITION_ID) return false;
-  if (existing.season !== CANDIDATE_B_SEASON) return false;
-  return true;
+  return recomputed === existing.snapshotHash;
 }
 
 export function classifyExistingSnapshot(
   existing: PersistedSnapshot | null,
-  computed: DerivedSnapshot
+  computed: DerivedSnapshot,
+  options?: { expectedTeamCount?: number }
 ): ExistingSnapshotState {
   if (!existing) return 'ABSENT';
-  if (!verifyPersistedSnapshotIntegrity(existing)) return 'CORRUPT_EXISTING';
+  if (
+    !verifyPersistedSnapshotIntegrity(existing, {
+      expectedTeamCount: options?.expectedTeamCount ?? computed.expectedTeamCount,
+    })
+  ) {
+    return 'CORRUPT_EXISTING';
+  }
   const existingRowHashes = [...existing.teams]
     .map((t) => ({ teamId: t.teamId, rowHash: t.rowHash }))
     .sort((a, b) => (a.teamId < b.teamId ? -1 : a.teamId > b.teamId ? 1 : 0));
@@ -1395,8 +1486,14 @@ export async function executeCandidateBFeatureSnapshotIngest(input: {
   const invariantBlockers = assessCandidateBV1Invariants(input.snapshot, {
     requireFrozenCounts: input.requireFrozenCounts,
   });
+  const requiredTeamCount =
+    input.requireFrozenCounts === false
+      ? input.snapshot.expectedTeamCount
+      : CANDIDATE_B_EXPECTED_TEAM_COUNT;
   const existing = await input.store.loadExistingByStableIdentity();
-  const existingState = classifyExistingSnapshot(existing, input.snapshot);
+  const existingState = classifyExistingSnapshot(existing, input.snapshot, {
+    expectedTeamCount: requiredTeamCount,
+  });
   const blockers = [...invariantBlockers];
   if (existingState === 'SEMANTIC_CONFLICT') blockers.push('semantic_conflict');
   if (existingState === 'CORRUPT_EXISTING') blockers.push('corrupt_existing');
@@ -1426,17 +1523,25 @@ export async function executeCandidateBFeatureSnapshotIngest(input: {
 
   const result = await input.store.runSerializable(async (tx) => {
     const txExisting = await tx.loadExistingByStableIdentity();
-    const txState = classifyExistingSnapshot(txExisting, input.snapshot);
+    const txState = classifyExistingSnapshot(txExisting, input.snapshot, {
+      expectedTeamCount: requiredTeamCount,
+    });
     if (txState === 'EXACT_EXISTING' || txState === 'PROVENANCE_ONLY_DIFFERENCE') {
       return { state: txState, persisted: txExisting!, inserted: false };
     }
     if (txState === 'SEMANTIC_CONFLICT') throw new Error('semantic_conflict');
     if (txState === 'CORRUPT_EXISTING') throw new Error('corrupt_existing');
-    const persisted = await tx.insertSnapshot(input.snapshot, input.repoCommitSha, input.derivedAt);
-    if (!verifyPersistedSnapshotIntegrity(persisted)) {
+    await tx.insertSnapshot(input.snapshot, input.repoCommitSha, input.derivedAt);
+    const persisted = await tx.loadExistingByStableIdentity();
+    if (!persisted) throw new Error('post_write_missing_snapshot');
+    if (!verifyPersistedSnapshotIntegrity(persisted, { expectedTeamCount: requiredTeamCount })) {
       throw new Error('post_write_integrity_failed');
     }
-    if (classifyExistingSnapshot(persisted, input.snapshot) !== 'EXACT_EXISTING') {
+    if (
+      classifyExistingSnapshot(persisted, input.snapshot, {
+        expectedTeamCount: requiredTeamCount,
+      }) !== 'EXACT_EXISTING'
+    ) {
       throw new Error('post_write_hash_mismatch');
     }
     return { state: 'ABSENT' as ExistingSnapshotState, persisted, inserted: true };

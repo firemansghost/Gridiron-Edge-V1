@@ -27,8 +27,10 @@ import {
   hashTalentProvenance,
   hashTalentValues,
   parseFrozenPortalPayload,
+  parseVerifiedFrozenJson,
   sha256RawBytes,
   toIsoStringOrNull,
+  verifyPersistedSnapshotIntegrity,
   type CandidateBFeatureSnapshotStore,
   type DerivedSnapshot,
   type PersistedSnapshot,
@@ -160,11 +162,17 @@ function toPersisted(snapshot: DerivedSnapshot, provenanceHash = snapshot.source
     featureDefinitionId: snapshot.featureDefinitionId,
     featureDefinitionVersion: snapshot.featureDefinitionVersion,
     featureDefinitionHash: snapshot.featureDefinitionHash,
+    featureDefinitionManifest: snapshot.featureDefinitionManifest,
     derivationDefinitionId: snapshot.derivationDefinitionId,
     derivationDefinitionHash: snapshot.derivationDefinitionHash,
+    derivationDefinitionManifest: snapshot.derivationDefinitionManifest,
+    sourceManifest: snapshot.sourceManifest,
     sourceManifestHash: snapshot.sourceManifestHash,
+    sourceProvenanceManifest: snapshot.sourceProvenanceManifest,
     sourceProvenanceManifestHash: provenanceHash,
+    normalizationManifest: snapshot.normalizationManifest,
     normalizationManifestHash: snapshot.normalizationManifestHash,
+    populationManifest: snapshot.populationManifest,
     populationManifestHash: snapshot.populationManifestHash,
     expectedTeamCount: snapshot.expectedTeamCount,
     rowCount: snapshot.rowCount,
@@ -176,20 +184,26 @@ function toPersisted(snapshot: DerivedSnapshot, provenanceHash = snapshot.source
   };
 }
 
-function memoryStore(existing: PersistedSnapshot | null): Pick<
-  CandidateBFeatureSnapshotStore,
-  'loadExistingByStableIdentity' | 'runSerializable'
-> {
+function memoryStore(
+  existing: PersistedSnapshot | null,
+  options?: { corruptAfterInsert?: (row: PersistedSnapshot) => PersistedSnapshot }
+): Pick<CandidateBFeatureSnapshotStore, 'loadExistingByStableIdentity' | 'runSerializable'> {
   let current = existing;
+  let inserted = false;
   return {
     loadExistingByStableIdentity: async () => current,
     runSerializable: async (fn) =>
       fn({
-        loadExistingByStableIdentity: async () => current,
+        loadExistingByStableIdentity: async () => {
+          if (inserted && options?.corruptAfterInsert && current) {
+            return options.corruptAfterInsert(current);
+          }
+          return current;
+        },
         insertSnapshot: async (snapshot) => {
           current = toPersisted(snapshot);
           current.id = 'inserted';
-          return current;
+          inserted = true;
         },
       }),
   };
@@ -197,6 +211,9 @@ function memoryStore(existing: PersistedSnapshot | null): Pick<
 
 describe('Candidate B V1 feature snapshot hashing', () => {
   it('feature manifest hashes deterministically', () => {
+    expect(FEATURE_DEFINITION_HASH).toBe(
+      '6f1f8ecc132cdd87650252d57597a657ece0dd908bdf5010897023cafe988972'
+    );
     expect(sha256CanonicalJson(FEATURE_DEFINITION_MANIFEST)).toBe(FEATURE_DEFINITION_HASH);
     expect(sha256CanonicalJson(FEATURE_DEFINITION_MANIFEST)).toBe(
       sha256CanonicalJson(JSON.parse(JSON.stringify(FEATURE_DEFINITION_MANIFEST)))
@@ -204,6 +221,9 @@ describe('Candidate B V1 feature snapshot hashing', () => {
   });
 
   it('derivation manifest hashes deterministically', () => {
+    expect(DERIVATION_DEFINITION_HASH).toBe(
+      '6c04627787edbcc7d1d42549f3cb19c525a6c4c31de572549f01e3efa64a638c'
+    );
     expect(sha256CanonicalJson(DERIVATION_DEFINITION_MANIFEST)).toBe(DERIVATION_DEFINITION_HASH);
     expect(FEATURE_DEFINITION_HASH).not.toBe(DERIVATION_DEFINITION_HASH);
   });
@@ -278,6 +298,15 @@ describe('Candidate B V1 feature snapshot hashing', () => {
       ...JSON.parse(JSON.stringify(snapshot.teams.map((t) => ({ teamId: t.teamId, rowHash: t.rowHash })))),
     };
     const hash = computeSnapshotHash({
+      season: snapshot.season,
+      snapshotKind: snapshot.snapshotKind,
+      modelFamily: snapshot.modelFamily,
+      modelDefinitionId: snapshot.modelDefinitionId,
+      featureDefinitionId: snapshot.featureDefinitionId,
+      featureDefinitionVersion: snapshot.featureDefinitionVersion,
+      featureDefinitionHash: snapshot.featureDefinitionHash,
+      derivationDefinitionId: snapshot.derivationDefinitionId,
+      derivationDefinitionHash: snapshot.derivationDefinitionHash,
       sourceManifestHash: snapshot.sourceManifestHash,
       normalizationManifestHash: snapshot.normalizationManifestHash,
       populationManifestHash: snapshot.populationManifestHash,
@@ -335,6 +364,14 @@ describe('Candidate B V1 feature snapshot hashing', () => {
       })
     );
     expect(payload.portalRaw).toBeNull();
+  });
+
+  it('verifies raw SHA-256 before JSON.parse', () => {
+    const bytes = Buffer.from('{not-valid-json', 'utf8');
+    expect(() => parseVerifiedFrozenJson(bytes, '0'.repeat(64), 'core')).toThrow(/^core_sha_mismatch:/);
+    expect(() => parseVerifiedFrozenJson(bytes, '0'.repeat(64), 'core')).not.toThrow(/JSON/);
+    const matching = sha256RawBytes(bytes);
+    expect(() => parseVerifiedFrozenJson(bytes, matching, 'core')).toThrow();
   });
 });
 
@@ -496,20 +533,15 @@ describe('Candidate B V1 idempotency classifier', () => {
   });
 
   it('provenance-only difference → NO-OP', async () => {
+    const existingSnap = deriveThreeTeamSnapshot();
     const snapshot = deriveThreeTeamSnapshot({ provenanceExtra: 'later' });
-    const existing = toPersisted(deriveThreeTeamSnapshot(), 'other-provenance');
-    existing.snapshotHash = snapshot.snapshotHash;
-    existing.sourceManifestHash = snapshot.sourceManifestHash;
-    existing.featureDefinitionHash = snapshot.featureDefinitionHash;
-    existing.derivationDefinitionHash = snapshot.derivationDefinitionHash;
-    existing.normalizationManifestHash = snapshot.normalizationManifestHash;
-    existing.populationManifestHash = snapshot.populationManifestHash;
-    existing.teams = snapshot.teams.map((t) => ({ ...t }));
-    expect(classifyExistingSnapshot(existing, snapshot)).toBe('PROVENANCE_ONLY_DIFFERENCE');
+    expect(classifyExistingSnapshot(toPersisted(existingSnap), snapshot)).toBe(
+      'PROVENANCE_ONLY_DIFFERENCE'
+    );
     const { report } = await executeCandidateBFeatureSnapshotIngest({
       mode: 'PREVIEW',
       snapshot,
-      store: memoryStore(existing),
+      store: memoryStore(toPersisted(existingSnap)),
       repoCommitSha: 'a'.repeat(40),
       derivedAt: new Date(),
       requireFrozenCounts: false,
@@ -545,6 +577,58 @@ describe('Candidate B V1 idempotency classifier', () => {
     missing.teams = missing.teams.slice(0, 2);
     missing.rowCount = 2;
     expect(classifyExistingSnapshot(missing, snapshot)).toBe('CORRUPT_EXISTING');
+  });
+
+  it('persisted parent identity/manifest corruption → CORRUPT_EXISTING', () => {
+    const snapshot = deriveThreeTeamSnapshot();
+
+    const family = toPersisted(snapshot);
+    family.modelFamily = 'not_candidate_b';
+    expect(family.snapshotHash).toBe(snapshot.snapshotHash);
+    expect(classifyExistingSnapshot(family, snapshot)).toBe('CORRUPT_EXISTING');
+    expect(verifyPersistedSnapshotIntegrity(family)).toBe(false);
+
+    const source = toPersisted(snapshot);
+    source.sourceManifest = { ...snapshot.sourceManifest, tampered: true };
+    expect(source.sourceManifestHash).toBe(snapshot.sourceManifestHash);
+    expect(classifyExistingSnapshot(source, snapshot)).toBe('CORRUPT_EXISTING');
+
+    const feature = toPersisted(snapshot);
+    feature.featureDefinitionManifest = { ...snapshot.featureDefinitionManifest, tampered: true };
+    expect(feature.featureDefinitionHash).toBe(snapshot.featureDefinitionHash);
+    expect(classifyExistingSnapshot(feature, snapshot)).toBe('CORRUPT_EXISTING');
+
+    const provenance = toPersisted(snapshot);
+    provenance.sourceProvenanceManifest = {
+      ...snapshot.sourceProvenanceManifest,
+      tampered: true,
+    };
+    expect(provenance.sourceProvenanceManifestHash).toBe(snapshot.sourceProvenanceManifestHash);
+    expect(classifyExistingSnapshot(provenance, snapshot)).toBe('CORRUPT_EXISTING');
+
+    expect(verifyPersistedSnapshotIntegrity(toPersisted(snapshot))).toBe(false);
+    expect(
+      verifyPersistedSnapshotIntegrity(toPersisted(snapshot), {
+        expectedTeamCount: snapshot.expectedTeamCount,
+      })
+    ).toBe(true);
+  });
+
+  it('fresh post-insert re-read is the post-write proof', async () => {
+    const snapshot = deriveThreeTeamSnapshot();
+    await expect(
+      executeCandidateBFeatureSnapshotIngest({
+        mode: 'COMMIT',
+        confirmation: expectedCandidateBFeatureSnapshotConfirmation(snapshot.snapshotHash),
+        snapshot,
+        store: memoryStore(null, {
+          corruptAfterInsert: (row) => ({ ...row, modelFamily: 'tampered' }),
+        }),
+        repoCommitSha: 'a'.repeat(40),
+        derivedAt: new Date('2026-09-14T00:00:00.000Z'),
+        requireFrozenCounts: false,
+      })
+    ).rejects.toThrow(/post_write_integrity_failed|post_write_hash_mismatch/);
   });
 });
 

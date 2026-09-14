@@ -42,6 +42,7 @@ import {
   parseFrozenCorePayload,
   parseFrozenPortalPayload,
   parseFrozenReturningPayload,
+  parseVerifiedFrozenJson,
   resolveNamedTeamsToFbs,
   resolvePortalCounterpart,
   sha256RawBytes,
@@ -104,9 +105,13 @@ export function toRepoRelativePath(absPath: string, repoRoot = process.cwd()): s
   return rel;
 }
 
-function readJsonFile(absPath: string): { bytes: Buffer; json: unknown; sha256: string } {
-  const bytes = fs.readFileSync(absPath);
-  return { bytes, json: JSON.parse(bytes.toString('utf8')), sha256: sha256RawBytes(bytes) };
+export function readVerifiedFrozenJsonFile(input: {
+  absPath: string;
+  expectedSha256: string;
+  label: string;
+}): { bytes: Buffer; sha256: string; json: unknown } {
+  const bytes = fs.readFileSync(input.absPath);
+  return parseVerifiedFrozenJson(bytes, input.expectedSha256, input.label);
 }
 
 function readManifestTimestamp(snapshotDir: string, fallbackKeys: string[]): string | null {
@@ -187,11 +192,17 @@ function mapPersistedSnapshot(row: {
   featureDefinitionId: string;
   featureDefinitionVersion: string;
   featureDefinitionHash: string;
+  featureDefinitionManifest: unknown;
   derivationDefinitionId: string;
   derivationDefinitionHash: string;
+  derivationDefinitionManifest: unknown;
+  sourceManifest: unknown;
   sourceManifestHash: string;
+  sourceProvenanceManifest: unknown;
   sourceProvenanceManifestHash: string;
+  normalizationManifest: unknown;
   normalizationManifestHash: string;
+  populationManifest: unknown;
   populationManifestHash: string;
   expectedTeamCount: number;
   rowCount: number;
@@ -254,7 +265,7 @@ export function createPrismaCandidateBFeatureSnapshotStore(
           const txStore: CandidateBFeatureSnapshotTx = {
             loadExistingByStableIdentity: () => loadExisting(tx),
             async insertSnapshot(snapshot, repoCommitSha, derivedAt) {
-              const parent = await tx.shadowModelFeatureSnapshot.create({
+              await tx.shadowModelFeatureSnapshot.create({
                 data: {
                   season: snapshot.season,
                   snapshotKind: snapshot.snapshotKind,
@@ -315,9 +326,7 @@ export function createPrismaCandidateBFeatureSnapshotStore(
                     })),
                   },
                 },
-                include: { teams: true },
               });
-              return mapPersistedSnapshot(parent);
             },
           };
           return fn(txStore);
@@ -437,9 +446,21 @@ async function main(): Promise<void> {
   const coreFile = path.join(coreDir, CORE_RAW_RELATIVE);
   const returningFile = path.join(openingDir, RETURNING_RAW_RELATIVE);
   const portalFile = path.join(openingDir, PORTAL_RAW_RELATIVE);
-  const core = readJsonFile(coreFile);
-  const returning = readJsonFile(returningFile);
-  const portal = readJsonFile(portalFile);
+  const core = readVerifiedFrozenJsonFile({
+    absPath: coreFile,
+    expectedSha256: FROZEN_CORE_SHA256,
+    label: 'core',
+  });
+  const returning = readVerifiedFrozenJsonFile({
+    absPath: returningFile,
+    expectedSha256: FROZEN_RETURNING_SHA256,
+    label: 'returning',
+  });
+  const portal = readVerifiedFrozenJsonFile({
+    absPath: portalFile,
+    expectedSha256: FROZEN_PORTAL_SHA256,
+    label: 'portal',
+  });
 
   const repoCommitSha = readRepoCommitSha();
   const prisma = new PrismaClient();
@@ -482,9 +503,9 @@ async function main(): Promise<void> {
       ...report,
       researchOnly: true,
       migrationDeployedInThisPr: false,
-      commitAuthorized: false,
       prismaMigrateInvoked: false,
       providerCalls: 0,
+      commitGuardSatisfied: args.mode === 'COMMIT' && (report.commitSucceeded || report.alreadyPresent),
     };
     const reportPath =
       args.reportPath ??
