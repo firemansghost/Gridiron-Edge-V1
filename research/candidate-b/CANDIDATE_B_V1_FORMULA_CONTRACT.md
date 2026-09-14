@@ -9,6 +9,8 @@
 This document freezes the **exact Candidate B V1 numerical formula** after the completed formula + coverage audit.  
 It does **not** imply `READY_TO_IMPLEMENT_MODEL`.
 
+Population-SD parity rerun completed after formula convention freeze; all audit reference statistics in this contract reflect divisor-N normalization.
+
 Source identities, hashes, missing-data codes, and the 50% portal evidence gate remain as frozen in the input contract. This file does not alter them.
 
 ---
@@ -197,10 +199,12 @@ Audit references (evidence only — **not** calculation inputs):
 | Item | Approximate audit value |
 |---|---|
 | Complete n | 103 |
-| Raw mean | ≈ 0.081166 |
-| Raw population SD | ≈ 0.671379 |
+| Raw mean | ≈ 0.081464 |
+| Raw population SD | ≈ 0.670770 |
 | `compositeZ` mean | ≈ 0 |
-| `compositeZ` SD | 1 |
+| `compositeZ` population SD | 1 |
+| `compositeZ` min | ≈ −1.891064 |
+| `compositeZ` max | ≈ 3.124450 |
 
 Do not hardcode rounded audit statistics as calculation inputs.
 
@@ -225,14 +229,14 @@ Audit reference distribution (evidence only):
 |---|---:|
 | n | 103 |
 | mean | ≈ 0 |
-| SD | 3.5 |
-| min | ≈ −6.586712 |
-| p10 | ≈ −4.077636 |
-| p25 | ≈ −2.277507 |
-| median | ≈ −0.352551 |
-| p75 | ≈ 2.061268 |
-| p90 | ≈ 4.344956 |
-| max | ≈ 10.879462 |
+| population SD | 3.5 |
+| min | ≈ −6.618722 |
+| p10 | ≈ −4.098523 |
+| p25 | ≈ −2.288275 |
+| median | ≈ −0.354005 |
+| p75 | ≈ 2.070632 |
+| p90 | ≈ 4.366813 |
+| max | ≈ 10.935576 |
 
 ---
 
@@ -331,9 +335,9 @@ Formula audit findings (evidence, **not** hardcoded model inputs):
 - portal available teams = 104
 - complete Candidate B teams = 103
 - Week 3 covered games = 35 / 57
-- all feature SDs finite and > 0
-- Candidate B rating SD = 3.5
-- Week 3 complete-game model margin range approximately −7.161806 to +16.463028
+- all feature population SDs finite and > 0
+- Candidate B rating population SD = 3.5
+- Week 3 complete-game model margin range approximately −7.200925 to +16.526366
 - structural pathologies = **NONE**
 
 ---
