@@ -97,6 +97,7 @@ It may be used only for Candidate B predictions made **after** this retrieval, u
 | Snapshot | `cfbd-2026-w01-seed-partial-20260901T153731Z` |
 | Designation | `ONE_TIME_OPENING_WEEK_BASELINE` |
 | Primary V1 field | `percentPPA` |
+| Raw payload SHA-256 | `fedfbe805fb628452fdfe9d5ea97da917a4f591b5320c8af448abcca38751449` |
 | Coverage | 136 / 138 |
 
 ### Not blended into V1
@@ -133,6 +134,7 @@ It is eligible only for predictions after its retrieval timestamp.
 |---|---|
 | Source | same September 1 `ONE_TIME_OPENING_WEEK_BASELINE` |
 | Raw source | `player_portal.json` |
+| Raw payload SHA-256 | `8ba75badc9f7e8c106e49fa489f2c3f4989a14019ff5f8e720b44f7384003e77` |
 | Candidate B V1 metric | `PORTAL_RATED_MEAN_QUALITY_DELTA_V1` |
 
 ### Metric definition
@@ -356,4 +358,5 @@ The following remain private / untracked under `.research-data/` and must not be
 - `cfbd-2025-core-prior-freeze-20260914T061114Z`
 - `cfbd-2026-w01-seed-partial-20260901T153731Z`
 
-Raw CFBD payloads are intentionally excluded from this PR.
+Raw CFBD payloads are intentionally excluded from this PR.  
+The raw source hashes above pin the exact private PIT payload bytes used by this input contract; the raw payloads themselves remain uncommitted.
