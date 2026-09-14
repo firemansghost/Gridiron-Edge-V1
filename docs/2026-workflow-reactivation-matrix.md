@@ -1,12 +1,12 @@
 # 2026 Workflow Reactivation Matrix — Current Operator Overlay
 
-**Updated:** 2026-09-08 America/Chicago  
-**Verified operational code baseline:** `56a13bc4ae24472eac4427614143c8bc1c3ddda4`  
+**Updated:** 2026-09-13 America/Chicago  
+**Evidence-producing runtime baseline:** `e54196faf18e2f1287e85e12b613e65afbc27ca2`  
 **Status:** manual guarded production; Core V1 official; Hybrid V2 SHADOW / HELD / NOT OFFICIAL
 
 This file is the current operator matrix. It answers **what is safe to run now, what has been production-proven, and what remains held**.
 
-Detailed September 8 evidence is in [`2026-09-08-phase4b-closeout.md`](./2026-09-08-phase4b-closeout.md). Season-wide operator truth is in [`../SEASON_STATUS.md`](../SEASON_STATUS.md).
+Detailed September 8 evidence is in [`2026-09-08-phase4b-closeout.md`](./2026-09-08-phase4b-closeout.md). Season-wide operator truth is in [`../SEASON_STATUS.md`](../SEASON_STATUS.md). Generic Shadow notes are in [`SHADOW_MODEL_CAPTURE_V1.md`](./SHADOW_MODEL_CAPTURE_V1.md).
 
 The prior long-form workflow inventory/audit remains in Git history at:
 
@@ -26,13 +26,14 @@ This documentation change does **not**:
 - authorize Super Tier A production use
 - authorize Shadow ATS/CLV/evaluation persistence
 - authorize Shadow prediction automation
-- authorize generic multi-model Shadow migration deploy or production COMMIT
+- authorize blanket future Generic Shadow COMMITs or a recurring Generic Shadow schedule
 - authorize Candidate B / WEPA / other research-model adapters
 - authorize T−30 closing automation
 - change Core V1, Hybrid V2, or lifecycle formulas
 - change `CORE_EVAL_V1`
 - change the 30-minute prediction freshness rule
 - change the kickoff-minus-30-minute closing rule
+- imply Official Card or Hybrid activation from Generic Shadow evidence
 - call a provider
 - write a production database row
 
@@ -47,9 +48,11 @@ This documentation change does **not**:
 | Week 1 scores | **CLOSED — 51/51 final** |
 | Week 1 grading | **CLOSED — 98/98 graded; 29–67–2** |
 | Week 2 Live Odds | **PROVEN — 2,533 persisted MarketLine rows** |
+| Week 3 Live Odds | **PROVEN — COMMIT 34784597710; 4,171 rows; spread/total 57/57; ML 53/57** |
 | 2026 TeamUnitGrades | **PROVEN — 138/138 persisted** |
-| Phase 4B prediction capture | **PROVEN — first legitimate 49-game cohort persisted** |
-| Phase 4B T−30 closing | **PREVIEW PROVEN; first COMMIT pending due window** |
+| Phase 4B Hybrid prediction capture | **PROVEN — first legitimate 49-game cohort persisted** |
+| Phase 4B T−30 closing | **Week 2 complete — 36 legitimate captures / 13 legitimate misses** |
+| Phase 4B Generic Shadow capture | **PROVEN / MANUAL_GUARDED / RESEARCH ONLY — first Week 3 COMMIT proven** |
 | Phase 4B ATS / CLV / evaluation | **NOT IMPLEMENTED / NOT AUTHORIZED** |
 | TeamGameStat / lifecycle | Prepared; canonical lifecycle weight remains 0 through completed Week 2 |
 | Recurring production schedules | **KEEP STOPPED unless separately authorized** |
@@ -70,8 +73,8 @@ All workflows below are `workflow_dispatch` / manual unless a row explicitly say
 | `write-cfbd-unit-grade-sources-2026-manual.yml` | Same-season CFBD unit-grade source PREVIEW/COMMIT | **Yes** — CFBD | `cfbd_*` source tables only | **PROVEN / MANUAL_SAFE** |
 | `preview-team-unit-grades-2026-manual.yml` | TeamUnitGrades planner PREVIEW | 0 | none | **PROVEN / READ-ONLY** |
 | `write-team-unit-grades-2026-manual.yml` | TeamUnitGrades PREVIEW/COMMIT | 0 | TeamUnitGrades only | **PROVEN — 138/138 persisted** |
-| `capture-shadow-snapshot-v1-2026-manual.yml` | Prospective Shadow prediction PREVIEW/COMMIT | 0 | ShadowCaptureRun + ShadowPredictionSnapshot | **PROVEN — first 49-game cohort persisted** |
-| `capture-shadow-model-predictions-2026-manual.yml` | Generic multi-model Shadow PREVIEW/COMMIT (`core_v1_shadow_baseline_v1` allowlist) | 0 | ShadowModelCaptureRun + ShadowModelPrediction only | **CODE PRESENT; migration not deployed; COMMIT not authorized** |
+| `capture-shadow-snapshot-v1-2026-manual.yml` | Prospective Hybrid Shadow prediction PREVIEW/COMMIT | 0 | ShadowCaptureRun + ShadowPredictionSnapshot | **PROVEN — first 49-game cohort persisted** |
+| `capture-shadow-model-predictions-2026-manual.yml` | Generic multi-model Shadow PREVIEW/COMMIT (`core_v1_shadow_baseline_v1` allowlist) | 0 | ShadowModelCaptureRun + ShadowModelPrediction only | **PROVEN / MANUAL_GUARDED / RESEARCH ONLY** — migration deployed (**34779225982**); first Week 3 PREVIEW **34785048578** / COMMIT **34785370466**; future COMMITs not blanket-authorized |
 | `capture-shadow-t30-closing-v1-2026-manual.yml` | T−30 closing PREVIEW/COMMIT | 0 | ShadowClosingMarketSnapshot only | **Week 2 complete — 36 captures / 13 misses** |
 | `audit-prisma-migration-history.yml` | Migration-history audit | 0 | none | **MANUAL_SAFE / READ-ONLY** |
 | `write-cfbd-schedules-2026-manual.yml` | Guarded weekly schedule rollover | **Yes** — CFBD | Game schedule scope | Manual guarded; do not infer recurring authorization |
@@ -134,13 +137,9 @@ COMMIT run **34270648352**:
 
 Hybrid remains held.
 
-### T−30 closing PREVIEW
+### T−30 closing — Week 2 complete
 
-PR #110 merged the closing writer at:
-
-`56a13bc4ae24472eac4427614143c8bc1c3ddda4`
-
-Production PREVIEW run **34279785108**:
+Historical first production PREVIEW (read-path proof) on SHA `56a13bc4ae24472eac4427614143c8bc1c3ddda4`, run **34279785108**:
 
 - total: **49**
 - existing: **0**
@@ -152,7 +151,12 @@ Production PREVIEW run **34279785108**:
 - mutations: **false**
 - provider calls: **0**
 
-The read path is proven. No closing rows exist yet.
+That PREVIEW is historical read-path proof only. Week 2 T−30 evidence is now **complete**:
+
+- legitimate captures: **36**
+- legitimate misses: **13**
+
+Do not describe Week 2 T−30 as incomplete, and do not claim that closing evidence has not yet been written.
 
 ## Phase 4B operating contract
 
@@ -178,14 +182,21 @@ The read path is proven. No closing rows exist yet.
 
 The closing writer depends on a separate Live Odds persistence step. A fresh provider response obtained **after** T−30 cannot be used to repair a missed benchmark.
 
-## Week 2 first closing windows
+### Generic Shadow capture
+
+- research-only additive tables (`ShadowModelCaptureRun` / `ShadowModelPrediction`)
+- provider calls = 0
+- first Week 3 production proof: migration **34779225982**, PREVIEW **34785048578**, COMMIT **34785370466**, capture run `882cf725-9e83-431e-965d-0e97df2da635`
+- future Generic COMMITs remain guarded/manual and are **not** blanket-authorized
+
+## Week 2 first closing windows (historical operating notes)
 
 | Game | Kickoff CT | T−30 CT |
 |---|---|---|
 | Rutgers @ Boston College | Fri Sep 11, **6:30 PM** | **6:00 PM** |
 | Missouri @ Kansas | Fri Sep 11, **7:00 PM** | **6:30 PM** |
 
-Recommended manual sequence for each due window:
+Recommended manual sequence for each due window remained:
 
 1. Live Odds PREVIEW shortly before T−30;
 2. audit;
@@ -194,7 +205,7 @@ Recommended manual sequence for each due window:
 5. audit selected persisted MarketLine provenance / no fall-forward;
 6. separately authorize T−30 COMMIT before kickoff.
 
-The first T−30 COMMIT is **not** pre-authorized by this matrix.
+Week 2 T−30 is now complete (36 captures / 13 misses). Later weeks still require separate operator authorization per window.
 
 ## Lifecycle timing
 
@@ -256,6 +267,7 @@ Before running a manual workflow, remember whether PREVIEW itself consumes a pro
 | Unit-grade readiness audit | **0** |
 | TeamUnitGrades planner/writer PREVIEW | **0** |
 | Shadow prediction capture | **0** |
+| Generic Shadow model capture | **0** |
 | T−30 closing capture | **0** |
 
 Do not spend provider calls merely to make a dashboard look busy.
@@ -269,12 +281,14 @@ Do not spend provider calls merely to make a dashboard look busy.
 - Shadow CLV evaluation persistence
 - Shadow research ROI persistence
 - recurring Shadow prediction cadence
+- recurring Generic Shadow cadence / blanket future Generic COMMIT authorization
 - recurring T−30 closing cadence
 - retrospective Shadow inserts/backfill
+- Candidate B / WEPA / other research-model adapters
 
 ## Deferred maintenance
 
-Separate from current Week 2 operations:
+Separate from current Week 3 operations:
 
 - npm audit findings: **21 vulnerabilities** (2 low, 1 moderate, 17 high, 1 critical)
 - GitHub Actions Node 20 deprecation / Node 24 forcing warnings
