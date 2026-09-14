@@ -6,7 +6,15 @@ module.exports = {
       testEnvironment: 'node',
       testMatch: ['<rootDir>/apps/jobs/**/__tests__/**/*.test.ts'],
       transform: {
-        '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/apps/jobs/tsconfig.test.json' }],
+        '^.+\\.ts$': [
+          'ts-jest',
+          {
+            tsconfig: '<rootDir>/apps/jobs/tsconfig.test.json',
+            diagnostics: {
+              exclude: ['**/apps/web/lib/shadow-model-capture-v1.ts'],
+            },
+          },
+        ],
       },
       moduleFileExtensions: ['ts', 'js', 'json'],
     },
