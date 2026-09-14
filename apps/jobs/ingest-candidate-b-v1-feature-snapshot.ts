@@ -56,6 +56,7 @@ import {
   type PersistedTeamRow,
   type TalentSourceRow,
 } from './src/research/candidate-b/candidate-b-v1-feature-snapshot';
+import { insertCandidateBFeatureSnapshotTeamsExact } from './src/research/candidate-b/candidate-b-v1-exact-float8-writer';
 
 export function parseCandidateBIngestArgs(argv: string[]): {
   season: number;
@@ -261,7 +262,7 @@ export function createPrismaCandidateBFeatureSnapshotStore(
           const txStore: CandidateBFeatureSnapshotTx = {
             loadExistingByStableIdentity: () => loadExisting(tx),
             async insertSnapshot(snapshot, repoCommitSha, derivedAt) {
-              await tx.shadowModelFeatureSnapshot.create({
+              const parent = await tx.shadowModelFeatureSnapshot.create({
                 data: {
                   season: snapshot.season,
                   snapshotKind: snapshot.snapshotKind,
@@ -291,38 +292,9 @@ export function createPrismaCandidateBFeatureSnapshotStore(
                   repoCommitSha,
                   derivedAt,
                   snapshotHash: snapshot.snapshotHash,
-                  teams: {
-                    create: snapshot.teams.map((team) => ({
-                      teamId: team.teamId,
-                      season: team.season,
-                      availabilityStatus: team.availabilityStatus,
-                      unavailableReasons: team.unavailableReasons,
-                      priorCoreRaw: team.priorCoreRaw,
-                      talentRaw: team.talentRaw,
-                      returningRaw: team.returningRaw,
-                      portalRaw: team.portalRaw,
-                      zCore: team.zCore,
-                      zTalent: team.zTalent,
-                      zReturning: team.zReturning,
-                      zPortal: team.zPortal,
-                      candidateBRawComposite: team.candidateBRawComposite,
-                      candidateBCompositeZ: team.candidateBCompositeZ,
-                      candidateBTeamRatingPoints: team.candidateBTeamRatingPoints,
-                      inboundTransferCount: team.inboundTransferCount,
-                      inboundRatedCount: team.inboundRatedCount,
-                      inboundRatedCoverage: team.inboundRatedCoverage,
-                      inboundDirectionStatus: team.inboundDirectionStatus,
-                      inboundMeanRating: team.inboundMeanRating,
-                      outboundTransferCount: team.outboundTransferCount,
-                      outboundRatedCount: team.outboundRatedCount,
-                      outboundRatedCoverage: team.outboundRatedCoverage,
-                      outboundDirectionStatus: team.outboundDirectionStatus,
-                      outboundMeanRating: team.outboundMeanRating,
-                      rowHash: team.rowHash,
-                    })),
-                  },
                 },
               });
+              await insertCandidateBFeatureSnapshotTeamsExact(tx, parent.id, snapshot.teams);
             },
           };
           return fn(txStore);

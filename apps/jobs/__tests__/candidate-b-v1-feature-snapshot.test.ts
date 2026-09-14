@@ -10,7 +10,11 @@ import {
   DERIVATION_DEFINITION_MANIFEST,
   FEATURE_DEFINITION_HASH,
   FEATURE_DEFINITION_MANIFEST,
+  FROZEN_PERSISTENCE_ENCODING_CONTRACT_HASH,
   FROZEN_TEAM_RESOLUTION_POLICY_HASH,
+  PERSISTENCE_ENCODING_CONTRACT_HASH,
+  PERSISTENCE_ENCODING_CONTRACT_ID,
+  PERSISTENCE_ENCODING_CONTRACT_MANIFEST,
   RATING_SCALE,
   TEAM_RESOLUTION_POLICY_HASH,
   TEAM_RESOLUTION_POLICY_ID,
@@ -259,6 +263,39 @@ describe('Candidate B V1 feature snapshot hashing', () => {
     );
     expect(DERIVATION_DEFINITION_HASH).toBe(
       '6c04627787edbcc7d1d42549f3cb19c525a6c4c31de572549f01e3efa64a638c'
+    );
+  });
+
+  it('persistence encoding contract is frozen, content-addressed, and non-semantic', () => {
+    expect(PERSISTENCE_ENCODING_CONTRACT_ID).toBe('candidate_b_v1_exact_float8_text_encoding_v1');
+    expect(PERSISTENCE_ENCODING_CONTRACT_HASH).toBe(
+      '644f51274d1630746e579f861ebd22f4e82921be7adb8372cf2fef9d9dbcd343'
+    );
+    expect(FROZEN_PERSISTENCE_ENCODING_CONTRACT_HASH).toBe(PERSISTENCE_ENCODING_CONTRACT_HASH);
+    expect(sha256CanonicalJson(PERSISTENCE_ENCODING_CONTRACT_MANIFEST)).toBe(
+      PERSISTENCE_ENCODING_CONTRACT_HASH
+    );
+    const snapshot = deriveThreeTeamSnapshot();
+    expect(JSON.stringify(snapshot.sourceManifest)).not.toContain(PERSISTENCE_ENCODING_CONTRACT_ID);
+    expect(JSON.stringify(snapshot.sourceManifest)).not.toContain(PERSISTENCE_ENCODING_CONTRACT_HASH);
+    expect(JSON.stringify(snapshot.featureDefinitionManifest)).not.toContain(
+      PERSISTENCE_ENCODING_CONTRACT_ID
+    );
+    expect(JSON.stringify(snapshot.derivationDefinitionManifest)).not.toContain(
+      PERSISTENCE_ENCODING_CONTRACT_ID
+    );
+    expect(snapshot.teams.every((t) => !t.rowHash.includes(PERSISTENCE_ENCODING_CONTRACT_HASH))).toBe(
+      true
+    );
+    expect(snapshot.snapshotHash).not.toContain(PERSISTENCE_ENCODING_CONTRACT_HASH);
+    expect(FEATURE_DEFINITION_HASH).toBe(
+      '6f1f8ecc132cdd87650252d57597a657ece0dd908bdf5010897023cafe988972'
+    );
+    expect(DERIVATION_DEFINITION_HASH).toBe(
+      '6c04627787edbcc7d1d42549f3cb19c525a6c4c31de572549f01e3efa64a638c'
+    );
+    expect(TEAM_RESOLUTION_POLICY_HASH).toBe(
+      'de627563f2c4c2b1e195182bcd6b66dd3226daf9800e209e5f55244f94ea0efe'
     );
   });
 
@@ -917,6 +954,8 @@ describe('Candidate B V1 strict team resolution', () => {
     expect(cli).not.toContain(rejected);
     expect(cli).toContain('createCandidateBCfbdFbsResolver');
     expect(pure).toContain('strictFullIdentity: true');
+    expect(cli).not.toMatch(/teams:\s*\{\s*create:/);
+    expect(cli).toContain('insertCandidateBFeatureSnapshotTeamsExact');
   });
 });
 
