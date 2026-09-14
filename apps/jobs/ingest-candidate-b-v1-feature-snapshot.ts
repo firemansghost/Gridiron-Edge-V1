@@ -34,6 +34,7 @@ import {
   buildSourceManifest,
   buildSourceProvenanceManifest,
   calculateMuPortal,
+  createCandidateBCfbdFbsResolver,
   deriveCandidateBSnapshot,
   executeCandidateBFeatureSnapshotIngest,
   expectedCandidateBFeatureSnapshotConfirmation,
@@ -144,12 +145,7 @@ export function createCfbdFbsResolver(
   resolver: Pick<TeamResolver, 'resolveTeamDetailed'>,
   authoritativeTeamIds: string[]
 ): CfbdTeamResolver {
-  const allowed = new Set(authoritativeTeamIds);
-  return (providerName: string) => {
-    const result = resolver.resolveTeamDetailed(providerName, 'NCAAF', { provider: 'cfbd' });
-    if (!result.teamId || result.method === 'fuzzy') return null;
-    return allowed.has(result.teamId) ? result.teamId : null;
-  };
+  return createCandidateBCfbdFbsResolver(resolver, authoritativeTeamIds);
 }
 
 function mapPersistedTeam(row: {

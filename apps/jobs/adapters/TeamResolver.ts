@@ -26,6 +26,17 @@ export interface TeamResolveResult {
   method: TeamResolveMethod;
 }
 
+export interface TeamResolveOptions {
+  provider?: string;
+  /**
+   * Candidate B V1 opt-in. Default/absent preserves current behavior.
+   * When provider === 'cfbd' and this is true, only full-string guard /
+   * CFBD alias / general exact alias are accepted. Parenthetical stripping,
+   * normalized_alias, and fuzzy are skipped.
+   */
+  strictFullIdentity?: boolean;
+}
+
 export class TeamResolver {
   private aliases: Map<string, string> = new Map();
   private cfbdAliases: Map<string, string> = new Map();
@@ -353,7 +364,7 @@ export class TeamResolver {
    * @param options - Optional provider-specific options
    * @returns Canonical team ID or null if not found/denylisted
    */
-  resolveTeam(providerName: string, providerSport: string, options?: { provider?: string }): string | null {
+  resolveTeam(providerName: string, providerSport: string, options?: TeamResolveOptions): string | null {
     return this.resolveTeamDetailed(providerName, providerSport, options).teamId;
   }
 
@@ -364,7 +375,7 @@ export class TeamResolver {
   resolveTeamDetailed(
     providerName: string,
     providerSport: string,
-    options?: { provider?: string }
+    options?: TeamResolveOptions
   ): TeamResolveResult {
     if (!providerName || !providerSport) {
       return { teamId: null, method: null };
@@ -373,6 +384,7 @@ export class TeamResolver {
     // Pre-normalize: strip diacritics and unify A&M forms
     const preNormalized = this.preNormalizeName(providerName);
     const normalizedName = preNormalized.toLowerCase().trim();
+    const strictCfbd = options?.provider === 'cfbd' && options?.strictFullIdentity === true;
     
     // Debug logging for Miami and Texas A&M
     const needsDebug = providerName.toLowerCase().includes('miami') || 
@@ -395,8 +407,9 @@ export class TeamResolver {
     if (options?.provider === 'cfbd') {
       let cfbdMatch = this.cfbdAliases.get(normalizedName);
       
-      // If no match, try with fallback normalization
-      if (!cfbdMatch) {
+      // Default CFBD: parenthetical fallback remains for existing callers.
+      // Strict full-identity mode must not strip "(PA)" / "(OH)" as evidence.
+      if (!cfbdMatch && !strictCfbd) {
         const fallbackName = this.postFallbackNormalize(normalizedName);
         cfbdMatch = this.cfbdAliases.get(fallbackName);
       }
@@ -428,8 +441,7 @@ export class TeamResolver {
     // Step 2: Exact alias match (general aliases)
     let exactMatch = this.aliases.get(normalizedName);
     
-    // If no match, try with fallback normalization
-    if (!exactMatch) {
+    if (!exactMatch && !strictCfbd) {
       const fallbackName = this.postFallbackNormalize(normalizedName);
       exactMatch = this.aliases.get(fallbackName);
     }
@@ -448,6 +460,10 @@ export class TeamResolver {
       }
       
       return { teamId: exactMatch, method: 'alias' };
+    }
+
+    if (strictCfbd) {
+      return { teamId: null, method: null };
     }
 
     // Step 2: Name normalization (strip mascots, punctuation, etc.)

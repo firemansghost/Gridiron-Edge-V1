@@ -185,6 +185,124 @@ export const DERIVATION_DEFINITION_MANIFEST = {
 export const FEATURE_DEFINITION_HASH = sha256CanonicalJson(FEATURE_DEFINITION_MANIFEST);
 export const DERIVATION_DEFINITION_HASH = sha256CanonicalJson(DERIVATION_DEFINITION_MANIFEST);
 
+export const TEAM_RESOLUTION_POLICY_ID = 'candidate_b_v1_team_resolution_policy_v1' as const;
+
+export const TEAM_RESOLUTION_POLICY_MANIFEST = {
+  policyId: TEAM_RESOLUTION_POLICY_ID,
+  provider: 'cfbd',
+  authoritativePopulation: {
+    source: 'TeamMembership',
+    season: 2026,
+    level: 'FBS',
+    expectedUniqueCount: 138,
+  },
+  preNormalization: {
+    trim: true,
+    unicodeDiacriticNormalization: true,
+    normalizeAandMToken: true,
+    preserveParentheticalQualifier: true,
+  },
+  acceptedResolutionClasses: [
+    'FULL_STRING_GUARD',
+    'FULL_STRING_CFBD_ALIAS',
+    'FULL_STRING_GENERAL_EXACT_ALIAS',
+  ],
+  rejectedResolutionClasses: [
+    'FUZZY',
+    'NORMALIZED_ALIAS',
+    'PARENTHETICAL_STRIPPING_ALIAS',
+    'SILENT_NON_FBS_TO_FBS_INFERENCE',
+    'INVENTED_ALIAS',
+    'MANUAL_DERIVATION_REMAP',
+  ],
+  parentheticalRule: 'IDENTITY_BEARING_UNLESS_EXPLICIT_FULL_STRING_ALIAS_OR_GUARD',
+  teamLevelSources: {
+    priorCore: {
+      requireEverySourceRowResolved: true,
+      expectedSourceRows: 136,
+      requireUniqueTargetTeamIds: true,
+    },
+    returning: {
+      requireEverySourceRowResolved: true,
+      expectedSourceRows: 136,
+      requireUniqueTargetTeamIds: true,
+    },
+  },
+  portal: {
+    resolveOriginAndDestinationIndependently: true,
+    unresolvedCounterpartyAllowed: true,
+    retainValidFbsSideWhenCounterpartyUnresolved: true,
+    bothSidesRequired: false,
+  },
+  knownDisposition: {
+    'California (PA)': 'UNRESOLVED_NON_FBS',
+    'Miami (OH)': 'EXPLICIT_FULL_IDENTITY_RESOLUTION_ALLOWED',
+  },
+} as const;
+
+export const TEAM_RESOLUTION_POLICY_HASH = sha256CanonicalJson(TEAM_RESOLUTION_POLICY_MANIFEST);
+export const FROZEN_TEAM_RESOLUTION_POLICY_HASH =
+  'de627563f2c4c2b1e195182bcd6b66dd3226daf9800e209e5f55244f94ea0efe';
+
+if (TEAM_RESOLUTION_POLICY_HASH !== FROZEN_TEAM_RESOLUTION_POLICY_HASH) {
+  throw new Error(
+    `team_resolution_policy_hash_mismatch:${TEAM_RESOLUTION_POLICY_HASH}!=${FROZEN_TEAM_RESOLUTION_POLICY_HASH}`
+  );
+}
+
+export const CANDIDATE_B_ACCEPTED_TEAM_RESOLUTION_METHODS = [
+  'guard',
+  'cfbd_alias',
+  'alias',
+] as const;
+
+export type CandidateBAcceptedTeamResolutionMethod =
+  (typeof CANDIDATE_B_ACCEPTED_TEAM_RESOLUTION_METHODS)[number];
+
+export function isCandidateBAcceptedTeamResolutionMethod(
+  method: string | null
+): method is CandidateBAcceptedTeamResolutionMethod {
+  return (
+    method === 'guard' ||
+    method === 'cfbd_alias' ||
+    method === 'alias'
+  );
+}
+
+export interface CandidateBTeamResolveDetailed {
+  resolveTeamDetailed(
+    providerName: string,
+    providerSport: string,
+    options?: { provider?: string; strictFullIdentity?: boolean }
+  ): { teamId: string | null; method: string | null };
+}
+
+export function applyCandidateBCfbdResolutionAcceptance(
+  result: { teamId: string | null; method: string | null },
+  authoritativeTeamIds: ReadonlySet<string> | readonly string[]
+): string | null {
+  const allowed =
+    authoritativeTeamIds instanceof Set ? authoritativeTeamIds : new Set(authoritativeTeamIds);
+  if (!result.teamId || !isCandidateBAcceptedTeamResolutionMethod(result.method)) {
+    return null;
+  }
+  return allowed.has(result.teamId) ? result.teamId : null;
+}
+
+export function createCandidateBCfbdFbsResolver(
+  resolver: CandidateBTeamResolveDetailed,
+  authoritativeTeamIds: string[]
+): CfbdTeamResolver {
+  const allowed = new Set(authoritativeTeamIds);
+  return (providerName: string) => {
+    const result = resolver.resolveTeamDetailed(providerName, 'NCAAF', {
+      provider: 'cfbd',
+      strictFullIdentity: true,
+    });
+    return applyCandidateBCfbdResolutionAcceptance(result, allowed);
+  };
+}
+
 const CORE_KEYS = [
   'year',
   'throughSeasonType',
@@ -1378,6 +1496,10 @@ export function buildSourceManifest(input: {
       field: 'talentComposite',
       n: 138,
       talentValueHash: input.talentValueHash,
+    },
+    teamResolution: {
+      policyId: TEAM_RESOLUTION_POLICY_ID,
+      policyHash: TEAM_RESOLUTION_POLICY_HASH,
     },
   };
 }
