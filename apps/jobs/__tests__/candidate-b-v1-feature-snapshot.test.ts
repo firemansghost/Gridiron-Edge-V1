@@ -1,0 +1,642 @@
+/**
+ * Candidate B V1 feature-snapshot ingest — focused unit + migration contract tests.
+ * Synthetic fixtures only. No private PIT. No DATABASE_URL. No providers.
+ */
+
+import * as fs from 'fs';
+import * as path from 'path';
+import {
+  DERIVATION_DEFINITION_HASH,
+  DERIVATION_DEFINITION_MANIFEST,
+  FEATURE_DEFINITION_HASH,
+  FEATURE_DEFINITION_MANIFEST,
+  RATING_SCALE,
+  aggregatePortalByTeam,
+  aggregatePortalDirection,
+  assertAuthoritativeFbsPopulation,
+  buildSourceManifest,
+  buildSourceProvenanceManifest,
+  calculateMuPortal,
+  classifyExistingSnapshot,
+  computeRowHash,
+  computeSnapshotHash,
+  deriveCandidateBSnapshot,
+  emptyDirection,
+  executeCandidateBFeatureSnapshotIngest,
+  expectedCandidateBFeatureSnapshotConfirmation,
+  hashTalentProvenance,
+  hashTalentValues,
+  parseFrozenPortalPayload,
+  sha256RawBytes,
+  toIsoStringOrNull,
+  type CandidateBFeatureSnapshotStore,
+  type DerivedSnapshot,
+  type PersistedSnapshot,
+  type TeamFeatureRow,
+} from '../src/research/candidate-b/candidate-b-v1-feature-snapshot';
+import { sha256CanonicalJson } from '../../web/lib/shadow-model-capture-v1';
+
+const ROOT = path.resolve(__dirname, '../../..');
+const SCHEMA = path.join(ROOT, 'prisma/schema.prisma');
+const MIGRATION = path.join(
+  ROOT,
+  'prisma/migrations/20260914120000_add_shadow_model_feature_snapshot_v1/migration.sql'
+);
+const PURE = path.join(
+  ROOT,
+  'apps/jobs/src/research/candidate-b/candidate-b-v1-feature-snapshot.ts'
+);
+const CLI = path.join(ROOT, 'apps/jobs/ingest-candidate-b-v1-feature-snapshot.ts');
+
+function iso(ms: number): string {
+  return new Date(ms).toISOString();
+}
+
+function teamIds(): string[] {
+  return ['alpha', 'beta', 'gamma'];
+}
+
+function completePortal(raw: number) {
+  return {
+    inbound: {
+      transferCount: 2,
+      ratedCount: 2,
+      ratedCoverage: 1,
+      directionStatus: 'SUFFICIENT_RATED_COVERAGE' as const,
+      meanRating: raw,
+      centeredQuality: raw,
+    },
+    outbound: emptyDirection(),
+    portalRaw: raw,
+  };
+}
+
+function deriveThreeTeamSnapshot(overrides?: {
+  missingPortalFor?: string;
+  provenanceExtra?: string;
+  talentValues?: Record<string, number>;
+}): DerivedSnapshot {
+  const ids = teamIds();
+  const talentValues = overrides?.talentValues ?? { alpha: 10, beta: 20, gamma: 30 };
+  const prior = new Map([
+    ['alpha', 1],
+    ['beta', 2],
+    ['gamma', 3],
+  ]);
+  const talent = new Map(Object.entries(talentValues));
+  const returning = new Map([
+    ['alpha', 0.1],
+    ['beta', 0.2],
+    ['gamma', 0.3],
+  ]);
+  const portalRaws: Record<string, number> = { alpha: 0.2, beta: 0.4, gamma: 0.8 };
+  const portalByTeamId = new Map(
+    ids.map((id) => [
+      id,
+      id === overrides?.missingPortalFor
+        ? {
+            inbound: emptyDirection(),
+            outbound: aggregatePortalDirection([null, null, 1], 0.5),
+            portalRaw: null,
+          }
+        : completePortal(portalRaws[id]),
+    ])
+  );
+  const talentRows = ids.map((teamId) => ({
+    teamId,
+    season: 2026,
+    talentComposite: talentValues[teamId],
+  }));
+  const talentValueHash = hashTalentValues(talentRows);
+  const talentProvenanceHash = hashTalentProvenance(
+    ids.map((teamId) => ({
+      teamId,
+      season: 2026,
+      createdAt: iso(1_000),
+      updatedAt: iso(2_000),
+      sourceUpdatedAt: null,
+    }))
+  );
+  const sourceManifest = buildSourceManifest({
+    coreSha256: 'c'.repeat(64),
+    returningSha256: 'd'.repeat(64),
+    portalSha256: 'e'.repeat(64),
+    muPortal: 0.5,
+    talentValueHash,
+  });
+  const sourceProvenanceManifest = {
+    ...buildSourceProvenanceManifest({
+      coreRetrievedAt: iso(3_000),
+      returningRetrievedAt: iso(4_000),
+      portalRetrievedAt: iso(5_000),
+      coreRelativePath: '.research-data/core/raw.json',
+      returningRelativePath: '.research-data/open/returning.json',
+      portalRelativePath: '.research-data/open/portal.json',
+      talentProvenanceHash,
+    }),
+    diagnostic: overrides?.provenanceExtra ?? null,
+  };
+  return deriveCandidateBSnapshot({
+    teamIds: ids,
+    priorCoreByTeamId: prior,
+    talentByTeamId: talent,
+    returningByTeamId: returning,
+    portalByTeamId,
+    muPortal: 0.5,
+    sourceManifest,
+    sourceProvenanceManifest,
+    talentValueHash,
+    talentProvenanceHash,
+  });
+}
+
+function toPersisted(snapshot: DerivedSnapshot, provenanceHash = snapshot.sourceProvenanceManifestHash): PersistedSnapshot {
+  return {
+    id: 'snap-1',
+    season: snapshot.season,
+    snapshotKind: snapshot.snapshotKind,
+    modelFamily: snapshot.modelFamily,
+    modelDefinitionId: snapshot.modelDefinitionId,
+    featureDefinitionId: snapshot.featureDefinitionId,
+    featureDefinitionVersion: snapshot.featureDefinitionVersion,
+    featureDefinitionHash: snapshot.featureDefinitionHash,
+    derivationDefinitionId: snapshot.derivationDefinitionId,
+    derivationDefinitionHash: snapshot.derivationDefinitionHash,
+    sourceManifestHash: snapshot.sourceManifestHash,
+    sourceProvenanceManifestHash: provenanceHash,
+    normalizationManifestHash: snapshot.normalizationManifestHash,
+    populationManifestHash: snapshot.populationManifestHash,
+    expectedTeamCount: snapshot.expectedTeamCount,
+    rowCount: snapshot.rowCount,
+    completeVectorCount: snapshot.completeVectorCount,
+    unavailableVectorCount: snapshot.unavailableVectorCount,
+    portalAvailableCount: snapshot.portalAvailableCount,
+    snapshotHash: snapshot.snapshotHash,
+    teams: snapshot.teams.map((t) => ({ ...t })),
+  };
+}
+
+function memoryStore(existing: PersistedSnapshot | null): Pick<
+  CandidateBFeatureSnapshotStore,
+  'loadExistingByStableIdentity' | 'runSerializable'
+> {
+  let current = existing;
+  return {
+    loadExistingByStableIdentity: async () => current,
+    runSerializable: async (fn) =>
+      fn({
+        loadExistingByStableIdentity: async () => current,
+        insertSnapshot: async (snapshot) => {
+          current = toPersisted(snapshot);
+          current.id = 'inserted';
+          return current;
+        },
+      }),
+  };
+}
+
+describe('Candidate B V1 feature snapshot hashing', () => {
+  it('feature manifest hashes deterministically', () => {
+    expect(sha256CanonicalJson(FEATURE_DEFINITION_MANIFEST)).toBe(FEATURE_DEFINITION_HASH);
+    expect(sha256CanonicalJson(FEATURE_DEFINITION_MANIFEST)).toBe(
+      sha256CanonicalJson(JSON.parse(JSON.stringify(FEATURE_DEFINITION_MANIFEST)))
+    );
+  });
+
+  it('derivation manifest hashes deterministically', () => {
+    expect(sha256CanonicalJson(DERIVATION_DEFINITION_MANIFEST)).toBe(DERIVATION_DEFINITION_HASH);
+    expect(FEATURE_DEFINITION_HASH).not.toBe(DERIVATION_DEFINITION_HASH);
+  });
+
+  it('canonical key order does not alter hash', () => {
+    expect(sha256CanonicalJson({ b: 1, a: { z: 2, y: 3 } })).toBe(
+      sha256CanonicalJson({ a: { y: 3, z: 2 }, b: 1 })
+    );
+  });
+
+  it('timestamps are ISO strings or null before provenance hashing', () => {
+    const at = new Date('2026-08-27T17:10:00.000Z');
+    const fromDate = hashTalentProvenance([
+      { teamId: 'a', season: 2026, createdAt: at, updatedAt: at, sourceUpdatedAt: null },
+    ]);
+    const fromIso = hashTalentProvenance([
+      {
+        teamId: 'a',
+        season: 2026,
+        createdAt: '2026-08-27T17:10:00.000Z',
+        updatedAt: '2026-08-27T17:10:00.000Z',
+        sourceUpdatedAt: null,
+      },
+    ]);
+    expect(fromDate).toBe(fromIso);
+    expect(toIsoStringOrNull(at)).toBe('2026-08-27T17:10:00.000Z');
+    expect(toIsoStringOrNull(null)).toBeNull();
+  });
+
+  it('talentValueHash is unchanged when only timestamps change', () => {
+    const values = [{ teamId: 'a', season: 2026, talentComposite: 12.5 }];
+    const a = hashTalentValues(values);
+    const b = hashTalentValues(values);
+    expect(a).toBe(b);
+    const p1 = hashTalentProvenance([
+      { teamId: 'a', season: 2026, createdAt: iso(1), updatedAt: iso(1), sourceUpdatedAt: null },
+    ]);
+    const p2 = hashTalentProvenance([
+      { teamId: 'a', season: 2026, createdAt: iso(2), updatedAt: iso(2), sourceUpdatedAt: null },
+    ]);
+    expect(p1).not.toBe(p2);
+    expect(a).toBe(hashTalentValues([{ teamId: 'a', season: 2026, talentComposite: 12.5 }]));
+  });
+
+  it('talentProvenanceHash changes when timestamps change', () => {
+    const p1 = hashTalentProvenance([
+      { teamId: 'z', season: 2026, createdAt: iso(10), updatedAt: iso(10), sourceUpdatedAt: iso(10) },
+    ]);
+    const p2 = hashTalentProvenance([
+      { teamId: 'z', season: 2026, createdAt: iso(11), updatedAt: iso(10), sourceUpdatedAt: iso(10) },
+    ]);
+    expect(p1).not.toBe(p2);
+  });
+
+  it('sourceManifestHash excludes supporting provenance', () => {
+    const snapshot = deriveThreeTeamSnapshot();
+    const same = deriveThreeTeamSnapshot({ provenanceExtra: 'later-operator-timestamp' });
+    expect(snapshot.sourceManifestHash).toBe(same.sourceManifestHash);
+    expect(snapshot.sourceProvenanceManifestHash).not.toBe(same.sourceProvenanceManifestHash);
+  });
+
+  it('snapshotHash excludes supporting provenance', () => {
+    const a = deriveThreeTeamSnapshot();
+    const b = deriveThreeTeamSnapshot({ provenanceExtra: 'changed' });
+    expect(a.snapshotHash).toBe(b.snapshotHash);
+    expect(a.sourceProvenanceManifestHash).not.toBe(b.sourceProvenanceManifestHash);
+  });
+
+  it('snapshotHash excludes repo SHA / derivedAt / createdAt', () => {
+    const snapshot = deriveThreeTeamSnapshot();
+    const withMeta = {
+      ...JSON.parse(JSON.stringify(snapshot.teams.map((t) => ({ teamId: t.teamId, rowHash: t.rowHash })))),
+    };
+    const hash = computeSnapshotHash({
+      sourceManifestHash: snapshot.sourceManifestHash,
+      normalizationManifestHash: snapshot.normalizationManifestHash,
+      populationManifestHash: snapshot.populationManifestHash,
+      expectedTeamCount: snapshot.expectedTeamCount,
+      rowCount: snapshot.rowCount,
+      completeVectorCount: snapshot.completeVectorCount,
+      unavailableVectorCount: snapshot.unavailableVectorCount,
+      portalAvailableCount: snapshot.portalAvailableCount,
+      teams: snapshot.teams,
+    });
+    expect(hash).toBe(snapshot.snapshotHash);
+    expect(snapshot.snapshotHash).not.toContain('repoCommitSha');
+    expect(withMeta.derivedAt).toBeUndefined();
+  });
+
+  it('rowHash sorts unavailable reasons and preserves explicit nulls', () => {
+    const row: Omit<TeamFeatureRow, 'rowHash'> = {
+      teamId: 'x',
+      season: 2026,
+      availabilityStatus: 'UNAVAILABLE',
+      unavailableReasons: ['TEAM_FEATURE_VECTOR_UNAVAILABLE', 'PORTAL_FEATURE_UNAVAILABLE'],
+      priorCoreRaw: 1,
+      talentRaw: 2,
+      returningRaw: 3,
+      portalRaw: null,
+      zCore: 0.1,
+      zTalent: 0.2,
+      zReturning: 0.3,
+      zPortal: null,
+      candidateBRawComposite: null,
+      candidateBCompositeZ: null,
+      candidateBTeamRatingPoints: null,
+      inboundTransferCount: 1,
+      inboundRatedCount: 0,
+      inboundRatedCoverage: 0,
+      inboundDirectionStatus: 'INSUFFICIENT_RATED_COVERAGE',
+      inboundMeanRating: null,
+      outboundTransferCount: 0,
+      outboundRatedCount: 0,
+      outboundRatedCoverage: null,
+      outboundDirectionStatus: 'NO_TRANSFERS',
+      outboundMeanRating: null,
+    };
+    const sorted = computeRowHash({
+      ...row,
+      unavailableReasons: ['PORTAL_FEATURE_UNAVAILABLE', 'TEAM_FEATURE_VECTOR_UNAVAILABLE'],
+    });
+    const unsorted = computeRowHash(row);
+    expect(sorted).toBe(unsorted);
+    const payload = JSON.parse(
+      JSON.stringify({
+        portalRaw: null,
+        inboundMeanRating: null,
+        outboundRatedCoverage: null,
+      })
+    );
+    expect(payload.portalRaw).toBeNull();
+  });
+});
+
+describe('Candidate B V1 formula', () => {
+  it('population SD uses divisor N', () => {
+    const snapshot = deriveThreeTeamSnapshot();
+    expect(snapshot.normalizationManifest.divisor).toBe('N');
+    expect(snapshot.normalizationManifest.talent.n).toBe(3);
+    expect(snapshot.normalizationManifest.talent.populationMean).toBe(20);
+    expect(snapshot.normalizationManifest.talent.populationSD).toBeCloseTo(Math.sqrt(200 / 3), 12);
+  });
+
+  it('exactly 0.50 portal coverage is sufficient', () => {
+    const dir = aggregatePortalDirection([1, null], 0.4);
+    expect(dir.directionStatus).toBe('SUFFICIENT_RATED_COVERAGE');
+    expect(dir.ratedCoverage).toBe(0.5);
+    expect(dir.meanRating).toBe(1);
+    expect(dir.centeredQuality).toBeCloseTo(0.6, 12);
+  });
+
+  it('below 0.50 is unavailable', () => {
+    const dir = aggregatePortalDirection([1, null, null], 0.4);
+    expect(dir.directionStatus).toBe('INSUFFICIENT_RATED_COVERAGE');
+    expect(dir.ratedCoverage).toBeCloseTo(1 / 3, 12);
+    expect(dir.meanRating).toBeNull();
+    expect(dir.centeredQuality).toBeNull();
+  });
+
+  it('NO_TRANSFERS uses centered zero but persists null coverage/mean', () => {
+    const dir = emptyDirection();
+    expect(dir.directionStatus).toBe('NO_TRANSFERS');
+    expect(dir.transferCount).toBe(0);
+    expect(dir.ratedCount).toBe(0);
+    expect(dir.ratedCoverage).toBeNull();
+    expect(dir.meanRating).toBeNull();
+    expect(dir.centeredQuality).toBe(0);
+  });
+
+  it('global muPortal uses every finite provider rating in the payload', () => {
+    const rows = parseFrozenPortalPayload([
+      {
+        season: 2026,
+        firstName: 'A',
+        lastName: 'B',
+        position: 'QB',
+        origin: 'School A',
+        destination: null,
+        transferDate: '2026-01-01',
+        rating: 0.5,
+        stars: 3,
+        eligibility: 'Immediate',
+      },
+      {
+        season: 2026,
+        firstName: 'C',
+        lastName: 'D',
+        position: 'WR',
+        origin: 'School B',
+        destination: 'School C',
+        transferDate: '2026-01-02',
+        rating: null,
+        stars: null,
+        eligibility: 'Immediate',
+      },
+      {
+        season: 2026,
+        firstName: 'E',
+        lastName: 'F',
+        position: 'RB',
+        origin: 'School D',
+        destination: 'School E',
+        transferDate: '2026-01-03',
+        rating: 1.5,
+        stars: 4,
+        eligibility: 'Immediate',
+      },
+    ]);
+    expect(calculateMuPortal(rows)).toBe(1);
+  });
+
+  it('missing component keeps other known raw/z values', () => {
+    const snapshot = deriveThreeTeamSnapshot({ missingPortalFor: 'alpha' });
+    const alpha = snapshot.teams.find((t) => t.teamId === 'alpha')!;
+    expect(alpha.portalRaw).toBeNull();
+    expect(alpha.zPortal).toBeNull();
+    expect(alpha.priorCoreRaw).toBe(1);
+    expect(alpha.zCore).not.toBeNull();
+    expect(alpha.talentRaw).toBe(10);
+    expect(alpha.returningRaw).toBe(0.1);
+  });
+
+  it('incomplete vector nulls all 3 derived composite/rating values', () => {
+    const snapshot = deriveThreeTeamSnapshot({ missingPortalFor: 'alpha' });
+    const alpha = snapshot.teams.find((t) => t.teamId === 'alpha')!;
+    expect(alpha.candidateBRawComposite).toBeNull();
+    expect(alpha.candidateBCompositeZ).toBeNull();
+    expect(alpha.candidateBTeamRatingPoints).toBeNull();
+    expect(alpha.unavailableReasons).toEqual([
+      'PORTAL_FEATURE_UNAVAILABLE',
+      'TEAM_FEATURE_VECTOR_UNAVAILABLE',
+    ]);
+  });
+
+  it('equal 25% composite math', () => {
+    const snapshot = deriveThreeTeamSnapshot();
+    const team = snapshot.teams.find((t) => t.teamId === 'beta')!;
+    expect(team.candidateBRawComposite).toBeCloseTo(
+      0.25 * team.zCore! + 0.25 * team.zTalent! + 0.25 * team.zReturning! + 0.25 * team.zPortal!,
+      12
+    );
+  });
+
+  it('second-stage population normalization', () => {
+    const snapshot = deriveThreeTeamSnapshot();
+    const raw = snapshot.teams.map((t) => t.candidateBRawComposite!);
+    const mean = raw.reduce((s, n) => s + n, 0) / raw.length;
+    const sd = Math.sqrt(raw.reduce((s, n) => s + (n - mean) ** 2, 0) / raw.length);
+    for (const team of snapshot.teams) {
+      expect(team.candidateBCompositeZ).toBeCloseTo((team.candidateBRawComposite! - mean) / sd, 12);
+    }
+  });
+
+  it('3.5-point population SD on synthetic complete set', () => {
+    const snapshot = deriveThreeTeamSnapshot();
+    const points = snapshot.teams.map((t) => t.candidateBTeamRatingPoints!);
+    const mean = points.reduce((s, n) => s + n, 0) / points.length;
+    const sd = Math.sqrt(points.reduce((s, n) => s + (n - mean) ** 2, 0) / points.length);
+    expect(sd).toBeCloseTo(RATING_SCALE, 12);
+    expect(snapshot.teams[0].candidateBTeamRatingPoints).toBeCloseTo(
+      snapshot.teams[0].candidateBCompositeZ! * 3.5,
+      12
+    );
+  });
+
+  it('exact confirmation string contains full hash', () => {
+    const snapshot = deriveThreeTeamSnapshot();
+    const confirmation = expectedCandidateBFeatureSnapshotConfirmation(snapshot.snapshotHash);
+    expect(confirmation).toBe(`INGEST_2026_CANDIDATE_B_V1_FEATURE_SNAPSHOT_${snapshot.snapshotHash}`);
+    expect(confirmation).toMatch(/INGEST_2026_CANDIDATE_B_V1_FEATURE_SNAPSHOT_[0-9a-f]{64}$/);
+  });
+});
+
+describe('Candidate B V1 idempotency classifier', () => {
+  it('exact existing snapshot → NO-OP', async () => {
+    const snapshot = deriveThreeTeamSnapshot();
+    const { report } = await executeCandidateBFeatureSnapshotIngest({
+      mode: 'COMMIT',
+      confirmation: expectedCandidateBFeatureSnapshotConfirmation(snapshot.snapshotHash),
+      snapshot,
+      store: memoryStore(toPersisted(snapshot)),
+      repoCommitSha: 'a'.repeat(40),
+      derivedAt: new Date('2026-09-14T00:00:00.000Z'),
+      requireFrozenCounts: false,
+    });
+    expect(report.existingState).toBe('EXACT_EXISTING');
+    expect(report.alreadyPresent).toBe(true);
+    expect(report.commitSucceeded).toBe(false);
+    expect(report.persistenceCommitted).toBe(false);
+  });
+
+  it('provenance-only difference → NO-OP', async () => {
+    const snapshot = deriveThreeTeamSnapshot({ provenanceExtra: 'later' });
+    const existing = toPersisted(deriveThreeTeamSnapshot(), 'other-provenance');
+    existing.snapshotHash = snapshot.snapshotHash;
+    existing.sourceManifestHash = snapshot.sourceManifestHash;
+    existing.featureDefinitionHash = snapshot.featureDefinitionHash;
+    existing.derivationDefinitionHash = snapshot.derivationDefinitionHash;
+    existing.normalizationManifestHash = snapshot.normalizationManifestHash;
+    existing.populationManifestHash = snapshot.populationManifestHash;
+    existing.teams = snapshot.teams.map((t) => ({ ...t }));
+    expect(classifyExistingSnapshot(existing, snapshot)).toBe('PROVENANCE_ONLY_DIFFERENCE');
+    const { report } = await executeCandidateBFeatureSnapshotIngest({
+      mode: 'PREVIEW',
+      snapshot,
+      store: memoryStore(existing),
+      repoCommitSha: 'a'.repeat(40),
+      derivedAt: new Date(),
+      requireFrozenCounts: false,
+    });
+    expect(report.existingState).toBe('PROVENANCE_ONLY_DIFFERENCE');
+    expect(report.alreadyPresent).toBe(true);
+    expect(report.writeSafe).toBe(true);
+  });
+
+  it('semantic difference → FAIL CLOSED', async () => {
+    const snapshot = deriveThreeTeamSnapshot();
+    const other = deriveThreeTeamSnapshot({ talentValues: { alpha: 11, beta: 20, gamma: 30 } });
+    expect(classifyExistingSnapshot(toPersisted(other), snapshot)).toBe('SEMANTIC_CONFLICT');
+    const { report } = await executeCandidateBFeatureSnapshotIngest({
+      mode: 'PREVIEW',
+      snapshot,
+      store: memoryStore(toPersisted(other)),
+      repoCommitSha: 'a'.repeat(40),
+      derivedAt: new Date(),
+      requireFrozenCounts: false,
+    });
+    expect(report.existingState).toBe('SEMANTIC_CONFLICT');
+    expect(report.writeSafe).toBe(false);
+    expect(report.blockers).toContain('semantic_conflict');
+  });
+
+  it('corrupt child hash/count → FAIL CLOSED', () => {
+    const snapshot = deriveThreeTeamSnapshot();
+    const corrupt = toPersisted(snapshot);
+    corrupt.teams[0].rowHash = '0'.repeat(64);
+    expect(classifyExistingSnapshot(corrupt, snapshot)).toBe('CORRUPT_EXISTING');
+    const missing = toPersisted(snapshot);
+    missing.teams = missing.teams.slice(0, 2);
+    missing.rowCount = 2;
+    expect(classifyExistingSnapshot(missing, snapshot)).toBe('CORRUPT_EXISTING');
+  });
+});
+
+describe('Candidate B V1 schema + migration contract', () => {
+  const schema = fs.readFileSync(SCHEMA, 'utf8');
+  const sql = fs.readFileSync(MIGRATION, 'utf8');
+
+  function modelBlock(name: string): string {
+    const match = schema.match(new RegExp(`model ${name} \\{[\\s\\S]*?\\n\\}`));
+    if (!match) throw new Error(`missing model ${name}`);
+    return match[0];
+  }
+
+  it('schema has no @updatedAt on new models', () => {
+    expect(modelBlock('ShadowModelFeatureSnapshot')).not.toContain('@updatedAt');
+    expect(modelBlock('ShadowModelFeatureSnapshotTeam')).not.toContain('@updatedAt');
+    expect(modelBlock('ShadowModelFeatureSnapshotTeam')).not.toContain('Team @relation');
+  });
+
+  it('migration contains append-only trigger protection for both tables', () => {
+    expect(sql).toContain('shadow_model_feature_snapshot_v1_reject_mutation');
+    expect(sql).toContain('BEFORE UPDATE OR DELETE ON "shadow_model_feature_snapshots"');
+    expect(sql).toContain('BEFORE UPDATE OR DELETE ON "shadow_model_feature_snapshot_teams"');
+    expect(sql).toContain('USING ERRCODE = \'restrict_violation\'');
+  });
+
+  it('migration has required unique indexes, parent/child FK, and RESTRICT', () => {
+    expect(sql).toContain('CREATE TABLE "shadow_model_feature_snapshots"');
+    expect(sql).toContain('CREATE TABLE "shadow_model_feature_snapshot_teams"');
+    expect(sql).toContain('shadow_model_feature_snapshots_snapshot_hash_key');
+    expect(sql).toContain('shadow_model_feature_snapshots_v1_identity_key');
+    expect(sql).toContain('shadow_model_feature_snapshot_teams_snapshot_team_key');
+    expect(sql).toContain('shadow_model_feature_snapshot_teams_snapshot_id_fkey');
+    expect(sql).toContain('ON DELETE RESTRICT ON UPDATE RESTRICT');
+  });
+
+  it('migration has no operational Team/Game/MarketLine/Bet FK and no DML/backfill', () => {
+    expect(sql).not.toMatch(/ALTER TABLE "teams"/);
+    expect(sql).not.toMatch(/ALTER TABLE "games"/);
+    expect(sql).not.toMatch(/ALTER TABLE "market_lines"/);
+    expect(sql).not.toMatch(/ALTER TABLE "bets"/);
+    expect(sql).not.toMatch(/REFERENCES "teams"/);
+    expect(sql).not.toMatch(/INSERT\s+INTO/i);
+    expect(sql).not.toMatch(/UPDATE\s+\w+\s+SET/i);
+    expect(sql).not.toMatch(/DELETE\s+FROM/i);
+  });
+
+  it('no provider/fetch path exists in Candidate B ingest implementation', () => {
+    const pure = fs.readFileSync(PURE, 'utf8');
+    const cli = fs.readFileSync(CLI, 'utf8');
+    for (const src of [pure, cli]) {
+      expect(src).not.toMatch(/\bfetch\s*\(/);
+      expect(src).not.toContain('collegefootballdata.com');
+      expect(src).not.toContain('CFBD_API_KEY');
+      expect(src).not.toContain('ODDS_API');
+      expect(src).not.toContain("from '../../src/cfbd/cfbd-client'");
+    }
+  });
+
+  it('authoritative membership fails closed on duplicates and count mismatch', () => {
+    expect(() =>
+      assertAuthoritativeFbsPopulation(
+        [
+          { teamId: 'a', level: 'fbs' },
+          { teamId: 'a', level: 'FBS' },
+        ],
+        2
+      )
+    ).toThrow(/duplicate_fbs_membership/);
+    expect(() => assertAuthoritativeFbsPopulation([{ teamId: 'a', level: 'fbs' }], 2)).toThrow(
+      /authoritative_fbs_count_mismatch/
+    );
+  });
+
+  it('raw SHA helper hashes bytes not re-serialized JSON', () => {
+    const bytes = Buffer.from('{"a":1}', 'utf8');
+    expect(sha256RawBytes(bytes)).toBe(sha256RawBytes(Buffer.from('{"a":1}', 'utf8')));
+    expect(sha256RawBytes(bytes)).not.toBe(sha256RawBytes(Buffer.from('{"a": 1}', 'utf8')));
+  });
+
+  it('portal aggregation keeps a valid FBS side when the counterparty is unresolved', () => {
+    const result = aggregatePortalByTeam(
+      ['alpha'],
+      [
+        { originTeamId: 'alpha', destinationTeamId: null, rating: 1 },
+        { originTeamId: null, destinationTeamId: 'alpha', rating: 2 },
+      ],
+      0
+    );
+    const row = result.get('alpha')!;
+    expect(row.outbound.transferCount).toBe(1);
+    expect(row.inbound.transferCount).toBe(1);
+    expect(row.portalRaw).toBe(1);
+  });
+});
