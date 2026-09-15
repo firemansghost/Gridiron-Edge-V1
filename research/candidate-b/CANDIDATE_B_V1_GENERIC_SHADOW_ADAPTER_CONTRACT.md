@@ -2,7 +2,7 @@
 
 **Status:** `GENERIC_SHADOW_ADAPTER_CONTRACT_FROZEN`  
 **Model status:** SHADOW / RESEARCH ONLY — NOT OFFICIAL  
-**Contract date:** 2026-09-14  
+**Contract date:** 2026-09-15  
 **Companion contracts (unchanged by this file):**
 - [`CANDIDATE_B_V1_INPUT_CONTRACT.md`](./CANDIDATE_B_V1_INPUT_CONTRACT.md)
 - [`CANDIDATE_B_V1_FORMULA_CONTRACT.md`](./CANDIDATE_B_V1_FORMULA_CONTRACT.md)
@@ -37,7 +37,7 @@ Durable Candidate B V1 feature snapshot:
 | Child rows | `138` |
 | Stable identity | `PRESENT` |
 | `verifyPersistedSnapshotIntegrity` | `true` |
-| `classifyExistingSnapshot` | `EXACT_EXISTING` |
+| `classifyExistingSnapshot` | `EXACT_EXISTING` (already-proven persistence evidence only; **not** a runtime call or gate) |
 
 ---
 
@@ -127,12 +127,35 @@ marketLines
 
 Core baseline behavior using those three fields **must remain unchanged**.
 
-Freeze a narrow additive optional Candidate B feature-snapshot field. Implementation field name may follow repo conventions (`candidateBFeatureSnapshot` is the intended frame-field style). A generic `frozenFeatureSnapshots` container from the persistence design is acceptable **only if** it carries this exact Candidate B snapshot identity for `candidate_b_roster_prior_v1` and Core ignores it.
+The previously frozen persistence design requires a **generic** optional container, not a Candidate-B-specific frame field.
 
-Semantics must be exact:
+`candidateBFeatureSnapshot` is **not** the preferred architecture.
+
+Freeze:
+
+```
+OperationalShadowModelFrame {
+  games
+  ratings
+  marketLines
+  frozenFeatureSnapshots?: FrozenShadowFeatureSnapshot[]
+}
+```
+
+Core ignores the optional container.
+
+Candidate B locates the exact entry by pinned:
+
+- `snapshotHash`
+- `featureDefinitionId`
+- `derivationDefinitionId`
+
+A Candidate B adapter may define a typed view over that generic snapshot. The `OperationalShadowModelFrame` extension itself remains generic.
+
+Conceptual loaded snapshot:
 
 ```ts
-CandidateBShadowFeatureSnapshotFrame {
+FrozenShadowFeatureSnapshot {
   parentId
   season
   snapshotHash
@@ -150,22 +173,38 @@ CandidateBShadowFeatureSnapshotFrame {
   completeVectorCount
   unavailableVectorCount
   portalAvailableCount
-  teams[]
-}
-
-CandidateBShadowFeatureRow {
-  teamId
-  season
-  availabilityStatus
-  unavailableReasons
-  candidateBTeamRatingPoints
-  rowHash
+  teamsById
 }
 ```
 
 `parentId` is the persisted snapshot DB id. It is provenance, not a substitute for `snapshotHash`.
 
-The frame row is a **narrow prediction view**. It must **not** copy the whole 138-team snapshot into every prediction. Full persisted parent + child integrity still happens at run-level load, using the already-proven exact read path.
+`teamsById` is a deterministic indexed lookup keyed by `teamId`, or an equivalent generic indexed lookup preserving exactly those semantics, consistent with [`CANDIDATE_B_V1_PERSISTENCE_DESIGN.md`](./CANDIDATE_B_V1_PERSISTENCE_DESIGN.md).
+
+Each team row available to the adapter must expose enough persisted semantic fields to reproduce the previously frozen prediction input contract. These come **ONLY** from the already-persisted exact-decoded snapshot:
+
+```ts
+FrozenShadowFeatureTeamRow {
+  teamId
+  season
+  availabilityStatus
+  unavailableReasons
+  priorCoreRaw
+  talentRaw
+  returningRaw
+  portalRaw
+  zCore
+  zTalent
+  zReturning
+  zPortal
+  candidateBRawComposite
+  candidateBCompositeZ
+  candidateBTeamRatingPoints
+  rowHash
+}
+```
+
+Do **not** copy the whole 138-team snapshot into every prediction. Full persisted parent + child integrity still happens at run-level load, using the already-proven exact read path.
 
 ---
 
@@ -192,21 +231,41 @@ Required exact read path:
 parent Prisma read without include: { teams: true }
   -> child rows via candidate_b_v1_exact_float8_binary_read_v1
   -> normalizationManifest via candidate_b_v1_normalization_manifest_canonical_json_text_v1
-  -> verifyPersistedSnapshotIntegrity(...) = true
-  -> classify / identity represents the exact pinned snapshot
+  -> verifyPersistedSnapshotIntegrity(...) === true
+  -> exact runtime pin gate below
 ```
 
 Do **not** use ordinary Prisma child `Float` model decoding as the Candidate B semantic source.
 
-Required before planning:
+`classifyExistingSnapshot(existing, computed, ...)` requires a `DerivedSnapshot` and is an ingest / re-derivation comparison. Candidate B runtime is **forbidden** from re-deriving from PIT, `TeamSeasonTalent`, CFBD, portal, or other mutable / raw sources. Therefore `classifyExistingSnapshot = EXACT_EXISTING` is **not** an executable runtime prerequisite. It remains only the already-proven persistence evidence recorded above.
+
+Runtime verification instead:
 
 ```
-verifyPersistedSnapshotIntegrity(...) = true
-classifyExistingSnapshot = EXACT_EXISTING
-snapshotHash = 0332e24f97c891fd6431280fa7939c467c614714abe207eeb3dc89d466eb1148
+load exact pinned snapshotHash
+verifyPersistedSnapshotIntegrity(...) === true
+exact snapshotHash match
+exact featureDefinitionId / version / hash match
+exact derivationDefinitionId / hash match
+exact sourceManifestHash match
+exact sourceProvenanceManifestHash match
+exact normalizationManifestHash match
+exact populationManifestHash match
+exact team-resolution policy ID / hash match
+exact expectedTeamCount = 138
+exact rowCount = 138
+exact completeVectorCount = 103
+exact unavailableVectorCount = 35
+exact portalAvailableCount = 104
 ```
 
-Identity must also match the frozen feature, derivation, source, normalization, population, team-resolution, and count pins above.
+Pinned `snapshotHash`:
+
+```
+0332e24f97c891fd6431280fa7939c467c614714abe207eeb3dc89d466eb1148
+```
+
+Any mismatch = **RUN-LEVEL FAIL CLOSED** before planning.
 
 If the parent snapshot is:
 
@@ -256,7 +315,7 @@ Do **not** zero-fill them.
 
 A complete Candidate B vector for a game participant requires:
 
-- a matching frame row for that `teamId` / `season`
+- a matching `teamsById` (or equivalent indexed) row for that `teamId` / `season`
 - `availabilityStatus = AVAILABLE`
 - finite `candidateBTeamRatingPoints`
 
@@ -449,7 +508,12 @@ sha256CanonicalJson(featureDefinitionManifest)
 
 Call this object `CANDIDATE_B_GENERIC_SHADOW_MODEL_DEFINITION_MANIFEST`.
 
-It contains only stable semantic strings, booleans, numbers, and pinned hashes. It does **not** include timestamps, repo SHA, runtime paths, or implementation filenames.
+It contains only stable semantic strings, booleans, numbers, and pinned hashes. It excludes timestamps, repo SHA, DB ids, and runtime-observed values. It **may** contain frozen stable module / config identifiers matching Generic Core Shadow precedent, such as:
+
+```
+apps/web/lib/core-v1-spread.ts#computeEffectiveHfa
+apps/web/lib/data/core_v1_hfa_config.json
+```
 
 ```json
 {
@@ -687,14 +751,46 @@ awayTeamId
 neutralSite
 kickoffTimestamp
 predictionTimestamp
-homeCandidateBTeamRatingPoints
-awayCandidateBTeamRatingPoints
-homeFeatureRowHash
-awayFeatureRowHash
 featureSnapshotHash
 modelDefinitionId
 featureDefinitionId
 policyDefinitionId
+home:
+  teamId
+  rowHash
+  priorCoreRaw
+  talentRaw
+  returningRaw
+  portalRaw
+  zCore
+  zTalent
+  zReturning
+  zPortal
+  candidateBRawComposite
+  candidateBCompositeZ
+  candidateBTeamRatingPoints
+away:
+  teamId
+  rowHash
+  priorCoreRaw
+  talentRaw
+  returningRaw
+  portalRaw
+  zCore
+  zTalent
+  zReturning
+  zPortal
+  candidateBRawComposite
+  candidateBCompositeZ
+  candidateBTeamRatingPoints
+hfa:
+  inputs / result needed to reproduce the matchup
+    homeTeamId
+    neutralSite
+    effectiveHfa
+    baseHfa
+    teamAdjustment
+    rawHfa
 market:
   existing Generic Shadow selected market structure
     selectedMarketLineId
@@ -711,6 +807,9 @@ market:
     homeLine
     awayLine
 ```
+
+Home / away numeric fields come **ONLY** from the already-persisted exact-decoded snapshot rows.  
+Do **not** copy all 138 teams into a prediction.
 
 `market` is `null` when no coherent eligible market was selected.
 
