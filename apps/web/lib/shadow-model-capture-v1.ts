@@ -20,8 +20,14 @@ export const MAX_SHADOW_MODEL_MARKET_AGE_SECONDS = 1800;
 export const MAX_SHADOW_MODEL_MARKET_AGE_MS = 1_800_000;
 export const CAPTURE_CONTEXT_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
-export const SHADOW_MODEL_ALLOWLIST = ['core_v1_shadow_baseline_v1'] as const;
+export const SHADOW_MODEL_ALLOWLIST = [
+  'core_v1_shadow_baseline_v1',
+  'candidate_b_roster_prior_v1',
+] as const;
 export type ShadowModelAllowlistId = (typeof SHADOW_MODEL_ALLOWLIST)[number];
+
+export const SHADOW_MODEL_COMMIT_ALLOWLIST = ['core_v1_shadow_baseline_v1'] as const;
+export type ShadowModelCommitAllowlistId = (typeof SHADOW_MODEL_COMMIT_ALLOWLIST)[number];
 
 export type ShadowModelCaptureMode = 'PREVIEW' | 'COMMIT';
 export type ShadowModelPredictionStatus = 'AVAILABLE' | 'UNAVAILABLE';
@@ -70,6 +76,24 @@ export function validateCaptureContext(
 
 export function isShadowModelAllowlisted(id: string): id is ShadowModelAllowlistId {
   return (SHADOW_MODEL_ALLOWLIST as readonly string[]).indexOf(id) >= 0;
+}
+
+export function isShadowModelCommitAllowlisted(id: string): id is ShadowModelCommitAllowlistId {
+  return (SHADOW_MODEL_COMMIT_ALLOWLIST as readonly string[]).indexOf(id) >= 0;
+}
+
+export function shadowModelCommitAuthorizationError(
+  mode: string,
+  modelId: string
+): { error: 'model_id_not_commit_allowlisted'; modelId: string; mode: string } | null {
+  if (mode === 'COMMIT' && !isShadowModelCommitAllowlisted(modelId)) {
+    return {
+      error: 'model_id_not_commit_allowlisted',
+      modelId,
+      mode,
+    };
+  }
+  return null;
 }
 
 export function canonicalizeJson(value: unknown): unknown {

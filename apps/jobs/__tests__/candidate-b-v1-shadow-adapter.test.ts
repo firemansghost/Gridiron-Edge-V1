@@ -9,9 +9,13 @@ import { computeEffectiveHfa } from '../../web/lib/core-v1-spread';
 import { SPREAD_EDGE_FLOOR, LIVE_ODDS_SOURCE } from '../../web/lib/core-v1-weekly-card';
 import {
   SHADOW_MODEL_ALLOWLIST,
+  SHADOW_MODEL_COMMIT_ALLOWLIST,
   isShadowModelAllowlisted,
+  isShadowModelCommitAllowlisted,
   planShadowModelCaptureRun,
   sha256CanonicalJson,
+  shadowModelCommitAuthorizationError,
+  expectedShadowModelWriteConfirmation,
   type FrozenShadowFeatureSnapshot,
   type OperationalShadowModelFrame,
 } from '../../web/lib/shadow-model-capture-v1';
@@ -370,19 +374,61 @@ describe('Candidate B Generic Shadow adapter', () => {
 });
 
 describe('Candidate B Generic Shadow staging safety', () => {
-  it('keeps the production allowlist Core-only', () => {
-    expect(SHADOW_MODEL_ALLOWLIST).toEqual([CORE_V1_SHADOW_BASELINE_MODEL_ID]);
-    expect(isShadowModelAllowlisted(CANDIDATE_B_GENERIC_SHADOW_MODEL_ID)).toBe(false);
+  it('allowlists Candidate B for PREVIEW and keeps COMMIT Core-only', () => {
+    expect(SHADOW_MODEL_ALLOWLIST).toEqual([
+      CORE_V1_SHADOW_BASELINE_MODEL_ID,
+      CANDIDATE_B_GENERIC_SHADOW_MODEL_ID,
+    ]);
+    expect(isShadowModelAllowlisted(CORE_V1_SHADOW_BASELINE_MODEL_ID)).toBe(true);
+    expect(isShadowModelAllowlisted(CANDIDATE_B_GENERIC_SHADOW_MODEL_ID)).toBe(true);
+    expect(SHADOW_MODEL_COMMIT_ALLOWLIST).toEqual([CORE_V1_SHADOW_BASELINE_MODEL_ID]);
+    expect(isShadowModelCommitAllowlisted(CORE_V1_SHADOW_BASELINE_MODEL_ID)).toBe(true);
+    expect(isShadowModelCommitAllowlisted(CANDIDATE_B_GENERIC_SHADOW_MODEL_ID)).toBe(false);
   });
 
-  it('CLI still rejects Candidate B before frame loading', () => {
+  it('CLI permits Candidate B PREVIEW and rejects COMMIT before frame loading', () => {
     const cli = fs.readFileSync(CLI, 'utf8');
     const wf = fs.readFileSync(WF, 'utf8');
-    expect(cli.indexOf('isShadowModelAllowlisted')).toBeGreaterThan(-1);
-    expect(cli.indexOf('isShadowModelAllowlisted')).toBeLessThan(
-      cli.indexOf('loadOperationalShadowModelFrame')
+    const mainSrc = cli.slice(cli.indexOf('async function main()'));
+    expect(mainSrc.indexOf('isShadowModelAllowlisted')).toBeGreaterThan(-1);
+    expect(mainSrc.indexOf('shadowModelCommitAuthorizationError')).toBeGreaterThan(-1);
+    expect(mainSrc.indexOf('isShadowModelAllowlisted')).toBeLessThan(
+      mainSrc.indexOf('shadowModelCommitAuthorizationError')
     );
-    expect(wf).not.toContain('candidate_b');
+    expect(mainSrc.indexOf('shadowModelCommitAuthorizationError')).toBeLessThan(
+      mainSrc.indexOf('new PrismaClient()')
+    );
+    expect(mainSrc.indexOf('shadowModelCommitAuthorizationError')).toBeLessThan(
+      mainSrc.indexOf('createPrismaPersistence')
+    );
+    expect(cli).toContain('model_id_not_commit_allowlisted');
+    const commitGate = mainSrc.slice(
+      mainSrc.indexOf('shadowModelCommitAuthorizationError'),
+      mainSrc.indexOf('new PrismaClient()')
+    );
+    expect(commitGate).not.toContain('confirmation');
+    expect(commitGate).not.toContain('args.confirmation');
+    expect(
+      shadowModelCommitAuthorizationError(
+        'COMMIT',
+        CANDIDATE_B_GENERIC_SHADOW_MODEL_ID
+      )
+    ).toEqual({
+      error: 'model_id_not_commit_allowlisted',
+      modelId: CANDIDATE_B_GENERIC_SHADOW_MODEL_ID,
+      mode: 'COMMIT',
+    });
+    expect(
+      shadowModelCommitAuthorizationError(
+        'PREVIEW',
+        CANDIDATE_B_GENERIC_SHADOW_MODEL_ID
+      )
+    ).toBeNull();
+    expect(
+      expectedShadowModelWriteConfirmation(3, CANDIDATE_B_GENERIC_SHADOW_MODEL_ID)
+    ).toBe('CAPTURE_2026_WEEK_3_SHADOW_MODEL_candidate_b_roster_prior_v1');
+    expect(wf).toContain('candidate_b_roster_prior_v1');
+    expect(wf).toContain('Candidate B V1 COMMIT is not authorized.');
     expect(wf).toContain('core_v1_shadow_baseline_v1');
   });
 });

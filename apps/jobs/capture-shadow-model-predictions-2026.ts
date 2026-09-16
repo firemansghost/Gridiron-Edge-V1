@@ -24,6 +24,8 @@ import {
   fingerprintOfficialFlat100BetRows,
   isShadowModelAllowlisted,
   marketAgeDistribution,
+  shadowModelCommitAuthorizationError,
+  SHADOW_MODEL_ALLOWLIST,
   resolvePreviewExitCode,
   validateCaptureContext,
   type ExistingShadowModelCohort,
@@ -398,7 +400,7 @@ async function main(): Promise<void> {
           ok: false,
           error: 'model_id_not_allowlisted',
           modelId: args.modelId,
-          allowlist: [CORE_V1_SHADOW_BASELINE_MODEL_ID],
+          allowlist: [...SHADOW_MODEL_ALLOWLIST],
         },
         null,
         2
@@ -408,6 +410,22 @@ async function main(): Promise<void> {
   }
   if (args.mode !== 'PREVIEW' && args.mode !== 'COMMIT') {
     console.error(JSON.stringify({ ok: false, error: 'mode_invalid' }, null, 2));
+    process.exit(1);
+  }
+  const commitBlock = shadowModelCommitAuthorizationError(args.mode, args.modelId);
+  if (commitBlock) {
+    console.error(
+      JSON.stringify(
+        {
+          ok: false,
+          error: 'model_id_not_commit_allowlisted',
+          modelId: commitBlock.modelId,
+          mode: commitBlock.mode,
+        },
+        null,
+        2
+      )
+    );
     process.exit(1);
   }
 

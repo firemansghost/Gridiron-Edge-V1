@@ -8,7 +8,9 @@
 # closing snapshots, or evaluation rows.
 # Does NOT call CFBD / Odds / weather. Does NOT run Prisma migrate.
 #
-# First-PR model allowlist: core_v1_shadow_baseline_v1 only.
+# PREVIEW allowlist: core_v1_shadow_baseline_v1 and candidate_b_roster_prior_v1.
+# COMMIT allowlist: core_v1_shadow_baseline_v1 only.
+# Candidate B COMMIT is mechanically blocked in this workflow and in the CLI.
 # Production COMMIT remains NOT AUTHORIZED until independent PREVIEW review.
 #
 # Security:
@@ -39,6 +41,7 @@ on:
         type: choice
         options:
           - core_v1_shadow_baseline_v1
+          - candidate_b_roster_prior_v1
       mode:
         description: 'PREVIEW (DB read-only) or COMMIT (atomic Shadow Model capture)'
         required: true
@@ -141,12 +144,16 @@ jobs:
             echo "::error::week must be a positive integer"
             exit 1
           fi
-          if [ "$INPUT_MODEL_ID" != "core_v1_shadow_baseline_v1" ]; then
+          if [ "$INPUT_MODEL_ID" != "core_v1_shadow_baseline_v1" ] && [ "$INPUT_MODEL_ID" != "candidate_b_roster_prior_v1" ]; then
             echo "::error::model_id must be an allowlisted value (got ${INPUT_MODEL_ID})"
             exit 1
           fi
           if [ "$INPUT_MODE" != "PREVIEW" ] && [ "$INPUT_MODE" != "COMMIT" ]; then
             echo "::error::mode must be PREVIEW or COMMIT"
+            exit 1
+          fi
+          if [ "$INPUT_MODE" = "COMMIT" ] && [ "$INPUT_MODEL_ID" = "candidate_b_roster_prior_v1" ]; then
+            echo "::error::Candidate B V1 COMMIT is not authorized."
             exit 1
           fi
           if [ -z "$INPUT_CAPTURE_CONTEXT" ]; then
@@ -182,6 +189,10 @@ jobs:
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
         run: |
           set -euo pipefail
+          if [ "$INPUT_MODE" = "COMMIT" ] && [ "$INPUT_MODEL_ID" = "candidate_b_roster_prior_v1" ]; then
+            echo "::error::Candidate B V1 COMMIT is not authorized."
+            exit 1
+          fi
           mkdir -p reports
           if [ "$INPUT_MODE" = "COMMIT" ]; then
             npx tsx apps/jobs/capture-shadow-model-predictions-2026.ts \
