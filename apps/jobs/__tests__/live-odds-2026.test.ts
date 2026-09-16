@@ -1190,6 +1190,9 @@ describe('2C-2J-2 live-odds-2026 guards (repaired)', () => {
       'utf8'
     );
     expect(cli).toContain('fetchLiveNcaafOddsSnapshot');
+    expect(cli).toContain("provider: 'oddsapi'");
+    expect(cli).toContain('strictFullIdentity: true');
+    expect(cli).not.toMatch(/resolveTeamDetailed\(\s*name,\s*'NCAAF'\s*\)/);
     expect(cli).toContain('createResult.count');
     expect(cli).toContain('assertCreateManyCountMatches');
     expect(cli).toContain('verifyInsertedFingerprints');
@@ -1761,5 +1764,94 @@ describe('Week 1 Maryland Terrapins alias repair (Hampton FCS nonblocking)', () 
     expect(plan.eventCounts.out_of_scope_fbs_fcs).toBe(1);
     expect(plan.eventCounts.unresolved_expected_fbs).toBe(0);
     expect(plan.writeSafe).toBe(true);
+  });
+});
+
+describe('Week 3 East Texas A&M strict Odds identity repair', () => {
+  function strictOddsResolve(resolver: InstanceType<typeof import('../adapters/TeamResolver').TeamResolver>) {
+    return (name: string) =>
+      resolver.resolveTeamDetailed(name, 'NCAAF', {
+        provider: 'oddsapi',
+        strictFullIdentity: true,
+      });
+  }
+
+  it('legitimate current Odds exact strings remain resolvable under strict Odds mode', () => {
+    const { TeamResolver } = require('../adapters/TeamResolver') as typeof import('../adapters/TeamResolver');
+    const resolver = new TeamResolver();
+    const resolveTeam = strictOddsResolve(resolver);
+    expect(resolveTeam('Miami (OH) RedHawks')).toEqual({ teamId: 'miami-oh', method: 'alias' });
+    expect(resolveTeam('Texas A&M Aggies')).toEqual({ teamId: 'texas-a-m', method: 'alias' });
+    expect(resolveTeam('San Diego State Aztecs')).toEqual({
+      teamId: 'san-diego-state',
+      method: 'alias',
+    });
+    expect(resolveTeam('San Jose State Spartans')).toEqual({
+      teamId: 'san-jos-state',
+      method: 'alias',
+    });
+    expect(resolveTeam('Tulsa Golden Hurricane')).toEqual({ teamId: 'tulsa', method: 'alias' });
+  });
+
+  it('East Texas A&M Lions @ Tulsa Golden Hurricane is out_of_scope_fbs_fcs, not unmatched_both_fbs', () => {
+    const { TeamResolver } = require('../adapters/TeamResolver') as typeof import('../adapters/TeamResolver');
+    const resolver = new TeamResolver();
+    const resolveTeam = strictOddsResolve(resolver);
+
+    const ids = fbsIds();
+    ids[134] = 'tulsa';
+    const games = week1Games(ids);
+    const fbsTeamIds = new Set(ids);
+
+    const diag = classifyProviderEvent({
+      event: {
+        home_team: 'Tulsa Golden Hurricane',
+        away_team: 'East Texas A&M Lions',
+        commence_time: WK1_DATE,
+      },
+      week: 1,
+      fbsTeamIds,
+      requestedWeekGames: games,
+      seasonGames: games,
+      resolveTeam,
+    });
+    expect(diag.homeTeamId).toBe('tulsa');
+    expect(diag.awayTeamId).toBeNull();
+    expect(diag.classification).toBe('out_of_scope_fbs_fcs');
+    expect(diag.classification).not.toBe('unmatched_both_fbs');
+    expect(diag.classification).not.toBe('unresolved_expected_fbs');
+    expect(diag.detail).toMatch(/no authoritative FBS-vs-FBS Game/i);
+
+    const plan = buildLiveOddsPlan({
+      season: 2026,
+      week: 1,
+      mode: 'PREVIEW',
+      fbsTeamIds: ids,
+      requestedWeekGames: games,
+      seasonGames: games,
+      providerEvents: [
+        {
+          home_team: 'Tulsa Golden Hurricane',
+          away_team: 'East Texas A&M Lions',
+          commence_time: WK1_DATE,
+          bookmakers: [],
+        },
+      ],
+      providerCalls: 1,
+      providerUsage: {
+        requestsLast: '1',
+        requestsUsed: null,
+        requestsRemaining: null,
+      },
+      existingRows: [],
+      resolveTeam,
+    });
+    expect(plan.eventCounts.out_of_scope_fbs_fcs).toBe(1);
+    expect(plan.eventCounts.unmatched_both_fbs).toBe(0);
+    expect(plan.eventCounts.unresolved_expected_fbs).toBe(0);
+    expect(plan.writeSafe).toBe(true);
+    expect(plan.writeBlockers).not.toContain(
+      'unmatched both-FBS provider event for requested week'
+    );
   });
 });

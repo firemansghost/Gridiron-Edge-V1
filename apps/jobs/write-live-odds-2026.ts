@@ -232,7 +232,10 @@ async function main(): Promise<void> {
     };
 
     const resolveTeam = (name: string) =>
-      resolver.resolveTeamDetailed(name, 'NCAAF');
+      resolver.resolveTeamDetailed(name, 'NCAAF', {
+        provider: 'oddsapi',
+        strictFullIdentity: true,
+      });
 
     plan = buildLiveOddsPlan({
       season: args.season,

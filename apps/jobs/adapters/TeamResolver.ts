@@ -29,10 +29,10 @@ export interface TeamResolveResult {
 export interface TeamResolveOptions {
   provider?: string;
   /**
-   * Candidate B V1 opt-in. Default/absent preserves current behavior.
-   * When provider === 'cfbd' and this is true, only full-string guard /
-   * CFBD alias / general exact alias are accepted. Parenthetical stripping,
-   * normalized_alias, and fuzzy are skipped.
+   * Opt-in fail-closed full-identity resolution. Default/absent preserves current behavior.
+   * When true, only full-string guard / provider-specific exact alias / general exact
+   * alias are accepted. Parenthetical stripping, normalized_alias, and fuzzy are skipped.
+   * CFBD exact aliases are consulted only when provider === 'cfbd'.
    */
   strictFullIdentity?: boolean;
 }
@@ -412,7 +412,8 @@ export class TeamResolver {
     // Pre-normalize: strip diacritics and unify A&M forms
     const preNormalized = this.preNormalizeName(providerName);
     const normalizedName = preNormalized.toLowerCase().trim();
-    const strictCfbd = options?.provider === 'cfbd' && options?.strictFullIdentity === true;
+    const strictFullIdentity = options?.strictFullIdentity === true;
+    const cfbdProvider = options?.provider === 'cfbd';
     
     // Debug logging for Miami and Texas A&M
     const needsDebug = providerName.toLowerCase().includes('miami') || 
@@ -425,7 +426,7 @@ export class TeamResolver {
       return { teamId: null, method: null };
     }
 
-    const guardedResult = strictCfbd
+    const guardedResult = strictFullIdentity
       ? this.applyStrictFullIdentityGuards(normalizedName)
       : this.applyMisMapGuards(providerName);
     if (guardedResult) {
@@ -433,12 +434,12 @@ export class TeamResolver {
     }
 
     // Step 1: Provider-specific alias match (CFBD first if provider is cfbd)
-    if (options?.provider === 'cfbd') {
+    if (cfbdProvider) {
       let cfbdMatch = this.cfbdAliases.get(normalizedName);
       
       // Default CFBD: parenthetical fallback remains for existing callers.
       // Strict full-identity mode must not strip "(PA)" / "(OH)" as evidence.
-      if (!cfbdMatch && !strictCfbd) {
+      if (!cfbdMatch && !strictFullIdentity) {
         const fallbackName = this.postFallbackNormalize(normalizedName);
         cfbdMatch = this.cfbdAliases.get(fallbackName);
       }
@@ -470,7 +471,7 @@ export class TeamResolver {
     // Step 2: Exact alias match (general aliases)
     let exactMatch = this.aliases.get(normalizedName);
     
-    if (!exactMatch && !strictCfbd) {
+    if (!exactMatch && !strictFullIdentity) {
       const fallbackName = this.postFallbackNormalize(normalizedName);
       exactMatch = this.aliases.get(fallbackName);
     }
@@ -491,7 +492,7 @@ export class TeamResolver {
       return { teamId: exactMatch, method: 'alias' };
     }
 
-    if (strictCfbd) {
+    if (strictFullIdentity) {
       return { teamId: null, method: null };
     }
 

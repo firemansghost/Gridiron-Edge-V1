@@ -144,6 +144,58 @@ describe('TeamResolver CFBD hardening', () => {
   });
 });
 
+describe('TeamResolver strictFullIdentity for Odds API', () => {
+  const resolver = new TeamResolver();
+  const strictOdds = (name: string) =>
+    resolver.resolveTeamDetailed(name, 'NCAAF', {
+      provider: 'oddsapi',
+      strictFullIdentity: true,
+    });
+
+  it('does not consult CFBD-specific aliases for Odds provider', () => {
+    const src = require('fs').readFileSync(
+      require('path').join(__dirname, '../adapters/TeamResolver.ts'),
+      'utf8'
+    );
+    expect(src).toContain("options?.provider === 'cfbd'");
+    expect(src).toContain('strictFullIdentity === true');
+    expect(src).not.toMatch(/provider === 'oddsapi'[\s\S]{0,80}cfbdAliases/);
+  });
+
+  it('resolves current legitimate Odds exact identities', () => {
+    expect(strictOdds('Miami (OH) RedHawks')).toEqual({
+      teamId: 'miami-oh',
+      method: 'alias',
+    });
+    expect(strictOdds('Texas A&M Aggies')).toEqual({
+      teamId: 'texas-a-m',
+      method: 'alias',
+    });
+    expect(strictOdds('San Diego State Aztecs')).toEqual({
+      teamId: 'san-diego-state',
+      method: 'alias',
+    });
+    expect(strictOdds('San Jose State Spartans')).toEqual({
+      teamId: 'san-jos-state',
+      method: 'alias',
+    });
+  });
+
+  it('fails closed on East Texas A&M and nearby false A&M identities', () => {
+    expect(strictOdds('East Texas A&M Lions')).toEqual({ teamId: null, method: null });
+    expect(strictOdds('Texas A&M Corpus Christi')).toEqual({ teamId: null, method: null });
+    expect(strictOdds('Texas A&M-Kingsville')).toEqual({ teamId: null, method: null });
+    expect(strictOdds('Texas A&M (Fake)')).toEqual({ teamId: null, method: null });
+  });
+
+  it('legacy default substring guard remains for non-opt-in callers', () => {
+    expect(resolver.resolveTeamDetailed('East Texas A&M Lions', 'NCAAF')).toEqual({
+      teamId: 'texas-a-m',
+      method: 'guard',
+    });
+  });
+});
+
 describe('normalizeCfbdConferenceForV1', () => {
   it('FBS Independents → Independent', () => {
     expect(normalizeCfbdConferenceForV1('FBS Independents')).toBe(
