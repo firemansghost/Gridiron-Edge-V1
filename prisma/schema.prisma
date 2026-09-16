@@ -1275,6 +1275,7 @@ model ShadowModelPrediction {
   predictionPickValue Float?                       @map("prediction_pick_value")
 
   captureRun ShadowModelCaptureRun @relation(fields: [captureRunId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  closingMarketSnapshot ShadowModelClosingMarketSnapshot?
 
   @@unique([captureRunId, gameId], map: "shadow_model_predictions_run_game_key")
   @@index([captureRunId])
@@ -1284,6 +1285,42 @@ model ShadowModelPrediction {
   @@index([predictionStatus])
   @@index([marketType])
   @@map("shadow_model_predictions")
+}
+
+model ShadowModelClosingMarketSnapshot {
+  id                         String                   @id @default(cuid())
+  predictionId               String                   @unique(map: "shadow_model_closing_market_snapshots_prediction_id_key") @map("prediction_id")
+  gameId                     String                   @map("game_id")
+  evaluationProtocol         String                   @map("evaluation_protocol")
+  closingDefinitionId        String                   @map("closing_definition_id")
+  closingDefinitionHash      String                   @map("closing_definition_hash")
+  marketType                 ShadowModelMarketType    @map("market_type")
+  predictionKickoffTimestamp DateTime                 @map("prediction_kickoff_timestamp")
+  closingKickoffTimestamp    DateTime                 @map("closing_kickoff_timestamp")
+  targetTimestamp            DateTime                 @map("target_timestamp")
+  status                     ShadowAvailabilityStatus
+  unavailableReason          String?                  @map("unavailable_reason")
+  selectedHomeMarketLineId   String?                  @map("selected_home_market_line_id")
+  selectedAwayMarketLineId   String?                  @map("selected_away_market_line_id")
+  selectedHomeLineValue      Float?                   @map("selected_home_line_value")
+  selectedAwayLineValue      Float?                   @map("selected_away_line_value")
+  selectedDisplayTeamId      String?                  @map("selected_display_team_id")
+  selectedDisplayLineValue   Float?                   @map("selected_display_line_value")
+  canonicalMarketHma         Float?                   @map("canonical_market_hma")
+  book                       String?
+  source                     String?
+  marketObservationTimestamp DateTime?                @map("market_observation_timestamp")
+  marketAgeToTargetSeconds   Int?                     @map("market_age_to_target_seconds")
+  capturedAt                 DateTime                 @map("captured_at")
+  createdAt                  DateTime                 @default(now()) @map("created_at")
+
+  prediction ShadowModelPrediction @relation(fields: [predictionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([gameId], map: "shadow_model_closing_market_snapshots_game_id_idx")
+  @@index([targetTimestamp], map: "shadow_model_closing_market_snapshots_target_timestamp_idx")
+  @@index([status], map: "shadow_model_closing_market_snapshots_status_idx")
+  @@index([closingDefinitionHash], map: "shadow_model_closing_market_snapshots_closing_def_hash_idx")
+  @@map("shadow_model_closing_market_snapshots")
 }
 
 model ShadowModelFeatureSnapshot {
