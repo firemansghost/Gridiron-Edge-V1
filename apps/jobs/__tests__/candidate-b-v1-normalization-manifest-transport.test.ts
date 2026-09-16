@@ -816,7 +816,7 @@ describe('source contract', () => {
     const writer = fs.readFileSync(WRITER, 'utf8');
     const reader = fs.readFileSync(READER, 'utf8');
     expect(cli).toContain('encodeCandidateBNormalizationManifest');
-    expect(cli).toContain('decodeCandidateBNormalizationManifest');
+    expect(cli).toContain('loadCandidateBPersistedSnapshotByStableIdentity');
     expect(cli).toContain('snapshot.normalizationManifest');
     expect(cli).not.toMatch(/encodeCandidateBNormalizationManifest\(\s*snapshot\.featureDefinitionManifest/);
     expect(cli).not.toMatch(/encodeCandidateBNormalizationManifest\(\s*snapshot\.populationManifest/);

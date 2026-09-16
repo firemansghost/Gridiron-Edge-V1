@@ -19,9 +19,6 @@ import {
   CORE_RAW_RELATIVE,
   DEFAULT_CORE_SNAPSHOT_DIR,
   DEFAULT_OPENING_SNAPSHOT_DIR,
-  DERIVATION_DEFINITION_ID,
-  FEATURE_DEFINITION_ID,
-  FEATURE_DEFINITION_VERSION,
   FROZEN_CORE_SHA256,
   FROZEN_PORTAL_SHA256,
   FROZEN_RETURNING_SHA256,
@@ -52,16 +49,11 @@ import {
   type CfbdTeamResolver,
   type DerivedSnapshot,
   type IngestMode,
-  type PersistedSnapshot,
-  type PersistedTeamRow,
   type TalentSourceRow,
 } from './src/research/candidate-b/candidate-b-v1-feature-snapshot';
 import { insertCandidateBFeatureSnapshotTeamsExact } from './src/research/candidate-b/candidate-b-v1-exact-float8-writer';
-import { loadCandidateBFeatureSnapshotTeamsExact } from './src/research/candidate-b/candidate-b-v1-exact-float8-reader';
-import {
-  decodeCandidateBNormalizationManifest,
-  encodeCandidateBNormalizationManifest,
-} from './src/research/candidate-b/candidate-b-v1-normalization-manifest-transport';
+import { loadCandidateBPersistedSnapshotByStableIdentity } from './src/research/candidate-b/candidate-b-v1-persisted-snapshot-reader';
+import { encodeCandidateBNormalizationManifest } from './src/research/candidate-b/candidate-b-v1-normalization-manifest-transport';
 
 export function parseCandidateBIngestArgs(argv: string[]): {
   season: number;
@@ -154,67 +146,11 @@ export function createCfbdFbsResolver(
   return createCandidateBCfbdFbsResolver(resolver, authoritativeTeamIds);
 }
 
-function mapPersistedSnapshot(
-  row: {
-    id: string;
-    season: number;
-    snapshotKind: string;
-    modelFamily: string;
-    modelDefinitionId: string;
-    featureDefinitionId: string;
-    featureDefinitionVersion: string;
-    featureDefinitionHash: string;
-    featureDefinitionManifest: unknown;
-    derivationDefinitionId: string;
-    derivationDefinitionHash: string;
-    derivationDefinitionManifest: unknown;
-    sourceManifest: unknown;
-    sourceManifestHash: string;
-    sourceProvenanceManifest: unknown;
-    sourceProvenanceManifestHash: string;
-    normalizationManifest: unknown;
-    normalizationManifestHash: string;
-    populationManifest: unknown;
-    populationManifestHash: string;
-    expectedTeamCount: number;
-    rowCount: number;
-    completeVectorCount: number;
-    unavailableVectorCount: number;
-    portalAvailableCount: number;
-    snapshotHash: string;
-  },
-  teams: PersistedTeamRow[]
-): PersistedSnapshot {
-  return {
-    ...row,
-    teams,
-  };
-}
-
-const STABLE_IDENTITY = {
-  season: CANDIDATE_B_SEASON,
-  featureDefinitionId: FEATURE_DEFINITION_ID,
-  featureDefinitionVersion: FEATURE_DEFINITION_VERSION,
-  derivationDefinitionId: DERIVATION_DEFINITION_ID,
-} as const;
-
 export function createPrismaCandidateBFeatureSnapshotStore(
   prisma: PrismaClient
 ): CandidateBFeatureSnapshotStore {
-  const loadExisting = async (db: Prisma.TransactionClient | PrismaClient) => {
-    const row = await db.shadowModelFeatureSnapshot.findUnique({
-      where: {
-        season_featureDefinitionId_featureDefinitionVersion_derivationDefinitionId: STABLE_IDENTITY,
-      },
-    });
-    if (!row) return null;
-    const teams = await loadCandidateBFeatureSnapshotTeamsExact(db, row.id);
-    const normalizationManifest = decodeCandidateBNormalizationManifest(
-      row.normalizationManifest,
-      row.normalizationManifestHash
-    );
-    return mapPersistedSnapshot({ ...row, normalizationManifest }, teams);
-  };
+  const loadExisting = (db: Prisma.TransactionClient | PrismaClient) =>
+    loadCandidateBPersistedSnapshotByStableIdentity(db);
 
   return {
     async loadAuthoritativeFbsMembership(season) {

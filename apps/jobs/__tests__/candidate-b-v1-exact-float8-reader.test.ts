@@ -555,7 +555,7 @@ describe('source contract', () => {
     const reader = fs.readFileSync(READER, 'utf8');
     const pure = fs.readFileSync(PURE, 'utf8');
     expect(cli).not.toMatch(/include:\s*\{\s*teams:\s*true\s*\}/);
-    expect(cli).toContain('loadCandidateBFeatureSnapshotTeamsExact');
+    expect(cli).toContain('loadCandidateBPersistedSnapshotByStableIdentity');
     expect(reader).toContain("encode(float8send(");
     expect(reader).toContain('candidateBFloat8FromHex');
     expect(pure).not.toContain(PERSISTENCE_READ_CONTRACT_ID);

@@ -11,6 +11,7 @@ import { pickDisplaySpread, selectBookSpreadSnapshots } from '@/lib/market-line-
 import { computeProductionCoreV1HmaFromV1Ratings } from '@/lib/shadow-snapshot-v1';
 import {
   SHADOW_MODEL_ALLOWLIST,
+  UNAVAILABLE_REASON_ORDER,
   canonicalJsonString,
   sha256CanonicalJson,
   selectAuthorizedCoherentSpreadMarket,
@@ -232,6 +233,20 @@ describe('Shadow Model Capture V1 — definition hashes', () => {
 
   it('allowlist contains only core_v1_shadow_baseline_v1 in this PR', () => {
     expect(SHADOW_MODEL_ALLOWLIST).toEqual([CORE_V1_SHADOW_BASELINE_MODEL_ID]);
+  });
+
+  it('keeps Core unavailable-reason order and inserts team_feature_vector_unavailable before markets', () => {
+    expect(UNAVAILABLE_REASON_ORDER).toEqual([
+      'post_kickoff',
+      'missing_rating',
+      'rating_provenance_unavailable',
+      'team_feature_vector_unavailable',
+      'missing_market',
+      'incoherent_market',
+      'stale_market',
+      'invalid_model_output',
+      'market_selector_unimplemented',
+    ]);
   });
 });
 
@@ -485,6 +500,64 @@ describe('Shadow Model Capture V1 — market and eligibility guards', () => {
       model,
     });
     expect(plan.predictions[0].unavailableReasons).toContain('missing_rating');
+  });
+
+  it('does not require frozenFeatureSnapshots and never emits team_feature_vector_unavailable', () => {
+    const withSnapshot = planShadowModelCaptureRun({
+      season: 2026,
+      week: 3,
+      mode: 'PREVIEW',
+      captureContext: 'core_ignores_frozen_features',
+      confirmation: '',
+      repoCommitSha: REPO_SHA,
+      predictionTimestamp: NOW,
+      frame: baseFrame({
+        frozenFeatureSnapshots: [
+          {
+            parentId: 'ignored',
+            season: 2026,
+            snapshotHash: '0'.repeat(64),
+            featureDefinitionId: 'ignored',
+            featureDefinitionVersion: 'v1',
+            featureDefinitionHash: '0'.repeat(64),
+            derivationDefinitionId: 'ignored',
+            derivationDefinitionHash: '0'.repeat(64),
+            sourceManifestHash: '0'.repeat(64),
+            sourceProvenanceManifestHash: '0'.repeat(64),
+            normalizationManifestHash: '0'.repeat(64),
+            populationManifestHash: '0'.repeat(64),
+            expectedTeamCount: 0,
+            rowCount: 0,
+            completeVectorCount: 0,
+            unavailableVectorCount: 0,
+            portalAvailableCount: 0,
+            teamsById: {},
+          },
+        ],
+      }),
+      model,
+    });
+    const withoutSnapshot = planShadowModelCaptureRun({
+      season: 2026,
+      week: 3,
+      mode: 'PREVIEW',
+      captureContext: 'core_no_frozen_features',
+      confirmation: '',
+      repoCommitSha: REPO_SHA,
+      predictionTimestamp: NOW,
+      frame: baseFrame(),
+      model,
+    });
+    expect(withSnapshot.ok).toBe(true);
+    expect(withoutSnapshot.ok).toBe(true);
+    expect(withSnapshot.predictions[0].predictionStatus).toBe('AVAILABLE');
+    expect(withoutSnapshot.predictions[0].predictionStatus).toBe('AVAILABLE');
+    expect(withSnapshot.predictions[0].unavailableReasons).not.toContain(
+      'team_feature_vector_unavailable'
+    );
+    expect(withoutSnapshot.predictions[0].unavailableReasons).not.toContain(
+      'team_feature_vector_unavailable'
+    );
   });
 
   it('missing market becomes unavailable', () => {

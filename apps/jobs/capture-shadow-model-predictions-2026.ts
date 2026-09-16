@@ -37,15 +37,20 @@ import {
 } from '../web/lib/shadow-model-capture-v1';
 import {
   CORE_V1_SHADOW_BASELINE_MODEL_ID,
-  CORE_V1_SHADOW_BASELINE_MODEL_HASH,
-  CORE_V1_SHADOW_FEATURE_DEFINITION_HASH,
-  CORE_V1_SHADOW_POLICY_DEFINITION_HASH,
   createCoreV1ShadowBaselineDefinition,
 } from '../web/lib/shadow-models/core-v1-shadow-baseline-v1';
+import {
+  CANDIDATE_B_GENERIC_SHADOW_MODEL_ID,
+  createCandidateBRosterPriorShadowDefinition,
+} from './src/research/candidate-b/candidate-b-v1-shadow-adapter';
+import { loadOperationalShadowModelFrame } from './src/shadow-model-operational-frame';
 
 function resolveModelDefinition(modelId: string): ShadowModelDefinition {
   if (modelId === CORE_V1_SHADOW_BASELINE_MODEL_ID) {
     return createCoreV1ShadowBaselineDefinition();
+  }
+  if (modelId === CANDIDATE_B_GENERIC_SHADOW_MODEL_ID) {
+    return createCandidateBRosterPriorShadowDefinition();
   }
   throw new Error(`model_id_not_allowlisted:${modelId}`);
 }
@@ -204,82 +209,10 @@ function predictionCreateData(row: PlannedShadowModelPrediction) {
 async function loadOperationalFrame(
   db: PrismaClient | Prisma.TransactionClient,
   season: number,
-  week: number
+  week: number,
+  modelDefinitionId: string
 ): Promise<OperationalShadowModelFrame> {
-  const games = await db.game.findMany({
-    where: { season, week },
-    select: {
-      id: true,
-      season: true,
-      week: true,
-      homeTeamId: true,
-      awayTeamId: true,
-      date: true,
-      neutralSite: true,
-    },
-  });
-
-  const ratingsRaw = await db.teamSeasonRating.findMany({
-    where: { season, modelVersion: 'v1' },
-    select: {
-      teamId: true,
-      season: true,
-      modelVersion: true,
-      powerRating: true,
-      rating: true,
-      createdAt: true,
-      updatedAt: true,
-    },
-  });
-
-  const gameIds = games.map((g) => g.id);
-  const marketRaw =
-    gameIds.length === 0
-      ? []
-      : await db.marketLine.findMany({
-          where: { gameId: { in: gameIds }, lineType: 'spread' },
-          select: {
-            id: true,
-            gameId: true,
-            lineType: true,
-            lineValue: true,
-            teamId: true,
-            bookName: true,
-            source: true,
-            timestamp: true,
-          },
-        });
-
-  return {
-    games: games.map((g) => ({
-      id: g.id,
-      season: g.season,
-      week: g.week,
-      homeTeamId: g.homeTeamId,
-      awayTeamId: g.awayTeamId,
-      kickoffTimestamp: g.date,
-      neutralSite: g.neutralSite,
-    })),
-    ratings: ratingsRaw.map((r) => ({
-      teamId: r.teamId,
-      season: r.season,
-      modelVersion: r.modelVersion,
-      powerRating: toFinite(r.powerRating),
-      rating: toFinite(r.rating),
-      createdAt: r.createdAt,
-      updatedAt: r.updatedAt,
-    })),
-    marketLines: marketRaw.map((r) => ({
-      id: r.id,
-      gameId: r.gameId,
-      lineType: String(r.lineType),
-      lineValue: r.lineValue,
-      teamId: r.teamId,
-      bookName: r.bookName,
-      source: r.source,
-      timestamp: r.timestamp,
-    })),
-  };
+  return loadOperationalShadowModelFrame(db, { season, week, modelDefinitionId });
 }
 
 async function findCohort(
@@ -336,7 +269,8 @@ function createPrismaPersistence(
 
   const bindTx = (db: PrismaClient | Prisma.TransactionClient): ShadowModelMutationTx => ({
     findCohort: () => findCohort(db, cohortArgs),
-    loadFrame: () => loadOperationalFrame(db, cohortArgs.season, cohortArgs.week),
+    loadFrame: () =>
+      loadOperationalFrame(db, cohortArgs.season, cohortArgs.week, args.model.modelDefinitionId),
     now: clock,
     createRun: async (run: PlannedShadowModelCaptureRun) => {
       await db.shadowModelCaptureRun.create({
@@ -385,7 +319,8 @@ function createPrismaPersistence(
     now: clock,
     createId: () => randomUUID(),
     findCohort: () => findCohort(prisma, cohortArgs),
-    loadFrame: () => loadOperationalFrame(prisma, cohortArgs.season, cohortArgs.week),
+    loadFrame: () =>
+      loadOperationalFrame(prisma, cohortArgs.season, cohortArgs.week, args.model.modelDefinitionId),
     runTransaction: async (fn) =>
       prisma.$transaction(
         async (tx) => fn(bindTx(tx)),
@@ -510,9 +445,9 @@ async function main(): Promise<void> {
           ? expectedShadowModelWriteConfirmation(args.week, model.modelDefinitionId)
           : null,
       pinnedHashes: {
-        modelDefinitionHash: CORE_V1_SHADOW_BASELINE_MODEL_HASH,
-        featureDefinitionHash: CORE_V1_SHADOW_FEATURE_DEFINITION_HASH,
-        policyDefinitionHash: CORE_V1_SHADOW_POLICY_DEFINITION_HASH,
+        modelDefinitionHash: model.modelDefinitionHash,
+        featureDefinitionHash: model.featureDefinitionHash,
+        policyDefinitionHash: model.policyDefinitionHash,
       },
       researchOnly: true,
       productionCommitAuthorized: false,

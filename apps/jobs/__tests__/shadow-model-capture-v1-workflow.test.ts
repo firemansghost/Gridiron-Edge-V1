@@ -44,6 +44,13 @@ describe('Shadow Model Capture V1 workflow', () => {
     expect(wf).not.toContain('candidate_b');
     expect(wf).not.toContain('wepa_shadow');
     expect(cli).toContain('isShadowModelAllowlisted');
+    expect(cli.indexOf('isShadowModelAllowlisted')).toBeLessThan(
+      cli.indexOf('loadOperationalShadowModelFrame')
+    );
+    expect(cli).toContain('createCandidateBRosterPriorShadowDefinition');
+    expect(cli).toContain('model.modelDefinitionHash');
+    expect(cli).toContain('model.featureDefinitionHash');
+    expect(cli).toContain('model.policyDefinitionHash');
     expect(lib).toContain("SHADOW_MODEL_ALLOWLIST = ['core_v1_shadow_baseline_v1']");
   });
 
