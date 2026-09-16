@@ -686,6 +686,23 @@ export async function executeGenericShadowT30ClosingCapture(input: {
   adapter: GenericShadowT30CaptureAdapter;
 }): Promise<GenericShadowT30ExecutionResult> {
   const mode = String(input.mode).toUpperCase();
+  if (mode !== 'PREVIEW' && mode !== 'COMMIT') {
+    const plan = failClosedPlan({
+      season: input.season,
+      week: input.week,
+      captureRunId: input.captureRunId,
+      mode,
+      confirmation: input.confirmation,
+      observedTimestamp: input.adapter.now(),
+      createId: input.adapter.createId,
+    });
+    const execution = emptyExecution(mode, {
+      verificationOk: false,
+      verificationReasons: ['mode_invalid'],
+      error: 'mode_invalid',
+    });
+    return { plan, execution, report: buildReport(plan, execution) };
+  }
 
   if (mode === 'PREVIEW') {
     const frame = await input.adapter.loadFrame();

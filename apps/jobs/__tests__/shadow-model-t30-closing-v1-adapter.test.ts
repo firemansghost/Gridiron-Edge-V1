@@ -626,6 +626,32 @@ describe('Generic Shadow T-30 Closing V1 — PREVIEW / COMMIT execution', () => 
     expect(CONFIRM).toBe(`CAPTURE_2026_WEEK_3_SHADOW_MODEL_T30_${RUN_ID}`);
   });
 
+  it('fails closed on invalid mode even when COMMIT confirmation is otherwise correct', async () => {
+    const adapter = fakeAdapter();
+    const { plan, execution } = await executeGenericShadowT30ClosingCapture({
+      season: 2026,
+      week: 3,
+      captureRunId: RUN_ID,
+      mode: 'BOGUS',
+      confirmation: CONFIRM,
+      adapter,
+    });
+    expect(plan.writeSafe).toBe(false);
+    expect(plan.writeBlockers).toContain('mode_invalid');
+    expect(execution.transactionStarted).toBe(false);
+    expect(execution.mutationsInvoked).toBe(false);
+    expect(execution.commitSucceeded).toBe(false);
+    expect(execution.persistenceCommitted).toBe(false);
+    expect(execution.rolledBack).toBe(false);
+    expect(execution.verificationOk).toBe(false);
+    expect(execution.verificationReasons).toContain('mode_invalid');
+    expect(execution.error).toBe('mode_invalid');
+    expect(execution.providerCalls).toBe(0);
+    expect(adapter.runTransactionCalls).toBe(0);
+    expect(adapter.createCalls).toHaveLength(0);
+    expect(adapter.loadFrameCalls).toBe(0);
+  });
+
   it('does not mutate when the transaction frame is not write-safe', async () => {
     const adapter = fakeAdapter({
       txFrame: dueFrame({ captureRun: captureRun({ status: 'FAILED' }) }),
