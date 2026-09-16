@@ -206,24 +206,48 @@ Recommended future indexes: `gameId`, `targetTimestamp`, `status`, `closingDefin
 
 Use the repository helper `sha256CanonicalJson` (`canonicalJsonString` of key-sorted JSON, then SHA-256 hex). Do **not** use raw `JSON.stringify`, the markdown-file SHA, a git blob SHA, or a source-code SHA.
 
+`closingDefinitionHash` fingerprints the material semantics that determine what a Generic closing row means. Already-frozen market-selection fields remain unchanged. Additional evidence-affecting semantics are included so the hash covers kickoff source, capture frame, persistence linkage, planning states, persisted statuses, unavailable reasons, and existing-row immutability.
+
+Supported-model eligibility remains an operational allowlist separate from this closing definition and is **not** hashed here.
+
+Any future change to a hash-covered semantic requires a **new closing definition / version / hash**. Do not silently mutate this object in place.
+
 Exact object:
 
 ```json
 {
   "authorizedSource": "oddsapi",
+  "captureFrame": "all_shadow_model_prediction_children_of_exact_capture_run_including_unavailable",
   "closingDefinitionId": "generic_shadow_t30_closing_v1",
+  "closingKickoffSource": "current_persisted_game_kickoff_at_closing_planning_time",
   "coherentHomeAwayPairRequired": true,
+  "dueRule": "target_timestamp_lte_observed_lt_closing_kickoff_timestamp",
   "evaluationProtocol": "CORE_EVAL_V1",
+  "existingRowBehavior": "immutable_idempotent_no_refresh_or_better_line_replacement",
+  "futureRule": "observed_lt_target_timestamp_no_row",
   "marketType": "SPREAD",
   "maxMarketAgeToTargetSeconds": null,
+  "missedRule": "observed_gte_closing_kickoff_timestamp_no_existing_row_no_persisted_row_no_backfill",
   "noAfterTargetFallForward": true,
   "noPostKickBackfill": true,
+  "persistedStatuses": [
+    "AVAILABLE",
+    "UNAVAILABLE"
+  ],
+  "persistenceLinkage": "one_closing_row_per_shadow_model_prediction_prediction_id_unique",
+  "postCaptureRetarget": "forbidden_existing_closing_row_immutable",
+  "preCaptureKickoffDrift": "allowed_when_game_team_identity_consistent",
+  "predictionKickoffPreservation": "frozen_prediction_kickoff_retained_separately",
   "providerCalls": 0,
   "selectionModules": [
     "apps/web/lib/market-line-snapshot.ts#selectBookSpreadSnapshots",
     "apps/web/lib/market-line-snapshot.ts#pickDisplaySpread"
   ],
   "targetOffsetSeconds": 1800,
+  "unavailableReasons": [
+    "missing_market_at_or_before_t30",
+    "incoherent_market_at_or_before_t30"
+  ],
   "version": 1
 }
 ```
@@ -231,12 +255,12 @@ Exact object:
 Exact canonical string produced by `canonicalJsonString` of that object:
 
 ```
-{"authorizedSource":"oddsapi","closingDefinitionId":"generic_shadow_t30_closing_v1","coherentHomeAwayPairRequired":true,"evaluationProtocol":"CORE_EVAL_V1","marketType":"SPREAD","maxMarketAgeToTargetSeconds":null,"noAfterTargetFallForward":true,"noPostKickBackfill":true,"providerCalls":0,"selectionModules":["apps/web/lib/market-line-snapshot.ts#selectBookSpreadSnapshots","apps/web/lib/market-line-snapshot.ts#pickDisplaySpread"],"targetOffsetSeconds":1800,"version":1}
+{"authorizedSource":"oddsapi","captureFrame":"all_shadow_model_prediction_children_of_exact_capture_run_including_unavailable","closingDefinitionId":"generic_shadow_t30_closing_v1","closingKickoffSource":"current_persisted_game_kickoff_at_closing_planning_time","coherentHomeAwayPairRequired":true,"dueRule":"target_timestamp_lte_observed_lt_closing_kickoff_timestamp","evaluationProtocol":"CORE_EVAL_V1","existingRowBehavior":"immutable_idempotent_no_refresh_or_better_line_replacement","futureRule":"observed_lt_target_timestamp_no_row","marketType":"SPREAD","maxMarketAgeToTargetSeconds":null,"missedRule":"observed_gte_closing_kickoff_timestamp_no_existing_row_no_persisted_row_no_backfill","noAfterTargetFallForward":true,"noPostKickBackfill":true,"persistedStatuses":["AVAILABLE","UNAVAILABLE"],"persistenceLinkage":"one_closing_row_per_shadow_model_prediction_prediction_id_unique","postCaptureRetarget":"forbidden_existing_closing_row_immutable","preCaptureKickoffDrift":"allowed_when_game_team_identity_consistent","predictionKickoffPreservation":"frozen_prediction_kickoff_retained_separately","providerCalls":0,"selectionModules":["apps/web/lib/market-line-snapshot.ts#selectBookSpreadSnapshots","apps/web/lib/market-line-snapshot.ts#pickDisplaySpread"],"targetOffsetSeconds":1800,"unavailableReasons":["missing_market_at_or_before_t30","incoherent_market_at_or_before_t30"],"version":1}
 ```
 
 ```
 closingDefinitionHash =
-74f7bead0a07f7744a760421f8ddf95c81efb21cf44bb54ce93c5e1326fe4953
+1a2b01a893e0d8811d5ffe0c78af2f8a15dc9d4eb165b19ef5f14a9e1e8be898
 ```
 
 This computation is local/provider-free. This PR does **not** create runtime code for it.
