@@ -11,6 +11,7 @@ import { pickDisplaySpread, selectBookSpreadSnapshots } from '@/lib/market-line-
 import { computeProductionCoreV1HmaFromV1Ratings } from '@/lib/shadow-snapshot-v1';
 import {
   SHADOW_MODEL_ALLOWLIST,
+  SHADOW_MODEL_COMMIT_ALLOWLIST,
   UNAVAILABLE_REASON_ORDER,
   canonicalJsonString,
   sha256CanonicalJson,
@@ -18,6 +19,9 @@ import {
   planShadowModelCaptureRun,
   executeShadowModelCapture,
   expectedShadowModelWriteConfirmation,
+  isShadowModelAllowlisted,
+  isShadowModelCommitAllowlisted,
+  shadowModelCommitAuthorizationError,
   validateCaptureContext,
   fingerprintOfficialFlat100BetRows,
   MAX_SHADOW_MODEL_MARKET_AGE_MS,
@@ -231,8 +235,36 @@ describe('Shadow Model Capture V1 — definition hashes', () => {
     );
   });
 
-  it('allowlist contains only core_v1_shadow_baseline_v1 in this PR', () => {
-    expect(SHADOW_MODEL_ALLOWLIST).toEqual([CORE_V1_SHADOW_BASELINE_MODEL_ID]);
+  it('general allowlist includes Core and Candidate B; COMMIT allowlist remains Core-only', () => {
+    expect(SHADOW_MODEL_ALLOWLIST).toEqual([
+      CORE_V1_SHADOW_BASELINE_MODEL_ID,
+      'candidate_b_roster_prior_v1',
+    ]);
+    expect(isShadowModelAllowlisted(CORE_V1_SHADOW_BASELINE_MODEL_ID)).toBe(true);
+    expect(isShadowModelAllowlisted('candidate_b_roster_prior_v1')).toBe(true);
+    expect(SHADOW_MODEL_COMMIT_ALLOWLIST).toEqual([CORE_V1_SHADOW_BASELINE_MODEL_ID]);
+    expect(isShadowModelCommitAllowlisted(CORE_V1_SHADOW_BASELINE_MODEL_ID)).toBe(true);
+    expect(isShadowModelCommitAllowlisted('candidate_b_roster_prior_v1')).toBe(false);
+  });
+
+  it('Candidate B COMMIT is blocked even when confirmation syntax is valid', () => {
+    const confirmation = expectedShadowModelWriteConfirmation(3, 'candidate_b_roster_prior_v1');
+    expect(confirmation).toBe(
+      'CAPTURE_2026_WEEK_3_SHADOW_MODEL_candidate_b_roster_prior_v1'
+    );
+    expect(
+      shadowModelCommitAuthorizationError('COMMIT', 'candidate_b_roster_prior_v1')
+    ).toEqual({
+      error: 'model_id_not_commit_allowlisted',
+      modelId: 'candidate_b_roster_prior_v1',
+      mode: 'COMMIT',
+    });
+    expect(
+      shadowModelCommitAuthorizationError('PREVIEW', 'candidate_b_roster_prior_v1')
+    ).toBeNull();
+    expect(
+      shadowModelCommitAuthorizationError('COMMIT', CORE_V1_SHADOW_BASELINE_MODEL_ID)
+    ).toBeNull();
   });
 
   it('keeps Core unavailable-reason order and inserts team_feature_vector_unavailable before markets', () => {
