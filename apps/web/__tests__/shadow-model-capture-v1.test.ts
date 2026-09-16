@@ -235,36 +235,40 @@ describe('Shadow Model Capture V1 — definition hashes', () => {
     );
   });
 
-  it('general allowlist includes Core and Candidate B; COMMIT allowlist remains Core-only', () => {
+  it('general allowlist and COMMIT allowlist include Core and Candidate B', () => {
     expect(SHADOW_MODEL_ALLOWLIST).toEqual([
       CORE_V1_SHADOW_BASELINE_MODEL_ID,
       'candidate_b_roster_prior_v1',
     ]);
     expect(isShadowModelAllowlisted(CORE_V1_SHADOW_BASELINE_MODEL_ID)).toBe(true);
     expect(isShadowModelAllowlisted('candidate_b_roster_prior_v1')).toBe(true);
-    expect(SHADOW_MODEL_COMMIT_ALLOWLIST).toEqual([CORE_V1_SHADOW_BASELINE_MODEL_ID]);
+    expect(SHADOW_MODEL_COMMIT_ALLOWLIST).toEqual([
+      CORE_V1_SHADOW_BASELINE_MODEL_ID,
+      'candidate_b_roster_prior_v1',
+    ]);
     expect(isShadowModelCommitAllowlisted(CORE_V1_SHADOW_BASELINE_MODEL_ID)).toBe(true);
-    expect(isShadowModelCommitAllowlisted('candidate_b_roster_prior_v1')).toBe(false);
+    expect(isShadowModelCommitAllowlisted('candidate_b_roster_prior_v1')).toBe(true);
   });
 
-  it('Candidate B COMMIT is blocked even when confirmation syntax is valid', () => {
+  it('Candidate B COMMIT is allowlisted; exact confirmation remains frozen; unknown models stay blocked', () => {
     const confirmation = expectedShadowModelWriteConfirmation(3, 'candidate_b_roster_prior_v1');
     expect(confirmation).toBe(
       'CAPTURE_2026_WEEK_3_SHADOW_MODEL_candidate_b_roster_prior_v1'
     );
     expect(
       shadowModelCommitAuthorizationError('COMMIT', 'candidate_b_roster_prior_v1')
-    ).toEqual({
-      error: 'model_id_not_commit_allowlisted',
-      modelId: 'candidate_b_roster_prior_v1',
-      mode: 'COMMIT',
-    });
+    ).toBeNull();
     expect(
       shadowModelCommitAuthorizationError('PREVIEW', 'candidate_b_roster_prior_v1')
     ).toBeNull();
     expect(
       shadowModelCommitAuthorizationError('COMMIT', CORE_V1_SHADOW_BASELINE_MODEL_ID)
     ).toBeNull();
+    expect(shadowModelCommitAuthorizationError('COMMIT', 'not_a_shadow_model')).toEqual({
+      error: 'model_id_not_commit_allowlisted',
+      modelId: 'not_a_shadow_model',
+      mode: 'COMMIT',
+    });
   });
 
   it('keeps Core unavailable-reason order and inserts team_feature_vector_unavailable before markets', () => {
