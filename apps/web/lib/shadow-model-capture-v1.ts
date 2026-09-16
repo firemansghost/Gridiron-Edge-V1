@@ -26,7 +26,10 @@ export const SHADOW_MODEL_ALLOWLIST = [
 ] as const;
 export type ShadowModelAllowlistId = (typeof SHADOW_MODEL_ALLOWLIST)[number];
 
-export const SHADOW_MODEL_COMMIT_ALLOWLIST = ['core_v1_shadow_baseline_v1'] as const;
+export const SHADOW_MODEL_COMMIT_ALLOWLIST = [
+  'core_v1_shadow_baseline_v1',
+  'candidate_b_roster_prior_v1',
+] as const;
 export type ShadowModelCommitAllowlistId = (typeof SHADOW_MODEL_COMMIT_ALLOWLIST)[number];
 
 export type ShadowModelCaptureMode = 'PREVIEW' | 'COMMIT';

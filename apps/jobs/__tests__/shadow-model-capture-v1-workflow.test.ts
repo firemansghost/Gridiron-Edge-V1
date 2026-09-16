@@ -38,22 +38,26 @@ describe('Shadow Model Capture V1 workflow', () => {
     expect(wf).toMatch(/default:\s*PREVIEW/);
   });
 
-  it('allowlists Core PREVIEW+COMMIT and Candidate B PREVIEW only', () => {
+  it('allowlists Core and Candidate B for PREVIEW and COMMIT', () => {
     expect(wf).toContain('core_v1_shadow_baseline_v1');
     expect(wf).toContain('candidate_b_roster_prior_v1');
     expect(wf).toMatch(
       /options:\s*\n\s*- core_v1_shadow_baseline_v1\s*\n\s*- candidate_b_roster_prior_v1/
     );
     expect(wf).not.toContain('wepa_shadow');
-    expect(wf).toContain('Candidate B V1 COMMIT is not authorized.');
+    expect(wf).not.toContain('Candidate B V1 COMMIT is not authorized.');
     const preflight = stepBlock(wf, 'Preflight (names/presence only)');
     const capture = stepBlock(wf, 'Run guarded Shadow Model capture');
     expect(preflight).toContain('candidate_b_roster_prior_v1');
-    expect(preflight).toContain('Candidate B V1 COMMIT is not authorized.');
-    expect(capture).toContain('Candidate B V1 COMMIT is not authorized.');
-    expect(capture.indexOf('Candidate B V1 COMMIT is not authorized.')).toBeLessThan(
-      capture.indexOf('npx tsx apps/jobs/capture-shadow-model-predictions-2026.ts')
+    expect(preflight).toContain('core_v1_shadow_baseline_v1');
+    expect(preflight).toContain(
+      'COMMIT requires confirm=${EXPECTED}'
     );
+    expect(preflight).toContain(
+      'CAPTURE_2026_WEEK_${INPUT_WEEK}_SHADOW_MODEL_${INPUT_MODEL_ID}'
+    );
+    expect(preflight).not.toContain('Candidate B V1 COMMIT is not authorized.');
+    expect(capture).not.toContain('Candidate B V1 COMMIT is not authorized.');
     expect(cli).toContain('isShadowModelAllowlisted');
     expect(cli).toContain('shadowModelCommitAuthorizationError');
     const mainSrc = cli.slice(cli.indexOf('async function main()'));

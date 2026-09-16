@@ -9,9 +9,11 @@
 # Does NOT call CFBD / Odds / weather. Does NOT run Prisma migrate.
 #
 # PREVIEW allowlist: core_v1_shadow_baseline_v1 and candidate_b_roster_prior_v1.
-# COMMIT allowlist: core_v1_shadow_baseline_v1 only.
-# Candidate B COMMIT is mechanically blocked in this workflow and in the CLI.
-# Candidate B production COMMIT remains NOT AUTHORIZED; separate authorization is required after independent PREVIEW review.
+# COMMIT allowlist: core_v1_shadow_baseline_v1 and candidate_b_roster_prior_v1.
+# Candidate B is technically COMMIT-enabled after the successful independent PREVIEW gate.
+# A production COMMIT still requires explicit per-run operator authorization
+# and the exact confirmation string. Merging this workflow change does not
+# itself authorize a production run.
 #
 # Security:
 # - Dispatch inputs reach shell only via step-level env (never ${{ inputs.* }} inside run:).
@@ -152,10 +154,6 @@ jobs:
             echo "::error::mode must be PREVIEW or COMMIT"
             exit 1
           fi
-          if [ "$INPUT_MODE" = "COMMIT" ] && [ "$INPUT_MODEL_ID" = "candidate_b_roster_prior_v1" ]; then
-            echo "::error::Candidate B V1 COMMIT is not authorized."
-            exit 1
-          fi
           if [ -z "$INPUT_CAPTURE_CONTEXT" ]; then
             echo "::error::capture_context is required"
             exit 1
@@ -189,10 +187,6 @@ jobs:
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
         run: |
           set -euo pipefail
-          if [ "$INPUT_MODE" = "COMMIT" ] && [ "$INPUT_MODEL_ID" = "candidate_b_roster_prior_v1" ]; then
-            echo "::error::Candidate B V1 COMMIT is not authorized."
-            exit 1
-          fi
           mkdir -p reports
           if [ "$INPUT_MODE" = "COMMIT" ]; then
             npx tsx apps/jobs/capture-shadow-model-predictions-2026.ts \
