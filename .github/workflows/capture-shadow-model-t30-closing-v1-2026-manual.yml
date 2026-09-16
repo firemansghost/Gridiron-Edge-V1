@@ -1,0 +1,233 @@
+# Manual GUARDED 2026 Generic Shadow Model T-30 Closing V1 capture.
+# workflow_dispatch ONLY — no schedule, push, pull_request, or workflow_run.
+# PREVIEW by default. COMMIT requires mode=COMMIT and
+# confirm=CAPTURE_2026_WEEK_<week>_SHADOW_MODEL_T30_<capture_run_id>.
+#
+# PREVIEW: production DB SELECT only; providerCalls=0; zero writes.
+# COMMIT: serializable append-only insert into
+# ShadowModelClosingMarketSnapshot only.
+#
+# no providers
+# no prediction writes
+# no Hybrid writes
+# no Bet writes
+# no MatchupOutput writes
+# no evaluation writes
+# no migration
+#
+# Uses persisted oddsapi spread MarketLine rows only.
+# Does NOT run Live Odds, Generic prediction capture, or Prisma migrate.
+# Merging this workflow does NOT authorize PREVIEW or COMMIT.
+
+name: Capture Generic Shadow Model T-30 Closing V1 2026 (Manual, Guarded)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (must be 2026)'
+        required: true
+        type: string
+        default: '2026'
+      week:
+        description: 'CFB week (positive integer)'
+        required: true
+        type: string
+      capture_run_id:
+        description: 'Exact persisted Generic ShadowModelCaptureRun primary key'
+        required: true
+        type: string
+      mode:
+        description: 'PREVIEW (DB read-only) or COMMIT (append-only Generic T-30 closing rows)'
+        required: true
+        type: choice
+        options:
+          - PREVIEW
+          - COMMIT
+        default: PREVIEW
+      expected_main_sha:
+        description: 'Exact main commit SHA authorized for this capture'
+        required: true
+        type: string
+      confirm:
+        description: 'For COMMIT, type CAPTURE_2026_WEEK_<week>_SHADOW_MODEL_T30_<capture_run_id> exactly'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: generic-shadow-model-t30-closing-v1-production-capture
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Source SHA guard
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA=$(git rev-parse HEAD)
+          echo "ACTUAL_SHA=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+          echo "actual_sha: ${ACTUAL_SHA}"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          echo "github_ref: ${GITHUB_REF:-}"
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Refusing Generic Shadow T-30 capture. Workflow must run from main."
+            echo "::error::github_ref=${GITHUB_REF:-}"
+            exit 1
+          fi
+          if [ -z "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing Generic Shadow T-30 capture. expected_main_sha is required."
+            exit 1
+          fi
+          if [ "${ACTUAL_SHA}" != "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing Generic Shadow T-30 capture. Checked-out SHA does not match expected_main_sha."
+            echo "::error::actual_sha=${ACTUAL_SHA}"
+            echo "::error::expected_main_sha=${EXPECTED_MAIN_SHA}"
+            exit 1
+          fi
+          echo "Source SHA guard passed."
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight (names/presence only)
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+          INPUT_CAPTURE_RUN_ID: ${{ inputs.capture_run_id }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          echo "season=${INPUT_SEASON}"
+          echo "week=${INPUT_WEEK}"
+          echo "capture_run_id=${INPUT_CAPTURE_RUN_ID}"
+          echo "mode=${INPUT_MODE}"
+          echo "PREVIEW IS DATABASE READ-ONLY"
+          echo "providerCalls=0"
+          echo "persisted MarketLine only"
+          echo "PREVIEW timestamp will NOT become the COMMIT capture timestamp"
+          echo "ODDS_API_KEY: not provided"
+          echo "CFBD_API_KEY: not provided"
+          echo "SGO_API_KEY: not provided"
+          echo "VISUALCROSSING_API_KEY: not provided"
+
+          if [ "$INPUT_SEASON" != "2026" ]; then
+            echo "::error::season must equal 2026 (got ${INPUT_SEASON})"
+            exit 1
+          fi
+          if ! [[ "$INPUT_WEEK" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::week must be a positive integer"
+            exit 1
+          fi
+          if [ -z "$INPUT_CAPTURE_RUN_ID" ]; then
+            echo "::error::capture_run_id is required"
+            exit 1
+          fi
+          if [ "$INPUT_MODE" != "PREVIEW" ] && [ "$INPUT_MODE" != "COMMIT" ]; then
+            echo "::error::mode must be PREVIEW or COMMIT"
+            exit 1
+          fi
+          EXPECTED_CONFIRM="CAPTURE_2026_WEEK_${INPUT_WEEK}_SHADOW_MODEL_T30_${INPUT_CAPTURE_RUN_ID}"
+          if [ "$INPUT_MODE" = "COMMIT" ] && [ "$INPUT_CONFIRM" != "$EXPECTED_CONFIRM" ]; then
+            echo "::error::COMMIT requires confirm=${EXPECTED_CONFIRM}"
+            exit 1
+          fi
+          echo "Preflight OK (no production DB secret in this step)"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prisma version
+        run: npx prisma -v
+
+      - name: Run guarded Generic Shadow Model T-30 Closing V1 capture
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+          INPUT_CAPTURE_RUN_ID: ${{ inputs.capture_run_id }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          REPORT="reports/generic-shadow-model-t30-closing-v1-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-${INPUT_CAPTURE_RUN_ID}-${INPUT_MODE}.json"
+          if [ "$INPUT_MODE" = "COMMIT" ]; then
+            npx tsx apps/jobs/capture-shadow-model-t30-closing-v1-2026.ts \
+              --season "$INPUT_SEASON" \
+              --week "$INPUT_WEEK" \
+              --capture-run-id "$INPUT_CAPTURE_RUN_ID" \
+              --mode COMMIT \
+              --confirm "$INPUT_CONFIRM" \
+              --report "$REPORT"
+          else
+            npx tsx apps/jobs/capture-shadow-model-t30-closing-v1-2026.ts \
+              --season "$INPUT_SEASON" \
+              --week "$INPUT_WEEK" \
+              --capture-run-id "$INPUT_CAPTURE_RUN_ID" \
+              --mode PREVIEW \
+              --report "$REPORT"
+          fi
+
+      - name: Upload Generic Shadow Model T-30 Closing V1 report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generic-shadow-model-t30-closing-v1-2026-w${{ inputs.week }}-${{ inputs.capture_run_id }}-${{ inputs.mode }}
+          path: reports/generic-shadow-model-t30-closing-v1-2026-*.json
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+          INPUT_CAPTURE_RUN_ID: ${{ inputs.capture_run_id }}
+          INPUT_MODE: ${{ inputs.mode }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "==================================================="
+          echo "GENERIC SHADOW MODEL T-30 CLOSING V1 (MANUAL, GUARDED)"
+          echo "==================================================="
+          echo "season: ${INPUT_SEASON}"
+          echo "week: ${INPUT_WEEK}"
+          echo "capture_run_id: ${INPUT_CAPTURE_RUN_ID}"
+          echo "mode: ${INPUT_MODE}"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          if [ -n "${ACTUAL_SHA:-}" ]; then
+            echo "actual_sha: ${ACTUAL_SHA}"
+          else
+            echo "actual_sha: (unavailable)"
+          fi
+          echo "status: ${JOB_STATUS}"
+          echo "providerCalls=0"
+          echo "ShadowModelClosingMarketSnapshot: only possible write target"
+          echo "ShadowModelPrediction writes: false"
+          echo "ShadowModelCaptureRun writes: false"
+          echo "Hybrid ShadowClosingMarketSnapshot writes: false"
+          echo "ShadowEvaluationResult writes: false"
+          echo "Bet writes: false"
+          echo "MatchupOutput writes: false"
+          echo "Game writes: false"
+          echo "MarketLine writes: false"
+          echo "prisma migrate: not invoked"
+          echo "no after-T-30 fall-forward"
+          echo "no postkick backfill"
+          echo "PREVIEW timestamp will NOT become COMMIT timestamp"
+          echo "==================================================="
