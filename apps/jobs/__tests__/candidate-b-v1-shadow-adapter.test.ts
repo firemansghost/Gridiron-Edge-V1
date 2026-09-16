@@ -1,0 +1,388 @@
+/**
+ * Candidate B V1 Generic Shadow adapter tests.
+ * No DATABASE_URL. No providers. No PREVIEW/COMMIT. No production writes.
+ */
+
+import * as fs from 'fs';
+import * as path from 'path';
+import { computeEffectiveHfa } from '../../web/lib/core-v1-spread';
+import { SPREAD_EDGE_FLOOR, LIVE_ODDS_SOURCE } from '../../web/lib/core-v1-weekly-card';
+import {
+  SHADOW_MODEL_ALLOWLIST,
+  isShadowModelAllowlisted,
+  planShadowModelCaptureRun,
+  sha256CanonicalJson,
+  type FrozenShadowFeatureSnapshot,
+  type OperationalShadowModelFrame,
+} from '../../web/lib/shadow-model-capture-v1';
+import { CORE_V1_SHADOW_BASELINE_MODEL_ID } from '../../web/lib/shadow-models/core-v1-shadow-baseline-v1';
+import {
+  FEATURE_DEFINITION_HASH,
+  FEATURE_DEFINITION_ID,
+  FEATURE_DEFINITION_MANIFEST,
+  FEATURE_DEFINITION_VERSION,
+} from '../src/research/candidate-b/candidate-b-v1-feature-snapshot';
+import { CANDIDATE_B_FROZEN_FEATURE_SNAPSHOT_HASH } from '../src/research/candidate-b/candidate-b-v1-runtime-snapshot';
+import {
+  CANDIDATE_B_GENERIC_SHADOW_MODEL_DEFINITION_HASH,
+  CANDIDATE_B_GENERIC_SHADOW_MODEL_ID,
+  CANDIDATE_B_GENERIC_SHADOW_POLICY_DEFINITION_HASH,
+  CANDIDATE_B_V1_GENERIC_SHADOW_ADAPTER_CONTRACT_HASH,
+  FROZEN_CANDIDATE_B_FEATURE_DEFINITION_HASH,
+  FROZEN_CANDIDATE_B_GENERIC_SHADOW_MODEL_DEFINITION_HASH,
+  FROZEN_CANDIDATE_B_GENERIC_SHADOW_POLICY_DEFINITION_HASH,
+  FROZEN_CANDIDATE_B_V1_GENERIC_SHADOW_ADAPTER_CONTRACT_HASH,
+  computeCandidateBShadowHma,
+  createCandidateBRosterPriorShadowDefinition,
+} from '../src/research/candidate-b/candidate-b-v1-shadow-adapter';
+
+const NOW = new Date('2026-09-13T16:00:00.000Z');
+const KICKOFF = new Date('2026-09-13T19:00:00.000Z');
+const MARKET_TS = new Date('2026-09-13T15:50:00.000Z');
+const REPO_SHA = 'a'.repeat(40);
+const ROOT = path.resolve(__dirname, '../../..');
+const CLI = path.join(ROOT, 'apps/jobs/capture-shadow-model-predictions-2026.ts');
+const WF = path.join(
+  ROOT,
+  '.github/workflows/capture-shadow-model-predictions-2026-manual.yml'
+);
+
+function teamRow(
+  teamId: string,
+  points: number | null,
+  extra: Partial<FrozenShadowFeatureSnapshot['teamsById'][string]> = {}
+) {
+  return {
+    teamId,
+    season: 2026,
+    availabilityStatus: points == null ? 'UNAVAILABLE' : 'AVAILABLE',
+    unavailableReasons: points == null ? ['TEAM_FEATURE_VECTOR_UNAVAILABLE'] : [],
+    priorCoreRaw: points == null ? null : 1,
+    talentRaw: points == null ? null : 2,
+    returningRaw: points == null ? null : 0.3,
+    portalRaw: points == null ? null : 0.01,
+    zCore: points == null ? null : 0.4,
+    zTalent: points == null ? null : -0.2,
+    zReturning: points == null ? null : 0.1,
+    zPortal: points == null ? null : 0.05,
+    candidateBRawComposite: points == null ? null : 0.08,
+    candidateBCompositeZ: points == null ? null : points / 3.5,
+    candidateBTeamRatingPoints: points,
+    rowHash: `row-${teamId}`,
+    ...extra,
+  };
+}
+
+function snapshot(teamsById: FrozenShadowFeatureSnapshot['teamsById']): FrozenShadowFeatureSnapshot {
+  return {
+    parentId: 'parent-b',
+    season: 2026,
+    snapshotHash: CANDIDATE_B_FROZEN_FEATURE_SNAPSHOT_HASH,
+    featureDefinitionId: FEATURE_DEFINITION_ID,
+    featureDefinitionVersion: FEATURE_DEFINITION_VERSION,
+    featureDefinitionHash: FEATURE_DEFINITION_HASH,
+    derivationDefinitionId: 'candidate_b_roster_prior_derivation_v1',
+    derivationDefinitionHash: '6c04627787edbcc7d1d42549f3cb19c525a6c4c31de572549f01e3efa64a638c',
+    sourceManifestHash: '183e07cec8ab146247f8b15eda93331a1dfe03f624b06fd8b0dae886d14b14d6',
+    sourceProvenanceManifestHash: '89ea635c89898aa2de5fad66a43e6eca36ef917f6945cc82635536746347f8da',
+    normalizationManifestHash: '9de2fdbf94581f05671349111ae36e458c94ac637b93e8db0eaea701abdeaa96',
+    populationManifestHash: 'ce7a633f3230864c785048047698a3ba55fef1e25339e87db2a090bd65c59f2c',
+    expectedTeamCount: 138,
+    rowCount: 138,
+    completeVectorCount: 103,
+    unavailableVectorCount: 35,
+    portalAvailableCount: 104,
+    teamsById,
+  };
+}
+
+function coherentPair() {
+  return [
+    {
+      id: 'ml-home',
+      gameId: 'g1',
+      lineType: 'spread',
+      lineValue: -3.5,
+      teamId: 'home',
+      bookName: 'book-a',
+      source: LIVE_ODDS_SOURCE,
+      timestamp: MARKET_TS,
+    },
+    {
+      id: 'ml-away',
+      gameId: 'g1',
+      lineType: 'spread',
+      lineValue: 3.5,
+      teamId: 'away',
+      bookName: 'book-a',
+      source: LIVE_ODDS_SOURCE,
+      timestamp: MARKET_TS,
+    },
+  ];
+}
+
+function frame(extra: Partial<OperationalShadowModelFrame> = {}): OperationalShadowModelFrame {
+  return {
+    games: [
+      {
+        id: 'g1',
+        season: 2026,
+        week: 3,
+        homeTeamId: 'home',
+        awayTeamId: 'away',
+        kickoffTimestamp: KICKOFF,
+        neutralSite: false,
+      },
+    ],
+    ratings: [
+      {
+        teamId: 'home',
+        season: 2026,
+        modelVersion: 'v1',
+        powerRating: 99,
+        rating: 99,
+        createdAt: new Date('2026-08-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-08-01T00:00:00.000Z'),
+      },
+      {
+        teamId: 'away',
+        season: 2026,
+        modelVersion: 'v1',
+        powerRating: 1,
+        rating: 1,
+        createdAt: new Date('2026-08-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-08-01T00:00:00.000Z'),
+      },
+    ],
+    marketLines: coherentPair(),
+    frozenFeatureSnapshots: [
+      snapshot({
+        home: teamRow('home', 4),
+        away: teamRow('away', 1),
+      }),
+    ],
+    ...extra,
+  };
+}
+
+function plan(frameInput: OperationalShadowModelFrame = frame()) {
+  return planShadowModelCaptureRun({
+    season: 2026,
+    week: 3,
+    mode: 'PREVIEW',
+    captureContext: 'candidate_b_adapter',
+    confirmation: '',
+    repoCommitSha: REPO_SHA,
+    predictionTimestamp: NOW,
+    frame: frameInput,
+    model: createCandidateBRosterPriorShadowDefinition(),
+  });
+}
+
+describe('Candidate B Generic Shadow canonical identities', () => {
+  it('freezes exact model, policy, adapter, and feature hashes', () => {
+    expect(CANDIDATE_B_GENERIC_SHADOW_MODEL_DEFINITION_HASH).toBe(
+      FROZEN_CANDIDATE_B_GENERIC_SHADOW_MODEL_DEFINITION_HASH
+    );
+    expect(CANDIDATE_B_GENERIC_SHADOW_POLICY_DEFINITION_HASH).toBe(
+      FROZEN_CANDIDATE_B_GENERIC_SHADOW_POLICY_DEFINITION_HASH
+    );
+    expect(CANDIDATE_B_V1_GENERIC_SHADOW_ADAPTER_CONTRACT_HASH).toBe(
+      FROZEN_CANDIDATE_B_V1_GENERIC_SHADOW_ADAPTER_CONTRACT_HASH
+    );
+    expect(FEATURE_DEFINITION_HASH).toBe(FROZEN_CANDIDATE_B_FEATURE_DEFINITION_HASH);
+    expect(sha256CanonicalJson(FEATURE_DEFINITION_MANIFEST)).toBe(FEATURE_DEFINITION_HASH);
+    const model = createCandidateBRosterPriorShadowDefinition();
+    expect(model.featureDefinitionId).toBe(FEATURE_DEFINITION_ID);
+    expect(model.featureDefinitionVersion).toBe(FEATURE_DEFINITION_VERSION);
+    expect(sha256CanonicalJson(model.featureDefinitionManifest)).toBe(FEATURE_DEFINITION_HASH);
+  });
+});
+
+describe('Candidate B Generic Shadow adapter', () => {
+  it('uses Candidate B ratings plus Core HFA exactly once, not Core ratings', () => {
+    const result = plan();
+    const row = result.predictions[0];
+    const hfa = computeEffectiveHfa('home', false);
+    const expected = computeCandidateBShadowHma({
+      homeTeamId: 'home',
+      homeCandidateBTeamRatingPoints: 4,
+      awayCandidateBTeamRatingPoints: 1,
+      neutralSite: false,
+    });
+    expect(expected).toBeCloseTo(4 - 1 + hfa.effectiveHfa, 10);
+    expect(row.modelValue).toBeCloseTo(expected, 10);
+    expect(row.modelValue).not.toBeCloseTo(99 - 1 + hfa.effectiveHfa, 5);
+    expect(row.featureProvenance).toMatchObject({
+      hfa: {
+        effectiveHfa: hfa.effectiveHfa,
+        baseHfa: hfa.baseHfa,
+        teamAdjustment: hfa.teamAdjustment,
+        rawHfa: hfa.rawHfa,
+      },
+    });
+  });
+
+  it('neutral site HFA is 0', () => {
+    const result = plan(
+      frame({
+        games: [
+          {
+            id: 'g1',
+            season: 2026,
+            week: 3,
+            homeTeamId: 'home',
+            awayTeamId: 'away',
+            kickoffTimestamp: KICKOFF,
+            neutralSite: true,
+          },
+        ],
+      })
+    );
+    expect(result.predictions[0].modelValue).toBeCloseTo(3, 10);
+    expect((result.predictions[0].featureProvenance as { hfa: { effectiveHfa: number } }).hfa.effectiveHfa).toBe(0);
+  });
+
+  it('emits team_feature_vector_unavailable without missing_rating or zero-fill', () => {
+    const missingAway = plan(
+      frame({
+        frozenFeatureSnapshots: [
+          snapshot({
+            home: teamRow('home', 4),
+            away: teamRow('away', null),
+          }),
+        ],
+      })
+    );
+    expect(missingAway.predictions[0].predictionStatus).toBe('UNAVAILABLE');
+    expect(missingAway.predictions[0].unavailableReasons).toEqual([
+      'team_feature_vector_unavailable',
+    ]);
+    expect(missingAway.predictions[0].unavailableReasons).not.toContain('missing_rating');
+    expect(missingAway.predictions[0].modelValue).toBeNull();
+    expect(
+      (missingAway.predictions[0].inputPayload as { away: { candidateBTeamRatingPoints: number | null } })
+        .away.candidateBTeamRatingPoints
+    ).toBeNull();
+
+    const missingRow = plan(
+      frame({
+        frozenFeatureSnapshots: [snapshot({ home: teamRow('home', 4) })],
+      })
+    );
+    expect(missingRow.predictions[0].unavailableReasons).toEqual([
+      'team_feature_vector_unavailable',
+    ]);
+    expect(missingRow.predictions[0].unavailableReasons).not.toContain('missing_rating');
+  });
+
+  it('selects HOME/AWAY through getATSPick and NO_SELECTION below the 0.1 floor', () => {
+    const home = plan();
+    expect(home.predictions[0].selectedSide).toBe('HOME');
+    expect(home.predictions[0].selectedTeamId).toBe('home');
+    expect((home.predictions[0].modelOutput as { edgeFloor: number }).edgeFloor).toBe(
+      SPREAD_EDGE_FLOOR
+    );
+    expect(home.predictions[0].predictionPickValue).toBeCloseTo(-3.5, 10);
+
+    const hfa = computeEffectiveHfa('home', false);
+    const noSelHomePoints = 3.5 - hfa.effectiveHfa;
+    const noSel = plan(
+      frame({
+        frozenFeatureSnapshots: [
+          snapshot({
+            home: teamRow('home', noSelHomePoints),
+            away: teamRow('away', 0),
+          }),
+        ],
+      })
+    );
+    expect(noSel.predictions[0].modelValue).toBeCloseTo(3.5, 10);
+    expect(noSel.predictions[0].selectedSide).toBe('NO_SELECTION');
+    expect(noSel.predictions[0].predictionStatus).toBe('AVAILABLE');
+    expect(noSel.predictions[0].selectedTeamId).toBeNull();
+    expect(noSel.predictions[0].predictionPickValue).toBeNull();
+
+    const away = plan(
+      frame({
+        frozenFeatureSnapshots: [
+          snapshot({
+            home: teamRow('home', -6),
+            away: teamRow('away', 6),
+          }),
+        ],
+      })
+    );
+    expect(away.predictions[0].selectedSide).toBe('AWAY');
+    expect(away.predictions[0].selectedTeamId).toBe('away');
+    expect(away.predictions[0].predictionPickValue).toBeCloseTo(3.5, 10);
+  });
+
+  it('records full home/away payload and provenance without the 138-team snapshot', () => {
+    const row = plan().predictions[0];
+    const payload = row.inputPayload as Record<string, unknown>;
+    const home = payload.home as Record<string, unknown>;
+    const away = payload.away as Record<string, unknown>;
+    for (const side of [home, away]) {
+      expect(side).toEqual(
+        expect.objectContaining({
+          teamId: expect.any(String),
+          rowHash: expect.any(String),
+          priorCoreRaw: expect.any(Number),
+          talentRaw: expect.any(Number),
+          returningRaw: expect.any(Number),
+          portalRaw: expect.any(Number),
+          zCore: expect.any(Number),
+          zTalent: expect.any(Number),
+          zReturning: expect.any(Number),
+          zPortal: expect.any(Number),
+          candidateBRawComposite: expect.any(Number),
+          candidateBCompositeZ: expect.any(Number),
+          candidateBTeamRatingPoints: expect.any(Number),
+        })
+      );
+    }
+    expect(payload.featureSnapshotHash).toBe(CANDIDATE_B_FROZEN_FEATURE_SNAPSHOT_HASH);
+    expect(payload.hfa).toEqual(
+      expect.objectContaining({
+        homeTeamId: 'home',
+        neutralSite: false,
+        effectiveHfa: expect.any(Number),
+        baseHfa: expect.any(Number),
+        teamAdjustment: expect.any(Number),
+        rawHfa: expect.any(Number),
+      })
+    );
+    expect(payload.market).toEqual(
+      expect.objectContaining({
+        selectedMarketLineId: 'ml-home',
+        canonicalMarketValue: 3.5,
+        marketSource: LIVE_ODDS_SOURCE,
+      })
+    );
+    expect(payload).not.toHaveProperty('teamsById');
+    expect(payload).not.toHaveProperty('teams');
+    const provenance = row.featureProvenance as Record<string, unknown>;
+    expect(provenance.snapshotParentId).toBe('parent-b');
+    expect(provenance.snapshotHash).toBe(CANDIDATE_B_FROZEN_FEATURE_SNAPSHOT_HASH);
+    expect(JSON.stringify(payload)).not.toContain('t137');
+  });
+});
+
+describe('Candidate B Generic Shadow staging safety', () => {
+  it('keeps the production allowlist Core-only', () => {
+    expect(SHADOW_MODEL_ALLOWLIST).toEqual([CORE_V1_SHADOW_BASELINE_MODEL_ID]);
+    expect(isShadowModelAllowlisted(CANDIDATE_B_GENERIC_SHADOW_MODEL_ID)).toBe(false);
+  });
+
+  it('CLI still rejects Candidate B before frame loading', () => {
+    const cli = fs.readFileSync(CLI, 'utf8');
+    const wf = fs.readFileSync(WF, 'utf8');
+    expect(cli.indexOf('isShadowModelAllowlisted')).toBeGreaterThan(-1);
+    expect(cli.indexOf('isShadowModelAllowlisted')).toBeLessThan(
+      cli.indexOf('loadOperationalShadowModelFrame')
+    );
+    expect(wf).not.toContain('candidate_b');
+    expect(wf).toContain('core_v1_shadow_baseline_v1');
+  });
+});

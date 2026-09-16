@@ -995,7 +995,7 @@ describe('Candidate B V1 strict team resolution', () => {
     expect(cli).not.toMatch(/teams:\s*\{\s*create:/);
     expect(cli).toContain('insertCandidateBFeatureSnapshotTeamsExact');
     expect(cli).not.toMatch(/include:\s*\{\s*teams:\s*true\s*\}/);
-    expect(cli).toContain('loadCandidateBFeatureSnapshotTeamsExact');
+    expect(cli).toContain('loadCandidateBPersistedSnapshotByStableIdentity');
   });
 });
 

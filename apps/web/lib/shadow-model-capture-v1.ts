@@ -37,6 +37,7 @@ export const UNAVAILABLE_REASON_ORDER = [
   'post_kickoff',
   'missing_rating',
   'rating_provenance_unavailable',
+  'team_feature_vector_unavailable',
   'missing_market',
   'incoherent_market',
   'stale_market',
@@ -171,10 +172,40 @@ export interface ShadowModelMarketLineRow {
   timestamp: Date | string;
 }
 
+export interface FrozenShadowFeatureTeamRow {
+  teamId: string;
+  season: number;
+  availabilityStatus: string;
+  unavailableReasons: string[];
+  rowHash: string;
+}
+
+export interface FrozenShadowFeatureSnapshot {
+  parentId: string;
+  season: number;
+  snapshotHash: string;
+  featureDefinitionId: string;
+  featureDefinitionVersion: string;
+  featureDefinitionHash: string;
+  derivationDefinitionId: string;
+  derivationDefinitionHash: string;
+  sourceManifestHash: string;
+  sourceProvenanceManifestHash: string;
+  normalizationManifestHash: string;
+  populationManifestHash: string;
+  expectedTeamCount: number;
+  rowCount: number;
+  completeVectorCount: number;
+  unavailableVectorCount: number;
+  portalAvailableCount: number;
+  teamsById: Record<string, FrozenShadowFeatureTeamRow>;
+}
+
 export interface OperationalShadowModelFrame {
   games: ShadowModelGameRow[];
   ratings: ShadowModelRatingRow[];
   marketLines: ShadowModelMarketLineRow[];
+  frozenFeatureSnapshots?: FrozenShadowFeatureSnapshot[];
 }
 
 export interface ShadowModelMarketProvenance {
