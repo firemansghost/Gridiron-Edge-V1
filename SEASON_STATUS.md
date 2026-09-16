@@ -1,12 +1,13 @@
 # Season Status — Gridiron Edge
 
-**Status:** 2026 season active — manual guarded production  
-**Updated:** 2026-09-13 America/Chicago  
-**Evidence-producing runtime baseline:** `e54196faf18e2f1287e85e12b613e65afbc27ca2`  
-**Official production spread model:** Core V1 / `official_flat_100`  
+**Status:** 2026 season active — manual guarded production
+**Updated:** 2026-09-16 America/Chicago
+**Evidence-producing runtime baseline:** `60e5735c820dbd53e3f07de28d5c4c44b8f46b38`
+**Official production spread model:** Core V1 / `official_flat_100`
 **Hybrid V2:** SHADOW / HELD / NOT OFFICIAL
+**Candidate B V1:** SHADOW / RESEARCH ONLY / NOT OFFICIAL
 
-This file is the operator-facing current-state document. Detailed September 8 Phase 4B evidence is in [`docs/2026-09-08-phase4b-closeout.md`](docs/2026-09-08-phase4b-closeout.md). Current workflow authorization is in [`docs/2026-workflow-reactivation-matrix.md`](docs/2026-workflow-reactivation-matrix.md). Generic multi-model Shadow capture notes are in [`docs/SHADOW_MODEL_CAPTURE_V1.md`](docs/SHADOW_MODEL_CAPTURE_V1.md).
+This file is the operator-facing current-state document. Detailed September 8 Phase 4B evidence is in [`docs/2026-09-08-phase4b-closeout.md`](docs/2026-09-08-phase4b-closeout.md). Current workflow authorization is in [`docs/2026-workflow-reactivation-matrix.md`](docs/2026-workflow-reactivation-matrix.md). Generic multi-model Shadow capture notes are in [`docs/SHADOW_MODEL_CAPTURE_V1.md`](docs/SHADOW_MODEL_CAPTURE_V1.md). Candidate B first prospective cohort evidence is in [`docs/2026-09-16-candidate-b-v1-first-prospective-closeout.md`](docs/2026-09-16-candidate-b-v1-first-prospective-closeout.md).
 
 The prior long-form phase archaeology remains available in Git history at the exact pre-closeout baseline:
 
@@ -16,9 +17,9 @@ This consolidation intentionally removes stale historical sections from the live
 
 ---
 
-## CURRENT STATE — 2026-09-13
+## CURRENT STATE — 2026-09-16
 
-The project is **not** globally blocked. Week 2 scores are final. Week 3 is active with a completed Sep 13 Live Odds refresh (57/57 spread+total coverage). Core V1 remains official. Hybrid remains held. The first legitimate prospective Hybrid Shadow cohort remains frozen at 49 games. Week 2 T−30 closing evidence is complete (36 captures / 13 misses). The Generic Core V1 Shadow path has a first prospective production capture for Week 3 (research-only; additive; not an Official Card writer).
+The project is **not** globally blocked. Week 2 scores are final. Week 3 is active with a completed Sep 16 Live Odds refresh (57/57 requested-week match; current MarketLine total **9,404**). Core V1 remains official. Hybrid remains held. Candidate B remains **SHADOW / RESEARCH ONLY / NOT OFFICIAL**. The first legitimate prospective Hybrid Shadow cohort remains frozen at 49 games. Week 2 T−30 closing evidence is complete (36 captures / 13 misses). The Generic Core V1 Shadow path has a first prospective production capture for Week 3. Candidate B now also has a first persisted prospective Week 3 research cohort; that cohort is frozen and must not be replaced. Neither Generic path is an Official Card writer. No blanket future COMMIT authorization exists. No recurring Shadow schedule is authorized.
 
 ### Season posture
 
@@ -35,19 +36,22 @@ The project is **not** globally blocked. Week 2 scores are final. Week 3 is acti
 | Week 2 Hybrid Shadow prediction cohort | **49** persisted |
 | Week 2 T−30 closing | **36 legitimate captures / 13 legitimate misses** |
 | Week 3 schedule | **57 games** |
-| Week 3 Live Odds (current after COMMIT **34784597710**) | **4,171** MarketLine rows; spread **57/57**; total **57/57**; moneyline **53/57**; **9** books |
+| Week 3 Live Odds (current after COMMIT **35127135613**) | **9,404** MarketLine rows; requested-week matched **57/57**; unmatched_both_fbs **0**; unresolved_expected_fbs **0** |
 | Week 3 Official Card | Market refresh complete; Official Card itself **not yet rewritten/previewed** as a separate guarded step; **no official bets written** |
 | 2026 TeamUnitGrades | **COMPLETE / PRODUCTION-PROVEN — 138/138** |
 | Phase 4B Hybrid prediction capture | **IMPLEMENTED + FIRST LEGITIMATE COMMIT PROVEN** (Week 2 cohort frozen) |
 | Phase 4B T−30 closing | **Week 2 complete** (36 / 13) |
 | Phase 4B ATS / CLV / evaluation | **NOT IMPLEMENTED / NOT AUTHORIZED** |
-| Generic multi-model Shadow capture | **MIGRATION DEPLOYED + FIRST WEEK 3 PRODUCTION COMMIT PROVEN**; research-only / additive; future COMMITs **not blanket-authorized** |
+| Generic Shadow allowlist | `core_v1_shadow_baseline_v1` + `candidate_b_roster_prior_v1` (PREVIEW and COMMIT) |
+| Generic Core V1 Shadow | **FIRST WEEK 3 PRODUCTION COMMIT PROVEN** (research-only / additive; run **34785370466**) |
+| Candidate B V1 Generic Shadow | **IMPLEMENTED + FIRST PROSPECTIVE COMMIT PROVEN AND FROZEN**; SHADOW / RESEARCH ONLY; future COMMITs **per-run authorization only** |
+| Candidate B Week 3 cohort | **FROZEN / DO NOT REPLACE** — run **35128215811**; UUID `74234d87-bb32-47c6-927b-6de3d24cfc88` |
 | Shadow automation | **NOT AUTHORIZED** |
 | Recurring production schedules | Operator-stopped unless separately authorized |
 
 ## Verified production snapshot
 
-Historical September 8 verification remains valid for Week 1 / TeamUnitGrades / first Hybrid Shadow cohort. September 13 operator truth:
+Historical September 8 verification remains valid for Week 1 / TeamUnitGrades / first Hybrid Shadow cohort. September 13 Generic Core Shadow proof remains valid. September 16 operator truth:
 
 | Metric | Value |
 |---|---:|
@@ -56,15 +60,24 @@ Historical September 8 verification remains valid for Week 1 / TeamUnitGrades / 
 | Week 2 Hybrid Shadow predictions | **49** |
 | Week 2 T−30 captures / misses | **36 / 13** |
 | Week 3 scheduled games | **57** |
-| Week 3 Live Odds rows after COMMIT **34784597710** | **4,171** |
-| Week 3 Live Odds inserted by that COMMIT | **1,965** |
-| Week 3 spread / total / ML coverage | **57 / 57 / 53** |
+| Week 3 Live Odds rows after COMMIT **35127135613** (current) | **9,404** |
+| Week 3 Live Odds inserted by that COMMIT | **2,618** |
+| Week 3 requested-week match after that COMMIT | **57 / 57** |
 | Week 3 official bets written | **0** |
 | Generic Shadow migration deploy | **34779225982** |
-| Generic Shadow first capture run | `882cf725-9e83-431e-965d-0e97df2da635` |
-| Generic Shadow Week 3 predictions | **57** (AVAILABLE **57** / UNAVAILABLE **0**; selections **57** / NO_SELECTION **0**) |
+| Generic Core Shadow first capture run | `882cf725-9e83-431e-965d-0e97df2da635` |
+| Generic Core Shadow Week 3 predictions | **57** (AVAILABLE **57** / UNAVAILABLE **0**; selections **57** / NO_SELECTION **0**) |
+| Candidate B first PREVIEW | **35123647114** (zero persisted prediction rows) |
+| Candidate B first COMMIT | **35128215811** |
+| Candidate B first capture run | `74234d87-bb32-47c6-927b-6de3d24cfc88` |
+| Candidate B Week 3 predictions | **57** (AVAILABLE **35** / UNAVAILABLE **22**; selections **34** / NO_SELECTION **1**) |
 
-Historical earlier Week 3 Live Odds state (before the Sep 13 refresh): **469 rows / 46 games**. That is **not** current.
+Historical Week 3 Live Odds states that are **not** current:
+
+- before the Sep 13 refresh: **469 rows / 46 games**
+- after Sep 13 COMMIT **34784597710**: **4,171** rows (spread/total 57/57; ML 53/57)
+
+Do not describe **4,171** as the current Week 3 MarketLine count after the Sep 16 refresh.
 
 
 ## Week 1 — formally closed
@@ -123,9 +136,9 @@ Guarded Live Odds COMMIT run **34268896159** persisted the Week 2 market:
 
 Live Odds remains a separate provider-backed stage. Shadow prediction and T−30 capture do not fetch odds themselves.
 
-## Week 3 live market — Sep 13 refresh
+## Week 3 live market — Sep 13 historical refresh
 
-Fresh Live Odds PREVIEW **34784449263** and COMMIT **34784597710** on evidence-producing runtime SHA `e54196faf18e2f1287e85e12b613e65afbc27ca2`:
+Fresh Live Odds PREVIEW **34784449263** and COMMIT **34784597710** on then-current evidence-producing runtime SHA `e54196faf18e2f1287e85e12b613e65afbc27ca2`:
 
 - scheduled games: **57**
 - inserted MarketLine rows: **1,965**
@@ -140,9 +153,31 @@ Fresh Live Odds PREVIEW **34784449263** and COMMIT **34784597710** on evidence-p
 
 Four games lacked moneyline only: Buffalo @ Penn State; Kent State @ Ohio State; UTEP @ Michigan; Western Kentucky @ Indiana.
 
-Earlier historical Week 3 Live Odds state before this refresh was **469 rows / 46 games**. That is not current.
+Earlier historical Week 3 Live Odds state before this refresh was **469 rows / 46 games**. The Sep 13 **4,171** total is **not** current after the Sep 16 refresh below.
 
 Market refresh complete does **not** by itself mean the Official Card has been rewritten. Official Card work remains a separate guarded operator step. No Week 3 official bets have been written.
+
+## Week 3 live market — Sep 16 current checkpoint
+
+A failed Live Odds Week 3 COMMIT **35048532226** fail-closed on `unmatched_both_fbs` after legacy substring resolution mapped **East Texas A&M Lions** → `texas-a-m`. `writeSafe=false`; no production persistence; no DB mutation. PR #130 repaired the identity layer rather than weakening the blocker.
+
+Post-repair COMMIT **35120508141** matched **57 / 57** requested-week games (`unmatched_both_fbs=0`; `unresolved_expected_fbs=0`; `providerCalls=1`; **2,615** rows inserted; post-write verification passed). That refresh supported the Candidate B PREVIEW gate.
+
+Current Week 3 Live Odds checkpoint is COMMIT **35127135613** on SHA `60e5735c820dbd53e3f07de28d5c4c44b8f46b38`, captured immediately before the first Candidate B COMMIT because Generic Shadow itself is `providerCalls=0`:
+
+- scheduled games: **57**
+- matched requested-week: **57**
+- out-of-scope FBS/FCS: **17**
+- outside requested week: **1**
+- unmatched_both_fbs: **0**
+- unresolved_expected_fbs: **0**
+- ambiguous / fuzzy-required: **0 / 0**
+- writeSafe: **true**
+- providerCalls: **1**
+- Odds API credits: **3**
+- rows proposed / inserted: **2,618 / 2,618**
+- postWriteVerificationSucceeded: **true**
+- Week 3 MarketLine total after write: **9,404**
 
 ## Phase 4B — prospective Shadow evidence
 
@@ -204,6 +239,46 @@ Migration deploy run **34779225982** created the additive Generic tables. After 
 
 This is SHADOW / RESEARCH evidence only. It does not rewrite Hybrid Snapshot V1 and does not make Generic Shadow an Official Card writer. Future Generic COMMITs remain guarded/manual and are **not** blanket-authorized.
 
+### Candidate B V1 Generic Shadow — first Week 3 prospective research cohort
+
+Candidate B remains **SHADOW / RESEARCH ONLY / NOT OFFICIAL**. Implementation sequence: adapter contract PR #127, implementation PR #128, PREVIEW enablement PR #129, Live Odds identity repair PR #130, COMMIT-path enablement PR #131. PR #131 enabled the guarded technical path; it did **not** itself authorize a production run.
+
+Frozen feature basis: snapshotHash `0332e24f97c891fd6431280fa7939c467c614714abe207eeb3dc89d466eb1148` (138 rows; 103 complete / 35 unavailable). Runtime pins that exact snapshot. Do not rerun, update, or delete it.
+
+Independent PREVIEW **35123647114** on SHA `611bb4c13663e6b49b648ef9333797461a493ca5`:
+
+- model: `candidate_b_roster_prior_v1`
+- capture context: `candidate_b_w3_first_observation`
+- games: **57**
+- AVAILABLE / UNAVAILABLE: **35 / 22**
+- selections / NO_SELECTION: **34 / 1**
+- all 22 unavailable: `team_feature_vector_unavailable`
+- unexpected market/runtime reasons: **0**
+- providerCalls: **0**
+- mutationsInvoked: **false**
+- PREVIEW wrote **zero** Shadow prediction rows
+
+Separately authorized COMMIT **35128215811** on SHA `60e5735c820dbd53e3f07de28d5c4c44b8f46b38`:
+
+- exact confirmation: `CAPTURE_2026_WEEK_3_SHADOW_MODEL_candidate_b_roster_prior_v1`
+- capture run UUID: `74234d87-bb32-47c6-927b-6de3d24cfc88`
+- prediction timestamp: `2026-09-16T17:27:24Z`
+- selected market timestamp: `2026-09-16T17:16:34Z`
+- market age: **651 seconds** (ceiling 1,800)
+- games persisted: **57**
+- AVAILABLE / UNAVAILABLE: **35 / 22**
+- selections / NO_SELECTION: **34 / 1**
+- sides: **21 AWAY / 13 HOME**
+- all 22 unavailable: `team_feature_vector_unavailable`
+- providerCalls: **0**
+- verificationOk: **true**
+- writes: `ShadowModelCaptureRun` + `ShadowModelPrediction` only
+- Bet / MatchupOutput / Official Card / Hybrid / closing / evaluation / feature-snapshot writes: **false**
+
+The North Carolina @ Clemson NO_SELECTION is legitimate frozen-floor behavior (edge 0.0876 < 0.1). This cohort is **frozen evidence**. Do not rerun, replace, delete, overwrite, or backdate it. Full ledger: [`docs/2026-09-16-candidate-b-v1-first-prospective-closeout.md`](docs/2026-09-16-candidate-b-v1-first-prospective-closeout.md).
+
+Candidate B success proves evidence plumbing and establishes prospective research data. It does **not** prove predictive superiority and does **not** change Core V1 official status. Future Candidate B COMMITs require separate current operator authorization. No recurring Shadow schedule is authorized.
+
 ### T−30 closing layer
 
 Week 2 T−30 closing evidence is complete:
@@ -235,7 +310,7 @@ All entries below are manual unless explicitly stated otherwise.
 | `write-team-unit-grades-2026-manual.yml` | Guarded TeamUnitGrades PREVIEW/COMMIT | **PROVEN — 138/138 persisted** |
 | `capture-shadow-snapshot-v1-2026-manual.yml` | Prospective Hybrid Shadow prediction PREVIEW/COMMIT | **PROVEN — first 49-game cohort persisted** |
 | `capture-shadow-t30-closing-v1-2026-manual.yml` | T−30 closing PREVIEW/COMMIT | **Week 2 complete — 36 captures / 13 misses** |
-| `capture-shadow-model-predictions-2026-manual.yml` | Generic multi-model Shadow PREVIEW/COMMIT | **PROVEN / MANUAL_GUARDED / RESEARCH ONLY** — first Week 3 COMMIT proven; future COMMITs not blanket-authorized |
+| `capture-shadow-model-predictions-2026-manual.yml` | Generic multi-model Shadow PREVIEW/COMMIT | **PROVEN / MANUAL_GUARDED / RESEARCH ONLY / PER-RUN AUTHORIZATION** — Core + Candidate B allowlisted; first Core Week 3 COMMIT proven; first Candidate B Week 3 COMMIT proven and frozen; future COMMITs not blanket-authorized |
 | `audit-prisma-migration-history.yml` | Read-only migration-history audit | MANUAL_SAFE |
 
 No Shadow cron is authorized. No score/grading automation is authorized by this document. Do not infer recurring cadence from a manual workflow being present.
@@ -248,12 +323,14 @@ No Shadow cron is authorized. No score/grading automation is authorized by this 
 - Shadow prediction automation
 - T−30 closing automation
 - blanket future Generic Shadow COMMIT authorization / recurring Generic schedule
-- Candidate B / WEPA / other research-model adapters
+- WEPA / PassMatch / Totals V2 / Portal / ensemble adapters
 - official Hybrid activation
 - Hybrid Bet writes
 - Super Tier A production use
 - retrospective Shadow backfill
+- replacing or rerunning the frozen Candidate B Week 3 cohort
 - reconstructing Week 2 Official Card bets (0 persisted; do not invent)
+- Candidate B promotion / official use
 
 ## Deferred maintenance — separate workstreams
 
@@ -272,6 +349,7 @@ This status closeout does **not** change:
 - Hybrid V2 formula
 - Core V1 official status
 - Hybrid held status
+- Candidate B research-only status
 - `CORE_EVAL_V1`
 - 30-minute prediction freshness rule
 - kickoff-minus-30-minute closing rule
@@ -280,6 +358,7 @@ This status closeout does **not** change:
 - official card selections
 - production workflow schedules
 - any production database row
+- the frozen Candidate B Week 3 prospective cohort
 
 ## Historical archaeology
 

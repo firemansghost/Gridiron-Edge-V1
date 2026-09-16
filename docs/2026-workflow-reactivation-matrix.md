@@ -1,12 +1,12 @@
 # 2026 Workflow Reactivation Matrix — Current Operator Overlay
 
-**Updated:** 2026-09-13 America/Chicago  
-**Evidence-producing runtime baseline:** `e54196faf18e2f1287e85e12b613e65afbc27ca2`  
-**Status:** manual guarded production; Core V1 official; Hybrid V2 SHADOW / HELD / NOT OFFICIAL
+**Updated:** 2026-09-16 America/Chicago
+**Evidence-producing runtime baseline:** `60e5735c820dbd53e3f07de28d5c4c44b8f46b38`
+**Status:** manual guarded production; Core V1 official; Hybrid V2 SHADOW / HELD / NOT OFFICIAL; Candidate B V1 SHADOW / RESEARCH ONLY / NOT OFFICIAL
 
 This file is the current operator matrix. It answers **what is safe to run now, what has been production-proven, and what remains held**.
 
-Detailed September 8 evidence is in [`2026-09-08-phase4b-closeout.md`](./2026-09-08-phase4b-closeout.md). Season-wide operator truth is in [`../SEASON_STATUS.md`](../SEASON_STATUS.md). Generic Shadow notes are in [`SHADOW_MODEL_CAPTURE_V1.md`](./SHADOW_MODEL_CAPTURE_V1.md).
+Detailed September 8 evidence is in [`2026-09-08-phase4b-closeout.md`](./2026-09-08-phase4b-closeout.md). Season-wide operator truth is in [`../SEASON_STATUS.md`](../SEASON_STATUS.md). Generic Shadow notes are in [`SHADOW_MODEL_CAPTURE_V1.md`](./SHADOW_MODEL_CAPTURE_V1.md). Candidate B first prospective cohort evidence is in [`2026-09-16-candidate-b-v1-first-prospective-closeout.md`](./2026-09-16-candidate-b-v1-first-prospective-closeout.md).
 
 The prior long-form workflow inventory/audit remains in Git history at:
 
@@ -27,7 +27,9 @@ This documentation change does **not**:
 - authorize Shadow ATS/CLV/evaluation persistence
 - authorize Shadow prediction automation
 - authorize blanket future Generic Shadow COMMITs or a recurring Generic Shadow schedule
-- authorize Candidate B / WEPA / other research-model adapters
+- authorize Candidate B promotion or official use
+- classify Candidate B as blanket `MANUAL_SAFE` for future COMMITs
+- authorize WEPA / PassMatch / Totals V2 / Portal / ensemble adapters
 - authorize T−30 closing automation
 - change Core V1, Hybrid V2, or lifecycle formulas
 - change `CORE_EVAL_V1`
@@ -48,11 +50,12 @@ This documentation change does **not**:
 | Week 1 scores | **CLOSED — 51/51 final** |
 | Week 1 grading | **CLOSED — 98/98 graded; 29–67–2** |
 | Week 2 Live Odds | **PROVEN — 2,533 persisted MarketLine rows** |
-| Week 3 Live Odds | **PROVEN — COMMIT 34784597710; 4,171 rows; spread/total 57/57; ML 53/57** |
+| Week 3 Live Odds | **PROVEN — current COMMIT 35127135613; 9,404 rows; requested-week 57/57; unmatched_both_fbs 0** |
 | 2026 TeamUnitGrades | **PROVEN — 138/138 persisted** |
 | Phase 4B Hybrid prediction capture | **PROVEN — first legitimate 49-game cohort persisted** |
 | Phase 4B T−30 closing | **Week 2 complete — 36 legitimate captures / 13 legitimate misses** |
-| Phase 4B Generic Shadow capture | **PROVEN / MANUAL_GUARDED / RESEARCH ONLY — first Week 3 COMMIT proven** |
+| Phase 4B Generic Shadow capture | **PROVEN / MANUAL_GUARDED / RESEARCH ONLY / PER-RUN AUTHORIZATION** — Core first Week 3 COMMIT proven; Candidate B first Week 3 COMMIT proven and frozen |
+| Candidate B V1 | **SHADOW / RESEARCH ONLY / NOT OFFICIAL** — first prospective cohort frozen; no blanket future COMMIT authorization |
 | Phase 4B ATS / CLV / evaluation | **NOT IMPLEMENTED / NOT AUTHORIZED** |
 | TeamGameStat / lifecycle | Prepared; canonical lifecycle weight remains 0 through completed Week 2 |
 | Recurring production schedules | **KEEP STOPPED unless separately authorized** |
@@ -74,7 +77,7 @@ All workflows below are `workflow_dispatch` / manual unless a row explicitly say
 | `preview-team-unit-grades-2026-manual.yml` | TeamUnitGrades planner PREVIEW | 0 | none | **PROVEN / READ-ONLY** |
 | `write-team-unit-grades-2026-manual.yml` | TeamUnitGrades PREVIEW/COMMIT | 0 | TeamUnitGrades only | **PROVEN — 138/138 persisted** |
 | `capture-shadow-snapshot-v1-2026-manual.yml` | Prospective Hybrid Shadow prediction PREVIEW/COMMIT | 0 | ShadowCaptureRun + ShadowPredictionSnapshot | **PROVEN — first 49-game cohort persisted** |
-| `capture-shadow-model-predictions-2026-manual.yml` | Generic multi-model Shadow PREVIEW/COMMIT (`core_v1_shadow_baseline_v1` allowlist) | 0 | ShadowModelCaptureRun + ShadowModelPrediction only | **PROVEN / MANUAL_GUARDED / RESEARCH ONLY** — migration deployed (**34779225982**); first Week 3 PREVIEW **34785048578** / COMMIT **34785370466**; future COMMITs not blanket-authorized |
+| `capture-shadow-model-predictions-2026-manual.yml` | Generic multi-model Shadow PREVIEW/COMMIT (`core_v1_shadow_baseline_v1` + `candidate_b_roster_prior_v1`) | 0 | ShadowModelCaptureRun + ShadowModelPrediction only | **PROVEN / MANUAL_GUARDED / RESEARCH ONLY / PER-RUN AUTHORIZATION** — Core first Week 3 COMMIT **34785370466**; Candidate B PREVIEW **35123647114**; Candidate B first COMMIT **35128215811** (UUID `74234d87-bb32-47c6-927b-6de3d24cfc88`) frozen; workflow_dispatch only; default PREVIEW; no schedule; future COMMITs not blanket-authorized |
 | `capture-shadow-t30-closing-v1-2026-manual.yml` | T−30 closing PREVIEW/COMMIT | 0 | ShadowClosingMarketSnapshot only | **Week 2 complete — 36 captures / 13 misses** |
 | `audit-prisma-migration-history.yml` | Migration-history audit | 0 | none | **MANUAL_SAFE / READ-ONLY** |
 | `write-cfbd-schedules-2026-manual.yml` | Guarded weekly schedule rollover | **Yes** — CFBD | Game schedule scope | Manual guarded; do not infer recurring authorization |
@@ -186,8 +189,15 @@ The closing writer depends on a separate Live Odds persistence step. A fresh pro
 
 - research-only additive tables (`ShadowModelCaptureRun` / `ShadowModelPrediction`)
 - provider calls = 0
-- first Week 3 production proof: migration **34779225982**, PREVIEW **34785048578**, COMMIT **34785370466**, capture run `882cf725-9e83-431e-965d-0e97df2da635`
-- future Generic COMMITs remain guarded/manual and are **not** blanket-authorized
+- current allowlist: `core_v1_shadow_baseline_v1` + `candidate_b_roster_prior_v1`
+- workflow remains `workflow_dispatch` only; default PREVIEW; no schedule
+- Core first Week 3 production proof: migration **34779225982**, PREVIEW **34785048578**, COMMIT **34785370466**, capture run `882cf725-9e83-431e-965d-0e97df2da635`
+- Candidate B first PREVIEW: **35123647114** (zero persisted prediction rows)
+- Candidate B first separately authorized COMMIT: **35128215811**, capture run `74234d87-bb32-47c6-927b-6de3d24cfc88` (57 / 35 available / 22 unavailable / 34 selections / 1 NO_SELECTION; market age 651s)
+- Candidate B remains **SHADOW / RESEARCH ONLY / NOT OFFICIAL**
+- Candidate B Week 3 cohort is frozen; do not replace it
+- future Generic COMMITs remain **PER-RUN AUTHORIZATION** / manual-guarded and are **not** blanket-authorized
+- do **not** globally classify Candidate B as `MANUAL_SAFE` in a way that implies blanket future COMMIT permission
 
 ## Week 2 first closing windows (historical operating notes)
 
@@ -284,7 +294,9 @@ Do not spend provider calls merely to make a dashboard look busy.
 - recurring Generic Shadow cadence / blanket future Generic COMMIT authorization
 - recurring T−30 closing cadence
 - retrospective Shadow inserts/backfill
-- Candidate B / WEPA / other research-model adapters
+- replacing or rerunning the frozen Candidate B Week 3 cohort
+- Candidate B promotion / official use
+- WEPA / PassMatch / Totals V2 / Portal / ensemble adapters
 
 ## Deferred maintenance
 
@@ -301,4 +313,4 @@ For the detailed pre-September-8 workflow inventory, classifications, scheduled-
 
 `git show 56a13bc4ae24472eac4427614143c8bc1c3ddda4:docs/2026-workflow-reactivation-matrix.md`
 
-That history remains authoritative for what was known **at those phase closes**. This file is authoritative for current operator guidance as of September 13, 2026.
+That history remains authoritative for what was known **at those phase closes**. This file is authoritative for current operator guidance as of September 16, 2026.
