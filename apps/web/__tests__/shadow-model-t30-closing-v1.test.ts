@@ -556,6 +556,40 @@ describe('Generic Shadow T-30 Closing V1 — capture frame integrity', () => {
     expect(result.writeBlockers).toContain('prediction_game_set_mismatch');
   });
 
+  it('fails closed on a numeric expectedGameId that would stringify to the prediction gameId', () => {
+    const numericId = 123;
+    const stringId = '123';
+    const result = plan({
+      frame: frame({
+        captureRun: run({ expectedGameIds: [numericId], totalGames: 1 }),
+        predictions: [prediction({ gameId: stringId })],
+        games: [game({ id: stringId })],
+        marketLines: pair({ gameId: stringId }),
+      }),
+    });
+    expect(result.writeSafe).toBe(false);
+    expect(result.ok).toBe(false);
+    expect(result.writeBlockers).toContain('expected_game_ids_not_strings');
+    expect(result.rowsToInsert).toEqual([]);
+  });
+
+  it('accepts string expectedGameIds that happen to look numeric', () => {
+    const stringId = '123';
+    const result = plan({
+      frame: frame({
+        captureRun: run({ expectedGameIds: [stringId], totalGames: 1 }),
+        predictions: [prediction({ gameId: stringId })],
+        games: [game({ id: stringId })],
+        marketLines: pair({ gameId: stringId }),
+      }),
+    });
+    expect(result.writeSafe).toBe(true);
+    expect(result.ok).toBe(true);
+    expect(result.writeBlockers).not.toContain('expected_game_ids_not_strings');
+    expect(result.rowsToInsert).toHaveLength(1);
+    expect(result.predictions[0].gameId).toBe(stringId);
+  });
+
   it('fails closed when a prediction belongs to another capture run', () => {
     const result = plan({
       frame: frame({

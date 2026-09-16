@@ -739,9 +739,9 @@ export function planGenericShadowT30Closing(
     blockers.push('expected_game_ids_not_array');
   }
   const expectedGameIds = Array.isArray(expectedGameIdsRaw)
-    ? expectedGameIdsRaw.map((id) => String(id))
+    ? expectedGameIdsRaw.filter((id): id is string => typeof id === 'string' && id.length > 0)
     : [];
-  if (Array.isArray(expectedGameIdsRaw) && expectedGameIds.some((id) => !isNonEmptyString(id))) {
+  if (Array.isArray(expectedGameIdsRaw) && expectedGameIds.length !== expectedGameIdsRaw.length) {
     blockers.push('expected_game_ids_not_strings');
   }
   if (
