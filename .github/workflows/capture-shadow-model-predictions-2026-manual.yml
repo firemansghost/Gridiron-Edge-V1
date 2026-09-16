@@ -11,7 +11,7 @@
 # PREVIEW allowlist: core_v1_shadow_baseline_v1 and candidate_b_roster_prior_v1.
 # COMMIT allowlist: core_v1_shadow_baseline_v1 only.
 # Candidate B COMMIT is mechanically blocked in this workflow and in the CLI.
-# Production COMMIT remains NOT AUTHORIZED until independent PREVIEW review.
+# Candidate B production COMMIT remains NOT AUTHORIZED; separate authorization is required after independent PREVIEW review.
 #
 # Security:
 # - Dispatch inputs reach shell only via step-level env (never ${{ inputs.* }} inside run:).
