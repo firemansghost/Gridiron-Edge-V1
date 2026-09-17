@@ -27,10 +27,11 @@ export const GENERIC_SHADOW_T30_AUTOMATION_MARKET_WINDOW_CLOSE_MINUTES = 35 as c
 export const GENERIC_SHADOW_T30_AUTOMATION_PROVIDER_ENABLED = false as const;
 export const GENERIC_SHADOW_T30_AUTOMATION_WRITES_ENABLED = false as const;
 
+const MINUTE_MS = 60_000;
 const MARKET_WINDOW_OPEN_MS =
-  GENERIC_SHADOW_T30_AUTOMATION_MARKET_WINDOW_OPEN_MINUTES * 60 * 1000;
+  GENERIC_SHADOW_T30_AUTOMATION_MARKET_WINDOW_OPEN_MINUTES * MINUTE_MS;
 const MARKET_WINDOW_CLOSE_MS =
-  GENERIC_SHADOW_T30_AUTOMATION_MARKET_WINDOW_CLOSE_MINUTES * 60 * 1000;
+  GENERIC_SHADOW_T30_AUTOMATION_MARKET_WINDOW_CLOSE_MINUTES * MINUTE_MS;
 
 export type GenericShadowT30AutomationOutcome =
   | 'NO_ACTION'
@@ -156,6 +157,20 @@ function mergeEvidenceStatus(
   b: GenericShadowT30FreshEvidenceStatus
 ): GenericShadowT30FreshEvidenceStatus {
   return evidenceRank(a) >= evidenceRank(b) ? a : b;
+}
+
+export function isGenericShadowT30AutomationMarketRefreshWindowOpen(
+  kickoffTimestamp: Date,
+  observedTimestamp: Date
+): boolean {
+  const kickoffMs = kickoffTimestamp.getTime();
+  const observedMs = observedTimestamp.getTime();
+  if (!Number.isFinite(kickoffMs) || !Number.isFinite(observedMs)) return false;
+  const minutesToKickoff = (kickoffMs - observedMs) / MINUTE_MS;
+  return (
+    minutesToKickoff <= GENERIC_SHADOW_T30_AUTOMATION_MARKET_WINDOW_OPEN_MINUTES &&
+    minutesToKickoff >= GENERIC_SHADOW_T30_AUTOMATION_MARKET_WINDOW_CLOSE_MINUTES
+  );
 }
 
 /**
@@ -289,10 +304,7 @@ export function planGenericShadowT30Automation(
 
       const windowOpen = new Date(kickoff.getTime() - MARKET_WINDOW_OPEN_MS);
       const windowClose = new Date(kickoff.getTime() - MARKET_WINDOW_CLOSE_MS);
-      const inRefreshWindow =
-        Number.isFinite(observedMs) &&
-        observedMs >= windowOpen.getTime() &&
-        observedMs <= windowClose.getTime();
+      const inRefreshWindow = isGenericShadowT30AutomationMarketRefreshWindowOpen(kickoff, observed);
       if (!inRefreshWindow) continue;
 
       const rawPrediction = predictionById.get(predictionPlan.predictionId);
@@ -383,12 +395,15 @@ export function planGenericShadowT30Automation(
     .map((game) => game.gameId);
   const marketRefreshNeeded = marketRefreshNeededGameIds.length > 0;
   const uniqueBlockers = uniqueSorted(blockers);
-  const outcome = determineGenericShadowT30AutomationOutcome({
-    blockers: uniqueBlockers,
-    counts: aggregate,
-    marketRefreshWindowOpenCount: marketRefreshGames.length,
-    marketRefreshNeeded,
-  });
+  const outcome =
+    uniqueBlockers.length > 0
+      ? 'BLOCKED'
+      : determineGenericShadowT30AutomationOutcome({
+          blockers: [],
+          counts: aggregate,
+          marketRefreshWindowOpenCount: marketRefreshGames.length,
+          marketRefreshNeeded,
+        });
 
   return {
     version: GENERIC_SHADOW_T30_AUTOMATION_VERSION,
