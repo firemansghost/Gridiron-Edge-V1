@@ -119,7 +119,20 @@ function parseDate(value: Date | string | null | undefined): Date | null {
 }
 
 function uniqueSorted(values: string[]): string[] {
-  return [...new Set(values)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const out: string[] = [];
+  for (let i = 0; i < values.length; i++) {
+    if (out.indexOf(values[i]) === -1) out.push(values[i]);
+  }
+  out.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return out;
+}
+
+function valuesOfMap<T>(map: Map<string, T>): T[] {
+  const out: T[] = [];
+  map.forEach((value) => {
+    out.push(value);
+  });
+  return out;
 }
 
 function emptyCounts(): GenericShadowT30Counts {
@@ -384,10 +397,10 @@ export function planGenericShadowT30Automation(
     }
   }
 
-  const upcomingTargetGroups = [...targetGroupsByKey.values()].sort(
+  const upcomingTargetGroups = valuesOfMap(targetGroupsByKey).sort(
     (a, b) => a.targetTimestamp.getTime() - b.targetTimestamp.getTime()
   );
-  const marketRefreshGames = [...marketGamesById.values()].sort((a, b) =>
+  const marketRefreshGames = valuesOfMap(marketGamesById).sort((a, b) =>
     a.gameId < b.gameId ? -1 : a.gameId > b.gameId ? 1 : 0
   );
   const marketRefreshNeededGameIds = marketRefreshGames
