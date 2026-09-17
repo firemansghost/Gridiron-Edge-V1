@@ -44,3 +44,18 @@ jobs:
             apps/web/__tests__/generic-shadow-t30-automation-v1-outcome.test.ts \
             apps/web/__tests__/generic-shadow-t30-automation-v1-window.test.ts \
             apps/jobs/__tests__/generic-shadow-t30-automation-v1-workflow.test.ts
+
+      - name: Secret-free production-path CLI smoke check
+        run: |
+          set +e
+          OUTPUT=$(DIRECT_URL='' npx tsx apps/jobs/preview-generic-shadow-t30-automation-v1-2026.ts \
+            --season 2026 \
+            --week 3 2>&1)
+          STATUS=$?
+          set -e
+          echo "$OUTPUT"
+          if [ "$STATUS" -eq 0 ]; then
+            echo "::error::Expected secret-free CLI smoke check to fail closed without DIRECT_URL."
+            exit 1
+          fi
+          echo "$OUTPUT" | grep -F "DIRECT_URL required"
