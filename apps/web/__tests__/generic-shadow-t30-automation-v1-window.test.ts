@@ -1,7 +1,11 @@
-import { planGenericShadowT30Automation } from '@/lib/generic-shadow-t30-automation-v1';
+import {
+  isGenericShadowT30AutomationMarketRefreshWindowOpen,
+  planGenericShadowT30Automation,
+} from '@/lib/generic-shadow-t30-automation-v1';
 import type { GenericShadowT30OperationalFrame } from '@/lib/shadow-model-t30-closing-v1';
 
 const KICKOFF = new Date('2026-09-19T20:00:00.000Z');
+const OBSERVED = new Date('2026-09-19T19:20:00.000Z');
 
 function frame(): GenericShadowT30OperationalFrame {
   return {
@@ -54,11 +58,15 @@ function frame(): GenericShadowT30OperationalFrame {
 }
 
 describe('Generic Shadow T-30 Automation V1 — refresh-window integration', () => {
-  it('keeps a T-40 observation FUTURE while opening the T-45..T-35 refresh window', () => {
+  it('opens the pure T-45..T-35 predicate at T-40', () => {
+    expect(isGenericShadowT30AutomationMarketRefreshWindowOpen(KICKOFF, OBSERVED)).toBe(true);
+  });
+
+  it('keeps a T-40 observation FUTURE while grouping the target and opening refresh work', () => {
     const result = planGenericShadowT30Automation({
       season: 2026,
       week: 3,
-      observedTimestamp: new Date('2026-09-19T19:20:00.000Z'),
+      observedTimestamp: OBSERVED,
       frames: [frame()],
     });
     const prediction = result.runPlans[0]?.predictions[0];
@@ -69,6 +77,7 @@ describe('Generic Shadow T-30 Automation V1 — refresh-window integration', () 
       state: prediction?.state,
       closingKickoff: prediction?.closingKickoffTimestamp.toISOString(),
       target: prediction?.targetTimestamp.toISOString(),
+      upcomingTargetGroupsCount: result.upcomingTargetGroups.length,
       marketRefreshWindowOpenCount: result.marketRefreshWindowOpenCount,
       marketRefreshNeeded: result.marketRefreshNeeded,
     }).toEqual({
@@ -77,6 +86,7 @@ describe('Generic Shadow T-30 Automation V1 — refresh-window integration', () 
       state: 'FUTURE',
       closingKickoff: '2026-09-19T20:00:00.000Z',
       target: '2026-09-19T19:30:00.000Z',
+      upcomingTargetGroupsCount: 1,
       marketRefreshWindowOpenCount: 1,
       marketRefreshNeeded: true,
     });
