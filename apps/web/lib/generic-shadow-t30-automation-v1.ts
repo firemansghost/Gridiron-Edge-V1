@@ -158,25 +158,27 @@ function mergeEvidenceStatus(
   return evidenceRank(a) >= evidenceRank(b) ? a : b;
 }
 
-function determineOutcome(input: {
+/**
+ * Headline outcome favors work that can still be acted on now. Historical
+ * MISSED evidence remains visible in counts, but must not hide a current
+ * refresh window or DUE closing window later in the same week.
+ */
+export function determineGenericShadowT30AutomationOutcome(input: {
   blockers: string[];
   counts: GenericShadowT30Counts;
   marketRefreshWindowOpenCount: number;
   marketRefreshNeeded: boolean;
 }): GenericShadowT30AutomationOutcome {
   if (input.blockers.length > 0) return 'BLOCKED';
-  if (input.counts.missedCount > 0) return 'MISSED_TARGET_PRESENT';
-  if (input.marketRefreshWindowOpenCount === 0 && input.counts.dueCount === 0) {
-    return 'NO_ACTION';
-  }
   if (
-    input.marketRefreshWindowOpenCount > 0 &&
-    !input.marketRefreshNeeded &&
-    input.counts.dueCount === 0
+    input.counts.dueCount > 0 ||
+    (input.marketRefreshWindowOpenCount > 0 && input.marketRefreshNeeded)
   ) {
-    return 'MARKET_REFRESH_NOT_NEEDED';
+    return 'PREVIEW_ONLY';
   }
-  return 'PREVIEW_ONLY';
+  if (input.marketRefreshWindowOpenCount > 0) return 'MARKET_REFRESH_NOT_NEEDED';
+  if (input.counts.missedCount > 0) return 'MISSED_TARGET_PRESENT';
+  return 'NO_ACTION';
 }
 
 export function planGenericShadowT30Automation(
@@ -243,8 +245,7 @@ export function planGenericShadowT30Automation(
     });
   }
 
-  type MutableMarketGame = GenericShadowT30AutomationMarketGame;
-  const marketGamesById = new Map<string, MutableMarketGame>();
+  const marketGamesById = new Map<string, GenericShadowT30AutomationMarketGame>();
   const targetGroupsByKey = new Map<string, GenericShadowT30AutomationTargetGroup>();
 
   for (let frameIndex = 0; frameIndex < sortedFrames.length; frameIndex++) {
@@ -382,7 +383,7 @@ export function planGenericShadowT30Automation(
     .map((game) => game.gameId);
   const marketRefreshNeeded = marketRefreshNeededGameIds.length > 0;
   const uniqueBlockers = uniqueSorted(blockers);
-  const outcome = determineOutcome({
+  const outcome = determineGenericShadowT30AutomationOutcome({
     blockers: uniqueBlockers,
     counts: aggregate,
     marketRefreshWindowOpenCount: marketRefreshGames.length,
