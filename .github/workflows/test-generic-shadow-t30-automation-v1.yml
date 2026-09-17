@@ -1,0 +1,61 @@
+# Validation-only CI for Generic Shadow T-30 Automation V1.
+# No DB, no secrets, no providers, no production writes.
+
+name: Test Generic Shadow T-30 Automation V1
+
+on:
+  pull_request:
+    paths:
+      - 'apps/web/lib/generic-shadow-t30-automation-v1.ts'
+      - 'apps/web/__tests__/generic-shadow-t30-automation-v1*.test.ts'
+      - 'apps/jobs/src/generic-shadow-t30-automation-v1-adapter.ts'
+      - 'apps/jobs/preview-generic-shadow-t30-automation-v1-2026.ts'
+      - 'apps/jobs/__tests__/generic-shadow-t30-automation-v1-workflow.test.ts'
+      - '.github/workflows/preview-generic-shadow-t30-automation-v1-2026-manual.yml'
+      - '.github/workflows/test-generic-shadow-t30-automation-v1.yml'
+      - 'research/generic-shadow/GENERIC_SHADOW_T30_AUTOMATION_V1_CONTRACT.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  targeted-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Slice A targeted tests
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/web/__tests__/generic-shadow-t30-automation-v1.test.ts \
+            apps/web/__tests__/generic-shadow-t30-automation-v1-outcome.test.ts \
+            apps/web/__tests__/generic-shadow-t30-automation-v1-window.test.ts \
+            apps/jobs/__tests__/generic-shadow-t30-automation-v1-workflow.test.ts
+
+      - name: Secret-free production-path CLI smoke check
+        run: |
+          set +e
+          OUTPUT=$(DIRECT_URL='' npx tsx apps/jobs/preview-generic-shadow-t30-automation-v1-2026.ts \
+            --season 2026 \
+            --week 3 2>&1)
+          STATUS=$?
+          set -e
+          echo "$OUTPUT"
+          if [ "$STATUS" -eq 0 ]; then
+            echo "::error::Expected secret-free CLI smoke check to fail closed without DIRECT_URL."
+            exit 1
+          fi
+          echo "$OUTPUT" | grep -F "DIRECT_URL required"
