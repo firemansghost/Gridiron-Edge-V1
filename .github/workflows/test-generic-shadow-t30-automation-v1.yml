@@ -42,4 +42,5 @@ jobs:
           npx jest --runInBand --runTestsByPath \
             apps/web/__tests__/generic-shadow-t30-automation-v1.test.ts \
             apps/web/__tests__/generic-shadow-t30-automation-v1-outcome.test.ts \
+            apps/web/__tests__/generic-shadow-t30-automation-v1-window.test.ts \
             apps/jobs/__tests__/generic-shadow-t30-automation-v1-workflow.test.ts
