@@ -1,0 +1,157 @@
+# Generic Shadow T-30 Automation V1 — Stage A manual PREVIEW only.
+#
+# workflow_dispatch ONLY.
+# Production DB SELECTs only.
+# providerCalls=0.
+# No provider secrets.
+# No MarketLine or closing writes.
+# No Generic prediction, Hybrid, Bet, MatchupOutput, evaluation, Game, or migration writes.
+# No schedule is authorized by this workflow.
+
+name: Preview Generic Shadow T-30 Automation V1 2026 (Manual, Read-Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (must be 2026)'
+        required: true
+        type: string
+        default: '2026'
+      week:
+        description: 'CFB week (positive integer)'
+        required: true
+        type: string
+      expected_main_sha:
+        description: 'Exact main commit SHA authorized for this PREVIEW'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: generic-shadow-t30-automation-v1-preview
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Source SHA guard
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA=$(git rev-parse HEAD)
+          echo "ACTUAL_SHA=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+          echo "actual_sha: ${ACTUAL_SHA}"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          echo "github_ref: ${GITHUB_REF:-}"
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Refusing automation PREVIEW. Workflow must run from main."
+            exit 1
+          fi
+          if [ -z "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing automation PREVIEW. expected_main_sha is required."
+            exit 1
+          fi
+          if [ "${ACTUAL_SHA}" != "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing automation PREVIEW. Checked-out SHA does not match expected_main_sha."
+            echo "::error::actual_sha=${ACTUAL_SHA}"
+            echo "::error::expected_main_sha=${EXPECTED_MAIN_SHA}"
+            exit 1
+          fi
+          echo "Source SHA guard passed."
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+        run: |
+          set -euo pipefail
+          echo "season=${INPUT_SEASON}"
+          echo "week=${INPUT_WEEK}"
+          echo "STAGE A PREVIEW ONLY"
+          echo "production DB SELECTs only"
+          echo "providerCalls=0"
+          echo "provider secrets: not loaded"
+          echo "production writes: disabled"
+          echo "schedule: not enabled"
+          if [ "$INPUT_SEASON" != "2026" ]; then
+            echo "::error::season must equal 2026 (got ${INPUT_SEASON})"
+            exit 1
+          fi
+          if ! [[ "$INPUT_WEEK" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::week must be a positive integer"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prisma version
+        run: npx prisma -v
+
+      - name: Run Generic Shadow T-30 Automation V1 PREVIEW
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          REPORT="reports/generic-shadow-t30-automation-v1-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-PREVIEW.json"
+          npx tsx apps/jobs/preview-generic-shadow-t30-automation-v1-2026.ts \
+            --season "$INPUT_SEASON" \
+            --week "$INPUT_WEEK" \
+            --report "$REPORT"
+
+      - name: Upload Generic Shadow T-30 Automation V1 PREVIEW report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generic-shadow-t30-automation-v1-2026-w${{ inputs.week }}-PREVIEW
+          path: reports/generic-shadow-t30-automation-v1-2026-*.json
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "==================================================="
+          echo "GENERIC SHADOW T-30 AUTOMATION V1 — STAGE A PREVIEW"
+          echo "==================================================="
+          echo "season: ${INPUT_SEASON}"
+          echo "week: ${INPUT_WEEK}"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          echo "actual_sha: ${ACTUAL_SHA:-unavailable}"
+          echo "status: ${JOB_STATUS}"
+          echo "providerCalls=0"
+          echo "MarketLine writes: false"
+          echo "ShadowModelClosingMarketSnapshot writes: false"
+          echo "ShadowModelPrediction writes: false"
+          echo "ShadowModelCaptureRun writes: false"
+          echo "Hybrid writes: false"
+          echo "Bet writes: false"
+          echo "MatchupOutput writes: false"
+          echo "evaluation writes: false"
+          echo "Game writes: false"
+          echo "prisma migrate: not invoked"
+          echo "schedule: not enabled"
+          echo "==================================================="
