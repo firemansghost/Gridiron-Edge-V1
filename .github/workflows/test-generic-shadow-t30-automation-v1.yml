@@ -8,15 +8,20 @@ on:
     paths:
       - 'apps/web/lib/generic-shadow-t30-automation-v1.ts'
       - 'apps/web/lib/generic-shadow-t30-automation-v1-market-refresh.ts'
+      - 'apps/web/lib/generic-shadow-t30-automation-v1-closing-commit.ts'
       - 'apps/web/__tests__/generic-shadow-t30-automation-v1*.test.ts'
       - 'apps/jobs/src/generic-shadow-t30-automation-v1-adapter.ts'
       - 'apps/jobs/src/generic-shadow-t30-automation-v1-market-refresh-adapter.ts'
+      - 'apps/jobs/src/generic-shadow-t30-automation-v1-closing-commit-adapter.ts'
       - 'apps/jobs/preview-generic-shadow-t30-automation-v1-2026.ts'
       - 'apps/jobs/run-generic-shadow-t30-automation-v1-market-refresh-2026.ts'
+      - 'apps/jobs/run-generic-shadow-t30-automation-v1-closing-commit-2026.ts'
       - 'apps/jobs/__tests__/generic-shadow-t30-automation-v1-workflow.test.ts'
       - 'apps/jobs/__tests__/generic-shadow-t30-automation-v1-market-refresh*.test.ts'
+      - 'apps/jobs/__tests__/generic-shadow-t30-automation-v1-closing-commit*.test.ts'
       - '.github/workflows/preview-generic-shadow-t30-automation-v1-2026-manual.yml'
       - '.github/workflows/run-generic-shadow-t30-automation-v1-market-refresh-2026-manual.yml'
+      - '.github/workflows/run-generic-shadow-t30-automation-v1-closing-commit-2026-manual.yml'
       - '.github/workflows/test-generic-shadow-t30-automation-v1.yml'
       - 'research/generic-shadow/GENERIC_SHADOW_T30_AUTOMATION_V1_CONTRACT.md'
   workflow_dispatch:
@@ -53,6 +58,10 @@ jobs:
             apps/jobs/__tests__/generic-shadow-t30-automation-v1-market-refresh.test.ts \
             apps/jobs/__tests__/generic-shadow-t30-automation-v1-market-refresh-workflow.test.ts \
             apps/jobs/__tests__/generic-shadow-t30-automation-v1-market-refresh-live-odds-report.test.ts \
+            apps/web/__tests__/generic-shadow-t30-automation-v1-closing-commit.test.ts \
+            apps/jobs/__tests__/generic-shadow-t30-automation-v1-closing-commit.test.ts \
+            apps/jobs/__tests__/generic-shadow-t30-automation-v1-closing-commit-workflow.test.ts \
+            apps/jobs/__tests__/generic-shadow-t30-automation-v1-closing-commit-child-report.test.ts \
             apps/jobs/__tests__/live-odds-2026.test.ts \
             apps/web/__tests__/shadow-model-t30-closing-v1.test.ts \
             apps/jobs/__tests__/shadow-model-t30-closing-v1-adapter.test.ts \
@@ -85,6 +94,22 @@ jobs:
           echo "$OUTPUT"
           if [ "$STATUS" -eq 0 ]; then
             echo "::error::Expected secret-free market-refresh PLAN smoke check to fail closed without DIRECT_URL."
+            exit 1
+          fi
+          echo "$OUTPUT" | grep -F "DIRECT_URL required"
+
+      - name: Secret-free closing-commit PLAN CLI smoke check
+        run: |
+          set +e
+          OUTPUT=$(DIRECT_URL='' npx tsx apps/jobs/run-generic-shadow-t30-automation-v1-closing-commit-2026.ts \
+            --season 2026 \
+            --week 3 \
+            --mode PLAN 2>&1)
+          STATUS=$?
+          set -e
+          echo "$OUTPUT"
+          if [ "$STATUS" -eq 0 ]; then
+            echo "::error::Expected secret-free closing-commit PLAN smoke check to fail closed without DIRECT_URL."
             exit 1
           fi
           echo "$OUTPUT" | grep -F "DIRECT_URL required"
