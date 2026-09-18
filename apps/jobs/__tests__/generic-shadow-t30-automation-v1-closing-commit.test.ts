@@ -8,6 +8,7 @@ import {
   expectedGenericShadowT30ClosingCommitConfirmation,
   type GenericShadowT30ClosingChildSummary,
 } from '../../web/lib/generic-shadow-t30-automation-v1-closing-commit';
+import { planGenericShadowT30Automation } from '../../web/lib/generic-shadow-t30-automation-v1';
 import type {
   GenericShadowT30CaptureRun,
   GenericShadowT30CurrentGame,
@@ -255,6 +256,9 @@ async function runCycle(options: {
   confirmation?: string;
   timestamps?: Date[];
   framesByCall?: GenericShadowT30OperationalFrame[][];
+  blockersByCall?: string[][];
+  initialPlan?: ReturnType<typeof planGenericShadowT30Automation>;
+  initialObservedTimestamp?: Date;
   children?: Record<string, GenericShadowT30ClosingChildSummary | (() => Promise<GenericShadowT30ClosingChildSummary>)>;
 }) {
   const framesByCall = options.framesByCall ?? [[frame()]];
@@ -273,8 +277,13 @@ async function runCycle(options: {
     discover: async () => {
       discoverCalls += 1;
       const frames = framesByCall[Math.min(discoverCalls - 1, framesByCall.length - 1)];
-      return discovery(frames);
+      const blockers = options.blockersByCall
+        ? options.blockersByCall[Math.min(discoverCalls - 1, options.blockersByCall.length - 1)] ?? []
+        : [];
+      return { ...discovery(frames), blockers };
     },
+    initialPlan: options.initialPlan,
+    initialObservedTimestamp: options.initialObservedTimestamp,
     runClosingCommit: async (request: GenericShadowT30ClosingCommitRequest) => {
       invoked.push(request.captureRunId);
       confirmations.push(request.confirmation);
@@ -299,7 +308,8 @@ describe('Generic Shadow T-30 Automation V1 — closing-commit cycle', () => {
     expect(report.closingCommitRequested).toBe(false);
     expect(invoked).toEqual([]);
     expect(report.mutationTargetsInvoked).toEqual([]);
-    expect(report.closingRowsInserted).toBe(0);
+    expect(report.closingRowsInsertedKnown).toBe(0);
+    expect(report.closingRowsInsertedExact).toBe(0);
     expect(report.providerCalls).toBe(0);
     expect(report.scheduleEnabled).toBe(false);
   });
@@ -320,16 +330,23 @@ describe('Generic Shadow T-30 Automation V1 — closing-commit cycle', () => {
 
   it('COMMIT with one DUE supported run invokes the child closing boundary exactly once', async () => {
     const { report, invoked, confirmations } = await runCycle({
-      framesByCall: [[frame()], [frame('run-a', { existingClosings: [existingClosing('run-a')] })]],
+      framesByCall: [
+        [frame()],
+        [frame()],
+        [frame('run-a', { existingClosings: [existingClosing('run-a')] })],
+      ],
     });
     expect(invoked).toEqual(['run-a']);
     expect(confirmations).toEqual([expectedGenericShadowT30WriteConfirmation(3, 'run-a')]);
     expect(report.outcome).toBe('CLOSINGS_CAPTURED');
     expect(report.mutationTargetsInvoked).toEqual(['ShadowModelClosingMarketSnapshot']);
-    expect(report.closingRowsInserted).toBe(1);
+    expect(report.closingRowsInsertedKnown).toBe(1);
+    expect(report.closingRowsInsertedExact).toBe(1);
     expect(report.providerCalls).toBe(0);
     expect(report.requestedMode).toBe('COMMIT');
     expect(report.reportKind).toBe('TERMINAL');
+    expect(report.preCommitPlan).not.toBeNull();
+    expect(report.preCommitObservedTimestamp).toEqual(DUE_AT);
   });
 
   it('invokes two DUE capture runs for the same physical game in captureRunId order', async () => {
@@ -338,7 +355,7 @@ describe('Generic Shadow T-30 Automation V1 — closing-commit cycle', () => {
       frame('run-a', {}, 'candidate_b_roster_prior_v1'),
     ];
     const { report, invoked } = await runCycle({
-      framesByCall: [dual, dual],
+      framesByCall: [dual, dual, dual],
       children: {
         'run-a': persistedChild('run-a', { modelDefinitionId: 'candidate_b_roster_prior_v1' }),
         'run-b': persistedChild('run-b', { modelDefinitionId: 'core_v1_shadow_baseline_v1' }),
@@ -346,7 +363,8 @@ describe('Generic Shadow T-30 Automation V1 — closing-commit cycle', () => {
     });
     expect(invoked).toEqual(['run-a', 'run-b']);
     expect(report.dueCaptureRunIds).toEqual(['run-a', 'run-b']);
-    expect(report.closingRowsInserted).toBe(2);
+    expect(report.closingRowsInsertedKnown).toBe(2);
+    expect(report.closingRowsInsertedExact).toBe(2);
     expect(report.mutationTargetsInvoked).toEqual(['ShadowModelClosingMarketSnapshot']);
   });
 
@@ -357,7 +375,8 @@ describe('Generic Shadow T-30 Automation V1 — closing-commit cycle', () => {
     expect(invoked).toEqual([]);
     expect(report.outcome).toBe('NO_ACTION');
     expect(report.mutationTargetsInvoked).toEqual([]);
-    expect(report.closingRowsInserted).toBe(0);
+    expect(report.closingRowsInsertedKnown).toBe(0);
+    expect(report.closingRowsInsertedExact).toBe(0);
     expect(report.reportKind).toBe('TERMINAL');
   });
 
@@ -368,7 +387,8 @@ describe('Generic Shadow T-30 Automation V1 — closing-commit cycle', () => {
     });
     expect(invoked).toEqual([]);
     expect(report.outcome).toBe('MISSED_TARGET_PRESENT');
-    expect(report.closingRowsInserted).toBe(0);
+    expect(report.closingRowsInsertedKnown).toBe(0);
+    expect(report.closingRowsInsertedExact).toBe(0);
     expect(report.missedCount).toBe(1);
   });
 
@@ -392,6 +412,7 @@ describe('Generic Shadow T-30 Automation V1 — closing-commit cycle', () => {
     expect(report.runResults[0].existingCount).toBe(1);
     expect(report.runResults[0].insertedClosingCount).toBe(0);
     expect(report.runResults[0].transactionalNoOp).toBe(true);
+    expect(report.runResults[0].commitSucceeded).toBe(true);
     expect(report.mutationTargetsInvoked).toEqual([]);
   });
 
@@ -401,7 +422,9 @@ describe('Generic Shadow T-30 Automation V1 — closing-commit cycle', () => {
     expect(report.runResults[0].insertedClosingCount).toBe(1);
     expect(report.runResults[0].verificationOk).toBe(true);
     expect(report.postwriteVerificationStatus).toBe('PASSED');
-    expect(report.closingAvailableCount).toBe(1);
+    expect(report.plannedAvailableCount).toBe(1);
+    expect(report.persistedAvailableCount).toBe(1);
+    expect(report.runResults[0].commitSucceeded).toBe(true);
   });
 
   it('retains a legitimate UNAVAILABLE DUE persist without missing-to-zero', async () => {
@@ -418,7 +441,8 @@ describe('Generic Shadow T-30 Automation V1 — closing-commit cycle', () => {
     expect(report.outcome).toBe('CLOSINGS_CAPTURED');
     expect(report.runResults[0].plannedUnavailableCount).toBe(1);
     expect(report.runResults[0].insertedClosingCount).toBe(1);
-    expect(report.closingUnavailableCount).toBe(1);
+    expect(report.plannedUnavailableCount).toBe(1);
+    expect(report.persistedUnavailableCount).toBe(1);
     expect(report.mutationTargetsInvoked).toEqual(['ShadowModelClosingMarketSnapshot']);
   });
 
@@ -442,6 +466,7 @@ describe('Generic Shadow T-30 Automation V1 — closing-commit cycle', () => {
     expect(invoked).toEqual(['run-a']);
     expect(report.outcome).toBe('FAILED');
     expect(report.runResults[0].rolledBack).toBe(true);
+    expect(report.runResults[0].commitSucceeded).toBe(false);
     expect(report.runResults[0].insertedClosingCount).toBe(0);
     expect(report.mutationTargetsInvoked).toEqual([]);
     expect(report.writeSafe).toBe(false);
@@ -475,7 +500,7 @@ describe('Generic Shadow T-30 Automation V1 — closing-commit cycle', () => {
       frame('run-b', {}, 'core_v1_shadow_baseline_v1'),
     ];
     const { report, invoked } = await runCycle({
-      framesByCall: [dual],
+      framesByCall: [dual, dual, dual],
       children: {
         'run-a': persistedChild('run-a', { insertedClosingCount: 2, insertedClosingIds: ['a1', 'a2'] }),
         'run-b': persistedChild('run-b', {
@@ -493,7 +518,8 @@ describe('Generic Shadow T-30 Automation V1 — closing-commit cycle', () => {
     });
     expect(invoked).toEqual(['run-a', 'run-b']);
     expect(report.runResults[0].insertedClosingCount).toBe(2);
-    expect(report.closingRowsInserted).toBe(2);
+    expect(report.closingRowsInsertedKnown).toBe(2);
+    expect(report.closingRowsInsertedExact).toBe(2);
     expect(report.mutationTargetsInvoked).toEqual(['ShadowModelClosingMarketSnapshot']);
     expect(report.outcome).toBe('FAILED');
     expect(report.writeSafe).toBe(false);
@@ -510,6 +536,11 @@ describe('Generic Shadow T-30 Automation V1 — closing-commit cycle', () => {
     expect(invoked).toEqual(['run-a']);
     expect(report.runResults[0].persistenceStatus).toBe('UNKNOWN');
     expect(report.runResults[0].persistenceCommitted).toBeNull();
+    expect(report.runResults[0].insertedClosingCount).toBeNull();
+    expect(report.runResults[0].insertedClosingIds).toBeNull();
+    expect(report.runResults[0].commitSucceeded).toBeNull();
+    expect(report.closingRowsInsertedKnown).toBe(0);
+    expect(report.closingRowsInsertedExact).toBeNull();
     expect(report.mutationTargetsInvoked).toBeNull();
     expect(report.outcome).toBe('FAILED');
     expect(report.writeSafe).toBe(false);
@@ -524,7 +555,7 @@ describe('Generic Shadow T-30 Automation V1 — closing-commit cycle', () => {
       frame('run-b', {}, 'core_v1_shadow_baseline_v1'),
     ];
     const { report, invoked } = await runCycle({
-      framesByCall: [dual],
+      framesByCall: [dual, dual],
       children: {
         'run-a': async () => {
           throw new Error('child_unreadable');
@@ -550,10 +581,197 @@ describe('Generic Shadow T-30 Automation V1 — closing-commit cycle', () => {
     expect(report.closingCommitRequested).toBe(false);
   });
 
-  it('always reports providerCalls=0 and never writes MarketLine', async () => {
+  it('always reports providerCalls=0 on the legitimate path and never writes MarketLine', async () => {
     const { report } = await runCycle({});
     expect(report.providerCalls).toBe(0);
     expect(report.mutationTargetsInvoked).not.toContain('MarketLine' as never);
     expect(report.mutationTargetsInvoked).toEqual(['ShadowModelClosingMarketSnapshot']);
+  });
+
+  it('A: initial PLAN FUTURE then fresh pre-COMMIT DUE invokes the child exactly once', async () => {
+    const initialPlan = planGenericShadowT30Automation({
+      season: 2026,
+      week: 3,
+      observedTimestamp: BEFORE_TARGET,
+      frames: [frame()],
+    });
+    const { report, invoked } = await runCycle({
+      initialPlan,
+      initialObservedTimestamp: BEFORE_TARGET,
+      timestamps: [DUE_AT, DUE_AT],
+      framesByCall: [
+        [frame()],
+        [frame('run-a', { existingClosings: [existingClosing('run-a')] })],
+      ],
+    });
+    expect(initialPlan.counts.futureCount).toBe(1);
+    expect(initialPlan.counts.dueCount).toBe(0);
+    expect(report.initialPlan.counts.futureCount).toBe(1);
+    expect(report.preCommitPlan?.counts.dueCount).toBe(1);
+    expect(invoked).toEqual(['run-a']);
+    expect(report.dueCaptureRunIds).toEqual(['run-a']);
+    expect(report.closingCommitRequested).toBe(true);
+    expect(report.outcome).toBe('CLOSINGS_CAPTURED');
+  });
+
+  it('B: initial PLAN DUE then fresh pre-COMMIT EXISTING does not invoke the child', async () => {
+    const initialPlan = planGenericShadowT30Automation({
+      season: 2026,
+      week: 3,
+      observedTimestamp: DUE_AT,
+      frames: [frame()],
+    });
+    const { report, invoked } = await runCycle({
+      initialPlan,
+      initialObservedTimestamp: DUE_AT,
+      timestamps: [DUE_AT, DUE_AT],
+      framesByCall: [[frame('run-a', { existingClosings: [existingClosing('run-a')] })]],
+    });
+    expect(initialPlan.counts.dueCount).toBe(1);
+    expect(invoked).toEqual([]);
+    expect(report.preCommitPlan?.counts.existingCount).toBe(1);
+    expect(report.closingCommitRequested).toBe(false);
+    expect(report.outcome).toBe('NO_ACTION');
+  });
+
+  it('C: initial PLAN DUE then fresh pre-COMMIT MISSED does not invoke or backfill', async () => {
+    const initialPlan = planGenericShadowT30Automation({
+      season: 2026,
+      week: 3,
+      observedTimestamp: DUE_AT,
+      frames: [frame()],
+    });
+    const { report, invoked } = await runCycle({
+      initialPlan,
+      initialObservedTimestamp: DUE_AT,
+      timestamps: [AFTER_KICKOFF, AFTER_KICKOFF],
+      framesByCall: [[frame()]],
+    });
+    expect(initialPlan.counts.dueCount).toBe(1);
+    expect(invoked).toEqual([]);
+    expect(report.preCommitPlan?.counts.missedCount).toBe(1);
+    expect(report.closingCommitRequested).toBe(false);
+    expect(report.outcome).toBe('MISSED_TARGET_PRESENT');
+    expect(report.closingRowsInsertedKnown).toBe(0);
+    expect(report.closingRowsInsertedExact).toBe(0);
+  });
+
+  it('D: initial PLAN DUE then fresh pre-COMMIT BLOCKED does not invoke and reports BLOCKED', async () => {
+    const initialPlan = planGenericShadowT30Automation({
+      season: 2026,
+      week: 3,
+      observedTimestamp: DUE_AT,
+      frames: [frame()],
+    });
+    const { report, invoked } = await runCycle({
+      initialPlan,
+      initialObservedTimestamp: DUE_AT,
+      timestamps: [DUE_AT, DUE_AT],
+      framesByCall: [[frame()]],
+      blockersByCall: [['eligible_capture_run_incomplete']],
+    });
+    expect(initialPlan.counts.dueCount).toBe(1);
+    expect(invoked).toEqual([]);
+    expect(report.closingCommitRequested).toBe(false);
+    expect(report.outcome).toBe('BLOCKED');
+    expect(report.blockers).toContain('eligible_capture_run_incomplete');
+    expect(report.preCommitPlan).not.toBeNull();
+  });
+
+  it('E: fresh pre-COMMIT DUE then child kickoff race remains MISSED with no write', async () => {
+    const { report, invoked } = await runCycle({
+      children: { 'run-a': missedChild('run-a') },
+    });
+    expect(report.preCommitPlan?.counts.dueCount).toBe(1);
+    expect(invoked).toEqual(['run-a']);
+    expect(report.runResults[0].missedCount).toBe(1);
+    expect(report.runResults[0].insertedClosingCount).toBe(0);
+    expect(report.runResults[0].persistenceStatus).toBe('NOT_PERSISTED');
+    expect(report.runResults[0].commitSucceeded).toBe(true);
+    expect(report.outcome).toBe('MISSED_TARGET_PRESENT');
+    expect(report.persistedAvailableCount).toBe(0);
+    expect(report.persistedUnavailableCount).toBe(0);
+  });
+
+  it('preserves known inserts when a later child is UNKNOWN without claiming an exact total', async () => {
+    const dual = [
+      frame('run-a', {}, 'candidate_b_roster_prior_v1'),
+      frame('run-b', {}, 'core_v1_shadow_baseline_v1'),
+    ];
+    const { report, invoked } = await runCycle({
+      framesByCall: [dual, dual, dual],
+      children: {
+        'run-a': persistedChild('run-a', { insertedClosingCount: 2, insertedClosingIds: ['a1', 'a2'] }),
+        'run-b': async () => {
+          throw new Error('child_report_missing');
+        },
+      },
+    });
+    expect(invoked).toEqual(['run-a', 'run-b']);
+    expect(report.runResults[0].persistenceStatus).toBe('PERSISTED');
+    expect(report.runResults[0].insertedClosingCount).toBe(2);
+    expect(report.runResults[1].persistenceStatus).toBe('UNKNOWN');
+    expect(report.runResults[1].insertedClosingCount).toBeNull();
+    expect(report.closingRowsInsertedKnown).toBe(2);
+    expect(report.closingRowsInsertedExact).toBeNull();
+    expect(report.mutationTargetsInvoked).toEqual(['ShadowModelClosingMarketSnapshot']);
+    expect(report.outcome).toBe('FAILED');
+  });
+
+  it('does not increase persisted AVAILABLE/UNAVAILABLE counts for a rolled-back child', async () => {
+    const { report } = await runCycle({
+      children: {
+        'run-a': persistedChild('run-a', {
+          persistenceStatus: 'NOT_PERSISTED',
+          persistenceCommitted: false,
+          mutationsInvoked: true,
+          rolledBack: true,
+          commitSucceeded: false,
+          verificationOk: false,
+          insertedClosingCount: 0,
+          insertedClosingIds: [],
+          plannedAvailableCount: 1,
+          plannedUnavailableCount: 0,
+        }),
+      },
+    });
+    expect(report.plannedAvailableCount).toBe(1);
+    expect(report.persistedAvailableCount).toBe(0);
+    expect(report.persistedUnavailableCount).toBe(0);
+    expect(report.closingRowsInsertedKnown).toBe(0);
+    expect(report.closingRowsInsertedExact).toBe(0);
+  });
+
+  it('preserves a nonzero child providerCalls value as FAILED without normalizing to zero', async () => {
+    const { report, invoked } = await runCycle({
+      children: {
+        'run-a': persistedChild('run-a', {
+          persistenceStatus: 'NOT_PERSISTED',
+          writeSafe: false,
+          providerCalls: 3,
+          blockers: ['child_provider_calls_nonzero'],
+          error: 'child_provider_calls_nonzero',
+          insertedClosingCount: 0,
+          insertedClosingIds: [],
+        }),
+      },
+    });
+    expect(invoked).toEqual(['run-a']);
+    expect(report.runResults[0].providerCalls).toBe(3);
+    expect(report.providerCalls).toBe(3);
+    expect(report.outcome).toBe('FAILED');
+    expect(report.writeSafe).toBe(false);
+    expect(report.blockers.some((value) => value.indexOf('child_provider_calls_nonzero') >= 0)).toBe(
+      true
+    );
+  });
+
+  it('does not invoke writers when confirmation is invalid even if the initial PLAN was DUE', async () => {
+    const { report, invoked } = await runCycle({
+      confirmation: 'CAPTURE_2026_WEEK_3_SHADOW_MODEL_T30_run-a',
+    });
+    expect(invoked).toEqual([]);
+    expect(report.preCommitPlan).toBeNull();
+    expect(report.preCommitObservedTimestamp).toBeNull();
   });
 });

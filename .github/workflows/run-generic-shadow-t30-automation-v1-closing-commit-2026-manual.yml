@@ -151,7 +151,7 @@ jobs:
             --report "$REPORT"
 
       - name: Write terminal COMMIT cycle report
-        if: ${{ inputs.mode == 'COMMIT' }}
+        if: ${{ always() && inputs.mode == 'COMMIT' }}
         env:
           INPUT_SEASON: ${{ inputs.season }}
           INPUT_WEEK: ${{ inputs.week }}

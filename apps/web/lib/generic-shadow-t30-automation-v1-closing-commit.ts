@@ -9,6 +9,7 @@
  * once per eligible DUE capture run.
  *
  * Multiple capture runs for the same physical game are NOT deduplicated.
+ * COMMIT writer authorization uses the fresh pre-COMMIT plan only.
  */
 
 import type {
@@ -94,13 +95,13 @@ export interface GenericShadowT30ClosingChildSummary {
   persistenceStatus: GenericShadowT30ClosingPersistenceStatus;
   persistenceCommitted: boolean | null;
   mutationsInvoked: boolean | null;
-  insertedClosingCount: number;
-  insertedClosingIds: string[];
+  insertedClosingCount: number | null;
+  insertedClosingIds: string[] | null;
   verificationOk: boolean | null;
   verificationReasons: string[];
   rolledBack: boolean | null;
   commitSucceeded: boolean | null;
-  providerCalls: 0;
+  providerCalls: number;
   blockers: string[];
   error: string | null;
 }
@@ -123,12 +124,13 @@ export interface GenericShadowT30ClosingCommitRunResult {
   transactionalNoOp: boolean | null;
   persistenceStatus: GenericShadowT30ClosingPersistenceStatus;
   persistenceCommitted: boolean | null;
-  insertedClosingCount: number;
-  insertedClosingIds: string[];
+  insertedClosingCount: number | null;
+  insertedClosingIds: string[] | null;
   verificationOk: boolean | null;
   verificationReasons: string[];
   rolledBack: boolean | null;
-  providerCalls: 0;
+  commitSucceeded: boolean | null;
+  providerCalls: number;
   blockers: string[];
   error: string | null;
   skippedAfterPriorChildFailure: boolean;
@@ -149,6 +151,7 @@ export interface GenericShadowT30ClosingCommitCycleReport {
   repoCommitSha: string;
   githubRef: string | null;
   initialObservedTimestamp: Date;
+  preCommitObservedTimestamp: Date | null;
   finalObservedTimestamp: Date | null;
   eligibleCaptureRunIds: string[];
   eligibleModelDefinitionIds: string[];
@@ -158,17 +161,21 @@ export interface GenericShadowT30ClosingCommitCycleReport {
   closingCommitRequested: boolean;
   runResults: GenericShadowT30ClosingCommitRunResult[];
   closingRowsPlanned: number;
-  closingRowsInserted: number;
-  closingAvailableCount: number;
-  closingUnavailableCount: number;
+  plannedAvailableCount: number;
+  plannedUnavailableCount: number;
+  persistedAvailableCount: number;
+  persistedUnavailableCount: number;
+  closingRowsInsertedKnown: number;
+  closingRowsInsertedExact: number | null;
   missedCount: number;
-  providerCalls: 0;
+  providerCalls: number;
   mutationTargetsInvoked: GenericShadowT30ClosingMutationTarget[] | null;
   blockers: string[];
   writeSafe: boolean;
   postwriteVerificationStatus: GenericShadowT30ClosingPostwriteVerificationStatus;
   outcome: GenericShadowT30ClosingCommitCycleOutcome;
   initialPlan: GenericShadowT30AutomationPlan;
+  preCommitPlan: GenericShadowT30AutomationPlan | null;
   finalPlan: GenericShadowT30AutomationPlan | null;
 }
 
@@ -227,13 +234,14 @@ export function decideGenericShadowT30ClosingCommit(
 export function childClosingCommitFailed(
   child: Pick<
     GenericShadowT30ClosingChildSummary,
-    'persistenceStatus' | 'rolledBack' | 'commitSucceeded' | 'verificationOk'
+    'persistenceStatus' | 'rolledBack' | 'commitSucceeded' | 'verificationOk' | 'providerCalls'
   >
 ): boolean {
   if (child.persistenceStatus === 'UNKNOWN') return true;
   if (child.rolledBack === true) return true;
   if (child.commitSucceeded === false) return true;
   if (child.persistenceStatus === 'PERSISTED' && child.verificationOk !== true) return true;
+  if (child.providerCalls > 0) return true;
   return false;
 }
 
@@ -254,26 +262,28 @@ export function mutationTargetsInvokedForClosingPersistence(
 export function determineGenericShadowT30ClosingCommitCycleOutcome(input: {
   mode: GenericShadowT30ClosingCommitMode;
   blockers: string[];
-  initialCounts: GenericShadowT30AutomationPlan['counts'];
+  decisionCounts: GenericShadowT30AutomationPlan['counts'];
   closingCommitRequested: boolean;
   runResults: GenericShadowT30ClosingCommitRunResult[];
+  providerCalls: number;
 }): GenericShadowT30ClosingCommitCycleOutcome {
   const invoked = input.runResults.filter((run) => run.invocationAttempted);
   const anyFailed = invoked.some((run) =>
     childClosingCommitFailed({
       persistenceStatus: run.persistenceStatus,
       rolledBack: run.rolledBack,
-      commitSucceeded: run.rolledBack === true || run.verificationOk === false ? false : true,
+      commitSucceeded: run.commitSucceeded,
       verificationOk: run.verificationOk,
+      providerCalls: run.providerCalls,
     })
   );
   const anyPersisted = input.runResults.some((run) => run.persistenceStatus === 'PERSISTED');
-  if (anyFailed) return 'FAILED';
+  if (anyFailed || input.providerCalls > 0) return 'FAILED';
   if (anyPersisted && input.blockers.length > 0) return 'FAILED';
   if (input.mode === 'PLAN') {
     if (input.blockers.length > 0) return 'BLOCKED';
-    if (input.initialCounts.dueCount > 0) return 'PREVIEW_ONLY';
-    if (input.initialCounts.missedCount > 0) return 'MISSED_TARGET_PRESENT';
+    if (input.decisionCounts.dueCount > 0) return 'PREVIEW_ONLY';
+    if (input.decisionCounts.missedCount > 0) return 'MISSED_TARGET_PRESENT';
     return 'NO_ACTION';
   }
   if (input.blockers.length > 0 && invoked.length === 0) return 'BLOCKED';
@@ -288,7 +298,7 @@ export function determineGenericShadowT30ClosingCommitCycleOutcome(input: {
         run.insertedClosingCount === 0
     );
   if (anyChildMissedOnly) return 'MISSED_TARGET_PRESENT';
-  if (input.initialCounts.dueCount === 0 && input.initialCounts.missedCount > 0) {
+  if (input.decisionCounts.dueCount === 0 && input.decisionCounts.missedCount > 0) {
     return 'MISSED_TARGET_PRESENT';
   }
   return 'NO_ACTION';
@@ -321,6 +331,7 @@ function emptyRunResult(
     verificationOk: null,
     verificationReasons: [],
     rolledBack: null,
+    commitSucceeded: null,
     providerCalls: 0,
     blockers: [...run.writeBlockers],
     error: null,
@@ -356,11 +367,12 @@ export function runResultFromChildSummary(
     persistenceStatus: child.persistenceStatus,
     persistenceCommitted: child.persistenceCommitted,
     insertedClosingCount: child.insertedClosingCount,
-    insertedClosingIds: child.insertedClosingIds.slice(),
+    insertedClosingIds: child.insertedClosingIds == null ? null : child.insertedClosingIds.slice(),
     verificationOk: child.verificationOk,
     verificationReasons: child.verificationReasons.slice(),
     rolledBack: child.rolledBack,
-    providerCalls: 0,
+    commitSucceeded: child.commitSucceeded,
+    providerCalls: child.providerCalls,
     blockers: child.blockers.slice(),
     error: child.error,
     skippedAfterPriorChildFailure: extras.skippedAfterPriorChildFailure === true,
@@ -374,58 +386,89 @@ export function buildGenericShadowT30ClosingCommitCycleReport(input: {
   repoCommitSha: string;
   githubRef: string | null;
   initialObservedTimestamp: Date;
+  preCommitObservedTimestamp: Date | null;
   finalObservedTimestamp: Date | null;
   initialPlan: GenericShadowT30AutomationPlan;
+  preCommitPlan: GenericShadowT30AutomationPlan | null;
   finalPlan: GenericShadowT30AutomationPlan | null;
   runResults: GenericShadowT30ClosingCommitRunResult[];
   extraBlockers?: string[];
 }): GenericShadowT30ClosingCommitCycleReport {
-  const decision = decideGenericShadowT30ClosingCommit(input.initialPlan);
+  const decisionPlan =
+    input.mode === 'COMMIT' && input.preCommitPlan ? input.preCommitPlan : input.initialPlan;
+  const decision = decideGenericShadowT30ClosingCommit(decisionPlan);
   const closingCommitRequested =
-    input.mode === 'COMMIT' && decision.closingCommitRequested && !decision.failClosed;
+    input.mode === 'COMMIT' &&
+    !!input.preCommitPlan &&
+    decision.closingCommitRequested &&
+    !decision.failClosed;
+  const dueCaptureRunIds =
+    input.mode === 'PLAN'
+      ? decideGenericShadowT30ClosingCommit(input.initialPlan).dueCaptureRunIds
+      : input.preCommitPlan
+        ? decision.dueCaptureRunIds
+        : [];
   const unknownPersistenceBlockers = input.runResults
     .filter((run) => run.persistenceStatus === 'UNKNOWN')
     .map((run) => `persistence_state_unknown:${run.captureRunId}`);
+  const providerCallBlockers = input.runResults
+    .filter((run) => run.providerCalls > 0)
+    .map((run) => `child_provider_calls_nonzero:${run.captureRunId}`);
+  const reportBlockers =
+    input.mode === 'PLAN'
+      ? input.initialPlan.blockers
+      : input.preCommitPlan
+        ? input.preCommitPlan.blockers
+        : [];
   const blockers = uniqueSorted([
-    ...input.initialPlan.blockers,
+    ...reportBlockers,
     ...(input.extraBlockers ?? []),
     ...(input.finalPlan?.blockers ?? []),
     ...unknownPersistenceBlockers,
+    ...providerCallBlockers,
   ]);
+  const sourcePlans =
+    input.mode === 'COMMIT' && input.preCommitPlan
+      ? input.preCommitPlan.runPlans
+      : input.initialPlan.runPlans;
   const runResults =
-    input.runResults.length > 0
-      ? input.runResults
-      : input.initialPlan.runPlans.map((run) => emptyRunResult(run));
+    input.runResults.length > 0 ? input.runResults : sourcePlans.map((run) => emptyRunResult(run));
+  let providerCalls = 0;
+  for (let i = 0; i < runResults.length; i++) {
+    providerCalls += runResults[i].providerCalls;
+  }
   const outcome = determineGenericShadowT30ClosingCommitCycleOutcome({
     mode: input.mode,
     blockers,
-    initialCounts: input.initialPlan.counts,
+    decisionCounts: decisionPlan.counts,
     closingCommitRequested,
     runResults,
+    providerCalls,
   });
-  let closingRowsInserted = 0;
-  let closingAvailableCount = 0;
-  let closingUnavailableCount = 0;
-  let missedCount = input.initialPlan.counts.missedCount;
-  for (let i = 0; i < runResults.length; i++) {
-    closingRowsInserted += runResults[i].insertedClosingCount;
-    closingAvailableCount += runResults[i].plannedAvailableCount;
-    closingUnavailableCount += runResults[i].plannedUnavailableCount;
-    if (runResults[i].invocationAttempted) {
-      missedCount += 0;
-    }
-  }
+  let closingRowsInsertedKnown = 0;
+  let anyUnknownInserts = false;
+  let persistedAvailableCount = 0;
+  let persistedUnavailableCount = 0;
+  let missedCount = decisionPlan.counts.missedCount;
   if (runResults.some((run) => run.invocationAttempted)) {
     missedCount = 0;
-    closingAvailableCount = 0;
-    closingUnavailableCount = 0;
     for (let i = 0; i < runResults.length; i++) {
-      if (!runResults[i].invocationAttempted) continue;
       missedCount += runResults[i].missedCount;
-      closingAvailableCount += runResults[i].plannedAvailableCount;
-      closingUnavailableCount += runResults[i].plannedUnavailableCount;
     }
   }
+  for (let i = 0; i < runResults.length; i++) {
+    const run = runResults[i];
+    if (run.persistenceStatus === 'UNKNOWN') {
+      anyUnknownInserts = true;
+    } else if (run.persistenceStatus === 'PERSISTED') {
+      closingRowsInsertedKnown += run.insertedClosingCount ?? 0;
+      persistedAvailableCount += run.plannedAvailableCount;
+      persistedUnavailableCount += run.plannedUnavailableCount;
+    }
+  }
+  const plannedAvailableCount = decisionPlan.counts.plannedAvailableCount;
+  const plannedUnavailableCount = decisionPlan.counts.plannedUnavailableCount;
+  const closingRowsInsertedExact = anyUnknownInserts ? null : closingRowsInsertedKnown;
   const anyUnknown = runResults.some((run) => run.persistenceStatus === 'UNKNOWN');
   const anyPersisted = runResults.some((run) => run.persistenceStatus === 'PERSISTED');
   const anyVerificationFailed = runResults.some(
@@ -437,13 +480,15 @@ export function buildGenericShadowT30ClosingCommitCycleReport(input: {
   else if (anyVerificationFailed) postwriteVerificationStatus = 'FAILED';
   else if (anyPersisted) postwriteVerificationStatus = 'PASSED';
   else if (closingCommitRequested) postwriteVerificationStatus = 'NOT_APPLICABLE';
+  const decisionWriteSafe = input.mode === 'PLAN' ? input.initialPlan.writeSafe : !!input.preCommitPlan && input.preCommitPlan.writeSafe;
   const writeSafe =
     blockers.length === 0 &&
-    input.initialPlan.writeSafe &&
+    decisionWriteSafe &&
     (!input.finalPlan || input.finalPlan.writeSafe) &&
     outcome !== 'FAILED' &&
     outcome !== 'BLOCKED' &&
-    !anyUnknown;
+    !anyUnknown &&
+    providerCalls === 0;
 
   return {
     automationVersion: 1,
@@ -461,26 +506,31 @@ export function buildGenericShadowT30ClosingCommitCycleReport(input: {
     repoCommitSha: input.repoCommitSha,
     githubRef: input.githubRef,
     initialObservedTimestamp: input.initialObservedTimestamp,
+    preCommitObservedTimestamp: input.preCommitObservedTimestamp,
     finalObservedTimestamp: input.finalObservedTimestamp,
-    eligibleCaptureRunIds: input.initialPlan.eligibleCaptureRunIds,
-    eligibleModelDefinitionIds: input.initialPlan.eligibleModelDefinitionIds,
+    eligibleCaptureRunIds: decisionPlan.eligibleCaptureRunIds,
+    eligibleModelDefinitionIds: decisionPlan.eligibleModelDefinitionIds,
     initialOutcome: input.initialPlan.outcome,
     initialCounts: input.initialPlan.counts,
-    dueCaptureRunIds: decision.dueCaptureRunIds,
+    dueCaptureRunIds,
     closingCommitRequested,
     runResults,
-    closingRowsPlanned: input.initialPlan.closingRowsPlanned,
-    closingRowsInserted,
-    closingAvailableCount,
-    closingUnavailableCount,
+    closingRowsPlanned: decisionPlan.closingRowsPlanned,
+    plannedAvailableCount,
+    plannedUnavailableCount,
+    persistedAvailableCount,
+    persistedUnavailableCount,
+    closingRowsInsertedKnown,
+    closingRowsInsertedExact,
     missedCount,
-    providerCalls: 0,
+    providerCalls,
     mutationTargetsInvoked: mutationTargetsInvokedForClosingPersistence(runResults),
     blockers,
     writeSafe,
     postwriteVerificationStatus,
     outcome,
     initialPlan: input.initialPlan,
+    preCommitPlan: input.preCommitPlan,
     finalPlan: input.finalPlan,
   };
 }

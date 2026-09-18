@@ -15,6 +15,8 @@ import {
   GENERIC_SHADOW_T30_CLOSING_DEFINITION_ID,
 } from '../../web/lib/shadow-model-t30-closing-v1';
 
+const IDENTITY = { season: 2026, week: 3, captureRunId: 'run-a' };
+
 function cliShapedReport(extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     season: 2026,
@@ -64,7 +66,7 @@ function cliShapedReport(extra: Record<string, unknown> = {}): Record<string, un
 
 describe('summarizeGuardedClosingReport against Generic T-30 closing CLI shape', () => {
   it('preserves a successful COMMIT persist and verification', () => {
-    const summary = summarizeGuardedClosingReport(cliShapedReport(), 'run-a');
+    const summary = summarizeGuardedClosingReport(cliShapedReport(), IDENTITY);
     expect(summary.persistenceStatus).toBe('PERSISTED');
     expect(summary.persistenceCommitted).toBe(true);
     expect(summary.insertedClosingCount).toBe(1);
@@ -91,11 +93,12 @@ describe('summarizeGuardedClosingReport against Generic T-30 closing CLI shape',
           plannedInsertCount: 0,
         },
       }),
-      'run-a'
+      IDENTITY
     );
     expect(summary.persistenceStatus).toBe('NOT_PERSISTED');
     expect(summary.mutationsInvoked).toBe(false);
     expect(summary.insertedClosingCount).toBe(0);
+    expect(summary.commitSucceeded).toBe(true);
   });
 
   it('treats rolled-back count mismatch as NOT_PERSISTED, not UNKNOWN', () => {
@@ -110,19 +113,23 @@ describe('summarizeGuardedClosingReport against Generic T-30 closing CLI shape',
         verificationReasons: ['in_transaction_closing_count_mismatch'],
         error: 'in_transaction_closing_count_mismatch',
       }),
-      'run-a'
+      IDENTITY
     );
     expect(summary.persistenceStatus).toBe('NOT_PERSISTED');
     expect(summary.rolledBack).toBe(true);
     expect(summary.verificationOk).toBe(false);
+    expect(summary.commitSucceeded).toBe(false);
   });
 
   it('treats a missing child report as UNKNOWN persistence, not proven zero mutation', () => {
     const missingPath = path.join(os.tmpdir(), `missing-closing-child-${Date.now()}.json`);
-    const summary = readGuardedClosingChildReport(missingPath, 'run-a');
+    const summary = readGuardedClosingChildReport(missingPath, IDENTITY);
     expect(summary.persistenceStatus).toBe('UNKNOWN');
     expect(summary.persistenceCommitted).toBeNull();
     expect(summary.mutationsInvoked).toBeNull();
+    expect(summary.insertedClosingCount).toBeNull();
+    expect(summary.insertedClosingIds).toBeNull();
+    expect(summary.commitSucceeded).toBeNull();
     expect(summary.blockers).toEqual(expect.arrayContaining(['persistence_state_unknown']));
     expect(summary.error).toBe('child_report_missing');
   });
@@ -131,8 +138,10 @@ describe('summarizeGuardedClosingReport against Generic T-30 closing CLI shape',
     const tmp = path.join(os.tmpdir(), `unreadable-closing-child-${Date.now()}.json`);
     fs.writeFileSync(tmp, '{not-json', 'utf8');
     try {
-      const summary = readGuardedClosingChildReport(tmp, 'run-a');
+      const summary = readGuardedClosingChildReport(tmp, IDENTITY);
       expect(summary.persistenceStatus).toBe('UNKNOWN');
+      expect(summary.insertedClosingCount).toBeNull();
+      expect(summary.insertedClosingIds).toBeNull();
       expect(summary.blockers).toEqual(expect.arrayContaining(['persistence_state_unknown']));
       expect(String(summary.error)).toContain('child_report_unreadable');
     } finally {
@@ -141,8 +150,65 @@ describe('summarizeGuardedClosingReport against Generic T-30 closing CLI shape',
   });
 
   it('treats a parsed report without mutationsInvoked proof as UNKNOWN', () => {
-    const summary = summarizeGuardedClosingReport({ hello: 'world' }, 'run-a');
+    const summary = summarizeGuardedClosingReport({ hello: 'world' }, IDENTITY);
     expect(summary.persistenceStatus).toBe('UNKNOWN');
     expect(summary.mutationsInvoked).toBeNull();
+    expect(summary.insertedClosingCount).toBeNull();
+    expect(summary.insertedClosingIds).toBeNull();
+  });
+
+  it('does not attribute a report with the wrong captureRunId', () => {
+    const summary = summarizeGuardedClosingReport(
+      cliShapedReport({ captureRunId: 'run-stale' }),
+      IDENTITY
+    );
+    expect(summary.persistenceStatus).toBe('UNKNOWN');
+    expect(summary.insertedClosingCount).toBeNull();
+    expect(summary.insertedClosingIds).toBeNull();
+    expect(summary.error).toBe('child_report_identity_mismatch:captureRunId');
+  });
+
+  it('does not attribute a report with the wrong week', () => {
+    const summary = summarizeGuardedClosingReport(cliShapedReport({ week: 4 }), IDENTITY);
+    expect(summary.persistenceStatus).toBe('UNKNOWN');
+    expect(summary.error).toBe('child_report_identity_mismatch:week');
+  });
+
+  it('does not attribute a report with the wrong closingDefinitionHash', () => {
+    const summary = summarizeGuardedClosingReport(
+      cliShapedReport({ closingDefinitionHash: 'deadbeef' }),
+      IDENTITY
+    );
+    expect(summary.persistenceStatus).toBe('UNKNOWN');
+    expect(summary.error).toBe('child_report_identity_mismatch:closingDefinitionHash');
+  });
+
+  it('does not attribute a report with the wrong mode', () => {
+    const summary = summarizeGuardedClosingReport(cliShapedReport({ mode: 'PLAN' }), IDENTITY);
+    expect(summary.persistenceStatus).toBe('UNKNOWN');
+    expect(summary.error).toBe('child_report_identity_mismatch:mode');
+  });
+
+  it('does not attribute a report missing a required identity field', () => {
+    const raw = cliShapedReport();
+    delete raw.evaluationProtocol;
+    const summary = summarizeGuardedClosingReport(raw, IDENTITY);
+    expect(summary.persistenceStatus).toBe('UNKNOWN');
+    expect(summary.error).toBe('child_report_identity_missing:evaluationProtocol');
+  });
+
+  it('preserves a nonzero providerCalls value instead of normalizing it to zero', () => {
+    const summary = summarizeGuardedClosingReport(cliShapedReport({ providerCalls: 2 }), IDENTITY);
+    expect(summary.providerCalls).toBe(2);
+    expect(summary.writeSafe).toBe(false);
+    expect(summary.blockers).toContain('child_provider_calls_nonzero');
+    expect(summary.persistenceStatus).toBe('PERSISTED');
+    expect(summary.insertedClosingCount).toBe(1);
+  });
+
+  it('preserves commitSucceeded=true on a successful persist', () => {
+    const summary = summarizeGuardedClosingReport(cliShapedReport(), IDENTITY);
+    expect(summary.commitSucceeded).toBe(true);
+    expect(summary.persistenceStatus).toBe('PERSISTED');
   });
 });

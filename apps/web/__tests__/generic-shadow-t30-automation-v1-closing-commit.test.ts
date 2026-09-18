@@ -5,6 +5,7 @@
 
 import { planGenericShadowT30Automation } from '@/lib/generic-shadow-t30-automation-v1';
 import {
+  childClosingCommitFailed,
   decideGenericShadowT30ClosingCommit,
   determineGenericShadowT30ClosingCommitCycleOutcome,
   dueCaptureRunIdsFromPlan,
@@ -257,7 +258,7 @@ describe('Generic Shadow T-30 Automation V1 — closing-commit decision', () => 
       determineGenericShadowT30ClosingCommitCycleOutcome({
         mode: 'PLAN',
         blockers: [],
-        initialCounts: {
+        decisionCounts: {
           totalPredictions: 1,
           existingCount: 0,
           futureCount: 0,
@@ -269,13 +270,14 @@ describe('Generic Shadow T-30 Automation V1 — closing-commit decision', () => 
         },
         closingCommitRequested: false,
         runResults: [],
+        providerCalls: 0,
       })
     ).toBe('PREVIEW_ONLY');
     expect(
       determineGenericShadowT30ClosingCommitCycleOutcome({
         mode: 'COMMIT',
         blockers: [],
-        initialCounts: {
+        decisionCounts: {
           totalPredictions: 1,
           existingCount: 0,
           futureCount: 0,
@@ -310,13 +312,63 @@ describe('Generic Shadow T-30 Automation V1 — closing-commit decision', () => 
             verificationOk: true,
             verificationReasons: [],
             rolledBack: false,
+            commitSucceeded: true,
             providerCalls: 0,
             blockers: [],
             error: null,
             skippedAfterPriorChildFailure: false,
           },
         ],
+        providerCalls: 0,
       })
     ).toBe('CLOSINGS_CAPTURED');
+  });
+
+  it('classifies child failure from the actual commitSucceeded field', () => {
+    expect(
+      childClosingCommitFailed({
+        persistenceStatus: 'PERSISTED',
+        rolledBack: false,
+        commitSucceeded: true,
+        verificationOk: true,
+        providerCalls: 0,
+      })
+    ).toBe(false);
+    expect(
+      childClosingCommitFailed({
+        persistenceStatus: 'NOT_PERSISTED',
+        rolledBack: false,
+        commitSucceeded: true,
+        verificationOk: true,
+        providerCalls: 0,
+      })
+    ).toBe(false);
+    expect(
+      childClosingCommitFailed({
+        persistenceStatus: 'NOT_PERSISTED',
+        rolledBack: true,
+        commitSucceeded: false,
+        verificationOk: false,
+        providerCalls: 0,
+      })
+    ).toBe(true);
+    expect(
+      childClosingCommitFailed({
+        persistenceStatus: 'UNKNOWN',
+        rolledBack: null,
+        commitSucceeded: null,
+        verificationOk: null,
+        providerCalls: 0,
+      })
+    ).toBe(true);
+    expect(
+      childClosingCommitFailed({
+        persistenceStatus: 'PERSISTED',
+        rolledBack: false,
+        commitSucceeded: true,
+        verificationOk: true,
+        providerCalls: 2,
+      })
+    ).toBe(true);
   });
 });

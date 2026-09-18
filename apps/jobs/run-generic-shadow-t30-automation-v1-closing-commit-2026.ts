@@ -192,17 +192,21 @@ async function main(): Promise<void> {
       `outcome=${report.outcome} initial=${report.initialOutcome} dueRuns=${report.dueCaptureRunIds.length} closingCommitRequested=${report.closingCommitRequested}`
     );
     console.log(
-      `providerCalls=0 mutationTargetsInvoked=${
+      `providerCalls=${report.providerCalls} mutationTargetsInvoked=${
         report.mutationTargetsInvoked == null
           ? 'UNKNOWN'
           : report.mutationTargetsInvoked.join(',') || 'none'
-      } closingRowsInserted=${report.closingRowsInserted}`
+      } closingRowsInsertedKnown=${report.closingRowsInsertedKnown} closingRowsInsertedExact=${
+        report.closingRowsInsertedExact == null ? 'UNKNOWN' : report.closingRowsInsertedExact
+      }`
     );
     if (report.blockers.length > 0) console.log(`blockers=${report.blockers.join(' | ')}`);
     for (let i = 0; i < report.runResults.length; i++) {
       const run = report.runResults[i];
       console.log(
-        `run=${run.captureRunId} invoked=${run.invocationAttempted} persistence=${run.persistenceStatus} inserted=${run.insertedClosingCount}`
+        `run=${run.captureRunId} invoked=${run.invocationAttempted} persistence=${run.persistenceStatus} inserted=${
+          run.insertedClosingCount == null ? 'UNKNOWN' : run.insertedClosingCount
+        } commitSucceeded=${run.commitSucceeded == null ? 'UNKNOWN' : String(run.commitSucceeded)}`
       );
       if (run.childReportPath) {
         console.log(`childReport=${run.childReportPath}`);

@@ -136,7 +136,13 @@ describe('Generic Shadow T-30 Automation V1 closing-commit workflow', () => {
     expect(adapter).not.toMatch(/prisma\.marketLine/);
     expect(adapter).not.toMatch(/prisma\.shadowModelPrediction/);
     expect(planner).toContain("'ShadowModelClosingMarketSnapshot'");
-    expect(planner).toContain('closingRowsInserted');
+    expect(planner).toContain('closingRowsInsertedKnown');
+    expect(planner).toContain('closingRowsInsertedExact');
+    expect(planner).toContain('plannedAvailableCount');
+    expect(planner).toContain('persistedAvailableCount');
+    expect(adapter).toContain('preCommitPlan');
+    expect(adapter).toContain('child_report_identity_mismatch');
+    expect(adapter).toContain('child_provider_calls_nonzero');
   });
 
   it('composes the existing Generic closing COMMIT CLI per DUE capture run', () => {
@@ -159,13 +165,29 @@ describe('Generic Shadow T-30 Automation V1 closing-commit workflow', () => {
     const commit = stepBlock(wf, 'Write terminal COMMIT cycle report');
     const upload = stepBlock(wf, 'Upload Generic Shadow T-30 closing-commit report');
     expect(commit).toContain('--mode COMMIT');
+    expect(commit).toMatch(/if:\s*\$\{\{\s*always\(\)\s*&&\s*inputs\.mode\s*==\s*'COMMIT'\s*\}\}/);
     expect(commit).toContain('--initial-report');
+    expect(commit).toContain('PLAN report missing');
     expect(commit).toContain('closing-commit-COMMIT.json');
     expect(commit).toContain('--child-report-dir');
+    expect(upload).toContain('if: always()');
     expect(upload).toContain('generic-shadow-t30-automation-v1-2026-*-closing-commit-*.json');
     expect(upload).toContain('generic-shadow-t30-automation-v1-closing-child-*.json');
     expect(adapter).toContain('generic-shadow-t30-automation-v1-closing-child-');
     expect(cli).toContain('scheduleEnabled=false');
     expect(wf).toContain('IMPLEMENTED / SCHEDULE DISABLED / PRODUCTION EXECUTION NOT AUTHORIZED');
+  });
+
+  it('keeps the terminal COMMIT report eligible after a failing initial PLAN', () => {
+    const plan = stepBlock(wf, 'Plan closing-commit cycle (read-only)');
+    const commit = stepBlock(wf, 'Write terminal COMMIT cycle report');
+    const upload = stepBlock(wf, 'Upload Generic Shadow T-30 closing-commit report');
+    expect(plan).not.toContain('continue-on-error: true');
+    expect(commit).toContain("always() && inputs.mode == 'COMMIT'");
+    expect(commit).toContain('PLAN report missing');
+    expect(commit).not.toMatch(/if:\s*\$\{\{\s*inputs\.mode\s*==\s*'COMMIT'\s*\}\}/);
+    expect(upload).toContain('if: always()');
+    expect(adapter).toContain('freshPreCommitPlan');
+    expect(adapter).toContain('decideGenericShadowT30ClosingCommit(freshPreCommitPlan)');
   });
 });

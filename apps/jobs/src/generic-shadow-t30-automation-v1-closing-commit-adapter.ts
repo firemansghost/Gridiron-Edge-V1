@@ -34,6 +34,11 @@ import {
   type GenericShadowT30ClosingPersistenceStatus,
 } from '../../web/lib/generic-shadow-t30-automation-v1-closing-commit';
 import {
+  GENERIC_SHADOW_T30_CLOSING_DEFINITION_HASH,
+  GENERIC_SHADOW_T30_CLOSING_DEFINITION_ID,
+  GENERIC_SHADOW_T30_EVALUATION_PROTOCOL,
+} from '../../web/lib/shadow-model-t30-closing-v1';
+import {
   discoverGenericShadowT30AutomationFrames,
   type GenericShadowT30AutomationDiscovery,
 } from './generic-shadow-t30-automation-v1-adapter';
@@ -45,6 +50,11 @@ export interface GenericShadowT30ClosingCommitRequest {
   confirmation: string;
   reportPath: string;
 }
+
+export type GenericShadowT30ClosingChildIdentity = Pick<
+  GenericShadowT30ClosingCommitRequest,
+  'season' | 'week' | 'captureRunId'
+>;
 
 export interface GenericShadowT30ClosingCommitCycleInput {
   season: number;
@@ -135,16 +145,48 @@ function unknownClosingChild(
     persistenceStatus: 'UNKNOWN',
     persistenceCommitted: null,
     mutationsInvoked: null,
-    insertedClosingCount: extras.insertedClosingCount ?? 0,
-    insertedClosingIds: extras.insertedClosingIds ?? [],
+    insertedClosingCount: null,
+    insertedClosingIds: null,
     verificationOk: null,
     verificationReasons: extras.verificationReasons ?? [],
     rolledBack: extras.rolledBack ?? null,
     commitSucceeded: extras.commitSucceeded ?? null,
-    providerCalls: 0,
+    providerCalls: typeof extras.providerCalls === 'number' ? extras.providerCalls : 0,
     blockers: uniqueSorted(['persistence_state_unknown', ...(extras.blockers ?? [error])]),
     error,
   };
+}
+
+function identityIssue(
+  raw: Record<string, unknown>,
+  request: GenericShadowT30ClosingChildIdentity
+): string | null {
+  const required: Array<[string, unknown]> = [
+    ['season', request.season],
+    ['week', request.week],
+    ['captureRunId', request.captureRunId],
+    ['mode', 'COMMIT'],
+    ['closingDefinitionId', GENERIC_SHADOW_T30_CLOSING_DEFINITION_ID],
+    ['closingDefinitionHash', GENERIC_SHADOW_T30_CLOSING_DEFINITION_HASH],
+    ['evaluationProtocol', GENERIC_SHADOW_T30_EVALUATION_PROTOCOL],
+  ];
+  for (let i = 0; i < required.length; i++) {
+    const field = required[i][0];
+    const expected = required[i][1];
+    if (!(field in raw) || raw[field] == null) {
+      return `child_report_identity_missing:${field}`;
+    }
+    if (raw[field] !== expected) {
+      return `child_report_identity_mismatch:${field}`;
+    }
+  }
+  if (!('providerCalls' in raw) || raw.providerCalls == null) {
+    return 'child_report_identity_missing:providerCalls';
+  }
+  if (typeof raw.providerCalls !== 'number' || !Number.isFinite(raw.providerCalls)) {
+    return 'child_report_identity_mismatch:providerCalls';
+  }
+  return null;
 }
 
 function countsFromRaw(raw: Record<string, unknown>): {
@@ -170,16 +212,24 @@ function countsFromRaw(raw: Record<string, unknown>): {
 
 export function summarizeGuardedClosingReport(
   raw: unknown,
-  captureRunId: string
+  request: GenericShadowT30ClosingChildIdentity
 ): GenericShadowT30ClosingChildSummary {
   if (!isRecord(raw)) {
-    return unknownClosingChild(captureRunId, 'child_report_insufficient');
+    return unknownClosingChild(request.captureRunId, 'child_report_insufficient');
   }
+  const identityError = identityIssue(raw, request);
+  if (identityError) {
+    return unknownClosingChild(request.captureRunId, identityError, {
+      modelDefinitionId: typeof raw.modelDefinitionId === 'string' ? raw.modelDefinitionId : '',
+    });
+  }
+  const providerCalls = raw.providerCalls as number;
   const mutationsInvoked = raw.mutationsInvoked;
   if (typeof mutationsInvoked !== 'boolean') {
-    return unknownClosingChild(captureRunId, 'persistence_state_unknown', {
+    return unknownClosingChild(request.captureRunId, 'persistence_state_unknown', {
       modelDefinitionId: typeof raw.modelDefinitionId === 'string' ? raw.modelDefinitionId : '',
       blockers: Array.isArray(raw.writeBlockers) ? raw.writeBlockers.map(String) : [],
+      providerCalls,
       ...countsFromRaw(raw),
     });
   }
@@ -189,9 +239,10 @@ export function summarizeGuardedClosingReport(
   let persistenceStatus: GenericShadowT30ClosingPersistenceStatus = 'NOT_PERSISTED';
   if (mutationsInvoked === true) {
     if (persistenceCommitted == null && rolledBack == null) {
-      return unknownClosingChild(captureRunId, 'persistence_state_unknown', {
+      return unknownClosingChild(request.captureRunId, 'persistence_state_unknown', {
         modelDefinitionId: typeof raw.modelDefinitionId === 'string' ? raw.modelDefinitionId : '',
         mutationsInvoked: true,
+        providerCalls,
         ...countsFromRaw(raw),
       });
     }
@@ -205,50 +256,54 @@ export function summarizeGuardedClosingReport(
       : null;
   const counts = countsFromRaw(raw);
   const writeBlockers = Array.isArray(raw.writeBlockers) ? raw.writeBlockers.map(String) : [];
-  const providerCalls = raw.providerCalls;
-  if (providerCalls != null && providerCalls !== 0) {
-    return unknownClosingChild(captureRunId, 'child_provider_calls_nonzero', {
-      modelDefinitionId: typeof raw.modelDefinitionId === 'string' ? raw.modelDefinitionId : '',
-      blockers: writeBlockers,
-      ...counts,
-    });
-  }
+  const nonzeroProvider = providerCalls > 0;
+  const insertedClosingCount =
+    persistenceStatus === 'PERSISTED' ? asNumber(raw.insertedClosingCount) : 0;
+  const insertedClosingIds =
+    persistenceStatus === 'PERSISTED' ? asStringArray(raw.insertedClosingIds) : [];
   return {
-    captureRunId: typeof raw.captureRunId === 'string' ? raw.captureRunId : captureRunId,
+    captureRunId: request.captureRunId,
     modelDefinitionId: typeof raw.modelDefinitionId === 'string' ? raw.modelDefinitionId : '',
     observedTimestamp: observed && Number.isFinite(observed.getTime()) ? observed : null,
     ...counts,
-    writeSafe: raw.writeSafe === true,
+    writeSafe: raw.writeSafe === true && !nonzeroProvider,
     transactionStarted: typeof raw.transactionStarted === 'boolean' ? raw.transactionStarted : null,
     transactionalNoOp: typeof raw.transactionalNoOp === 'boolean' ? raw.transactionalNoOp : null,
     persistenceStatus,
     persistenceCommitted,
     mutationsInvoked,
-    insertedClosingCount: asNumber(raw.insertedClosingCount),
-    insertedClosingIds: asStringArray(raw.insertedClosingIds),
+    insertedClosingCount,
+    insertedClosingIds,
     verificationOk: typeof raw.verificationOk === 'boolean' ? raw.verificationOk : null,
     verificationReasons: asStringArray(raw.verificationReasons),
     rolledBack,
     commitSucceeded: typeof raw.commitSucceeded === 'boolean' ? raw.commitSucceeded : null,
-    providerCalls: 0,
-    blockers: writeBlockers,
-    error: typeof raw.error === 'string' ? raw.error : null,
+    providerCalls,
+    blockers: nonzeroProvider
+      ? uniqueSorted(['child_provider_calls_nonzero', ...writeBlockers])
+      : writeBlockers,
+    error:
+      typeof raw.error === 'string'
+        ? raw.error
+        : nonzeroProvider
+          ? 'child_provider_calls_nonzero'
+          : null,
   };
 }
 
 export function readGuardedClosingChildReport(
   reportPath: string,
-  captureRunId: string
+  request: GenericShadowT30ClosingChildIdentity
 ): GenericShadowT30ClosingChildSummary {
   if (!fs.existsSync(reportPath)) {
-    return unknownClosingChild(captureRunId, 'child_report_missing');
+    return unknownClosingChild(request.captureRunId, 'child_report_missing');
   }
   try {
     const raw = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-    return summarizeGuardedClosingReport(raw, captureRunId);
+    return summarizeGuardedClosingReport(raw, request);
   } catch (err) {
     return unknownClosingChild(
-      captureRunId,
+      request.captureRunId,
       `child_report_unreadable:${err instanceof Error ? err.message : String(err)}`
     );
   }
@@ -286,7 +341,7 @@ export function invokeGuardedGenericShadowT30ClosingCommit(
   if (fs.existsSync(request.reportPath)) {
     try {
       const raw = JSON.parse(fs.readFileSync(request.reportPath, 'utf8'));
-      return summarizeGuardedClosingReport(raw, request.captureRunId);
+      return summarizeGuardedClosingReport(raw, request);
     } catch (err) {
       return unknownClosingChild(
         request.captureRunId,
@@ -335,64 +390,80 @@ export async function runGenericShadowT30ClosingCommitCycle(
     }
   }
 
-  const gatedPlan =
-    extraBlockers.length > 0 ? mergeDiscovery(initialPlan, extraBlockers) : initialPlan;
-  const decision = decideGenericShadowT30ClosingCommit(gatedPlan);
-
-  const runResults: GenericShadowT30ClosingCommitRunResult[] = gatedPlan.runPlans.map((run) =>
-    notAttemptedRunResult(run)
-  );
+  let preCommitObservedTimestamp: Date | null = null;
+  let preCommitPlan: GenericShadowT30AutomationPlan | null = null;
   let finalPlan: GenericShadowT30AutomationPlan | null = null;
   let finalObservedTimestamp: Date | null = null;
+  const runResults: GenericShadowT30ClosingCommitRunResult[] = [];
 
-  const mayCommit =
-    input.mode === 'COMMIT' && extraBlockers.length === 0 && decision.closingCommitRequested;
+  if (input.mode === 'COMMIT' && extraBlockers.length === 0) {
+    preCommitObservedTimestamp = input.now();
+    const preDiscovery = await input.discover();
+    const freshPreCommitPlan = mergeDiscovery(
+      planGenericShadowT30Automation({
+        season: input.season,
+        week: input.week,
+        observedTimestamp: preCommitObservedTimestamp,
+        frames: preDiscovery.frames,
+      }),
+      preDiscovery.blockers
+    );
+    preCommitPlan = freshPreCommitPlan;
+    const decision = decideGenericShadowT30ClosingCommit(freshPreCommitPlan);
+    for (let i = 0; i < freshPreCommitPlan.runPlans.length; i++) {
+      runResults.push(notAttemptedRunResult(freshPreCommitPlan.runPlans[i]));
+    }
 
-  if (mayCommit) {
-    let stopFurther = false;
-    for (let i = 0; i < decision.dueCaptureRunIds.length; i++) {
-      const captureRunId = decision.dueCaptureRunIds[i];
-      const runIndex = runResults.findIndex((run) => run.captureRunId === captureRunId);
-      const runPlan = gatedPlan.runPlans.filter((run) => run.captureRunId === captureRunId)[0];
-      if (!runPlan || runIndex < 0) continue;
-      const childReportPath = defaultClosingChildReportPath(input.childReportDir, captureRunId);
-      if (stopFurther) {
-        runResults[runIndex] = notAttemptedRunResult(runPlan, {
-          childReportPath,
-          skippedAfterPriorChildFailure: true,
-          error: 'skipped_after_prior_child_failure',
-        });
-        continue;
-      }
-      const childConfirmation = expectedGenericShadowT30ClosingChildConfirmation(
-        input.week,
-        captureRunId
-      );
-      let child: GenericShadowT30ClosingChildSummary;
-      try {
-        if (!input.runClosingCommit) {
-          child = unknownClosingChild(captureRunId, 'closing_commit_boundary_missing');
-        } else {
-          child = await input.runClosingCommit({
+    if (decision.closingCommitRequested) {
+      let stopFurther = false;
+      for (let i = 0; i < decision.dueCaptureRunIds.length; i++) {
+        const captureRunId = decision.dueCaptureRunIds[i];
+        const runIndex = runResults.findIndex((run) => run.captureRunId === captureRunId);
+        const runPlan = freshPreCommitPlan.runPlans.filter((run) => run.captureRunId === captureRunId)[0];
+        if (!runPlan || runIndex < 0) continue;
+        const childReportPath = defaultClosingChildReportPath(input.childReportDir, captureRunId);
+        if (stopFurther) {
+          runResults[runIndex] = notAttemptedRunResult(runPlan, {
+            childReportPath,
+            skippedAfterPriorChildFailure: true,
+            error: 'skipped_after_prior_child_failure',
+          });
+          continue;
+        }
+        const childConfirmation = expectedGenericShadowT30ClosingChildConfirmation(
+          input.week,
+          captureRunId
+        );
+        let child: GenericShadowT30ClosingChildSummary;
+        try {
+          if (!input.runClosingCommit) {
+            child = unknownClosingChild(captureRunId, 'closing_commit_boundary_missing');
+          } else {
+            child = await input.runClosingCommit({
+              season: input.season,
+              week: input.week,
+              captureRunId,
+              confirmation: childConfirmation,
+              reportPath: childReportPath,
+            });
+          }
+        } catch (err) {
+          child = readGuardedClosingChildReport(childReportPath, {
             season: input.season,
             week: input.week,
             captureRunId,
-            confirmation: childConfirmation,
-            reportPath: childReportPath,
           });
+          if (child.persistenceStatus === 'UNKNOWN') {
+            child = unknownClosingChild(
+              captureRunId,
+              err instanceof Error ? err.message : String(err)
+            );
+          }
         }
-      } catch (err) {
-        child = readGuardedClosingChildReport(childReportPath, captureRunId);
-        if (child.persistenceStatus === 'UNKNOWN') {
-          child = unknownClosingChild(
-            captureRunId,
-            err instanceof Error ? err.message : String(err)
-          );
+        runResults[runIndex] = runResultFromChildSummary(runPlan, child, { childReportPath });
+        if (childClosingCommitFailed(child)) {
+          stopFurther = true;
         }
-      }
-      runResults[runIndex] = runResultFromChildSummary(runPlan, child, { childReportPath });
-      if (childClosingCommitFailed(child)) {
-        stopFurther = true;
       }
     }
 
@@ -415,11 +486,16 @@ export async function runGenericShadowT30ClosingCommitCycle(
           `post_commit_replan_failed:${err instanceof Error ? err.message : String(err)}`
         );
       }
-    } else if (!finalObservedTimestamp) {
+    } else {
       finalObservedTimestamp = input.now();
     }
-  } else if (input.mode === 'COMMIT') {
-    finalObservedTimestamp = input.now();
+  } else {
+    for (let i = 0; i < initialPlan.runPlans.length; i++) {
+      runResults.push(notAttemptedRunResult(initialPlan.runPlans[i]));
+    }
+    if (input.mode === 'COMMIT') {
+      finalObservedTimestamp = input.now();
+    }
   }
 
   return buildGenericShadowT30ClosingCommitCycleReport({
@@ -429,8 +505,10 @@ export async function runGenericShadowT30ClosingCommitCycle(
     repoCommitSha: input.repoCommitSha,
     githubRef: input.githubRef,
     initialObservedTimestamp,
+    preCommitObservedTimestamp,
     finalObservedTimestamp,
-    initialPlan: gatedPlan,
+    initialPlan,
+    preCommitPlan,
     finalPlan,
     runResults,
     extraBlockers,
