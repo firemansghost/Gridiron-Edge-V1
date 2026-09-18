@@ -1,0 +1,226 @@
+# Generic Shadow T-30 Automation V1 — schedule-disabled closing COMMIT.
+#
+# workflow_dispatch ONLY.
+# NO schedule, push, pull_request, or workflow_run.
+#
+# PLAN: production DB SELECTs only. No provider secret. No writes.
+# COMMIT: may invoke the existing guarded Generic T-30 closing COMMIT
+# boundary at most once per eligible DUE capture run.
+#
+# IMPLEMENTED / SCHEDULE DISABLED / PRODUCTION EXECUTION NOT AUTHORIZED
+#
+# No Live Odds. No ODDS_API_KEY. No MarketLine writes.
+# No prediction, Hybrid, Bet, MatchupOutput, evaluation, Game, or migration writes.
+# Do not alter capture-shadow-model-t30-closing-v1-2026-manual.yml semantics.
+# Do not alter Stage C market-refresh workflow semantics.
+
+name: Generic Shadow T-30 Automation V1 Closing Commit 2026 (Manual, Guarded, Schedule Disabled)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (must be 2026)'
+        required: true
+        type: string
+        default: '2026'
+      week:
+        description: 'CFB week (positive integer)'
+        required: true
+        type: string
+      mode:
+        description: 'PLAN (DB read-only) or COMMIT (at most one Generic closing COMMIT per DUE capture run)'
+        required: true
+        type: choice
+        options:
+          - PLAN
+          - COMMIT
+        default: PLAN
+      expected_main_sha:
+        description: 'Exact main commit SHA authorized for this cycle'
+        required: true
+        type: string
+      confirm:
+        description: 'For COMMIT, type CAPTURE_2026_WEEK_<week>_GENERIC_SHADOW_T30_AUTOMATED_CLOSINGS exactly'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: generic-shadow-t30-automation-v1-production
+  cancel-in-progress: false
+
+jobs:
+  closing-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Source SHA guard
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA=$(git rev-parse HEAD)
+          echo "ACTUAL_SHA=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+          echo "actual_sha: ${ACTUAL_SHA}"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          echo "github_ref: ${GITHUB_REF:-}"
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Refusing closing commit. Workflow must run from main."
+            exit 1
+          fi
+          if [ -z "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing closing commit. expected_main_sha is required."
+            exit 1
+          fi
+          if [ "${ACTUAL_SHA}" != "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing closing commit. Checked-out SHA does not match expected_main_sha."
+            echo "::error::actual_sha=${ACTUAL_SHA}"
+            echo "::error::expected_main_sha=${EXPECTED_MAIN_SHA}"
+            exit 1
+          fi
+          echo "Source SHA guard passed."
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight (names/presence only)
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CONFIRMATION: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          echo "season=${INPUT_SEASON}"
+          echo "week=${INPUT_WEEK}"
+          echo "mode=${INPUT_MODE}"
+          echo "IMPLEMENTED / SCHEDULE DISABLED / PRODUCTION EXECUTION NOT AUTHORIZED"
+          echo "true closing target remains kickoff-30m"
+          echo "schedule: not enabled"
+          echo "Live Odds / MarketLine: not invoked"
+          echo "ODDS_API_KEY: not provided"
+          echo "CFBD_API_KEY: not provided"
+          echo "SGO_API_KEY: not provided"
+          echo "VISUALCROSSING_API_KEY: not provided"
+          if [ "$INPUT_SEASON" != "2026" ]; then
+            echo "::error::season must equal 2026 (got ${INPUT_SEASON})"
+            exit 1
+          fi
+          if ! [[ "$INPUT_WEEK" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::week must be a positive integer"
+            exit 1
+          fi
+          if [ "$INPUT_MODE" != "PLAN" ] && [ "$INPUT_MODE" != "COMMIT" ]; then
+            echo "::error::mode must be PLAN or COMMIT"
+            exit 1
+          fi
+          EXPECTED="CAPTURE_2026_WEEK_${INPUT_WEEK}_GENERIC_SHADOW_T30_AUTOMATED_CLOSINGS"
+          if [ "$INPUT_MODE" = "COMMIT" ] && [ "$INPUT_CONFIRMATION" != "$EXPECTED" ]; then
+            echo "::error::COMMIT requires confirm=${EXPECTED}"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Plan closing-commit cycle (read-only)
+        id: plan
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          REPORT="reports/generic-shadow-t30-automation-v1-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-closing-commit-PLAN.json"
+          npx tsx apps/jobs/run-generic-shadow-t30-automation-v1-closing-commit-2026.ts \
+            --season "$INPUT_SEASON" \
+            --week "$INPUT_WEEK" \
+            --mode PLAN \
+            --report "$REPORT"
+
+      - name: Write terminal COMMIT cycle report
+        if: ${{ inputs.mode == 'COMMIT' }}
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+          INPUT_CONFIRMATION: ${{ inputs.confirm }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          PLAN_REPORT="reports/generic-shadow-t30-automation-v1-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-closing-commit-PLAN.json"
+          REPORT="reports/generic-shadow-t30-automation-v1-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-closing-commit-COMMIT.json"
+          if [ ! -f "$PLAN_REPORT" ]; then
+            echo "::error::PLAN report missing; cannot write terminal COMMIT report."
+            exit 1
+          fi
+          if [ -z "${DIRECT_URL:-}" ]; then
+            echo "::error::DIRECT_URL secret is missing"
+            exit 1
+          fi
+          echo "DIRECT_URL: present (value not printed)"
+          echo "ODDS_API_KEY: not provided"
+          npx tsx apps/jobs/run-generic-shadow-t30-automation-v1-closing-commit-2026.ts \
+            --season "$INPUT_SEASON" \
+            --week "$INPUT_WEEK" \
+            --mode COMMIT \
+            --confirm "$INPUT_CONFIRMATION" \
+            --report "$REPORT" \
+            --child-report-dir reports \
+            --initial-report "$PLAN_REPORT"
+
+      - name: Upload Generic Shadow T-30 closing-commit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generic-shadow-t30-automation-v1-2026-w${{ inputs.week }}-closing-commit
+          path: |
+            reports/generic-shadow-t30-automation-v1-2026-*-closing-commit-*.json
+            reports/generic-shadow-t30-automation-v1-closing-child-*.json
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_WEEK: ${{ inputs.week }}
+          INPUT_MODE: ${{ inputs.mode }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "==================================================="
+          echo "GENERIC SHADOW T-30 AUTOMATION V1 — CLOSING COMMIT"
+          echo "==================================================="
+          echo "season: ${INPUT_SEASON}"
+          echo "week: ${INPUT_WEEK}"
+          echo "mode: ${INPUT_MODE}"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          echo "actual_sha: ${ACTUAL_SHA:-unavailable}"
+          echo "status: ${JOB_STATUS}"
+          echo "IMPLEMENTED / SCHEDULE DISABLED / PRODUCTION EXECUTION NOT AUTHORIZED"
+          echo "schedule: not enabled"
+          echo "providerCalls=0"
+          echo "ODDS_API_KEY: not provided"
+          echo "ShadowModelClosingMarketSnapshot: only possible write target"
+          echo "MarketLine writes: false"
+          echo "ShadowModelPrediction writes: false"
+          echo "ShadowModelCaptureRun writes: false"
+          echo "Hybrid writes: false"
+          echo "Bet writes: false"
+          echo "MatchupOutput writes: false"
+          echo "evaluation writes: false"
+          echo "Game writes: false"
+          echo "prisma migrate: not invoked"
+          echo "==================================================="
