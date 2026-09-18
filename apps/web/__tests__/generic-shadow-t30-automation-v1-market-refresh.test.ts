@@ -8,6 +8,7 @@ import {
   decideGenericShadowT30MarketRefresh,
   determineGenericShadowT30MarketRefreshCycleOutcome,
   expectedGenericShadowT30MarketRefreshConfirmation,
+  mutationTargetsInvokedForPersistence,
 } from '@/lib/generic-shadow-t30-automation-v1-market-refresh';
 import type {
   GenericShadowT30CaptureRun,
@@ -289,5 +290,14 @@ describe('Generic Shadow T-30 Automation V1 — market refresh decision', () => 
         verificationOk: null,
       })
     ).toBe('FAILED');
+  });
+});
+
+describe('Generic Shadow T-30 Automation V1 — mutationTargetsInvoked persistence encodings', () => {
+  it('encodes the four persistence states without a false zero-mutation UNKNOWN', () => {
+    expect(mutationTargetsInvokedForPersistence('NOT_ATTEMPTED')).toEqual([]);
+    expect(mutationTargetsInvokedForPersistence('NOT_PERSISTED')).toEqual([]);
+    expect(mutationTargetsInvokedForPersistence('PERSISTED')).toEqual(['MarketLine']);
+    expect(mutationTargetsInvokedForPersistence('UNKNOWN')).toBeNull();
   });
 });

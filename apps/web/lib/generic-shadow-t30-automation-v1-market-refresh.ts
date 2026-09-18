@@ -126,7 +126,7 @@ export interface GenericShadowT30MarketRefreshCycleReport {
   postwriteVerificationStatus: GenericShadowT30PostwriteVerificationStatus;
   finalOutcome: GenericShadowT30AutomationOutcome | null;
   finalFreshEvidenceStatus: GenericShadowT30AutomationPlan['marketRefreshGames'];
-  mutationTargetsInvoked: GenericShadowT30MutationTarget[];
+  mutationTargetsInvoked: GenericShadowT30MutationTarget[] | null;
   closingRowsInserted: 0;
   closingWriterInvoked: false;
   blockers: string[];
@@ -135,6 +135,14 @@ export interface GenericShadowT30MarketRefreshCycleReport {
   initialPlan: GenericShadowT30AutomationPlan;
   finalPlan: GenericShadowT30AutomationPlan | null;
   liveOdds: GenericShadowT30LiveOddsCommitSummary | null;
+}
+
+export function mutationTargetsInvokedForPersistence(
+  persistenceStatus: GenericShadowT30PersistenceStatus
+): GenericShadowT30MutationTarget[] | null {
+  if (persistenceStatus === 'UNKNOWN') return null;
+  if (persistenceStatus === 'PERSISTED') return ['MarketLine'];
+  return [];
 }
 
 function uniqueSorted(values: string[]): string[] {
@@ -293,7 +301,7 @@ export function buildGenericShadowT30MarketRefreshCycleReport(input: {
     postwriteVerificationStatus: liveOdds?.postwriteVerificationStatus ?? 'NOT_ATTEMPTED',
     finalOutcome: input.finalPlan?.outcome ?? null,
     finalFreshEvidenceStatus: input.finalPlan?.marketRefreshGames ?? [],
-    mutationTargetsInvoked: persistenceStatus === 'PERSISTED' ? ['MarketLine'] : [],
+    mutationTargetsInvoked: mutationTargetsInvokedForPersistence(persistenceStatus),
     closingRowsInserted: 0,
     closingWriterInvoked: false,
     blockers,

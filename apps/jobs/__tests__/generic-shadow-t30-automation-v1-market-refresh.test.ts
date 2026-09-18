@@ -205,6 +205,7 @@ describe('Generic Shadow T-30 Automation V1 — market-refresh cycle', () => {
     });
     expect(report.outcome).toBe('NO_ACTION');
     expect(report.providerCallAttempted).toBe(false);
+    expect(report.persistenceStatus).toBe('NOT_ATTEMPTED');
     expect(report.mutationTargetsInvoked).toEqual([]);
     expect(report.closingRowsInserted).toBe(0);
     expect(report.scheduleEnabled).toBe(false);
@@ -221,6 +222,7 @@ describe('Generic Shadow T-30 Automation V1 — market-refresh cycle', () => {
     expect(report.marketRefreshRequested).toBe(false);
     expect(liveOddsCalls).toBe(0);
     expect(report.persistenceStatus).toBe('NOT_ATTEMPTED');
+    expect(report.mutationTargetsInvoked).toEqual([]);
   });
 
   it('invokes Live Odds exactly once when T-45..T-35 evidence is missing', async () => {
@@ -235,6 +237,7 @@ describe('Generic Shadow T-30 Automation V1 — market-refresh cycle', () => {
     expect(report.outcome).toBe('MARKET_REFRESHED');
     expect(report.providerCallAttempted).toBe(true);
     expect(report.providerCallSucceeded).toBe(true);
+    expect(report.persistenceStatus).toBe('PERSISTED');
     expect(report.mutationTargetsInvoked).toEqual(['MarketLine']);
     expect(report.closingRowsInserted).toBe(0);
     expect(report.closingWriterInvoked).toBe(false);
@@ -298,11 +301,46 @@ describe('Generic Shadow T-30 Automation V1 — market-refresh cycle', () => {
     expect(report.persistenceStatus).toBe('UNKNOWN');
     expect(report.persistenceInvoked).toBeNull();
     expect(report.blockers).toEqual(expect.arrayContaining(['persistence_state_unknown']));
-    expect(report.mutationTargetsInvoked).toEqual([]);
+    expect(report.mutationTargetsInvoked).toBeNull();
     expect(report.writeSafe).toBe(false);
     expect(report.closingRowsInserted).toBe(0);
     expect(report.closingWriterInvoked).toBe(false);
     expect(report.postRefreshObservedTimestamp).toBeNull();
+  });
+
+  it('encodes UNKNOWN persistence without a false zero-mutation assertion', async () => {
+    const { report } = await runCycle({
+      framesByCall: [[frame()], [frame()]],
+      liveOddsImpl: async () => {
+        throw new Error('odds_provider_unavailable');
+      },
+    });
+    expect(report.persistenceStatus).toBe('UNKNOWN');
+    expect(report.persistenceInvoked).toBeNull();
+    expect(report.mutationTargetsInvoked).toBeNull();
+  });
+
+  it('encodes NOT_PERSISTED as zero mutation targets, not UNKNOWN', async () => {
+    const { report, liveOddsCalls } = await runCycle({
+      framesByCall: [[frame()], [frame()]],
+      liveOdds: {
+        ...successLiveOdds(),
+        persistenceInvoked: false,
+        persistenceStatus: 'NOT_PERSISTED',
+        insertedCount: null,
+        postwriteVerificationStatus: 'COMMIT_BLOCKED',
+        verificationOk: null,
+        writeSafe: false,
+        blockers: ['unresolved_expected_fbs'],
+      },
+    });
+    expect(liveOddsCalls).toBe(1);
+    expect(report.outcome).toBe('FAILED');
+    expect(report.persistenceStatus).toBe('NOT_PERSISTED');
+    expect(report.persistenceInvoked).toBe(false);
+    expect(report.mutationTargetsInvoked).toEqual([]);
+    expect(report.closingRowsInserted).toBe(0);
+    expect(report.closingWriterInvoked).toBe(false);
   });
 
   it('records persistence and fails closed when postwrite verification fails, without a second provider call', async () => {
@@ -359,6 +397,7 @@ describe('Generic Shadow T-30 Automation V1 — market-refresh cycle', () => {
     expect(report.marketRefreshRequested).toBe(true);
     expect(liveOddsCalls).toBe(0);
     expect(report.providerCallAttempted).toBe(false);
+    expect(report.persistenceStatus).toBe('NOT_ATTEMPTED');
     expect(report.mutationTargetsInvoked).toEqual([]);
     expect(report.closingRowsInserted).toBe(0);
     expect(report.closingWriterInvoked).toBe(false);

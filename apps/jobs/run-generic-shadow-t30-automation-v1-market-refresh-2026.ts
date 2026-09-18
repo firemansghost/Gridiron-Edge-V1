@@ -198,7 +198,9 @@ async function main(): Promise<void> {
       `outcome=${report.outcome} initial=${report.initialOutcome} marketRefreshNeeded=${report.marketRefreshNeeded} windowOpen=${report.marketRefreshWindowOpenCount}`
     );
     console.log(
-      `providerCallAttempted=${report.providerCallAttempted} providerCallSucceeded=${report.providerCallSucceeded} mutationTargetsInvoked=${report.mutationTargetsInvoked.join(',') || 'none'} closingRowsInserted=0`
+      `providerCallAttempted=${report.providerCallAttempted} providerCallSucceeded=${report.providerCallSucceeded} mutationTargetsInvoked=${
+        report.mutationTargetsInvoked == null ? 'UNKNOWN' : report.mutationTargetsInvoked.join(',') || 'none'
+      } closingRowsInserted=0`
     );
     if (report.blockers.length > 0) console.log(`blockers=${report.blockers.join(' | ')}`);
 
