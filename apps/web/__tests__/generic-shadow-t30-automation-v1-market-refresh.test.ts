@@ -239,10 +239,11 @@ describe('Generic Shadow T-30 Automation V1 — market refresh decision', () => 
     expect(
       determineGenericShadowT30MarketRefreshCycleOutcome({
         initialOutcome: 'PREVIEW_ONLY',
+        finalOutcome: 'MARKET_REFRESH_NOT_NEEDED',
         blockers: [],
         providerCallAttempted: true,
         providerCallSucceeded: true,
-        persistenceInvoked: true,
+        persistenceStatus: 'PERSISTED',
         verificationOk: true,
       })
     ).toBe('MARKET_REFRESHED');
@@ -252,11 +253,40 @@ describe('Generic Shadow T-30 Automation V1 — market refresh decision', () => 
     expect(
       determineGenericShadowT30MarketRefreshCycleOutcome({
         initialOutcome: 'PREVIEW_ONLY',
+        finalOutcome: null,
         blockers: [],
         providerCallAttempted: true,
         providerCallSucceeded: true,
-        persistenceInvoked: true,
+        persistenceStatus: 'PERSISTED',
         verificationOk: false,
+      })
+    ).toBe('FAILED');
+  });
+
+  it('uses the later pre-refresh plan when the window closed before a provider call', () => {
+    expect(
+      determineGenericShadowT30MarketRefreshCycleOutcome({
+        initialOutcome: 'PREVIEW_ONLY',
+        finalOutcome: 'NO_ACTION',
+        blockers: [],
+        providerCallAttempted: false,
+        providerCallSucceeded: false,
+        persistenceStatus: 'NOT_ATTEMPTED',
+        verificationOk: null,
+      })
+    ).toBe('NO_ACTION');
+  });
+
+  it('fails closed when persistence state is UNKNOWN', () => {
+    expect(
+      determineGenericShadowT30MarketRefreshCycleOutcome({
+        initialOutcome: 'PREVIEW_ONLY',
+        finalOutcome: null,
+        blockers: ['persistence_state_unknown'],
+        providerCallAttempted: true,
+        providerCallSucceeded: false,
+        persistenceStatus: 'UNKNOWN',
+        verificationOk: null,
       })
     ).toBe('FAILED');
   });

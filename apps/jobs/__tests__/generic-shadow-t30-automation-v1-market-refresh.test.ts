@@ -151,6 +151,7 @@ function successLiveOdds(): GenericShadowT30LiveOddsCommitSummary {
     proposedInsertCount: 8,
     insertedCount: 8,
     persistenceInvoked: true,
+    persistenceStatus: 'PERSISTED',
     postwriteVerificationStatus: 'PASSED',
     verificationOk: true,
     error: null,
@@ -164,6 +165,7 @@ async function runCycle(options: {
   framesByCall?: GenericShadowT30OperationalFrame[][];
   liveOdds?: GenericShadowT30LiveOddsCommitSummary | (() => Promise<GenericShadowT30LiveOddsCommitSummary>);
   liveOddsImpl?: () => Promise<GenericShadowT30LiveOddsCommitSummary>;
+  throwOnDiscoverCall?: number;
 }) {
   const framesByCall = options.framesByCall ?? [[frame()]];
   let discoverCalls = 0;
@@ -178,8 +180,11 @@ async function runCycle(options: {
     liveOddsReportPath: 'reports/fake-live-odds.json',
     now: nowQueue(options.timestamps ?? [T0, T_PRE, T1]),
     discover: async () => {
-      const frames = framesByCall[Math.min(discoverCalls, framesByCall.length - 1)];
       discoverCalls += 1;
+      if (options.throwOnDiscoverCall === discoverCalls) {
+        throw new Error('post_refresh_discovery_boom');
+      }
+      const frames = framesByCall[Math.min(discoverCalls - 1, framesByCall.length - 1)];
       return discovery(frames);
     },
     runLiveOddsCommit: async () => {
@@ -211,8 +216,11 @@ describe('Generic Shadow T-30 Automation V1 — market-refresh cycle', () => {
       framesByCall: [[frame(pair(new Date('2026-09-19T19:18:00.000Z')))]],
     });
     expect(report.outcome).toBe('MARKET_REFRESH_NOT_NEEDED');
+    expect(report.requestedMode).toBe('COMMIT');
+    expect(report.reportKind).toBe('TERMINAL');
     expect(report.marketRefreshRequested).toBe(false);
     expect(liveOddsCalls).toBe(0);
+    expect(report.persistenceStatus).toBe('NOT_ATTEMPTED');
   });
 
   it('invokes Live Odds exactly once when T-45..T-35 evidence is missing', async () => {
@@ -287,7 +295,11 @@ describe('Generic Shadow T-30 Automation V1 — market-refresh cycle', () => {
     expect(liveOddsCalls).toBe(1);
     expect(report.outcome).toBe('FAILED');
     expect(report.providerCallSucceeded).toBe(false);
+    expect(report.persistenceStatus).toBe('UNKNOWN');
+    expect(report.persistenceInvoked).toBeNull();
+    expect(report.blockers).toEqual(expect.arrayContaining(['persistence_state_unknown']));
     expect(report.mutationTargetsInvoked).toEqual([]);
+    expect(report.writeSafe).toBe(false);
     expect(report.closingRowsInserted).toBe(0);
     expect(report.closingWriterInvoked).toBe(false);
     expect(report.postRefreshObservedTimestamp).toBeNull();
@@ -320,6 +332,8 @@ describe('Generic Shadow T-30 Automation V1 — market-refresh cycle', () => {
     });
     expect(report.marketRefreshRequested).toBe(true);
     expect(report.providerCallAttempted).toBe(false);
+    expect(report.requestedMode).toBe('PLAN');
+    expect(report.reportKind).toBe('PLAN');
     expect(liveOddsCalls).toBe(0);
     expect(report.scheduleEnabled).toBe(false);
     expect(report.productionExecutionAuthorized).toBe(false);
@@ -333,6 +347,46 @@ describe('Generic Shadow T-30 Automation V1 — market-refresh cycle', () => {
     expect(report.outcome).toBe('BLOCKED');
     expect(report.blockers).toContain('market_refresh_confirmation_invalid');
     expect(liveOddsCalls).toBe(0);
+  });
+
+  it('does not call the provider when the pre-refresh re-plan moves after T-35 but before T-30', async () => {
+    const afterWindowBeforeTarget = new Date('2026-09-19T19:26:00.000Z');
+    const { report, liveOddsCalls } = await runCycle({
+      timestamps: [T0, afterWindowBeforeTarget],
+      framesByCall: [[frame()], [frame()]],
+    });
+    expect(report.initialOutcome).toBe('PREVIEW_ONLY');
+    expect(report.marketRefreshRequested).toBe(true);
+    expect(liveOddsCalls).toBe(0);
+    expect(report.providerCallAttempted).toBe(false);
+    expect(report.mutationTargetsInvoked).toEqual([]);
+    expect(report.closingRowsInserted).toBe(0);
+    expect(report.closingWriterInvoked).toBe(false);
+    expect(report.finalPlan).toBeTruthy();
+    expect(report.finalOutcome).toBe('NO_ACTION');
+    expect(report.outcome).toBe('NO_ACTION');
+    expect(report.outcome).not.toBe('PREVIEW_ONLY');
+    expect(report.requestedMode).toBe('COMMIT');
+    expect(report.reportKind).toBe('TERMINAL');
+  });
+
+  it('writes a truthful FAILED report if post-refresh discovery throws after MarketLine persistence', async () => {
+    const { report, liveOddsCalls } = await runCycle({
+      framesByCall: [[frame()], [frame()]],
+      throwOnDiscoverCall: 3,
+    });
+    expect(liveOddsCalls).toBe(1);
+    expect(report.outcome).toBe('FAILED');
+    expect(report.persistenceStatus).toBe('PERSISTED');
+    expect(report.persistenceInvoked).toBe(true);
+    expect(report.marketLineInsertedCount).toBe(8);
+    expect(report.postwriteVerificationStatus).toBe('PASSED');
+    expect(report.mutationTargetsInvoked).toEqual(['MarketLine']);
+    expect(report.closingRowsInserted).toBe(0);
+    expect(report.writeSafe).toBe(false);
+    expect(report.blockers.some((value) => value.startsWith('post_refresh_replan_failed:'))).toBe(
+      true
+    );
   });
 });
 

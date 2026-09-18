@@ -23,6 +23,7 @@ import {
   type GenericShadowT30LiveOddsCommitSummary,
   type GenericShadowT30MarketRefreshCycleReport,
   type GenericShadowT30MarketRefreshMode,
+  type GenericShadowT30PersistenceStatus,
   type GenericShadowT30PostwriteVerificationStatus,
 } from '../../web/lib/generic-shadow-t30-automation-v1-market-refresh';
 import { expectedWriteConfirmation } from './odds/live-odds-2026';
@@ -78,79 +79,104 @@ function mergeDiscovery(
   };
 }
 
-function emptyLiveOddsFailure(
+function unknownLiveOddsChild(
   error: string,
   extras: Partial<GenericShadowT30LiveOddsCommitSummary> = {}
 ): GenericShadowT30LiveOddsCommitSummary {
   return {
     providerCallAttempted: true,
-    providerCallSucceeded: false,
+    providerCallSucceeded: extras.providerCallSucceeded ?? false,
     providerCalls: extras.providerCalls ?? 0,
     providerCredits: extras.providerCredits ?? null,
     writeSafe: false,
-    blockers: extras.blockers ?? [error],
+    blockers: uniqueSorted([
+      'persistence_state_unknown',
+      ...(extras.blockers ?? [error]),
+    ]),
     proposedInsertCount: extras.proposedInsertCount ?? 0,
     insertedCount: extras.insertedCount ?? null,
-    persistenceInvoked: extras.persistenceInvoked ?? false,
-    postwriteVerificationStatus: extras.postwriteVerificationStatus ?? 'PROVIDER_FAILED',
-    verificationOk: extras.verificationOk ?? false,
+    persistenceInvoked: null,
+    persistenceStatus: 'UNKNOWN',
+    postwriteVerificationStatus: 'UNKNOWN',
+    verificationOk: null,
     error,
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
 export function summarizeGuardedLiveOddsReport(
   raw: unknown,
   spawnStatus: number
 ): GenericShadowT30LiveOddsCommitSummary {
-  const report = raw as {
-    plan?: {
-      providerCalls?: number;
-      requestCreditsLast?: number | null;
-      providerUsage?: {
-        requestsLast?: string | null;
-        requestsUsed?: string | null;
-        requestsRemaining?: string | null;
-      };
-      writeSafe?: boolean;
-      writeBlockers?: string[];
-      proposedInsert?: unknown[];
-    };
-    execution?: {
-      marketLinePersistenceInvoked?: boolean;
-      commitSucceeded?: boolean;
-      proposedBeforeTransaction?: number;
-      insertedThisRun?: number | null;
-      createManyCount?: number | null;
-      postWriteVerificationSucceeded?: boolean | null;
-      error?: string | null;
-    };
-    verification?: { ok?: boolean } | null;
-  } | null;
+  if (!isRecord(raw) || !isRecord(raw.plan)) {
+    return unknownLiveOddsChild('child_report_insufficient', {
+      providerCalls: 0,
+    });
+  }
 
-  const plan = report?.plan;
-  const execution = report?.execution;
-  const verification = report?.verification;
-  const providerCalls = plan?.providerCalls ?? 0;
+  const plan = raw.plan;
+  const execution = isRecord(raw.execution) ? raw.execution : null;
+  const verification = isRecord(raw.verification) ? raw.verification : null;
+  const providerCalls = typeof plan.providerCalls === 'number' ? plan.providerCalls : 0;
   const providerCallSucceeded = providerCalls === 1;
-  const persistenceInvoked = !!execution?.marketLinePersistenceInvoked;
+  const providerUsage = isRecord(plan.providerUsage) ? plan.providerUsage : null;
+  const writeBlockers = Array.isArray(plan.writeBlockers)
+    ? plan.writeBlockers.map(String)
+    : [];
+  const proposedInsertCount = Array.isArray(plan.proposedInsert)
+    ? plan.proposedInsert.length
+    : typeof execution?.proposedBeforeTransaction === 'number'
+      ? execution.proposedBeforeTransaction
+      : 0;
+  const persistenceFlag = execution?.marketLinePersistenceInvoked;
+  if (typeof persistenceFlag !== 'boolean') {
+    return unknownLiveOddsChild('persistence_state_unknown', {
+      providerCallSucceeded,
+      providerCalls,
+      providerCredits: {
+        requestsLast: typeof providerUsage?.requestsLast === 'string' ? providerUsage.requestsLast : null,
+        requestsUsed: typeof providerUsage?.requestsUsed === 'string' ? providerUsage.requestsUsed : null,
+        requestsRemaining:
+          typeof providerUsage?.requestsRemaining === 'string' ? providerUsage.requestsRemaining : null,
+        requestCreditsLast:
+          typeof plan.requestCreditsLast === 'number' ? plan.requestCreditsLast : null,
+      },
+      blockers: writeBlockers.length > 0 ? writeBlockers : ['persistence_state_unknown'],
+      proposedInsertCount,
+    });
+  }
+
+  const persistenceStatus: GenericShadowT30PersistenceStatus = persistenceFlag
+    ? 'PERSISTED'
+    : 'NOT_PERSISTED';
   const verificationOk =
     verification && typeof verification.ok === 'boolean'
       ? verification.ok
-      : execution?.postWriteVerificationSucceeded ?? null;
+      : typeof execution?.postWriteVerificationSucceeded === 'boolean'
+        ? execution.postWriteVerificationSucceeded
+        : null;
 
-  let postwriteVerificationStatus: GenericShadowT30PostwriteVerificationStatus =
-    'NOT_ATTEMPTED';
-  if (!providerCallSucceeded) {
-    postwriteVerificationStatus = providerCalls > 0 ? 'PROVIDER_FAILED' : 'COMMIT_BLOCKED';
-  } else if (persistenceInvoked) {
+  let postwriteVerificationStatus: GenericShadowT30PostwriteVerificationStatus = 'NOT_ATTEMPTED';
+  if (persistenceStatus === 'PERSISTED') {
     postwriteVerificationStatus = verificationOk === true ? 'PASSED' : 'FAILED';
+  } else if (!providerCallSucceeded) {
+    postwriteVerificationStatus = providerCalls > 0 ? 'PROVIDER_FAILED' : 'COMMIT_BLOCKED';
   } else {
     postwriteVerificationStatus = 'COMMIT_BLOCKED';
   }
 
+  const insertedCount =
+    typeof execution?.insertedThisRun === 'number'
+      ? execution.insertedThisRun
+      : typeof execution?.createManyCount === 'number'
+        ? execution.createManyCount
+        : null;
   const error =
-    execution?.error ||
-    (spawnStatus !== 0 && !persistenceInvoked
+    (typeof execution?.error === 'string' && execution.error) ||
+    (spawnStatus !== 0 && persistenceStatus !== 'PERSISTED'
       ? `live_odds_commit_exited_${spawnStatus}`
       : null);
 
@@ -159,22 +185,39 @@ export function summarizeGuardedLiveOddsReport(
     providerCallSucceeded,
     providerCalls,
     providerCredits: {
-      requestsLast: plan?.providerUsage?.requestsLast ?? null,
-      requestsUsed: plan?.providerUsage?.requestsUsed ?? null,
-      requestsRemaining: plan?.providerUsage?.requestsRemaining ?? null,
-      requestCreditsLast: plan?.requestCreditsLast ?? null,
+      requestsLast: typeof providerUsage?.requestsLast === 'string' ? providerUsage.requestsLast : null,
+      requestsUsed: typeof providerUsage?.requestsUsed === 'string' ? providerUsage.requestsUsed : null,
+      requestsRemaining:
+        typeof providerUsage?.requestsRemaining === 'string' ? providerUsage.requestsRemaining : null,
+      requestCreditsLast: typeof plan.requestCreditsLast === 'number' ? plan.requestCreditsLast : null,
     },
-    writeSafe: !!plan?.writeSafe,
-    blockers: Array.isArray(plan?.writeBlockers) ? plan.writeBlockers.map(String) : [],
-    proposedInsertCount: Array.isArray(plan?.proposedInsert)
-      ? plan.proposedInsert.length
-      : execution?.proposedBeforeTransaction ?? 0,
-    insertedCount: execution?.insertedThisRun ?? execution?.createManyCount ?? null,
-    persistenceInvoked,
+    writeSafe: plan.writeSafe === true,
+    blockers: writeBlockers,
+    proposedInsertCount,
+    insertedCount,
+    persistenceInvoked: persistenceFlag,
+    persistenceStatus,
     postwriteVerificationStatus,
     verificationOk,
     error,
   };
+}
+
+export function readGuardedLiveOddsChildReport(
+  reportPath: string,
+  spawnStatus = 1
+): GenericShadowT30LiveOddsCommitSummary {
+  if (!fs.existsSync(reportPath)) {
+    return unknownLiveOddsChild('child_report_missing');
+  }
+  try {
+    const raw = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+    return summarizeGuardedLiveOddsReport(raw, spawnStatus);
+  } catch (err) {
+    return unknownLiveOddsChild(
+      `child_report_unreadable:${err instanceof Error ? err.message : String(err)}`
+    );
+  }
 }
 
 export function invokeGuardedLiveOddsCommit(
@@ -209,8 +252,8 @@ export function invokeGuardedLiveOddsCommit(
     try {
       raw = JSON.parse(fs.readFileSync(request.reportPath, 'utf8'));
     } catch (err) {
-      return emptyLiveOddsFailure(
-        `live_odds_report_unreadable:${err instanceof Error ? err.message : String(err)}`
+      return unknownLiveOddsChild(
+        `child_report_unreadable:${err instanceof Error ? err.message : String(err)}`
       );
     }
   }
@@ -223,7 +266,7 @@ export function invokeGuardedLiveOddsCommit(
     .toString()
     .trim()
     .slice(0, 500);
-  return emptyLiveOddsFailure(message || `live_odds_commit_exited_${result.status ?? 1}`);
+  return unknownLiveOddsChild(message || `child_report_missing`);
 }
 
 export async function discoverWithPrisma(
@@ -270,13 +313,14 @@ export async function runGenericShadowT30MarketRefreshCycle(
   let finalPlan: GenericShadowT30AutomationPlan | null = null;
   let liveOddsInvoked = false;
 
-  const mayRefresh =
-    input.mode === 'COMMIT' &&
-    extraBlockers.length === 0 &&
-    initialDecision.providerCallRequested &&
-    !initialDecision.failClosed;
+  try {
+    const mayRefresh =
+      input.mode === 'COMMIT' &&
+      extraBlockers.length === 0 &&
+      initialDecision.providerCallRequested &&
+      !initialDecision.failClosed;
 
-  if (mayRefresh) {
+    if (mayRefresh) {
     const preRefreshObserved = input.now();
     const preDiscovery = await input.discover();
     const prePlan = mergeDiscovery(
@@ -294,7 +338,7 @@ export async function runGenericShadowT30MarketRefreshCycle(
       finalPlan = prePlan;
     } else if (preDecision.providerCallRequested) {
       if (!input.runLiveOddsCommit) {
-        liveOdds = emptyLiveOddsFailure('live_odds_commit_boundary_missing');
+        liveOdds = unknownLiveOddsChild('live_odds_commit_boundary_missing');
       } else {
         liveOddsInvoked = true;
         try {
@@ -305,44 +349,80 @@ export async function runGenericShadowT30MarketRefreshCycle(
             reportPath: input.liveOddsReportPath,
           });
         } catch (err) {
-          liveOdds = emptyLiveOddsFailure(
-            err instanceof Error ? err.message : String(err)
-          );
+          liveOdds = readGuardedLiveOddsChildReport(input.liveOddsReportPath, 1);
+          if (liveOdds.persistenceStatus === 'UNKNOWN') {
+            liveOdds = unknownLiveOddsChild(
+              err instanceof Error ? err.message : String(err)
+            );
+          }
         }
       }
-      if (liveOddsInvoked && liveOdds.providerCallSucceeded && liveOdds.verificationOk === true) {
-        postRefreshObservedTimestamp = input.now();
-        const finalDiscovery = await input.discover();
-        finalPlan = mergeDiscovery(
-          planGenericShadowT30Automation({
-            season: input.season,
-            week: input.week,
-            observedTimestamp: postRefreshObservedTimestamp,
-            frames: finalDiscovery.frames,
-          }),
-          finalDiscovery.blockers
-        );
+      const persistedAndVerified =
+        liveOdds.persistenceStatus === 'PERSISTED' && liveOdds.verificationOk === true;
+      if (liveOddsInvoked && persistedAndVerified) {
+        try {
+          postRefreshObservedTimestamp = input.now();
+          const finalDiscovery = await input.discover();
+          finalPlan = mergeDiscovery(
+            planGenericShadowT30Automation({
+              season: input.season,
+              week: input.week,
+              observedTimestamp: postRefreshObservedTimestamp,
+              frames: finalDiscovery.frames,
+            }),
+            finalDiscovery.blockers
+          );
+        } catch (err) {
+          extraBlockers.push(
+            `post_refresh_replan_failed:${err instanceof Error ? err.message : String(err)}`
+          );
+          finalPlan = prePlan;
+        }
       } else {
         finalPlan = prePlan;
       }
     } else {
       finalPlan = prePlan;
     }
-  }
+    }
 
-  return buildGenericShadowT30MarketRefreshCycleReport({
-    season: input.season,
-    week: input.week,
-    mode: input.mode,
-    repoCommitSha: input.repoCommitSha,
-    githubRef: input.githubRef,
-    initialObservedTimestamp,
-    postRefreshObservedTimestamp,
-    initialPlan: gatedPlan,
-    finalPlan,
-    liveOdds,
-    extraBlockers,
-  });
+    return buildGenericShadowT30MarketRefreshCycleReport({
+      season: input.season,
+      week: input.week,
+      mode: input.mode,
+      repoCommitSha: input.repoCommitSha,
+      githubRef: input.githubRef,
+      initialObservedTimestamp,
+      postRefreshObservedTimestamp,
+      initialPlan: gatedPlan,
+      finalPlan,
+      liveOdds,
+      extraBlockers,
+    });
+  } catch (err) {
+    if (
+      liveOdds &&
+      (liveOdds.persistenceStatus === 'PERSISTED' || liveOdds.persistenceStatus === 'UNKNOWN')
+    ) {
+      extraBlockers.push(
+        `coordinator_exception:${err instanceof Error ? err.message : String(err)}`
+      );
+      return buildGenericShadowT30MarketRefreshCycleReport({
+        season: input.season,
+        week: input.week,
+        mode: input.mode,
+        repoCommitSha: input.repoCommitSha,
+        githubRef: input.githubRef,
+        initialObservedTimestamp,
+        postRefreshObservedTimestamp,
+        initialPlan: gatedPlan,
+        finalPlan,
+        liveOdds,
+        extraBlockers,
+      });
+    }
+    throw err;
+  }
 }
 
 export function defaultLiveOddsReportPath(season: number, week: number): string {

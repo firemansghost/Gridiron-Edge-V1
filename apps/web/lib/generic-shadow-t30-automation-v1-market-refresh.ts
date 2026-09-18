@@ -41,7 +41,16 @@ export type GenericShadowT30PostwriteVerificationStatus =
   | 'NOT_APPLICABLE'
   | 'COMMIT_BLOCKED'
   | 'PROVIDER_FAILED'
-  | 'NOT_ATTEMPTED';
+  | 'NOT_ATTEMPTED'
+  | 'UNKNOWN';
+
+export type GenericShadowT30PersistenceStatus =
+  | 'NOT_ATTEMPTED'
+  | 'NOT_PERSISTED'
+  | 'PERSISTED'
+  | 'UNKNOWN';
+
+export type GenericShadowT30ReportKind = 'PLAN' | 'TERMINAL';
 
 export function expectedGenericShadowT30MarketRefreshConfirmation(
   week: number
@@ -71,7 +80,8 @@ export interface GenericShadowT30LiveOddsCommitSummary {
   blockers: string[];
   proposedInsertCount: number;
   insertedCount: number | null;
-  persistenceInvoked: boolean;
+  persistenceInvoked: boolean | null;
+  persistenceStatus: GenericShadowT30PersistenceStatus;
   postwriteVerificationStatus: GenericShadowT30PostwriteVerificationStatus;
   verificationOk: boolean | null;
   error: string | null;
@@ -87,6 +97,8 @@ export interface GenericShadowT30MarketRefreshCycleReport {
   season: number;
   week: number;
   mode: GenericShadowT30MarketRefreshMode;
+  requestedMode: GenericShadowT30MarketRefreshMode;
+  reportKind: GenericShadowT30ReportKind;
   repoCommitSha: string;
   githubRef: string | null;
   initialObservedTimestamp: Date;
@@ -109,6 +121,8 @@ export interface GenericShadowT30MarketRefreshCycleReport {
   liveOddsBlockers: string[];
   marketLineProposedCount: number;
   marketLineInsertedCount: number | null;
+  persistenceInvoked: boolean | null;
+  persistenceStatus: GenericShadowT30PersistenceStatus;
   postwriteVerificationStatus: GenericShadowT30PostwriteVerificationStatus;
   finalOutcome: GenericShadowT30AutomationOutcome | null;
   finalFreshEvidenceStatus: GenericShadowT30AutomationPlan['marketRefreshGames'];
@@ -171,20 +185,22 @@ export function decideGenericShadowT30MarketRefresh(plan: {
 
 export function determineGenericShadowT30MarketRefreshCycleOutcome(input: {
   initialOutcome: GenericShadowT30AutomationOutcome;
+  finalOutcome: GenericShadowT30AutomationOutcome | null;
   blockers: string[];
   providerCallAttempted: boolean;
   providerCallSucceeded: boolean;
-  persistenceInvoked: boolean;
+  persistenceStatus: GenericShadowT30PersistenceStatus;
   verificationOk: boolean | null;
 }): GenericShadowT30MarketRefreshCycleOutcome {
-  if (input.blockers.length > 0 && !input.providerCallAttempted) return 'BLOCKED';
+  if (input.persistenceStatus === 'UNKNOWN') return 'FAILED';
   if (input.providerCallAttempted) {
-    if (!input.providerCallSucceeded) return 'FAILED';
-    if (input.persistenceInvoked && input.verificationOk === false) return 'FAILED';
-    if (!input.persistenceInvoked) return 'FAILED';
-    if (input.verificationOk !== true) return 'FAILED';
-    return 'MARKET_REFRESHED';
+    if (input.persistenceStatus === 'PERSISTED' && input.verificationOk === true) {
+      return input.blockers.length > 0 ? 'FAILED' : 'MARKET_REFRESHED';
+    }
+    return 'FAILED';
   }
+  if (input.blockers.length > 0) return 'BLOCKED';
+  if (input.finalOutcome) return input.finalOutcome;
   return input.initialOutcome;
 }
 
@@ -205,21 +221,28 @@ export function buildGenericShadowT30MarketRefreshCycleReport(input: {
   const refreshDecision = decideGenericShadowT30MarketRefresh(input.initialPlan);
   const providerCallAttempted = !!liveOdds?.providerCallAttempted;
   const providerCallSucceeded = !!liveOdds?.providerCallSucceeded;
-  const persistenceInvoked = !!liveOdds?.persistenceInvoked;
+  const persistenceStatus: GenericShadowT30PersistenceStatus =
+    liveOdds?.persistenceStatus ?? 'NOT_ATTEMPTED';
+  const persistenceInvoked =
+    persistenceStatus === 'UNKNOWN' ? null : persistenceStatus === 'PERSISTED';
   const verificationOk = liveOdds ? liveOdds.verificationOk : null;
+  const unknownPersistenceBlockers =
+    persistenceStatus === 'UNKNOWN' ? ['persistence_state_unknown'] : [];
   const blockers = uniqueSorted([
     ...input.initialPlan.blockers,
     ...(input.extraBlockers ?? []),
     ...(input.finalPlan?.blockers ?? []),
     ...(liveOdds && !liveOdds.providerCallSucceeded ? liveOdds.blockers : []),
     ...(liveOdds && liveOdds.error ? [liveOdds.error] : []),
+    ...unknownPersistenceBlockers,
   ]);
   const outcome = determineGenericShadowT30MarketRefreshCycleOutcome({
     initialOutcome: input.initialPlan.outcome,
+    finalOutcome: input.finalPlan?.outcome ?? null,
     blockers,
     providerCallAttempted,
     providerCallSucceeded,
-    persistenceInvoked,
+    persistenceStatus,
     verificationOk,
   });
   const writeSafe =
@@ -227,7 +250,8 @@ export function buildGenericShadowT30MarketRefreshCycleReport(input: {
     input.initialPlan.writeSafe &&
     (!input.finalPlan || input.finalPlan.writeSafe) &&
     outcome !== 'FAILED' &&
-    outcome !== 'BLOCKED';
+    outcome !== 'BLOCKED' &&
+    persistenceStatus !== 'UNKNOWN';
 
   return {
     automationVersion: 1,
@@ -240,6 +264,8 @@ export function buildGenericShadowT30MarketRefreshCycleReport(input: {
     season: input.season,
     week: input.week,
     mode: input.mode,
+    requestedMode: input.mode,
+    reportKind: input.mode === 'COMMIT' ? 'TERMINAL' : 'PLAN',
     repoCommitSha: input.repoCommitSha,
     githubRef: input.githubRef,
     initialObservedTimestamp: input.initialObservedTimestamp,
@@ -262,10 +288,12 @@ export function buildGenericShadowT30MarketRefreshCycleReport(input: {
     liveOddsBlockers: liveOdds?.blockers ?? [],
     marketLineProposedCount: liveOdds?.proposedInsertCount ?? 0,
     marketLineInsertedCount: liveOdds?.insertedCount ?? null,
+    persistenceInvoked,
+    persistenceStatus,
     postwriteVerificationStatus: liveOdds?.postwriteVerificationStatus ?? 'NOT_ATTEMPTED',
     finalOutcome: input.finalPlan?.outcome ?? null,
     finalFreshEvidenceStatus: input.finalPlan?.marketRefreshGames ?? [],
-    mutationTargetsInvoked: persistenceInvoked ? ['MarketLine'] : [],
+    mutationTargetsInvoked: persistenceStatus === 'PERSISTED' ? ['MarketLine'] : [],
     closingRowsInserted: 0,
     closingWriterInvoked: false,
     blockers,

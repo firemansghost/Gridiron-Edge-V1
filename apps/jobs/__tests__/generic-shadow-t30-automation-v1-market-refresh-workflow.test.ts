@@ -96,6 +96,9 @@ describe('Generic Shadow T-30 Automation V1 market-refresh workflow', () => {
     expect(wf.indexOf('- name: Source SHA guard')).toBeLessThan(
       wf.indexOf('- name: Conditional Live Odds market refresh')
     );
+    expect(wf.indexOf('- name: Source SHA guard')).toBeLessThan(
+      wf.indexOf('- name: Write terminal COMMIT cycle report')
+    );
     expect(guard).not.toMatch(/secrets\.DIRECT_URL/);
     expect(guard).not.toMatch(/secrets\.ODDS_API_KEY/);
   });
@@ -103,6 +106,7 @@ describe('Generic Shadow T-30 Automation V1 market-refresh workflow', () => {
   it('keeps ODDS_API_KEY only on the conditional refresh step', () => {
     const plan = stepBlock(wf, 'Plan market-refresh cycle (read-only)');
     const refresh = stepBlock(wf, 'Conditional Live Odds market refresh');
+    const terminal = stepBlock(wf, 'Write terminal COMMIT cycle report');
     const preflight = stepBlock(wf, 'Preflight (names/presence only)');
     expect(plan).toMatch(/DIRECT_URL:\s*\$\{\{\s*secrets\.DIRECT_URL\s*\}\}/);
     expect(plan).not.toMatch(/ODDS_API_KEY/);
@@ -110,6 +114,7 @@ describe('Generic Shadow T-30 Automation V1 market-refresh workflow', () => {
     expect(refresh).toMatch(/ODDS_API_KEY:\s*\$\{\{\s*secrets\.ODDS_API_KEY\s*\}\}/);
     expect(refresh).toMatch(/DIRECT_URL:\s*\$\{\{\s*secrets\.DIRECT_URL\s*\}\}/);
     expect(refresh).toMatch(/DATABASE_URL:\s*\$\{\{\s*secrets\.DIRECT_URL\s*\}\}/);
+    expect(terminal).not.toMatch(/ODDS_API_KEY/);
     expect(preflight).not.toMatch(/ODDS_API_KEY/);
     expect(preflight).not.toMatch(/DIRECT_URL/);
     expect(wf.match(/secrets\.ODDS_API_KEY/g)).toHaveLength(1);
@@ -151,12 +156,25 @@ describe('Generic Shadow T-30 Automation V1 market-refresh workflow', () => {
     expect(stageAWf).not.toContain('write-live-odds-2026.ts');
   });
 
-  it('uploads a machine-readable report even for no-op cycles', () => {
+  it('uploads coordinator reports and the raw Live Odds child report when present', () => {
+    const upload = stepBlock(wf, 'Upload Generic Shadow T-30 market-refresh report');
+    expect(upload).toContain('generic-shadow-t30-automation-v1-2026-*-market-refresh-*.json');
+    expect(upload).toContain('live-odds-2026-*-generic-shadow-t30-market-refresh.json');
     expect(wf).toContain('actions/upload-artifact@v4');
     expect(wf).toContain('if-no-files-found: warn');
     expect(cli).toContain('writeReport');
     expect(cli).toContain('scheduleEnabled=false');
     expect(wf).toContain('IMPLEMENTED / SCHEDULE DISABLED / PRODUCTION EXECUTION NOT AUTHORIZED');
+  });
+
+  it('writes a terminal COMMIT report even when PLAN determines no refresh is needed', () => {
+    const terminal = stepBlock(wf, 'Write terminal COMMIT cycle report');
+    expect(terminal).toContain('--mode COMMIT');
+    expect(terminal).toContain('--initial-report');
+    expect(terminal).toContain('market-refresh-COMMIT.json');
+    expect(terminal).not.toMatch(/ODDS_API_KEY/);
+    expect(terminal).toMatch(/DIRECT_URL:\s*\$\{\{\s*secrets\.DIRECT_URL\s*\}\}/);
+    expect(wf).toContain("steps.plan.outputs.should_refresh != 'true'");
   });
 });
 
