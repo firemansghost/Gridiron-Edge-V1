@@ -28,35 +28,74 @@ export interface TeamGameStatCliArgs {
 }
 
 export interface CfbdAdvancedGameStatRow {
+  gameId?: number | string;
   season?: number;
+  seasonType?: string;
   week?: number;
   team: string;
   opponent: string;
-  homeAway: 'home' | 'away' | string;
+  /**
+   * Legacy compatibility only. Current CFBD v2 AdvancedGameStat does not
+   * expose homeAway; canonical Game rows are authoritative for orientation.
+   */
+  homeAway?: 'home' | 'away' | string;
   offense?: {
-    yardsPerPlay?: number | null;
-    successRate?: number | null;
+    plays?: number | null;
+    drives?: number | null;
     ppa?: number | null;
+    totalPPA?: number | null;
+    successRate?: number | null;
+    explosiveness?: number | null;
+    powerSuccess?: number | null;
+    stuffRate?: number | null;
+    lineYards?: number | null;
+    lineYardsTotal?: number | null;
+    secondLevelYards?: number | null;
+    secondLevelYardsTotal?: number | null;
+    openFieldYards?: number | null;
+    openFieldYardsTotal?: number | null;
+    standardDowns?: Record<string, unknown>;
+    passingDowns?: Record<string, unknown>;
+    rushingPlays?: Record<string, unknown>;
+    passingPlays?: Record<string, unknown>;
+    // Legacy fields retained as optional for historical fixtures only.
+    yardsPerPlay?: number | null;
     secondsPerPlay?: number | null;
     yardsPerPass?: number | null;
     yardsPerRush?: number | null;
-    plays?: number | null;
     yards?: number | null;
     passing?: { yards?: number | null; attempts?: number | null };
     rushing?: { yards?: number | null; attempts?: number | null };
   };
   defense?: {
-    yardsPerPlay?: number | null;
-    successRate?: number | null;
+    plays?: number | null;
+    drives?: number | null;
     ppa?: number | null;
+    totalPPA?: number | null;
+    successRate?: number | null;
+    explosiveness?: number | null;
+    powerSuccess?: number | null;
+    stuffRate?: number | null;
+    lineYards?: number | null;
+    lineYardsTotal?: number | null;
+    secondLevelYards?: number | null;
+    secondLevelYardsTotal?: number | null;
+    openFieldYards?: number | null;
+    openFieldYardsTotal?: number | null;
+    standardDowns?: Record<string, unknown>;
+    passingDowns?: Record<string, unknown>;
+    rushingPlays?: Record<string, unknown>;
+    passingPlays?: Record<string, unknown>;
+    // Legacy fields retained as optional for historical fixtures only.
+    yardsPerPlay?: number | null;
     secondsPerPlay?: number | null;
     yardsPerPass?: number | null;
     yardsPerRush?: number | null;
-    plays?: number | null;
     yards?: number | null;
     passing?: { yards?: number | null; attempts?: number | null };
     rushing?: { yards?: number | null; attempts?: number | null };
   };
+  // Legacy top-level aggregate fields retained as optional.
   plays?: number | null;
   yards?: number | null;
   passing?: { yards?: number | null; attempts?: number | null };
@@ -210,7 +249,7 @@ export function mapAdvancedStatsToManagedFields(
   const passYpaDef = safeNumber(row.defense?.yardsPerPass);
   const rushYpcDef = safeNumber(row.defense?.yardsPerRush);
 
-  const playsOff = safeNumber(row.plays);
+  const playsOff = safeNumber(row.offense?.plays ?? row.plays);
   const yardsOff = safeNumber(row.yards);
   const passYardsOff = safeNumber(row.passing?.yards);
   const rushYardsOff = safeNumber(row.rushing?.yards);
@@ -397,7 +436,6 @@ export function buildCfbdAdvancedGameStatsUrl(
   url.searchParams.set('year', String(season));
   url.searchParams.set('week', String(week));
   url.searchParams.set('seasonType', 'regular');
-  url.searchParams.set('classification', 'fbs');
   return url.toString();
 }
 
@@ -660,56 +698,63 @@ export function planTeamGameStats(options: {
       continue;
     }
 
-    const homeAway = String(row.homeAway ?? '').toLowerCase();
-    if (homeAway !== 'home' && homeAway !== 'away') {
-      unresolvedRows += 1;
-      blockers.push(
-        `invalid_homeAway:${row.team}|${row.opponent}|${String(row.homeAway)}`
-      );
-      continue;
-    }
-
     const teamRes = options.teamResolutions.get(row.team);
     const oppRes = options.teamResolutions.get(row.opponent);
     const teamOk = isTeamResolved(teamRes);
     const oppOk = isTeamResolved(oppRes);
     const fields = mapAdvancedStatsToManagedFields(row);
 
-    if (!teamOk && !oppOk) {
-      unresolvedRows += 1;
-      blockers.push(`unresolved_provider_team:${row.team}`);
-      blockers.push(`unresolved_provider_team:${row.opponent}`);
-      continue;
-    }
-
-    if (!teamOk && oppOk) {
-      // Opponent resolved; team unresolved — ignore only if unique FCS non-expected side.
+    // Current CFBD v2 AdvancedGameStat omits homeAway. Canonical Game rows are
+    // authoritative for orientation; provider team/opponent identify the pair.
+    if (teamOk && oppOk) {
+      const teamId = teamRes.resolvedId;
       const oppId = oppRes.resolvedId;
-      const candidates =
-        homeAway === 'home'
-          ? findGamesWhere((g) => g.awayTeamId === oppId)
-          : findGamesWhere((g) => g.homeTeamId === oppId);
-      if (candidates.length === 1) {
-        const g = candidates[0];
-        const teamSideId = homeAway === 'home' ? g.homeTeamId : g.awayTeamId;
-        const key = naturalKey(g.id, teamSideId);
-        if (!expectedKeys.has(key)) {
-          ignoredProviderRows += 1;
-          continue;
-        }
+      const pairGames = findGamesWhere(
+        (g) =>
+          (g.homeTeamId === teamId && g.awayTeamId === oppId) ||
+          (g.homeTeamId === oppId && g.awayTeamId === teamId)
+      );
+      if (pairGames.length === 0) {
+        // Provider endpoint is not classification-filtered; unrelated FCS games
+        // are expected and ignored unless they correspond to an expected key.
+        ignoredProviderRows += 1;
+        continue;
       }
-      unresolvedRows += 1;
-      blockers.push(`unresolved_provider_team:${row.team}`);
+      if (pairGames.length > 1) {
+        unresolvedRows += 1;
+        blockers.push(
+          `ambiguous_provider_row:${row.team}|${row.opponent} matches=${pairGames.length}`
+        );
+        continue;
+      }
+      const g = pairGames[0];
+      const key = naturalKey(g.id, teamId);
+      if (!expectedKeys.has(key)) {
+        ignoredProviderRows += 1;
+        continue;
+      }
+      if (matchedByKey.has(key)) {
+        duplicateKeySet.add(key);
+        blockers.push(`duplicate_natural_key:${key}`);
+        continue;
+      }
+      matchedByKey.set(key, {
+        key,
+        gameId: g.id,
+        teamId,
+        fields,
+      });
       continue;
     }
 
     if (teamOk && !oppOk) {
-      // Team resolved; opponent unresolved — match unique expected key without opponent id.
+      // Resolve the provider team against the single canonical game it plays
+      // this week. If that canonical participant is expected, the unresolved
+      // opponent does not prevent safely mapping the FBS team's own row.
       const teamId = teamRes.resolvedId;
-      const candidates =
-        homeAway === 'home'
-          ? findGamesWhere((g) => g.homeTeamId === teamId)
-          : findGamesWhere((g) => g.awayTeamId === teamId);
+      const candidates = findGamesWhere(
+        (g) => g.homeTeamId === teamId || g.awayTeamId === teamId
+      );
       if (candidates.length > 1) {
         unresolvedRows += 1;
         blockers.push(
@@ -741,43 +786,42 @@ export function planTeamGameStats(options: {
       continue;
     }
 
-    // Both resolved
-    const teamId = teamRes!.resolvedId!;
-    const oppId = oppRes!.resolvedId!;
-    const homeId = homeAway === 'home' ? teamId : oppId;
-    const awayId = homeAway === 'home' ? oppId : teamId;
-    const pair = `${homeId}|${awayId}`;
-    const pairGames = gamesByPair.get(pair) ?? [];
-    if (pairGames.length === 0) {
-      ignoredProviderRows += 1;
-      continue;
-    }
-    if (pairGames.length > 1) {
-      unresolvedRows += 1;
-      blockers.push(
-        `ambiguous_provider_row:${row.team}|${row.opponent} pair=${pair}`
+    if (!teamOk && oppOk) {
+      // An unresolved provider team can be ignored when it is the non-expected
+      // side of a unique canonical matchup (for example an FCS opponent).
+      const oppId = oppRes.resolvedId;
+      const candidates = findGamesWhere(
+        (g) => g.homeTeamId === oppId || g.awayTeamId === oppId
       );
+      if (candidates.length === 1) {
+        const g = candidates[0];
+        const unresolvedSideId =
+          g.homeTeamId === oppId ? g.awayTeamId : g.homeTeamId;
+        const key = naturalKey(g.id, unresolvedSideId);
+        if (!expectedKeys.has(key)) {
+          ignoredProviderRows += 1;
+          continue;
+        }
+      } else if (candidates.length === 0) {
+        ignoredProviderRows += 1;
+        continue;
+      } else {
+        unresolvedRows += 1;
+        blockers.push(
+          `ambiguous_provider_row:${row.team}|${row.opponent} matches=${candidates.length}`
+        );
+        continue;
+      }
+      unresolvedRows += 1;
+      blockers.push(`unresolved_provider_team:${row.team}`);
       continue;
     }
-    const g = pairGames[0];
-    const key = naturalKey(g.id, teamId);
-    if (!expectedKeys.has(key)) {
-      ignoredProviderRows += 1;
-      continue;
-    }
-    if (matchedByKey.has(key)) {
-      duplicateKeySet.add(key);
-      blockers.push(`duplicate_natural_key:${key}`);
-      continue;
-    }
-    matchedByKey.set(key, {
-      key,
-      gameId: g.id,
-      teamId,
-      fields,
-    });
-  }
 
+    // Neither provider name resolved. This row cannot map to a canonical
+    // expected participant directly. Ignore it here; any genuinely required
+    // FBS participant still fails closed via missing_expected_key below.
+    ignoredProviderRows += 1;
+  }
   const duplicateKeys = duplicateKeySet.size;
 
   // Missing expected keys

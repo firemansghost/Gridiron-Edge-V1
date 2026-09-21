@@ -61,7 +61,6 @@ function providerRow(
   overrides: Partial<CfbdAdvancedGameStatRow> & {
     team: string;
     opponent: string;
-    homeAway: 'home' | 'away';
   }
 ): CfbdAdvancedGameStatRow {
   return {
@@ -128,6 +127,44 @@ describe('2C-2J-6D-1 mapping fixtures', () => {
     expect(fields.epaDef).toBe(-0.12);
     expect(fields.yppOff).toBe(7);
     expect(fields.successOff).toBe(0.5);
+  });
+
+  it('maps the current CFBD v2 AdvancedGameStat shape without homeAway or legacy yardage fields', () => {
+    const row: CfbdAdvancedGameStatRow = {
+      gameId: 401234567,
+      season: 2026,
+      seasonType: 'regular',
+      week: 1,
+      team: 'Alabama',
+      opponent: 'Georgia',
+      offense: {
+        plays: 71,
+        drives: 12,
+        ppa: 0.27,
+        totalPPA: 19.17,
+        successRate: 0.48,
+        explosiveness: 1.21,
+      },
+      defense: {
+        plays: 66,
+        drives: 11,
+        ppa: -0.08,
+        totalPPA: -5.28,
+        successRate: 0.34,
+        explosiveness: 1.01,
+      },
+    };
+    const fields = mapAdvancedStatsToManagedFields(row);
+    expect(fields.epaOff).toBe(0.27);
+    expect(fields.epaDef).toBe(-0.08);
+    expect(fields.successOff).toBe(0.48);
+    expect(fields.successDef).toBe(0.34);
+    expect(fields.offensive_stats.plays).toBe(71);
+    expect(fields.yppOff).toBeNull();
+    expect(fields.yppDef).toBeNull();
+    expect(fields.pace).toBeNull();
+    expect(fields.passYpaOff).toBeNull();
+    expect(fields.rushYpcOff).toBeNull();
   });
 
   it('derivePaceFromSecondsPerPlay uses 60/spp; safeNumber nulls non-finite', () => {
@@ -262,7 +299,7 @@ describe('2C-2J-6D-1 provider fetch', () => {
       expect(u).toContain('year=2026');
       expect(u).toContain('week=1');
       expect(u).toContain('seasonType=regular');
-      expect(u).toContain('classification=fbs');
+      expect(u).not.toContain('classification=');
       return {
         ok: true,
         status: 200,
@@ -351,6 +388,38 @@ describe('2C-2J-6D-1 planning', () => {
     expect(plan.counts.proposedCreates).toBe(2);
     expect(plan.writeSafe).toBe(true);
     expect(plan.mutationsInvoked).toBe(false);
+  });
+
+  it('infers provider orientation from canonical Game when current CFBD v2 omits homeAway', () => {
+    const v2HomeRow: CfbdAdvancedGameStatRow = {
+      ...homeRow,
+      homeAway: undefined,
+      gameId: 401234567,
+      seasonType: 'regular',
+    };
+    const v2AwayRow: CfbdAdvancedGameStatRow = {
+      ...awayRow,
+      homeAway: undefined,
+      gameId: 401234567,
+      seasonType: 'regular',
+    };
+    const plan = planTeamGameStats({
+      season: 2026,
+      week: 1,
+      mode: 'PREVIEW',
+      confirmation: '',
+      providerRows: [v2AwayRow, v2HomeRow],
+      providerHttpStatus: 200,
+      providerCalls: 1,
+      dbGames: [finalGame],
+      existingStats: [],
+      fbsTeamIds: fbs,
+      teamResolutions: resolutions,
+    });
+    expect(plan.writeSafe).toBe(true);
+    expect(plan.counts.resolvedProviderRows).toBe(2);
+    expect(plan.counts.missingExpectedKeys).toBe(0);
+    expect(plan.counts.proposedCreates).toBe(2);
   });
 
   it('PREVIEW zero mutations via plan + execution builders', () => {
@@ -571,6 +640,33 @@ describe('2C-2J-6D-1 planning', () => {
     expect(plan.counts.ignoredProviderRows).toBe(1);
     expect(plan.counts.proposedCreates).toBe(2);
     expect(plan.writeSafe).toBe(true);
+  });
+
+  it('ignores noncanonical provider rows when neither provider team resolves', () => {
+    const extra = providerRow({
+      team: 'FCS Team A',
+      opponent: 'FCS Team B',
+      homeAway: undefined,
+    });
+    const res = new Map(resolutions);
+    res.set('FCS Team A', unresolved('FCS Team A'));
+    res.set('FCS Team B', unresolved('FCS Team B'));
+    const plan = planTeamGameStats({
+      season: 2026,
+      week: 1,
+      mode: 'PREVIEW',
+      confirmation: '',
+      providerRows: [homeRow, awayRow, extra],
+      providerHttpStatus: 200,
+      providerCalls: 1,
+      dbGames: [finalGame],
+      existingStats: [],
+      fbsTeamIds: fbs,
+      teamResolutions: res,
+    });
+    expect(plan.writeSafe).toBe(true);
+    expect(plan.counts.ignoredProviderRows).toBe(1);
+    expect(plan.counts.missingExpectedKeys).toBe(0);
   });
 
   it('commitEligible false when blockers', () => {
