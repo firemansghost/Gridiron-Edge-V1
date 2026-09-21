@@ -226,7 +226,7 @@ describe('2C-2J-6D-1 mapping fixtures', () => {
     expect(managedFieldsEqual(reread, planned)).toBe(false);
   });
 
-  it('semanticJsonEqual ignores object key order but preserves arrays and values', () => {
+  it('semanticJsonEqual ignores object key order but preserves arrays and substantive values', () => {
     expect(
       semanticJsonEqual(
         {
@@ -245,6 +245,75 @@ describe('2C-2J-6D-1 mapping fixtures', () => {
     expect(semanticJsonEqual([1, 2, 3], [3, 2, 1])).toBe(false);
     expect(semanticJsonEqual({ epa: 0.45 }, { epa: 0.46 })).toBe(false);
     expect(semanticJsonEqual({ value: null }, { value: 0 })).toBe(false);
+  });
+
+  it('semanticJsonEqual accepts observed PostgreSQL JSONB numeric round-trip drift only', () => {
+    expect(
+      semanticJsonEqual(
+        { epa: 0.13513274392571223 },
+        { epa: 0.1351327439257122 }
+      )
+    ).toBe(true);
+
+    expect(
+      semanticJsonEqual(
+        {
+          defense: {
+            explosiveness: 1.2436244800126635,
+          },
+        },
+        {
+          defense: {
+            explosiveness: 1.243624480012663,
+          },
+        }
+      )
+    ).toBe(true);
+
+    expect(
+      semanticJsonEqual(
+        { epa: 0.13513274392571223 },
+        { epa: 0.1352 }
+      )
+    ).toBe(false);
+  });
+
+  it('managedFieldsEqual accepts observed JSONB numeric round-trip drift but not substantive drift', () => {
+    const row = providerRow({
+      team: 'A',
+      opponent: 'B',
+      homeAway: 'home',
+    });
+    const planned = mapAdvancedStatsToManagedFields(row);
+    const reread = mapAdvancedStatsToManagedFields(row);
+
+    planned.offensive_stats = {
+      ...planned.offensive_stats,
+      epa: 0.13513274392571223,
+    };
+    reread.offensive_stats = {
+      ...reread.offensive_stats,
+      epa: 0.1351327439257122,
+    };
+    planned.rawJson = {
+      defense: {
+        explosiveness: 1.2436244800126635,
+      },
+    };
+    reread.rawJson = {
+      defense: {
+        explosiveness: 1.243624480012663,
+      },
+    };
+
+    expect(managedFieldsEqual(reread, planned)).toBe(true);
+
+    reread.rawJson = {
+      defense: {
+        explosiveness: 1.25,
+      },
+    };
+    expect(managedFieldsEqual(reread, planned)).toBe(false);
   });
 
   it('managedFieldsEqual treats jsonb key-order changes as equal but real value changes as unequal', () => {
@@ -850,6 +919,44 @@ describe('2C-2J-6D-1 planning', () => {
       persistedValue: '0.99',
       absoluteDelta: null,
       tolerance: null,
+    });
+  });
+
+  it('JSON diagnostics skip tolerated round-trip drift and report the first substantive mismatch', () => {
+    const fields = baseFieldsFrom(homeRow);
+    const planned = {
+      ...fields,
+      offensive_stats: {
+        ...fields.offensive_stats,
+        epa: 0.13513274392571223,
+        success: 0.4925373134328358,
+      },
+    };
+    const reread = {
+      ...planned,
+      offensive_stats: {
+        ...planned.offensive_stats,
+        epa: 0.1351327439257122,
+        success: 0.51,
+      },
+    };
+    const key = naturalKey(gameId, homeId);
+
+    const bad = verifyTeamGameStatPostWrite({
+      expectedKeys: [key],
+      plannedByKey: new Map([[key, planned]]),
+      afterRows: [asDbStat(gameId, homeId, reread)],
+    });
+
+    expect(bad.ok).toBe(false);
+    expect(bad.diagnostics).toHaveLength(1);
+    expect(bad.diagnostics[0]).toMatchObject({
+      key,
+      field: 'offensive_stats',
+      kind: 'json',
+      path: '$.success',
+      plannedValue: '0.4925373134328358',
+      persistedValue: '0.51',
     });
   });
 
