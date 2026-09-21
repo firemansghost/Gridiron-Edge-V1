@@ -4,6 +4,8 @@
 
 import {
   EXPECTED_2026_FBS_COUNT,
+  TEAM_GAME_STAT_VERIFICATION_DIAGNOSTIC_LIMIT,
+  TeamGameStatPostWriteVerificationError,
   buildPreviewExecution,
   buildRolledBackExecution,
   buildSuccessfulCommitExecution,
@@ -771,7 +773,7 @@ describe('2C-2J-6D-1 planning', () => {
     expect(commitEligible(plan)).toBe(false);
   });
 
-  it('post-write verification mismatch fails', () => {
+  it('post-write verification mismatch fails with field-level scalar diagnostics', () => {
     const fields = baseFieldsFrom(homeRow);
     const plannedByKey = new Map<string, ManagedTeamGameStatFields>([
       [naturalKey(gameId, homeId), fields],
@@ -786,6 +788,8 @@ describe('2C-2J-6D-1 planning', () => {
       ],
     });
     expect(ok.ok).toBe(true);
+    expect(ok.diagnostics).toEqual([]);
+    expect(ok.totalManagedFieldMismatches).toBe(0);
 
     const bad = verifyTeamGameStatPostWrite({
       expectedKeys: [naturalKey(gameId, homeId), naturalKey(gameId, awayId)],
@@ -799,6 +803,54 @@ describe('2C-2J-6D-1 planning', () => {
     expect(bad.reasons.some((r) => r.includes('managed_fields_mismatch'))).toBe(
       true
     );
+    expect(bad.diagnostics).toHaveLength(1);
+    expect(bad.diagnostics[0]).toMatchObject({
+      key: naturalKey(gameId, homeId),
+      field: 'epaOff',
+      kind: 'scalar',
+      path: null,
+      plannedValue: String(fields.epaOff),
+      persistedValue: '99',
+    });
+    expect(bad.diagnostics[0].absoluteDelta).toBeGreaterThan(0);
+    expect(bad.diagnostics[0].tolerance).toBeGreaterThan(0);
+    expect(bad.diagnosticLimit).toBe(
+      TEAM_GAME_STAT_VERIFICATION_DIAGNOSTIC_LIMIT
+    );
+    expect(bad.diagnosticsTruncated).toBe(false);
+    expect(bad.totalManagedFieldMismatches).toBe(1);
+  });
+
+  it('post-write verification reports the first differing JSON path without dumping objects', () => {
+    const fields = baseFieldsFrom(homeRow);
+    const corrupted = {
+      ...fields,
+      offensive_stats: {
+        ...fields.offensive_stats,
+        epa: 0.99,
+      },
+    };
+    const key = naturalKey(gameId, homeId);
+    const bad = verifyTeamGameStatPostWrite({
+      expectedKeys: [key],
+      plannedByKey: new Map([[key, fields]]),
+      afterRows: [asDbStat(gameId, homeId, corrupted)],
+    });
+
+    expect(bad.ok).toBe(false);
+    expect(bad.diagnostics).toHaveLength(1);
+    expect(bad.diagnostics[0]).toMatchObject({
+      key,
+      field: 'offensive_stats',
+      kind: 'json',
+      path: '$.epa',
+      plannedType: 'number',
+      persistedType: 'number',
+      plannedValue: String(fields.offensive_stats.epa),
+      persistedValue: '0.99',
+      absoluteDelta: null,
+      tolerance: null,
+    });
   });
 
   it('successful commit execution builder reports mutation counts', () => {
@@ -1049,8 +1101,9 @@ describe('2C-2J-6D-1 transactional verification rollback', () => {
     const store = new Map<string, DbTeamGameStatRow>();
     let mutationAttempts = 0;
 
-    await expect(
-      executeAtomicTeamGameStatCommit({
+    let caught: unknown = null;
+    try {
+      await executeAtomicTeamGameStatCommit({
         plan,
         providerRows: [homeRow, awayRow],
         fbsTeamIds: fbs,
@@ -1074,8 +1127,22 @@ describe('2C-2J-6D-1 transactional verification rollback', () => {
         updateRow: async () => {
           mutationAttempts += 1;
         },
-      })
-    ).rejects.toThrow(/post-write verification failed/);
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(TeamGameStatPostWriteVerificationError);
+    const verificationError =
+      caught as TeamGameStatPostWriteVerificationError;
+    expect(verificationError.message).toMatch(/post-write verification failed/);
+    expect(verificationError.verification.ok).toBe(false);
+    expect(verificationError.verification.diagnostics.length).toBeGreaterThan(0);
+    expect(
+      verificationError.verification.diagnostics.some(
+        (d) => d.field === 'epaOff' && d.persistedValue === '999'
+      )
+    ).toBe(true);
 
     expect(mutationAttempts).toBeGreaterThan(0);
 
