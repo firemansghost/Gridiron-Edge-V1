@@ -12,6 +12,7 @@ import {
   executeAtomicTeamGameStatCommit,
   expectedTeamGameStatConfirmation,
   fetchCfbdAdvancedGameStatsWeek,
+  float8RoundTripEqual,
   managedFieldsEqual,
   mapAdvancedStatsToManagedFields,
   naturalKey,
@@ -177,6 +178,50 @@ describe('2C-2J-6D-1 mapping fixtures', () => {
     expect(safeNumber(Infinity)).toBeNull();
     expect(safeNumber(undefined)).toBeNull();
     expect(safeNumber(1.5)).toBe(1.5);
+  });
+
+  it('float8RoundTripEqual accepts only machine-precision PostgreSQL float8 drift', () => {
+    expect(
+      float8RoundTripEqual(0.4925373134328358, 0.492537313432836)
+    ).toBe(true);
+    expect(
+      float8RoundTripEqual(0.45740677150249703, 0.457406771502497)
+    ).toBe(true);
+    expect(float8RoundTripEqual(0.4925, 0.4935)).toBe(false);
+    expect(float8RoundTripEqual(null, null)).toBe(true);
+    expect(float8RoundTripEqual(null, 0)).toBe(false);
+    expect(float8RoundTripEqual(0, null)).toBe(false);
+    expect(float8RoundTripEqual(Infinity, Infinity)).toBe(true);
+    expect(float8RoundTripEqual(Infinity, Number.MAX_VALUE)).toBe(false);
+    expect(float8RoundTripEqual(NaN, NaN)).toBe(false);
+  });
+
+  it('managedFieldsEqual accepts float8 round-trip drift but rejects substantive scalar changes', () => {
+    const row = providerRow({
+      team: 'A',
+      opponent: 'B',
+      homeAway: 'home',
+      offense: {
+        ppa: 0.45740677150249703,
+        successRate: 0.4925373134328358,
+      },
+      defense: {
+        ppa: 0.17296795620109381,
+        successRate: 0.4090909090909091,
+      },
+    });
+    const planned = mapAdvancedStatsToManagedFields(row);
+    const reread = mapAdvancedStatsToManagedFields(row);
+
+    reread.successOff = 0.492537313432836;
+    reread.epaOff = 0.457406771502497;
+    reread.successDef = 0.409090909090909;
+    reread.epaDef = 0.172967956201094;
+
+    expect(managedFieldsEqual(reread, planned)).toBe(true);
+
+    reread.epaOff = 0.4575;
+    expect(managedFieldsEqual(reread, planned)).toBe(false);
   });
 
   it('semanticJsonEqual ignores object key order but preserves arrays and values', () => {
