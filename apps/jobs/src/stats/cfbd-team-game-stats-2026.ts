@@ -342,9 +342,9 @@ export function float8RoundTripEqual(
   a: number | null,
   b: number | null
 ): boolean {
-  if (a === b) return true;
-  if (a === null || b === null) return false;
+  if (a === null || b === null) return a === b;
   if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+  if (a === b) return true;
 
   const scale = Math.max(1, Math.abs(a), Math.abs(b));
   const tolerance = Number.EPSILON * 16 * scale;
