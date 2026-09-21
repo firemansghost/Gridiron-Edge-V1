@@ -134,15 +134,20 @@ describe('2C-2J-6D-1 canonical CFBD TeamGameStat workflow', () => {
     expect(cli).toContain('provider call skipped');
   });
 
-  it('post-write verification lives inside executeAtomic (not after commit)', () => {
+  it('post-write verification lives inside executeAtomic and rollback preserves diagnostics', () => {
     const lib = fs.readFileSync(
       path.join(ROOT, 'apps/jobs/src/stats/cfbd-team-game-stats-2026.ts'),
       'utf8'
     );
     expect(lib).toMatch(
-      /export async function executeAtomicTeamGameStatCommit[\s\S]*verifyTeamGameStatPostWrite[\s\S]*post-write verification failed/
+      /export async function executeAtomicTeamGameStatCommit[\s\S]*verifyTeamGameStatPostWrite[\s\S]*TeamGameStatPostWriteVerificationError/
     );
+    expect(lib).toContain('TEAM_GAME_STAT_VERIFICATION_DIAGNOSTIC_LIMIT = 24');
+    expect(lib).toContain('diagnoseManagedFieldMismatches');
     expect(cli).not.toContain('verifyTeamGameStatPostWrite');
+    expect(cli).toContain('TeamGameStatPostWriteVerificationError');
+    expect(cli).toContain('verification = err.verification');
+    expect(cli).toContain('verificationDiagnosticsPreserved');
     expect(cli).toContain('transactionalVerification');
     expect(cli).toContain('buildRolledBackExecution');
   });
