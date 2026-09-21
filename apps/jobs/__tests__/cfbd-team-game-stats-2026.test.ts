@@ -18,6 +18,7 @@ import {
   parseTeamGameStatCliArgs,
   planTeamGameStats,
   safeNumber,
+  semanticJsonEqual,
   verifyTeamGameStatPostWrite,
   type CfbdAdvancedGameStatRow,
   type DbGameRowForStats,
@@ -178,7 +179,28 @@ describe('2C-2J-6D-1 mapping fixtures', () => {
     expect(safeNumber(1.5)).toBe(1.5);
   });
 
-  it('managedFieldsEqual compares scalars and JSON bags', () => {
+  it('semanticJsonEqual ignores object key order but preserves arrays and values', () => {
+    expect(
+      semanticJsonEqual(
+        {
+          plays: 67,
+          nested: { success: 0.49, epa: 0.45 },
+          series: [1, { side: 'home', value: null }, 3],
+        },
+        {
+          series: [1, { value: null, side: 'home' }, 3],
+          nested: { epa: 0.45, success: 0.49 },
+          plays: 67,
+        }
+      )
+    ).toBe(true);
+
+    expect(semanticJsonEqual([1, 2, 3], [3, 2, 1])).toBe(false);
+    expect(semanticJsonEqual({ epa: 0.45 }, { epa: 0.46 })).toBe(false);
+    expect(semanticJsonEqual({ value: null }, { value: 0 })).toBe(false);
+  });
+
+  it('managedFieldsEqual treats jsonb key-order changes as equal but real value changes as unequal', () => {
     const row = providerRow({
       team: 'A',
       opponent: 'B',
@@ -186,7 +208,24 @@ describe('2C-2J-6D-1 mapping fixtures', () => {
     });
     const a = mapAdvancedStatsToManagedFields(row);
     const b = mapAdvancedStatsToManagedFields(row);
+
+    b.offensive_stats = Object.fromEntries(
+      Object.entries(b.offensive_stats).reverse()
+    );
+    b.defensive_stats = Object.fromEntries(
+      Object.entries(b.defensive_stats).reverse()
+    );
+    b.rawJson = Object.fromEntries(Object.entries(b.rawJson).reverse());
+
     expect(managedFieldsEqual(a, b)).toBe(true);
+
+    b.offensive_stats = {
+      ...b.offensive_stats,
+      epa: 0.99,
+    };
+    expect(managedFieldsEqual(a, b)).toBe(false);
+
+    b.offensive_stats = a.offensive_stats;
     b.epaOff = 0.99;
     expect(managedFieldsEqual(a, b)).toBe(false);
   });
