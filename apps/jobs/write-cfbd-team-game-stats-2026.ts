@@ -35,6 +35,7 @@ import {
   type DbGameRowForStats,
   type DbTeamGameStatRow,
   type ManagedTeamGameStatFields,
+  TeamGameStatPostWriteVerificationError,
   type TeamGameStatExecutionState,
   type TeamGameStatPlan,
   type TeamGameStatPostWriteVerification,
@@ -421,10 +422,15 @@ async function main(): Promise<void> {
       plan = txResult.rePlan;
       verification = txResult.verification;
     } catch (err) {
+      if (err instanceof TeamGameStatPostWriteVerificationError) {
+        verification = err.verification;
+      }
       const msg = redactSecretLike(
         err instanceof Error ? err.message : String(err)
       );
-      const verificationFailed = /post-write verification failed/i.test(msg);
+      const verificationFailed =
+        err instanceof TeamGameStatPostWriteVerificationError ||
+        /post-write verification failed/i.test(msg);
       execution = buildRolledBackExecution({
         providerCalls: plan.providerCalls,
         mutationAttempts: txMutationAttempts,
@@ -435,6 +441,8 @@ async function main(): Promise<void> {
         rolledBack: true,
         isolationLevel: 'Serializable',
         transactionalVerificationFailed: verificationFailed,
+        verificationDiagnosticsPreserved:
+          err instanceof TeamGameStatPostWriteVerificationError,
       });
       throw err;
     }

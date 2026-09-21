@@ -203,11 +203,43 @@ export interface TeamGameStatExecutionState {
   providerCalls: number;
 }
 
+export const TEAM_GAME_STAT_VERIFICATION_DIAGNOSTIC_LIMIT = 24;
+
+export interface TeamGameStatFieldMismatchDiagnostic {
+  key: string;
+  field: string;
+  kind: 'scalar' | 'json';
+  path: string | null;
+  plannedType: string;
+  persistedType: string;
+  plannedValue: string;
+  persistedValue: string;
+  absoluteDelta: number | null;
+  tolerance: number | null;
+}
+
 export interface TeamGameStatPostWriteVerification {
   ok: boolean;
   reasons: string[];
   afterRows: number;
   verifiedKeys: number;
+  diagnostics: TeamGameStatFieldMismatchDiagnostic[];
+  diagnosticLimit: number;
+  diagnosticsTruncated: boolean;
+  totalManagedFieldMismatches: number;
+}
+
+export class TeamGameStatPostWriteVerificationError extends Error {
+  readonly verification: TeamGameStatPostWriteVerification;
+
+  constructor(verification: TeamGameStatPostWriteVerification) {
+    super(
+      `post-write verification failed: ${verification.reasons.join('; ')}`
+    );
+    this.name = 'TeamGameStatPostWriteVerificationError';
+    this.verification = verification;
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
 }
 
 export function expectedTeamGameStatConfirmation(week: number): string {
@@ -349,6 +381,230 @@ export function float8RoundTripEqual(
   const scale = Math.max(1, Math.abs(a), Math.abs(b));
   const tolerance = Number.EPSILON * 16 * scale;
   return Math.abs(a - b) <= tolerance;
+}
+
+function diagnosticValueType(value: unknown): string {
+  if (value === null) return 'null';
+  if (value === undefined) return 'undefined';
+  if (Array.isArray(value)) return 'array';
+  return typeof value;
+}
+
+function diagnosticValueSummary(value: unknown): string {
+  if (value === undefined) return '<undefined>';
+  if (value === null) return 'null';
+  if (typeof value === 'string') {
+    const clipped = value.length > 120 ? `${value.slice(0, 117)}...` : value;
+    return JSON.stringify(clipped);
+  }
+  if (
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'bigint'
+  ) {
+    return String(value);
+  }
+  if (Array.isArray(value)) return `<array length=${value.length}>`;
+  if (typeof value === 'object') {
+    return `<object keys=${Object.keys(value as Record<string, unknown>).length}>`;
+  }
+  return String(value);
+}
+
+interface JsonMismatchDiagnostic {
+  path: string;
+  plannedType: string;
+  persistedType: string;
+  plannedValue: string;
+  persistedValue: string;
+}
+
+function firstJsonMismatch(
+  planned: unknown,
+  persisted: unknown,
+  path = '$'
+): JsonMismatchDiagnostic | null {
+  if (planned === persisted) return null;
+
+  if (planned === null || persisted === null) {
+    return {
+      path,
+      plannedType: diagnosticValueType(planned),
+      persistedType: diagnosticValueType(persisted),
+      plannedValue: diagnosticValueSummary(planned),
+      persistedValue: diagnosticValueSummary(persisted),
+    };
+  }
+
+  if (Array.isArray(planned) || Array.isArray(persisted)) {
+    if (!Array.isArray(planned) || !Array.isArray(persisted)) {
+      return {
+        path,
+        plannedType: diagnosticValueType(planned),
+        persistedType: diagnosticValueType(persisted),
+        plannedValue: diagnosticValueSummary(planned),
+        persistedValue: diagnosticValueSummary(persisted),
+      };
+    }
+    if (planned.length !== persisted.length) {
+      return {
+        path: `${path}.length`,
+        plannedType: 'number',
+        persistedType: 'number',
+        plannedValue: String(planned.length),
+        persistedValue: String(persisted.length),
+      };
+    }
+    for (let i = 0; i < planned.length; i++) {
+      const nested = firstJsonMismatch(planned[i], persisted[i], `${path}[${i}]`);
+      if (nested) return nested;
+    }
+    return null;
+  }
+
+  if (typeof planned === 'object' || typeof persisted === 'object') {
+    if (typeof planned !== 'object' || typeof persisted !== 'object') {
+      return {
+        path,
+        plannedType: diagnosticValueType(planned),
+        persistedType: diagnosticValueType(persisted),
+        plannedValue: diagnosticValueSummary(planned),
+        persistedValue: diagnosticValueSummary(persisted),
+      };
+    }
+
+    const plannedObj = planned as Record<string, unknown>;
+    const persistedObj = persisted as Record<string, unknown>;
+    const keys = Array.from(
+      new Set([...Object.keys(plannedObj), ...Object.keys(persistedObj)])
+    ).sort();
+
+    for (const key of keys) {
+      const plannedHas = Object.prototype.hasOwnProperty.call(plannedObj, key);
+      const persistedHas = Object.prototype.hasOwnProperty.call(persistedObj, key);
+      const childPath = `${path}.${key}`;
+      if (!plannedHas || !persistedHas) {
+        return {
+          path: childPath,
+          plannedType: plannedHas
+            ? diagnosticValueType(plannedObj[key])
+            : 'missing',
+          persistedType: persistedHas
+            ? diagnosticValueType(persistedObj[key])
+            : 'missing',
+          plannedValue: plannedHas
+            ? diagnosticValueSummary(plannedObj[key])
+            : '<missing>',
+          persistedValue: persistedHas
+            ? diagnosticValueSummary(persistedObj[key])
+            : '<missing>',
+        };
+      }
+      const nested = firstJsonMismatch(
+        plannedObj[key],
+        persistedObj[key],
+        childPath
+      );
+      if (nested) return nested;
+    }
+    return null;
+  }
+
+  return {
+    path,
+    plannedType: diagnosticValueType(planned),
+    persistedType: diagnosticValueType(persisted),
+    plannedValue: diagnosticValueSummary(planned),
+    persistedValue: diagnosticValueSummary(persisted),
+  };
+}
+
+export function diagnoseManagedFieldMismatches(
+  key: string,
+  persisted: ManagedTeamGameStatFields,
+  planned: ManagedTeamGameStatFields
+): TeamGameStatFieldMismatchDiagnostic[] {
+  const diagnostics: TeamGameStatFieldMismatchDiagnostic[] = [];
+  const scalarFields = [
+    'yppOff',
+    'successOff',
+    'epaOff',
+    'pace',
+    'passYpaOff',
+    'rushYpcOff',
+    'yppDef',
+    'successDef',
+    'epaDef',
+    'passYpaDef',
+    'rushYpcDef',
+  ] as const;
+
+  for (const field of scalarFields) {
+    const persistedValue = persisted[field];
+    const plannedValue = planned[field];
+    if (float8RoundTripEqual(persistedValue, plannedValue)) continue;
+
+    const finitePair =
+      persistedValue !== null &&
+      plannedValue !== null &&
+      Number.isFinite(persistedValue) &&
+      Number.isFinite(plannedValue);
+    const scale = finitePair
+      ? Math.max(1, Math.abs(persistedValue), Math.abs(plannedValue))
+      : null;
+    const tolerance =
+      scale === null ? null : Number.EPSILON * 16 * scale;
+    const absoluteDelta =
+      finitePair ? Math.abs(persistedValue - plannedValue) : null;
+
+    diagnostics.push({
+      key,
+      field,
+      kind: 'scalar',
+      path: null,
+      plannedType: diagnosticValueType(plannedValue),
+      persistedType: diagnosticValueType(persistedValue),
+      plannedValue: diagnosticValueSummary(plannedValue),
+      persistedValue: diagnosticValueSummary(persistedValue),
+      absoluteDelta,
+      tolerance,
+    });
+  }
+
+  const jsonFields = [
+    'offensive_stats',
+    'defensive_stats',
+    'special_teams',
+    'rawJson',
+  ] as const;
+
+  for (const field of jsonFields) {
+    const persistedValue = persisted[field];
+    const plannedValue = planned[field];
+    if (semanticJsonEqual(persistedValue, plannedValue)) continue;
+    const mismatch =
+      firstJsonMismatch(plannedValue, persistedValue) ?? {
+        path: '$',
+        plannedType: diagnosticValueType(plannedValue),
+        persistedType: diagnosticValueType(persistedValue),
+        plannedValue: diagnosticValueSummary(plannedValue),
+        persistedValue: diagnosticValueSummary(persistedValue),
+      };
+    diagnostics.push({
+      key,
+      field,
+      kind: 'json',
+      path: mismatch.path,
+      plannedType: mismatch.plannedType,
+      persistedType: mismatch.persistedType,
+      plannedValue: mismatch.plannedValue,
+      persistedValue: mismatch.persistedValue,
+      absoluteDelta: null,
+      tolerance: null,
+    });
+  }
+
+  return diagnostics;
 }
 
 export function managedFieldsEqual(
@@ -1143,9 +1399,7 @@ export async function executeAtomicTeamGameStatCommit(options: {
   });
 
   if (!verification.ok) {
-    throw new Error(
-      `post-write verification failed: ${verification.reasons.join('; ')}`
-    );
+    throw new TeamGameStatPostWriteVerificationError(verification);
   }
 
   return {
@@ -1168,6 +1422,8 @@ export function verifyTeamGameStatPostWrite(options: {
   updateCount?: number;
 }): TeamGameStatPostWriteVerification {
   const reasons: string[] = [];
+  const diagnostics: TeamGameStatFieldMismatchDiagnostic[] = [];
+  let totalManagedFieldMismatches = 0;
   const afterByKey = new Map<string, DbTeamGameStatRow[]>();
   for (const row of options.afterRows) {
     const key = naturalKey(row.gameId, row.teamId);
@@ -1194,6 +1450,19 @@ export function verifyTeamGameStatPostWrite(options: {
     }
     if (!managedFieldsEqual(rows[0], planned)) {
       reasons.push(`managed_fields_mismatch:${key}`);
+      const rowDiagnostics = diagnoseManagedFieldMismatches(
+        key,
+        rows[0],
+        planned
+      );
+      totalManagedFieldMismatches += rowDiagnostics.length;
+      for (const diagnostic of rowDiagnostics) {
+        if (
+          diagnostics.length < TEAM_GAME_STAT_VERIFICATION_DIAGNOSTIC_LIMIT
+        ) {
+          diagnostics.push(diagnostic);
+        }
+      }
       continue;
     }
     verifiedKeys += 1;
@@ -1223,6 +1492,11 @@ export function verifyTeamGameStatPostWrite(options: {
     reasons,
     afterRows: options.afterRows.length,
     verifiedKeys,
+    diagnostics,
+    diagnosticLimit: TEAM_GAME_STAT_VERIFICATION_DIAGNOSTIC_LIMIT,
+    diagnosticsTruncated:
+      totalManagedFieldMismatches > TEAM_GAME_STAT_VERIFICATION_DIAGNOSTIC_LIMIT,
+    totalManagedFieldMismatches,
   };
 }
 
