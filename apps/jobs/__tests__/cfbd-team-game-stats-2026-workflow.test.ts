@@ -123,8 +123,12 @@ describe('2C-2J-6D-1 canonical CFBD TeamGameStat workflow', () => {
     expect(collectRunBodies(wf)).not.toMatch(/\$\{\{\s*inputs\./);
   });
 
-  it('CLI uses Serializable isolation and confirmation-before-provider gate', () => {
+  it('CLI uses Serializable isolation, explicit 30s timeout, and confirmation-before-provider gate', () => {
+    expect(cli).toContain(
+      'export const TEAM_GAME_STAT_TRANSACTION_TIMEOUT_MS = 30_000'
+    );
     expect(cli).toContain('TransactionIsolationLevel.Serializable');
+    expect(cli).toContain('timeout: TEAM_GAME_STAT_TRANSACTION_TIMEOUT_MS');
     expect(cli).toContain('executeAtomicTeamGameStatCommit');
     expect(cli).toContain('expectedTeamGameStatConfirmation');
     expect(cli).toContain('provider call skipped');
