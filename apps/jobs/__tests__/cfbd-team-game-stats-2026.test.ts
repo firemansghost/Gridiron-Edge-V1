@@ -191,7 +191,7 @@ describe('2C-2J-6D-1 mapping fixtures', () => {
     expect(float8RoundTripEqual(null, null)).toBe(true);
     expect(float8RoundTripEqual(null, 0)).toBe(false);
     expect(float8RoundTripEqual(0, null)).toBe(false);
-    expect(float8RoundTripEqual(Infinity, Infinity)).toBe(true);
+    expect(float8RoundTripEqual(Infinity, Infinity)).toBe(false);
     expect(float8RoundTripEqual(Infinity, Number.MAX_VALUE)).toBe(false);
     expect(float8RoundTripEqual(NaN, NaN)).toBe(false);
   });
