@@ -16,14 +16,17 @@ on:
       - 'apps/jobs/preview-generic-shadow-t30-automation-v1-2026.ts'
       - 'apps/jobs/run-generic-shadow-t30-automation-v1-market-refresh-2026.ts'
       - 'apps/jobs/run-generic-shadow-t30-automation-v1-closing-commit-2026.ts'
+      - 'apps/jobs/__tests__/generic-shadow-t30-automation-v1-scheduled-workflow.test.ts'
       - 'apps/jobs/__tests__/generic-shadow-t30-automation-v1-workflow.test.ts'
       - 'apps/jobs/__tests__/generic-shadow-t30-automation-v1-market-refresh*.test.ts'
       - 'apps/jobs/__tests__/generic-shadow-t30-automation-v1-closing-commit*.test.ts'
       - '.github/workflows/preview-generic-shadow-t30-automation-v1-2026-manual.yml'
       - '.github/workflows/run-generic-shadow-t30-automation-v1-market-refresh-2026-manual.yml'
       - '.github/workflows/run-generic-shadow-t30-automation-v1-closing-commit-2026-manual.yml'
+      - '.github/workflows/run-generic-shadow-t30-automation-v1-scheduled-2026.yml'
       - '.github/workflows/test-generic-shadow-t30-automation-v1.yml'
       - 'research/generic-shadow/GENERIC_SHADOW_T30_AUTOMATION_V1_CONTRACT.md'
+      - 'research/generic-shadow/GENERIC_SHADOW_T30_AUTOMATION_V1_SCHEDULE_RUNBOOK.md'
   workflow_dispatch:
 
 permissions:
@@ -62,6 +65,7 @@ jobs:
             apps/jobs/__tests__/generic-shadow-t30-automation-v1-closing-commit.test.ts \
             apps/jobs/__tests__/generic-shadow-t30-automation-v1-closing-commit-workflow.test.ts \
             apps/jobs/__tests__/generic-shadow-t30-automation-v1-closing-commit-child-report.test.ts \
+            apps/jobs/__tests__/generic-shadow-t30-automation-v1-scheduled-workflow.test.ts \
             apps/jobs/__tests__/live-odds-2026.test.ts \
             apps/web/__tests__/shadow-model-t30-closing-v1.test.ts \
             apps/jobs/__tests__/shadow-model-t30-closing-v1-adapter.test.ts \
