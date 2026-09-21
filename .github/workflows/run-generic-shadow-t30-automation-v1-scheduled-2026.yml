@@ -1,0 +1,369 @@
+# Generic Shadow T-30 Automation V1 — recurring scheduled coordinator.
+#
+# IMPORTANT:
+# - Merging this workflow does NOT activate production automation.
+# - The job is gated by repository variable:
+#     GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED == "true"
+# - The active CFB week is supplied by repository variable:
+#     GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK
+# - Activation/change of either variable is a separate operator authorization.
+#
+# This workflow only orchestrates the already-proven Stage C and Stage D CLIs.
+# It does not change their market-selection, closing, persistence, or verification semantics.
+#
+# Stage C:
+# - DB read-only PLAN every active cycle.
+# - ODDS_API_KEY is exposed only when the PLAN requests a T-45..T-35 board refresh.
+# - At most one guarded Live Odds board COMMIT per cycle.
+#
+# Stage D:
+# - providerCalls=0.
+# - DB read-only PLAN, then guarded Generic T-30 closing COMMIT/no-op.
+# - Only ShadowModelClosingMarketSnapshot may be written.
+#
+# Forbidden here:
+# - prediction/capture-run creation
+# - Bet / Official Card / Hybrid writes
+# - evaluation writes
+# - lifecycle/rating writes
+# - Game writes
+# - migrations
+# - post-target market reinterpretation or postkick backfill
+
+name: Generic Shadow T-30 Automation V1 2026 (Scheduled, Activation Gated)
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: generic-shadow-t30-automation-v1-production
+  cancel-in-progress: false
+
+jobs:
+  scheduled-cycle:
+    if: ${{ vars.GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      INPUT_SEASON: '2026'
+      INPUT_WEEK: ${{ vars.GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Scheduled source/ref and activation guard
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA=$(git rev-parse HEAD)
+          echo "ACTUAL_SHA=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+          echo "actual_sha=${ACTUAL_SHA}"
+          echo "github_ref=${GITHUB_REF:-}"
+          echo "season=${INPUT_SEASON}"
+          echo "week=${INPUT_WEEK:-}"
+          echo "activation_gate=enabled"
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Refusing scheduled automation. Workflow must run from main."
+            exit 1
+          fi
+          if [ "${INPUT_SEASON}" != "2026" ]; then
+            echo "::error::season must equal 2026"
+            exit 1
+          fi
+          if ! [[ "${INPUT_WEEK:-}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK must be a positive integer"
+            exit 1
+          fi
+          echo "Scheduled source/ref and activation guard passed."
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Stage C plan market-refresh cycle (read-only)
+        id: market_plan
+        env:
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          REPORT="reports/generic-shadow-t30-automation-v1-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-market-refresh-PLAN.json"
+          npx tsx apps/jobs/run-generic-shadow-t30-automation-v1-market-refresh-2026.ts \
+            --season "$INPUT_SEASON" \
+            --week "$INPUT_WEEK" \
+            --mode PLAN \
+            --report "$REPORT"
+
+      - name: Stage C conditional Live Odds board refresh
+        if: ${{ steps.market_plan.outputs.should_refresh == 'true' && steps.market_plan.outputs.blocked != 'true' }}
+        env:
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          DATABASE_URL: ${{ secrets.DIRECT_URL }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          CONFIRMATION="REFRESH_2026_WEEK_${INPUT_WEEK}_GENERIC_SHADOW_T30_MARKET"
+          PLAN_REPORT="reports/generic-shadow-t30-automation-v1-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-market-refresh-PLAN.json"
+          REPORT="reports/generic-shadow-t30-automation-v1-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-market-refresh-COMMIT.json"
+          LIVE_ODDS_REPORT="reports/live-odds-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-generic-shadow-t30-market-refresh.json"
+          if [ -z "${DIRECT_URL:-}" ]; then
+            echo "::error::DIRECT_URL secret is missing"
+            exit 1
+          fi
+          if [ -z "${ODDS_API_KEY:-}" ]; then
+            echo "::error::ODDS_API_KEY secret is missing"
+            exit 1
+          fi
+          npx tsx apps/jobs/run-generic-shadow-t30-automation-v1-market-refresh-2026.ts \
+            --season "$INPUT_SEASON" \
+            --week "$INPUT_WEEK" \
+            --mode COMMIT \
+            --confirm "$CONFIRMATION" \
+            --report "$REPORT" \
+            --live-odds-report "$LIVE_ODDS_REPORT" \
+            --initial-report "$PLAN_REPORT"
+
+      - name: Stage C terminal no-refresh/blocked report
+        if: ${{ always() && steps.market_plan.outputs.should_refresh != 'true' }}
+        env:
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          CONFIRMATION="REFRESH_2026_WEEK_${INPUT_WEEK}_GENERIC_SHADOW_T30_MARKET"
+          PLAN_REPORT="reports/generic-shadow-t30-automation-v1-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-market-refresh-PLAN.json"
+          REPORT="reports/generic-shadow-t30-automation-v1-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-market-refresh-COMMIT.json"
+          if [ ! -f "$PLAN_REPORT" ]; then
+            echo "::error::Stage C PLAN report missing."
+            exit 1
+          fi
+          npx tsx apps/jobs/run-generic-shadow-t30-automation-v1-market-refresh-2026.ts \
+            --season "$INPUT_SEASON" \
+            --week "$INPUT_WEEK" \
+            --mode COMMIT \
+            --confirm "$CONFIRMATION" \
+            --report "$REPORT" \
+            --initial-report "$PLAN_REPORT"
+
+      - name: Stage D plan closing cycle (read-only)
+        id: closing_plan
+        env:
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          REPORT="reports/generic-shadow-t30-automation-v1-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-closing-commit-PLAN.json"
+          npx tsx apps/jobs/run-generic-shadow-t30-automation-v1-closing-commit-2026.ts \
+            --season "$INPUT_SEASON" \
+            --week "$INPUT_WEEK" \
+            --mode PLAN \
+            --report "$REPORT"
+
+      - name: Stage D terminal closing COMMIT/no-op
+        env:
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          CONFIRMATION="CAPTURE_2026_WEEK_${INPUT_WEEK}_GENERIC_SHADOW_T30_AUTOMATED_CLOSINGS"
+          PLAN_REPORT="reports/generic-shadow-t30-automation-v1-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-closing-commit-PLAN.json"
+          REPORT="reports/generic-shadow-t30-automation-v1-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-closing-commit-COMMIT.json"
+          if [ ! -f "$PLAN_REPORT" ]; then
+            echo "::error::Stage D PLAN report missing."
+            exit 1
+          fi
+          echo "ODDS_API_KEY: not provided"
+          npx tsx apps/jobs/run-generic-shadow-t30-automation-v1-closing-commit-2026.ts \
+            --season "$INPUT_SEASON" \
+            --week "$INPUT_WEEK" \
+            --mode COMMIT \
+            --confirm "$CONFIRMATION" \
+            --report "$REPORT" \
+            --child-report-dir reports \
+            --initial-report "$PLAN_REPORT"
+
+      - name: Write scheduled-cycle machine-readable report
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+
+          const season = Number(process.env.INPUT_SEASON || 2026);
+          const week = Number(process.env.INPUT_WEEK || NaN);
+          const sha = process.env.ACTUAL_SHA || null;
+          const githubRef = process.env.GITHUB_REF || null;
+          const jobStatus = process.env.JOB_STATUS || 'unknown';
+
+          const marketPlanPath = path.join('reports', `generic-shadow-t30-automation-v1-2026-${season}-week-${week}-market-refresh-PLAN.json`);
+          const marketCommitPath = path.join('reports', `generic-shadow-t30-automation-v1-2026-${season}-week-${week}-market-refresh-COMMIT.json`);
+          const closingPlanPath = path.join('reports', `generic-shadow-t30-automation-v1-2026-${season}-week-${week}-closing-commit-PLAN.json`);
+          const closingCommitPath = path.join('reports', `generic-shadow-t30-automation-v1-2026-${season}-week-${week}-closing-commit-COMMIT.json`);
+
+          function readJson(p) {
+            if (!fs.existsSync(p)) return null;
+            return JSON.parse(fs.readFileSync(p, 'utf8'));
+          }
+          function uniq(values) {
+            return [...new Set(values.filter(Boolean))].sort();
+          }
+          function arr(v) {
+            return Array.isArray(v) ? v : [];
+          }
+
+          const market = readJson(marketCommitPath) || readJson(marketPlanPath);
+          const closing = readJson(closingCommitPath) || readJson(closingPlanPath);
+          const blockers = uniq([
+            ...arr(market?.blockers),
+            ...arr(closing?.blockers),
+            ...(market ? [] : ['market_stage_report_missing']),
+            ...(closing ? [] : ['closing_stage_report_missing']),
+          ]);
+          const eligibleCaptureRunIds = uniq([
+            ...arr(market?.eligibleCaptureRunIds),
+            ...arr(closing?.eligibleCaptureRunIds),
+          ]);
+          const eligibleModelDefinitionIds = uniq([
+            ...arr(market?.eligibleModelDefinitionIds),
+            ...arr(closing?.eligibleModelDefinitionIds),
+          ]);
+          const counts =
+            closing?.finalPlan?.counts ||
+            closing?.preCommitPlan?.counts ||
+            closing?.initialCounts ||
+            market?.finalPlan?.counts ||
+            market?.initialCounts ||
+            { existing: 0, future: 0, due: 0, missed: 0 };
+
+          const marketRefreshed = Boolean(market?.providerCallSucceeded);
+          const closingRowsInserted =
+            closing?.closingRowsInsertedExact ??
+            closing?.closingRowsInsertedKnown ??
+            0;
+          const closingCaptured = Number(closingRowsInserted) > 0;
+          const unknownMutationTargets =
+            market?.mutationTargetsInvoked == null ||
+            closing?.mutationTargetsInvoked == null;
+          const mutationTargetsInvoked = unknownMutationTargets
+            ? null
+            : uniq([
+                ...arr(market?.mutationTargetsInvoked),
+                ...arr(closing?.mutationTargetsInvoked),
+              ]);
+
+          let outcome = 'NO_ACTION';
+          if (jobStatus !== 'success' || !market || !closing) outcome = 'FAILED';
+          else if (blockers.length > 0 || market?.outcome === 'BLOCKED' || closing?.outcome === 'BLOCKED') outcome = 'BLOCKED';
+          else if (market?.outcome === 'FAILED' || closing?.outcome === 'FAILED') outcome = 'FAILED';
+          else if (marketRefreshed && closingCaptured) outcome = 'MARKET_REFRESHED_AND_CLOSINGS_CAPTURED';
+          else if (closingCaptured) outcome = 'CLOSINGS_CAPTURED';
+          else if (marketRefreshed) outcome = 'MARKET_REFRESHED';
+          else if (Number(counts?.missed || 0) > 0) outcome = 'MISSED_TARGET_PRESENT';
+          else if (market?.marketRefreshWindowOpenCount > 0 && market?.marketRefreshNeeded === false) outcome = 'MARKET_REFRESH_NOT_NEEDED';
+
+          const report = {
+            automationVersion: 1,
+            capability: 'generic_shadow_t30_automation_v1_scheduled_cycle',
+            stage: 'SCHEDULE_ENABLEMENT_ACTIVATION_GATED',
+            scheduleEnabled: true,
+            activationGateVariable: 'GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED',
+            activationGatePassed: true,
+            activeWeekVariable: 'GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK',
+            cadenceMinutes: 5,
+            season,
+            week,
+            observedTimestamp: new Date().toISOString(),
+            repoCommitSha: sha,
+            githubRef,
+            jobStatus,
+            eligibleCaptureRunIds,
+            eligibleModelDefinitionIds,
+            counts,
+            upcomingTargetGroups: market?.upcomingTargetGroups || [],
+            marketRefreshWindowOpenCount: Number(market?.marketRefreshWindowOpenCount || 0),
+            marketRefreshNeeded: Boolean(market?.marketRefreshNeeded),
+            providerCallsAttempted: Number(market?.providerCallsAttempted || 0),
+            providerCallsSucceeded: Number(market?.providerCallsSucceeded || 0),
+            providerCredits: market?.providerCredits || null,
+            closingRowsPlanned: Number(closing?.closingRowsPlanned || 0),
+            closingRowsInserted,
+            persistedAvailableCount: Number(closing?.persistedAvailableCount || 0),
+            persistedUnavailableCount: Number(closing?.persistedUnavailableCount || 0),
+            missedCount: Number(closing?.missedCount ?? counts?.missed ?? 0),
+            blockers,
+            writeSafe: Boolean(market?.writeSafe && closing?.writeSafe && blockers.length === 0 && jobStatus === 'success'),
+            mutationTargetsInvoked,
+            postwriteVerificationStatus: {
+              market: market?.postwriteVerificationStatus || null,
+              closing: closing?.postwriteVerificationStatus || null,
+            },
+            outcome,
+            stageCReport: market,
+            stageDReport: closing,
+            researchOnly: true,
+            predictionWrites: false,
+            captureRunWrites: false,
+            hybridWrites: false,
+            betWrites: false,
+            matchupOutputWrites: false,
+            evaluationWrites: false,
+            gameWrites: false,
+            lifecycleWrites: false,
+            prismaMigrateInvoked: false,
+          };
+
+          const out = path.join('reports', `generic-shadow-t30-automation-v1-2026-${season}-week-${week}-SCHEDULED-CYCLE.json`);
+          fs.writeFileSync(out, JSON.stringify(report, null, 2));
+          console.log(`scheduledCycleReport=${out}`);
+          console.log(`outcome=${outcome} providerCalls=${report.providerCallsAttempted} closingRowsInserted=${closingRowsInserted}`);
+          NODE
+
+      - name: Upload scheduled-cycle audit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generic-shadow-t30-automation-v1-2026-w${{ vars.GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK }}-scheduled-cycle
+          path: |
+            reports/generic-shadow-t30-automation-v1-2026-*.json
+            reports/live-odds-2026-*-generic-shadow-t30-market-refresh.json
+            reports/generic-shadow-t30-automation-v1-closing-child-*.json
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "==================================================="
+          echo "GENERIC SHADOW T-30 AUTOMATION V1 — SCHEDULED CYCLE"
+          echo "==================================================="
+          echo "season: ${INPUT_SEASON}"
+          echo "week: ${INPUT_WEEK:-unavailable}"
+          echo "actual_sha: ${ACTUAL_SHA:-unavailable}"
+          echo "github_ref: ${GITHUB_REF:-unavailable}"
+          echo "cadence: every 5 minutes"
+          echo "activation gate: GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED=true"
+          echo "Stage C window: T-45..T-35 only"
+          echo "Stage C max provider board calls/cycle: 1"
+          echo "Stage D target: T-30"
+          echo "Stage D providerCalls=0"
+          echo "prediction/capture-run writes: false"
+          echo "Hybrid writes: false"
+          echo "Bet writes: false"
+          echo "evaluation writes: false"
+          echo "Game/lifecycle writes: false"
+          echo "prisma migrate: not invoked"
+          echo "==================================================="
