@@ -278,6 +278,44 @@ describe('2C-2J-6D-1 mapping fixtures', () => {
     ).toBe(false);
   });
 
+  it('managedFieldsEqual accepts observed JSONB numeric round-trip drift but not substantive drift', () => {
+    const row = providerRow({
+      team: 'A',
+      opponent: 'B',
+      homeAway: 'home',
+    });
+    const planned = mapAdvancedStatsToManagedFields(row);
+    const reread = mapAdvancedStatsToManagedFields(row);
+
+    planned.offensive_stats = {
+      ...planned.offensive_stats,
+      epa: 0.13513274392571223,
+    };
+    reread.offensive_stats = {
+      ...reread.offensive_stats,
+      epa: 0.1351327439257122,
+    };
+    planned.rawJson = {
+      defense: {
+        explosiveness: 1.2436244800126635,
+      },
+    };
+    reread.rawJson = {
+      defense: {
+        explosiveness: 1.243624480012663,
+      },
+    };
+
+    expect(managedFieldsEqual(reread, planned)).toBe(true);
+
+    reread.rawJson = {
+      defense: {
+        explosiveness: 1.25,
+      },
+    };
+    expect(managedFieldsEqual(reread, planned)).toBe(false);
+  });
+
   it('managedFieldsEqual treats jsonb key-order changes as equal but real value changes as unequal', () => {
     const row = providerRow({
       team: 'A',
