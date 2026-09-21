@@ -343,6 +343,10 @@ export function semanticJsonEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (a === null || b === null) return a === b;
 
+  if (typeof a === 'number' && typeof b === 'number') {
+    return float8RoundTripEqual(a, b);
+  }
+
   if (Array.isArray(a) || Array.isArray(b)) {
     if (!Array.isArray(a) || !Array.isArray(b)) return false;
     if (a.length !== b.length) return false;
@@ -425,6 +429,14 @@ function firstJsonMismatch(
   path = '$'
 ): JsonMismatchDiagnostic | null {
   if (planned === persisted) return null;
+
+  if (
+    typeof planned === 'number' &&
+    typeof persisted === 'number' &&
+    float8RoundTripEqual(planned, persisted)
+  ) {
+    return null;
+  }
 
   if (planned === null || persisted === null) {
     return {
