@@ -989,7 +989,7 @@ describe('2C-2J-5 split-slate kickoff_before tranche', () => {
     expect(plan.tranche.selectedGameIds).not.toContain('soon');
   });
 
-  it('missing market outside selected tranche does not block; inside does', () => {
+  it('missing required spread outside selected tranche does not block; inside does', () => {
     const early = mkGame('early', '2026-08-30T00:00:00.000Z');
     const lateMissing = mkGame('late', '2026-09-05T00:00:00.000Z', {
       spreadHma: null,
@@ -1037,6 +1037,43 @@ describe('2C-2J-5 split-slate kickoff_before tranche', () => {
     expect(
       blocked.writeBlockers.some((b) => /selected tranche game early/.test(b))
     ).toBe(true);
+  });
+
+  it('selected tranche may skip absent optional total/moneyline while reporting coverage gaps', () => {
+    const early = mkGame('early', '2026-08-30T00:00:00.000Z', {
+      spreadHma: 7,
+      total: null,
+      homeMl: null,
+      awayMl: null,
+    });
+    const fillers = Array.from({ length: 50 }, (_, i) =>
+      mkGame(`f${i}`, '2026-09-06T00:00:00.000Z')
+    );
+
+    const plan = buildCoreWeeklyCardPlan({
+      season: 2026,
+      week: 1,
+      mode: 'PREVIEW',
+      executionNow,
+      kickoffBefore: cutoff,
+      fbsMembershipCount: 138,
+      games: [early, ...fillers],
+      existingOfficial: [],
+      existingHybrid: [],
+    });
+
+    expect(plan.writeSafe).toBe(true);
+    expect(plan.marketReadiness.gamesMissingTotal).toContain('early');
+    expect(plan.marketReadiness.gamesMissingML).toContain('early');
+    expect(plan.writeBlockers.some((b) => /selected tranche game early/.test(b))).toBe(false);
+    expect(
+      plan.plannedBets.some((b) => b.gameId === 'early' && b.marketType === 'spread')
+    ).toBe(true);
+    expect(
+      plan.plannedBets.some(
+        (b) => b.gameId === 'early' && (b.marketType === 'total' || b.marketType === 'moneyline')
+      )
+    ).toBe(false);
   });
 
   it('entire selected tranche already present → idempotent NO-OP; commitEligible false', () => {
