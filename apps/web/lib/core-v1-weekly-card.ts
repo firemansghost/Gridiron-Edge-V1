@@ -990,7 +990,10 @@ export function buildCoreWeeklyCardPlan(options: {
   const consensusComparisons: CoreWeeklyCardPlan['consensusComparisons'] = [];
   const selectedIds = new Set(selected.map((g) => g.gameId));
 
-  // Market inventory across kickoff-eligible games for reporting; BLOCK only selected tranche.
+  // Market inventory across kickoff-eligible games for reporting.
+  // Selected tranche hard-blocks only on required spread readiness or incoherent
+  // paired-market data. An entirely absent total or moneyline is reported and
+  // skipped; books may legitimately omit optional markets (for example extreme MLs).
   for (const g of kickoffEligible) {
     const sel = g.marketSelection;
     sameTimestampTies += sel.sameTimestampTies ?? 0;
@@ -1024,7 +1027,7 @@ export function buildCoreWeeklyCardPlan(options: {
     const inTranche = selectedIds.has(g.gameId);
     if (
       inTranche &&
-      (missingSpread || missingTotal || missingMl || incoherentSpread || incoherentMl)
+      (missingSpread || incoherentSpread || incoherentMl)
     ) {
       issues.push({
         gameId: g.gameId,
