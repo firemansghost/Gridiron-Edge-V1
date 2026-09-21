@@ -338,22 +338,35 @@ export function semanticJsonEqual(a: unknown, b: unknown): boolean {
   return false;
 }
 
+export function float8RoundTripEqual(
+  a: number | null,
+  b: number | null
+): boolean {
+  if (a === null || b === null) return a === b;
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+  if (a === b) return true;
+
+  const scale = Math.max(1, Math.abs(a), Math.abs(b));
+  const tolerance = Number.EPSILON * 16 * scale;
+  return Math.abs(a - b) <= tolerance;
+}
+
 export function managedFieldsEqual(
   a: ManagedTeamGameStatFields,
   b: ManagedTeamGameStatFields
 ): boolean {
   const scalarsEqual =
-    a.yppOff === b.yppOff &&
-    a.successOff === b.successOff &&
-    a.epaOff === b.epaOff &&
-    a.pace === b.pace &&
-    a.passYpaOff === b.passYpaOff &&
-    a.rushYpcOff === b.rushYpcOff &&
-    a.yppDef === b.yppDef &&
-    a.successDef === b.successDef &&
-    a.epaDef === b.epaDef &&
-    a.passYpaDef === b.passYpaDef &&
-    a.rushYpcDef === b.rushYpcDef;
+    float8RoundTripEqual(a.yppOff, b.yppOff) &&
+    float8RoundTripEqual(a.successOff, b.successOff) &&
+    float8RoundTripEqual(a.epaOff, b.epaOff) &&
+    float8RoundTripEqual(a.pace, b.pace) &&
+    float8RoundTripEqual(a.passYpaOff, b.passYpaOff) &&
+    float8RoundTripEqual(a.rushYpcOff, b.rushYpcOff) &&
+    float8RoundTripEqual(a.yppDef, b.yppDef) &&
+    float8RoundTripEqual(a.successDef, b.successDef) &&
+    float8RoundTripEqual(a.epaDef, b.epaDef) &&
+    float8RoundTripEqual(a.passYpaDef, b.passYpaDef) &&
+    float8RoundTripEqual(a.rushYpcDef, b.rushYpcDef);
   if (!scalarsEqual) return false;
   return (
     semanticJsonEqual(a.offensive_stats, b.offensive_stats) &&
