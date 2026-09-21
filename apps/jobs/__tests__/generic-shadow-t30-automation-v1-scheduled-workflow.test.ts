@@ -84,6 +84,7 @@ describe('Generic Shadow T-30 Automation V1 scheduled coordinator', () => {
     expect(report).toContain('closingRowsInserted');
     expect(report).toContain('mutationTargetsInvoked');
     expect(upload).toContain('if: always()');
-    expect(upload).toContain('SCHEDULED-CYCLE.json');
+    expect(report).toContain('SCHEDULED-CYCLE.json');
+    expect(upload).toContain('reports/generic-shadow-t30-automation-v1-2026-*.json');
   });
 });
