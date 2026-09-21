@@ -307,6 +307,37 @@ export function mapAdvancedStatsToManagedFields(
   };
 }
 
+export function semanticJsonEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === null || b === null) return a === b;
+
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b)) return false;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!semanticJsonEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+
+  if (typeof a === 'object' || typeof b === 'object') {
+    if (typeof a !== 'object' || typeof b !== 'object') return false;
+    const aObj = a as Record<string, unknown>;
+    const bObj = b as Record<string, unknown>;
+    const aKeys = Object.keys(aObj).sort();
+    const bKeys = Object.keys(bObj).sort();
+    if (aKeys.length !== bKeys.length) return false;
+    for (let i = 0; i < aKeys.length; i++) {
+      const key = aKeys[i];
+      if (key !== bKeys[i]) return false;
+      if (!semanticJsonEqual(aObj[key], bObj[key])) return false;
+    }
+    return true;
+  }
+
+  return false;
+}
+
 export function managedFieldsEqual(
   a: ManagedTeamGameStatFields,
   b: ManagedTeamGameStatFields
@@ -325,10 +356,10 @@ export function managedFieldsEqual(
     a.rushYpcDef === b.rushYpcDef;
   if (!scalarsEqual) return false;
   return (
-    JSON.stringify(a.offensive_stats) === JSON.stringify(b.offensive_stats) &&
-    JSON.stringify(a.defensive_stats) === JSON.stringify(b.defensive_stats) &&
-    JSON.stringify(a.special_teams) === JSON.stringify(b.special_teams) &&
-    JSON.stringify(a.rawJson) === JSON.stringify(b.rawJson)
+    semanticJsonEqual(a.offensive_stats, b.offensive_stats) &&
+    semanticJsonEqual(a.defensive_stats, b.defensive_stats) &&
+    semanticJsonEqual(a.special_teams, b.special_teams) &&
+    semanticJsonEqual(a.rawJson, b.rawJson)
   );
 }
 
