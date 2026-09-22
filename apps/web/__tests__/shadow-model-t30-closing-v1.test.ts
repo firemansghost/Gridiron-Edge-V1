@@ -238,6 +238,7 @@ describe('Generic Shadow T-30 Closing V1 — frozen identity', () => {
     expect([...GENERIC_SHADOW_T30_SUPPORTED_MODEL_IDS]).toEqual([
       'core_v1_shadow_baseline_v1',
       'candidate_b_roster_prior_v1',
+      'candidate_b_elo_prior_v1',
     ]);
   });
 

@@ -105,7 +105,7 @@ Current PREVIEW allowlist: `core_v1_shadow_baseline_v1`, `candidate_b_roster_pri
 
 Current COMMIT allowlist: `core_v1_shadow_baseline_v1`, `candidate_b_roster_prior_v1`, and `candidate_b_elo_prior_v1` (Elo Week 5+ only).
 
-`candidate_b_elo_prior_v1` is technically COMMIT-capable after the successful merged Week 5 structural PREVIEW gate, but no Elo production COMMIT is authorized merely by this code change. Each COMMIT still requires explicit per-run operator authorization and the exact confirmation string. Elo is still **not** supported by Generic T−30 in this engineering slice.
+`candidate_b_elo_prior_v1` is technically COMMIT-capable after the successful merged Week 5 structural PREVIEW gate, but no Elo production COMMIT is authorized merely by this code change. Each COMMIT still requires explicit per-run operator authorization and the exact confirmation string. Generic T−30 now recognizes Elo through the same shared supported-model path, but no Elo closing activity can occur until a separately authorized Week 5 Elo capture run exists. The active automated scheduler remains Week 4 until separately changed.
 
 The workflow remains `workflow_dispatch` only. Default mode remains PREVIEW. There is **no** recurring schedule.
 

@@ -277,7 +277,7 @@ describe('Candidate B Elo Prior V1 staging safety', () => {
     ).toBeNull();
   });
 
-  it('keeps Generic T-30 unsupported until a later reviewed slice', () => {
+  it('extends Generic T-30 support through the shared model allowlist', () => {
     const t30 = fs.readFileSync(T30, 'utf8');
     const supportedBlock = t30.slice(
       t30.indexOf('GENERIC_SHADOW_T30_SUPPORTED_MODEL_IDS'),
@@ -285,7 +285,7 @@ describe('Candidate B Elo Prior V1 staging safety', () => {
     );
     expect(supportedBlock).toContain('core_v1_shadow_baseline_v1');
     expect(supportedBlock).toContain('candidate_b_roster_prior_v1');
-    expect(supportedBlock).not.toContain('candidate_b_elo_prior_v1');
+    expect(supportedBlock).toContain('candidate_b_elo_prior_v1');
   });
 
   it('hard-gates Week 1-4 before Prisma and keeps exact confirmation on Elo COMMIT', () => {

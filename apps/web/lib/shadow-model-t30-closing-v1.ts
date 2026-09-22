@@ -37,6 +37,7 @@ export const GENERIC_SHADOW_T30_MARKET_TYPE = 'SPREAD' as const;
 export const GENERIC_SHADOW_T30_SUPPORTED_MODEL_IDS = [
   'core_v1_shadow_baseline_v1',
   'candidate_b_roster_prior_v1',
+  'candidate_b_elo_prior_v1',
 ] as const;
 export type GenericShadowT30SupportedModelId =
   (typeof GENERIC_SHADOW_T30_SUPPORTED_MODEL_IDS)[number];
