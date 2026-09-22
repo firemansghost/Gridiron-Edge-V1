@@ -24,6 +24,7 @@ describe('Generic Shadow T-30 Automation V1 scheduled coordinator', () => {
   const runbook = fs.readFileSync(RUNBOOK, 'utf8');
 
   it('has a five-minute cadence and an explicit disabled-by-default activation gate', () => {
+    expect(wf).toContain('workflow_dispatch:');
     expect(wf).toMatch(/schedule:\s*\n\s*- cron: '2-59\/5 \* \* \* \*'/m);
     expect(wf).toContain("vars.GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED == 'true'");
     expect(wf).toContain('vars.GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK');
@@ -81,6 +82,7 @@ describe('Generic Shadow T-30 Automation V1 scheduled coordinator', () => {
     expect(report).toContain('SCHEDULE_ENABLEMENT_ACTIVATION_GATED');
     expect(report).toContain('MARKET_REFRESHED_AND_CLOSINGS_CAPTURED');
     expect(report).toContain('providerCallsAttempted');
+    expect(report).toContain('triggerEvent');
     expect(report).toContain('closingRowsInserted');
     expect(report).toContain('mutationTargetsInvoked');
     expect(upload).toContain('if: always()');

@@ -4,7 +4,7 @@
 
 Merging the PR does **not** activate production automation.
 
-GitHub registers `schedule` from the default branch. If a scheduler emits no runs despite recent default-branch activity, change the cron expression deliberately to force GitHub to re-register/reactivate the schedule. The current equivalent five-minute cadence is `2-59/5 * * * *`, which also avoids the busiest top-of-hour boundary. This does not change the activation gate or any Stage C/Stage D timing semantics.
+GitHub registers `schedule` from the default branch. If a scheduler emits no runs despite recent default-branch activity, changing the cron expression can force GitHub to re-register/reactivate the schedule. The current equivalent five-minute cadence is `2-59/5 * * * *`, which also avoids the busiest top-of-hour boundary. On 2026-09-22 this still produced no schedule-event runs despite an active workflow and correct repository variables. The approved fallback design therefore allows an external clock to invoke this same workflow through `workflow_dispatch`; see `GENERIC_SHADOW_T30_EXTERNAL_CLOCK_RUNBOOK.md`. This does not change the activation gate or any Stage C/Stage D timing semantics.
 
 ## Purpose
 
