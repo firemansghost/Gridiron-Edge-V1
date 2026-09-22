@@ -1,0 +1,42 @@
+{
+  "snapshotId": "cfbd_preseason_elo_2026_discovery_2026_09_22",
+  "season": 2026,
+  "provider": "CFBD",
+  "endpoint": "/ratings/elo?year=2026&preseason=true",
+  "documentedOpenApiVersion": "5.29.0",
+  "retrievalTimestamp": "2026-09-22T14:24:48.916Z",
+  "discoveryRunId": 35740044682,
+  "discoveryArtifactId": 10699557025,
+  "discoveryArtifactDigest": "sha256:252f6758ae089c6a4500d48ef584bd861217c4ce8b3581724ab7dbb98ac7b190",
+  "rawPath": "research/candidate-b/snapshots/cfbd-preseason-elo/2026/2026-09-22-raw.json",
+  "rawByteCount": 9542,
+  "rawSha256": "97e40e9f8220f9e7bafd8c6cd68dbf9ecb4b94208fe5911b97b07891f9fa4e64",
+  "auditReportSha256": "94ff7e38c2f7f921ccaf4934537739d667542168c5a5ca0aef0dfb7280f512a0",
+  "qa": {
+    "rawRows": 138,
+    "uniqueProviderTeams": 138,
+    "canonicalFbsTeams": 138,
+    "resolvedFbsTeams": 138,
+    "usableEloTeams": 138,
+    "missingCanonicalTeams": [],
+    "unexpectedProviderTeams": [],
+    "duplicateProviderTeams": [],
+    "duplicateCanonicalTargets": [],
+    "nullEloCount": 0,
+    "nonFiniteEloCount": 0,
+    "yearMismatchCount": 0,
+    "eloPopulationMean": 1498.7608695652175,
+    "eloPopulationMedian": 1500,
+    "eloPopulationStdDev": 193.5003858868873,
+    "eloMin": 925,
+    "eloMax": 2064
+  },
+  "descriptiveComparison": {
+    "comparedCount": 138,
+    "pearsonEloVsTalentZ": 0.6112534930985031,
+    "spearmanEloVsTalentZ": 0.6488476591839615,
+    "pearsonZEloVsTalentZ": 0.6112534930985036
+  },
+  "historicalBoundary": "SEPTEMBER_2026_DISCOVERY_ARCHIVE_NOT_PRESEASON_AVAILABILITY_PROOF",
+  "immutable": true
+}
