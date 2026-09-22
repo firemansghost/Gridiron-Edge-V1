@@ -38,7 +38,7 @@ describe('Shadow Model Capture V1 workflow', () => {
     expect(wf).toMatch(/default:\s*PREVIEW/);
   });
 
-  it('allowlists Core + roster-prior for COMMIT and Elo for PREVIEW only', () => {
+  it('allowlists Core + roster-prior + Elo for guarded COMMIT', () => {
     expect(wf).toContain('core_v1_shadow_baseline_v1');
     expect(wf).toContain('candidate_b_roster_prior_v1');
     expect(wf).toContain('candidate_b_elo_prior_v1');
@@ -88,7 +88,7 @@ describe('Shadow Model Capture V1 workflow', () => {
       lib.indexOf('export const SHADOW_MODEL_COMMIT_ALLOWLIST'),
       lib.indexOf('export type ShadowModelCommitAllowlistId')
     );
-    expect(commitAllowlist).not.toContain("'candidate_b_elo_prior_v1'");
+    expect(commitAllowlist).toContain("'candidate_b_elo_prior_v1'");
   });
 
   it('requires expected_main_sha and capture_context; no operator prediction timestamp', () => {
