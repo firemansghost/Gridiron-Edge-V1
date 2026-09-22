@@ -16,12 +16,15 @@ function fixture(extraRaw: RawCfbdEloRow[] = []): DiscoveryInput {
     teamId: m.teamId,
     talentComposite: 100 + i * 2,
   }));
-  const rawRows: RawCfbdEloRow[] = memberships.map((m, i) => ({
-    year: 2026,
-    team: 'Team ' + i,
-    conference: 'Provider C' + (i % 10),
-    elo: 1000 + i * 10,
-  })).concat(extraRaw);
+  const rawRows: RawCfbdEloRow[] = [
+    ...memberships.map((m, i) => ({
+      year: 2026,
+      team: 'Team ' + i,
+      conference: 'Provider C' + (i % 10),
+      elo: 1000 + i * 10,
+    })),
+    ...extraRaw,
+  ];
 
   return {
     season: 2026,
