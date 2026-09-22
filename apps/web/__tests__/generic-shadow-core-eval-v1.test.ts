@@ -48,38 +48,44 @@ function closing(overrides: Partial<GenericShadowEvalClosing> = {}): GenericShad
   };
 }
 
+function defaultCaptureRun(
+  predictions: GenericShadowEvalPrediction[]
+): GenericShadowCoreEvalFrame['captureRun'] {
+  return {
+    id: 'run-1',
+    season: 2026,
+    week: 5,
+    captureContext: 'week5_test',
+    evaluationProtocol: 'CORE_EVAL_V1',
+    modelFamily: 'test',
+    modelDefinitionId: 'candidate_b_elo_prior_v1',
+    modelDefinitionHash: 'model-hash',
+    featureDefinitionId: 'feature-v1',
+    featureDefinitionHash: 'feature-hash',
+    policyDefinitionId: 'policy-v1',
+    policyDefinitionHash: 'policy-hash',
+    repoCommitSha: 'a'.repeat(40),
+    captureTimestamp: '2026-10-01T15:00:00.000Z',
+    expectedGameIds: predictions.map((p) => p.gameId),
+    totalGames: predictions.length,
+    availableCount: predictions.filter((p) => p.predictionStatus === 'AVAILABLE').length,
+    unavailableCount: predictions.filter((p) => p.predictionStatus !== 'AVAILABLE').length,
+    selectionCount: predictions.filter(
+      (p) =>
+        p.predictionStatus === 'AVAILABLE' &&
+        (p.selectedSide === 'HOME' || p.selectedSide === 'AWAY')
+    ).length,
+    noSelectionCount: predictions.filter(
+      (p) => p.predictionStatus === 'AVAILABLE' && p.selectedSide === 'NO_SELECTION'
+    ).length,
+    status: 'COMPLETE',
+  };
+}
+
 function frame(overrides: Partial<GenericShadowCoreEvalFrame> = {}): GenericShadowCoreEvalFrame {
   const predictions = overrides.predictions ?? [prediction()];
   return {
-    captureRun: {
-      id: 'run-1',
-      season: 2026,
-      week: 5,
-      captureContext: 'week5_test',
-      evaluationProtocol: 'CORE_EVAL_V1',
-      modelFamily: 'test',
-      modelDefinitionId: 'candidate_b_elo_prior_v1',
-      modelDefinitionHash: 'model-hash',
-      featureDefinitionId: 'feature-v1',
-      featureDefinitionHash: 'feature-hash',
-      policyDefinitionId: 'policy-v1',
-      policyDefinitionHash: 'policy-hash',
-      repoCommitSha: 'a'.repeat(40),
-      captureTimestamp: '2026-10-01T15:00:00.000Z',
-      expectedGameIds: predictions.map((p) => p.gameId),
-      totalGames: predictions.length,
-      availableCount: predictions.filter((p) => p.predictionStatus === 'AVAILABLE').length,
-      unavailableCount: predictions.filter((p) => p.predictionStatus !== 'AVAILABLE').length,
-      selectionCount: predictions.filter(
-        (p) =>
-          p.predictionStatus === 'AVAILABLE' &&
-          (p.selectedSide === 'HOME' || p.selectedSide === 'AWAY')
-      ).length,
-      noSelectionCount: predictions.filter(
-        (p) => p.predictionStatus === 'AVAILABLE' && p.selectedSide === 'NO_SELECTION'
-      ).length,
-      status: 'COMPLETE',
-    },
+    captureRun: overrides.captureRun ?? defaultCaptureRun(predictions),
     predictions,
     closings: overrides.closings ?? [closing()],
     games: overrides.games ?? [
@@ -94,36 +100,6 @@ function frame(overrides: Partial<GenericShadowCoreEvalFrame> = {}): GenericShad
         awayScore: 21,
       },
     ],
-    ...overrides,
-    captureRun: overrides.captureRun ?? {
-      id: 'run-1',
-      season: 2026,
-      week: 5,
-      captureContext: 'week5_test',
-      evaluationProtocol: 'CORE_EVAL_V1',
-      modelFamily: 'test',
-      modelDefinitionId: 'candidate_b_elo_prior_v1',
-      modelDefinitionHash: 'model-hash',
-      featureDefinitionId: 'feature-v1',
-      featureDefinitionHash: 'feature-hash',
-      policyDefinitionId: 'policy-v1',
-      policyDefinitionHash: 'policy-hash',
-      repoCommitSha: 'a'.repeat(40),
-      captureTimestamp: '2026-10-01T15:00:00.000Z',
-      expectedGameIds: predictions.map((p) => p.gameId),
-      totalGames: predictions.length,
-      availableCount: predictions.filter((p) => p.predictionStatus === 'AVAILABLE').length,
-      unavailableCount: predictions.filter((p) => p.predictionStatus !== 'AVAILABLE').length,
-      selectionCount: predictions.filter(
-        (p) =>
-          p.predictionStatus === 'AVAILABLE' &&
-          (p.selectedSide === 'HOME' || p.selectedSide === 'AWAY')
-      ).length,
-      noSelectionCount: predictions.filter(
-        (p) => p.predictionStatus === 'AVAILABLE' && p.selectedSide === 'NO_SELECTION'
-      ).length,
-      status: 'COMPLETE',
-    },
   };
 }
 
