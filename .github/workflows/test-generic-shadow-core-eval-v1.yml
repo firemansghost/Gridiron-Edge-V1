@@ -4,16 +4,21 @@ on:
   pull_request:
     paths:
       - 'research/generic-shadow/GENERIC_SHADOW_CORE_EVAL_V1_READONLY_CONTRACT.md'
-      - 'apps/jobs/__tests__/generic-shadow-core-eval-v1-contract.test.ts'
+      - 'apps/web/lib/generic-shadow-core-eval-v1.ts'
+      - 'apps/web/__tests__/generic-shadow-core-eval-v1.test.ts'
+      - 'apps/jobs/src/generic-shadow-core-eval-v1-adapter.ts'
+      - 'apps/jobs/evaluate-generic-shadow-core-eval-v1-2026.ts'
+      - 'apps/jobs/__tests__/generic-shadow-core-eval-v1-*.test.ts'
+      - '.github/workflows/evaluate-generic-shadow-core-eval-v1-2026-manual.yml'
       - '.github/workflows/test-generic-shadow-core-eval-v1.yml'
 
 permissions:
   contents: read
 
 jobs:
-  contract-test:
+  evaluator-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -27,5 +32,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify CORE_EVAL_V1 contract parity
-        run: npx jest apps/jobs/__tests__/generic-shadow-core-eval-v1-contract.test.ts --runInBand
+      - name: Test Generic Shadow CORE_EVAL_V1
+        run: |
+          npx jest \
+            apps/jobs/__tests__/generic-shadow-core-eval-v1-contract.test.ts \
+            apps/web/__tests__/generic-shadow-core-eval-v1.test.ts \
+            apps/jobs/__tests__/generic-shadow-core-eval-v1-adapter.test.ts \
+            apps/jobs/__tests__/generic-shadow-core-eval-v1-workflow.test.ts \
+            --runInBand

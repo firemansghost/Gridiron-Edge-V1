@@ -1,0 +1,138 @@
+# Generic Shadow CORE_EVAL_V1 — manual read-only evaluator.
+#
+# workflow_dispatch ONLY.
+# Production DB SELECTs only.
+# providerCalls=0.
+# No evaluation persistence, prediction/closing writes, provider calls,
+# Bet/Hybrid/MatchupOutput/Game writes, or Prisma migration.
+
+name: Evaluate Generic Shadow CORE_EVAL_V1 2026 (Manual, Read-Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      capture_run_id:
+        description: 'Exact persisted ShadowModelCaptureRun id'
+        required: true
+        type: string
+      expected_main_sha:
+        description: 'Exact main commit SHA authorized for this read-only evaluation'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: generic-shadow-core-eval-v1-readonly
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Source SHA guard
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA=$(git rev-parse HEAD)
+          echo "ACTUAL_SHA=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+          echo "actual_sha: ${ACTUAL_SHA}"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          echo "github_ref: ${GITHUB_REF:-}"
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Refusing evaluation. Workflow must run from main."
+            exit 1
+          fi
+          if [ -z "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing evaluation. expected_main_sha is required."
+            exit 1
+          fi
+          if [ "${ACTUAL_SHA}" != "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing evaluation. Checked-out SHA does not match expected_main_sha."
+            echo "::error::actual_sha=${ACTUAL_SHA}"
+            echo "::error::expected_main_sha=${EXPECTED_MAIN_SHA}"
+            exit 1
+          fi
+          echo "Source SHA guard passed."
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Preflight
+        env:
+          CAPTURE_RUN_ID: ${{ inputs.capture_run_id }}
+        run: |
+          set -euo pipefail
+          echo "capture_run_id=${CAPTURE_RUN_ID}"
+          echo "READ-ONLY CORE_EVAL_V1"
+          echo "production DB SELECTs only"
+          echo "providerCalls=0"
+          echo "provider secrets: not loaded"
+          echo "evaluation writes: false"
+          if [ -z "${CAPTURE_RUN_ID}" ]; then
+            echo "::error::capture_run_id is required"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prisma version
+        run: npx prisma -v
+
+      - name: Run Generic Shadow CORE_EVAL_V1 read-only evaluator
+        env:
+          CAPTURE_RUN_ID: ${{ inputs.capture_run_id }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          SAFE_ID=$(printf '%s' "$CAPTURE_RUN_ID" | tr -c 'A-Za-z0-9_.-' '_')
+          REPORT="reports/generic-shadow-core-eval-v1-${SAFE_ID}-READONLY.json"
+          npx tsx apps/jobs/evaluate-generic-shadow-core-eval-v1-2026.ts \
+            --capture-run-id "$CAPTURE_RUN_ID" \
+            --report "$REPORT"
+
+      - name: Upload Generic Shadow CORE_EVAL_V1 report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generic-shadow-core-eval-v1-${{ inputs.capture_run_id }}-READONLY
+          path: reports/generic-shadow-core-eval-v1-*-READONLY.json
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        env:
+          CAPTURE_RUN_ID: ${{ inputs.capture_run_id }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "==================================================="
+          echo "GENERIC SHADOW CORE_EVAL_V1 — READ-ONLY"
+          echo "==================================================="
+          echo "capture_run_id: ${CAPTURE_RUN_ID}"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          echo "actual_sha: ${ACTUAL_SHA:-unavailable}"
+          echo "status: ${JOB_STATUS}"
+          echo "providerCalls=0"
+          echo "ShadowEvaluationResult writes: false"
+          echo "ShadowModelPrediction writes: false"
+          echo "ShadowModelClosingMarketSnapshot writes: false"
+          echo "Hybrid writes: false"
+          echo "Bet writes: false"
+          echo "MatchupOutput writes: false"
+          echo "Game writes: false"
+          echo "prisma migrate: not invoked"
+          echo "schedule: not enabled"
+          echo "==================================================="
