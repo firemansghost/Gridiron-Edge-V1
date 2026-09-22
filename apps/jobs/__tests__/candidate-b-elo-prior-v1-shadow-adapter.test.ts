@@ -53,6 +53,7 @@ const RUNTIME = path.join(
   ROOT,
   'apps/jobs/src/research/candidate-b/candidate-b-elo-prior-v1-runtime-artifact.ts'
 );
+const T30 = path.join(ROOT, 'apps/web/lib/shadow-model-t30-closing-v1.ts');
 
 function frame(): OperationalShadowModelFrame {
   return {
@@ -278,6 +279,17 @@ describe('Candidate B Elo Prior V1 staging safety', () => {
       modelId: CANDIDATE_B_ELO_GENERIC_SHADOW_MODEL_ID,
       mode: 'COMMIT',
     });
+  });
+
+  it('keeps Generic T-30 unsupported until a later reviewed slice', () => {
+    const t30 = fs.readFileSync(T30, 'utf8');
+    const supportedBlock = t30.slice(
+      t30.indexOf('GENERIC_SHADOW_T30_SUPPORTED_MODEL_IDS'),
+      t30.indexOf('export type GenericShadowT30SupportedModelId')
+    );
+    expect(supportedBlock).toContain('core_v1_shadow_baseline_v1');
+    expect(supportedBlock).toContain('candidate_b_roster_prior_v1');
+    expect(supportedBlock).not.toContain('candidate_b_elo_prior_v1');
   });
 
   it('hard-gates Week 1-4 before Prisma and blocks Elo COMMIT in the workflow', () => {
