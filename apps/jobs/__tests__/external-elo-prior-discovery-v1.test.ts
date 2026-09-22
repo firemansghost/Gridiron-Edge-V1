@@ -4,9 +4,10 @@ import {
   EXPECTED_FBS_COUNT,
   buildExternalEloPriorDiscovery,
   type DiscoveryInput,
+  type RawCfbdEloRow,
 } from '../src/research/candidate-b/external-elo-prior-discovery-v1';
 
-function fixture(extraRaw: Array<Record<string, unknown>> = []): DiscoveryInput {
+function fixture(extraRaw: RawCfbdEloRow[] = []): DiscoveryInput {
   const memberships = Array.from({ length: EXPECTED_FBS_COUNT }, (_, i) => ({
     teamId: 't' + String(i).padStart(3, '0'),
     conference: 'C' + (i % 10),
@@ -15,7 +16,7 @@ function fixture(extraRaw: Array<Record<string, unknown>> = []): DiscoveryInput 
     teamId: m.teamId,
     talentComposite: 100 + i * 2,
   }));
-  const rawRows = memberships.map((m, i) => ({
+  const rawRows: RawCfbdEloRow[] = memberships.map((m, i) => ({
     year: 2026,
     team: 'Team ' + i,
     conference: 'Provider C' + (i % 10),
