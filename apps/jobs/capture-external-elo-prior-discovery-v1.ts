@@ -123,6 +123,7 @@ async function fetchCfbdPreseasonElo(season: number): Promise<{
 
 function failureReport(
   metadata: CaptureMetadata | null,
+  databaseReads: boolean,
   errorCode: string
 ): Record<string, unknown> {
   return {
@@ -132,7 +133,7 @@ function failureReport(
     errorCode,
     execution: {
       providerCalls: metadata ? 1 : 0,
-      databaseReads: metadata ? true : false,
+      databaseReads,
       mutationsInvoked: false,
       mutationTargetsInvoked: [],
       prismaTransactionInvoked: false,
@@ -166,6 +167,7 @@ export async function runExternalEloDiscovery(args: Args): Promise<number> {
   let prisma: PrismaClient | null = null;
   let metadata: CaptureMetadata | null = null;
   let rawCaptured = false;
+  let databaseReads = false;
 
   try {
     const provider = await fetchCfbdPreseasonElo(args.season);
@@ -180,6 +182,7 @@ export async function runExternalEloDiscovery(args: Args): Promise<number> {
     if (!Array.isArray(parsed)) throw new Error('CFBD Elo response is not an array');
 
     prisma = new PrismaClient();
+    databaseReads = true;
     const memberships = await prisma.teamMembership.findMany({
       where: { season: args.season, level: 'fbs' },
       select: { teamId: true, conference: true },
@@ -256,7 +259,7 @@ export async function runExternalEloDiscovery(args: Args): Promise<number> {
       try {
         writeExclusive(
           args.reportPath,
-          JSON.stringify(failureReport(metadata, code), null, 2) + '\n'
+          JSON.stringify(failureReport(metadata, databaseReads, code), null, 2) + '\n'
         );
       } catch {
         console.error('[external-elo-discovery] failure_report_write_failed');
