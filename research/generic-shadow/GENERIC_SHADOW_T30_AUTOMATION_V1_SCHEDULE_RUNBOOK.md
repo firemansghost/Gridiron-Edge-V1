@@ -4,6 +4,8 @@
 
 Merging the PR does **not** activate production automation.
 
+GitHub registers `schedule` from the default branch. If a newly merged scheduler emits no runs, a later commit on `main` refreshes that registration. It does not change the activation gate.
+
 ## Purpose
 
 This runbook covers only the recurring orchestration layer for the already-proven Generic Shadow T-30 Automation V1 Stage C and Stage D capabilities.
