@@ -30,6 +30,7 @@ export type ShadowModelAllowlistId = (typeof SHADOW_MODEL_ALLOWLIST)[number];
 export const SHADOW_MODEL_COMMIT_ALLOWLIST = [
   'core_v1_shadow_baseline_v1',
   'candidate_b_roster_prior_v1',
+  'candidate_b_elo_prior_v1',
 ] as const;
 export type ShadowModelCommitAllowlistId = (typeof SHADOW_MODEL_COMMIT_ALLOWLIST)[number];
 
