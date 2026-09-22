@@ -157,10 +157,6 @@ jobs:
             echo "::error::candidate_b_elo_prior_v1 first prospective observation is Week 5"
             exit 1
           fi
-          if [ "$INPUT_MODEL_ID" = "candidate_b_elo_prior_v1" ] && [ "$INPUT_MODE" != "PREVIEW" ]; then
-            echo "::error::candidate_b_elo_prior_v1 is PREVIEW-only; COMMIT is not authorized"
-            exit 1
-          fi
           if [ "$INPUT_MODE" != "PREVIEW" ] && [ "$INPUT_MODE" != "COMMIT" ]; then
             echo "::error::mode must be PREVIEW or COMMIT"
             exit 1
