@@ -402,8 +402,12 @@ export function evaluateGenericShadowCoreEvalV1(input: {
     gameById.set(game.id, game);
   }
 
+  const predictionIds = new Set(predictions.map((p) => p.id));
   const closingsByPrediction = new Map<string, GenericShadowEvalClosing[]>();
   for (const closing of closings) {
+    if (!predictionIds.has(closing.predictionId)) {
+      blockers.push(`orphan_closing_prediction:${closing.id}`);
+    }
     const rows = closingsByPrediction.get(closing.predictionId) ?? [];
     rows.push(closing);
     closingsByPrediction.set(closing.predictionId, rows);
