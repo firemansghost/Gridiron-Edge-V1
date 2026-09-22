@@ -230,6 +230,21 @@ describe('Generic Shadow T-30 Automation V1 — frozen Stage A posture', () => {
     expect(result.marketRefreshNeeded).toBe(true);
   });
 
+  it('treats an Elo capture run as an eligible Generic T-30 research cohort', () => {
+    const observed = new Date('2026-09-19T19:20:00.000Z');
+    const result = plan(observed, [
+      frame('run-elo', [], 'candidate_b_elo_prior_v1'),
+    ]);
+    expect(result.writeSafe).toBe(true);
+    expect(result.outcome).toBe('PREVIEW_ONLY');
+    expect(result.eligibleCaptureRunIds).toEqual(['run-elo']);
+    expect(result.eligibleModelDefinitionIds).toEqual(['candidate_b_elo_prior_v1']);
+    expect(result.marketRefreshWindowOpenCount).toBe(1);
+    expect(result.marketRefreshNeeded).toBe(true);
+    expect(result.providerCallsAttempted).toBe(0);
+    expect(result.mutationTargetsInvoked).toEqual([]);
+  });
+
   it('fails closed on an unsupported Generic model frame', () => {
     const result = plan(new Date('2026-09-19T19:20:00.000Z'), [
       frame('run-x', [], 'not_authorized_model'),
