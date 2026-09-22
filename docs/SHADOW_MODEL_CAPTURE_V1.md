@@ -2,7 +2,7 @@
 
 **Status:** IMPLEMENTED / MIGRATION DEPLOYED / CORE FRAMEWORK PROOF + CANDIDATE B FIRST RESEARCH COHORT PROVEN
 **Additive to:** Hybrid Shadow Snapshot V1 (Phase 4B)
-**Current allowlist (PREVIEW and COMMIT):** `core_v1_shadow_baseline_v1`, `candidate_b_roster_prior_v1`
+**Current allowlist (PREVIEW and COMMIT):** `core_v1_shadow_baseline_v1`, `candidate_b_roster_prior_v1`, `candidate_b_elo_prior_v1` (Elo Week 5+ only)
 **Current runtime baseline:** `60e5735c820dbd53e3f07de28d5c4c44b8f46b38`
 **Official production spread model:** Core V1 / `official_flat_100`
 **Candidate B V1:** SHADOW / RESEARCH ONLY / NOT OFFICIAL
@@ -103,9 +103,9 @@ Display name: **Capture Generic Shadow Model Predictions 2026 (Manual, Guarded)*
 
 Current PREVIEW allowlist: `core_v1_shadow_baseline_v1`, `candidate_b_roster_prior_v1`, and `candidate_b_elo_prior_v1` (Elo Week 5+ only).
 
-Current COMMIT allowlist remains: `core_v1_shadow_baseline_v1` and `candidate_b_roster_prior_v1`.
+Current COMMIT allowlist: `core_v1_shadow_baseline_v1`, `candidate_b_roster_prior_v1`, and `candidate_b_elo_prior_v1` (Elo Week 5+ only).
 
-`candidate_b_elo_prior_v1` is PREVIEW-only in the current engineering slice and is not yet supported by Generic T−30.
+`candidate_b_elo_prior_v1` is technically COMMIT-capable after the successful merged Week 5 structural PREVIEW gate, but no Elo production COMMIT is authorized merely by this code change. Each COMMIT still requires explicit per-run operator authorization and the exact confirmation string. Elo is still **not** supported by Generic T−30 in this engineering slice.
 
 The workflow remains `workflow_dispatch` only. Default mode remains PREVIEW. There is **no** recurring schedule.
 
@@ -188,7 +188,7 @@ If a COMMIT report shows `productionCommitAuthorized=false`, that static softwar
 | Migration | **Deployed** (run **34779225982**) |
 | Core first prospective production capture | **Proven** (Week 3 COMMIT **34785370466**) |
 | Candidate B first prospective research cohort | **Proven and frozen** (Week 3 COMMIT **35128215811**) |
-| Current allowlist | Core + Candidate B |
+| Current allowlist | Core + roster-prior Candidate B + Elo Candidate B (Elo Week 5+; per-run COMMIT authorization only) |
 | Future Generic COMMITs | **Not blanket-authorized**; each remains **PER-RUN AUTHORIZATION** / manual-guarded |
 | Candidate B status | **SHADOW / RESEARCH ONLY / NOT OFFICIAL** |
 | Official Card / Hybrid activation effect | **None** |
