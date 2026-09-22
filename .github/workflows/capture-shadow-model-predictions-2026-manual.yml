@@ -10,8 +10,8 @@
 #
 # PREVIEW allowlist: core_v1_shadow_baseline_v1, candidate_b_roster_prior_v1,
 # and candidate_b_elo_prior_v1 (Week 5+ only).
-# COMMIT allowlist remains core_v1_shadow_baseline_v1 and candidate_b_roster_prior_v1.
-# candidate_b_elo_prior_v1 is PREVIEW-only in this slice.
+# COMMIT allowlist includes core_v1_shadow_baseline_v1, candidate_b_roster_prior_v1,
+# and candidate_b_elo_prior_v1 (Week 5+ only).
 # Candidate B is technically COMMIT-enabled after the successful independent PREVIEW gate.
 # A production COMMIT still requires explicit per-run operator authorization
 # and the exact confirmation string. Merging this workflow change does not
@@ -155,10 +155,6 @@ jobs:
           fi
           if [ "$INPUT_MODEL_ID" = "candidate_b_elo_prior_v1" ] && [ "$INPUT_WEEK" -lt 5 ]; then
             echo "::error::candidate_b_elo_prior_v1 first prospective observation is Week 5"
-            exit 1
-          fi
-          if [ "$INPUT_MODEL_ID" = "candidate_b_elo_prior_v1" ] && [ "$INPUT_MODE" != "PREVIEW" ]; then
-            echo "::error::candidate_b_elo_prior_v1 is PREVIEW-only; COMMIT is not authorized"
             exit 1
           fi
           if [ "$INPUT_MODE" != "PREVIEW" ] && [ "$INPUT_MODE" != "COMMIT" ]; then

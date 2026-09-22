@@ -260,25 +260,21 @@ describe('Candidate B Elo Prior V1 Generic Shadow identities', () => {
 });
 
 describe('Candidate B Elo Prior V1 staging safety', () => {
-  it('is PREVIEW allowlisted but remains COMMIT blocked', () => {
+  it('is PREVIEW and guarded COMMIT allowlisted for the Week 5+ research path', () => {
     expect(SHADOW_MODEL_ALLOWLIST).toContain(CANDIDATE_B_ELO_GENERIC_SHADOW_MODEL_ID);
     expect(isShadowModelAllowlisted(CANDIDATE_B_ELO_GENERIC_SHADOW_MODEL_ID)).toBe(true);
     expect(
       (SHADOW_MODEL_COMMIT_ALLOWLIST as readonly string[]).includes(
         CANDIDATE_B_ELO_GENERIC_SHADOW_MODEL_ID
       )
-    ).toBe(false);
-    expect(isShadowModelCommitAllowlisted(CANDIDATE_B_ELO_GENERIC_SHADOW_MODEL_ID)).toBe(false);
+    ).toBe(true);
+    expect(isShadowModelCommitAllowlisted(CANDIDATE_B_ELO_GENERIC_SHADOW_MODEL_ID)).toBe(true);
     expect(
       shadowModelCommitAuthorizationError('PREVIEW', CANDIDATE_B_ELO_GENERIC_SHADOW_MODEL_ID)
     ).toBeNull();
     expect(
       shadowModelCommitAuthorizationError('COMMIT', CANDIDATE_B_ELO_GENERIC_SHADOW_MODEL_ID)
-    ).toEqual({
-      error: 'model_id_not_commit_allowlisted',
-      modelId: CANDIDATE_B_ELO_GENERIC_SHADOW_MODEL_ID,
-      mode: 'COMMIT',
-    });
+    ).toBeNull();
   });
 
   it('keeps Generic T-30 unsupported until a later reviewed slice', () => {
@@ -292,7 +288,7 @@ describe('Candidate B Elo Prior V1 staging safety', () => {
     expect(supportedBlock).not.toContain('candidate_b_elo_prior_v1');
   });
 
-  it('hard-gates Week 1-4 before Prisma and blocks Elo COMMIT in the workflow', () => {
+  it('hard-gates Week 1-4 before Prisma and keeps exact confirmation on Elo COMMIT', () => {
     const cli = fs.readFileSync(CLI, 'utf8');
     const wf = fs.readFileSync(WF, 'utf8');
     const mainSrc = cli.slice(cli.indexOf('async function main()'));
@@ -302,9 +298,10 @@ describe('Candidate B Elo Prior V1 staging safety', () => {
       mainSrc.indexOf('new PrismaClient()')
     );
     expect(wf).toContain('candidate_b_elo_prior_v1 first prospective observation is Week 5');
-    expect(wf).toContain(
+    expect(wf).not.toContain(
       'candidate_b_elo_prior_v1 is PREVIEW-only; COMMIT is not authorized'
     );
+    expect(wf).toContain('COMMIT requires confirm=${EXPECTED}');
     expect(wf).toContain('CFBD_API_KEY: not provided');
     expect(wf).toContain('ODDS_API_KEY: not provided');
   });

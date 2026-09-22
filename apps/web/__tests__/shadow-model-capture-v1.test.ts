@@ -235,7 +235,7 @@ describe('Shadow Model Capture V1 — definition hashes', () => {
     );
   });
 
-  it('general allowlist adds Elo PREVIEW while COMMIT remains Core + roster-prior', () => {
+  it('general and COMMIT allowlists include Elo after the reviewed Week 5 PREVIEW gate', () => {
     expect(SHADOW_MODEL_ALLOWLIST).toEqual([
       CORE_V1_SHADOW_BASELINE_MODEL_ID,
       'candidate_b_roster_prior_v1',
@@ -247,17 +247,14 @@ describe('Shadow Model Capture V1 — definition hashes', () => {
     expect(SHADOW_MODEL_COMMIT_ALLOWLIST).toEqual([
       CORE_V1_SHADOW_BASELINE_MODEL_ID,
       'candidate_b_roster_prior_v1',
+      'candidate_b_elo_prior_v1',
     ]);
     expect(isShadowModelCommitAllowlisted(CORE_V1_SHADOW_BASELINE_MODEL_ID)).toBe(true);
     expect(isShadowModelCommitAllowlisted('candidate_b_roster_prior_v1')).toBe(true);
-    expect(isShadowModelCommitAllowlisted('candidate_b_elo_prior_v1')).toBe(false);
+    expect(isShadowModelCommitAllowlisted('candidate_b_elo_prior_v1')).toBe(true);
     expect(
       shadowModelCommitAuthorizationError('COMMIT', 'candidate_b_elo_prior_v1')
-    ).toEqual({
-      error: 'model_id_not_commit_allowlisted',
-      modelId: 'candidate_b_elo_prior_v1',
-      mode: 'COMMIT',
-    });
+    ).toBeNull();
   });
 
   it('Candidate B COMMIT is allowlisted; exact confirmation remains frozen; unknown models stay blocked', () => {
