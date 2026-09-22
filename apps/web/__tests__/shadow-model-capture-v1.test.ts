@@ -254,11 +254,7 @@ describe('Shadow Model Capture V1 — definition hashes', () => {
     expect(isShadowModelCommitAllowlisted('candidate_b_elo_prior_v1')).toBe(true);
     expect(
       shadowModelCommitAuthorizationError('COMMIT', 'candidate_b_elo_prior_v1')
-    ).toEqual({
-      error: 'model_id_not_commit_allowlisted',
-      modelId: 'candidate_b_elo_prior_v1',
-      mode: 'COMMIT',
-    });
+    ).toBeNull();
   });
 
   it('Candidate B COMMIT is allowlisted; exact confirmation remains frozen; unknown models stay blocked', () => {
