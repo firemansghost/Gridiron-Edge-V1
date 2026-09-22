@@ -1,0 +1,137 @@
+{
+  "manifestId": "candidate_b_elo_prior_v1_generic_shadow_manifest_v1",
+  "modelDefinition": {
+    "id": "candidate_b_elo_prior_v1",
+    "version": "shadow_model_capture_v1",
+    "family": "candidate_b_elo_prior",
+    "official": false,
+    "productionHold": true,
+    "status": "SHADOW / RESEARCH ONLY — NOT OFFICIAL",
+    "marketType": "spread",
+    "formula": {
+      "identity": "candidate_b_elo_prior_v1_matchup",
+      "teamRatingPointsSource": "REPO_PINNED_HASH_VERIFIED_ELO_ARTIFACT_ONLY",
+      "artifactId": "candidate_b_elo_prior_features_2026_v1",
+      "artifactHash": "9c36fdcfd12ab95ffc24c8b5a3704a153d0b4ebcaf86c8309b1d200891b6fd20",
+      "expression": "homeCandidateBEloTeamRatingPoints - awayCandidateBEloTeamRatingPoints + computeEffectiveHfa(homeTeamId, neutralSite).effectiveHfa",
+      "hfaAppliedExactlyOnce": true,
+      "sourceModule": "apps/web/lib/core-v1-spread.ts#computeEffectiveHfa",
+      "noFallback": true,
+      "noSilentZeroFill": true,
+      "noTalentBlend": true,
+      "noRosterPriorBlend": true,
+      "noCoreRatingBlend": true,
+      "noHybridBlend": true,
+      "noLifecycleBlend": true,
+      "noOutcomeFit": true
+    },
+    "hfa": {
+      "source": "apps/web/lib/core-v1-spread.ts#computeEffectiveHfa",
+      "configSource": "apps/web/lib/data/core_v1_hfa_config.json",
+      "baseHfaPoints": 2,
+      "clipRange": [0.5, 3.5],
+      "neutralSite": 0,
+      "candidateBSpecificTuning": false
+    },
+    "frozenFeatureArtifact": {
+      "season": 2026,
+      "artifactId": "candidate_b_elo_prior_features_2026_v1",
+      "artifactHash": "9c36fdcfd12ab95ffc24c8b5a3704a153d0b4ebcaf86c8309b1d200891b6fd20",
+      "sourceRawSha256": "97e40e9f8220f9e7bafd8c6cd68dbf9ecb4b94208fe5911b97b07891f9fa4e64",
+      "mappingHash": "f6465665aa20ffcc55d0be9b03e00d39a03d3a7a961fc8c5225552d0c180c527",
+      "expectedTeamCount": 138,
+      "completeVectorCount": 138,
+      "unavailableVectorCount": 0
+    },
+    "runtimeFeatureSource": "REPO_PINNED_HASH_VERIFIED_ELO_ARTIFACT_ONLY",
+    "firstProspectiveWeek": 5
+  },
+  "featureDefinition": {
+    "id": "candidate_b_elo_prior_features_v1",
+    "version": "v1",
+    "required": {
+      "artifact": {
+        "artifactId": "candidate_b_elo_prior_features_2026_v1",
+        "artifactHash": "9c36fdcfd12ab95ffc24c8b5a3704a153d0b4ebcaf86c8309b1d200891b6fd20",
+        "rawPath": "research/candidate-b/snapshots/cfbd-preseason-elo/2026/2026-09-22-raw.json",
+        "rawSha256": "97e40e9f8220f9e7bafd8c6cd68dbf9ecb4b94208fe5911b97b07891f9fa4e64",
+        "mappingPath": "research/candidate-b/snapshots/cfbd-preseason-elo/2026/2026-09-22-team-mapping-v1.json",
+        "mappingHash": "f6465665aa20ffcc55d0be9b03e00d39a03d3a7a961fc8c5225552d0c180c527",
+        "expectedTeamCount": 138,
+        "hashVerifiedAtRuntime": true,
+        "noProviderFetch": true
+      },
+      "normalization": {
+        "populationCount": 138,
+        "populationMeanElo": 1498.7608695652175,
+        "populationStdDevElo": 193.5003858868873,
+        "scalePointsPerZ": 3.5,
+        "zFormula": "(rawElo - populationMeanElo) / populationStdDevElo",
+        "teamRatingFormula": "3.5 * zElo",
+        "populationSdDivisor": "N",
+        "noImputation": true,
+        "noOutcomeFit": true
+      },
+      "market": {
+        "lineType": "spread",
+        "source": "persisted_MarketLine_only",
+        "noProviderFetch": true
+      }
+    }
+  },
+  "policyDefinition": {
+    "id": "candidate_b_elo_prior_spread_policy_v1",
+    "version": "shadow_model_capture_v1",
+    "evaluationProtocol": "CORE_EVAL_V1",
+    "predictionMarket": {
+      "marketType": "spread",
+      "selectorId": "core_v1_coherent_spread_pair_v1",
+      "authorizedSource": "oddsapi",
+      "coherentHomeAwayPairRequired": true,
+      "reuseModules": [
+        "apps/web/lib/market-line-snapshot.ts#selectBookSpreadSnapshots",
+        "apps/web/lib/market-line-snapshot.ts#pickDisplaySpread"
+      ],
+      "freshnessMaxSeconds": 1800,
+      "freshnessMaxMilliseconds": 1800000,
+      "eligibility": "marketTimestamp <= predictionTimestamp",
+      "ordering": [
+        "timestamp DESC",
+        "homeRowId DESC (via pickDisplaySpread)"
+      ],
+      "noFutureMarketFallback": true,
+      "loneTeamRowNotSufficient": true
+    },
+    "selection": {
+      "source": "apps/web/lib/core-v1-spread.ts#getATSPick",
+      "edgeFloor": 0.1,
+      "edgeFormula": "edgeValue = modelValue - canonicalMarketValue (HMA)",
+      "sides": {
+        "noSelection": "abs(edgeValue) < 0.1",
+        "home": "edgeValue >= +0.1 (via getATSPick edge > 0 after floor)",
+        "away": "edgeValue <= -0.1 (via getATSPick edge < 0 after floor)"
+      },
+      "noSelectionRemainsAvailable": true,
+      "teamSidedPickValue": {
+        "HOME": "-canonicalMarketValue",
+        "AWAY": "+canonicalMarketValue",
+        "NO_SELECTION": null
+      },
+      "officialCardParity": {
+        "planner": "apps/web/lib/core-v1-weekly-card.ts#planSpreadBet",
+        "edgeFloorConstant": "SPREAD_EDGE_FLOOR",
+        "note": "Shadow challenger freezes selection semantics; does not write Bet rows."
+      }
+    },
+    "postKickoff": "unavailable",
+    "noRetrospectiveBackfill": true,
+    "researchOnly": true,
+    "firstProspectiveWeek": 5
+  },
+  "hashes": {
+    "modelDefinitionHash": "d9f469f5c9ac252bd93de2c94653c8ec9a5c967231f2197af8fba60453751add",
+    "featureDefinitionHash": "d056deba3e625deda6b95ffab04130294c4f47d28cd093a3f81d34c06a58888c",
+    "policyDefinitionHash": "f82f24fdbeb56488f21c48051aad0093841ea21452fa6f6b88ebab0a999e5035"
+  },
+  "manifestHash": "2956bb3a6ba00fb2b6ff277398eba5c440f4431d751f313da7901fddb7a29b84"
+}

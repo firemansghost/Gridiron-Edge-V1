@@ -101,7 +101,11 @@ The first Candidate B Week 3 prospective cohort is **frozen evidence**. Do not r
 
 Display name: **Capture Generic Shadow Model Predictions 2026 (Manual, Guarded)**
 
-Current allowlist (PREVIEW and COMMIT): `core_v1_shadow_baseline_v1` and `candidate_b_roster_prior_v1`.
+Current PREVIEW allowlist: `core_v1_shadow_baseline_v1`, `candidate_b_roster_prior_v1`, and `candidate_b_elo_prior_v1` (Elo Week 5+ only).
+
+Current COMMIT allowlist remains: `core_v1_shadow_baseline_v1` and `candidate_b_roster_prior_v1`.
+
+`candidate_b_elo_prior_v1` is PREVIEW-only in the current engineering slice and is not yet supported by Generic T−30.
 
 The workflow remains `workflow_dispatch` only. Default mode remains PREVIEW. There is **no** recurring schedule.
 
