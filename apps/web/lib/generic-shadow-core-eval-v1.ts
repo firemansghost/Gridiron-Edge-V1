@@ -373,6 +373,22 @@ export function evaluateGenericShadowCoreEvalV1(input: {
     blockers.push('capture_run_prediction_game_set_mismatch');
   }
 
+  const derivedAvailable = predictions.filter((p) => p.predictionStatus === 'AVAILABLE').length;
+  const derivedUnavailable = predictions.length - derivedAvailable;
+  const derivedSelections = predictions.filter(
+    (p) =>
+      p.predictionStatus === 'AVAILABLE' &&
+      (p.selectedSide === 'HOME' || p.selectedSide === 'AWAY')
+  ).length;
+  const derivedNoSelections = predictions.filter(
+    (p) => p.predictionStatus === 'AVAILABLE' && p.selectedSide === 'NO_SELECTION'
+  ).length;
+  if (captureRun.totalGames !== predictions.length) blockers.push('capture_run_total_games_mismatch');
+  if (captureRun.availableCount !== derivedAvailable) blockers.push('capture_run_available_count_mismatch');
+  if (captureRun.unavailableCount !== derivedUnavailable) blockers.push('capture_run_unavailable_count_mismatch');
+  if (captureRun.selectionCount !== derivedSelections) blockers.push('capture_run_selection_count_mismatch');
+  if (captureRun.noSelectionCount !== derivedNoSelections) blockers.push('capture_run_no_selection_count_mismatch');
+
   for (const p of predictions) {
     if (p.captureRunId !== captureRun.id) blockers.push(`prediction_capture_run_mismatch:${p.id}`);
     if (p.season !== captureRun.season) blockers.push(`prediction_season_mismatch:${p.id}`);
