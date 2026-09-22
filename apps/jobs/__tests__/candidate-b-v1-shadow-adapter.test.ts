@@ -392,6 +392,7 @@ describe('Candidate B Generic Shadow staging safety', () => {
     expect(SHADOW_MODEL_COMMIT_ALLOWLIST).toEqual([
       CORE_V1_SHADOW_BASELINE_MODEL_ID,
       CANDIDATE_B_GENERIC_SHADOW_MODEL_ID,
+      CANDIDATE_B_ELO_GENERIC_SHADOW_MODEL_ID,
     ]);
     expect(isShadowModelCommitAllowlisted(CORE_V1_SHADOW_BASELINE_MODEL_ID)).toBe(true);
     expect(isShadowModelCommitAllowlisted(CANDIDATE_B_GENERIC_SHADOW_MODEL_ID)).toBe(true);
