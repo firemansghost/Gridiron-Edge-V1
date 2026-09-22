@@ -23,6 +23,7 @@ export const CAPTURE_CONTEXT_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 export const SHADOW_MODEL_ALLOWLIST = [
   'core_v1_shadow_baseline_v1',
   'candidate_b_roster_prior_v1',
+  'candidate_b_elo_prior_v1',
 ] as const;
 export type ShadowModelAllowlistId = (typeof SHADOW_MODEL_ALLOWLIST)[number];
 
