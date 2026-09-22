@@ -1,0 +1,137 @@
+name: Capture External Elo Prior Discovery V1 (Manual, Guarded)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season year (must be 2026)'
+        required: true
+        type: string
+        default: '2026'
+      expected_main_sha:
+        description: 'Exact current main SHA'
+        required: true
+        type: string
+      confirmation:
+        description: 'Type CAPTURE_2026_CFBD_PRESEASON_ELO_DISCOVERY exactly'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: external-elo-prior-discovery-v1-2026
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Source SHA guard
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          echo "ACTUAL_SHA=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Refusing Elo discovery capture outside refs/heads/main."
+            exit 1
+          fi
+          if [ -z "${EXPECTED_MAIN_SHA}" ] || [ "${ACTUAL_SHA}" != "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing Elo discovery capture because main SHA does not match expected_main_sha."
+            exit 1
+          fi
+          echo "Source SHA guard passed."
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Preflight
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          if [ "${INPUT_SEASON}" != "2026" ]; then
+            echo "::error::season must equal 2026"
+            exit 1
+          fi
+          if [ "${INPUT_CONFIRMATION}" != "CAPTURE_2026_CFBD_PRESEASON_ELO_DISCOVERY" ]; then
+            echo "::error::Exact Elo discovery confirmation is required."
+            exit 1
+          fi
+          if [ -z "${CFBD_API_KEY:-}" ]; then
+            echo "::error::CFBD_API_KEY secret is missing"
+            exit 1
+          fi
+          if [ -z "${DIRECT_URL:-}" ]; then
+            echo "::error::DIRECT_URL secret is missing"
+            exit 1
+          fi
+          echo "season=2026"
+          echo "mode=RESEARCH_READ_ONLY"
+          echo "provider=CFBD"
+          echo "providerCallsMax=1"
+          echo "databaseMutations=false"
+          echo "Odds=false SGO=false weather=false"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prisma version
+        run: npx prisma -v
+
+      - name: Capture immutable CFBD preseason Elo and audit
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+          DATABASE_URL: ${{ secrets.DIRECT_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports/external-elo-prior-discovery-v1
+          npx tsx apps/jobs/capture-external-elo-prior-discovery-v1.ts \
+            --season "${INPUT_SEASON}" \
+            --confirm "${INPUT_CONFIRMATION}" \
+            --raw-path "reports/external-elo-prior-discovery-v1/2026-${GITHUB_RUN_ID}-raw.json" \
+            --report "reports/external-elo-prior-discovery-v1/2026-${GITHUB_RUN_ID}-audit.json"
+
+      - name: Upload discovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: external-elo-prior-discovery-v1-2026-${{ github.run_id }}
+          path: reports/external-elo-prior-discovery-v1/**
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Summary
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "External Elo Prior Discovery V1"
+          echo "status=${JOB_STATUS}"
+          echo "sourceSha=${ACTUAL_SHA:-unavailable}"
+          echo "endpoint=/ratings/elo?year=2026&preseason=true"
+          echo "documentedOpenApiVersion=5.29.0"
+          echo "providerCallsMax=1"
+          echo "databaseMutations=false"
+          echo "ratingsWrites=false"
+          echo "shadowPredictionWrites=false"
+          echo "betWrites=false"
+          echo "hybridWrites=false"
+          echo "lifecycleWrites=false"
+          echo "migrations=false"
