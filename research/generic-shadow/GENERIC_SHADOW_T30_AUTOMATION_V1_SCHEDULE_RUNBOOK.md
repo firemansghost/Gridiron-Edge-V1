@@ -4,7 +4,7 @@
 
 Merging the PR does **not** activate production automation.
 
-GitHub registers `schedule` from the default branch. If a newly merged scheduler emits no runs, a later commit on `main` refreshes that registration. It does not change the activation gate.
+GitHub registers `schedule` from the default branch. If a scheduler emits no runs despite recent default-branch activity, change the cron expression deliberately to force GitHub to re-register/reactivate the schedule. The current equivalent five-minute cadence is `2-59/5 * * * *`, which also avoids the busiest top-of-hour boundary. This does not change the activation gate or any Stage C/Stage D timing semantics.
 
 ## Purpose
 
@@ -114,13 +114,6 @@ Prediction cohorts are intentionally outside Automation V1.
 
 Before the scheduler can protect a new week, eligible Generic Shadow capture runs must already exist for that week.
 
-For Week 4, the intended paired research cohorts are:
-
-- `core_v1_shadow_baseline_v1`
-- `candidate_b_roster_prior_v1`
-
-with capture context:
-
-`week4_post_official_card`
+For Week 4, eligible COMPLETE cohorts currently include the original Core observation plus the later same-board paired research cohort. The scheduler discovers eligible capture runs from persisted state; it is not limited to one capture context. Current legitimate contexts include `week4_post_official_card` and `week4_tuesday_paired_research`.
 
 Those captures remain separately guarded research writes.
