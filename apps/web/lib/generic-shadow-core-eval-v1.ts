@@ -264,7 +264,7 @@ function toIso(value: Date | string): string {
 }
 
 function uniqueSorted(values: string[]): string[] {
-  return [...new Set(values)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return Array.from(new Set(values)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
 function stringArray(value: unknown): string[] | null {
@@ -412,7 +412,7 @@ export function evaluateGenericShadowCoreEvalV1(input: {
     rows.push(closing);
     closingsByPrediction.set(closing.predictionId, rows);
   }
-  for (const [predictionId, rows] of closingsByPrediction.entries()) {
+  for (const [predictionId, rows] of Array.from(closingsByPrediction.entries())) {
     if (rows.length > 1) blockers.push(`duplicate_closing_for_prediction:${predictionId}`);
   }
 
