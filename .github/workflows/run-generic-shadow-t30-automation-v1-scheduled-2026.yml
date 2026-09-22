@@ -34,7 +34,7 @@ name: Generic Shadow T-30 Automation V1 2026 (Scheduled, Activation Gated)
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '2-59/5 * * * *'
 
 permissions:
   contents: read
