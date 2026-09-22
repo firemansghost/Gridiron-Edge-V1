@@ -1,0 +1,32 @@
+name: Test Candidate B Elo Prior V1 Contract
+
+on:
+  pull_request:
+    paths:
+      - 'research/candidate-b/CANDIDATE_B_ELO_PRIOR_V1_FORMULA_CONTRACT.md'
+      - 'research/candidate-b/snapshots/cfbd-preseason-elo/2026/**'
+      - 'apps/jobs/__tests__/candidate-b-elo-prior-v1-contract.test.ts'
+      - '.github/workflows/test-candidate-b-elo-prior-v1-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test Candidate B Elo Prior V1 contract
+        run: npx jest apps/jobs/__tests__/candidate-b-elo-prior-v1-contract.test.ts --runInBand
