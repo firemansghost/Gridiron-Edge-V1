@@ -1,0 +1,31 @@
+name: Test Generic Shadow CORE_EVAL_V1
+
+on:
+  pull_request:
+    paths:
+      - 'research/generic-shadow/GENERIC_SHADOW_CORE_EVAL_V1_READONLY_CONTRACT.md'
+      - 'apps/jobs/__tests__/generic-shadow-core-eval-v1-contract.test.ts'
+      - '.github/workflows/test-generic-shadow-core-eval-v1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify CORE_EVAL_V1 contract parity
+        run: npx jest apps/jobs/__tests__/generic-shadow-core-eval-v1-contract.test.ts --runInBand
