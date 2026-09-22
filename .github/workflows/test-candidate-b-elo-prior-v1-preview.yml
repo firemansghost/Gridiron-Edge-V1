@@ -1,0 +1,48 @@
+name: Test Candidate B Elo Prior V1 PREVIEW
+
+on:
+  pull_request:
+    paths:
+      - 'research/candidate-b/CANDIDATE_B_ELO_PRIOR_V1_FORMULA_CONTRACT.md'
+      - 'research/candidate-b/CANDIDATE_B_ELO_PRIOR_V1_GENERIC_SHADOW_MANIFEST.json'
+      - 'research/candidate-b/snapshots/cfbd-preseason-elo/2026/**'
+      - 'apps/jobs/src/research/candidate-b/candidate-b-elo-prior-v1-*.ts'
+      - 'apps/jobs/capture-shadow-model-predictions-2026.ts'
+      - 'apps/jobs/src/shadow-model-operational-frame.ts'
+      - 'apps/web/lib/shadow-model-capture-v1.ts'
+      - '.github/workflows/capture-shadow-model-predictions-2026-manual.yml'
+      - 'apps/jobs/__tests__/candidate-b-elo-prior-v1-shadow-adapter.test.ts'
+      - 'apps/jobs/__tests__/candidate-b-v1-shadow-adapter.test.ts'
+      - 'apps/jobs/__tests__/shadow-model-capture-v1-workflow.test.ts'
+      - 'apps/web/__tests__/shadow-model-capture-v1.test.ts'
+      - '.github/workflows/test-candidate-b-elo-prior-v1-preview.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test Elo PREVIEW implementation and Generic Shadow regressions
+        run: |
+          npx jest \
+            apps/jobs/__tests__/candidate-b-elo-prior-v1-shadow-adapter.test.ts \
+            apps/jobs/__tests__/candidate-b-v1-shadow-adapter.test.ts \
+            apps/jobs/__tests__/shadow-model-capture-v1-workflow.test.ts \
+            apps/web/__tests__/shadow-model-capture-v1.test.ts \
+            apps/jobs/__tests__/candidate-b-elo-prior-v1-contract.test.ts \
+            --runInBand
