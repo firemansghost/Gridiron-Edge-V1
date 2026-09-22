@@ -33,6 +33,7 @@
 name: Generic Shadow T-30 Automation V1 2026 (Scheduled, Activation Gated)
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: '2-59/5 * * * *'
 
@@ -209,6 +210,7 @@ jobs:
           const sha = process.env.ACTUAL_SHA || null;
           const githubRef = process.env.GITHUB_REF || null;
           const jobStatus = process.env.JOB_STATUS || 'unknown';
+          const triggerEvent = process.env.GITHUB_EVENT_NAME || null;
 
           const marketPlanPath = path.join('reports', `generic-shadow-t30-automation-v1-2026-${season}-week-${week}-market-refresh-PLAN.json`);
           const marketCommitPath = path.join('reports', `generic-shadow-t30-automation-v1-2026-${season}-week-${week}-market-refresh-COMMIT.json`);
@@ -291,6 +293,7 @@ jobs:
             repoCommitSha: sha,
             githubRef,
             jobStatus,
+            triggerEvent,
             eligibleCaptureRunIds,
             eligibleModelDefinitionIds,
             counts,
@@ -354,6 +357,7 @@ jobs:
           echo "week: ${INPUT_WEEK:-unavailable}"
           echo "actual_sha: ${ACTUAL_SHA:-unavailable}"
           echo "github_ref: ${GITHUB_REF:-unavailable}"
+          echo "trigger_event: ${GITHUB_EVENT_NAME:-unavailable}"
           echo "cadence: every 5 minutes"
           echo "activation gate: GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED=true"
           echo "Stage C window: T-45..T-35 only"
