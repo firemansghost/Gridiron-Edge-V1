@@ -38,18 +38,22 @@ describe('Shadow Model Capture V1 workflow', () => {
     expect(wf).toMatch(/default:\s*PREVIEW/);
   });
 
-  it('allowlists Core and Candidate B for PREVIEW and COMMIT', () => {
+  it('allowlists Core + roster-prior for COMMIT and Elo for PREVIEW only', () => {
     expect(wf).toContain('core_v1_shadow_baseline_v1');
     expect(wf).toContain('candidate_b_roster_prior_v1');
+    expect(wf).toContain('candidate_b_elo_prior_v1');
     expect(wf).toMatch(
-      /options:\s*\n\s*- core_v1_shadow_baseline_v1\s*\n\s*- candidate_b_roster_prior_v1/
+      /options:\s*\n\s*- core_v1_shadow_baseline_v1\s*\n\s*- candidate_b_roster_prior_v1\s*\n\s*- candidate_b_elo_prior_v1/
     );
     expect(wf).not.toContain('wepa_shadow');
     expect(wf).not.toContain('Candidate B V1 COMMIT is not authorized.');
     const preflight = stepBlock(wf, 'Preflight (names/presence only)');
     const capture = stepBlock(wf, 'Run guarded Shadow Model capture');
     expect(preflight).toContain('candidate_b_roster_prior_v1');
+    expect(preflight).toContain('candidate_b_elo_prior_v1');
     expect(preflight).toContain('core_v1_shadow_baseline_v1');
+    expect(preflight).toContain('first prospective observation is Week 5');
+    expect(preflight).toContain('candidate_b_elo_prior_v1 is PREVIEW-only; COMMIT is not authorized');
     expect(preflight).toContain(
       'COMMIT requires confirm=${EXPECTED}'
     );
@@ -71,12 +75,20 @@ describe('Shadow Model Capture V1 workflow', () => {
       mainSrc.indexOf('createPrismaPersistence')
     );
     expect(cli).toContain('createCandidateBRosterPriorShadowDefinition');
+    expect(cli).toContain('createCandidateBEloPriorShadowDefinition');
+    expect(cli).toContain('candidate_b_elo_prior_not_authorized_before_week_5');
     expect(cli).toContain('model.modelDefinitionHash');
     expect(cli).toContain('model.featureDefinitionHash');
     expect(cli).toContain('model.policyDefinitionHash');
     expect(lib).toContain("'core_v1_shadow_baseline_v1'");
     expect(lib).toContain("'candidate_b_roster_prior_v1'");
+    expect(lib).toContain("'candidate_b_elo_prior_v1'");
     expect(lib).toContain('SHADOW_MODEL_COMMIT_ALLOWLIST');
+    const commitAllowlist = lib.slice(
+      lib.indexOf('export const SHADOW_MODEL_COMMIT_ALLOWLIST'),
+      lib.indexOf('export type ShadowModelCommitAllowlistId')
+    );
+    expect(commitAllowlist).not.toContain("'candidate_b_elo_prior_v1'");
   });
 
   it('requires expected_main_sha and capture_context; no operator prediction timestamp', () => {
