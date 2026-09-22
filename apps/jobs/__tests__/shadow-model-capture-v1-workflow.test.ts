@@ -53,7 +53,7 @@ describe('Shadow Model Capture V1 workflow', () => {
     expect(preflight).toContain('candidate_b_elo_prior_v1');
     expect(preflight).toContain('core_v1_shadow_baseline_v1');
     expect(preflight).toContain('first prospective observation is Week 5');
-    expect(preflight).toContain('candidate_b_elo_prior_v1 is PREVIEW-only; COMMIT is not authorized');
+    expect(preflight).not.toContain('candidate_b_elo_prior_v1 is PREVIEW-only; COMMIT is not authorized');
     expect(preflight).toContain(
       'COMMIT requires confirm=${EXPECTED}'
     );
