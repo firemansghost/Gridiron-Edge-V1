@@ -12,7 +12,7 @@
       "identity": "candidate_b_elo_prior_v1_matchup",
       "teamRatingPointsSource": "REPO_PINNED_HASH_VERIFIED_ELO_ARTIFACT_ONLY",
       "artifactId": "candidate_b_elo_prior_features_2026_v1",
-      "artifactHash": "204458cdf96f9326335725d5c5cd712beead26876027aee72a49e43dad0d5566",
+      "artifactHash": "9c36fdcfd12ab95ffc24c8b5a3704a153d0b4ebcaf86c8309b1d200891b6fd20",
       "expression": "homeCandidateBEloTeamRatingPoints - awayCandidateBEloTeamRatingPoints + computeEffectiveHfa(homeTeamId, neutralSite).effectiveHfa",
       "hfaAppliedExactlyOnce": true,
       "sourceModule": "apps/web/lib/core-v1-spread.ts#computeEffectiveHfa",
@@ -36,7 +36,7 @@
     "frozenFeatureArtifact": {
       "season": 2026,
       "artifactId": "candidate_b_elo_prior_features_2026_v1",
-      "artifactHash": "204458cdf96f9326335725d5c5cd712beead26876027aee72a49e43dad0d5566",
+      "artifactHash": "9c36fdcfd12ab95ffc24c8b5a3704a153d0b4ebcaf86c8309b1d200891b6fd20",
       "sourceRawSha256": "97e40e9f8220f9e7bafd8c6cd68dbf9ecb4b94208fe5911b97b07891f9fa4e64",
       "mappingHash": "f6465665aa20ffcc55d0be9b03e00d39a03d3a7a961fc8c5225552d0c180c527",
       "expectedTeamCount": 138,
@@ -52,7 +52,7 @@
     "required": {
       "artifact": {
         "artifactId": "candidate_b_elo_prior_features_2026_v1",
-        "artifactHash": "204458cdf96f9326335725d5c5cd712beead26876027aee72a49e43dad0d5566",
+        "artifactHash": "9c36fdcfd12ab95ffc24c8b5a3704a153d0b4ebcaf86c8309b1d200891b6fd20",
         "rawPath": "research/candidate-b/snapshots/cfbd-preseason-elo/2026/2026-09-22-raw.json",
         "rawSha256": "97e40e9f8220f9e7bafd8c6cd68dbf9ecb4b94208fe5911b97b07891f9fa4e64",
         "mappingPath": "research/candidate-b/snapshots/cfbd-preseason-elo/2026/2026-09-22-team-mapping-v1.json",
