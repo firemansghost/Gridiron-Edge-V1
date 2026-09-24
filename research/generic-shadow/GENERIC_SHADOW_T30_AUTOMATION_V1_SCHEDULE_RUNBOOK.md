@@ -1,10 +1,10 @@
 # Generic Shadow T-30 Automation V1 — Schedule Enablement Runbook
 
-**Status:** implementation review only; production activation remains a separate operator decision.
+**Status:** production clock proven 2026-09-24; Supabase external clock is the sole recurring scheduler. Native GitHub `schedule` is intentionally disabled.
 
-Merging the PR does **not** activate production automation.
+The coordinator remains activation-gated in GitHub and is invoked by the proven Supabase external clock through `workflow_dispatch`; see `GENERIC_SHADOW_T30_EXTERNAL_CLOCK_RUNBOOK.md`.
 
-GitHub registers `schedule` from the default branch. If a scheduler emits no runs despite recent default-branch activity, changing the cron expression can force GitHub to re-register/reactivate the schedule. The current equivalent five-minute cadence is `2-59/5 * * * *`, which also avoids the busiest top-of-hour boundary. On 2026-09-22 this still produced no schedule-event runs despite an active workflow and correct repository variables. The approved fallback design therefore allows an external clock to invoke this same workflow through `workflow_dispatch`; see `GENERIC_SHADOW_T30_EXTERNAL_CLOCK_RUNBOOK.md`. This does not change the activation gate or any Stage C/Stage D timing semantics.
+Historical context: native GitHub scheduling emitted no runs during the 2026-09-22 activation work, then unexpectedly recovered during the first Week 4 live proof on 2026-09-24 and fired at `2026-09-24T22:44:29Z`. The same live window also had the Supabase clock active. Existing concurrency, freshness, and idempotency controls prevented duplicate provider calls and duplicate closing writes, but dual scheduler authority was unnecessary. Issue #161 therefore makes the already-proven Supabase clock authoritative and removes native GitHub `schedule` from the coordinator workflow. This changes only the clock source; Stage C and Stage D timing and mutation semantics remain frozen.
 
 ## Purpose
 
@@ -35,7 +35,7 @@ It does not authorize or automate:
 
 ## Activation gate
 
-The scheduled workflow is inert unless this repository variable is explicitly set:
+The externally clocked workflow is inert unless this repository variable is explicitly set:
 
 `GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED=true`
 
@@ -49,7 +49,7 @@ Changing these variables is an operational activation/change and requires separa
 
 ## Source safety
 
-Scheduled operation:
+Recurring externally clocked operation:
 
 - runs from `refs/heads/main` only;
 - records exact checked-out HEAD SHA;
@@ -58,7 +58,7 @@ Scheduled operation:
   `generic-shadow-t30-automation-v1-production`;
 - keeps `cancel-in-progress: false`.
 
-The scheduled path intentionally does not use a human-entered `expected_main_sha`; this follows the frozen scheduled-runtime alternative in the Automation V1 contract.
+The recurring workflow intentionally does not use a human-entered `expected_main_sha`; this follows the frozen scheduled-runtime alternative in the Automation V1 contract.
 
 ## Stage C
 
@@ -90,7 +90,7 @@ Stage D:
 
 ## Reporting
 
-Every active scheduled cycle uploads:
+Every active externally dispatched cycle uploads:
 
 - Stage C PLAN/terminal reports;
 - raw Live Odds child report when a refresh occurs;
@@ -104,16 +104,16 @@ A green workflow without the machine-readable reports is not sufficient evidence
 
 The existing manual guarded Stage C and Stage D workflows remain canonical fallback paths.
 
-If scheduled automation is blocked or fails before a legitimate target window closes, Bobby may use the existing manual workflows while the frozen timing rules still permit it.
+If recurring automation is blocked or fails before a legitimate target window closes, Bobby may use the existing manual workflows while the frozen timing rules still permit it.
 
-No manual or scheduled path may reconstruct a missed T-30 close after kickoff.
+No manual or automated path may reconstruct a missed T-30 close after kickoff.
 
 ## Weekly operation
 
 Prediction cohorts are intentionally outside Automation V1.
 
-Before the scheduler can protect a new week, eligible Generic Shadow capture runs must already exist for that week.
+Before the external clock can protect a new week, eligible Generic Shadow capture runs must already exist for that week.
 
-For Week 4, eligible COMPLETE cohorts currently include the original Core observation plus the later same-board paired research cohort. The scheduler discovers eligible capture runs from persisted state; it is not limited to one capture context. Current legitimate contexts include `week4_post_official_card` and `week4_tuesday_paired_research`.
+For Week 4, eligible COMPLETE cohorts currently include the original Core observation plus the later same-board paired research cohort. The coordinator discovers eligible capture runs from persisted state; it is not limited to one capture context. Current legitimate contexts include `week4_post_official_card` and `week4_tuesday_paired_research`.
 
 Those captures remain separately guarded research writes.

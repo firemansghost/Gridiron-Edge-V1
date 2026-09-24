@@ -1,6 +1,6 @@
 # Generic Shadow T-30 Automation V1 — External Clock Fallback
 
-**Status:** implementation/review only. External clock activation remains a separate production operation.
+**Status:** ACTIVE / PROVEN. Supabase external clock is the sole recurring production clock as of the 2026-09-24 Week 4 live proof.
 
 ## Why this exists
 
@@ -39,16 +39,17 @@ run-generic-shadow-t30-automation-v1-scheduled-2026.yml
         +--> existing Stage D planner / T-30 closing COMMIT/no-op
 ```
 
-The GitHub workflow remains the sole coordinator.
+The GitHub workflow remains the sole coordinator. Supabase supplies only the recurring clock and dispatch; it does not duplicate betting/model logic.
 
 ## GitHub workflow support
 
-The coordinator supports both:
+The coordinator supports:
 
-- native GitHub `schedule`;
-- `workflow_dispatch` for an external clock.
+- `workflow_dispatch` from the Supabase external clock.
 
-Both routes use:
+Native GitHub `schedule` is intentionally disabled after the 2026-09-24 live proof demonstrated that GitHub cron could recover unpredictably and overlap the already-proven external clock.
+
+The recurring route uses:
 
 - the same repository activation gate;
 - the same active-week repository variable;
@@ -180,19 +181,20 @@ A successful Supabase cron record without a GitHub run is not sufficient.
 
 A green GitHub run without the machine-readable scheduled-cycle report is not sufficient.
 
-## Duplicate-clock behavior
+## Clock authority after live proof
 
-Native GitHub `schedule` may remain configured as a passive fallback.
+The external path was independently proven during the first Week 4 live cycle on 2026-09-24:
 
-If GitHub native scheduling later recovers and both clocks trigger close together:
+- Supabase cron dispatched the coordinator successfully on the intended five-minute cadence;
+- native GitHub `schedule` unexpectedly recovered and also fired at `2026-09-24T22:44:29Z`;
+- the native-triggered cycle performed the one required Stage C market refresh;
+- the following external cycle correctly saw fresh evidence and made no duplicate provider call;
+- the 6:02 PM CT external cycle captured the three legitimate Generic closing rows with `providerCalls=0`;
+- later cycles remained idempotent/no-op.
 
-- the existing single production concurrency group serializes the runs;
-- the first successful Stage C refresh should make the later cycle see a fresh board;
-- closing persistence remains append-only/idempotent.
+The overlap was safe, but it proved that keeping two clocks adds noise and a race surface without adding useful protection. Issue #161 therefore establishes **Supabase Cron as the sole recurring clock** and removes native GitHub `schedule` from the coordinator workflow.
 
-Nevertheless, after the external clock is proven, consider disabling the native GitHub cron in a later reviewed cleanup to reduce duplicate no-op runs.
-
-Do not disable native cron before the external path is independently proven.
+The existing single production concurrency group and append-only/idempotent closing rules remain defense-in-depth, not a substitute for single-clock authority.
 
 ## Manual fallback
 
@@ -208,11 +210,4 @@ No path, manual or automated, may:
 
 ## Production mutation boundary
 
-External-clock activation requires infrastructure mutations:
-
-- enable `pg_cron` if absent;
-- enable `pg_net` if absent;
-- store a GitHub dispatch token in Vault;
-- create one cron job.
-
-Those operations require explicit production authorization and must be verified immediately after execution.
+The production external clock is already active and proven. Any future infrastructure change to `pg_cron`, `pg_net`, Vault credentials, or the cron job remains a separately authorized production operation and must be verified immediately after execution.
