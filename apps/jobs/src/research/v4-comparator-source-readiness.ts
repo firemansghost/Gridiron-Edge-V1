@@ -76,6 +76,23 @@ function teamCount<T extends { teamId: string }>(rows: T[]): number {
   return unique(rows.map((row) => row.teamId)).length;
 }
 
+function teamCoverageAllRows<T extends { teamId: string }>(
+  rows: T[],
+  test: (row: T) => boolean
+): number {
+  const byTeam = new Map<string, T[]>();
+  for (const row of rows) {
+    const list = byTeam.get(row.teamId) ?? [];
+    list.push(row);
+    byTeam.set(row.teamId, list);
+  }
+  let complete = 0;
+  for (const teamRows of byTeam.values()) {
+    if (teamRows.length > 0 && teamRows.every(test)) complete += 1;
+  }
+  return complete;
+}
+
 function gameShape(rows: V4ReadinessTeamGameRow[]) {
   const games = unique(rows.map((row) => row.gameId));
   const teams = unique(rows.map((row) => row.teamId));
@@ -142,15 +159,13 @@ export function buildV4ComparatorSourceReadinessReport(
       finite(r.offAvailableYardsPct) &&
       finite(r.defAvailableYardsPct)
   );
-  const targetGameSuccessCoverage = teamCount(
-    targetGameRows.filter(
-      (r) => finite(r.successOff) && finite(r.successDef)
-    )
+  const targetGameSuccessCoverage = teamCoverageAllRows(
+    targetGameRows,
+    (r) => finite(r.successOff) && finite(r.successDef)
   );
-  const targetGamePlayCoverage = teamCount(
-    targetGameRows.filter(
-      (r) => finite(r.offensePlays) && finite(r.defensePlays)
-    )
+  const targetGamePlayCoverage = teamCoverageAllRows(
+    targetGameRows,
+    (r) => finite(r.offensePlays) && finite(r.defensePlays)
   );
 
   const comparisonSeasonSuccessCoverage = componentCoverage(
