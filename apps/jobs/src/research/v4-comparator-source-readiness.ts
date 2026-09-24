@@ -232,9 +232,10 @@ export function buildV4ComparatorSourceReadinessReport(
   if (historicalEquivalenceStatus !== 'CANDIDATE_COMPARABLE') {
     blockers.push('historical_team_game_stat_shape_not_comparable');
   }
-  if (successStatus !== 'READY') {
-    blockers.push('team_game_success_source_equivalence_unproven');
+  if (successStatus === 'MISSING') {
+    blockers.push('team_game_success_candidate_incomplete');
   }
+  blockers.push('team_game_success_source_equivalence_unproven');
   if (explosivenessStatus !== 'READY') {
     blockers.push('team_unit_grade_explosiveness_incomplete');
   }
