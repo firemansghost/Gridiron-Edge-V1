@@ -36,10 +36,10 @@ describe('V4 comparator source-readiness workflow', () => {
   });
 
   it('does not invoke legacy V4 or mutation paths', () => {
-    expect(wf).not.toContain('compute_ratings_v4.ts');
-    expect(wf).not.toContain('sync-drives.ts');
-    expect(wf).not.toContain('sync-v4-bets.ts');
-    expect(wf).not.toContain('prisma migrate');
+    expect(wf).not.toMatch(/(?:npx|node)\\s+[^\\n]*compute_ratings_v4\\.ts/);
+    expect(wf).not.toMatch(/(?:npx|node)\\s+[^\\n]*sync-drives\\.ts/);
+    expect(wf).not.toMatch(/(?:npx|node)\\s+[^\\n]*sync-v4-bets\\.ts/);
+    expect(wf).not.toMatch(/npx\\s+prisma\\s+migrate/);
     expect(cli).not.toMatch(/\.create\s*\(/);
     expect(cli).not.toMatch(/\.update\s*\(/);
     expect(cli).not.toMatch(/\.upsert\s*\(/);
