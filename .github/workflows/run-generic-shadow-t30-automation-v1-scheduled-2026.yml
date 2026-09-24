@@ -1,4 +1,9 @@
-# Generic Shadow T-30 Automation V1 — recurring scheduled coordinator.
+# Generic Shadow T-30 Automation V1 — recurring external-clock coordinator.
+#
+# CLOCK AUTHORITY:
+# - Supabase external clock is the sole recurring production clock after the 2026-09-24 live proof.
+# - This workflow is invoked through workflow_dispatch on ref=main.
+# - Native GitHub schedule is intentionally disabled to avoid dual-clock races/no-op duplication.
 #
 # IMPORTANT:
 # - Merging this workflow does NOT activate production automation.
@@ -34,8 +39,6 @@ name: Generic Shadow T-30 Automation V1 2026 (Scheduled, Activation Gated)
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '2-59/5 * * * *'
 
 permissions:
   contents: read
