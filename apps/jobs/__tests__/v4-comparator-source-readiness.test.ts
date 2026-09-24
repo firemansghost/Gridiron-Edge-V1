@@ -139,7 +139,8 @@ describe('V4 comparator source readiness', () => {
       '--wat',
     ]);
     expect(parsed.ok).toBe(false);
-    if (!parsed.ok) {
+    expect('errors' in parsed).toBe(true);
+    if ('errors' in parsed) {
       expect(parsed.errors.join(' ')).toMatch(/season must equal 2026/);
       expect(parsed.errors.join(' ')).toMatch(/unknown or incomplete argument/);
     }
