@@ -1,0 +1,165 @@
+# Manual READ-ONLY 2026 V4 comparator source-readiness audit.
+# workflow_dispatch ONLY — no schedule, push, pull_request, or workflow_run.
+# SELECT-only. No providers. No writes.
+#
+# Does NOT compute or persist V4 ratings.
+# Does NOT run sync-drives.ts or sync-v4-bets.ts.
+# Does NOT write Bet, TeamSeasonStat, TeamSeasonRating, TeamUnitGrades,
+# ShadowCaptureRun, ShadowPredictionSnapshot, Game, or MarketLine.
+# Does NOT run Prisma migrate.
+# Does NOT authorize Hybrid, V4, or Super Tier A production use.
+
+name: Audit 2026 V4 Comparator Source Readiness (Manual, Read Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Target season (must be 2026)'
+        required: true
+        type: string
+        default: '2026'
+      comparison_season:
+        description: 'Historical structural comparison season'
+        required: true
+        type: string
+        default: '2025'
+      expected_main_sha:
+        description: 'Exact main commit SHA authorized for this audit'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-v4-comparator-source-readiness-${{ inputs.season }}
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Source SHA guard
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA=$(git rev-parse HEAD)
+          echo "ACTUAL_SHA=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+          echo "actual_sha: ${ACTUAL_SHA}"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          echo "github_ref: ${GITHUB_REF:-}"
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Refusing V4 comparator readiness audit. Workflow must run from main."
+            exit 1
+          fi
+          if [ -z "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::expected_main_sha is required"
+            exit 1
+          fi
+          if [ "${ACTUAL_SHA}" != "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Checked-out SHA does not match expected_main_sha."
+            exit 1
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight (names/presence only)
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_COMPARISON_SEASON: ${{ inputs.comparison_season }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          echo "season=${INPUT_SEASON}"
+          echo "comparison_season=${INPUT_COMPARISON_SEASON}"
+          echo "researchOnly=true"
+          echo "providerCalls=0"
+          echo "mutationsInvoked=false"
+          echo "CFBD_API_KEY: not provided"
+          echo "ODDS_API_KEY: not provided"
+          echo "V4 rating writes: false"
+          echo "V4 Bet writes: false"
+          echo "Shadow writes: false"
+          echo "TeamSeasonStat writes: false"
+          echo "prisma migrate: not invoked"
+
+          if [ "${INPUT_SEASON}" != "2026" ]; then
+            echo "::error::season must equal 2026"
+            exit 1
+          fi
+          if ! [[ "${INPUT_COMPARISON_SEASON}" =~ ^[0-9]{4}$ ]]; then
+            echo "::error::comparison_season must be a four-digit year"
+            exit 1
+          fi
+          if [ -z "${DIRECT_URL:-}" ]; then
+            echo "::error::DIRECT_URL secret is missing"
+            exit 1
+          fi
+          echo "DIRECT_URL: present (value not printed)"
+
+      - name: Install dependencies
+        env:
+          DATABASE_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+          DIRECT_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+        run: npm ci
+
+      - name: Generate Prisma client
+        env:
+          DATABASE_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+          DIRECT_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+        run: npm run prisma:generate
+
+      - name: Run V4 comparator source-readiness audit
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_COMPARISON_SEASON: ${{ inputs.comparison_season }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          npx tsx apps/jobs/audit-v4-comparator-source-readiness-2026.ts \
+            --season "$INPUT_SEASON" \
+            --comparison-season "$INPUT_COMPARISON_SEASON" \
+            --report "reports/v4-comparator-source-readiness-${INPUT_SEASON}.json"
+
+      - name: Upload V4 comparator source-readiness report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4-comparator-source-readiness-${{ inputs.season }}
+          path: reports/v4-comparator-source-readiness-*.json
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_COMPARISON_SEASON: ${{ inputs.comparison_season }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "==================================================="
+          echo "V4 COMPARATOR SOURCE READINESS — READ ONLY"
+          echo "==================================================="
+          echo "season: ${INPUT_SEASON}"
+          echo "comparison_season: ${INPUT_COMPARISON_SEASON}"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          echo "actual_sha: ${ACTUAL_SHA:-unavailable}"
+          echo "status: ${JOB_STATUS}"
+          echo "researchOnly=true"
+          echo "providerCalls=0"
+          echo "mutationsInvoked=false"
+          echo "V4/Bet/Shadow/TeamSeasonStat writes: false"
+          echo "prisma migrate: not invoked"
+          echo "==================================================="
