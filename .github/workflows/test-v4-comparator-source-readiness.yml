@@ -1,0 +1,71 @@
+# Validation-only CI for V4 comparator source-readiness research.
+# No DB, no secrets, no providers, no production writes.
+
+name: Test V4 Comparator Source Readiness
+
+on:
+  pull_request:
+    paths:
+      - 'apps/jobs/src/research/v4-comparator-source-readiness.ts'
+      - 'apps/jobs/audit-v4-comparator-source-readiness-2026.ts'
+      - 'apps/jobs/__tests__/v4-comparator-source-readiness*.test.ts'
+      - '.github/workflows/audit-v4-comparator-source-readiness-2026.yml'
+      - '.github/workflows/test-v4-comparator-source-readiness.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  targeted-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run V4 readiness tests
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/v4-comparator-source-readiness.test.ts \
+            apps/jobs/__tests__/v4-comparator-source-readiness-workflow.test.ts
+
+      - name: Secret-free CLI smoke check
+        run: |
+          set +e
+          OUTPUT=$(DIRECT_URL='' npx tsx apps/jobs/audit-v4-comparator-source-readiness-2026.ts \
+            --season 2026 \
+            --comparison-season 2025 2>&1)
+          STATUS=$?
+          set -e
+          echo "$OUTPUT"
+          if [ "$STATUS" -eq 0 ]; then
+            echo "::error::Expected read-only CLI to fail closed without DIRECT_URL."
+            exit 1
+          fi
+          echo "$OUTPUT" | grep -F "DIRECT_URL required"
+
+      - name: Invalid-season CLI smoke check
+        run: |
+          set +e
+          OUTPUT=$(DIRECT_URL='postgresql://invalid' npx tsx apps/jobs/audit-v4-comparator-source-readiness-2026.ts \
+            --season 2025 \
+            --comparison-season 2024 2>&1)
+          STATUS=$?
+          set -e
+          echo "$OUTPUT"
+          if [ "$STATUS" -eq 0 ]; then
+            echo "::error::Expected invalid target season to fail closed before database access."
+            exit 1
+          fi
+          echo "$OUTPUT" | grep -F "season must equal 2026"
