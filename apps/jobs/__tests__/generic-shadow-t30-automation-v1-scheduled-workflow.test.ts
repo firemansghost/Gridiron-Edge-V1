@@ -1,5 +1,5 @@
 /**
- * Static checks for the activation-gated recurring Generic Shadow T-30 Automation V1 scheduler.
+ * Static checks for the activation-gated recurring Generic Shadow T-30 Automation V1 external-clock coordinator.
  * No network, DB, provider, or production mutation.
  */
 
@@ -19,16 +19,17 @@ function stepBlock(src: string, stepName: string): string {
   return next === -1 ? rest : rest.slice(0, next);
 }
 
-describe('Generic Shadow T-30 Automation V1 scheduled coordinator', () => {
+describe('Generic Shadow T-30 Automation V1 external-clock coordinator', () => {
   const wf = fs.readFileSync(WF, 'utf8');
   const runbook = fs.readFileSync(RUNBOOK, 'utf8');
 
-  it('has a five-minute cadence and an explicit disabled-by-default activation gate', () => {
+  it('uses workflow_dispatch only and preserves the explicit activation gate', () => {
     expect(wf).toContain('workflow_dispatch:');
-    expect(wf).toMatch(/schedule:\s*\n\s*- cron: '2-59\/5 \* \* \* \*'/m);
+    expect(wf).not.toMatch(/\nschedule:\s*\n/m);
+    expect(wf).not.toMatch(/cron:\s*['\"]2-59\/5 \* \* \* \*['\"]/m);
     expect(wf).toContain("vars.GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED == 'true'");
     expect(wf).toContain('vars.GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK');
-    expect(runbook).toContain('Merging the PR does **not** activate production automation');
+    expect(runbook).toContain('Supabase external clock is the sole recurring scheduler');
   });
 
   it('preserves main-only execution and one production concurrency group', () => {
@@ -79,7 +80,10 @@ describe('Generic Shadow T-30 Automation V1 scheduled coordinator', () => {
   it('writes and uploads a top-level machine-readable scheduled-cycle report', () => {
     const report = stepBlock(wf, 'Write scheduled-cycle machine-readable report');
     const upload = stepBlock(wf, 'Upload scheduled-cycle audit artifact');
-    expect(report).toContain('SCHEDULE_ENABLEMENT_ACTIVATION_GATED');
+    expect(report).toContain('scheduleEnabled: false');
+    expect(report).toContain("clockAuthority: 'SUPABASE_EXTERNAL'");
+    expect(report).toContain('externalClockDispatchEnabled: true');
+    expect(report).toContain('nativeGithubScheduleEnabled: false');
     expect(report).toContain('MARKET_REFRESHED_AND_CLOSINGS_CAPTURED');
     expect(report).toContain('providerCallsAttempted');
     expect(report).toContain('triggerEvent');
