@@ -1,0 +1,67 @@
+# Validation-only CI for V4 Prospective V1 research preview.
+# No DB, no secrets, no provider calls, no production writes.
+
+name: Test V4 Prospective V1 Preview
+
+on:
+  pull_request:
+    paths:
+      - 'research/v4-prospective/V4_PROSPECTIVE_V1_CONTRACT.md'
+      - 'apps/jobs/src/research/v4-prospective-v1.ts'
+      - 'apps/jobs/audit-v4-prospective-v1-preview-2026.ts'
+      - 'apps/jobs/__tests__/v4-prospective-v1*.test.ts'
+      - '.github/workflows/preview-v4-prospective-v1-2026-manual.yml'
+      - '.github/workflows/test-v4-prospective-v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  targeted-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run V4 prospective tests
+        run: |
+          npx jest --runInBand --runTestsByPath             apps/jobs/__tests__/v4-prospective-v1.test.ts             apps/jobs/__tests__/v4-prospective-v1-workflow.test.ts
+
+      - name: Missing-secret CLI smoke check
+        run: |
+          set +e
+          OUTPUT=$(DIRECT_URL='' CFBD_API_KEY=''             npx tsx apps/jobs/audit-v4-prospective-v1-preview-2026.ts             --season 2026 --week 4 2>&1)
+          STATUS=$?
+          set -e
+          echo "$OUTPUT"
+          if [ "$STATUS" -eq 0 ]; then
+            echo "::error::Expected preview to fail closed without DIRECT_URL."
+            exit 1
+          fi
+          echo "$OUTPUT" | grep -F "DIRECT_URL required"
+
+      - name: Invalid-frame CLI smoke check
+        run: |
+          set +e
+          OUTPUT=$(DIRECT_URL='postgresql://invalid' CFBD_API_KEY='test-only'             npx tsx apps/jobs/audit-v4-prospective-v1-preview-2026.ts             --season 2025 --week 5 2>&1)
+          STATUS=$?
+          set -e
+          echo "$OUTPUT"
+          if [ "$STATUS" -eq 0 ]; then
+            echo "::error::Expected invalid season/week to fail before DB/provider access."
+            exit 1
+          fi
+          echo "$OUTPUT" | grep -F "season must equal 2026"
+          echo "$OUTPUT" | grep -F "week must equal 4"
