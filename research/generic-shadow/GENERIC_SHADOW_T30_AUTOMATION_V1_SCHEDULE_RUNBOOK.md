@@ -33,9 +33,9 @@ It does not authorize or automate:
 - no after-target fall-forward;
 - no postkick backfill.
 
-## Activation gate
+## Activation gates
 
-The externally clocked workflow is inert unless this repository variable is explicitly set:
+The externally clocked Generic coordinator is inert unless this repository variable is explicitly set:
 
 `GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED=true`
 
@@ -43,7 +43,13 @@ The active week must also be supplied explicitly:
 
 `GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK=<positive integer>`
 
-Absence of the enable variable, any value other than the exact string `true`, or an invalid/missing week prevents production execution.
+An optional Hybrid Snapshot V1 closing stage is separately inert unless:
+
+`HYBRID_SHADOW_T30_AUTOMATION_V1_ENABLED=true`
+
+The Hybrid gate does not create Hybrid predictions or alter Hybrid qualification. It only invokes the already-proven `capture-shadow-t30-closing-v1-2026.ts` append-only closing writer after Generic Stage C/D succeed. It therefore reuses the same persisted board refreshed by Stage C and the same Supabase external clock.
+
+Absence of either enable variable, any value other than the exact string `true`, or an invalid/missing week prevents the corresponding production action.
 
 Changing these variables is an operational activation/change and requires separate Bobby authorization after the schedule-enablement PR is reviewed and merged.
 
@@ -88,6 +94,23 @@ Stage D:
 - may write only `ShadowModelClosingMarketSnapshot`;
 - preserves append-only/idempotent behavior and the frozen T-30 selector.
 
+## Optional Stage E — Hybrid T−30 closing
+
+When `HYBRID_SHADOW_T30_AUTOMATION_V1_ENABLED=true`, the same externally dispatched cycle runs the existing Hybrid Snapshot V1 closing writer after Generic Stage D.
+
+Stage E:
+
+- receives no `ODDS_API_KEY`;
+- uses persisted spread MarketLine rows only;
+- may write only `ShadowClosingMarketSnapshot`;
+- preserves the frozen kickoff-minus-30-minute selector;
+- never falls forward to a post-target market observation;
+- never creates a missing row at/after kickoff;
+- is append-only and transactionally idempotent on repeated five-minute cycles;
+- does not write predictions, capture runs, evaluation rows, Bets, MatchupOutputs, Game rows, or lifecycle state.
+
+Generic Stage C remains the only provider-backed portion of the cycle.
+
 ## Reporting
 
 Every active externally dispatched cycle uploads:
@@ -95,8 +118,9 @@ Every active externally dispatched cycle uploads:
 - Stage C PLAN/terminal reports;
 - raw Live Odds child report when a refresh occurs;
 - Stage D PLAN/terminal reports;
-- per-capture-run closing child reports when invoked;
-- one top-level `SCHEDULED-CYCLE.json` report combining provider, closing, blocker, mutation-target, and verification state.
+- per-capture-run Generic closing child reports when invoked;
+- the Hybrid closing COMMIT report when Stage E is enabled;
+- one top-level `SCHEDULED-CYCLE.json` report combining provider, Generic closing, Hybrid closing, blocker, mutation-target, and verification state.
 
 A green workflow without the machine-readable reports is not sufficient evidence.
 
