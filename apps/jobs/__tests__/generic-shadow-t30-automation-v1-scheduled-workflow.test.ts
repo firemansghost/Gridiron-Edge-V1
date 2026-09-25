@@ -103,6 +103,8 @@ describe('Generic Shadow T-30 Automation V1 external-clock coordinator', () => {
     expect(report).toContain('hybridClosingRowsInserted');
     expect(report).toContain('hybridClosingVerificationOk');
     expect(report).toContain('stageEHybridClosingReport');
+    expect(report).toContain("'ShadowClosingMarketSnapshot'");
+    expect(report).toContain("hybridClosing: hybridClosingEnabled");
     expect(report).toContain('mutationTargetsInvoked');
     expect(upload).toContain('if: always()');
     expect(report).toContain('SCHEDULED-CYCLE.json');
