@@ -306,6 +306,7 @@ jobs:
             : uniq([
                 ...arr(market?.mutationTargetsInvoked),
                 ...arr(closing?.mutationTargetsInvoked),
+                ...(hybridClosingCaptured ? ['ShadowClosingMarketSnapshot'] : []),
               ]);
 
           let outcome = 'NO_ACTION';
