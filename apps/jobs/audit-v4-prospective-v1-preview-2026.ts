@@ -322,15 +322,16 @@ async function main() {
     }
 
     const mappedAdvanced: MappedAdvancedRow[] = [];
-    let advancedUnmappedFbsRows = 0;
+    let advancedUnmappedProviderRows = 0;
     let advancedInvalidRows = 0;
     for (const row of advancedRaw) {
       const teamKey = keyName(row.team);
       const teamId = teamKey ? providerToInternal.get(teamKey) : null;
-      if (!teamId || !fbsSet.has(teamId)) {
-        if (teamId && fbsSet.has(teamId)) advancedUnmappedFbsRows += 1;
+      if (!teamId) {
+        advancedUnmappedProviderRows += 1;
         continue;
       }
+      if (!fbsSet.has(teamId)) continue;
       const op = finite(row.offense?.plays);
       const os = finite(row.offense?.successRate);
       const oe = finite(row.offense?.explosiveness);
@@ -594,7 +595,7 @@ async function main() {
         advancedRawRows: advancedRaw.length,
         advancedMappedRows: mappedAdvanced.length,
         advancedInvalidRows,
-        advancedUnmappedFbsRows,
+        advancedUnmappedProviderRows,
         driveRawRows: drivesRaw.length,
         driveRowsWithUnmappedFbsSide,
       },
