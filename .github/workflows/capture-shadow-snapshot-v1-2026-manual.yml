@@ -7,7 +7,9 @@
 # Does NOT write Bet, MatchupOutput, closing snapshots, or evaluation rows.
 # Does NOT call CFBD / Odds / weather. Does NOT run Prisma migrate.
 #
-# Production COMMIT remains NOT AUTHORIZED until independent writer audit.
+# V4 comparison source is an explicitly supplied Generic Shadow capture_run_id.
+# The workflow never auto-selects latest/best V4 evidence.
+# Production COMMIT remains NOT AUTHORIZED until independent PREVIEW review.
 #
 # Security:
 # - Dispatch inputs reach shell only via step-level env (never ${{ inputs.* }} inside run:).
@@ -40,6 +42,10 @@ on:
         default: PREVIEW
       capture_context:
         description: 'Declared capture context / cohort identity (^[a-z0-9][a-z0-9_-]{0,63}$). Required before execution. Not invented by the workflow.'
+        required: true
+        type: string
+      v4_capture_run_id:
+        description: 'Exact COMPLETE v4_prospective_v1 Generic Shadow capture run UUID'
         required: true
         type: string
       expected_main_sha:
@@ -107,6 +113,7 @@ jobs:
           INPUT_WEEK: ${{ inputs.week }}
           INPUT_MODE: ${{ inputs.mode }}
           INPUT_CAPTURE_CONTEXT: ${{ inputs.capture_context }}
+          INPUT_V4_CAPTURE_RUN_ID: ${{ inputs.v4_capture_run_id }}
           INPUT_CONFIRM: ${{ inputs.confirm }}
         run: |
           set -euo pipefail
@@ -114,6 +121,7 @@ jobs:
           echo "week=${INPUT_WEEK}"
           echo "mode=${INPUT_MODE}"
           echo "capture_context=${INPUT_CAPTURE_CONTEXT}"
+          echo "v4_capture_run_id=${INPUT_V4_CAPTURE_RUN_ID}"
           echo "PREVIEW IS DATABASE READ-ONLY"
           echo "providerCalls=0"
           echo "PREVIEW timestamp will NOT become the COMMIT prediction timestamp"
@@ -136,6 +144,10 @@ jobs:
           fi
           if [ -z "$INPUT_CAPTURE_CONTEXT" ]; then
             echo "::error::capture_context is required"
+            exit 1
+          fi
+          if [ -z "$INPUT_V4_CAPTURE_RUN_ID" ]; then
+            echo "::error::v4_capture_run_id is required"
             exit 1
           fi
           if ! [[ "$INPUT_CAPTURE_CONTEXT" =~ ^[a-z0-9][a-z0-9_-]{0,63}$ ]]; then
@@ -161,6 +173,7 @@ jobs:
           INPUT_WEEK: ${{ inputs.week }}
           INPUT_MODE: ${{ inputs.mode }}
           INPUT_CAPTURE_CONTEXT: ${{ inputs.capture_context }}
+          INPUT_V4_CAPTURE_RUN_ID: ${{ inputs.v4_capture_run_id }}
           INPUT_CONFIRM: ${{ inputs.confirm }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
         run: |
@@ -172,6 +185,7 @@ jobs:
               --week "$INPUT_WEEK" \
               --mode "$INPUT_MODE" \
               --capture-context "$INPUT_CAPTURE_CONTEXT" \
+              --v4-capture-run-id "$INPUT_V4_CAPTURE_RUN_ID" \
               --confirm "$INPUT_CONFIRM" \
               --report "reports/shadow-snapshot-v1-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-commit.json"
           else
@@ -180,6 +194,7 @@ jobs:
               --week "$INPUT_WEEK" \
               --mode "$INPUT_MODE" \
               --capture-context "$INPUT_CAPTURE_CONTEXT" \
+              --v4-capture-run-id "$INPUT_V4_CAPTURE_RUN_ID" \
               --report "reports/shadow-snapshot-v1-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-preview.json"
           fi
 
@@ -198,6 +213,7 @@ jobs:
           INPUT_WEEK: ${{ inputs.week }}
           INPUT_MODE: ${{ inputs.mode }}
           INPUT_CAPTURE_CONTEXT: ${{ inputs.capture_context }}
+          INPUT_V4_CAPTURE_RUN_ID: ${{ inputs.v4_capture_run_id }}
           EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
           JOB_STATUS: ${{ job.status }}
         run: |
@@ -208,6 +224,7 @@ jobs:
           echo "week: ${INPUT_WEEK}"
           echo "mode: ${INPUT_MODE}"
           echo "capture_context: ${INPUT_CAPTURE_CONTEXT}"
+          echo "v4_capture_run_id: ${INPUT_V4_CAPTURE_RUN_ID}"
           echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
           if [ -n "${ACTUAL_SHA:-}" ]; then
             echo "actual_sha: ${ACTUAL_SHA}"

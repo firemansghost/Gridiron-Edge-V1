@@ -1,0 +1,38 @@
+name: Test Hybrid V4 Generic Shadow Consumer
+
+on:
+  pull_request:
+    paths:
+      - 'apps/web/lib/shadow-snapshot-v1.ts'
+      - 'apps/jobs/capture-shadow-snapshot-v1-2026.ts'
+      - '.github/workflows/capture-shadow-snapshot-v1-2026-manual.yml'
+      - 'apps/web/__tests__/shadow-snapshot-v1.test.ts'
+      - 'apps/jobs/__tests__/hybrid-v4-generic-shadow-consumer.test.ts'
+      - '.github/workflows/test-hybrid-v4-generic-shadow-consumer.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test Hybrid V4 Generic Shadow consumer and Shadow Snapshot regressions
+        run: |
+          npx jest \
+            apps/jobs/__tests__/hybrid-v4-generic-shadow-consumer.test.ts \
+            apps/web/__tests__/shadow-snapshot-v1.test.ts \
+            --runInBand

@@ -16,7 +16,9 @@ export const SHADOW_EVALUATION_PROTOCOL = 'CORE_EVAL_V1';
 export const SHADOW_MODEL_FAMILY = 'hybrid_v2';
 export const SHADOW_MODEL_DEFINITION_ID = 'hybrid_v2_shadow_snapshot_v1';
 export const SHADOW_POLICY_DEFINITION_ID = 'core_eval_v1_shadow_policy_v1';
+/** Legacy Bet comparator identity retained for historical docs/tests only; not used by current capture. */
 export const SHADOW_V4_STRATEGY_TAG = 'v4_labs';
+export const SHADOW_V4_MODEL_DEFINITION_ID = 'v4_prospective_v1';
 export const MAX_PREDICTION_MARKET_AGE_SECONDS = 1800;
 export const MAX_PREDICTION_MARKET_AGE_MS = 1_800_000;
 export const HYBRID_SELECTION_ABS_THRESHOLD = 0.1;
@@ -180,13 +182,24 @@ export const SHADOW_POLICY_DEFINITION_MANIFEST = {
     },
   },
   v4Comparison: {
-    strategyTag: SHADOW_V4_STRATEGY_TAG,
-    marketType: 'spread',
+    source: 'generic_shadow_capture_run',
+    requiredModelDefinitionId: SHADOW_V4_MODEL_DEFINITION_ID,
+    exactCaptureRunIdRequired: true,
+    noLatestOrBestRunSelection: true,
+    runStatusRequired: 'COMPLETE',
+    seasonWeekMustMatchHybridCapture: true,
+    runCaptureTimestampMustBeAtOrBeforeHybridPredictionTimestamp: true,
+    marketType: 'SPREAD',
     states: ['SIDE_AVAILABLE', 'VERIFIED_NO_SELECTION', 'PROVENANCE_UNAVAILABLE'],
-    sideAvailableRequiresCreatedAtAndUpdatedAtAtOrBeforePredictionTimestamp: true,
+    mapping: {
+      availableHomeAway: 'SIDE_AVAILABLE',
+      availableNoSelection: 'VERIFIED_NO_SELECTION',
+      unavailableOrMissing: 'PROVENANCE_UNAVAILABLE',
+    },
     verifiedNoSelectionNotInferredFromAbsence: true,
     hybridOnlyRequiresVerifiedNoSelection: true,
     absenceIsProvenanceUnavailable: true,
+    legacyBetSourceUsed: false,
   },
   superTierA: {
     absEdgeThreshold: SUPER_TIER_A_ABS_EDGE_THRESHOLD,
@@ -379,14 +392,33 @@ export interface ShadowMarketLineRow {
   timestamp: Date | string;
 }
 
-export interface ShadowV4BetRow {
+export interface ShadowV4SourceRunRow {
   id: string;
+  season: number;
+  week: number;
+  captureContext: string;
+  evaluationProtocol: string;
+  modelFamily: string;
+  modelDefinitionId: string;
+  modelDefinitionHash: string;
+  featureDefinitionId: string;
+  featureDefinitionHash: string;
+  policyDefinitionId: string;
+  policyDefinitionHash: string;
+  captureTimestamp: Date | string;
+  status: string;
+}
+
+export interface ShadowV4PredictionRow {
+  id: string;
+  captureRunId: string;
   gameId: string;
-  strategyTag: string;
+  predictionTimestamp: Date | string;
+  predictionStatus: string;
+  unavailableReasons: string[];
   marketType: string;
-  side: string;
-  createdAt: Date | string;
-  updatedAt: Date | string;
+  selectedSide: string | null;
+  selectedTeamId: string | null;
 }
 
 export interface OperationalShadowFrame {
@@ -394,7 +426,8 @@ export interface OperationalShadowFrame {
   ratings: ShadowRatingRow[];
   unitGrades: ShadowUnitGradeRow[];
   marketLines: ShadowMarketLineRow[];
-  v4Bets: ShadowV4BetRow[];
+  v4SourceRun: ShadowV4SourceRunRow | null;
+  v4Predictions: ShadowV4PredictionRow[];
 }
 
 export interface SelectedPredictionMarket {
@@ -518,8 +551,49 @@ export function selectPredictionMarket(input: {
   return { status: 'selected', selected };
 }
 
+export function validateV4SourceFrame(input: {
+  sourceRun: ShadowV4SourceRunRow | null;
+  predictions: ShadowV4PredictionRow[];
+  expectedCaptureRunId: string;
+  season: number;
+  week: number;
+  predictionTimestamp: Date;
+}): string[] {
+  const blockers: string[] = [];
+  const run = input.sourceRun;
+  if (!input.expectedCaptureRunId) blockers.push('v4_capture_run_id_required');
+  if (!run) {
+    blockers.push('v4_source_run_missing');
+    return uniqueStrings(blockers);
+  }
+  if (run.id !== input.expectedCaptureRunId) blockers.push('v4_source_run_id_mismatch');
+  if (run.season !== input.season) blockers.push('v4_source_run_season_mismatch');
+  if (run.week !== input.week) blockers.push('v4_source_run_week_mismatch');
+  if (run.status !== 'COMPLETE') blockers.push('v4_source_run_not_complete');
+  if (run.evaluationProtocol !== SHADOW_EVALUATION_PROTOCOL) {
+    blockers.push('v4_source_run_protocol_mismatch');
+  }
+  if (run.modelDefinitionId !== SHADOW_V4_MODEL_DEFINITION_ID) {
+    blockers.push('v4_source_run_model_mismatch');
+  }
+  const captureTimestamp = toDate(run.captureTimestamp);
+  if (!captureTimestamp) blockers.push('v4_source_run_capture_timestamp_invalid');
+  else if (captureTimestamp.getTime() > input.predictionTimestamp.getTime()) {
+    blockers.push('v4_source_run_after_hybrid_prediction');
+  }
+
+  const seen = new Set<string>();
+  for (const row of input.predictions) {
+    if (row.captureRunId !== run.id) blockers.push('v4_source_prediction_run_mismatch');
+    if (seen.has(row.gameId)) blockers.push('v4_source_prediction_duplicate_game');
+    seen.add(row.gameId);
+  }
+  return uniqueStrings(blockers);
+}
+
 export function resolveV4Comparison(input: {
-  rows: ShadowV4BetRow[];
+  sourceRun: ShadowV4SourceRunRow | null;
+  rows: ShadowV4PredictionRow[];
   gameId: string;
   predictionTimestamp: Date;
 }): {
@@ -527,52 +601,106 @@ export function resolveV4Comparison(input: {
   v4ComparisonSide: ShadowTeamSide | null;
   v4Provenance: Record<string, unknown>;
 } {
+  const run = input.sourceRun;
+  const baseProvenance: Record<string, unknown> = {
+    source: 'generic_shadow_capture_run',
+    sourceCaptureRunId: run?.id ?? null,
+    sourceModelDefinitionId: run?.modelDefinitionId ?? null,
+    sourceModelDefinitionHash: run?.modelDefinitionHash ?? null,
+    sourceFeatureDefinitionId: run?.featureDefinitionId ?? null,
+    sourceFeatureDefinitionHash: run?.featureDefinitionHash ?? null,
+    sourcePolicyDefinitionId: run?.policyDefinitionId ?? null,
+    sourcePolicyDefinitionHash: run?.policyDefinitionHash ?? null,
+    sourceCaptureTimestamp: run ? toIso(run.captureTimestamp) : null,
+    legacyBetSourceUsed: false,
+  };
+
+  if (!run) {
+    return {
+      v4ComparisonStatus: 'PROVENANCE_UNAVAILABLE',
+      v4ComparisonSide: null,
+      v4Provenance: { ...baseProvenance, reason: 'source_run_missing' },
+    };
+  }
+
+  const runTs = toDate(run.captureTimestamp);
+  if (
+    run.status !== 'COMPLETE' ||
+    run.modelDefinitionId !== SHADOW_V4_MODEL_DEFINITION_ID ||
+    !runTs ||
+    runTs.getTime() > input.predictionTimestamp.getTime()
+  ) {
+    return {
+      v4ComparisonStatus: 'PROVENANCE_UNAVAILABLE',
+      v4ComparisonSide: null,
+      v4Provenance: { ...baseProvenance, reason: 'source_run_invalid_as_of_hybrid_prediction' },
+    };
+  }
+
   const candidates = input.rows.filter(
-    (row) =>
-      row.gameId === input.gameId &&
-      row.strategyTag === SHADOW_V4_STRATEGY_TAG &&
-      String(row.marketType) === 'spread'
+    (row) => row.captureRunId === run.id && row.gameId === input.gameId
   );
+  if (candidates.length !== 1) {
+    return {
+      v4ComparisonStatus: 'PROVENANCE_UNAVAILABLE',
+      v4ComparisonSide: null,
+      v4Provenance: {
+        ...baseProvenance,
+        reason: candidates.length === 0 ? 'source_prediction_missing' : 'source_prediction_duplicate',
+        sourcePredictionCount: candidates.length,
+      },
+    };
+  }
 
-  const asOf = candidates.filter((row) => {
-    const created = toDate(row.createdAt);
-    const updated = toDate(row.updatedAt);
-    if (!created || !updated) return false;
-    return (
-      created.getTime() <= input.predictionTimestamp.getTime() &&
-      updated.getTime() <= input.predictionTimestamp.getTime()
-    );
-  });
+  const row = candidates[0];
+  const rowTs = toDate(row.predictionTimestamp);
+  const rowProvenance = {
+    ...baseProvenance,
+    sourcePredictionId: row.id,
+    sourcePredictionTimestamp: rowTs ? rowTs.toISOString() : null,
+    sourcePredictionStatus: row.predictionStatus,
+    sourceUnavailableReasons: row.unavailableReasons,
+    sourceSelectedSide: row.selectedSide,
+    sourceSelectedTeamId: row.selectedTeamId,
+    sourceMarketType: row.marketType,
+  };
 
-  const sides = asOf
-    .map((row) => String(row.side).toLowerCase())
-    .filter((side) => side === 'home' || side === 'away');
+  if (!rowTs || rowTs.getTime() > input.predictionTimestamp.getTime()) {
+    return {
+      v4ComparisonStatus: 'PROVENANCE_UNAVAILABLE',
+      v4ComparisonSide: null,
+      v4Provenance: { ...rowProvenance, reason: 'source_prediction_after_hybrid_prediction' },
+    };
+  }
 
-  if (asOf.length === 1 && sides.length === 1) {
-    const row = asOf[0];
-    const side: ShadowTeamSide = String(row.side).toLowerCase() === 'home' ? 'HOME' : 'AWAY';
+  if (row.predictionStatus !== 'AVAILABLE') {
+    return {
+      v4ComparisonStatus: 'PROVENANCE_UNAVAILABLE',
+      v4ComparisonSide: null,
+      v4Provenance: { ...rowProvenance, reason: 'source_prediction_unavailable' },
+    };
+  }
+
+  if (row.selectedSide === 'HOME' || row.selectedSide === 'AWAY') {
     return {
       v4ComparisonStatus: 'SIDE_AVAILABLE',
-      v4ComparisonSide: side,
-      v4Provenance: {
-        betId: row.id,
-        strategyTag: row.strategyTag,
-        marketType: row.marketType,
-        side: row.side,
-        createdAt: toIso(row.createdAt),
-        updatedAt: toIso(row.updatedAt),
-      },
+      v4ComparisonSide: row.selectedSide,
+      v4Provenance: rowProvenance,
+    };
+  }
+
+  if (row.selectedSide === 'NO_SELECTION') {
+    return {
+      v4ComparisonStatus: 'VERIFIED_NO_SELECTION',
+      v4ComparisonSide: null,
+      v4Provenance: rowProvenance,
     };
   }
 
   return {
     v4ComparisonStatus: 'PROVENANCE_UNAVAILABLE',
     v4ComparisonSide: null,
-    v4Provenance: {
-      candidateCount: candidates.length,
-      asOfCount: asOf.length,
-      verifiedNoSelectionInferredFromAbsence: false,
-    },
+    v4Provenance: { ...rowProvenance, reason: 'source_prediction_selection_invalid' },
   };
 }
 
@@ -899,7 +1027,8 @@ export function planShadowGameSnapshot(input: {
   ratingByTeam: Map<string, ShadowRatingRow>;
   unitGradesByTeam: Map<string, ShadowUnitGradeRow>;
   marketLines: ShadowMarketLineRow[];
-  v4Bets: ShadowV4BetRow[];
+  v4SourceRun: ShadowV4SourceRunRow | null;
+  v4Predictions: ShadowV4PredictionRow[];
 }): PlannedShadowPredictionSnapshot {
   const kickoffTimestamp = toDate(input.game.kickoffTimestamp) as Date;
   const reasons: string[] = [];
@@ -961,7 +1090,8 @@ export function planShadowGameSnapshot(input: {
   if (market.status === 'stale_market') reasons.push('stale_market');
 
   const v4 = resolveV4Comparison({
-    rows: input.v4Bets,
+    sourceRun: input.v4SourceRun,
+    rows: input.v4Predictions,
     gameId: input.game.id,
     predictionTimestamp: input.predictionTimestamp,
   });
@@ -976,6 +1106,15 @@ export function planShadowGameSnapshot(input: {
     homeUnitGrades: homeGrades,
     awayUnitGrades: awayGrades,
     weather: SHADOW_WEATHER_STATE_UNUSED,
+    v4Comparison: {
+      sourceCaptureRunId: input.v4SourceRun?.id ?? null,
+      status: v4.v4ComparisonStatus,
+      side: v4.v4ComparisonSide,
+      sourcePredictionId:
+        typeof v4.v4Provenance.sourcePredictionId === 'string'
+          ? v4.v4Provenance.sourcePredictionId
+          : null,
+    },
   };
   const inputHash = sha256CanonicalJson(inputPayload);
 
@@ -1170,6 +1309,7 @@ export interface ShadowCapturePlan {
   modelDefinitionHash: string;
   policyDefinitionId: string;
   policyDefinitionHash: string;
+  v4CaptureRunId: string;
   expectedGameIds: string[];
   counts: ShadowRunCounts;
   snapshots: PlannedShadowPredictionSnapshot[];
@@ -1187,6 +1327,7 @@ export function planShadowCaptureRun(input: {
   repoCommitSha: string;
   predictionTimestamp: Date;
   frame: OperationalShadowFrame;
+  v4CaptureRunId: string;
   captureRunId?: string;
   createId?: () => string;
 }): ShadowCapturePlan {
@@ -1204,12 +1345,21 @@ export function planShadowCaptureRun(input: {
     input.frame.unitGrades.filter((r) => r.season === input.season),
     'unit_grades'
   );
+  const v4Blockers = validateV4SourceFrame({
+    sourceRun: input.frame.v4SourceRun,
+    predictions: input.frame.v4Predictions,
+    expectedCaptureRunId: input.v4CaptureRunId,
+    season: input.season,
+    week: input.week,
+    predictionTimestamp: input.predictionTimestamp,
+  });
 
   const writeBlockers = [
     ...(context.ok ? [] : [context.reason]),
     ...frameCheck.blockers,
     ...ratingIndex.blockers,
     ...gradeIndex.blockers,
+    ...v4Blockers,
   ];
   if (input.mode === 'COMMIT' && !confirmationValid) {
     writeBlockers.push('confirmation_invalid');
@@ -1227,6 +1377,7 @@ export function planShadowCaptureRun(input: {
     modelDefinitionHash: SHADOW_MODEL_DEFINITION_HASH,
     policyDefinitionId: SHADOW_POLICY_DEFINITION_ID,
     policyDefinitionHash: SHADOW_POLICY_DEFINITION_HASH,
+    v4CaptureRunId: input.v4CaptureRunId,
     confirmationValid,
     previewTimestampWillNotBecomeCommitTimestamp: true as const,
   };
@@ -1255,7 +1406,8 @@ export function planShadowCaptureRun(input: {
       ratingByTeam: ratingIndex.byTeam,
       unitGradesByTeam: gradeIndex.byTeam,
       marketLines: input.frame.marketLines,
-      v4Bets: input.frame.v4Bets,
+      v4SourceRun: input.frame.v4SourceRun,
+      v4Predictions: input.frame.v4Predictions,
     });
   });
 
@@ -1340,6 +1492,7 @@ export interface ExistingShadowCohort {
     predictionStatus: string;
     qualificationStatus: string | null;
     v4ComparisonStatus: string | null;
+    v4Provenance: unknown;
   }>;
 }
 
@@ -1367,12 +1520,19 @@ function isV4Status(value: unknown): value is ShadowV4ComparisonStatus {
   return V4_STATUSES.indexOf(value as ShadowV4ComparisonStatus) >= 0;
 }
 
+function sourceCaptureRunIdFromProvenance(value: unknown): string | null {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return null;
+  const id = (value as Record<string, unknown>).sourceCaptureRunId;
+  return typeof id === 'string' && id.length > 0 ? id : null;
+}
+
 export function validateExistingCompleteCohort(
   existing: ExistingShadowCohort,
   expectedIdentity?: {
     season: number;
     week: number;
     captureContext: string;
+    v4CaptureRunId: string;
   }
 ): string[] {
   const blockers: string[] = [];
@@ -1451,6 +1611,13 @@ export function validateExistingCompleteCohort(
       semanticOk = false;
     } else if (!isV4Status(snap.v4ComparisonStatus)) {
       blockers.push('existing_v4_comparison_status_unrecognized');
+      semanticOk = false;
+    }
+    if (
+      expectedIdentity &&
+      sourceCaptureRunIdFromProvenance(snap.v4Provenance) !== expectedIdentity.v4CaptureRunId
+    ) {
+      blockers.push('existing_v4_source_run_mismatch');
       semanticOk = false;
     }
   }
@@ -1573,6 +1740,7 @@ export interface ShadowCaptureReport {
   modelDefinitionHash: string;
   policyDefinitionId: string;
   policyDefinitionHash: string;
+  v4CaptureRunId: string;
   expectedGameIds: string[];
   counts: ShadowRunCounts;
   writeSafe: boolean;
@@ -1643,7 +1811,10 @@ function existingSnapshotSummaries(existing: ExistingShadowCohort): ShadowGameRe
     unavailableReasons: [],
     v4ComparisonStatus: isV4Status(s.v4ComparisonStatus) ? s.v4ComparisonStatus : null,
     v4ComparisonSide: null,
-    v4Provenance: null,
+    v4Provenance:
+      s.v4Provenance != null && typeof s.v4Provenance === 'object' && !Array.isArray(s.v4Provenance)
+        ? (s.v4Provenance as Record<string, unknown>)
+        : null,
     qualificationStatus: isQualificationStatus(s.qualificationStatus)
       ? s.qualificationStatus
       : null,
@@ -1665,7 +1836,12 @@ function countsFromValidExisting(existing: ExistingShadowCohort): ShadowRunCount
 function verifyCommittedCohort(
   existing: ExistingShadowCohort,
   plan: ShadowCapturePlan,
-  expectedIdentity: { season: number; week: number; captureContext: string }
+  expectedIdentity: {
+    season: number;
+    week: number;
+    captureContext: string;
+    v4CaptureRunId: string;
+  }
 ): string[] {
   const reasons = validateExistingCompleteCohort(existing, expectedIdentity);
   if (!plan.run) {
@@ -1749,6 +1925,7 @@ export async function executeShadowCapture(input: {
   captureContext: string;
   confirmation: string;
   repoCommitSha: string;
+  v4CaptureRunId: string;
   adapter: ShadowCaptureAdapter;
 }): Promise<{
   plan: ShadowCapturePlan;
@@ -1759,6 +1936,7 @@ export async function executeShadowCapture(input: {
     season: input.season,
     week: input.week,
     captureContext: input.captureContext,
+    v4CaptureRunId: input.v4CaptureRunId,
   };
 
   const emptyExecution = (partial: Partial<ShadowCaptureExecution>): ShadowCaptureExecution => ({
@@ -1799,6 +1977,7 @@ export async function executeShadowCapture(input: {
     modelDefinitionHash: plan.modelDefinitionHash,
     policyDefinitionId: plan.policyDefinitionId,
     policyDefinitionHash: plan.policyDefinitionHash,
+    v4CaptureRunId: plan.v4CaptureRunId,
     expectedGameIds: plan.expectedGameIds,
     counts: plan.counts,
     writeSafe: plan.writeSafe,
@@ -1833,6 +2012,7 @@ export async function executeShadowCapture(input: {
         modelDefinitionHash: SHADOW_MODEL_DEFINITION_HASH,
         policyDefinitionId: SHADOW_POLICY_DEFINITION_ID,
         policyDefinitionHash: SHADOW_POLICY_DEFINITION_HASH,
+        v4CaptureRunId: input.v4CaptureRunId,
         expectedGameIds: sortIds(expected),
         counts:
           integrity.length === 0
@@ -1867,6 +2047,7 @@ export async function executeShadowCapture(input: {
       captureContext: input.captureContext,
       confirmation: input.confirmation,
       repoCommitSha: input.repoCommitSha,
+      v4CaptureRunId: input.v4CaptureRunId,
       predictionTimestamp: previewTimestamp,
       frame,
       createId: input.adapter.createId,
@@ -1892,6 +2073,7 @@ export async function executeShadowCapture(input: {
       captureContext: input.captureContext,
       confirmation: input.confirmation,
       repoCommitSha: input.repoCommitSha,
+      v4CaptureRunId: input.v4CaptureRunId,
       predictionTimestamp: input.adapter.now(),
       frame,
       createId: input.adapter.createId,
@@ -1918,6 +2100,7 @@ export async function executeShadowCapture(input: {
         modelDefinitionHash: SHADOW_MODEL_DEFINITION_HASH,
         policyDefinitionId: SHADOW_POLICY_DEFINITION_ID,
         policyDefinitionHash: SHADOW_POLICY_DEFINITION_HASH,
+        v4CaptureRunId: input.v4CaptureRunId,
         expectedGameIds: Array.isArray(existing.run.expectedGameIds)
           ? sortIds(
               existing.run.expectedGameIds.filter((id): id is string => typeof id === 'string')
@@ -1954,6 +2137,7 @@ export async function executeShadowCapture(input: {
       modelDefinitionHash: SHADOW_MODEL_DEFINITION_HASH,
       policyDefinitionId: SHADOW_POLICY_DEFINITION_ID,
       policyDefinitionHash: SHADOW_POLICY_DEFINITION_HASH,
+      v4CaptureRunId: input.v4CaptureRunId,
       expectedGameIds: sortIds(expected),
       counts: countsFromValidExisting(existing),
       snapshots: [],
@@ -1993,6 +2177,7 @@ export async function executeShadowCapture(input: {
         captureContext: input.captureContext,
         confirmation: input.confirmation,
         repoCommitSha: input.repoCommitSha,
+        v4CaptureRunId: input.v4CaptureRunId,
         predictionTimestamp: commitTimestamp,
         frame,
         createId: input.adapter.createId,
@@ -2023,8 +2208,16 @@ export async function executeShadowCapture(input: {
         captureContext: input.captureContext,
         confirmation: input.confirmation,
         repoCommitSha: input.repoCommitSha,
+        v4CaptureRunId: input.v4CaptureRunId,
         predictionTimestamp: input.adapter.now(),
-        frame: { games: [], ratings: [], unitGrades: [], marketLines: [], v4Bets: [] },
+        frame: {
+          games: [],
+          ratings: [],
+          unitGrades: [],
+          marketLines: [],
+          v4SourceRun: null,
+          v4Predictions: [],
+        },
         createId: input.adapter.createId,
       });
     const execution = emptyExecution({
