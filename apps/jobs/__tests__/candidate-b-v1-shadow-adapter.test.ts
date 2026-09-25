@@ -385,18 +385,22 @@ describe('Candidate B Generic Shadow staging safety', () => {
       CORE_V1_SHADOW_BASELINE_MODEL_ID,
       CANDIDATE_B_GENERIC_SHADOW_MODEL_ID,
       CANDIDATE_B_ELO_GENERIC_SHADOW_MODEL_ID,
+      'v4_prospective_v1',
     ]);
     expect(isShadowModelAllowlisted(CORE_V1_SHADOW_BASELINE_MODEL_ID)).toBe(true);
     expect(isShadowModelAllowlisted(CANDIDATE_B_GENERIC_SHADOW_MODEL_ID)).toBe(true);
     expect(isShadowModelAllowlisted(CANDIDATE_B_ELO_GENERIC_SHADOW_MODEL_ID)).toBe(true);
+    expect(isShadowModelAllowlisted('v4_prospective_v1')).toBe(true);
     expect(SHADOW_MODEL_COMMIT_ALLOWLIST).toEqual([
       CORE_V1_SHADOW_BASELINE_MODEL_ID,
       CANDIDATE_B_GENERIC_SHADOW_MODEL_ID,
       CANDIDATE_B_ELO_GENERIC_SHADOW_MODEL_ID,
+      'v4_prospective_v1',
     ]);
     expect(isShadowModelCommitAllowlisted(CORE_V1_SHADOW_BASELINE_MODEL_ID)).toBe(true);
     expect(isShadowModelCommitAllowlisted(CANDIDATE_B_GENERIC_SHADOW_MODEL_ID)).toBe(true);
     expect(isShadowModelCommitAllowlisted(CANDIDATE_B_ELO_GENERIC_SHADOW_MODEL_ID)).toBe(true);
+    expect(isShadowModelCommitAllowlisted('v4_prospective_v1')).toBe(true);
   });
 
   it('CLI keeps the shared commit-allowlist gate before Prisma and permits Candidate B COMMIT', () => {
