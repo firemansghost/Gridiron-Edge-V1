@@ -634,7 +634,7 @@ export function buildPlayScoringLedger(
         syntheticAwayScore,
       });
 
-      if (!resolved.ok) {
+      if ('reason' in resolved) {
         invalidEvents.push({
           gameId,
           driveId,
