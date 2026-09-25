@@ -1,13 +1,13 @@
 # Season Status — Gridiron Edge
 
 **Status:** 2026 season active — manual guarded production
-**Updated:** 2026-09-16 America/Chicago
-**Evidence-producing runtime baseline:** `60e5735c820dbd53e3f07de28d5c4c44b8f46b38`
+**Updated:** 2026-09-25 America/Chicago
+**Evidence-producing runtime baseline:** `653eb9d1826954bb3ea6d1eaedb10b41739000eb`
 **Official production spread model:** Core V1 / `official_flat_100`
 **Hybrid V2:** SHADOW / HELD / NOT OFFICIAL
 **Candidate B V1:** SHADOW / RESEARCH ONLY / NOT OFFICIAL
 
-This file is the operator-facing current-state document. Detailed September 8 Phase 4B evidence is in [`docs/2026-09-08-phase4b-closeout.md`](docs/2026-09-08-phase4b-closeout.md). Current workflow authorization is in [`docs/2026-workflow-reactivation-matrix.md`](docs/2026-workflow-reactivation-matrix.md). Generic multi-model Shadow capture notes are in [`docs/SHADOW_MODEL_CAPTURE_V1.md`](docs/SHADOW_MODEL_CAPTURE_V1.md). Candidate B first prospective cohort evidence is in [`docs/2026-09-16-candidate-b-v1-first-prospective-closeout.md`](docs/2026-09-16-candidate-b-v1-first-prospective-closeout.md).
+This file is the operator-facing current-state document. Detailed September 8 Phase 4B evidence is in [`docs/2026-09-08-phase4b-closeout.md`](docs/2026-09-08-phase4b-closeout.md). Current workflow authorization is in [`docs/2026-workflow-reactivation-matrix.md`](docs/2026-workflow-reactivation-matrix.md). Generic multi-model Shadow capture notes are in [`docs/SHADOW_MODEL_CAPTURE_V1.md`](docs/SHADOW_MODEL_CAPTURE_V1.md). Candidate B first prospective cohort evidence is in [`docs/2026-09-16-candidate-b-v1-first-prospective-closeout.md`](docs/2026-09-16-candidate-b-v1-first-prospective-closeout.md). Current Week 4 Shadow / T-30 evidence and automation proof is in [`docs/2026-09-25-week4-shadow-t30-closeout.md`](docs/2026-09-25-week4-shadow-t30-closeout.md).
 
 The prior long-form phase archaeology remains available in Git history at the exact pre-closeout baseline:
 
@@ -17,9 +17,17 @@ This consolidation intentionally removes stale historical sections from the live
 
 ---
 
-## CURRENT STATE — 2026-09-16
+## CURRENT STATE — 2026-09-25
 
-The project is **not** globally blocked. Week 2 scores are final. Week 3 is active with a completed Sep 16 Live Odds refresh (57/57 requested-week match; current MarketLine total **9,404**). Core V1 remains official. Hybrid remains held. Candidate B remains **SHADOW / RESEARCH ONLY / NOT OFFICIAL**. The first legitimate prospective Hybrid Shadow cohort remains frozen at 49 games. Week 2 T−30 closing evidence is complete (36 captures / 13 misses). The Generic Core V1 Shadow path has a first prospective production capture for Week 3. Candidate B now also has a first persisted prospective Week 3 research cohort; that cohort is frozen and must not be replaced. Neither Generic path is an Official Card writer. No blanket future COMMIT authorization exists. No recurring Shadow schedule is authorized.
+The project is **not** globally blocked. Core V1 remains the only official spread model. Hybrid V2 remains **SHADOW / HELD / NOT OFFICIAL**; Hybrid Super Tier A remains **SHADOW / HELD**. Candidate B and V4 remain research-only.
+
+Week 4 has **58 games** and **107** persisted `official_flat_100` Bet rows, currently ungraded. TeamGameStat evidence is complete through Week 3 (**314 / 314** participant rows with EPA), and the frozen Candidate A / `GLOBAL_BLEND_W3_W6` lifecycle is at the completed-Week-3 checkpoint (**0.25**); after completed Week 4 the canonical weight becomes **0.50**.
+
+Prospective Week 4 research evidence is frozen for Core V1, Candidate B roster prior, V4 prospective V1, and Hybrid Snapshot V1. The verified Week 4 Hybrid cohort contains **58** snapshots (**57 AVAILABLE / 1 UNAVAILABLE**) with **8** Super Tier A research qualifiers and exact provenance to V4 run `149e59c2-801a-4535-bfc0-1b2d2f4a5198`.
+
+Generic T-30 closing automation is active through the proven Supabase external clock. For Week 4 only, the same coordinator now runs the existing Hybrid T-30 closing writer as Stage E after the Generic Stage C/D cycle. Live proof run **36148638315** passed on `653eb9d1826954bb3ea6d1eaedb10b41739000eb`: Stage E enabled, `writeSafe=true`, providerCalls=0, 57 future / 0 due / 1 legitimate missed game, zero mutations, and verification passed. Advancing the active week away from 4 automatically disables Hybrid Stage E.
+
+No additional Week 4 prediction cohorts should be created. No Hybrid/Candidate B/V4 evidence changes official model status.
 
 ### Season posture
 
@@ -29,25 +37,25 @@ The project is **not** globally blocked. Week 2 scores are final. Week 3 is acti
 | Official spread model | **Core V1** / `official_flat_100` |
 | Hybrid V2 | **SHADOW / HELD / NOT OFFICIAL** |
 | Hybrid Super Tier A | **SHADOW / HELD**; no production use |
-| V4 / Fade | Labs / backtest only |
-| Core V1 lifecycle | Candidate A / `GLOBAL_BLEND_W3_W6`; canonical weight **0 through completed Week 2**; first nonzero weight after completed Week 3 |
+| V4 prospective V1 | **SHADOW / RESEARCH ONLY**; Week 4 prospective cohort frozen |
+| Core V1 lifecycle | Candidate A / `GLOBAL_BLEND_W3_W6`; completed Week 3 checkpoint **0.25**; next canonical weight after completed Week 4 = **0.50** |
 | Week 1 | **CLOSED** — 51/51 games final; 98/98 official bets graded |
 | Week 2 | **CLOSED scores** — **49/49 final**; Official Card **0 Bets** (do not reconstruct) |
 | Week 2 Hybrid Shadow prediction cohort | **49** persisted |
 | Week 2 T−30 closing | **36 legitimate captures / 13 legitimate misses** |
 | Week 3 schedule | **57 games** |
 | Week 3 Live Odds (current after COMMIT **35127135613**) | **9,404** MarketLine rows; requested-week matched **57/57**; unmatched_both_fbs **0**; unresolved_expected_fbs **0** |
-| Week 3 Official Card | Market refresh complete; Official Card itself **not yet rewritten/previewed** as a separate guarded step; **no official bets written** |
+| Week 4 Official Card | **107** persisted `official_flat_100` Bet rows; currently ungraded |
 | 2026 TeamUnitGrades | **COMPLETE / PRODUCTION-PROVEN — 138/138** |
-| Phase 4B Hybrid prediction capture | **IMPLEMENTED + FIRST LEGITIMATE COMMIT PROVEN** (Week 2 cohort frozen) |
-| Phase 4B T−30 closing | **Week 2 complete** (36 / 13) |
-| Phase 4B ATS / CLV / evaluation | **NOT IMPLEMENTED / NOT AUTHORIZED** |
-| Generic Shadow allowlist | `core_v1_shadow_baseline_v1` + `candidate_b_roster_prior_v1` (PREVIEW and COMMIT) |
+| Phase 4B Hybrid prediction capture | **PROVEN**; Week 4 V4-backed 58-game cohort frozen and independently verified |
+| Phase 4B T−30 closing | Week 2 historical closeout **36 / 13**; Generic Week 4 automation active; Hybrid Week 4 Stage E live-proven |
+| Phase 4B ATS / CLV / evaluation | Generic `CORE_EVAL_V1` **read-only evaluator implemented**; evaluation persistence remains **NOT AUTHORIZED** |
+| Generic Shadow allowlist | Core V1 + Candidate B roster prior + Candidate B Elo Prior (Week 5+) + V4 prospective (Week 4 pinned); COMMIT remains model/week guarded |
 | Generic Core V1 Shadow | **FIRST WEEK 3 PRODUCTION COMMIT PROVEN** (research-only / additive; run **34785370466**) |
 | Candidate B V1 Generic Shadow | **IMPLEMENTED + FIRST PROSPECTIVE COMMIT PROVEN AND FROZEN**; SHADOW / RESEARCH ONLY; future COMMITs **per-run authorization only** |
 | Candidate B Week 3 cohort | **FROZEN / DO NOT REPLACE** — run **35128215811**; UUID `74234d87-bb32-47c6-927b-6de3d24cfc88` |
-| Shadow automation | **NOT AUTHORIZED** |
-| Recurring production schedules | Operator-stopped unless separately authorized |
+| Generic T−30 automation | **ACTIVE / PROVEN** via Supabase external clock; prediction automation remains unauthorized |
+| Recurring production schedules | Generic T−30 external clock active; Week 4 Hybrid closing inherits that gate only; other recurring production schedules remain stopped unless separately authorized |
 
 ## Verified production snapshot
 
@@ -71,6 +79,14 @@ Historical September 8 verification remains valid for Week 1 / TeamUnitGrades / 
 | Candidate B first COMMIT | **35128215811** |
 | Candidate B first capture run | `74234d87-bb32-47c6-927b-6de3d24cfc88` |
 | Candidate B Week 3 predictions | **57** (AVAILABLE **35** / UNAVAILABLE **22**; selections **34** / NO_SELECTION **1**) |
+| Week 4 scheduled games | **58** |
+| Week 4 official Core bets | **107**, currently ungraded |
+| TeamGameStat through Week 3 | **314 / 314** EPA-complete participant rows |
+| Week 4 V4 prospective run | `149e59c2-801a-4535-bfc0-1b2d2f4a5198` — **57 / 58 AVAILABLE** |
+| Week 4 Hybrid run | `86505023-0ba6-4838-bbd6-21091c73057f` — **57 / 58 AVAILABLE; 8 Super Tier A** |
+| Hybrid idempotent verification | run **36146124407** — existing COMPLETE cohort unchanged |
+| Generic T-30 external clock | **ACTIVE / PROVEN** |
+| Week 4 Hybrid T-30 Stage E proof | run **36148638315** — enabled, providerCalls=0, zero mutation before first due window |
 
 Historical Week 3 Live Odds states that are **not** current:
 
@@ -277,9 +293,13 @@ Separately authorized COMMIT **35128215811** on SHA `60e5735c820dbd53e3f07de28d5
 
 The North Carolina @ Clemson NO_SELECTION is legitimate frozen-floor behavior (edge 0.0876 < 0.1). This cohort is **frozen evidence**. Do not rerun, replace, delete, overwrite, or backdate it. Full ledger: [`docs/2026-09-16-candidate-b-v1-first-prospective-closeout.md`](docs/2026-09-16-candidate-b-v1-first-prospective-closeout.md).
 
-Candidate B success proves evidence plumbing and establishes prospective research data. It does **not** prove predictive superiority and does **not** change Core V1 official status. Future Candidate B COMMITs require separate current operator authorization. No recurring Shadow schedule is authorized.
+Candidate B success proves evidence plumbing and establishes prospective research data. It does **not** prove predictive superiority and does **not** change Core V1 official status. Future Candidate B prediction COMMITs require separate current operator authorization. No recurring Shadow **prediction** schedule is authorized.
 
 ### T−30 closing layer
+
+Current recurring clock authority is **Supabase external**. The Generic coordinator is active every five minutes and preserves the frozen Stage C T-45..T-35 refresh window plus Stage D T-30 closing semantics. During Week 4 only, Stage E invokes the existing Hybrid closing writer after Stage D; moving the active week away from 4 disables Stage E automatically.
+
+Week 4 live proof: **36148638315**. Full current evidence: [`docs/2026-09-25-week4-shadow-t30-closeout.md`](docs/2026-09-25-week4-shadow-t30-closeout.md).
 
 Week 2 T−30 closing evidence is complete:
 
@@ -302,18 +322,19 @@ All entries below are manual unless explicitly stated otherwise.
 | `write-core-v1-weekly-card-2026.yml` | Official Core V1 card | **PROVEN** |
 | `cfbd-scores-2026-manual.yml` | Scores PREVIEW/COMMIT | **PROVEN** |
 | `grade-bets-2026-manual.yml` | Official grading PREVIEW/COMMIT | **PROVEN** |
-| `cfbd-team-game-stats-2026-manual.yml` | TeamGameStat / lifecycle EPA feed | Prepared; lifecycle weight remains 0 through completed Week 2 |
-| `write-core-v1-lifecycle-ratings.yml` | Core V1 lifecycle ratings | Do not COMMIT merely because Week 2 is complete; first nonzero canonical weight after completed Week 3 |
+| `cfbd-team-game-stats-2026-manual.yml` | TeamGameStat / lifecycle EPA feed | **PROVEN through Week 3 — 314/314 EPA-complete participant rows**; Week 4 runs after games complete |
+| `write-core-v1-lifecycle-ratings.yml` | Core V1 lifecycle ratings | Guarded; completed Week 3 canonical weight **0.25**; after completed Week 4 next canonical weight **0.50** |
 | `audit-2026-unit-grade-source-readiness.yml` | Unit-grade source/readiness audit | **PROVEN** |
 | `write-cfbd-unit-grade-sources-2026-manual.yml` | Same-season unit-grade source PREVIEW/COMMIT | **PROVEN** |
 | `preview-team-unit-grades-2026-manual.yml` | Read-only TeamUnitGrades planner | **PROVEN** |
 | `write-team-unit-grades-2026-manual.yml` | Guarded TeamUnitGrades PREVIEW/COMMIT | **PROVEN — 138/138 persisted** |
-| `capture-shadow-snapshot-v1-2026-manual.yml` | Prospective Hybrid Shadow prediction PREVIEW/COMMIT | **PROVEN — first 49-game cohort persisted** |
-| `capture-shadow-t30-closing-v1-2026-manual.yml` | T−30 closing PREVIEW/COMMIT | **Week 2 complete — 36 captures / 13 misses** |
+| `capture-shadow-snapshot-v1-2026-manual.yml` | Prospective Hybrid Shadow prediction PREVIEW/COMMIT | **PROVEN — Week 4 V4-backed 58-game cohort frozen / verified** |
+| `capture-shadow-t30-closing-v1-2026-manual.yml` | Hybrid Snapshot V1 T−30 PREVIEW/COMMIT | **PROVEN**; retained as manual fallback; Week 4 also protected by gated Stage E |
 | `capture-shadow-model-predictions-2026-manual.yml` | Generic multi-model Shadow PREVIEW/COMMIT | **PROVEN / MANUAL_GUARDED / RESEARCH ONLY / PER-RUN AUTHORIZATION** — Core + Candidate B allowlisted; first Core Week 3 COMMIT proven; first Candidate B Week 3 COMMIT proven and frozen; future COMMITs not blanket-authorized |
+| `run-generic-shadow-t30-automation-v1-scheduled-2026.yml` | External-clock Generic T−30 coordinator + Week 4 Hybrid Stage E | **ACTIVE / PROVEN**; Supabase is sole recurring clock; Stage E auto-disables when active week != 4 |
 | `audit-prisma-migration-history.yml` | Read-only migration-history audit | MANUAL_SAFE |
 
-No Shadow cron is authorized. No score/grading automation is authorized by this document. Do not infer recurring cadence from a manual workflow being present.
+Generic T−30 recurring automation is authorized and active through the Supabase external clock. Week 4 Hybrid closing Stage E inherits that active gate only while the configured week equals 4. No score/grading automation or recurring prediction capture is authorized.
 
 ## Not implemented / not authorized
 
@@ -321,8 +342,8 @@ No Shadow cron is authorized. No score/grading automation is authorized by this 
 - Shadow CLV evaluation persistence
 - Shadow research ROI persistence
 - Shadow prediction automation
-- T−30 closing automation
-- blanket future Generic Shadow COMMIT authorization / recurring Generic schedule
+- future-week Hybrid T−30 automation beyond the explicit Week 4 scope
+- blanket future Generic Shadow prediction COMMIT authorization / recurring Generic prediction schedule
 - WEPA / PassMatch / Totals V2 / Portal / ensemble adapters
 - official Hybrid activation
 - Hybrid Bet writes
@@ -334,7 +355,7 @@ No Shadow cron is authorized. No score/grading automation is authorized by this 
 
 ## Deferred maintenance — separate workstreams
 
-These are real issues but are **not** blockers for current Week 3 operations:
+These are real issues but are **not** blockers for current Week 4 operations:
 
 - npm audit: **21 vulnerabilities** (2 low, 1 moderate, 17 high, 1 critical)
 - GitHub Actions Node 20 deprecation / Node 24 forcing warning on some actions
