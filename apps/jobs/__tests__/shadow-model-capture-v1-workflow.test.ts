@@ -38,12 +38,13 @@ describe('Shadow Model Capture V1 workflow', () => {
     expect(wf).toMatch(/default:\s*PREVIEW/);
   });
 
-  it('allowlists Core + roster-prior + Elo for guarded COMMIT', () => {
+  it('allowlists Core + roster-prior + Elo + V4 prospective for guarded COMMIT', () => {
     expect(wf).toContain('core_v1_shadow_baseline_v1');
     expect(wf).toContain('candidate_b_roster_prior_v1');
     expect(wf).toContain('candidate_b_elo_prior_v1');
+    expect(wf).toContain('v4_prospective_v1');
     expect(wf).toMatch(
-      /options:\s*\n\s*- core_v1_shadow_baseline_v1\s*\n\s*- candidate_b_roster_prior_v1\s*\n\s*- candidate_b_elo_prior_v1/
+      /options:\s*\n\s*- core_v1_shadow_baseline_v1\s*\n\s*- candidate_b_roster_prior_v1\s*\n\s*- candidate_b_elo_prior_v1\s*\n\s*- v4_prospective_v1/
     );
     expect(wf).not.toContain('wepa_shadow');
     expect(wf).not.toContain('Candidate B V1 COMMIT is not authorized.');
@@ -52,7 +53,9 @@ describe('Shadow Model Capture V1 workflow', () => {
     expect(preflight).toContain('candidate_b_roster_prior_v1');
     expect(preflight).toContain('candidate_b_elo_prior_v1');
     expect(preflight).toContain('core_v1_shadow_baseline_v1');
+    expect(preflight).toContain('v4_prospective_v1');
     expect(preflight).toContain('first prospective observation is Week 5');
+    expect(preflight).toContain('pinned artifact is authorized for Week 4 only');
     expect(preflight).not.toContain('candidate_b_elo_prior_v1 is PREVIEW-only; COMMIT is not authorized');
     expect(preflight).toContain(
       'COMMIT requires confirm=${EXPECTED}'
@@ -76,19 +79,23 @@ describe('Shadow Model Capture V1 workflow', () => {
     );
     expect(cli).toContain('createCandidateBRosterPriorShadowDefinition');
     expect(cli).toContain('createCandidateBEloPriorShadowDefinition');
+    expect(cli).toContain('createV4ProspectiveShadowDefinition');
     expect(cli).toContain('candidate_b_elo_prior_not_authorized_before_week_5');
+    expect(cli).toContain('v4_prospective_v1_artifact_authorized_for_week_4_only');
     expect(cli).toContain('model.modelDefinitionHash');
     expect(cli).toContain('model.featureDefinitionHash');
     expect(cli).toContain('model.policyDefinitionHash');
     expect(lib).toContain("'core_v1_shadow_baseline_v1'");
     expect(lib).toContain("'candidate_b_roster_prior_v1'");
     expect(lib).toContain("'candidate_b_elo_prior_v1'");
+    expect(lib).toContain("'v4_prospective_v1'");
     expect(lib).toContain('SHADOW_MODEL_COMMIT_ALLOWLIST');
     const commitAllowlist = lib.slice(
       lib.indexOf('export const SHADOW_MODEL_COMMIT_ALLOWLIST'),
       lib.indexOf('export type ShadowModelCommitAllowlistId')
     );
     expect(commitAllowlist).toContain("'candidate_b_elo_prior_v1'");
+    expect(commitAllowlist).toContain("'v4_prospective_v1'");
   });
 
   it('requires expected_main_sha and capture_context; no operator prediction timestamp', () => {

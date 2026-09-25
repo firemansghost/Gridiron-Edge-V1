@@ -235,25 +235,32 @@ describe('Shadow Model Capture V1 — definition hashes', () => {
     );
   });
 
-  it('general and COMMIT allowlists include Elo after the reviewed Week 5 PREVIEW gate', () => {
+  it('general and COMMIT allowlists include Elo and approved V4 prospective models', () => {
     expect(SHADOW_MODEL_ALLOWLIST).toEqual([
       CORE_V1_SHADOW_BASELINE_MODEL_ID,
       'candidate_b_roster_prior_v1',
       'candidate_b_elo_prior_v1',
+      'v4_prospective_v1',
     ]);
     expect(isShadowModelAllowlisted(CORE_V1_SHADOW_BASELINE_MODEL_ID)).toBe(true);
     expect(isShadowModelAllowlisted('candidate_b_roster_prior_v1')).toBe(true);
     expect(isShadowModelAllowlisted('candidate_b_elo_prior_v1')).toBe(true);
+    expect(isShadowModelAllowlisted('v4_prospective_v1')).toBe(true);
     expect(SHADOW_MODEL_COMMIT_ALLOWLIST).toEqual([
       CORE_V1_SHADOW_BASELINE_MODEL_ID,
       'candidate_b_roster_prior_v1',
       'candidate_b_elo_prior_v1',
+      'v4_prospective_v1',
     ]);
     expect(isShadowModelCommitAllowlisted(CORE_V1_SHADOW_BASELINE_MODEL_ID)).toBe(true);
     expect(isShadowModelCommitAllowlisted('candidate_b_roster_prior_v1')).toBe(true);
     expect(isShadowModelCommitAllowlisted('candidate_b_elo_prior_v1')).toBe(true);
+    expect(isShadowModelCommitAllowlisted('v4_prospective_v1')).toBe(true);
     expect(
       shadowModelCommitAuthorizationError('COMMIT', 'candidate_b_elo_prior_v1')
+    ).toBeNull();
+    expect(
+      shadowModelCommitAuthorizationError('COMMIT', 'v4_prospective_v1')
     ).toBeNull();
   });
 
