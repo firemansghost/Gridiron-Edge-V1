@@ -34,7 +34,8 @@ import {
   type ShadowMutationTx,
   type ShadowRatingRow,
   type ShadowUnitGradeRow,
-  type ShadowV4BetRow,
+  type ShadowV4PredictionRow,
+  type ShadowV4SourceRunRow,
 } from '../web/lib/shadow-snapshot-v1';
 
 function parseArgs(argv: string[]): {
@@ -42,6 +43,7 @@ function parseArgs(argv: string[]): {
   week: number;
   mode: ShadowCaptureMode;
   captureContext: string;
+  v4CaptureRunId: string;
   confirmation: string;
   reportPath?: string;
 } {
@@ -49,6 +51,7 @@ function parseArgs(argv: string[]): {
   let week = 1;
   let mode: ShadowCaptureMode = 'PREVIEW';
   let captureContext = '';
+  let v4CaptureRunId = '';
   let confirmation = '';
   let reportPath: string | undefined;
 
@@ -58,12 +61,13 @@ function parseArgs(argv: string[]): {
     else if (a === '--week') week = Number(argv[++i]);
     else if (a === '--mode') mode = String(argv[++i]).toUpperCase() as ShadowCaptureMode;
     else if (a === '--capture-context') captureContext = String(argv[++i] ?? '');
+    else if (a === '--v4-capture-run-id') v4CaptureRunId = String(argv[++i] ?? '');
     else if (a === '--confirm' || a === '--confirmation')
       confirmation = String(argv[++i] ?? '');
     else if (a === '--report') reportPath = String(argv[++i]);
   }
 
-  return { season, week, mode, captureContext, confirmation, reportPath };
+  return { season, week, mode, captureContext, v4CaptureRunId, confirmation, reportPath };
 }
 
 function defaultReportPath(season: number, week: number, mode: ShadowCaptureMode): string {
@@ -117,6 +121,7 @@ function mapExisting(run: {
     predictionStatus: string;
     qualificationStatus: string | null;
     v4ComparisonStatus: string | null;
+    v4Provenance: unknown;
   }>;
 }): ExistingShadowCohort {
   return {
@@ -200,7 +205,8 @@ function snapshotCreateData(row: PlannedShadowPredictionSnapshot) {
 async function loadOperationalFrame(
   db: PrismaClient | Prisma.TransactionClient,
   season: number,
-  week: number
+  week: number,
+  v4CaptureRunId: string
 ): Promise<OperationalShadowFrame> {
   const games = await db.game.findMany({
     where: { season, week },
@@ -263,25 +269,38 @@ async function loadOperationalFrame(
           },
         });
 
-  const v4Raw =
-    gameIds.length === 0
-      ? []
-      : await db.bet.findMany({
-          where: {
-            gameId: { in: gameIds },
-            strategyTag: 'v4_labs',
-            marketType: 'spread',
-          },
-          select: {
-            id: true,
-            gameId: true,
-            strategyTag: true,
-            marketType: true,
-            side: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-        });
+  const v4RunRaw = await db.shadowModelCaptureRun.findUnique({
+    where: { id: v4CaptureRunId },
+    select: {
+      id: true,
+      season: true,
+      week: true,
+      captureContext: true,
+      evaluationProtocol: true,
+      modelFamily: true,
+      modelDefinitionId: true,
+      modelDefinitionHash: true,
+      featureDefinitionId: true,
+      featureDefinitionHash: true,
+      policyDefinitionId: true,
+      policyDefinitionHash: true,
+      captureTimestamp: true,
+      status: true,
+      predictions: {
+        select: {
+          id: true,
+          captureRunId: true,
+          gameId: true,
+          predictionTimestamp: true,
+          predictionStatus: true,
+          unavailableReasons: true,
+          marketType: true,
+          selectedSide: true,
+          selectedTeamId: true,
+        },
+      },
+    },
+  });
 
   const ratings: ShadowRatingRow[] = ratingsRaw.map((r) => ({
     teamId: r.teamId,
@@ -318,14 +337,35 @@ async function loadOperationalFrame(
     timestamp: r.timestamp,
   }));
 
-  const v4Bets: ShadowV4BetRow[] = v4Raw.map((r) => ({
+  const v4SourceRun: ShadowV4SourceRunRow | null = v4RunRaw
+    ? {
+        id: v4RunRaw.id,
+        season: v4RunRaw.season,
+        week: v4RunRaw.week,
+        captureContext: v4RunRaw.captureContext,
+        evaluationProtocol: v4RunRaw.evaluationProtocol,
+        modelFamily: v4RunRaw.modelFamily,
+        modelDefinitionId: v4RunRaw.modelDefinitionId,
+        modelDefinitionHash: v4RunRaw.modelDefinitionHash,
+        featureDefinitionId: v4RunRaw.featureDefinitionId,
+        featureDefinitionHash: v4RunRaw.featureDefinitionHash,
+        policyDefinitionId: v4RunRaw.policyDefinitionId,
+        policyDefinitionHash: v4RunRaw.policyDefinitionHash,
+        captureTimestamp: v4RunRaw.captureTimestamp,
+        status: String(v4RunRaw.status),
+      }
+    : null;
+
+  const v4Predictions: ShadowV4PredictionRow[] = (v4RunRaw?.predictions ?? []).map((r) => ({
     id: r.id,
+    captureRunId: r.captureRunId,
     gameId: r.gameId,
-    strategyTag: r.strategyTag,
+    predictionTimestamp: r.predictionTimestamp,
+    predictionStatus: String(r.predictionStatus),
+    unavailableReasons: r.unavailableReasons,
     marketType: String(r.marketType),
-    side: String(r.side),
-    createdAt: r.createdAt,
-    updatedAt: r.updatedAt,
+    selectedSide: r.selectedSide == null ? null : String(r.selectedSide),
+    selectedTeamId: r.selectedTeamId,
   }));
 
   return {
@@ -341,7 +381,8 @@ async function loadOperationalFrame(
     ratings,
     unitGrades,
     marketLines,
-    v4Bets,
+    v4SourceRun,
+    v4Predictions,
   };
 }
 
@@ -368,6 +409,7 @@ async function findCohort(
           predictionStatus: true,
           qualificationStatus: true,
           v4ComparisonStatus: true,
+          v4Provenance: true,
         },
       },
     },
@@ -378,18 +420,31 @@ async function findCohort(
 
 function createPrismaAdapter(
   prisma: PrismaClient,
-  args: { season: number; week: number; captureContext: string; now?: () => Date }
+  args: {
+    season: number;
+    week: number;
+    captureContext: string;
+    v4CaptureRunId: string;
+    now?: () => Date;
+  }
 ): ShadowCaptureAdapter {
   const clock = args.now ?? (() => new Date());
   const cohortArgs = {
     season: args.season,
     week: args.week,
     captureContext: args.captureContext,
+    v4CaptureRunId: args.v4CaptureRunId,
   };
 
   const bindTx = (db: PrismaClient | Prisma.TransactionClient): ShadowMutationTx => ({
     findCohort: () => findCohort(db, cohortArgs.season, cohortArgs.week, cohortArgs.captureContext),
-    loadFrame: () => loadOperationalFrame(db, cohortArgs.season, cohortArgs.week),
+    loadFrame: () =>
+      loadOperationalFrame(
+        db,
+        cohortArgs.season,
+        cohortArgs.week,
+        cohortArgs.v4CaptureRunId
+      ),
     now: clock,
     createRun: async (run: PlannedShadowCaptureRun) => {
       await db.shadowCaptureRun.create({
@@ -438,7 +493,13 @@ function createPrismaAdapter(
     createId: () => randomUUID(),
     findCohort: () =>
       findCohort(prisma, cohortArgs.season, cohortArgs.week, cohortArgs.captureContext),
-    loadFrame: () => loadOperationalFrame(prisma, cohortArgs.season, cohortArgs.week),
+    loadFrame: () =>
+      loadOperationalFrame(
+        prisma,
+        cohortArgs.season,
+        cohortArgs.week,
+        cohortArgs.v4CaptureRunId
+      ),
     runTransaction: async (fn) =>
       prisma.$transaction((tx) => fn(bindTx(tx)), {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
@@ -484,6 +545,7 @@ async function main(): Promise<void> {
   console.log('============================================================');
   console.log(`season=${args.season} week=${args.week} mode=${args.mode}`);
   console.log(`capture_context=${args.captureContext}`);
+  console.log(`v4_capture_run_id=${args.v4CaptureRunId}`);
   console.log('PREVIEW IS DATABASE READ-ONLY; providerCalls=0');
   console.log(
     `expectedConfirmation=${expectedWriteConfirmation(args.week)} (value not echoed from input)`
@@ -505,6 +567,9 @@ async function main(): Promise<void> {
   if (!context.ok) {
     throw new Error(context.reason);
   }
+  if (!args.v4CaptureRunId) {
+    throw new Error('v4_capture_run_id is required');
+  }
 
   const url = process.env.DIRECT_URL;
   if (!url) {
@@ -520,6 +585,7 @@ async function main(): Promise<void> {
       season: args.season,
       week: args.week,
       captureContext: context.value,
+      v4CaptureRunId: args.v4CaptureRunId,
     });
 
     const { plan, execution, report } = await executeShadowCapture({
@@ -529,6 +595,7 @@ async function main(): Promise<void> {
       captureContext: context.value,
       confirmation: args.confirmation,
       repoCommitSha,
+      v4CaptureRunId: args.v4CaptureRunId,
       adapter,
     });
 
@@ -542,6 +609,7 @@ async function main(): Promise<void> {
       rolledBack: execution.rolledBack,
       transactionalIdempotentNoOp: execution.transactionalIdempotentNoOp,
       providerCalls: 0,
+      v4CaptureRunId: args.v4CaptureRunId,
       isolationLevel: args.mode === 'COMMIT' ? 'Serializable' : null,
     });
 
