@@ -515,6 +515,7 @@ function createPrismaAdapter(
               predictionStatus: true,
               qualificationStatus: true,
               v4ComparisonStatus: true,
+              v4Provenance: true,
             },
           },
         },
