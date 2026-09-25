@@ -105,7 +105,7 @@ const PREVIOUS_POLICY_HASH =
 const PINNED_MODEL_HASH =
   '1532c6440a0751317e74606c648201d104de03acaec4bf2ee31a6d3d0d3d6104';
 const PINNED_POLICY_HASH =
-  'f770f9eb3abe7bac8f6d2ed30d435063facc344a2381e56c471d4f428c1b7d52';
+  'f3fa1d8d2a201e23aee914670c8ac519bb8aadad631ec76f2a1bd972e11ecf21';
 
 function rating(
   teamId: string,
