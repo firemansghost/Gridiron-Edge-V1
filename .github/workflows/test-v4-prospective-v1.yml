@@ -8,6 +8,7 @@ on:
     paths:
       - 'research/v4-prospective/V4_PROSPECTIVE_V1_CONTRACT.md'
       - 'apps/jobs/src/research/v4-prospective-v1.ts'
+      - 'apps/jobs/src/research/v4-prospective-v1-play-scoring.ts'
       - 'apps/jobs/audit-v4-prospective-v1-preview-2026.ts'
       - 'apps/jobs/__tests__/v4-prospective-v1*.test.ts'
       - '.github/workflows/preview-v4-prospective-v1-2026-manual.yml'
@@ -37,7 +38,7 @@ jobs:
 
       - name: Run V4 prospective tests
         run: |
-          npx jest --runInBand --runTestsByPath             apps/jobs/__tests__/v4-prospective-v1.test.ts             apps/jobs/__tests__/v4-prospective-v1-workflow.test.ts
+          npx jest --runInBand --runTestsByPath             apps/jobs/__tests__/v4-prospective-v1.test.ts             apps/jobs/__tests__/v4-prospective-v1-play-scoring.test.ts             apps/jobs/__tests__/v4-prospective-v1-workflow.test.ts
 
       - name: Missing-secret CLI smoke check
         run: |
