@@ -4,7 +4,7 @@ import { sha256CanonicalJson } from '../../../../web/lib/shadow-model-capture-v1
 export const V4_PROSPECTIVE_MODEL_ID = 'v4_prospective_v1' as const;
 export const V4_PROSPECTIVE_MODEL_FAMILY = 'v4_prospective' as const;
 export const V4_PROSPECTIVE_RUNTIME_ARTIFACT_HASH =
-  '0c1fddf9e1d08a308887024c86c8be5a34aa3aa5bae16e53fe3dc2cb3edb0a33';
+  'e8b8490018572171906896c17cdcdab883d9c4727b0575591ab311e5062f95d0';
 export const V4_PROSPECTIVE_TARGET_WEEK = 4 as const;
 export const V4_PROSPECTIVE_HFA_POINTS = 2.0;
 export const V4_PROSPECTIVE_SELECTION_THRESHOLD_ABS = 0.1;
