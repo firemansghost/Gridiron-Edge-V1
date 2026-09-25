@@ -43,15 +43,17 @@ The active week must also be supplied explicitly:
 
 `GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK=<positive integer>`
 
-An optional Hybrid Snapshot V1 closing stage is separately inert unless:
+For Week 4 only, Hybrid Snapshot V1 closing capture is explicitly authorized to inherit the already-proven Generic activation gate while:
 
-`HYBRID_SHADOW_T30_AUTOMATION_V1_ENABLED=true`
+`GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED=true`
 
-The Hybrid gate does not create Hybrid predictions or alter Hybrid qualification. It only invokes the already-proven `capture-shadow-t30-closing-v1-2026.ts` append-only closing writer after Generic Stage C/D succeed. It therefore reuses the same persisted board refreshed by Stage C and the same Supabase external clock.
+and:
 
-Absence of either enable variable, any value other than the exact string `true`, or an invalid/missing week prevents the corresponding production action.
+`GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK=4`
 
-Changing these variables is an operational activation/change and requires separate Bobby authorization after the schedule-enablement PR is reviewed and merged.
+No second repository variable or second clock is required. The Hybrid stage does not create Hybrid predictions or alter Hybrid qualification. It only invokes the already-proven `capture-shadow-t30-closing-v1-2026.ts` append-only closing writer after Generic Stage C/D succeed, reusing the same persisted board refreshed by Stage C and the same Supabase external clock.
+
+Advancing the active Generic week away from 4 automatically disables Hybrid Stage E. Any future-week Hybrid closing automation requires a separate reviewed authorization.
 
 ## Source safety
 
@@ -96,7 +98,7 @@ Stage D:
 
 ## Optional Stage E — Hybrid T−30 closing
 
-When `HYBRID_SHADOW_T30_AUTOMATION_V1_ENABLED=true`, the same externally dispatched cycle runs the existing Hybrid Snapshot V1 closing writer after Generic Stage D.
+During Week 4, when the existing Generic automation gate is enabled and the active week equals 4, the same externally dispatched cycle runs the existing Hybrid Snapshot V1 closing writer after Generic Stage D.
 
 Stage E:
 
