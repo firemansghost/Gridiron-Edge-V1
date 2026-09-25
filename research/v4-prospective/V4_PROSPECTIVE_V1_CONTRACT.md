@@ -1,0 +1,203 @@
+# V4 Prospective V1 — Research Comparator Contract
+
+Status: **FROZEN FOR READ-ONLY PREVIEW IMPLEMENTATION**  
+Model identity: `v4_prospective_v1`  
+Season: 2026  
+Parent: #160  
+Implementation track: #167
+
+## Purpose
+
+`v4_prospective_v1` is a separately versioned **prospective comparator** for restoring the Hybrid/Super Tier A research lane without pretending the unrecoverable 2025 V4 feature snapshot can be reconstructed exactly.
+
+It is not historical V4, is not an official model, and is not authorized for persistence or betting use by this contract.
+
+## Initial Week 4 source frame
+
+- FBS population: 138 authoritative 2026 FBS teams.
+- Feature cutoff: completed Weeks **1–3 only**.
+- Week 4 game data is forbidden from feature construction.
+- Initial provider budget: **6 calls maximum**:
+  - `/stats/game/advanced`: Weeks 1, 2, 3.
+  - `/drives`: Weeks 1, 2, 3.
+- `/plays` is not part of V1. A future diagnostic requires separate authorization.
+- Raw provider payloads and digests must be retained in the preview artifact.
+
+## Historical math preserved
+
+The comparator preserves the actual historical V4 calculation behavior where recoverable:
+
+- Success Rate weight: 50%.
+- Explosiveness weight: 25%.
+- Finishing Drives weight: 15%.
+- Available Yards weight: 10%.
+- Offense and defense are z-scored separately.
+- Defensive direction conventions are preserved, including the historical V4 inversion applied to the already direction-adjusted defensive explosiveness grade.
+- Team net is offense component minus defense component.
+- Final team rating is:
+
+```
+rating = (netV4 - populationMeanNetV4) * 10
+```
+
+The historical implementation computed population net standard deviation for diagnostics but did **not** divide by it.
+
+Game spread convention:
+
+```
+v4Hma = homeRating + (neutral ? 0 : 2.0) - awayRating
+```
+
+Positive HMA means home favored.
+
+## Source semantics
+
+### Success Rate
+
+Source: CFBD `/stats/game/advanced`, Weeks 1–3 only.
+
+For each team:
+
+```
+success = sum(gameSuccessRate * gamePlays) / sum(gamePlays)
+```
+
+Offense and defense are aggregated independently.
+
+### Explosiveness
+
+Source: the same Week 1–3 advanced-game payload.
+
+Provider advanced-game explosiveness is weighted by estimated successful plays:
+
+```
+successfulPlays = successRate * plays
+explosiveness = sum(gameExplosiveness * successfulPlays) / sum(successfulPlays)
+```
+
+To preserve historical TeamUnitGrades/V4 direction behavior:
+
+- `offExplosivenessGrade = z(rawOffExplosiveness)`
+- `defExplosivenessGrade = -z(rawDefExplosiveness)`
+
+V4 then applies its historical second z-score/direction step to those grades.
+
+The persisted September 8, 2026 TeamUnitGrades snapshot remains provenance/reference evidence only. Its underlying efficiency-game source was Week 1 only and is not used as if it represented Weeks 1–3.
+
+### Finishing Drives
+
+Source: CFBD `/drives`, Weeks 1–3 only.
+
+Scoring-opportunity field-position logic preserves the legacy implementation:
+
+- use end yardline when available;
+- otherwise use start yardline + yards;
+- scoring opportunity when resulting 0–100 yardline is >= 60.
+
+The historical writer referenced an undocumented `drive.points` field. The current and historical Drive schema exposes start/end offense and defense scores instead. Therefore `v4_prospective_v1` explicitly defines:
+
+```
+driveOffensePoints = max(0, endOffenseScore - startOffenseScore)
+```
+
+This is a **new prospective source semantic**, not a claim about the missing historical V4 snapshot.
+
+For a team:
+
+```
+pointsPerScoringOpportunity =
+  sum(driveOffensePoints on qualifying drives) / qualifyingDriveCount
+```
+
+Defense receives the same opponent-drive values as points allowed per scoring opportunity.
+
+### Available Yards
+
+Source: CFBD `/drives`, Weeks 1–3 only.
+
+Preserve legacy calculation:
+
+```
+available = 100 - startYardline
+gained = max(0, drive.yards)
+pct = clamp(gained / available, 0, 1)
+```
+
+Use mean drive percentage independently for offense and defense.
+
+## Population / fail-closed rules
+
+The initial Week 4 frame is valid only if:
+
+- authoritative FBS count is exactly 138;
+- every FBS team maps to exactly one CFBD provider name;
+- every FBS team has finite offense and defense Success;
+- every FBS team has finite offense and defense Explosiveness;
+- every FBS team has finite offense and defense Finishing Drives;
+- every FBS team has finite offense and defense Available Yards.
+
+No missing value is silently zero-filled or mean-imputed.
+
+If the 138-team frame is incomplete, ratings are not considered preview-eligible.
+
+## Week 4 decision preview
+
+Prediction timestamp is the workflow observation time.
+
+For each Week 4 game:
+
+- if kickoff <= observation time: `POST_KICKOFF_UNAVAILABLE`;
+- otherwise select the newest persisted team-sided spread market at or before observation time;
+- market must be <= 30 minutes old;
+- no future-line fallback;
+- no market reconstruction.
+
+Decision:
+
+```
+edgeHma = v4Hma - marketHma
+absEdge = abs(edgeHma)
+
+absEdge < 0.1 -> VERIFIED_NO_SELECTION
+edgeHma >= 0.1 -> HOME
+edgeHma <= -0.1 -> AWAY
+```
+
+The preview must not be used retroactively to qualify Hybrid snapshots created before this comparator evidence exists.
+
+## Required artifact provenance
+
+The read-only preview artifact must include:
+
+- exact repository SHA;
+- observation timestamp;
+- provider-call ledger;
+- provider payload SHA-256 digests;
+- raw provider payloads;
+- 138-team mapping audit;
+- team raw features;
+- z-score summaries;
+- team comparator ratings;
+- Week 4 game decisions/unavailable reasons;
+- selected market-line provenance;
+- `safeToPersistComparator=false`;
+- `persistenceAuthorized=false`;
+- `superTierAActivationAuthorized=false`;
+- `historicalBackfillAuthorized=false`.
+
+## Explicitly not authorized
+
+This contract does not authorize:
+
+- TeamSeasonRating writes;
+- Bet writes;
+- Shadow capture writes;
+- Generic Shadow allowlist changes;
+- Super Tier A qualification activation;
+- Core V1 changes;
+- Hybrid V2 changes;
+- Official Card changes;
+- scheduled comparator automation;
+- retrospective Week 1–4 comparator decisions.
+
+Any persistence or activation requires a separate Bobby decision after the read-only preview is independently audited.
