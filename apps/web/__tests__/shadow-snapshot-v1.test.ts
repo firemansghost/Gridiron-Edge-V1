@@ -43,6 +43,52 @@ import {
 
 const NOW = new Date('2026-09-05T16:00:00.000Z');
 const KICKOFF = new Date('2026-09-05T19:00:00.000Z');
+const V4_CAPTURE_RUN_ID = 'v4-run-1';
+
+function v4SourceRun(extra: Record<string, unknown> = {}) {
+  return {
+    id: V4_CAPTURE_RUN_ID,
+    season: 2026,
+    week: 2,
+    captureContext: 'v4_source',
+    evaluationProtocol: 'CORE_EVAL_V1',
+    modelFamily: 'v4_prospective',
+    modelDefinitionId: 'v4_prospective_v1',
+    modelDefinitionHash: 'v4-model-hash',
+    featureDefinitionId: 'v4-feature',
+    featureDefinitionHash: 'v4-feature-hash',
+    policyDefinitionId: 'v4-policy',
+    policyDefinitionHash: 'v4-policy-hash',
+    captureTimestamp: new Date(NOW.getTime() - 60 * 60 * 1000),
+    status: 'COMPLETE',
+    ...extra,
+  };
+}
+
+function v4Prediction(
+  gameId: string,
+  selectedSide: 'HOME' | 'AWAY' | 'NO_SELECTION' | null,
+  extra: Record<string, unknown> = {}
+) {
+  return {
+    id: `v4-pred-${gameId}`,
+    captureRunId: V4_CAPTURE_RUN_ID,
+    gameId,
+    predictionTimestamp: new Date(NOW.getTime() - 60 * 60 * 1000),
+    predictionStatus: 'AVAILABLE',
+    unavailableReasons: [],
+    marketType: 'SPREAD',
+    selectedSide,
+    selectedTeamId:
+      selectedSide === 'HOME'
+        ? `${gameId}-home`
+        : selectedSide === 'AWAY'
+          ? `${gameId}-away`
+          : null,
+    ...extra,
+  };
+}
+
 const ZERO_GRADES = {
   offRunGrade: 0,
   defRunGrade: 0,
@@ -128,7 +174,8 @@ function availableFrame(gameId = 'g1', marketHma = 6): OperationalShadowFrame {
     ratings: [rating(g.homeTeamId, 5), rating(g.awayTeamId, 0)],
     unitGrades: [grades(g.homeTeamId), grades(g.awayTeamId)],
     marketLines: [homeMarket(gameId, marketHma)],
-    v4Bets: [],
+    v4SourceRun: v4SourceRun(),
+    v4Predictions: [],
   };
 }
 
@@ -205,6 +252,7 @@ function createMemoryAdapter(opts: {
           predictionStatus: s.predictionStatus,
           qualificationStatus: s.qualificationStatus,
           v4ComparisonStatus: s.v4ComparisonStatus,
+          v4Provenance: s.v4Provenance,
         })),
       };
       if (opts.corruptReadback) {
@@ -421,7 +469,8 @@ describe('inputs and unavailability', () => {
         [g.awayTeamId, grades(g.awayTeamId)],
       ]),
       marketLines: [homeMarket('g1', 2.5)],
-      v4Bets: [],
+      v4SourceRun: v4SourceRun(),
+      v4Predictions: [],
     });
     expect(snap.homeV1Rating).toBe(0);
     expect(snap.predictionStatus).toBe('AVAILABLE');
@@ -441,7 +490,8 @@ describe('inputs and unavailability', () => {
         [g.awayTeamId, grades(g.awayTeamId)],
       ]),
       marketLines: [homeMarket('g1', 6)],
-      v4Bets: [],
+      v4SourceRun: v4SourceRun(),
+      v4Predictions: [],
     });
     expect(snap.predictionStatus).toBe('UNAVAILABLE');
     expect(snap.unavailableReasons).toContain('missing_rating');
@@ -460,7 +510,8 @@ describe('inputs and unavailability', () => {
       ]),
       unitGradesByTeam: new Map([[g.homeTeamId, grades(g.homeTeamId)]]),
       marketLines: [homeMarket('g1', 6)],
-      v4Bets: [],
+      v4SourceRun: v4SourceRun(),
+      v4Predictions: [],
     });
     expect(snap.predictionStatus).toBe('UNAVAILABLE');
     expect(snap.unavailableReasons).toContain('missing_unit_grades');
@@ -475,6 +526,7 @@ describe('inputs and unavailability', () => {
       captureContext: 'friday_am',
       confirmation: '',
       repoCommitSha: 'a'.repeat(40),
+      v4CaptureRunId: V4_CAPTURE_RUN_ID,
       predictionTimestamp: NOW,
       frame: {
         ...availableFrame('g1', 6),
@@ -641,6 +693,7 @@ describe('selection, pick line, and qualification', () => {
       captureContext: 'friday_am',
       confirmation: '',
       repoCommitSha: 'a'.repeat(40),
+      v4CaptureRunId: V4_CAPTURE_RUN_ID,
       predictionTimestamp: NOW,
       frame: availableFrame('g1', 4),
     });
@@ -655,6 +708,7 @@ describe('selection, pick line, and qualification', () => {
       captureContext: 'friday_am',
       confirmation: '',
       repoCommitSha: 'a'.repeat(40),
+      v4CaptureRunId: V4_CAPTURE_RUN_ID,
       predictionTimestamp: NOW,
       frame: availableFrame('g1', 8),
     });
@@ -671,6 +725,7 @@ describe('selection, pick line, and qualification', () => {
       captureContext: 'friday_am',
       confirmation: '',
       repoCommitSha: 'a'.repeat(40),
+      v4CaptureRunId: V4_CAPTURE_RUN_ID,
       predictionTimestamp: NOW,
       frame: availableFrame('g1', 6),
     });
@@ -691,6 +746,7 @@ describe('selection, pick line, and qualification', () => {
       captureContext: 'friday_am',
       confirmation: '',
       repoCommitSha: 'a'.repeat(40),
+      v4CaptureRunId: V4_CAPTURE_RUN_ID,
       predictionTimestamp: NOW,
       frame: availableFrame('g1', 3),
     });
@@ -819,6 +875,7 @@ describe('selection, pick line, and qualification', () => {
 
   it('no V4 row does NOT become VERIFIED_NO_SELECTION', () => {
     const v4 = resolveV4Comparison({
+      sourceRun: v4SourceRun(),
       rows: [],
       gameId: 'g1',
       predictionTimestamp: NOW,
@@ -837,6 +894,7 @@ describe('run invariants', () => {
       captureContext: 'friday_am',
       confirmation: '',
       repoCommitSha: 'a'.repeat(40),
+      v4CaptureRunId: V4_CAPTURE_RUN_ID,
       predictionTimestamp: NOW,
       frame: {
         games: [game('g1'), game('g2')],
@@ -852,7 +910,8 @@ describe('run invariants', () => {
           grades('g2-away'),
         ],
         marketLines: [homeMarket('g1', 6)],
-        v4Bets: [],
+        v4SourceRun: v4SourceRun(),
+      v4Predictions: [],
       },
     });
     expect(plan.ok).toBe(true);
@@ -934,6 +993,7 @@ function validExistingCohort(extra: Partial<ExistingShadowCohort['run']> = {}): 
         predictionStatus: 'AVAILABLE',
         qualificationStatus: 'NOT_QUALIFIED',
         v4ComparisonStatus: 'PROVENANCE_UNAVAILABLE',
+        v4Provenance: { sourceCaptureRunId: V4_CAPTURE_RUN_ID },
       },
     ],
   };
@@ -946,6 +1006,7 @@ describe('existing cohort and atomic commit', () => {
       season: 2026,
       week: 2,
       captureContext: 'friday_am',
+      v4CaptureRunId: V4_CAPTURE_RUN_ID,
     })).toEqual([]);
     const { adapter, state } = createMemoryAdapter({
       frame: availableFrame('g1', 6),
@@ -958,6 +1019,7 @@ describe('existing cohort and atomic commit', () => {
       captureContext: 'friday_am',
       confirmation: expectedWriteConfirmation(2),
       repoCommitSha: 'a'.repeat(40),
+      v4CaptureRunId: V4_CAPTURE_RUN_ID,
       adapter,
     });
     expect(result.execution.transactionalIdempotentNoOp).toBe(true);
@@ -974,6 +1036,7 @@ describe('existing cohort and atomic commit', () => {
       season: 2026,
       week: 2,
       captureContext: 'friday_am',
+      v4CaptureRunId: V4_CAPTURE_RUN_ID,
     });
     expect(blockers).toContain('existing_qualification_status_missing');
     expect(blockers).not.toContain('existing_qualified_mismatch');
@@ -1009,6 +1072,7 @@ describe('existing cohort and atomic commit', () => {
       captureContext: 'friday_am',
       confirmation: expectedWriteConfirmation(2),
       repoCommitSha: 'a'.repeat(40),
+      v4CaptureRunId: V4_CAPTURE_RUN_ID,
       adapter,
     });
     expect({
@@ -1038,6 +1102,7 @@ describe('existing cohort and atomic commit', () => {
       captureContext: 'friday_am',
       confirmation: '',
       repoCommitSha: 'a'.repeat(40),
+      v4CaptureRunId: V4_CAPTURE_RUN_ID,
       adapter,
     });
     expect(result.execution.mutationsInvoked).toBe(false);
@@ -1079,6 +1144,7 @@ describe('existing cohort and atomic commit', () => {
       captureContext: 'friday_am',
       confirmation: expectedWriteConfirmation(2),
       repoCommitSha: 'a'.repeat(40),
+      v4CaptureRunId: V4_CAPTURE_RUN_ID,
       adapter,
     });
     expect(result.execution.rolledBack).toBe(true);
@@ -1097,6 +1163,7 @@ describe('existing cohort and atomic commit', () => {
       captureContext: 'friday_am',
       confirmation: expectedWriteConfirmation(2),
       repoCommitSha: 'a'.repeat(40),
+      v4CaptureRunId: V4_CAPTURE_RUN_ID,
       adapter,
     });
     expect(result.execution.commitSucceeded).toBe(true);
@@ -1119,6 +1186,7 @@ describe('existing cohort and atomic commit', () => {
       captureContext: 'friday_am',
       confirmation: expectedWriteConfirmation(2),
       repoCommitSha: 'a'.repeat(40),
+      v4CaptureRunId: V4_CAPTURE_RUN_ID,
       adapter,
     });
     expect(state.snapshots.map((s) => s.id)).toEqual(['id-2']);
@@ -1144,6 +1212,7 @@ describe('existing cohort and atomic commit', () => {
       captureContext: 'friday_am',
       confirmation: expectedWriteConfirmation(2),
       repoCommitSha: 'a'.repeat(40),
+      v4CaptureRunId: V4_CAPTURE_RUN_ID,
       adapter,
     });
     expect(result.execution.commitSucceeded).toBe(true);
@@ -1162,6 +1231,7 @@ describe('existing cohort and atomic commit', () => {
       captureContext: 'friday_am',
       confirmation: expectedWriteConfirmation(2),
       repoCommitSha: 'a'.repeat(40),
+      v4CaptureRunId: V4_CAPTURE_RUN_ID,
       adapter,
     });
     expect(result.execution.persistenceCommitted).toBe(true);
