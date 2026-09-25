@@ -80,6 +80,8 @@ describe('V4 prospective v1 preview workflow guardrails', () => {
     expect(cli).toContain('play-scoring-ledger.json');
     expect(cli).toContain('relevantDriveIdsMissingPlayCoverage');
     expect(cli).toContain('playScoringLedger.valid');
+    expect(cli).toContain('finalScoreValidation');
+    expect(cli).toContain('final_score_mismatch');
   });
 
   it('preserves the prospective versioning boundary and rejects drive score-state provenance', () => {
@@ -87,8 +89,11 @@ describe('V4 prospective v1 preview workflow guardrails', () => {
     expect(contract).toContain('retrospective Week 1–4 comparator decisions');
     expect(contract).toContain('startOffenseScore/endOffenseScore');
     expect(contract).toContain('are therefore **not used**');
-    expect(play).toContain('single_scoring_event_increment_gt_8');
-    expect(play).toContain('score_regression');
+    expect(play).toContain('unclassified_scoring_value');
+    expect(play).toContain('ambiguous_scoring_event');
+    expect(play).toContain('score_resolves_points');
+    expect(cli).toContain('finalScoreValidation.pass');
+    expect(contract).toContain('Game.homeScore/awayScore');
   });
 
   it('keeps missing provider numerics fail-closed rather than Number(null)=0', () => {
