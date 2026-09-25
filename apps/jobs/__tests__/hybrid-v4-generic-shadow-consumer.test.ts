@@ -58,6 +58,20 @@ describe('Hybrid V4 Generic Shadow consumer wiring', () => {
     expect(cli).not.toContain('fetch(');
   });
 
+
+  it('reads V4 provenance back before postwrite verification', () => {
+    const readRunStart = cli.indexOf('readRun: async (id: string)');
+    const evaluationCountStart = cli.indexOf(
+      'countEvaluationResultsForPredictionIds',
+      readRunStart
+    );
+    expect(readRunStart).toBeGreaterThanOrEqual(0);
+    expect(evaluationCountStart).toBeGreaterThan(readRunStart);
+    const readRunBlock = cli.slice(readRunStart, evaluationCountStart);
+    expect(readRunBlock).toContain('v4Provenance: true');
+    expect(lib).toContain('existing_v4_source_run_mismatch');
+  });
+
   it('keeps Super Tier A frozen and non-official', () => {
     expect(lib).toContain('SUPER_TIER_A_ABS_EDGE_THRESHOLD = 4.0');
     expect(lib).toContain("requiresHybridStrong: true");
