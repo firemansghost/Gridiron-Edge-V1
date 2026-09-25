@@ -293,7 +293,7 @@ Separately authorized COMMIT **35128215811** on SHA `60e5735c820dbd53e3f07de28d5
 
 The North Carolina @ Clemson NO_SELECTION is legitimate frozen-floor behavior (edge 0.0876 < 0.1). This cohort is **frozen evidence**. Do not rerun, replace, delete, overwrite, or backdate it. Full ledger: [`docs/2026-09-16-candidate-b-v1-first-prospective-closeout.md`](docs/2026-09-16-candidate-b-v1-first-prospective-closeout.md).
 
-Candidate B success proves evidence plumbing and establishes prospective research data. It does **not** prove predictive superiority and does **not** change Core V1 official status. Future Candidate B COMMITs require separate current operator authorization. No recurring Shadow schedule is authorized.
+Candidate B success proves evidence plumbing and establishes prospective research data. It does **not** prove predictive superiority and does **not** change Core V1 official status. Future Candidate B prediction COMMITs require separate current operator authorization. No recurring Shadow **prediction** schedule is authorized.
 
 ### T−30 closing layer
 
@@ -355,7 +355,7 @@ Generic T−30 recurring automation is authorized and active through the Supabas
 
 ## Deferred maintenance — separate workstreams
 
-These are real issues but are **not** blockers for current Week 3 operations:
+These are real issues but are **not** blockers for current Week 4 operations:
 
 - npm audit: **21 vulnerabilities** (2 low, 1 moderate, 17 high, 1 critical)
 - GitHub Actions Node 20 deprecation / Node 24 forcing warning on some actions
