@@ -30,6 +30,11 @@ import {
   type MappedAdvancedRow,
   type MappedDriveRow,
 } from './src/research/v4-prospective-v1';
+import {
+  buildPlayScoringLedger,
+  playDerivedDriveOffensePoints,
+  type ProspectivePlayScoreRow,
+} from './src/research/v4-prospective-v1-play-scoring';
 
 interface ProviderCallRecord {
   endpoint: string;
@@ -58,14 +63,28 @@ interface AdvancedRow {
 }
 
 interface DriveRow {
+  id?: string | number | null;
   gameId?: string | number | null;
   offense?: string | null;
   defense?: string | null;
   startYardline?: number | null;
   endYardline?: number | null;
   yards?: number | null;
-  startOffenseScore?: number | null;
-  endOffenseScore?: number | null;
+}
+
+interface PlayRow {
+  gameId?: string | number | null;
+  driveId?: string | number | null;
+  driveNumber?: number | null;
+  playNumber?: number | null;
+  period?: number | null;
+  offense?: string | null;
+  defense?: string | null;
+  home?: string | null;
+  away?: string | null;
+  offenseScore?: number | null;
+  defenseScore?: number | null;
+  scoring?: boolean | null;
 }
 
 function parseArgs(argv: string[]) {
@@ -294,9 +313,10 @@ async function main() {
     const rawFiles: Array<{ fileName: string; sha256: string; bytes: number }> = [];
     const advancedRaw: AdvancedRow[] = [];
     const drivesRaw: DriveRow[] = [];
+    const playsRaw: PlayRow[] = [];
 
     for (const week of V4_PROSPECTIVE_V1_COMPLETED_WEEKS) {
-      for (const endpoint of ['/stats/game/advanced', '/drives'] as const) {
+      for (const endpoint of ['/stats/game/advanced', '/drives', '/plays'] as const) {
         if (providerCalls.length >= V4_PROSPECTIVE_V1_PROVIDER_CALL_BUDGET) {
           throw new Error('provider call budget exceeded');
         }
@@ -311,12 +331,19 @@ async function main() {
               r.rows
             )
           );
-        } else {
+        } else if (endpoint === '/drives') {
           const r = await fetchCfbd<DriveRow>(baseUrl, apiKey, endpoint, week);
           providerCalls.push(r.call);
           drivesRaw.push(...r.rows);
           rawFiles.push(
             writeJson(args.outputDir, `cfbd-drives-week-${week}.json`, r.rows)
+          );
+        } else {
+          const r = await fetchCfbd<PlayRow>(baseUrl, apiKey, endpoint, week);
+          providerCalls.push(r.call);
+          playsRaw.push(...r.rows);
+          rawFiles.push(
+            writeJson(args.outputDir, `cfbd-plays-week-${week}.json`, r.rows)
           );
         }
       }
@@ -357,8 +384,52 @@ async function main() {
       });
     }
 
+    const relevantGameIds = new Set<string>();
+    for (const row of drivesRaw) {
+      const offenseKey = keyName(row.offense);
+      const defenseKey = keyName(row.defense);
+      const offenseMapped = offenseKey
+        ? providerToInternal.get(offenseKey)
+        : undefined;
+      const defenseMapped = defenseKey
+        ? providerToInternal.get(defenseKey)
+        : undefined;
+      if (
+        (offenseMapped && fbsSet.has(offenseMapped)) ||
+        (defenseMapped && fbsSet.has(defenseMapped))
+      ) {
+        const gameId = text(row.gameId);
+        if (gameId) relevantGameIds.add(gameId);
+      }
+    }
+
+    const relevantPlayRows: ProspectivePlayScoreRow[] = playsRaw
+      .filter((row) => {
+        const gameId = text(row.gameId);
+        return gameId !== null && relevantGameIds.has(gameId);
+      })
+      .map((row) => ({
+        gameId: text(row.gameId) ?? '',
+        driveId: text(row.driveId),
+        driveNumber: finite(row.driveNumber),
+        playNumber: finite(row.playNumber),
+        period: finite(row.period),
+        offense: text(row.offense),
+        defense: text(row.defense),
+        home: text(row.home),
+        away: text(row.away),
+        offenseScore: finite(row.offenseScore),
+        defenseScore: finite(row.defenseScore),
+        scoring: row.scoring === true,
+      }));
+    const playScoringLedger = buildPlayScoringLedger(relevantPlayRows);
+    const playDriveIdSet = new Set(playScoringLedger.playDriveIds);
+
     const mappedDrives: MappedDriveRow[] = [];
     let driveRowsWithUnmappedFbsSide = 0;
+    let relevantDriveRows = 0;
+    let relevantDriveIdsMissingPlayCoverage = 0;
+
     for (const row of drivesRaw) {
       const offenseKey = keyName(row.offense);
       const defenseKey = keyName(row.defense);
@@ -372,20 +443,30 @@ async function main() {
         offenseMapped ?? `provider:${offenseKey ?? 'unknown-offense'}`;
       const defenseTeamId =
         defenseMapped ?? `provider:${defenseKey ?? 'unknown-defense'}`;
-      if (
-        (offenseMapped && fbsSet.has(offenseMapped)) ||
-        (defenseMapped && fbsSet.has(defenseMapped))
-      ) {
+      const driveId = text(row.id);
+      const isRelevant =
+        Boolean(offenseMapped && fbsSet.has(offenseMapped)) ||
+        Boolean(defenseMapped && fbsSet.has(defenseMapped));
+
+      if (isRelevant) {
+        relevantDriveRows += 1;
         if (!offenseMapped || !defenseMapped) driveRowsWithUnmappedFbsSide += 1;
+        if (!driveId || !playDriveIdSet.has(driveId)) {
+          relevantDriveIdsMissingPlayCoverage += 1;
+        }
       }
+
       mappedDrives.push({
         offenseTeamId,
         defenseTeamId,
         startYardline: finite(row.startYardline),
         endYardline: finite(row.endYardline),
         yards: finite(row.yards),
-        startOffenseScore: finite(row.startOffenseScore),
-        endOffenseScore: finite(row.endOffenseScore),
+        offensePointsFromPlays: playDerivedDriveOffensePoints({
+          ledger: playScoringLedger,
+          driveId,
+          offenseProviderTeam: text(row.offense),
+        }),
       });
     }
 
@@ -406,6 +487,8 @@ async function main() {
       mappingConflicts.length === 0 &&
       providerCalls.length === V4_PROSPECTIVE_V1_PROVIDER_CALL_BUDGET &&
       providerCalls.every((c) => c.ok) &&
+      playScoringLedger.valid &&
+      relevantDriveIdsMissingPlayCoverage === 0 &&
       combined.missingTeamIds.length === 0;
 
     let ratingResult: ReturnType<typeof buildV4ProspectiveRatings> | null = null;
@@ -550,6 +633,11 @@ async function main() {
       'provider-calls.json',
       providerCalls
     );
+    const scoringLedgerFile = writeJson(
+      args.outputDir,
+      'play-scoring-ledger.json',
+      playScoringLedger
+    );
     const featuresFile = writeJson(
       args.outputDir,
       'team-features.json',
@@ -567,7 +655,7 @@ async function main() {
     );
 
     const payloadDigests = Object.fromEntries(
-      [...rawFiles, callsFile, featuresFile, ratingsFile, previewFile].map(
+      [...rawFiles, callsFile, scoringLedgerFile, featuresFile, ratingsFile, previewFile].map(
         (f) => [f.fileName, f.sha256]
       )
     );
@@ -599,6 +687,19 @@ async function main() {
         advancedUnmappedProviderRows,
         driveRawRows: drivesRaw.length,
         driveRowsWithUnmappedFbsSide,
+        relevantDriveRows,
+        relevantDriveIdsMissingPlayCoverage,
+        playRawRows: playsRaw.length,
+        relevantPlayRows: relevantPlayRows.length,
+        playScoringLedger: {
+          valid: playScoringLedger.valid,
+          playDriveIds: playScoringLedger.playDriveIds.length,
+          scoringRows: playScoringLedger.scoringRows,
+          validScoringEvents: playScoringLedger.validScoringEvents,
+          invalidScoringEvents: playScoringLedger.invalidScoringEvents,
+          maxSingleTeamIncrement: playScoringLedger.maxSingleTeamIncrement,
+          invalidEvents: playScoringLedger.invalidEvents,
+        },
       },
       frameComplete,
       missingTeamIds: combined.missingTeamIds,
@@ -642,7 +743,7 @@ async function main() {
         {
           report,
           reportArtifact: reportFile,
-          files: [...rawFiles, callsFile, featuresFile, ratingsFile, previewFile],
+          files: [...rawFiles, callsFile, scoringLedgerFile, featuresFile, ratingsFile, previewFile],
         },
         null,
         2
