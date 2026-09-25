@@ -102,20 +102,27 @@ The first live preview proved current `/drives` `startOffenseScore/endOffenseSco
 Play scoring contract:
 
 1. Use all play rows for FBS-relevant games and preserve `driveId`.
-2. Use rows marked `scoring=true` to build a fixed home/away cumulative scoreboard.
-3. Convert each scoring row from offense/defense score orientation into home/away score orientation.
-4. Order scoring rows by period, drive number, then play number.
-5. For each scoring event:
-   - scores must be finite nonnegative integers;
-   - neither team score may regress;
-   - exactly one team must gain points;
-   - a single team increment must be between 1 and 8 points.
-6. Credit the positive score increment to that team and that scoring row's `driveId`.
-7. A drive's offense points are the points credited to the drive offense team on that drive.
-   - a defensive-return touchdown on the drive therefore contributes 0 offensive points;
-   - a non-scoring drive contributes 0 points.
-8. Every FBS-relevant drive must have matching play-level `driveId` coverage.
-9. Any invalid scoring event or missing FBS-relevant drive/play identity fails the full comparator frame closed.
+2. Only rows marked `scoring=true` are treated as scoring events.
+3. Point value is derived from play semantics, not cumulative score deltas:
+   - made field goal = 3;
+   - safety = 2;
+   - standalone two-point conversion = 2;
+   - touchdown = 6 plus explicitly successful PAT/two-point result when documented;
+   - failed PAT/two-point attempt contributes 0 extra;
+   - when a touchdown row mentions a two-point try without an explicit result, allowed point candidates are {6,8} and provider score state may resolve the ambiguity.
+4. Scoring side is derived from play semantics:
+   - ordinary offensive TD/FG/conversion => offense;
+   - interception/fumble/block/kick/punt return TD and defensive conversion => defense;
+   - provider-ambiguous safety and `Fumble Recovery (Own)` rows may use score-direction only to resolve which team scored.
+5. Regulation scoring rows are ordered by period then game clock descending. Overtime uses provider wallclock, then drive/play order as fallback.
+6. Cumulative provider score state is **not** the point-value source. It is used only as a tie-breaker/consistency signal.
+7. Any event whose value or scorer remains ambiguous fails the frame closed.
+8. Credit the resolved event points to scoring team + `driveId`.
+9. A drive's offense points are the points credited to the drive offense team:
+   - defensive-return TD on that drive therefore contributes 0 offensive points;
+   - non-scoring drive contributes 0 points.
+10. Every FBS-relevant drive must have matching play-level `driveId` coverage.
+11. The reconstructed final score for every completed Week 1–3 FBS game must exactly equal the persisted `Game.homeScore/awayScore` result after provider/internal home-away mapping. Any mismatch fails the full frame closed.
 
 For a team:
 
@@ -190,7 +197,7 @@ The read-only preview artifact must include:
 - provider-call ledger;
 - provider payload SHA-256 digests;
 - raw advanced, drive, and play provider payloads;
-- play scoring ledger with scoreboard/drive-ID diagnostics;
+- play scoring ledger with semantic-event, score-state mismatch, drive-ID, and final-score validation diagnostics;
 - 138-team mapping audit;
 - team raw features;
 - z-score summaries;
