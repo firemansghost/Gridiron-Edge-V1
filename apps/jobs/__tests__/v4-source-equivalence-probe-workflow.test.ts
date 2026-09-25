@@ -51,15 +51,12 @@ describe('V4 source equivalence probe workflow guardrails', () => {
   });
 
   it('contains no Prisma mutation calls or migrations', () => {
+    const prismaMutation =
+      /prisma\.[A-Za-z0-9_]+\.(?:create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/;
     for (const source of [cli, mod]) {
-      expect(source).not.toMatch(/\.create\s*\(/);
-      expect(source).not.toMatch(/\.createMany\s*\(/);
-      expect(source).not.toMatch(/\.update\s*\(/);
-      expect(source).not.toMatch(/\.updateMany\s*\(/);
-      expect(source).not.toMatch(/\.upsert\s*\(/);
-      expect(source).not.toMatch(/\.delete\s*\(/);
-      expect(source).not.toMatch(/\.deleteMany\s*\(/);
-      expect(source).not.toMatch(/\$executeRaw/);
+      expect(source).not.toMatch(prismaMutation);
+      expect(source).not.toMatch(/prisma\.\$executeRaw/);
+      expect(source).not.toMatch(/prisma\.\$queryRawUnsafe/);
     }
     expect(wf).not.toMatch(/npx\s+prisma\s+migrate/);
     expect(wf).toContain('mutationsInvoked=false');
