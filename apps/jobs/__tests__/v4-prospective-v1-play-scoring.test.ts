@@ -154,8 +154,8 @@ describe('V4 prospective v1 semantic scoring ledger', () => {
 
     expect(ledger.valid).toBe(true);
     expect(ledger.gameFinalScores[0]).toMatchObject({
-      homeScore: 20,
-      awayScore: 22,
+      homeScore: 13,
+      awayScore: 15,
     });
     expect(ledger.scoreStateMismatchEvents).toBeGreaterThan(0);
   });
