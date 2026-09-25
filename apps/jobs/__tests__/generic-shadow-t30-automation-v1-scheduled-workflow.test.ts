@@ -29,6 +29,7 @@ describe('Generic Shadow T-30 Automation V1 external-clock coordinator', () => {
     expect(wf).not.toMatch(/cron:\s*['\"]2-59\/5 \* \* \* \*['\"]/m);
     expect(wf).toContain("vars.GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED == 'true'");
     expect(wf).toContain('vars.GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK');
+    expect(wf).toContain("vars.HYBRID_SHADOW_T30_AUTOMATION_V1_ENABLED == 'true'");
     expect(runbook).toContain('Supabase external clock is the sole recurring scheduler');
   });
 
@@ -64,6 +65,16 @@ describe('Generic Shadow T-30 Automation V1 external-clock coordinator', () => {
     expect(wf).toContain('Stage D providerCalls=0');
   });
 
+  it('adds Hybrid closing only behind its own gate and keeps it provider-free', () => {
+    const hybrid = stepBlock(wf, 'Stage E optional Hybrid T-30 closing COMMIT/no-op');
+    expect(hybrid).toContain("vars.HYBRID_SHADOW_T30_AUTOMATION_V1_ENABLED == 'true'");
+    expect(hybrid).toContain('capture-shadow-t30-closing-v1-2026.ts');
+    expect(hybrid).toContain('CAPTURE_2026_WEEK_${INPUT_WEEK}_T30_CLOSING_V1');
+    expect(hybrid).toContain('--mode COMMIT');
+    expect(hybrid).toContain('ODDS_API_KEY: not provided');
+    expect(hybrid).not.toContain('secrets.ODDS_API_KEY');
+  });
+
   it('does not create predictions or invoke unrelated writers', () => {
     expect(wf).not.toContain('capture-shadow-model-predictions-2026.ts');
     expect(wf).not.toContain('write-core-v1-weekly-card');
@@ -72,7 +83,7 @@ describe('Generic Shadow T-30 Automation V1 external-clock coordinator', () => {
     expect(wf).not.toContain('prisma migrate dev');
     expect(wf).not.toContain('prisma db push');
     expect(wf).toContain('prediction/capture-run writes: false');
-    expect(wf).toContain('Hybrid writes: false');
+    expect(wf).toContain('Hybrid prediction writes: false');
     expect(wf).toContain('Bet writes: false');
     expect(wf).toContain('evaluation writes: false');
   });
@@ -88,6 +99,9 @@ describe('Generic Shadow T-30 Automation V1 external-clock coordinator', () => {
     expect(report).toContain('providerCallsAttempted');
     expect(report).toContain('triggerEvent');
     expect(report).toContain('closingRowsInserted');
+    expect(report).toContain('hybridClosingRowsInserted');
+    expect(report).toContain('hybridClosingVerificationOk');
+    expect(report).toContain('stageEHybridClosingReport');
     expect(report).toContain('mutationTargetsInvoked');
     expect(upload).toContain('if: always()');
     expect(report).toContain('SCHEDULED-CYCLE.json');
