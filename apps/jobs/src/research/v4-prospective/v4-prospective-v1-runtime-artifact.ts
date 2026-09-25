@@ -88,7 +88,12 @@ export function loadV4ProspectiveRuntimeArtifact(): V4ProspectiveRuntimeArtifact
     computedArtifactHash !== V4_PROSPECTIVE_RUNTIME_ARTIFACT_HASH ||
     artifact.artifactHash !== V4_PROSPECTIVE_RUNTIME_ARTIFACT_HASH
   ) {
-    throw new Error('v4_prospective_runtime_artifact_hash_mismatch');
+    throw new Error(
+      'v4_prospective_runtime_artifact_hash_mismatch:' +
+        computedArtifactHash +
+        ':expected:' +
+        V4_PROSPECTIVE_RUNTIME_ARTIFACT_HASH
+    );
   }
   return artifact;
 }
