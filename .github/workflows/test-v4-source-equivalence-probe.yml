@@ -1,0 +1,70 @@
+# Validation-only CI for the V4 source-equivalence provider probe.
+# No DB, no secrets, no provider calls, no production writes.
+
+name: Test V4 Source Equivalence Probe
+
+on:
+  pull_request:
+    paths:
+      - 'apps/jobs/src/research/v4-source-equivalence-probe.ts'
+      - 'apps/jobs/audit-v4-source-equivalence-probe-2026.ts'
+      - 'apps/jobs/__tests__/v4-source-equivalence-probe*.test.ts'
+      - '.github/workflows/audit-v4-source-equivalence-probe-2026.yml'
+      - '.github/workflows/test-v4-source-equivalence-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  targeted-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run source-equivalence tests
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/v4-source-equivalence-probe.test.ts \
+            apps/jobs/__tests__/v4-source-equivalence-probe-workflow.test.ts
+
+      - name: Missing-secret CLI smoke check
+        run: |
+          set +e
+          OUTPUT=$(DIRECT_URL='' CFBD_API_KEY='' npx tsx apps/jobs/audit-v4-source-equivalence-probe-2026.ts \
+            --season 2026 2>&1)
+          STATUS=$?
+          set -e
+          echo "$OUTPUT"
+          if [ "$STATUS" -eq 0 ]; then
+            echo "::error::Expected probe to fail closed without DIRECT_URL."
+            exit 1
+          fi
+          echo "$OUTPUT" | grep -F "DIRECT_URL required"
+
+      - name: Invalid-season CLI smoke check
+        run: |
+          set +e
+          OUTPUT=$(DIRECT_URL='postgresql://invalid' CFBD_API_KEY='test-only' \
+            npx tsx apps/jobs/audit-v4-source-equivalence-probe-2026.ts \
+            --season 2025 2>&1)
+          STATUS=$?
+          set -e
+          echo "$OUTPUT"
+          if [ "$STATUS" -eq 0 ]; then
+            echo "::error::Expected invalid season to fail before DB/provider access."
+            exit 1
+          fi
+          echo "$OUTPUT" | grep -F "season must equal 2026"
