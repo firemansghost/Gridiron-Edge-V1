@@ -13,6 +13,7 @@ import {
 import type { OperationalShadowModelFrame } from '../../web/lib/shadow-model-capture-v1';
 import { CANDIDATE_B_GENERIC_SHADOW_MODEL_ID } from './research/candidate-b/candidate-b-v1-shadow-adapter';
 import { CANDIDATE_B_ELO_GENERIC_SHADOW_MODEL_ID } from './research/candidate-b/candidate-b-elo-prior-v1-shadow-adapter';
+import { V4_PROSPECTIVE_GENERIC_SHADOW_MODEL_ID } from './research/v4-prospective/v4-prospective-v1-shadow-adapter';
 import {
   loadCandidateBPersistedSnapshotBySnapshotHash,
   type CandidateBPersistedSnapshotDb,
@@ -157,7 +158,10 @@ export async function loadOperationalShadowModelFrame(
     };
   }
 
-  if (args.modelDefinitionId === CANDIDATE_B_ELO_GENERIC_SHADOW_MODEL_ID) {
+  if (
+    args.modelDefinitionId === CANDIDATE_B_ELO_GENERIC_SHADOW_MODEL_ID ||
+    args.modelDefinitionId === V4_PROSPECTIVE_GENERIC_SHADOW_MODEL_ID
+  ) {
     return {
       games,
       ratings: [],
