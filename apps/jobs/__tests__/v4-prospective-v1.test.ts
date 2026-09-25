@@ -15,8 +15,8 @@ import {
 } from '../src/research/v4-prospective-v1';
 
 describe('V4 prospective v1 research comparator', () => {
-  it('freezes the six-call budget and historical weight skeleton', () => {
-    expect(V4_PROSPECTIVE_V1_PROVIDER_CALL_BUDGET).toBe(6);
+  it('freezes the nine-call budget and historical weight skeleton', () => {
+    expect(V4_PROSPECTIVE_V1_PROVIDER_CALL_BUDGET).toBe(9);
     expect(V4_PROSPECTIVE_V1_EXPECTED_FBS).toBe(138);
     expect(V4_PROSPECTIVE_V1_WEIGHTS).toEqual({
       success: 0.5,
@@ -41,16 +41,30 @@ describe('V4 prospective v1 research comparator', () => {
     ]);
     expect(result[0].offSuccess).toBeCloseTo(60 / 150, 12);
     expect(result[0].defSuccess).toBeCloseTo(30 / 100, 12);
-    expect(result[0].rawOffExplosiveness).toBeCloseTo((1.2 * 50 + 2.0 * 10) / 60, 12);
-    expect(result[0].rawDefExplosiveness).toBeCloseTo((0.8 * 20 + 1.6 * 10) / 30, 12);
+    expect(result[0].rawOffExplosiveness).toBeCloseTo(
+      (1.2 * 50 + 2.0 * 10) / 60,
+      12
+    );
+    expect(result[0].rawDefExplosiveness).toBeCloseTo(
+      (0.8 * 20 + 1.6 * 10) / 30,
+      12
+    );
   });
 
   it('never converts missing advanced numerics to zero', () => {
     const result = aggregateAdvancedFeatures(['a'], [
       {
         teamId: 'a',
-        offense: { plays: null as unknown as number, successRate: null as unknown as number, explosiveness: null as unknown as number },
-        defense: { plays: null as unknown as number, successRate: null as unknown as number, explosiveness: null as unknown as number },
+        offense: {
+          plays: null as unknown as number,
+          successRate: null as unknown as number,
+          explosiveness: null as unknown as number,
+        },
+        defense: {
+          plays: null as unknown as number,
+          successRate: null as unknown as number,
+          explosiveness: null as unknown as number,
+        },
       },
     ]);
     expect(result[0].offSuccess).toBeNull();
@@ -59,7 +73,7 @@ describe('V4 prospective v1 research comparator', () => {
     expect(result[0].rawDefExplosiveness).toBeNull();
   });
 
-  it('preserves the legacy scoring-opportunity and available-yards rules', () => {
+  it('preserves legacy scoring-opportunity and available-yards rules', () => {
     expect(
       legacyScoringOpportunity({
         startYardline: 20,
@@ -75,7 +89,7 @@ describe('V4 prospective v1 research comparator', () => {
     ).toBeCloseTo(0.5, 12);
   });
 
-  it('derives prospective drive points from offense score delta and fails closed when absent', () => {
+  it('uses only play-derived drive points and fails closed when absent', () => {
     expect(
       prospectiveDriveOffensePoints({
         offenseTeamId: 'a',
@@ -83,8 +97,7 @@ describe('V4 prospective v1 research comparator', () => {
         startYardline: 20,
         endYardline: 100,
         yards: 80,
-        startOffenseScore: 7,
-        endOffenseScore: 14,
+        offensePointsFromPlays: 7,
       })
     ).toBe(7);
     expect(
@@ -94,13 +107,12 @@ describe('V4 prospective v1 research comparator', () => {
         startYardline: 20,
         endYardline: 80,
         yards: 60,
-        startOffenseScore: null,
-        endOffenseScore: null,
+        offensePointsFromPlays: null,
       })
     ).toBeNull();
   });
 
-  it('aggregates offense and defense drive features from the same drive evidence', () => {
+  it('aggregates offense and defense finishing from the same play-derived drive points', () => {
     const rows = aggregateDriveFeatures(['a', 'b'], [
       {
         offenseTeamId: 'a',
@@ -108,16 +120,38 @@ describe('V4 prospective v1 research comparator', () => {
         startYardline: 20,
         endYardline: 70,
         yards: 50,
-        startOffenseScore: 0,
-        endOffenseScore: 7,
+        offensePointsFromPlays: 7,
       },
     ]);
     const a = rows.find((r) => r.teamId === 'a')!;
     const b = rows.find((r) => r.teamId === 'b')!;
     expect(a.offFinishing).toBe(7);
     expect(b.defFinishing).toBe(7);
+    expect(a.offScoringOppsMissingPoints).toBe(0);
+    expect(b.defScoringOppsMissingPoints).toBe(0);
     expect(a.offAvailableYardsPct).toBeCloseTo(50 / 80, 12);
     expect(b.defAvailableYardsPct).toBeCloseTo(50 / 80, 12);
+  });
+
+  it('keeps a qualifying drive in the denominator and fails finishing closed when its points are unknown', () => {
+    const rows = aggregateDriveFeatures(['a', 'b'], [
+      {
+        offenseTeamId: 'a',
+        defenseTeamId: 'b',
+        startYardline: 20,
+        endYardline: 70,
+        yards: 50,
+        offensePointsFromPlays: null,
+      },
+    ]);
+    const a = rows.find((r) => r.teamId === 'a')!;
+    const b = rows.find((r) => r.teamId === 'b')!;
+    expect(a.offScoringOpps).toBe(1);
+    expect(b.defScoringOpps).toBe(1);
+    expect(a.offScoringOppsMissingPoints).toBe(1);
+    expect(b.defScoringOppsMissingPoints).toBe(1);
+    expect(a.offFinishing).toBeNull();
+    expect(b.defFinishing).toBeNull();
   });
 
   it('marks a team incomplete rather than imputing a missing drive feature', () => {
@@ -158,6 +192,8 @@ describe('V4 prospective v1 research comparator', () => {
         defAvailableYardsPct: 0.4 - i * 0.001,
         offScoringOpps: 3,
         defScoringOpps: 3,
+        offScoringOppsMissingPoints: 0,
+        defScoringOppsMissingPoints: 0,
         offAvailableDrives: 10,
         defAvailableDrives: 10,
         offExplosivenessGrade: -1 + i * 0.02,
@@ -188,8 +224,14 @@ describe('V4 prospective v1 research comparator', () => {
         neutralSite: true,
       })
     ).toBe(5);
-    expect(v4ProspectiveDecision({ v4Hma: 6, marketHma: 3 }).side).toBe('HOME');
-    expect(v4ProspectiveDecision({ v4Hma: 1, marketHma: 3 }).side).toBe('AWAY');
-    expect(v4ProspectiveDecision({ v4Hma: 3.05, marketHma: 3 }).side).toBe('NO_SELECTION');
+    expect(v4ProspectiveDecision({ v4Hma: 6, marketHma: 3 }).side).toBe(
+      'HOME'
+    );
+    expect(v4ProspectiveDecision({ v4Hma: 1, marketHma: 3 }).side).toBe(
+      'AWAY'
+    );
+    expect(v4ProspectiveDecision({ v4Hma: 3.05, marketHma: 3 }).side).toBe(
+      'NO_SELECTION'
+    );
   });
 });
