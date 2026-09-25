@@ -885,6 +885,101 @@ describe('selection, pick line, and qualification', () => {
   });
 });
 
+
+describe('V4 Generic Shadow provenance mapping', () => {
+  it('maps AVAILABLE HOME/AWAY to SIDE_AVAILABLE with exact run provenance', () => {
+    const v4 = resolveV4Comparison({
+      sourceRun: v4SourceRun(),
+      rows: [v4Prediction('g1', 'AWAY')],
+      gameId: 'g1',
+      predictionTimestamp: NOW,
+    });
+    expect(v4.v4ComparisonStatus).toBe('SIDE_AVAILABLE');
+    expect(v4.v4ComparisonSide).toBe('AWAY');
+    expect(v4.v4Provenance).toEqual(
+      expect.objectContaining({
+        source: 'generic_shadow_capture_run',
+        sourceCaptureRunId: V4_CAPTURE_RUN_ID,
+        sourcePredictionId: 'v4-pred-g1',
+        sourceSelectedSide: 'AWAY',
+        legacyBetSourceUsed: false,
+      })
+    );
+  });
+
+  it('maps AVAILABLE NO_SELECTION to VERIFIED_NO_SELECTION', () => {
+    const v4 = resolveV4Comparison({
+      sourceRun: v4SourceRun(),
+      rows: [v4Prediction('g1', 'NO_SELECTION')],
+      gameId: 'g1',
+      predictionTimestamp: NOW,
+    });
+    expect(v4.v4ComparisonStatus).toBe('VERIFIED_NO_SELECTION');
+    expect(v4.v4ComparisonSide).toBeNull();
+    expect(v4.v4Provenance.sourceCaptureRunId).toBe(V4_CAPTURE_RUN_ID);
+  });
+
+  it('maps source UNAVAILABLE to PROVENANCE_UNAVAILABLE without synthesizing a side', () => {
+    const v4 = resolveV4Comparison({
+      sourceRun: v4SourceRun(),
+      rows: [
+        v4Prediction('g1', null, {
+          predictionStatus: 'UNAVAILABLE',
+          unavailableReasons: ['post_kickoff'],
+        }),
+      ],
+      gameId: 'g1',
+      predictionTimestamp: NOW,
+    });
+    expect(v4.v4ComparisonStatus).toBe('PROVENANCE_UNAVAILABLE');
+    expect(v4.v4ComparisonSide).toBeNull();
+    expect(v4.v4Provenance).toEqual(
+      expect.objectContaining({
+        sourceCaptureRunId: V4_CAPTURE_RUN_ID,
+        sourcePredictionStatus: 'UNAVAILABLE',
+        sourceUnavailableReasons: ['post_kickoff'],
+        reason: 'source_prediction_unavailable',
+      })
+    );
+  });
+
+  it('rejects a V4 source run captured after the Hybrid prediction timestamp', () => {
+    const frame = availableFrame('g1', 6);
+    frame.v4SourceRun = v4SourceRun({
+      captureTimestamp: new Date(NOW.getTime() + 1000),
+    });
+    const plan = planShadowCaptureRun({
+      season: 2026,
+      week: 2,
+      mode: 'PREVIEW',
+      captureContext: 'friday_am',
+      confirmation: '',
+      repoCommitSha: 'a'.repeat(40),
+      v4CaptureRunId: V4_CAPTURE_RUN_ID,
+      predictionTimestamp: NOW,
+      frame,
+    });
+    expect(plan.writeSafe).toBe(false);
+    expect(plan.writeBlockers).toContain('v4_source_run_after_hybrid_prediction');
+  });
+
+  it('rejects a frame whose exact V4 run id differs from the requested id', () => {
+    const plan = planShadowCaptureRun({
+      season: 2026,
+      week: 2,
+      mode: 'PREVIEW',
+      captureContext: 'friday_am',
+      confirmation: '',
+      repoCommitSha: 'a'.repeat(40),
+      v4CaptureRunId: 'different-v4-run',
+      predictionTimestamp: NOW,
+      frame: availableFrame('g1', 6),
+    });
+    expect(plan.writeSafe).toBe(false);
+    expect(plan.writeBlockers).toContain('v4_source_run_id_mismatch');
+  });
+});
+
 describe('run invariants', () => {
   it('reconciles available/unavailable/qualification/v4 counts', () => {
     const plan = planShadowCaptureRun({
@@ -1029,6 +1124,30 @@ describe('existing cohort and atomic commit', () => {
     expect(state.snapshots).toHaveLength(0);
   });
 
+  it('same Hybrid cohort context cannot no-op against a different V4 source run', async () => {
+    const existing = validExistingCohort();
+    const { adapter, state } = createMemoryAdapter({
+      frame: availableFrame('g1', 6),
+      existing,
+    });
+    const result = await executeShadowCapture({
+      season: 2026,
+      week: 2,
+      mode: 'COMMIT',
+      captureContext: 'friday_am',
+      confirmation: expectedWriteConfirmation(2),
+      repoCommitSha: 'a'.repeat(40),
+      v4CaptureRunId: 'different-v4-run',
+      adapter,
+    });
+    expect(result.execution.transactionalIdempotentNoOp).toBe(false);
+    expect(result.plan.writeSafe).toBe(false);
+    expect(result.plan.writeBlockers).toContain('existing_v4_source_run_mismatch');
+    expect(result.execution.mutationsInvoked).toBe(false);
+    expect(state.runs).toHaveLength(0);
+    expect(state.snapshots).toHaveLength(0);
+  });
+
   it('existing COMPLETE with null qualification is malformed, not synthesized', () => {
     const existing = validExistingCohort();
     existing.snapshots[0].qualificationStatus = null;
@@ -1050,6 +1169,7 @@ describe('existing cohort and atomic commit', () => {
         season: 2026,
         week: 2,
         captureContext: 'friday_am',
+        v4CaptureRunId: V4_CAPTURE_RUN_ID,
       })
     ).toContain('existing_v4_comparison_status_missing');
   });
