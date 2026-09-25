@@ -22,7 +22,7 @@ The first prospective comparator frame is the independently audited Week 4 sourc
 - source artifact: 10843139601
 - source artifact archive SHA-256: ab28291fe102335abf1b3af6960ab5251bc51b74d4608a62e9ad3da8464ec0df
 - team-ratings.json SHA-256: 4ed8926cf27be4c5f2914613b134d7c4ec3d4a8205e403d671189effca68fd07
-- runtime artifact hash: 0c1fddf9e1d08a308887024c86c8be5a34aa3aa5bae16e53fe3dc2cb3edb0a33
+- runtime artifact hash: e8b8490018572171906896c17cdcdab883d9c4727b0575591ab311e5062f95d0
 - team count: 138
 - reconstructed final validation: 157/157 exact
 - scoring rows: 2378
