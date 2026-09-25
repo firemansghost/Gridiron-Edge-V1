@@ -17,10 +17,11 @@ It is not historical V4, is not an official model, and is not authorized for per
 - FBS population: 138 authoritative 2026 FBS teams.
 - Feature cutoff: completed Weeks **1–3 only**.
 - Week 4 game data is forbidden from feature construction.
-- Initial provider budget: **6 calls maximum**:
+- Initial provider budget: **9 calls maximum**:
   - `/stats/game/advanced`: Weeks 1, 2, 3.
   - `/drives`: Weeks 1, 2, 3.
-- `/plays` is not part of V1. A future diagnostic requires separate authorization.
+  - `/plays`: Weeks 1, 2, 3.
+- The first six-call preview on 2026-09-24 is retained as failed source-audit evidence because current `/drives` score-state fields produced impossible single-drive score deltas.
 - Raw provider payloads and digests must be retained in the preview artifact.
 
 ## Historical math preserved
@@ -86,7 +87,9 @@ The persisted September 8, 2026 TeamUnitGrades snapshot remains provenance/refer
 
 ### Finishing Drives
 
-Source: CFBD `/drives`, Weeks 1–3 only.
+Sources:
+- CFBD `/drives`, Weeks 1–3 only, for drive identity and scoring-opportunity field position.
+- CFBD `/plays`, Weeks 1–3 only, for scoring provenance.
 
 Scoring-opportunity field-position logic preserves the legacy implementation:
 
@@ -94,22 +97,35 @@ Scoring-opportunity field-position logic preserves the legacy implementation:
 - otherwise use start yardline + yards;
 - scoring opportunity when resulting 0–100 yardline is >= 60.
 
-The historical writer referenced an undocumented `drive.points` field. The current and historical Drive schema exposes start/end offense and defense scores instead. Therefore `v4_prospective_v1` explicitly defines:
+The first live preview proved current `/drives` `startOffenseScore/endOffenseScore` cannot be trusted for drive scoring. Those fields are therefore **not used** by `v4_prospective_v1`.
 
-```
-driveOffensePoints = max(0, endOffenseScore - startOffenseScore)
-```
+Play scoring contract:
 
-This is a **new prospective source semantic**, not a claim about the missing historical V4 snapshot.
+1. Use all play rows for FBS-relevant games and preserve `driveId`.
+2. Use rows marked `scoring=true` to build a fixed home/away cumulative scoreboard.
+3. Convert each scoring row from offense/defense score orientation into home/away score orientation.
+4. Order scoring rows by period, drive number, then play number.
+5. For each scoring event:
+   - scores must be finite nonnegative integers;
+   - neither team score may regress;
+   - exactly one team must gain points;
+   - a single team increment must be between 1 and 8 points.
+6. Credit the positive score increment to that team and that scoring row's `driveId`.
+7. A drive's offense points are the points credited to the drive offense team on that drive.
+   - a defensive-return touchdown on the drive therefore contributes 0 offensive points;
+   - a non-scoring drive contributes 0 points.
+8. Every FBS-relevant drive must have matching play-level `driveId` coverage.
+9. Any invalid scoring event or missing FBS-relevant drive/play identity fails the full comparator frame closed.
 
 For a team:
 
 ```
 pointsPerScoringOpportunity =
-  sum(driveOffensePoints on qualifying drives) / qualifyingDriveCount
+  sum(playDerivedOffensePoints on every qualifying drive) /
+  qualifyingDriveCount
 ```
 
-Defense receives the same opponent-drive values as points allowed per scoring opportunity.
+Every qualifying drive remains in the denominator. If points cannot be established for any qualifying drive, that team's Finishing Drives feature is unavailable.
 
 ### Available Yards
 
@@ -173,7 +189,8 @@ The read-only preview artifact must include:
 - observation timestamp;
 - provider-call ledger;
 - provider payload SHA-256 digests;
-- raw provider payloads;
+- raw advanced, drive, and play provider payloads;
+- play scoring ledger with scoreboard/drive-ID diagnostics;
 - 138-team mapping audit;
 - team raw features;
 - z-score summaries;
