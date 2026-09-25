@@ -50,6 +50,11 @@ import {
   CANDIDATE_B_ELO_GENERIC_SHADOW_MODEL_ID,
   createCandidateBEloPriorShadowDefinition,
 } from './src/research/candidate-b/candidate-b-elo-prior-v1-shadow-adapter';
+import {
+  V4_PROSPECTIVE_GENERIC_SHADOW_MODEL_ID,
+  createV4ProspectiveShadowDefinition,
+} from './src/research/v4-prospective/v4-prospective-v1-shadow-adapter';
+import { V4_PROSPECTIVE_TARGET_WEEK } from './src/research/v4-prospective/v4-prospective-v1-runtime-artifact';
 import { loadOperationalShadowModelFrame } from './src/shadow-model-operational-frame';
 
 function resolveModelDefinition(modelId: string): ShadowModelDefinition {
@@ -61,6 +66,9 @@ function resolveModelDefinition(modelId: string): ShadowModelDefinition {
   }
   if (modelId === CANDIDATE_B_ELO_GENERIC_SHADOW_MODEL_ID) {
     return createCandidateBEloPriorShadowDefinition();
+  }
+  if (modelId === V4_PROSPECTIVE_GENERIC_SHADOW_MODEL_ID) {
+    return createV4ProspectiveShadowDefinition();
   }
   throw new Error(`model_id_not_allowlisted:${modelId}`);
 }
@@ -428,6 +436,25 @@ async function main(): Promise<void> {
           modelId: args.modelId,
           week: args.week,
           firstProspectiveWeek: CANDIDATE_B_ELO_FIRST_PROSPECTIVE_WEEK,
+        },
+        null,
+        2
+      )
+    );
+    process.exit(1);
+  }
+  if (
+    args.modelId === V4_PROSPECTIVE_GENERIC_SHADOW_MODEL_ID &&
+    args.week !== V4_PROSPECTIVE_TARGET_WEEK
+  ) {
+    console.error(
+      JSON.stringify(
+        {
+          ok: false,
+          error: 'v4_prospective_v1_artifact_authorized_for_week_4_only',
+          modelId: args.modelId,
+          week: args.week,
+          targetWeek: V4_PROSPECTIVE_TARGET_WEEK,
         },
         null,
         2
