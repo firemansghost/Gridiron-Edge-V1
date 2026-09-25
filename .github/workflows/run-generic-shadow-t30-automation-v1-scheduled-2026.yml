@@ -11,9 +11,10 @@
 #     GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED == "true"
 # - The active CFB week is supplied by repository variable:
 #     GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK
-# - Optional Hybrid Snapshot V1 closing capture is separately gated by:
-#     HYBRID_SHADOW_T30_AUTOMATION_V1_ENABLED == "true"
-# - Activation/change of any production gate/week variable is a separate operator authorization.
+# - Week 4 Hybrid Snapshot V1 closing capture is explicitly authorized to inherit
+#   the proven Generic activation gate while the active week equals 4.
+# - Advancing the active week automatically disables Hybrid Stage E; future-week
+#   Hybrid closing automation requires a separate reviewed authorization.
 #
 # This workflow only orchestrates the already-proven Stage C and Stage D CLIs.
 # It does not change their market-selection, closing, persistence, or verification semantics.
@@ -205,8 +206,8 @@ jobs:
             --child-report-dir reports \
             --initial-report "$PLAN_REPORT"
 
-      - name: Stage E optional Hybrid T-30 closing COMMIT/no-op
-        if: ${{ vars.HYBRID_SHADOW_T30_AUTOMATION_V1_ENABLED == 'true' }}
+      - name: Stage E Week 4 Hybrid T-30 closing COMMIT/no-op
+        if: ${{ vars.GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED == 'true' && vars.GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK == '4' }}
         env:
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
         run: |
@@ -226,7 +227,7 @@ jobs:
         if: always()
         env:
           JOB_STATUS: ${{ job.status }}
-          HYBRID_T30_ENABLED: ${{ vars.HYBRID_SHADOW_T30_AUTOMATION_V1_ENABLED }}
+          HYBRID_T30_ENABLED: ${{ vars.GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED == 'true' && vars.GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK == '4' }}
         run: |
           set -euo pipefail
           mkdir -p reports
@@ -331,7 +332,7 @@ jobs:
             activationGateVariable: 'GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED',
             activationGatePassed: true,
             activeWeekVariable: 'GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK',
-            hybridClosingActivationGateVariable: 'HYBRID_SHADOW_T30_AUTOMATION_V1_ENABLED',
+            hybridClosingActivation: 'WEEK4_INHERITS_GENERIC_GATE',
             hybridClosingEnabled,
             cadenceMinutes: 5,
             season,
@@ -423,7 +424,7 @@ jobs:
           echo "Stage C max provider board calls/cycle: 1"
           echo "Stage D target: T-30"
           echo "Stage D providerCalls=0"
-          echo "Stage E Hybrid closing gate: HYBRID_SHADOW_T30_AUTOMATION_V1_ENABLED"
+          echo "Stage E Hybrid closing activation: Week 4 inherits Generic gate; future weeks disabled"
           echo "Stage E providerCalls=0; ShadowClosingMarketSnapshot only"
           echo "prediction/capture-run writes: false"
           echo "Hybrid prediction writes: false"
