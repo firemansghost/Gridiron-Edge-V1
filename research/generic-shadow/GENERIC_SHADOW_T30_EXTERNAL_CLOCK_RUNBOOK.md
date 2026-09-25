@@ -55,7 +55,7 @@ The recurring route uses:
 
 - the same Generic repository activation gate;
 - the same active-week repository variable;
-- an independent `HYBRID_SHADOW_T30_AUTOMATION_V1_ENABLED` gate for optional Hybrid closing capture;
+- Week 4-only Hybrid closing activation inherited from the same Generic gate while the active week equals 4;
 - the same production concurrency group;
 - the same Stage C / Stage D commands;
 - the same machine-readable report;
