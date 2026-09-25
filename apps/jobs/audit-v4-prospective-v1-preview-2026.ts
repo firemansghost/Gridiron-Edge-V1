@@ -78,6 +78,8 @@ interface PlayRow {
   driveNumber?: number | null;
   playNumber?: number | null;
   period?: number | null;
+  clock?: { minutes?: number | null; seconds?: number | null } | null;
+  wallclock?: string | null;
   offense?: string | null;
   defense?: string | null;
   home?: string | null;
@@ -85,6 +87,8 @@ interface PlayRow {
   offenseScore?: number | null;
   defenseScore?: number | null;
   scoring?: boolean | null;
+  playType?: string | null;
+  playText?: string | null;
 }
 
 function parseArgs(argv: string[]) {
@@ -408,22 +412,178 @@ async function main() {
         const gameId = text(row.gameId);
         return gameId !== null && relevantGameIds.has(gameId);
       })
-      .map((row) => ({
-        gameId: text(row.gameId) ?? '',
-        driveId: text(row.driveId),
-        driveNumber: finite(row.driveNumber),
-        playNumber: finite(row.playNumber),
-        period: finite(row.period),
-        offense: text(row.offense),
-        defense: text(row.defense),
-        home: text(row.home),
-        away: text(row.away),
-        offenseScore: finite(row.offenseScore),
-        defenseScore: finite(row.defenseScore),
-        scoring: row.scoring === true,
-      }));
+      .map((row) => {
+        const minutes = finite(row.clock?.minutes);
+        const seconds = finite(row.clock?.seconds);
+        return {
+          gameId: text(row.gameId) ?? '',
+          driveId: text(row.driveId),
+          driveNumber: finite(row.driveNumber),
+          playNumber: finite(row.playNumber),
+          period: finite(row.period),
+          clockSeconds:
+            minutes !== null && seconds !== null
+              ? minutes * 60 + seconds
+              : null,
+          wallclock: text(row.wallclock),
+          offense: text(row.offense),
+          defense: text(row.defense),
+          home: text(row.home),
+          away: text(row.away),
+          offenseScore: finite(row.offenseScore),
+          defenseScore: finite(row.defenseScore),
+          scoring: row.scoring === true,
+          playType: text(row.playType),
+          playText: text(row.playText),
+        };
+      });
     const playScoringLedger = buildPlayScoringLedger(relevantPlayRows);
     const playDriveIdSet = new Set(playScoringLedger.playDriveIds);
+
+    const sourceTeamGameRows = await prisma.teamGameStat.findMany({
+      where: {
+        season: args.season,
+        week: { in: [...V4_PROSPECTIVE_V1_COMPLETED_WEEKS] },
+      },
+      select: {
+        gameId: true,
+        rawJson: true,
+      },
+      orderBy: [{ week: 'asc' }, { gameId: 'asc' }, { teamId: 'asc' }],
+    });
+
+    const cfbdToInternalGame = new Map<string, string>();
+    for (const row of sourceTeamGameRows) {
+      const providerGameId =
+        row.rawJson &&
+        typeof row.rawJson === 'object' &&
+        !Array.isArray(row.rawJson)
+          ? text((row.rawJson as Record<string, unknown>).gameId)
+          : null;
+      if (!providerGameId) continue;
+      const prior = cfbdToInternalGame.get(providerGameId);
+      if (prior && prior !== row.gameId) {
+        throw new Error(
+          `provider game ${providerGameId} maps to multiple internal games`
+        );
+      }
+      cfbdToInternalGame.set(providerGameId, row.gameId);
+    }
+
+    const sourceGameIds = Array.from(
+      new Set(cfbdToInternalGame.values())
+    ).sort();
+    const sourceGames = await prisma.game.findMany({
+      where: { id: { in: sourceGameIds } },
+      select: {
+        id: true,
+        homeTeamId: true,
+        awayTeamId: true,
+        homeScore: true,
+        awayScore: true,
+        status: true,
+      },
+      orderBy: { id: 'asc' },
+    });
+    const sourceGameById = new Map(sourceGames.map((g) => [g.id, g]));
+    const ledgerFinalByProviderGame = new Map(
+      playScoringLedger.gameFinalScores.map((g) => [g.gameId, g])
+    );
+
+    const finalScoreMismatches: Array<Record<string, unknown>> = [];
+    let finalScoreComparableGames = 0;
+    let finalScoreExactMatches = 0;
+
+    for (const [providerGameId, internalGameId] of cfbdToInternalGame.entries()) {
+      const game = sourceGameById.get(internalGameId);
+      const ledgerFinal = ledgerFinalByProviderGame.get(providerGameId);
+      if (
+        !game ||
+        !ledgerFinal ||
+        game.homeScore === null ||
+        game.awayScore === null ||
+        game.status !== 'final'
+      ) {
+        finalScoreMismatches.push({
+          providerGameId,
+          internalGameId,
+          reason: !game
+            ? 'missing_internal_game'
+            : !ledgerFinal
+              ? 'missing_play_ledger_final'
+              : game.status !== 'final'
+                ? 'internal_game_not_final'
+                : 'missing_internal_final_score',
+        });
+        continue;
+      }
+
+      const providerHomeInternal = providerToInternal.get(
+        keyName(ledgerFinal.homeProviderTeam) ?? ''
+      );
+      const providerAwayInternal = providerToInternal.get(
+        keyName(ledgerFinal.awayProviderTeam) ?? ''
+      );
+      finalScoreComparableGames += 1;
+
+      let expectedHome: number | null = null;
+      let expectedAway: number | null = null;
+      if (
+        providerHomeInternal === game.homeTeamId &&
+        providerAwayInternal === game.awayTeamId
+      ) {
+        expectedHome = game.homeScore;
+        expectedAway = game.awayScore;
+      } else if (
+        providerHomeInternal === game.awayTeamId &&
+        providerAwayInternal === game.homeTeamId
+      ) {
+        expectedHome = game.awayScore;
+        expectedAway = game.homeScore;
+      } else {
+        finalScoreMismatches.push({
+          providerGameId,
+          internalGameId,
+          reason: 'provider_home_away_mapping_mismatch',
+          providerHomeInternal,
+          providerAwayInternal,
+          internalHomeTeamId: game.homeTeamId,
+          internalAwayTeamId: game.awayTeamId,
+        });
+        continue;
+      }
+
+      if (
+        ledgerFinal.homeScore === expectedHome &&
+        ledgerFinal.awayScore === expectedAway
+      ) {
+        finalScoreExactMatches += 1;
+      } else {
+        finalScoreMismatches.push({
+          providerGameId,
+          internalGameId,
+          reason: 'final_score_mismatch',
+          ledgerHome: ledgerFinal.homeScore,
+          ledgerAway: ledgerFinal.awayScore,
+          expectedHome,
+          expectedAway,
+        });
+      }
+    }
+
+    const finalScoreValidation = {
+      expectedGames: cfbdToInternalGame.size,
+      internalGamesLoaded: sourceGames.length,
+      comparableGames: finalScoreComparableGames,
+      exactMatches: finalScoreExactMatches,
+      mismatchCount: finalScoreMismatches.length,
+      mismatches: finalScoreMismatches,
+      pass:
+        cfbdToInternalGame.size > 0 &&
+        finalScoreComparableGames === cfbdToInternalGame.size &&
+        finalScoreExactMatches === cfbdToInternalGame.size &&
+        finalScoreMismatches.length === 0,
+    };
 
     const mappedDrives: MappedDriveRow[] = [];
     let driveRowsWithUnmappedFbsSide = 0;
@@ -488,6 +648,7 @@ async function main() {
       providerCalls.length === V4_PROSPECTIVE_V1_PROVIDER_CALL_BUDGET &&
       providerCalls.every((c) => c.ok) &&
       playScoringLedger.valid &&
+      finalScoreValidation.pass &&
       relevantDriveIdsMissingPlayCoverage === 0 &&
       combined.missingTeamIds.length === 0;
 
@@ -697,9 +858,14 @@ async function main() {
           scoringRows: playScoringLedger.scoringRows,
           validScoringEvents: playScoringLedger.validScoringEvents,
           invalidScoringEvents: playScoringLedger.invalidScoringEvents,
-          maxSingleTeamIncrement: playScoringLedger.maxSingleTeamIncrement,
+          scoreStateMismatchEvents:
+            playScoringLedger.scoreStateMismatchEvents,
+          semanticFallbackEvents:
+            playScoringLedger.semanticFallbackEvents,
+          maxSingleEventPoints: playScoringLedger.maxSingleEventPoints,
           invalidEvents: playScoringLedger.invalidEvents,
         },
+        finalScoreValidation,
       },
       frameComplete,
       missingTeamIds: combined.missingTeamIds,
