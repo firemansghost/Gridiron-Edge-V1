@@ -29,7 +29,7 @@ describe('Generic Shadow T-30 Automation V1 external-clock coordinator', () => {
     expect(wf).not.toMatch(/cron:\s*['\"]2-59\/5 \* \* \* \*['\"]/m);
     expect(wf).toContain("vars.GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED == 'true'");
     expect(wf).toContain('vars.GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK');
-    expect(wf).toContain("vars.HYBRID_SHADOW_T30_AUTOMATION_V1_ENABLED == 'true'");
+    expect(wf).toContain("vars.GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK == '4'");
     expect(runbook).toContain('Supabase external clock is the sole recurring scheduler');
   });
 
@@ -65,9 +65,10 @@ describe('Generic Shadow T-30 Automation V1 external-clock coordinator', () => {
     expect(wf).toContain('Stage D providerCalls=0');
   });
 
-  it('adds Hybrid closing only behind its own gate and keeps it provider-free', () => {
-    const hybrid = stepBlock(wf, 'Stage E optional Hybrid T-30 closing COMMIT/no-op');
-    expect(hybrid).toContain("vars.HYBRID_SHADOW_T30_AUTOMATION_V1_ENABLED == 'true'");
+  it('activates Hybrid closing only for Week 4 under the proven Generic gate and keeps it provider-free', () => {
+    const hybrid = stepBlock(wf, 'Stage E Week 4 Hybrid T-30 closing COMMIT/no-op');
+    expect(hybrid).toContain("vars.GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED == 'true'");
+    expect(hybrid).toContain("vars.GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK == '4'");
     expect(hybrid).toContain('capture-shadow-t30-closing-v1-2026.ts');
     expect(hybrid).toContain('CAPTURE_2026_WEEK_${INPUT_WEEK}_T30_CLOSING_V1');
     expect(hybrid).toContain('--mode COMMIT');
