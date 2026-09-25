@@ -147,8 +147,15 @@ export function buildPlayScoringLedger(
         typeof row.driveId === 'string' && row.driveId.trim()
           ? row.driveId.trim()
           : null;
+      const hasOrder =
+        row.period !== null &&
+        Number.isInteger(row.period) &&
+        row.driveNumber !== null &&
+        Number.isInteger(row.driveNumber) &&
+        row.playNumber !== null &&
+        Number.isInteger(row.playNumber);
 
-      if (!fixed || !driveId) {
+      if (!fixed || !driveId || !hasOrder) {
         invalidEvents.push({
           gameId,
           driveId,
@@ -156,7 +163,9 @@ export function buildPlayScoringLedger(
           playNumber: row.playNumber,
           reason: !driveId
             ? 'missing_drive_id'
-            : 'invalid_fixed_scoreboard_fields',
+            : !hasOrder
+              ? 'missing_or_invalid_play_order'
+              : 'invalid_fixed_scoreboard_fields',
           homeDelta: null,
           awayDelta: null,
         });
