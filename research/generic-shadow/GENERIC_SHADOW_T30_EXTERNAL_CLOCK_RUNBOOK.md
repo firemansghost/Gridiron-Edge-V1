@@ -20,7 +20,7 @@ Observed diagnostic on 2026-09-22:
 - observed marks: `2026-09-22T15:07:00Z`, `2026-09-22T15:12:00Z`;
 - scheduled run list after both marks: empty.
 
-The fallback therefore changes only the **clock**. It does not move Stage C or Stage D logic out of GitHub Actions.
+The fallback therefore changes only the **clock**. It does not move Stage C, Stage D, or the separately gated Hybrid closing Stage E logic out of GitHub Actions.
 
 ## Architecture
 
@@ -36,7 +36,9 @@ run-generic-shadow-t30-automation-v1-scheduled-2026.yml
         |
         +--> existing Stage C planner / optional one-board refresh
         |
-        +--> existing Stage D planner / T-30 closing COMMIT/no-op
+        +--> existing Stage D planner / Generic T-30 closing COMMIT/no-op
+        |
+        +--> optional gated Stage E / Hybrid T-30 closing COMMIT/no-op
 ```
 
 The GitHub workflow remains the sole coordinator. Supabase supplies only the recurring clock and dispatch; it does not duplicate betting/model logic.
@@ -51,8 +53,9 @@ Native GitHub `schedule` is intentionally disabled after the 2026-09-24 live pro
 
 The recurring route uses:
 
-- the same repository activation gate;
+- the same Generic repository activation gate;
 - the same active-week repository variable;
+- an independent `HYBRID_SHADOW_T30_AUTOMATION_V1_ENABLED` gate for optional Hybrid closing capture;
 - the same production concurrency group;
 - the same Stage C / Stage D commands;
 - the same machine-readable report;

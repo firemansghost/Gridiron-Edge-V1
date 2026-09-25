@@ -11,7 +11,9 @@
 #     GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED == "true"
 # - The active CFB week is supplied by repository variable:
 #     GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK
-# - Activation/change of either variable is a separate operator authorization.
+# - Optional Hybrid Snapshot V1 closing capture is separately gated by:
+#     HYBRID_SHADOW_T30_AUTOMATION_V1_ENABLED == "true"
+# - Activation/change of any production gate/week variable is a separate operator authorization.
 #
 # This workflow only orchestrates the already-proven Stage C and Stage D CLIs.
 # It does not change their market-selection, closing, persistence, or verification semantics.
@@ -25,6 +27,12 @@
 # - providerCalls=0.
 # - DB read-only PLAN, then guarded Generic T-30 closing COMMIT/no-op.
 # - Only ShadowModelClosingMarketSnapshot may be written.
+#
+# Optional Stage E (separately activation-gated):
+# - runs only after Stage C/D succeed.
+# - providerCalls=0; reuses the persisted board refreshed by Stage C.
+# - invokes the proven Hybrid Snapshot V1 T-30 closing CLI.
+# - may write only ShadowClosingMarketSnapshot; repeated cycles are idempotent.
 #
 # Forbidden here:
 # - prediction/capture-run creation
@@ -197,10 +205,28 @@ jobs:
             --child-report-dir reports \
             --initial-report "$PLAN_REPORT"
 
+      - name: Stage E optional Hybrid T-30 closing COMMIT/no-op
+        if: ${{ vars.HYBRID_SHADOW_T30_AUTOMATION_V1_ENABLED == 'true' }}
+        env:
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          CONFIRMATION="CAPTURE_2026_WEEK_${INPUT_WEEK}_T30_CLOSING_V1"
+          REPORT="reports/hybrid-shadow-t30-closing-v1-2026-${INPUT_SEASON}-week-${INPUT_WEEK}-COMMIT.json"
+          echo "ODDS_API_KEY: not provided"
+          npx tsx apps/jobs/capture-shadow-t30-closing-v1-2026.ts \
+            --season "$INPUT_SEASON" \
+            --week "$INPUT_WEEK" \
+            --mode COMMIT \
+            --confirm "$CONFIRMATION" \
+            --report "$REPORT"
+
       - name: Write scheduled-cycle machine-readable report
         if: always()
         env:
           JOB_STATUS: ${{ job.status }}
+          HYBRID_T30_ENABLED: ${{ vars.HYBRID_SHADOW_T30_AUTOMATION_V1_ENABLED }}
         run: |
           set -euo pipefail
           mkdir -p reports
@@ -219,6 +245,8 @@ jobs:
           const marketCommitPath = path.join('reports', `generic-shadow-t30-automation-v1-2026-${season}-week-${week}-market-refresh-COMMIT.json`);
           const closingPlanPath = path.join('reports', `generic-shadow-t30-automation-v1-2026-${season}-week-${week}-closing-commit-PLAN.json`);
           const closingCommitPath = path.join('reports', `generic-shadow-t30-automation-v1-2026-${season}-week-${week}-closing-commit-COMMIT.json`);
+          const hybridClosingPath = path.join('reports', `hybrid-shadow-t30-closing-v1-2026-${season}-week-${week}-COMMIT.json`);
+          const hybridClosingEnabled = process.env.HYBRID_T30_ENABLED === 'true';
 
           function readJson(p) {
             if (!fs.existsSync(p)) return null;
@@ -233,11 +261,14 @@ jobs:
 
           const market = readJson(marketCommitPath) || readJson(marketPlanPath);
           const closing = readJson(closingCommitPath) || readJson(closingPlanPath);
+          const hybridClosing = readJson(hybridClosingPath);
           const blockers = uniq([
             ...arr(market?.blockers),
             ...arr(closing?.blockers),
+            ...(hybridClosingEnabled ? arr(hybridClosing?.writeBlockers) : []),
             ...(market ? [] : ['market_stage_report_missing']),
             ...(closing ? [] : ['closing_stage_report_missing']),
+            ...(hybridClosingEnabled && !hybridClosing ? ['hybrid_closing_stage_report_missing'] : []),
           ]);
           const eligibleCaptureRunIds = uniq([
             ...arr(market?.eligibleCaptureRunIds),
@@ -261,6 +292,11 @@ jobs:
             closing?.closingRowsInsertedKnown ??
             0;
           const closingCaptured = Number(closingRowsInserted) > 0;
+          const hybridClosingRowsInserted = Number(hybridClosing?.insertedSnapshotCount || 0);
+          const hybridClosingCaptured = hybridClosingRowsInserted > 0;
+          const hybridClosingVerificationOk =
+            !hybridClosingEnabled ||
+            (hybridClosing != null && hybridClosing.verificationOk === true);
           const unknownMutationTargets =
             market?.mutationTargetsInvoked == null ||
             closing?.mutationTargetsInvoked == null;
@@ -275,6 +311,9 @@ jobs:
           if (jobStatus !== 'success' || !market || !closing) outcome = 'FAILED';
           else if (blockers.length > 0 || market?.outcome === 'BLOCKED' || closing?.outcome === 'BLOCKED') outcome = 'BLOCKED';
           else if (market?.outcome === 'FAILED' || closing?.outcome === 'FAILED') outcome = 'FAILED';
+          else if (marketRefreshed && closingCaptured && hybridClosingCaptured) outcome = 'MARKET_REFRESHED_AND_ALL_CLOSINGS_CAPTURED';
+          else if (closingCaptured && hybridClosingCaptured) outcome = 'ALL_CLOSINGS_CAPTURED';
+          else if (hybridClosingCaptured) outcome = 'HYBRID_CLOSINGS_CAPTURED';
           else if (marketRefreshed && closingCaptured) outcome = 'MARKET_REFRESHED_AND_CLOSINGS_CAPTURED';
           else if (closingCaptured) outcome = 'CLOSINGS_CAPTURED';
           else if (marketRefreshed) outcome = 'MARKET_REFRESHED';
@@ -292,6 +331,8 @@ jobs:
             activationGateVariable: 'GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED',
             activationGatePassed: true,
             activeWeekVariable: 'GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK',
+            hybridClosingActivationGateVariable: 'HYBRID_SHADOW_T30_AUTOMATION_V1_ENABLED',
+            hybridClosingEnabled,
             cadenceMinutes: 5,
             season,
             week,
@@ -311,11 +352,20 @@ jobs:
             providerCredits: market?.providerCredits || null,
             closingRowsPlanned: Number(closing?.closingRowsPlanned || 0),
             closingRowsInserted,
+            hybridClosingRowsInserted,
+            hybridClosingVerificationOk,
+            hybridClosingReportPresent: hybridClosing != null,
             persistedAvailableCount: Number(closing?.persistedAvailableCount || 0),
             persistedUnavailableCount: Number(closing?.persistedUnavailableCount || 0),
             missedCount: Number(closing?.missedCount ?? counts?.missed ?? 0),
             blockers,
-            writeSafe: Boolean(market?.writeSafe && closing?.writeSafe && blockers.length === 0 && jobStatus === 'success'),
+            writeSafe: Boolean(
+              market?.writeSafe &&
+              closing?.writeSafe &&
+              (!hybridClosingEnabled || (hybridClosing?.writeSafe && hybridClosingVerificationOk)) &&
+              blockers.length === 0 &&
+              jobStatus === 'success'
+            ),
             mutationTargetsInvoked,
             postwriteVerificationStatus: {
               market: market?.postwriteVerificationStatus || null,
@@ -324,10 +374,12 @@ jobs:
             outcome,
             stageCReport: market,
             stageDReport: closing,
+            stageEHybridClosingReport: hybridClosing,
             researchOnly: true,
             predictionWrites: false,
             captureRunWrites: false,
-            hybridWrites: false,
+            hybridPredictionWrites: false,
+            hybridClosingWrites: hybridClosingCaptured,
             betWrites: false,
             matchupOutputWrites: false,
             evaluationWrites: false,
@@ -351,6 +403,7 @@ jobs:
             reports/generic-shadow-t30-automation-v1-2026-*.json
             reports/live-odds-2026-*-generic-shadow-t30-market-refresh.json
             reports/generic-shadow-t30-automation-v1-closing-child-*.json
+            reports/hybrid-shadow-t30-closing-v1-2026-*.json
           if-no-files-found: warn
 
       - name: Summary
@@ -370,8 +423,10 @@ jobs:
           echo "Stage C max provider board calls/cycle: 1"
           echo "Stage D target: T-30"
           echo "Stage D providerCalls=0"
+          echo "Stage E Hybrid closing gate: HYBRID_SHADOW_T30_AUTOMATION_V1_ENABLED"
+          echo "Stage E providerCalls=0; ShadowClosingMarketSnapshot only"
           echo "prediction/capture-run writes: false"
-          echo "Hybrid writes: false"
+          echo "Hybrid prediction writes: false"
           echo "Bet writes: false"
           echo "evaluation writes: false"
           echo "Game/lifecycle writes: false"
