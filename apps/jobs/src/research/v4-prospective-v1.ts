@@ -42,8 +42,7 @@ export interface MappedDriveRow {
   startYardline: number | null;
   endYardline: number | null;
   yards: number | null;
-  startOffenseScore: number | null;
-  endOffenseScore: number | null;
+  offensePointsFromPlays: number | null;
 }
 
 export interface AdvancedTeamFeature {
@@ -66,6 +65,8 @@ export interface DriveTeamFeature {
   defAvailableYardsPct: number | null;
   offScoringOpps: number;
   defScoringOpps: number;
+  offScoringOppsMissingPoints: number;
+  defScoringOppsMissingPoints: number;
   offAvailableDrives: number;
   defAvailableDrives: number;
 }
@@ -228,10 +229,9 @@ export function legacyAvailableYardsPct(input: {
 }
 
 export function prospectiveDriveOffensePoints(row: MappedDriveRow): number | null {
-  const start = finite(row.startOffenseScore);
-  const end = finite(row.endOffenseScore);
-  if (start === null || end === null) return null;
-  return Math.max(0, end - start);
+  const points = finite(row.offensePointsFromPlays);
+  if (points === null || points < 0) return null;
+  return points;
 }
 
 export function aggregateDriveFeatures(
@@ -241,8 +241,10 @@ export function aggregateDriveFeatures(
   type Acc = {
     offOpps: number;
     offPoints: number;
+    offMissingPoints: number;
     defOpps: number;
     defPoints: number;
+    defMissingPoints: number;
     offAvailCount: number;
     offAvailSum: number;
     defAvailCount: number;
@@ -254,8 +256,10 @@ export function aggregateDriveFeatures(
     acc.set(id, {
       offOpps: 0,
       offPoints: 0,
+      offMissingPoints: 0,
       defOpps: 0,
       defPoints: 0,
+      defMissingPoints: 0,
       offAvailCount: 0,
       offAvailSum: 0,
       defAvailCount: 0,
@@ -270,9 +274,10 @@ export function aggregateDriveFeatures(
 
     if (fbs.has(row.offenseTeamId)) {
       const a = acc.get(row.offenseTeamId)!;
-      if (scoring === true && points !== null) {
+      if (scoring === true) {
         a.offOpps += 1;
-        a.offPoints += points;
+        if (points === null) a.offMissingPoints += 1;
+        else a.offPoints += points;
       }
       if (avail !== null) {
         a.offAvailCount += 1;
@@ -281,9 +286,10 @@ export function aggregateDriveFeatures(
     }
     if (fbs.has(row.defenseTeamId)) {
       const a = acc.get(row.defenseTeamId)!;
-      if (scoring === true && points !== null) {
+      if (scoring === true) {
         a.defOpps += 1;
-        a.defPoints += points;
+        if (points === null) a.defMissingPoints += 1;
+        else a.defPoints += points;
       }
       if (avail !== null) {
         a.defAvailCount += 1;
@@ -296,14 +302,22 @@ export function aggregateDriveFeatures(
     const a = acc.get(teamId)!;
     return {
       teamId,
-      offFinishing: a.offOpps > 0 ? a.offPoints / a.offOpps : null,
-      defFinishing: a.defOpps > 0 ? a.defPoints / a.defOpps : null,
+      offFinishing:
+        a.offOpps > 0 && a.offMissingPoints === 0
+          ? a.offPoints / a.offOpps
+          : null,
+      defFinishing:
+        a.defOpps > 0 && a.defMissingPoints === 0
+          ? a.defPoints / a.defOpps
+          : null,
       offAvailableYardsPct:
         a.offAvailCount > 0 ? a.offAvailSum / a.offAvailCount : null,
       defAvailableYardsPct:
         a.defAvailCount > 0 ? a.defAvailSum / a.defAvailCount : null,
       offScoringOpps: a.offOpps,
       defScoringOpps: a.defOpps,
+      offScoringOppsMissingPoints: a.offMissingPoints,
+      defScoringOppsMissingPoints: a.defMissingPoints,
       offAvailableDrives: a.offAvailCount,
       defAvailableDrives: a.defAvailCount,
     };
@@ -361,6 +375,8 @@ export function combineProspectiveFeatures(input: {
       defAvailableYardsPct: d?.defAvailableYardsPct ?? null,
       offScoringOpps: d?.offScoringOpps ?? 0,
       defScoringOpps: d?.defScoringOpps ?? 0,
+      offScoringOppsMissingPoints: d?.offScoringOppsMissingPoints ?? 0,
+      defScoringOppsMissingPoints: d?.defScoringOppsMissingPoints ?? 0,
       offAvailableDrives: d?.offAvailableDrives ?? 0,
       defAvailableDrives: d?.defAvailableDrives ?? 0,
       offExplosivenessGrade:
