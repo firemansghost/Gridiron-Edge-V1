@@ -371,6 +371,9 @@ jobs:
             postwriteVerificationStatus: {
               market: market?.postwriteVerificationStatus || null,
               closing: closing?.postwriteVerificationStatus || null,
+              hybridClosing: hybridClosingEnabled
+                ? (hybridClosing?.verificationOk === true ? 'VERIFIED' : 'NOT_VERIFIED')
+                : 'DISABLED',
             },
             outcome,
             stageCReport: market,
