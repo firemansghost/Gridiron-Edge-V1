@@ -1,0 +1,149 @@
+# Manual READ-ONLY 2026 V4 source-equivalence provider probe.
+# Exactly preregistered Weeks 1-3 / endpoint set; max 9 provider calls.
+# No schedules. No database writes. No comparator persistence.
+
+name: Audit 2026 V4 Source Equivalence Probe (Manual, Read Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season (must be 2026)'
+        required: true
+        type: string
+        default: '2026'
+      expected_main_sha:
+        description: 'Exact main SHA authorized for this probe'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-v4-source-equivalence-probe-${{ inputs.season }}
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Source SHA guard
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA=$(git rev-parse HEAD)
+          echo "ACTUAL_SHA=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+          echo "actual_sha: ${ACTUAL_SHA}"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          echo "github_ref: ${GITHUB_REF:-}"
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Workflow must run from main."
+            exit 1
+          fi
+          if [ -z "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::expected_main_sha is required"
+            exit 1
+          fi
+          if [ "${ACTUAL_SHA}" != "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Checked-out SHA does not match expected_main_sha."
+            exit 1
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Preflight
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+        run: |
+          set -euo pipefail
+          echo "season=${INPUT_SEASON}"
+          echo "researchOnly=true"
+          echo "providerCallBudget=9"
+          echo "mutationTargets=[]"
+          echo "safeToPersistComparator=false"
+          echo "TeamSeasonStat writes=false"
+          echo "TeamSeasonRating writes=false"
+          echo "TeamUnitGrades writes=false"
+          echo "Bet writes=false"
+          echo "Shadow writes=false"
+          echo "Game writes=false"
+          echo "MarketLine writes=false"
+          echo "Prisma migrate=false"
+          if [ "${INPUT_SEASON}" != "2026" ]; then
+            echo "::error::season must equal 2026"
+            exit 1
+          fi
+          if [ -z "${DIRECT_URL:-}" ]; then
+            echo "::error::DIRECT_URL secret is missing"
+            exit 1
+          fi
+          if [ -z "${CFBD_API_KEY:-}" ]; then
+            echo "::error::CFBD_API_KEY secret is missing"
+            exit 1
+          fi
+          echo "DIRECT_URL: present (not printed)"
+          echo "CFBD_API_KEY: present (not printed)"
+
+      - name: Install dependencies
+        env:
+          DATABASE_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+          DIRECT_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+        run: npm ci
+
+      - name: Generate Prisma client
+        env:
+          DATABASE_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+          DIRECT_URL: postgresql://prisma:prisma@127.0.0.1:5432/prisma_generate_placeholder
+        run: npm run prisma:generate
+
+      - name: Run fixed V4 source-equivalence probe
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+          CFBD_BASE_URL: ${{ vars.CFBD_BASE_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports/v4-source-equivalence-probe-2026
+          npx tsx apps/jobs/audit-v4-source-equivalence-probe-2026.ts             --season "$INPUT_SEASON"             --output-dir reports/v4-source-equivalence-probe-2026
+
+      - name: Upload source-equivalence evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4-source-equivalence-probe-2026
+          path: reports/v4-source-equivalence-probe-2026/
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "==================================================="
+          echo "V4 SOURCE EQUIVALENCE PROBE — READ ONLY"
+          echo "==================================================="
+          echo "season: ${INPUT_SEASON}"
+          echo "expected_main_sha: ${EXPECTED_MAIN_SHA}"
+          echo "actual_sha: ${ACTUAL_SHA:-unavailable}"
+          echo "status: ${JOB_STATUS}"
+          echo "providerCallBudget=9"
+          echo "mutationsInvoked=false"
+          echo "safeToPersistComparator=false"
+          echo "comparatorPersistenceAuthorized=false"
+          echo "==================================================="
