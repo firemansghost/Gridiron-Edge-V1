@@ -1,0 +1,148 @@
+name: Capture 2023 Historical Research Snapshot V1 (Manual, Guarded)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Historical season (this workflow locked to 2023)'
+        required: true
+        type: string
+        default: '2023'
+      expected_main_sha:
+        description: 'Exact current main SHA'
+        required: true
+        type: string
+      confirmation:
+        description: 'Type CAPTURE_2023_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW exactly'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: historical-research-snapshot-v1-2023
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Source SHA guard
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          echo "ACTUAL_SHA=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+          echo "actual_sha=${ACTUAL_SHA}"
+          echo "expected_main_sha=${EXPECTED_MAIN_SHA}"
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Refusing historical snapshot outside refs/heads/main."
+            exit 1
+          fi
+          if [ -z "${EXPECTED_MAIN_SHA}" ] || [ "${ACTUAL_SHA}" != "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing historical snapshot because main SHA does not match expected_main_sha."
+            exit 1
+          fi
+          echo "Source SHA guard passed."
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Preflight
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ "${INPUT_SEASON}" != "2023" ]; then
+            echo "::error::This historical snapshot workflow is locked to season 2023."
+            exit 1
+          fi
+          if [ "${INPUT_CONFIRMATION}" != "CAPTURE_2023_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW" ]; then
+            echo "::error::Exact historical snapshot confirmation is required."
+            exit 1
+          fi
+          if [ -z "${CFBD_API_KEY:-}" ]; then
+            echo "::error::CFBD_API_KEY secret is missing."
+            exit 1
+          fi
+
+          echo "season=2023"
+          echo "mode=RESEARCH_PREVIEW_ARTIFACT_ONLY"
+          echo "provider=CFBD"
+          echo "providerCallsHardMax=32"
+          echo "databaseReads=false"
+          echo "databaseWrites=false"
+          echo "OddsAPI=false SGO=false weather=false"
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Compile historical capture without lifecycle-dependent runtime
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/historical-research-snapshot-v1
+          npx tsc --module commonjs \
+            --moduleResolution node \
+            --target ES2019 \
+            --esModuleInterop \
+            --skipLibCheck \
+            --outDir .tmp/historical-research-snapshot-v1 \
+            apps/jobs/src/research/historical-research-snapshot-v1.ts \
+            apps/jobs/capture-historical-research-snapshot-v1.ts
+
+      - name: Capture 2023 historical research snapshot
+        env:
+          INPUT_SEASON: ${{ inputs.season }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+        run: |
+          set -euo pipefail
+          OUT="reports/historical-research-snapshot-v1/2023-${GITHUB_RUN_ID}"
+          node .tmp/historical-research-snapshot-v1/capture-historical-research-snapshot-v1.js \
+            --season "${INPUT_SEASON}" \
+            --confirm "${INPUT_CONFIRMATION}" \
+            --output-dir "${OUT}"
+
+      - name: Upload immutable research evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-research-snapshot-v1-2023-${{ github.run_id }}
+          path: reports/historical-research-snapshot-v1/**
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Summary
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "==================================================="
+          echo "HISTORICAL RESEARCH SNAPSHOT V1 — 2023"
+          echo "==================================================="
+          echo "status=${JOB_STATUS}"
+          echo "sourceSha=${ACTUAL_SHA:-unavailable}"
+          echo "mode=RESEARCH_PREVIEW_ARTIFACT_ONLY"
+          echo "provider=CFBD"
+          echo "providerCallsHardMax=32"
+          echo "databaseReads=false"
+          echo "databaseWrites=false"
+          echo "prismaClient=false"
+          echo "prismaGenerate=false"
+          echo "Bet/Shadow/Game/lifecycle writes=false"
+          echo "historical betting lines=evaluation-only"
+          echo "weekly Elo=semantic-validation-required"
+          echo "2023=development corpus capture; research-only pending audit"
+          echo "==================================================="
