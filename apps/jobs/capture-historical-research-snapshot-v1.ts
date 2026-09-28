@@ -159,7 +159,7 @@ async function captureRequest(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45_000);
 
-  let response: Response;
+  let response: Response | null = null;
   try {
     response = await fetch(url, {
       method: 'GET',
@@ -175,6 +175,9 @@ async function captureRequest(
     clearTimeout(timeout);
   }
 
+  if (!response) {
+    throw new Error('CFBD request failed before response');
+  }
   if ([301, 302, 303, 307, 308].includes(response.status)) {
     throw new Error('CFBD redirect refused');
   }
@@ -201,7 +204,19 @@ async function captureRequest(
   };
 
   if (!response.ok) {
-    throw new Error(`CFBD HTTP ${response.status}`);
+    return {
+      call: {
+        ...baseCall,
+        ok: false,
+        rowCount: null,
+        errorCode: 'cfbd_http_error',
+      },
+      rows: [],
+      artifact: {
+        ...artifact,
+        file: rawRelative,
+      },
+    };
   }
 
   let parsed: unknown;
@@ -289,6 +304,8 @@ async function main(): Promise<void> {
   const captures = new Map<string, FetchCapture>();
   const calls: ProviderCallRecord[] = [];
   const artifacts: ArtifactDigest[] = [];
+  let providerCallsAttempted = 0;
+  let lastAttemptedRequestId: string | null = null;
 
   ensureDir(args.outputDir);
 
@@ -296,32 +313,42 @@ async function main(): Promise<void> {
     // Games is the first provider call because it defines the observed regular
     // FBS-vs-FBS week universe used to construct the remainder of the plan.
     const gamesRequest = buildHistoricalGamesRequest(args.season);
+    providerCallsAttempted += 1;
+    lastAttemptedRequestId = gamesRequest.id;
     const gamesCapture = await captureRequest(
       baseUrl,
       apiKey,
       args.outputDir,
-      1,
+      providerCallsAttempted,
       gamesRequest
     );
     captures.set(gamesRequest.id, gamesCapture);
     calls.push(gamesCapture.call);
     artifacts.push(gamesCapture.artifact);
+    if (!gamesCapture.call.ok) {
+      throw new Error(`CFBD HTTP ${gamesCapture.call.httpStatus ?? 'unknown'}`);
+    }
 
     const gamesRows = gamesCapture.rows as HistoricalGameLike[];
     const plan = buildHistoricalSnapshotPlan(args.season, gamesRows);
 
     for (let index = 1; index < plan.requests.length; index += 1) {
       const requestSpec = plan.requests[index];
+      providerCallsAttempted += 1;
+      lastAttemptedRequestId = requestSpec.id;
       const capture = await captureRequest(
         baseUrl,
         apiKey,
         args.outputDir,
-        index + 1,
+        providerCallsAttempted,
         requestSpec
       );
       captures.set(requestSpec.id, capture);
       calls.push(capture.call);
       artifacts.push(capture.artifact);
+      if (!capture.call.ok) {
+        throw new Error(`CFBD HTTP ${capture.call.httpStatus ?? 'unknown'}`);
+      }
 
       // Be deliberately gentle even though the monthly call budget is large.
       await new Promise((resolve) => setTimeout(resolve, 150));
@@ -360,10 +387,13 @@ async function main(): Promise<void> {
     };
 
     const qaFindings: string[] = [];
-    if (calls.length !== plan.providerCallCount) {
+    if (
+      calls.length !== plan.providerCallCount ||
+      providerCallsAttempted !== plan.providerCallCount
+    ) {
       qaFindings.push('provider_call_count_mismatch');
     }
-    if (calls.length > HISTORICAL_SNAPSHOT_MAX_PROVIDER_CALLS) {
+    if (providerCallsAttempted > HISTORICAL_SNAPSHOT_MAX_PROVIDER_CALLS) {
       qaFindings.push('provider_call_budget_exceeded');
     }
     if (coverage.fbsVsFbsRegularGames === 0) {
@@ -400,7 +430,7 @@ async function main(): Promise<void> {
       qaFindings,
       provider: {
         name: 'CFBD',
-        callsAttempted: calls.length,
+        callsAttempted: providerCallsAttempted,
         callsSucceeded: calls.filter((call) => call.ok).length,
         hardCallCeiling: HISTORICAL_SNAPSHOT_MAX_PROVIDER_CALLS,
         calls,
@@ -452,7 +482,7 @@ async function main(): Promise<void> {
       season: args.season,
       repoCommitSha: commitSha,
       generatedAt: new Date().toISOString(),
-      providerCalls: calls.length,
+      providerCalls: providerCallsAttempted,
       artifacts,
     };
     writeJsonExclusive(path.join(args.outputDir, 'manifest.json'), manifest);
@@ -464,7 +494,7 @@ async function main(): Promise<void> {
           qaFindings,
           season: args.season,
           repoCommitSha: commitSha,
-          providerCalls: calls.length,
+          providerCalls: providerCallsAttempted,
           hardCallCeiling: HISTORICAL_SNAPSHOT_MAX_PROVIDER_CALLS,
           fbsVsFbsRegularGames: coverage.fbsVsFbsRegularGames,
           completedFbsVsFbsRegularGames:
@@ -502,9 +532,10 @@ async function main(): Promise<void> {
       qaFindings: [errorCode],
       provider: {
         name: 'CFBD',
-        callsAttempted: calls.length,
+        callsAttempted: providerCallsAttempted,
         callsSucceeded: calls.filter((call) => call.ok).length,
         hardCallCeiling: HISTORICAL_SNAPSHOT_MAX_PROVIDER_CALLS,
+        lastAttemptedRequestId,
         calls,
       },
       execution: {
@@ -528,7 +559,7 @@ async function main(): Promise<void> {
         season: args.season,
         repoCommitSha: commitSha,
         generatedAt: new Date().toISOString(),
-        providerCalls: calls.length,
+        providerCalls: providerCallsAttempted,
         artifacts,
       });
     } catch {
