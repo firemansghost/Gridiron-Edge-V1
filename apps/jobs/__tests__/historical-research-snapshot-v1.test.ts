@@ -284,7 +284,7 @@ describe('historical research snapshot v1', () => {
     expect(workflow2024).toMatch(
       /CAPTURE_2024_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW/
     );
-    expect(workflow2024).toMatch(/season 2024/);
+    expect(workflow2024).toMatch(/season=2024/);
     expect(workflow2024).toMatch(/npm ci --ignore-scripts/);
     expect(workflow2024).toMatch(/npx tsc/);
     expect(workflow2024).toMatch(
