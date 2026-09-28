@@ -15,10 +15,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import {
-  HISTORICAL_SNAPSHOT_CONFIRMATION,
   HISTORICAL_SNAPSHOT_MAX_PROVIDER_CALLS,
-  HISTORICAL_SNAPSHOT_TARGET_SEASON,
   HISTORICAL_SNAPSHOT_VERSION,
+  assertHistoricalSnapshotSeason,
+  historicalSnapshotConfirmation,
+  historicalSnapshotSeasonRole,
   buildCfbdUrl,
   buildHistoricalGamesRequest,
   buildHistoricalSnapshotPlan,
@@ -79,12 +80,8 @@ function parseArgs(argv: string[]): Args {
   const confirm = values.get('--confirm') ?? '';
   const outputDir = values.get('--output-dir') ?? '';
 
-  if (season !== HISTORICAL_SNAPSHOT_TARGET_SEASON) {
-    throw new Error(
-      `season must equal ${HISTORICAL_SNAPSHOT_TARGET_SEASON}`
-    );
-  }
-  if (confirm !== HISTORICAL_SNAPSHOT_CONFIRMATION) {
+  assertHistoricalSnapshotSeason(season);
+  if (confirm !== historicalSnapshotConfirmation(season)) {
     throw new Error('exact historical snapshot confirmation is required');
   }
   if (!outputDir) throw new Error('--output-dir is required');
@@ -584,8 +581,7 @@ async function main(): Promise<void> {
           'ARCHIVED_FOR_SEMANTIC_VALIDATION_NOT_POINT_IN_TIME_SAFE_BY_THIS_CAPTURE',
         retrospectiveCoreRatings:
           'NOT_CAPTURED_NOT_PROSPECTIVE_EVIDENCE',
-        season2025Role:
-          'PIPELINE_VERIFICATION_NOW_LOCKED_HOLDOUT_FOR_LATER_FINAL_TEST',
+        seasonRole: historicalSnapshotSeasonRole(args.season),
       },
       execution: {
         databaseReads: false,
