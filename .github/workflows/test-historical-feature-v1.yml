@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'research/historical/HISTORICAL_FEATURE_DEFINITION_V1_CONTRACT.md'
+      - 'research/historical/HISTORICAL_MODEL_DEVELOPMENT_TUNING_PROTOCOL_V1.md'
       - 'apps/jobs/src/research/historical-feature-v1.ts'
       - 'apps/jobs/build-historical-feature-v1.ts'
       - 'apps/jobs/__tests__/historical-feature-v1.test.ts'
