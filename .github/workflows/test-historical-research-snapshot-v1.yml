@@ -1,0 +1,39 @@
+name: Test Historical Research Snapshot V1
+
+on:
+  pull_request:
+    paths:
+      - 'research/historical/HISTORICAL_RESEARCH_SNAPSHOT_V1_CONTRACT.md'
+      - 'apps/jobs/src/research/historical-research-snapshot-v1.ts'
+      - 'apps/jobs/capture-historical-research-snapshot-v1.ts'
+      - 'apps/jobs/__tests__/historical-research-snapshot-v1.test.ts'
+      - '.github/workflows/capture-historical-research-snapshot-v1.yml'
+      - '.github/workflows/test-historical-research-snapshot-v1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript smoke compile
+        run: |
+          npx tsc --noEmit             --module commonjs             --moduleResolution node             --target ES2019             --esModuleInterop             --skipLibCheck             apps/jobs/src/research/historical-research-snapshot-v1.ts             apps/jobs/capture-historical-research-snapshot-v1.ts
+
+      - name: Test Historical Research Snapshot V1
+        run: npx jest apps/jobs/__tests__/historical-research-snapshot-v1.test.ts --runInBand
