@@ -1,8 +1,8 @@
 # Historical Research Snapshot V1 — Authorized Season Contract
 
 **Status:** RESEARCH ONLY / PREVIEW-ARTIFACT ONLY  
-**Authorized seasons:** 2025 (audited pipeline-verification / later holdout) and 2022 (audited development corpus)  
-**Not authorized:** 2023 or 2024 provider capture until separately reviewed and enabled.
+**Authorized seasons:** 2025 (audited pipeline-verification / later holdout), 2022 (audited development corpus), and 2023 (next development-corpus capture)  
+**Not authorized:** 2024 provider capture until separately reviewed and enabled.
 
 ## Purpose
 
@@ -11,8 +11,8 @@ measure historical coverage before any historical-model reconstruction, feature 
 prediction generation, or backtest persistence.
 
 The 2025 capture proved the pipeline and remains the eventual untouched holdout. The
-2022 development-corpus capture has now also passed independent artifact and coverage
-audit. No later season is authorized by this contract.
+2022 development-corpus capture has passed independent artifact and coverage audit. The
+next authorized expansion is deliberately one season only: 2023.
 
 ## Scope
 
@@ -46,15 +46,17 @@ The shared V1 planner accepts exactly:
 
 - **2025** — already captured and independently audited; retained for pipeline
   verification now and the final untouched holdout later.
-- **2022** — authorized as the next development-corpus capture only.
+- **2022** — captured and independently audited as the first development corpus.
+- **2023** — authorized as the next development-corpus capture only.
 
-The shared planner must fail closed for **2023** and **2024** until a separate
-season-enablement decision is made.
+The shared planner must fail closed for **2024** until a separate season-enablement
+decision is made.
 
 Each season uses a season-specific manual guarded workflow and exact confirmation:
 
 - 2025: `CAPTURE_2025_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW`
 - 2022: `CAPTURE_2022_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW`
+- 2023: `CAPTURE_2023_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW`
 
 A workflow must run from `refs/heads/main` and require an exact
 `expected_main_sha`.
@@ -77,7 +79,7 @@ For an authorized season `Y`, the dynamic plan is:
 13+. one `/ratings/elo?year=Y&seasonType=regular&week=N` request for each
 observed regular-season FBS-vs-FBS week.
 
-For 2022, the recruiting classes are **2019–2022**.
+For 2022, the recruiting classes are **2019–2022**. For 2023, they are **2020–2023**.
 
 If the dynamically derived plan exceeds 32 calls, the job fails closed before the
 excess call is made.
@@ -183,17 +185,28 @@ Audit closeout is recorded in
 That audit does **not** by itself authorize model tuning, historical prediction
 generation, database persistence, or later-season provider calls.
 
+## 2023 development boundary
+
+The 2023 provider capture, once executed, creates the second candidate development
+corpus. It does **not** by itself authorize model tuning or historical prediction
+generation.
+
+After the 2023 artifact is captured, it must be independently audited for hashes,
+provider-call accounting, canonical coverage, missingness, market depth, and endpoint
+semantics before 2022–2023 development work begins.
+
 ## Next authorization boundary
 
-Merging 2022 capture capability does **not** authorize the provider run.
+Merging 2023 capture capability does **not** authorize the provider run.
 
-A later explicit operator decision is still required to execute the 2022 workflow on
+A later explicit operator decision is still required to execute the 2023 workflow on
 `main`.
 
-The successful and audited 2022 capture also does **not** authorize:
+A successful 2023 capture also does **not** authorize:
 
-- 2023 or 2024 provider calls;
+- 2024 provider calls;
 - database persistence of raw historical data;
 - historical prediction generation;
 - model tuning;
-- backtest result claims.
+- backtest result claims;
+- use of 2025 for development or tuning.

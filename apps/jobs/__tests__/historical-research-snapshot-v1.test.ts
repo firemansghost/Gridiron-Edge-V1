@@ -96,7 +96,7 @@ describe('historical research snapshot v1', () => {
     expect(url).not.toMatch(/token|key|authorization/i);
   });
 
-  it('authorizes only the audited 2025 path and the next 2022 development capture', () => {
+  it('authorizes audited 2022/2025 paths plus the next 2023 development capture', () => {
     const games2022 = games.map((game) => ({ ...game, season: 2022 }));
     const plan2022 = buildHistoricalSnapshotPlan(2022, games2022);
 
@@ -121,14 +121,38 @@ describe('historical research snapshot v1', () => {
       'CAPTURE_2022_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW'
     );
     expect(historicalSnapshotSeasonRole(2022)).toBe(
+      'DEVELOPMENT_CORPUS_AUDITED_RESEARCH_ONLY'
+    );
+
+    const games2023 = games.map((game) => ({ ...game, season: 2023 }));
+    const plan2023 = buildHistoricalSnapshotPlan(2023, games2023);
+
+    expect(plan2023.season).toBe(2023);
+    expect(plan2023.requests.map((request) => request.id)).toEqual([
+      'games',
+      'lines',
+      'advanced-game-stats',
+      'ppa-games',
+      'talent',
+      'returning-production',
+      'transfer-portal',
+      'recruiting-teams-2020',
+      'recruiting-teams-2021',
+      'recruiting-teams-2022',
+      'recruiting-teams-2023',
+      'elo-preseason',
+      'elo-week-01',
+      'elo-week-02',
+    ]);
+    expect(historicalSnapshotConfirmation(2023)).toBe(
+      'CAPTURE_2023_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW'
+    );
+    expect(historicalSnapshotSeasonRole(2023)).toBe(
       'DEVELOPMENT_CORPUS_CAPTURE_RESEARCH_ONLY_PENDING_AUDIT'
     );
 
-    expect(() => buildHistoricalSnapshotPlan(2023, games2022)).toThrow(
-      /season must be one of 2022, 2025/
-    );
-    expect(() => buildHistoricalSnapshotPlan(2024, games2022)).toThrow(
-      /season must be one of 2022, 2025/
+    expect(() => buildHistoricalSnapshotPlan(2024, games2023)).toThrow(
+      /season must be one of 2022, 2023, 2025/
     );
   });
 
@@ -195,6 +219,33 @@ describe('historical research snapshot v1', () => {
       /npx prisma|npm run prisma|prisma migrate|prisma db/i
     );
     expect(workflow2022).not.toMatch(
+      /ODDS_API_KEY|SGO_API_KEY|VISUALCROSSING/i
+    );
+
+
+    const workflow2023 = fs.readFileSync(
+      path.resolve(
+        process.cwd(),
+        '.github/workflows/capture-historical-research-snapshot-v1-2023.yml'
+      ),
+      'utf8'
+    );
+    expect(workflow2023).toMatch(/CFBD_API_KEY/);
+    expect(workflow2023).toMatch(/expected_main_sha/);
+    expect(workflow2023).toMatch(
+      /CAPTURE_2023_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW/
+    );
+    expect(workflow2023).toMatch(/npm ci --ignore-scripts/);
+    expect(workflow2023).toMatch(/npx tsc/);
+    expect(workflow2023).toMatch(
+      /node \.tmp\/historical-research-snapshot-v1\/capture-historical-research-snapshot-v1\.js/
+    );
+    expect(workflow2023).not.toMatch(/npx tsx/);
+    expect(workflow2023).not.toMatch(/DIRECT_URL|DATABASE_URL/);
+    expect(workflow2023).not.toMatch(
+      /npx prisma|npm run prisma|prisma migrate|prisma db/i
+    );
+    expect(workflow2023).not.toMatch(
       /ODDS_API_KEY|SGO_API_KEY|VISUALCROSSING/i
     );
 
