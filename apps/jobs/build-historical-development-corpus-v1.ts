@@ -40,6 +40,7 @@ interface LoadedSource {
   source: HistoricalDevelopmentSeasonSource;
   portalRawBytes: Buffer;
   providerCalls: number;
+  portalRowCount: number;
   snapshotManifestSha256: string;
   snapshotReportSha256: string;
 }
@@ -267,7 +268,8 @@ function loadFrozenSource(
   const provider = asObject(report.provider);
   const calls = provider?.calls;
   if (
-    provider?.name !== 'CFBD' ||
+    !provider ||
+    provider.name !== 'CFBD' ||
     provider.callsAttempted !== 27 ||
     provider.callsSucceeded !== 27 ||
     !Array.isArray(calls)
@@ -316,6 +318,8 @@ function loadFrozenSource(
     eloByWeek[Number(match[1])] = rowsForRequest(requestId);
   }
 
+  const portalRows = rowsForRequest('transfer-portal');
+
   return {
     config,
     source: {
@@ -332,6 +336,7 @@ function loadFrozenSource(
     },
     portalRawBytes: rawBytesForRequest('transfer-portal'),
     providerCalls: provider.callsAttempted as number,
+    portalRowCount: portalRows.length,
     snapshotManifestSha256: sha256Bytes(manifestRaw),
     snapshotReportSha256: sha256Bytes(reportRaw),
   };
@@ -532,12 +537,8 @@ function main(): void {
         historyEligibility: corpus.historyEligibility.length,
         outcomes: corpus.outcomes.length,
         marketEvaluation: corpus.marketEvaluation.length,
-        quarantinedTransferPortalRows2022: source2022.source
-          ? JSON.parse(source2022.portalRawBytes.toString('utf8')).length
-          : null,
-        quarantinedTransferPortalRows2023: source2023.source
-          ? JSON.parse(source2023.portalRawBytes.toString('utf8')).length
-          : null,
+        quarantinedTransferPortalRows2022: source2022.portalRowCount,
+        quarantinedTransferPortalRows2023: source2023.portalRowCount,
       },
       boundaries: {
         outcomesInPredictiveLayer: false,
