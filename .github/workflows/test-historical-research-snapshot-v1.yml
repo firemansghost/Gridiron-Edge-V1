@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'research/historical/HISTORICAL_RESEARCH_SNAPSHOT_V1_CONTRACT.md'
+      - 'research/historical/HISTORICAL_DEVELOPMENT_CORPUS_V1_CONTRACT.md'
       - 'apps/jobs/src/research/historical-research-snapshot-v1.ts'
       - 'apps/jobs/capture-historical-research-snapshot-v1.ts'
       - 'apps/jobs/__tests__/historical-research-snapshot-v1.test.ts'
