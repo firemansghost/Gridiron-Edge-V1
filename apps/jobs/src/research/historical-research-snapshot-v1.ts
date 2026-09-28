@@ -112,6 +112,17 @@ function request(
   return { id, kind, endpoint, query, ...extra };
 }
 
+export function buildHistoricalGamesRequest(
+  season: number
+): HistoricalSnapshotRequest {
+  assertHistoricalSnapshotSeason(season);
+  return request('games', 'games', '/games', {
+    year: String(season),
+    seasonType: HISTORICAL_SNAPSHOT_SEASON_TYPE,
+    classification: 'fbs',
+  });
+}
+
 export function buildHistoricalSnapshotPlan(
   season: number,
   gamesRows: HistoricalGameLike[]
@@ -124,11 +135,7 @@ export function buildHistoricalSnapshotPlan(
   }
 
   const requests: HistoricalSnapshotRequest[] = [
-    request('games', 'games', '/games', {
-      year: String(season),
-      seasonType: HISTORICAL_SNAPSHOT_SEASON_TYPE,
-      classification: 'fbs',
-    }),
+    buildHistoricalGamesRequest(season),
     request('lines', 'lines', '/lines', {
       year: String(season),
       seasonType: HISTORICAL_SNAPSHOT_SEASON_TYPE,
