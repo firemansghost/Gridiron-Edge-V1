@@ -1,6 +1,6 @@
 # Historical Model Development / Tuning Protocol V1
 
-**Status:** FROZEN DEVELOPMENT PROTOCOL — NO MODEL FIT YET  
+**Status:** FROZEN DEVELOPMENT PROTOCOL — EXECUTED AND INDEPENDENTLY AUDITED  
 **Development feature artifact:** Historical Feature V1  
 **Development seasons:** 2022 and 2023 only  
 **2022 role:** tuning / model-selection season  
@@ -789,32 +789,73 @@ The implementation must fail closed on at least:
 - coefficient/scaler non-finite;
 - repeated Stage A selection within one purported immutable V1 run.
 
+## Audited V1 development run
+
+Historical Model Development V1 was executed once in GitHub Actions run
+`36494166168` at builder SHA
+`ed57d43ebbfd7b2fdbd68237ec7f41a3832d168f`.
+
+Independent audit closeout is recorded in
+[`docs/2026-09-28-historical-model-development-v1-audit.md`](../../docs/2026-09-28-historical-model-development-v1-audit.md).
+
+Accepted development artifact:
+
+- artifact ID: `11002393824`
+- artifact name: `historical-model-development-v1-36494166168`
+- ZIP SHA-256:
+  `bb0a9233c4de18c317b35d13cc6bacefadc4e359fe4de8e52addad3ec523e313`
+
+Frozen Stage A selection SHA-256:
+
+`bcc28dbc02b177690136f192bd71f16110a3d05319c91d67ef5e6888f90c5858`
+
+Frozen development result:
+
+- selected primary lambda: **100**
+- selected Elo-baseline lambda: **100**
+- 2023 confirmation status: `DEVELOPMENT_CONFIRMATION_PASS`
+- final 2022+2023 candidate emitted: **yes**
+- final candidate payload SHA-256:
+  `8c6f1d053ff85e401f8acda5cba9ace7f54e5aaee6d9b46117a3c4dd690f1a53`
+
+The independently audited frozen candidate is:
+
+`historical_ridge_margin_v1`
+
+It is a **development candidate only**, not a production model.
+
 ## What remains unauthorized
 
-Merging this protocol does **not** authorize:
+The audited V1 result does **not** authorize:
 
-- model-development implementation;
-- model fit;
-- tuning execution;
-- 2023 confirmation run;
-- final model refit;
+- production deployment;
 - database persistence;
 - Generic Shadow changes;
 - official prediction changes;
+- lambda retuning;
+- coefficient/scaler changes;
+- feature-definition changes;
 - 2024 capture/use;
-- 2025 access.
+- 2025 access;
+- market evaluation.
 
-## Next sequence after protocol merge
+## Next authorization boundary
 
-1. implement an artifact-only deterministic V1 development engine;
-2. add synthetic tests for folds, scaling, missingness, ridge penalty, baselines, and
-   confirmation gate;
-3. add a manual SHA-guarded offline development workflow;
-4. review/merge capability;
-5. explicitly authorize one V1 development run;
-6. independently audit Stage A selection, 2023 confirmation, and any final candidate;
-7. if the gate passes, freeze the candidate model before any 2024 evidence is opened;
-8. then design a separate 2024 validation contract.
+The next research step is a separately frozen **2024 Historical Validation V1
+contract**.
+
+No 2024 provider capture, feature construction, outcome read, or candidate scoring
+should occur before that validation contract is reviewed and frozen.
+
+The validation contract must reuse the frozen candidate exactly:
+
+- lambda unchanged;
+- coefficients unchanged;
+- scaler unchanged;
+- feature semantics unchanged;
+- HFA treatment unchanged.
+
+2025 remains locked as the final holdout.
 
 ## Versioning
 
