@@ -128,8 +128,20 @@ describe('historical research snapshot v1', () => {
     expect(workflow).toMatch(/CFBD_API_KEY/);
     expect(workflow).toMatch(/expected_main_sha/);
     expect(workflow).toMatch(/CAPTURE_2025_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW/);
+    expect(workflow).toMatch(/npm ci --ignore-scripts/);
     expect(workflow).not.toMatch(/DIRECT_URL|DATABASE_URL/);
-    expect(workflow).not.toMatch(/prisma migrate|prisma db|PrismaClient/i);
+    expect(workflow).not.toMatch(
+      /npx prisma|npm run prisma|prisma migrate|prisma db/i
+    );
     expect(workflow).not.toMatch(/ODDS_API_KEY|SGO_API_KEY|VISUALCROSSING/i);
+
+    const cli = fs.readFileSync(
+      path.resolve(
+        process.cwd(),
+        'apps/jobs/capture-historical-research-snapshot-v1.ts'
+      ),
+      'utf8'
+    );
+    expect(cli).not.toMatch(/PrismaClient|DIRECT_URL|DATABASE_URL/);
   });
 });
