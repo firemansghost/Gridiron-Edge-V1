@@ -1,0 +1,74 @@
+name: Test Historical Model Development V1
+
+on:
+  pull_request:
+    paths:
+      - 'research/historical/HISTORICAL_MODEL_DEVELOPMENT_TUNING_PROTOCOL_V1.md'
+      - 'apps/jobs/src/research/historical-model-development-v1.ts'
+      - 'apps/jobs/run-historical-model-development-v1.ts'
+      - 'apps/jobs/__tests__/historical-model-development-v1.test.ts'
+      - '.github/workflows/run-historical-model-development-v1.yml'
+      - '.github/workflows/test-historical-model-development-v1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: TypeScript smoke compile
+        run: |
+          npx tsc --noEmit \
+            --module commonjs \
+            --moduleResolution node \
+            --target ES2019 \
+            --esModuleInterop \
+            --skipLibCheck \
+            apps/jobs/src/research/historical-model-development-v1.ts \
+            apps/jobs/run-historical-model-development-v1.ts
+
+      - name: Compile and start offline development runtime
+        run: |
+          set -euo pipefail
+          command -v unzip >/dev/null
+          rm -rf .tmp/historical-model-development-v1
+          npx tsc --module commonjs \
+            --moduleResolution node \
+            --target ES2019 \
+            --esModuleInterop \
+            --skipLibCheck \
+            --outDir .tmp/historical-model-development-v1 \
+            apps/jobs/src/research/historical-model-development-v1.ts \
+            apps/jobs/run-historical-model-development-v1.ts
+
+          test -f .tmp/historical-model-development-v1/run-historical-model-development-v1.js
+
+          set +e
+          OUTPUT="$(node .tmp/historical-model-development-v1/run-historical-model-development-v1.js \
+            --feature-zip .tmp/does-not-exist-feature.zip \
+            --corpus-zip .tmp/does-not-exist-corpus.zip \
+            --confirm RUN_2022_2023_HISTORICAL_MODEL_DEVELOPMENT_V1 \
+            --output-dir .tmp/no-development-run 2>&1)"
+          STATUS=$?
+          set -e
+
+          test "${STATUS}" -eq 1
+          echo "${OUTPUT}" | grep -F "[historical-model-development-v1] feature_zip_missing"
+
+      - name: Test Historical Model Development V1
+        run: npx jest apps/jobs/__tests__/historical-model-development-v1.test.ts --runInBand
