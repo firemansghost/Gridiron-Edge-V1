@@ -1,8 +1,17 @@
-# Historical Research Snapshot V1 — 2025 Contract
+# Historical Research Snapshot V1 — Authorized Season Contract
 
-**Status:** RESEARCH ONLY / PREVIEW ONLY  
-**Target season:** 2025  
-**Purpose:** verify historical data coverage and archival mechanics before any historical-model reconstruction or backtest persistence.
+**Status:** RESEARCH ONLY / PREVIEW-ARTIFACT ONLY  
+**Authorized seasons:** 2025 (audited pipeline-verification / later holdout) and 2022 (next development-corpus capture)  
+**Not authorized:** 2023 or 2024 provider capture until separately reviewed and enabled.
+
+## Purpose
+
+Historical Research Snapshot V1 exists to archive exact CFBD provider evidence and
+measure historical coverage before any historical-model reconstruction, feature tuning,
+prediction generation, or backtest persistence.
+
+The 2025 capture proved the pipeline and remains the eventual untouched holdout. The
+next authorized expansion is deliberately one season only: 2022.
 
 ## Scope
 
@@ -11,40 +20,66 @@ This capability may:
 - call College Football Data (CFBD) only;
 - archive exact raw provider bytes as GitHub Actions artifacts;
 - compute hashes, row counts, game counts, and coverage diagnostics;
-- derive the observed 2025 regular-season FBS-vs-FBS week set from the CFBD `/games` payload;
-- capture one CFBD Elo snapshot per observed regular-season week for later semantic validation.
+- derive the authorized season's regular-season FBS-vs-FBS week set from the CFBD
+  `/games` payload;
+- capture one CFBD Elo snapshot per observed regular-season week for later semantic
+  validation;
+- report provider-wide counts separately from canonical FBS-vs-FBS coverage;
+- report canonical team-prior missingness explicitly.
 
 This capability must not:
 
 - connect to production PostgreSQL/Supabase;
-- write any database row;
+- read or write any production database row;
 - invoke Prisma or Prisma generation;
 - invoke Odds API, SGO, weather, or any other provider;
 - write Bet, Game, MarketLine, Shadow, rating, lifecycle, or evaluation state;
 - reconstruct or infer missing provider rows;
-- treat retrospective data as prospective evidence.
+- coerce missing historical priors to zero;
+- treat retrospective data as prospective evidence;
+- generate historical predictions or tune a model.
+
+## Season authorization
+
+The shared V1 planner accepts exactly:
+
+- **2025** — already captured and independently audited; retained for pipeline
+  verification now and the final untouched holdout later.
+- **2022** — authorized as the next development-corpus capture only.
+
+The shared planner must fail closed for **2023** and **2024** until a separate
+season-enablement decision is made.
+
+Each season uses a season-specific manual guarded workflow and exact confirmation:
+
+- 2025: `CAPTURE_2025_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW`
+- 2022: `CAPTURE_2022_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW`
+
+A workflow must run from `refs/heads/main` and require an exact
+`expected_main_sha`.
 
 ## Provider call budget
 
-The workflow has a hard ceiling of **32 CFBD calls**.
+Every run has a hard ceiling of **32 CFBD calls**.
 
-The dynamic plan is:
+For an authorized season `Y`, the dynamic plan is:
 
-1. `/games?year=2025&seasonType=regular&classification=fbs`
-2. `/lines?year=2025&seasonType=regular`
-3. `/stats/game/advanced?year=2025&seasonType=regular`
-4. `/ppa/games?year=2025&seasonType=regular&classification=fbs`
-5. `/talent?year=2025`
-6. `/player/returning?year=2025`
-7. `/player/portal?year=2025`
-8. `/recruiting/teams?year=2022`
-9. `/recruiting/teams?year=2023`
-10. `/recruiting/teams?year=2024`
-11. `/recruiting/teams?year=2025`
-12. `/ratings/elo?year=2025&seasonType=regular&preseason=true`
-13+. one `/ratings/elo?year=2025&seasonType=regular&week=N` request for each observed regular-season FBS-vs-FBS week.
+1. `/games?year=Y&seasonType=regular&classification=fbs`
+2. `/lines?year=Y&seasonType=regular`
+3. `/stats/game/advanced?year=Y&seasonType=regular`
+4. `/ppa/games?year=Y&seasonType=regular&classification=fbs`
+5. `/talent?year=Y`
+6. `/player/returning?year=Y`
+7. `/player/portal?year=Y`
+8–11. four recruiting-team classes ending in `Y`
+12. `/ratings/elo?year=Y&seasonType=regular&preseason=true`
+13+. one `/ratings/elo?year=Y&seasonType=regular&week=N` request for each
+observed regular-season FBS-vs-FBS week.
 
-If the dynamically derived plan exceeds 32 calls, the job fails closed before the excess call is made.
+For 2022, the recruiting classes are **2019–2022**.
+
+If the dynamically derived plan exceeds 32 calls, the job fails closed before the
+excess call is made.
 
 ## Evidence durability
 
@@ -65,13 +100,17 @@ The final report records:
 - HTTP statuses and returned row counts;
 - provider rate-limit headers when supplied;
 - FBS-vs-FBS game and week coverage;
-- market, advanced-stat, PPA, roster-prior, recruiting, and Elo coverage;
-- zero-database-read / zero-database-write execution assertions.
+- provider-wide and canonical advanced/PPA coverage;
+- canonical talent, returning-production, recruiting, and preseason-Elo missingness;
+- zero-database-read / zero-database-write execution assertions;
+- season role.
 
 Dependency installation must use `npm ci --ignore-scripts` so the repository
 `postinstall` hook cannot invoke `prisma generate`.
 
-The GitHub workflow uploads these artifacts with a 90-day retention period. A future durability decision may copy verified raw snapshots to longer-lived private storage; that is not authorized by this V1 contract.
+The GitHub workflow uploads evidence with 90-day retention. A future durability
+decision may copy verified raw snapshots to longer-lived private storage; that is not
+authorized by V1.
 
 ## Leakage boundaries
 
@@ -79,46 +118,36 @@ The GitHub workflow uploads these artifacts with a 90-day retention period. A fu
 
 CFBD historical lines are **evaluation evidence only** in V1.
 
-They may be used later to evaluate:
+They may later be used to evaluate ATS performance, market-implied margin error, and
+closing-line comparison where provider semantics support it. They must not enter
+predictive features until a separate point-in-time market contract proves what was
+available before each historical prediction timestamp.
 
-- ATS performance;
-- market-implied margin error;
-- closing-line comparison where the provider semantics are appropriate.
+### Scores and postgame fields
 
-They must not be used as predictive features until a separate point-in-time market contract proves what information would have been available before each historical prediction timestamp.
-
-### Scores and postgame game fields
-
-Scores, postgame Elo, postgame win probability, and other postgame fields are outcome/evaluation data only.
-
-They may never enter a historical feature vector for a prediction made before the game.
+Scores, postgame Elo, postgame win probability, and other postgame fields are
+outcome/evaluation data only. They may never enter a feature vector for a prediction
+made before the game.
 
 ### Weekly Elo
 
-Weekly CFBD Elo rows are archived in V1 but are **not declared point-in-time safe** merely because a week parameter exists.
+Weekly CFBD Elo rows are archived but are **not declared point-in-time safe** merely
+because a week parameter exists.
 
-Before Elo can become a historical predictor, a separate semantic audit must determine whether the returned Week N value represents:
-
-- entering Week N;
-- after Week N;
-- or another stored convention.
-
-Until that audit passes, weekly Elo is research evidence only.
+The 2025 audit found strong evidence that Week N behaves as an end-of-Week-N rating.
+A separate point-in-time Elo contract must still formalize prior-week usage, byes,
+Week 1 anomalies, newly classified teams, and missing preseason values before Elo can
+be admitted to historical predictive features.
 
 ### CFBD retrospective CORE
 
-Retrospective CFBD CORE ratings are intentionally not captured in this snapshot. CFBD documents historical CORE values as retrospective results from the released methodology, not necessarily what would have been published at that historical moment.
-
-They must not be represented as prospective historical evidence.
+Retrospective CFBD CORE ratings are intentionally not captured. Historical CORE values
+must not be represented as prospective historical evidence without a separate
+point-in-time proof.
 
 ## 2025 holdout boundary
 
-2025 has two sequential roles:
-
-1. **Now:** pipeline verification only — coverage, mappings, hashes, missingness, endpoint semantics, and as-of feasibility.
-2. **Later:** locked final holdout after the model family and thresholds are chosen using development/validation seasons.
-
-Do not use 2025 game outcomes to choose:
+2025 remains unavailable for choosing:
 
 - model formula;
 - feature inclusion;
@@ -127,14 +156,29 @@ Do not use 2025 game outcomes to choose:
 - favorite/dog segmentation;
 - ensemble weights.
 
+Its outcomes may be used now only for pipeline verification, coverage, missingness,
+and endpoint-semantic auditing. The season is reserved for the later final holdout.
+
+## 2022 development boundary
+
+The 2022 provider capture creates a candidate development corpus; it does **not** by
+itself authorize model tuning or historical prediction generation.
+
+After the 2022 artifact is captured, it must be independently audited for hashes,
+provider-call accounting, canonical coverage, missingness, and endpoint semantics
+before the next research step is chosen.
+
 ## Next authorization boundary
 
-A successful 2025 Snapshot V1 does **not** authorize:
+Merging 2022 capture capability does **not** authorize the provider run.
 
-- database persistence of the raw data;
-- 2022/2023/2024 provider calls;
-- model tuning;
+A later explicit operator decision is still required to execute the 2022 workflow on
+`main`.
+
+A successful 2022 capture also does **not** authorize:
+
+- 2023 or 2024 provider calls;
+- database persistence of raw historical data;
 - historical prediction generation;
+- model tuning;
 - backtest result claims.
-
-Those actions require the snapshot to be audited first and a separate next-step decision.
