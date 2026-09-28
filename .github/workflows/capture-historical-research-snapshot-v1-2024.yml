@@ -144,5 +144,5 @@ jobs:
           echo "Bet/Shadow/Game/lifecycle writes=false"
           echo "historical betting lines=evaluation-only"
           echo "weekly Elo=semantic-validation-required"
-          echo "2024=development corpus capture; research-only pending audit"
+          echo "2024=validation source capture; research-only pending audit"
           echo "==================================================="
