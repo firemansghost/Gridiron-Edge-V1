@@ -1,0 +1,74 @@
+name: Test Historical Development Corpus V1
+
+on:
+  pull_request:
+    paths:
+      - 'research/historical/HISTORICAL_DEVELOPMENT_CORPUS_V1_CONTRACT.md'
+      - 'apps/jobs/src/research/historical-development-corpus-v1.ts'
+      - 'apps/jobs/build-historical-development-corpus-v1.ts'
+      - 'apps/jobs/__tests__/historical-development-corpus-v1.test.ts'
+      - '.github/workflows/build-historical-development-corpus-v1.yml'
+      - '.github/workflows/test-historical-development-corpus-v1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: TypeScript smoke compile
+        run: |
+          npx tsc --noEmit \
+            --module commonjs \
+            --moduleResolution node \
+            --target ES2019 \
+            --esModuleInterop \
+            --skipLibCheck \
+            apps/jobs/src/research/historical-development-corpus-v1.ts \
+            apps/jobs/build-historical-development-corpus-v1.ts
+
+      - name: Compile and start offline corpus runtime
+        run: |
+          set -euo pipefail
+          command -v unzip >/dev/null
+          rm -rf .tmp/historical-development-corpus-v1
+          npx tsc --module commonjs \
+            --moduleResolution node \
+            --target ES2019 \
+            --esModuleInterop \
+            --skipLibCheck \
+            --outDir .tmp/historical-development-corpus-v1 \
+            apps/jobs/src/research/historical-development-corpus-v1.ts \
+            apps/jobs/build-historical-development-corpus-v1.ts
+
+          test -f .tmp/historical-development-corpus-v1/build-historical-development-corpus-v1.js
+
+          set +e
+          OUTPUT="$(node .tmp/historical-development-corpus-v1/build-historical-development-corpus-v1.js \
+            --source-2022-zip .tmp/does-not-exist-2022.zip \
+            --source-2023-zip .tmp/does-not-exist-2023.zip \
+            --confirm BUILD_2022_2023_HISTORICAL_DEVELOPMENT_CORPUS_V1 \
+            --output-dir .tmp/no-corpus-run 2>&1)"
+          STATUS=$?
+          set -e
+
+          test "${STATUS}" -eq 1
+          echo "${OUTPUT}" | grep -F "[historical-development-corpus-v1] source_zip_missing"
+
+      - name: Test Historical Development Corpus V1
+        run: npx jest apps/jobs/__tests__/historical-development-corpus-v1.test.ts --runInBand
