@@ -1,0 +1,181 @@
+name: Run Historical Model Development V1 (Manual, Guarded)
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_main_sha:
+        description: 'Exact current main SHA'
+        required: true
+        type: string
+      confirmation:
+        description: 'Type RUN_2022_2023_HISTORICAL_MODEL_DEVELOPMENT_V1 exactly'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: historical-model-development-v1
+  cancel-in-progress: false
+
+jobs:
+  develop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      FEATURE_ARTIFACT_ID: '11000651389'
+      FEATURE_ZIP_SHA256: '047220307750b755d1e6d626628802baf818dbd70ffde9252e63768e7a823ad2'
+      CORPUS_ARTIFACT_ID: '10997010171'
+      CORPUS_ZIP_SHA256: 'cea83762d2b6e492caec680a74a085ef5a5e283c36a402ef4b35acbe2ce22b7d'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Source SHA guard
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          echo "ACTUAL_SHA=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+          echo "actual_sha=${ACTUAL_SHA}"
+          echo "expected_main_sha=${EXPECTED_MAIN_SHA}"
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Refusing development run outside refs/heads/main."
+            exit 1
+          fi
+          if [ -z "${EXPECTED_MAIN_SHA}" ] || [ "${ACTUAL_SHA}" != "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing development run because main SHA does not match expected_main_sha."
+            exit 1
+          fi
+          echo "Source SHA guard passed."
+
+      - name: Preflight
+        env:
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          if [ "${INPUT_CONFIRMATION}" != "RUN_2022_2023_HISTORICAL_MODEL_DEVELOPMENT_V1" ]; then
+            echo "::error::Exact model-development confirmation is required."
+            exit 1
+          fi
+          command -v curl >/dev/null
+          command -v unzip >/dev/null
+          command -v sha256sum >/dev/null
+          echo "mode=ARTIFACT_ONLY_OFFLINE_MODEL_DEVELOPMENT"
+          echo "tuningSeason=2022"
+          echo "confirmationSeason=2023"
+          echo "validation2024=false"
+          echo "holdout2025=false"
+          echo "marketReads=0"
+          echo "providerCalls=0"
+          echo "databaseReads=false"
+          echo "databaseWrites=false"
+          echo "prisma=false"
+
+      - name: Download frozen development artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p .research-inputs
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts"
+
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${API}/${FEATURE_ARTIFACT_ID}/zip" \
+            -o .research-inputs/historical-feature-v1-36489184409.zip
+
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${API}/${CORPUS_ARTIFACT_ID}/zip" \
+            -o .research-inputs/historical-development-corpus-v1-36479515332.zip
+
+      - name: Verify frozen input ZIP hashes
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' \
+            "${FEATURE_ZIP_SHA256}" \
+            ".research-inputs/historical-feature-v1-36489184409.zip" \
+            | sha256sum -c -
+          printf '%s  %s\n' \
+            "${CORPUS_ZIP_SHA256}" \
+            ".research-inputs/historical-development-corpus-v1-36479515332.zip" \
+            | sha256sum -c -
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Compile development engine without lifecycle-dependent runtime
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/historical-model-development-v1
+          npx tsc --module commonjs \
+            --moduleResolution node \
+            --target ES2019 \
+            --esModuleInterop \
+            --skipLibCheck \
+            --outDir .tmp/historical-model-development-v1 \
+            apps/jobs/src/research/historical-model-development-v1.ts \
+            apps/jobs/run-historical-model-development-v1.ts
+
+      - name: Run Historical Model Development V1
+        env:
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          OUT="reports/historical-model-development-v1/${GITHUB_RUN_ID}"
+          node .tmp/historical-model-development-v1/run-historical-model-development-v1.js \
+            --feature-zip .research-inputs/historical-feature-v1-36489184409.zip \
+            --corpus-zip .research-inputs/historical-development-corpus-v1-36479515332.zip \
+            --confirm "${INPUT_CONFIRMATION}" \
+            --output-dir "${OUT}"
+
+      - name: Upload immutable development evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-model-development-v1-${{ github.run_id }}
+          path: reports/historical-model-development-v1/**
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 6
+          overwrite: false
+          include-hidden-files: false
+
+      - name: Summary
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "==================================================="
+          echo "HISTORICAL MODEL DEVELOPMENT V1"
+          echo "==================================================="
+          echo "status=${JOB_STATUS}"
+          echo "sourceSha=${ACTUAL_SHA:-unavailable}"
+          echo "mode=ARTIFACT_ONLY_OFFLINE_MODEL_DEVELOPMENT"
+          echo "featureArtifactId=${FEATURE_ARTIFACT_ID}"
+          echo "corpusArtifactId=${CORPUS_ARTIFACT_ID}"
+          echo "tuningSeason=2022"
+          echo "confirmationSeason=2023"
+          echo "marketReads=0"
+          echo "providerCalls=0"
+          echo "databaseReads=false"
+          echo "databaseWrites=false"
+          echo "prisma=false"
+          echo "2024=reserved validation; not included"
+          echo "2025=locked final holdout; not included"
+          echo "==================================================="
