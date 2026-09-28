@@ -1,7 +1,7 @@
 # Historical Research Snapshot V1 — Authorized Season Contract
 
 **Status:** RESEARCH ONLY / PREVIEW-ARTIFACT ONLY  
-**Authorized seasons:** 2025 (audited pipeline-verification / later holdout), 2022 (audited development corpus), and 2023 (next development-corpus capture)  
+**Authorized seasons:** 2025 (audited pipeline-verification / later holdout), 2022 (audited development corpus), and 2023 (audited development corpus)  
 **Not authorized:** 2024 provider capture until separately reviewed and enabled.
 
 ## Purpose
@@ -11,8 +11,9 @@ measure historical coverage before any historical-model reconstruction, feature 
 prediction generation, or backtest persistence.
 
 The 2025 capture proved the pipeline and remains the eventual untouched holdout. The
-2022 development-corpus capture has passed independent artifact and coverage audit. The
-next authorized expansion is deliberately one season only: 2023.
+2022 and 2023 development-corpus captures have both passed independent artifact and
+coverage audit. The next step is development-corpus contract design, not another season
+capture.
 
 ## Scope
 
@@ -47,7 +48,7 @@ The shared V1 planner accepts exactly:
 - **2025** — already captured and independently audited; retained for pipeline
   verification now and the final untouched holdout later.
 - **2022** — captured and independently audited as the first development corpus.
-- **2023** — authorized as the next development-corpus capture only.
+- **2023** — captured and independently audited as the second development corpus.
 
 The shared planner must fail closed for **2024** until a separate season-enablement
 decision is made.
@@ -141,8 +142,8 @@ made before the game.
 Weekly CFBD Elo rows are **not same-week point-in-time safe** merely because a week
 parameter exists.
 
-Independent 2025 and 2022 audits establish that Week N behaves as an
-**end-of-provider-Week-N** state. The 2022 audit additionally verified final-game
+Independent 2025, 2022, and 2023 audits establish that Week N behaves as an
+**end-of-provider-Week-N** state. The 2022 and 2023 audits verify exact final-game
 postgame matching and exact bye-week carry-forward behavior.
 
 Historical Elo feature mapping is now frozen separately in
@@ -187,22 +188,24 @@ generation, database persistence, or later-season provider calls.
 
 ## 2023 development boundary
 
-The 2023 provider capture, once executed, creates the second candidate development
-corpus. It does **not** by itself authorize model tuning or historical prediction
-generation.
+The 2023 provider capture is now an **independently audited development corpus**.
 
-After the 2023 artifact is captured, it must be independently audited for hashes,
-provider-call accounting, canonical coverage, missingness, market depth, and endpoint
-semantics before 2022–2023 development work begins.
+Audit closeout is recorded in
+[`docs/2026-09-28-historical-research-snapshot-v1-2023-audit.md`](../../docs/2026-09-28-historical-research-snapshot-v1-2023-audit.md).
+
+The audit confirms complete canonical game/stat/line coverage for the captured 2023
+universe while preserving explicit missingness in returning production and one
+historical recruiting class. It also independently reconfirms Historical Elo PIT V1.
+
+That audit does **not** by itself authorize model tuning, historical prediction
+generation, database persistence, or later-season provider calls.
 
 ## Next authorization boundary
 
-Merging 2023 capture capability does **not** authorize the provider run.
+The next research step is a separately frozen **2022–2023 Historical Development
+Corpus V1 contract** before any historical feature computation or model tuning begins.
 
-A later explicit operator decision is still required to execute the 2023 workflow on
-`main`.
-
-A successful 2023 capture also does **not** authorize:
+The audited 2022–2023 snapshots do **not** authorize:
 
 - 2024 provider calls;
 - database persistence of raw historical data;

@@ -2,7 +2,7 @@
 
 **Status:** FROZEN RESEARCH INPUT MAPPING  
 **Scope:** Historical CFBD Elo only  
-**Evidence basis:** independently audited 2022 and 2025 Historical Research Snapshot V1 captures
+**Evidence basis:** independently audited 2022, 2023, and 2025 Historical Research Snapshot V1 captures
 
 ## Purpose
 
@@ -36,7 +36,14 @@ The 2022 audit found:
 - all same-week canonical-game deviations were explained by another game later in the
   same provider week.
 
-The previously audited 2025 capture independently showed the same end-of-week behavior.
+The audited 2023 capture independently reconfirmed the same behavior:
+
+- **1,605 / 1,605** comparable played team-weeks matched the team's final regular-season
+  postgame Elo in provider Week N;
+- **390 / 390** comparable bye team-weeks carried the prior snapshot forward unchanged;
+- all 13 same-week canonical deviations occurred in multi-game Week 1 team-weeks.
+
+The previously audited 2025 capture also showed the same end-of-week behavior.
 
 Therefore Week N Elo contains information from Week N outcomes and is not eligible as
 a pregame Week N feature.
@@ -51,7 +58,7 @@ The prior weekly snapshot is the authorized input:
 - a team that did not play in Week N-1 receives the provider's carried-forward value.
 
 The 2022 audit observed **393 / 393** comparable bye team-weeks carrying forward
-unchanged.
+unchanged. The 2023 audit independently observed **390 / 390**.
 
 ## Multiple games in one provider week
 
@@ -89,6 +96,11 @@ policy explicitly authorizes another treatment.
 `awayPostgameElo` from the games payload are semantic-audit/evaluation evidence.
 
 They are not the feature source under this contract.
+
+The 2023 audit also found that the frozen preseason/prior-week source matched the games
+payload's game-level pregame Elo on **1,410 / 1,500** canonical team-games, with **90**
+differences. Do not force equality between these sources or substitute one for the
+other.
 
 Two audited 2022 team-weeks had null game-level Elo fields while a weekly snapshot was
 still available:
