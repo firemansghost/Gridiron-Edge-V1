@@ -96,7 +96,7 @@ describe('historical research snapshot v1', () => {
     expect(url).not.toMatch(/token|key|authorization/i);
   });
 
-  it('authorizes audited 2022/2025 paths plus the next 2023 development capture', () => {
+  it('authorizes audited development/holdout paths plus guarded 2024 validation capture planning', () => {
     const games2022 = games.map((game) => ({ ...game, season: 2022 }));
     const plan2022 = buildHistoricalSnapshotPlan(2022, games2022);
 
@@ -151,8 +151,31 @@ describe('historical research snapshot v1', () => {
       'AUDITED_DEVELOPMENT_SOURCE_SEASON_NEW_CAPTURE_REQUIRES_AUDIT'
     );
 
-    expect(() => buildHistoricalSnapshotPlan(2024, games2023)).toThrow(
-      /season must be one of 2022, 2023, 2025/
+    const games2024 = games.map((game) => ({ ...game, season: 2024 }));
+    const plan2024 = buildHistoricalSnapshotPlan(2024, games2024);
+
+    expect(plan2024.season).toBe(2024);
+    expect(plan2024.requests.map((request) => request.id)).toEqual([
+      'games',
+      'lines',
+      'advanced-game-stats',
+      'ppa-games',
+      'talent',
+      'returning-production',
+      'transfer-portal',
+      'recruiting-teams-2021',
+      'recruiting-teams-2022',
+      'recruiting-teams-2023',
+      'recruiting-teams-2024',
+      'elo-preseason',
+      'elo-week-01',
+      'elo-week-02',
+    ]);
+    expect(historicalSnapshotConfirmation(2024)).toBe(
+      'CAPTURE_2024_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW'
+    );
+    expect(historicalSnapshotSeasonRole(2024)).toBe(
+      'VALIDATION_SOURCE_SEASON_CAPTURE_REQUIRES_EXPLICIT_AUTHORIZATION_AND_AUDIT'
     );
   });
 
@@ -246,6 +269,33 @@ describe('historical research snapshot v1', () => {
       /npx prisma|npm run prisma|prisma migrate|prisma db/i
     );
     expect(workflow2023).not.toMatch(
+      /ODDS_API_KEY|SGO_API_KEY|VISUALCROSSING/i
+    );
+
+    const workflow2024 = fs.readFileSync(
+      path.resolve(
+        process.cwd(),
+        '.github/workflows/capture-historical-research-snapshot-v1-2024.yml'
+      ),
+      'utf8'
+    );
+    expect(workflow2024).toMatch(/CFBD_API_KEY/);
+    expect(workflow2024).toMatch(/expected_main_sha/);
+    expect(workflow2024).toMatch(
+      /CAPTURE_2024_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW/
+    );
+    expect(workflow2024).toMatch(/season 2024/);
+    expect(workflow2024).toMatch(/npm ci --ignore-scripts/);
+    expect(workflow2024).toMatch(/npx tsc/);
+    expect(workflow2024).toMatch(
+      /node \.tmp\/historical-research-snapshot-v1\/capture-historical-research-snapshot-v1\.js/
+    );
+    expect(workflow2024).not.toMatch(/npx tsx/);
+    expect(workflow2024).not.toMatch(/DIRECT_URL|DATABASE_URL/);
+    expect(workflow2024).not.toMatch(
+      /npx prisma|npm run prisma|prisma migrate|prisma db/i
+    );
+    expect(workflow2024).not.toMatch(
       /ODDS_API_KEY|SGO_API_KEY|VISUALCROSSING/i
     );
 
