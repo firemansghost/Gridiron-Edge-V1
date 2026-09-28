@@ -1,6 +1,6 @@
 # Historical Development Corpus V1 — Construction Contract
 
-**Status:** FROZEN CORPUS DESIGN — RESEARCH ONLY  
+**Status:** FROZEN CORPUS DESIGN — BUILT AND INDEPENDENTLY AUDITED — RESEARCH ONLY  
 **Development seasons:** 2022 and 2023 only  
 **Validation season:** 2024 — reserved, not captured/authorized here  
 **Final holdout:** 2025 — locked, not available for development decisions  
@@ -597,26 +597,45 @@ The builder must assert source selection semantics, not refit them:
 The 2022/2023 semantic-audit match statistics remain audit references, not builder
 inputs.
 
-## What may happen after this contract is merged
+## Audited corpus build
 
-Merging this contract may authorize a later, separately reviewed implementation slice
-that builds and audits Historical Development Corpus V1 from the exact frozen source
-artifacts.
+Historical Development Corpus V1 was built from the exact frozen source artifacts in
+GitHub Actions run `36479515332` at builder SHA
+`3d553b0925f55321d53c3048544aa16a047e41c8`.
 
-It does **not** authorize model feature computation in the same slice.
+Independent audit closeout is recorded in
+[`docs/2026-09-28-historical-development-corpus-v1-audit.md`](../../docs/2026-09-28-historical-development-corpus-v1-audit.md).
 
-The recommended sequence after corpus construction is:
+The accepted corpus artifact:
 
-1. implement artifact-only corpus builder;
-2. independently verify corpus hashes, counts, temporal gates, missingness, and layer
-   separation;
-3. freeze a Historical Feature Definition V1 contract;
-4. compute candidate features only after that feature contract is frozen;
-5. freeze a model-development/tuning protocol;
-6. tune only on 2022–2023;
-7. freeze the candidate model;
-8. separately capture/use 2024 for validation;
-9. only after validation, explicitly unlock 2025 for final holdout evaluation.
+- artifact ID: `10997010171`
+- artifact name: `historical-development-corpus-v1-36479515332`
+- ZIP SHA-256:
+  `cea83762d2b6e492caec680a74a085ef5a5e283c36a402ef4b35acbe2ce22b7d`
+
+The audit independently verified source provenance, every manifested corpus artifact,
+the 1,484-game target universe, exact frozen missingness, Elo source mapping,
+strictly-prior-week history eligibility, predictive/outcome/market separation, and zero
+feature/model/database/provider activity during corpus construction.
+
+## Next authorization boundary
+
+The next research step is a separately frozen **Historical Feature Definition V1
+contract**.
+
+The audited corpus does **not** by itself authorize feature-matrix generation or model
+tuning.
+
+The required sequence remains:
+
+1. freeze Historical Feature Definition V1;
+2. compute candidate features only after that feature contract is frozen;
+3. independently audit the feature artifact;
+4. freeze a model-development/tuning protocol;
+5. tune only on 2022–2023;
+6. freeze the candidate model;
+7. separately capture/use 2024 for validation;
+8. only after validation, explicitly unlock 2025 for final holdout evaluation.
 
 ## Versioning
 
