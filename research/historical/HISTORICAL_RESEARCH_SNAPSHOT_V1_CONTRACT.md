@@ -200,22 +200,36 @@ historical recruiting class. It also independently reconfirms Historical Elo PIT
 That audit does **not** by itself authorize model tuning, historical prediction
 generation, database persistence, or later-season provider calls.
 
-## Next authorization boundary
+## 2024 validation boundary
 
-The 2022–2023 Historical Development Corpus V1 construction semantics are now frozen
-separately in
-[`HISTORICAL_DEVELOPMENT_CORPUS_V1_CONTRACT.md`](./HISTORICAL_DEVELOPMENT_CORPUS_V1_CONTRACT.md).
+2024 Historical Validation V1 is now frozen separately in
+[`HISTORICAL_VALIDATION_V1_CONTRACT.md`](./HISTORICAL_VALIDATION_V1_CONTRACT.md).
 
-Merging that contract does not construct the corpus and does not authorize feature
-computation or tuning. The next reviewed slice is an artifact-only, zero-provider,
-zero-database corpus builder that must consume the exact audited 2022/2023 source
-bytes and satisfy the frozen construction gates.
+That contract freezes the future validation sequence and permits a later reviewed
+implementation slice to add 2024 snapshot capability.
 
-The audited 2022–2023 snapshots do **not** authorize:
+It does **not** itself authorize the 2024 provider run.
 
-- 2024 provider calls;
+Until the separate implementation slice is merged:
+
+- 2024 remains rejected by the shared snapshot planner;
+- no 2024 capture workflow is enabled;
+- no 2024 provider call is authorized.
+
+When capability is later implemented, the exact 2024 confirmation must be:
+
+`CAPTURE_2024_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW`
+
+A separate explicit user authorization will still be required before that provider run.
+
+## Continuing leakage boundaries
+
+The audited historical snapshots do **not** authorize:
+
+- unguarded 2024 provider calls;
 - database persistence of raw historical data;
-- historical prediction generation;
-- model tuning;
-- backtest result claims;
-- use of 2025 for development or tuning.
+- historical market inputs;
+- candidate retuning;
+- use of 2025 for development, validation, or tuning.
+
+2025 remains locked for the later final holdout.
