@@ -112,6 +112,27 @@ separately reviewed protocol.
 Feature V1 selects four season-static/PIT prior families and one in-season history
 family.
 
+### Season-static timing caveat
+
+Talent, returning production, and recruiting are treated as **season-static retrospective
+candidate priors** under the already-frozen corpus contract.
+
+Their inclusion does not claim that the 2026 retrospective retrieval timestamp
+recreates the exact historical wall-clock publication timestamp at which each source
+became available.
+
+Accordingly:
+
+- these rows may be used for 2022–2023 development under this research contract;
+- they must be labeled as retrospective season-static priors in provenance;
+- they must not be described as timestamp-perfect historical live snapshots;
+- no in-season refresh of these source families is allowed in Feature V1;
+- a future prospective/validation implementation must separately prove or freeze its
+  own source-time posture before using an equivalent feature family.
+
+Historical Elo is different: its provider-week mapping is separately frozen by
+Historical Elo PIT V1.
+
 ### Family 1 — Historical Elo
 
 Source:
