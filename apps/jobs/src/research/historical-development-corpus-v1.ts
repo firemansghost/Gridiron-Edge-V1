@@ -10,6 +10,15 @@ export const HISTORICAL_DEVELOPMENT_CORPUS_V1_EXPECTED = {
     canonicalAdvancedTeamGames: 1468,
     canonicalPpaTeamGames: 1468,
     canonicalLineGames: 734,
+    missingTalentTeams: [] as string[],
+    missingReturningProductionTeams: ['James Madison'],
+    missingPreseasonEloTeams: [] as string[],
+    missingRecruitingTeamsByYear: {
+      '2019': [] as string[],
+      '2020': [] as string[],
+      '2021': [] as string[],
+      '2022': ['Florida International'],
+    },
   },
   2023: {
     canonicalGames: 750,
@@ -17,6 +26,15 @@ export const HISTORICAL_DEVELOPMENT_CORPUS_V1_EXPECTED = {
     canonicalAdvancedTeamGames: 1500,
     canonicalPpaTeamGames: 1500,
     canonicalLineGames: 750,
+    missingTalentTeams: [] as string[],
+    missingReturningProductionTeams: ['Jacksonville State', 'Sam Houston'],
+    missingPreseasonEloTeams: [] as string[],
+    missingRecruitingTeamsByYear: {
+      '2020': [] as string[],
+      '2021': [] as string[],
+      '2022': ['Florida International'],
+      '2023': [] as string[],
+    },
   },
 } as const;
 
@@ -639,6 +657,37 @@ export function buildHistoricalDevelopmentSeasonCorpus(
   const missingPreseasonEloTeams = [...canonicalTeams]
     .filter((team) => !eloPreseasonByTeam.has(team))
     .sort(lexicalCompare);
+
+  const sameStrings = (left: string[], right: readonly string[]): boolean =>
+    left.length === right.length &&
+    left.every((value, index) => value === right[index]);
+
+  if (!sameStrings(missingTalentTeams, expected.missingTalentTeams)) {
+    throw new Error(`talent_missingness_mismatch:${season}`);
+  }
+  if (
+    !sameStrings(
+      missingReturningProductionTeams,
+      expected.missingReturningProductionTeams
+    )
+  ) {
+    throw new Error(`returning_production_missingness_mismatch:${season}`);
+  }
+  if (
+    !sameStrings(missingPreseasonEloTeams, expected.missingPreseasonEloTeams)
+  ) {
+    throw new Error(`preseason_elo_missingness_mismatch:${season}`);
+  }
+  for (const year of expectedRecruitingYears(season)) {
+    const actual = missingRecruitingTeamsByYear[String(year)] ?? [];
+    const frozen =
+      expected.missingRecruitingTeamsByYear[
+        String(year) as keyof typeof expected.missingRecruitingTeamsByYear
+      ] ?? [];
+    if (!sameStrings(actual, frozen)) {
+      throw new Error(`recruiting_missingness_mismatch:${season}:${year}`);
+    }
+  }
 
   return {
     season,
