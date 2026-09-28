@@ -130,7 +130,7 @@ function sanitizeError(error: unknown): string {
   if (/provider call budget/i.test(message)) return 'provider_call_budget_exceeded';
   if (/array/i.test(message)) return 'provider_payload_not_array';
   if (/confirmation/i.test(message)) return 'invalid_confirmation';
-  if (/season must equal/i.test(message)) return 'invalid_season';
+  if (/historical snapshot v1 season must/i.test(message)) return 'invalid_season';
   if (/EEXIST/i.test(message)) return 'artifact_path_already_exists';
   return 'historical_snapshot_capture_failed';
 }
@@ -587,6 +587,7 @@ async function main(): Promise<void> {
         databaseReads: false,
         databaseWrites: false,
         prismaClientInstantiated: false,
+        prismaGenerateInvoked: false,
         mutationsInvoked: false,
         mutationTargetsInvoked: [],
         oddsApiInvoked: false,
@@ -673,6 +674,7 @@ async function main(): Promise<void> {
         databaseReads: false,
         databaseWrites: false,
         prismaClientInstantiated: false,
+        prismaGenerateInvoked: false,
         mutationsInvoked: false,
         mutationTargetsInvoked: [],
         migrationsInvoked: false,
