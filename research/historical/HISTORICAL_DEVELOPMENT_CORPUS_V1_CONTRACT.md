@@ -533,8 +533,8 @@ The future corpus builder must be deterministic and artifact-only.
 It must:
 
 - make **zero provider calls**;
-- make **zero database reads/writes** unless a later transport contract explicitly
-  authorizes a read-only source;
+- make **zero database reads**;
+- make **zero database writes**;
 - verify exact source artifact hashes before parsing;
 - record builder repo SHA;
 - record source run IDs and source SHA-256 identities;
