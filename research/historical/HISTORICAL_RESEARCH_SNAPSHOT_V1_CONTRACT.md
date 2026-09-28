@@ -108,6 +108,10 @@ The final report records:
 Dependency installation must use `npm ci --ignore-scripts` so the repository
 `postinstall` hook cannot invoke `prisma generate`.
 
+Because ignored lifecycle scripts make `tsx`/esbuild an unsafe runtime dependency for
+this guarded capture path, the workflow must compile the capture entrypoint with
+`tsc` and execute the emitted JavaScript with plain `node`.
+
 The GitHub workflow uploads evidence with 90-day retention. A future durability
 decision may copy verified raw snapshots to longer-lived private storage; that is not
 authorized by V1.

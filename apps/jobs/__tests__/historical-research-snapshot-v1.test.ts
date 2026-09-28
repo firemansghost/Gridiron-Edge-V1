@@ -161,6 +161,11 @@ describe('historical research snapshot v1', () => {
     expect(workflow).toMatch(/expected_main_sha/);
     expect(workflow).toMatch(/CAPTURE_2025_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW/);
     expect(workflow).toMatch(/npm ci --ignore-scripts/);
+    expect(workflow).toMatch(/npx tsc/);
+    expect(workflow).toMatch(
+      /node \.tmp\/historical-research-snapshot-v1\/capture-historical-research-snapshot-v1\.js/
+    );
+    expect(workflow).not.toMatch(/npx tsx/);
     expect(workflow).not.toMatch(/DIRECT_URL|DATABASE_URL/);
     expect(workflow).not.toMatch(
       /npx prisma|npm run prisma|prisma migrate|prisma db/i
@@ -180,6 +185,11 @@ describe('historical research snapshot v1', () => {
       /CAPTURE_2022_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW/
     );
     expect(workflow2022).toMatch(/npm ci --ignore-scripts/);
+    expect(workflow2022).toMatch(/npx tsc/);
+    expect(workflow2022).toMatch(
+      /node \.tmp\/historical-research-snapshot-v1\/capture-historical-research-snapshot-v1\.js/
+    );
+    expect(workflow2022).not.toMatch(/npx tsx/);
     expect(workflow2022).not.toMatch(/DIRECT_URL|DATABASE_URL/);
     expect(workflow2022).not.toMatch(
       /npx prisma|npm run prisma|prisma migrate|prisma db/i

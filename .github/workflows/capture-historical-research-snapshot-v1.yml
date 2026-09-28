@@ -89,6 +89,19 @@ jobs:
       - name: Install dependencies without lifecycle scripts
         run: npm ci --ignore-scripts
 
+      - name: Compile historical capture without lifecycle-dependent runtime
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/historical-research-snapshot-v1
+          npx tsc --module commonjs \
+            --moduleResolution node \
+            --target ES2019 \
+            --esModuleInterop \
+            --skipLibCheck \
+            --outDir .tmp/historical-research-snapshot-v1 \
+            apps/jobs/src/research/historical-research-snapshot-v1.ts \
+            apps/jobs/capture-historical-research-snapshot-v1.ts
+
       - name: Capture 2025 historical research snapshot
         env:
           INPUT_SEASON: ${{ inputs.season }}
@@ -97,7 +110,10 @@ jobs:
         run: |
           set -euo pipefail
           OUT="reports/historical-research-snapshot-v1/2025-${GITHUB_RUN_ID}"
-          npx tsx apps/jobs/capture-historical-research-snapshot-v1.ts             --season "${INPUT_SEASON}"             --confirm "${INPUT_CONFIRMATION}"             --output-dir "${OUT}"
+          node .tmp/historical-research-snapshot-v1/capture-historical-research-snapshot-v1.js \
+            --season "${INPUT_SEASON}" \
+            --confirm "${INPUT_CONFIRMATION}" \
+            --output-dir "${OUT}"
 
       - name: Upload immutable research evidence
         if: always()
