@@ -1,6 +1,6 @@
 # Historical Feature Definition V1 — Contract
 
-**Status:** FROZEN FEATURE DEFINITION — NOT YET COMPUTED  
+**Status:** FROZEN FEATURE DEFINITION — BUILT AND INDEPENDENTLY AUDITED  
 **Source corpus:** Historical Development Corpus V1  
 **Development seasons:** 2022 and 2023 only  
 **Validation season:** 2024 — reserved, not authorized here  
@@ -655,12 +655,30 @@ It must:
 
 Preferred research transport remains immutable files, not database persistence.
 
+## Audited Feature V1 build
+
+Historical Feature V1 was built from the accepted corpus in GitHub Actions run
+`36489184409` at builder SHA
+`743738eea6dfd0852cf28c5941aa998be300b0c9`.
+
+Independent audit closeout is recorded in
+[`docs/2026-09-28-historical-feature-v1-audit.md`](../../docs/2026-09-28-historical-feature-v1-audit.md).
+
+Accepted Feature V1 artifact:
+
+- artifact ID: `11000651389`
+- artifact name: `historical-feature-v1-36489184409`
+- ZIP SHA-256:
+  `047220307750b755d1e6d626628802baf818dbd70ffde9252e63768e7a823ad2`
+
+The audit independently reproduced every one of the **41,552** team-side feature
+objects from the accepted corpus with zero value, status, or observation-count
+mismatches.
+
 ## What remains unauthorized
 
-Merging this Feature Definition V1 contract does **not** authorize:
+The audited Feature V1 artifact does **not** authorize:
 
-- feature builder implementation;
-- feature artifact generation;
 - database persistence;
 - z-score computation;
 - model training;
@@ -671,16 +689,18 @@ Merging this Feature Definition V1 contract does **not** authorize:
 - 2024 capture/use;
 - 2025 access.
 
-## Next boundary after contract merge
+## Next authorization boundary
 
-The next reviewed engineering slice may implement an **artifact-only Historical Feature
-V1 builder** that computes exactly this vocabulary from the accepted corpus.
+The next research step is a separately frozen **Historical Model Development / Tuning
+Protocol V1**.
 
-After a feature artifact is built, it must be independently audited before any model
-training begins.
+No model fit or tuning run should occur before that protocol is reviewed and frozen.
 
-Only after that feature audit should the project freeze a **Historical Model
-Development / Tuning Protocol V1**.
+Development must remain confined to the accepted 2022–2023 Feature V1 artifact and the
+accepted 2022–2023 outcome labels under explicit source-read boundaries.
+
+2024 remains reserved for later validation and 2025 remains locked as the final
+holdout.
 
 ## Versioning
 
