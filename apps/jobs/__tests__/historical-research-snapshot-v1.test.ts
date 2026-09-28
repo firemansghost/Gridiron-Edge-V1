@@ -121,7 +121,7 @@ describe('historical research snapshot v1', () => {
       'CAPTURE_2022_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW'
     );
     expect(historicalSnapshotSeasonRole(2022)).toBe(
-      'DEVELOPMENT_CORPUS_AUDITED_RESEARCH_ONLY'
+      'AUDITED_DEVELOPMENT_SOURCE_SEASON_NEW_CAPTURE_REQUIRES_AUDIT'
     );
 
     const games2023 = games.map((game) => ({ ...game, season: 2023 }));
@@ -148,7 +148,7 @@ describe('historical research snapshot v1', () => {
       'CAPTURE_2023_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW'
     );
     expect(historicalSnapshotSeasonRole(2023)).toBe(
-      'DEVELOPMENT_CORPUS_AUDITED_RESEARCH_ONLY'
+      'AUDITED_DEVELOPMENT_SOURCE_SEASON_NEW_CAPTURE_REQUIRES_AUDIT'
     );
 
     expect(() => buildHistoricalSnapshotPlan(2024, games2023)).toThrow(
