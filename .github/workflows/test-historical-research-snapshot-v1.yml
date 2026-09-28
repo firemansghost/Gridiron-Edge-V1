@@ -36,5 +36,31 @@ jobs:
         run: |
           npx tsc --noEmit             --module commonjs             --moduleResolution node             --target ES2019             --esModuleInterop             --skipLibCheck             apps/jobs/src/research/historical-research-snapshot-v1.ts             apps/jobs/capture-historical-research-snapshot-v1.ts
 
+      - name: Compile and start guarded capture runtime without provider access
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/historical-research-snapshot-v1
+          npx tsc --module commonjs \
+            --moduleResolution node \
+            --target ES2019 \
+            --esModuleInterop \
+            --skipLibCheck \
+            --outDir .tmp/historical-research-snapshot-v1 \
+            apps/jobs/src/research/historical-research-snapshot-v1.ts \
+            apps/jobs/capture-historical-research-snapshot-v1.ts
+
+          test -f .tmp/historical-research-snapshot-v1/capture-historical-research-snapshot-v1.js
+
+          set +e
+          OUTPUT="$(node .tmp/historical-research-snapshot-v1/capture-historical-research-snapshot-v1.js \
+            --season 2023 \
+            --confirm INVALID \
+            --output-dir .tmp/historical-research-snapshot-v1/no-provider-run 2>&1)"
+          STATUS=$?
+          set -e
+
+          test "${STATUS}" -eq 1
+          echo "${OUTPUT}" | grep -F "[historical-snapshot] invalid_season"
+
       - name: Test Historical Research Snapshot V1
         run: npx jest apps/jobs/__tests__/historical-research-snapshot-v1.test.ts --runInBand
