@@ -148,7 +148,7 @@ describe('historical research snapshot v1', () => {
       'CAPTURE_2023_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW'
     );
     expect(historicalSnapshotSeasonRole(2023)).toBe(
-      'DEVELOPMENT_CORPUS_CAPTURE_RESEARCH_ONLY_PENDING_AUDIT'
+      'DEVELOPMENT_CORPUS_AUDITED_RESEARCH_ONLY'
     );
 
     expect(() => buildHistoricalSnapshotPlan(2024, games2023)).toThrow(
