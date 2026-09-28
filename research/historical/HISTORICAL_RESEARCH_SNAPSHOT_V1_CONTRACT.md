@@ -18,7 +18,7 @@ This capability must not:
 
 - connect to production PostgreSQL/Supabase;
 - write any database row;
-- invoke Prisma;
+- invoke Prisma or Prisma generation;
 - invoke Odds API, SGO, weather, or any other provider;
 - write Bet, Game, MarketLine, Shadow, rating, lifecycle, or evaluation state;
 - reconstruct or infer missing provider rows;
@@ -67,6 +67,9 @@ The final report records:
 - FBS-vs-FBS game and week coverage;
 - market, advanced-stat, PPA, roster-prior, recruiting, and Elo coverage;
 - zero-database-read / zero-database-write execution assertions.
+
+Dependency installation must use `npm ci --ignore-scripts` so the repository
+`postinstall` hook cannot invoke `prisma generate`.
 
 The GitHub workflow uploads these artifacts with a 90-day retention period. A future durability decision may copy verified raw snapshots to longer-lived private storage; that is not authorized by this V1 contract.
 

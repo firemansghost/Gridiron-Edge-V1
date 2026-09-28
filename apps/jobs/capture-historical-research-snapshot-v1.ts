@@ -144,6 +144,89 @@ function rowObject(row: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function canonicalFbsGameIds(
+  rows: HistoricalGameLike[],
+  season: number
+): Set<number> {
+  return new Set(
+    rows
+      .filter((row) => isFbsVsFbsRegularGame(row, season))
+      .map((row) => Number(row.id))
+      .filter((id) => Number.isInteger(id) && id > 0)
+  );
+}
+
+function canonicalFbsTeamNames(
+  rows: HistoricalGameLike[],
+  season: number
+): Set<string> {
+  const teams = new Set<string>();
+  for (const row of rows) {
+    if (!isFbsVsFbsRegularGame(row, season)) continue;
+    const obj = rowObject(row);
+    if (!obj) continue;
+    for (const key of ['homeTeam', 'awayTeam']) {
+      const value = obj[key];
+      if (typeof value === 'string' && value.trim()) teams.add(value.trim());
+    }
+  }
+  return teams;
+}
+
+function rowsForCanonicalGames(
+  rows: unknown[],
+  gameIds: Set<number>,
+  gameIdKey: string
+): unknown[] {
+  return rows.filter((row) => {
+    const obj = rowObject(row);
+    if (!obj) return false;
+    const gameId = Number(obj[gameIdKey]);
+    return Number.isInteger(gameId) && gameIds.has(gameId);
+  });
+}
+
+function namedTeamCoverage(
+  rows: unknown[],
+  canonicalTeams: Set<string>,
+  key = 'team'
+): {
+  matchedTeams: number;
+  missingTeams: string[];
+} {
+  const observed = new Set<string>();
+  for (const row of rows) {
+    const obj = rowObject(row);
+    const value = obj?.[key];
+    if (typeof value === 'string' && value.trim()) observed.add(value.trim());
+  }
+  const missingTeams = [...canonicalTeams]
+    .filter((team) => !observed.has(team))
+    .sort();
+  return {
+    matchedTeams: canonicalTeams.size - missingTeams.length,
+    missingTeams,
+  };
+}
+
+function recruitingCanonicalCoverage(
+  captures: Map<string, FetchCapture>,
+  canonicalTeams: Set<string>
+): Record<string, { matchedTeams: number; missingTeams: string[] }> {
+  const result: Record<
+    string,
+    { matchedTeams: number; missingTeams: string[] }
+  > = {};
+  for (const [id, capture] of captures) {
+    if (!id.startsWith('recruiting-teams-')) continue;
+    result[id.replace('recruiting-teams-', '')] = namedTeamCoverage(
+      capture.rows,
+      canonicalTeams
+    );
+  }
+  return result;
+}
+
 async function captureRequest(
   baseUrl: string,
   apiKey: string,
@@ -357,9 +440,24 @@ async function main(): Promise<void> {
     const fbsGames = gamesRows.filter((row) =>
       isFbsVsFbsRegularGame(row, args.season)
     );
+    const canonicalGameIds = canonicalFbsGameIds(gamesRows, args.season);
+    const canonicalTeams = canonicalFbsTeamNames(gamesRows, args.season);
     const advancedRows = requestRows(captures, 'advanced-game-stats');
     const ppaRows = requestRows(captures, 'ppa-games');
     const lineRows = requestRows(captures, 'lines');
+    const advancedCanonicalRows = rowsForCanonicalGames(
+      advancedRows,
+      canonicalGameIds,
+      'gameId'
+    );
+    const ppaCanonicalRows = rowsForCanonicalGames(
+      ppaRows,
+      canonicalGameIds,
+      'gameId'
+    );
+    const talentRows = requestRows(captures, 'talent');
+    const returningRows = requestRows(captures, 'returning-production');
+    const preseasonEloRows = requestRows(captures, 'elo-preseason');
 
     const coverage = {
       providerGamesRows: gamesRows.length,
@@ -368,21 +466,48 @@ async function main(): Promise<void> {
         gamesRows,
         args.season
       ),
+      canonicalFbsTeamCount: canonicalTeams.size,
       observedFbsVsFbsRegularWeeks: plan.observedFbsVsFbsRegularWeeks,
       historicalLinesRows: lineRows.length,
       fbsVsFbsHistoricalLineGames: fbsLineGameCount(lineRows),
-      advancedTeamGameRows: advancedRows.length,
-      advancedUniqueGames: uniqueNumericIds(advancedRows, 'gameId').length,
-      ppaTeamGameRows: ppaRows.length,
-      ppaUniqueGames: uniqueNumericIds(ppaRows, 'gameId').length,
-      talentRows: requestRows(captures, 'talent').length,
-      returningProductionRows: requestRows(
-        captures,
-        'returning-production'
+      advancedProviderRows: advancedRows.length,
+      advancedProviderUniqueGames: uniqueNumericIds(
+        advancedRows,
+        'gameId'
       ).length,
+      advancedCanonicalTeamGameRows: advancedCanonicalRows.length,
+      advancedCanonicalUniqueGames: uniqueNumericIds(
+        advancedCanonicalRows,
+        'gameId'
+      ).length,
+      ppaProviderRows: ppaRows.length,
+      ppaProviderUniqueGames: uniqueNumericIds(ppaRows, 'gameId').length,
+      ppaCanonicalTeamGameRows: ppaCanonicalRows.length,
+      ppaCanonicalUniqueGames: uniqueNumericIds(
+        ppaCanonicalRows,
+        'gameId'
+      ).length,
+      talentRows: talentRows.length,
+      talentCanonicalCoverage: namedTeamCoverage(
+        talentRows,
+        canonicalTeams
+      ),
+      returningProductionRows: returningRows.length,
+      returningProductionCanonicalCoverage: namedTeamCoverage(
+        returningRows,
+        canonicalTeams
+      ),
       transferPortalRows: requestRows(captures, 'transfer-portal').length,
       recruitingTeamRowsByClass: recruitingCounts(captures),
-      eloPreseasonRows: requestRows(captures, 'elo-preseason').length,
+      recruitingCanonicalCoverageByClass: recruitingCanonicalCoverage(
+        captures,
+        canonicalTeams
+      ),
+      eloPreseasonRows: preseasonEloRows.length,
+      eloPreseasonCanonicalCoverage: namedTeamCoverage(
+        preseasonEloRows,
+        canonicalTeams
+      ),
       eloWeeklyRowsByWeek: weeklyEloCounts(captures),
     };
 
@@ -408,11 +533,20 @@ async function main(): Promise<void> {
     if (coverage.fbsVsFbsHistoricalLineGames === 0) {
       qaFindings.push('no_fbs_vs_fbs_historical_lines');
     }
-    if (coverage.advancedUniqueGames === 0) {
-      qaFindings.push('no_advanced_game_coverage');
+    if (
+      coverage.advancedCanonicalUniqueGames !==
+        coverage.fbsVsFbsRegularGames ||
+      coverage.advancedCanonicalTeamGameRows !==
+        coverage.fbsVsFbsRegularGames * 2
+    ) {
+      qaFindings.push('incomplete_canonical_advanced_game_coverage');
     }
-    if (coverage.ppaUniqueGames === 0) {
-      qaFindings.push('no_ppa_game_coverage');
+    if (
+      coverage.ppaCanonicalUniqueGames !== coverage.fbsVsFbsRegularGames ||
+      coverage.ppaCanonicalTeamGameRows !==
+        coverage.fbsVsFbsRegularGames * 2
+    ) {
+      qaFindings.push('incomplete_canonical_ppa_game_coverage');
     }
     if (coverage.eloPreseasonRows === 0) {
       qaFindings.push('no_preseason_elo');
@@ -502,8 +636,9 @@ async function main(): Promise<void> {
           observedWeeks: plan.observedFbsVsFbsRegularWeeks,
           fbsVsFbsHistoricalLineGames:
             coverage.fbsVsFbsHistoricalLineGames,
-          advancedUniqueGames: coverage.advancedUniqueGames,
-          ppaUniqueGames: coverage.ppaUniqueGames,
+          advancedCanonicalUniqueGames:
+            coverage.advancedCanonicalUniqueGames,
+          ppaCanonicalUniqueGames: coverage.ppaCanonicalUniqueGames,
           talentRows: coverage.talentRows,
           returningProductionRows: coverage.returningProductionRows,
           transferPortalRows: coverage.transferPortalRows,
