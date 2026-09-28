@@ -1,7 +1,7 @@
 # Historical Research Snapshot V1 — Authorized Season Contract
 
 **Status:** RESEARCH ONLY / PREVIEW-ARTIFACT ONLY  
-**Authorized seasons:** 2025 (audited pipeline-verification / later holdout) and 2022 (next development-corpus capture)  
+**Authorized seasons:** 2025 (audited pipeline-verification / later holdout) and 2022 (audited development corpus)  
 **Not authorized:** 2023 or 2024 provider capture until separately reviewed and enabled.
 
 ## Purpose
@@ -11,7 +11,8 @@ measure historical coverage before any historical-model reconstruction, feature 
 prediction generation, or backtest persistence.
 
 The 2025 capture proved the pipeline and remains the eventual untouched holdout. The
-next authorized expansion is deliberately one season only: 2022.
+2022 development-corpus capture has now also passed independent artifact and coverage
+audit. No later season is authorized by this contract.
 
 ## Scope
 
@@ -135,13 +136,22 @@ made before the game.
 
 ### Weekly Elo
 
-Weekly CFBD Elo rows are archived but are **not declared point-in-time safe** merely
-because a week parameter exists.
+Weekly CFBD Elo rows are **not same-week point-in-time safe** merely because a week
+parameter exists.
 
-The 2025 audit found strong evidence that Week N behaves as an end-of-Week-N rating.
-A separate point-in-time Elo contract must still formalize prior-week usage, byes,
-Week 1 anomalies, newly classified teams, and missing preseason values before Elo can
-be admitted to historical predictive features.
+Independent 2025 and 2022 audits establish that Week N behaves as an
+**end-of-provider-Week-N** state. The 2022 audit additionally verified final-game
+postgame matching and exact bye-week carry-forward behavior.
+
+Historical Elo feature mapping is now frozen separately in
+[`HISTORICAL_ELO_PIT_V1_CONTRACT.md`](./HISTORICAL_ELO_PIT_V1_CONTRACT.md):
+
+- Week 1 -> preseason Elo;
+- Week N (N >= 2) -> Week N-1 Elo;
+- same-week Week N Elo -> prohibited.
+
+This is a leakage-safe provider-week mapping, not proof of exact historical wall-clock
+publication time.
 
 ### CFBD retrospective CORE
 
@@ -165,12 +175,13 @@ and endpoint-semantic auditing. The season is reserved for the later final holdo
 
 ## 2022 development boundary
 
-The 2022 provider capture creates a candidate development corpus; it does **not** by
-itself authorize model tuning or historical prediction generation.
+The 2022 provider capture is now an **independently audited development corpus**.
 
-After the 2022 artifact is captured, it must be independently audited for hashes,
-provider-call accounting, canonical coverage, missingness, and endpoint semantics
-before the next research step is chosen.
+Audit closeout is recorded in
+[`docs/2026-09-28-historical-research-snapshot-v1-2022-audit.md`](../../docs/2026-09-28-historical-research-snapshot-v1-2022-audit.md).
+
+That audit does **not** by itself authorize model tuning, historical prediction
+generation, database persistence, or later-season provider calls.
 
 ## Next authorization boundary
 
@@ -179,7 +190,7 @@ Merging 2022 capture capability does **not** authorize the provider run.
 A later explicit operator decision is still required to execute the 2022 workflow on
 `main`.
 
-A successful 2022 capture also does **not** authorize:
+The successful and audited 2022 capture also does **not** authorize:
 
 - 2023 or 2024 provider calls;
 - database persistence of raw historical data;
