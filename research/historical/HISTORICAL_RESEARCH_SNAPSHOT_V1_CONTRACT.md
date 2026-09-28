@@ -1,8 +1,8 @@
 # Historical Research Snapshot V1 — Authorized Season Contract
 
 **Status:** RESEARCH ONLY / PREVIEW-ARTIFACT ONLY  
-**Authorized seasons:** 2025 (audited pipeline-verification / later holdout), 2022 (audited development corpus), and 2023 (audited development corpus)  
-**Not authorized:** 2024 provider capture until separately reviewed and enabled.
+**Authorized planner seasons:** 2025 (audited pipeline-verification / later holdout), 2022 (audited development corpus), 2023 (audited development corpus), and 2024 (validation-source capability)  
+**2024 execution boundary:** capability may be merged, but the provider capture remains unauthorized until a separate explicit user authorization.
 
 ## Purpose
 
@@ -49,15 +49,18 @@ The shared V1 planner accepts exactly:
   verification now and the final untouched holdout later.
 - **2022** — captured and independently audited as the first development corpus.
 - **2023** — captured and independently audited as the second development corpus.
+- **2024** — validation-source capability only. The planner/workflow may exist after the
+  reviewed implementation slice, but the provider run remains a separate explicit
+  authorization boundary.
 
-The shared planner must fail closed for **2024** until a separate season-enablement
-decision is made.
+The shared planner must fail closed for unsupported seasons outside 2022–2025.
 
 Each season uses a season-specific manual guarded workflow and exact confirmation:
 
 - 2025: `CAPTURE_2025_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW`
 - 2022: `CAPTURE_2022_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW`
 - 2023: `CAPTURE_2023_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW`
+- 2024: `CAPTURE_2024_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW`
 
 A workflow must run from `refs/heads/main` and require an exact
 `expected_main_sha`.
@@ -210,17 +213,15 @@ implementation slice to add 2024 snapshot capability.
 
 It does **not** itself authorize the 2024 provider run.
 
-Until the separate implementation slice is merged:
+After the reviewed 2024 capability slice is merged:
 
-- 2024 remains rejected by the shared snapshot planner;
-- no 2024 capture workflow is enabled;
-- no 2024 provider call is authorized.
+- 2024 may be accepted by the shared snapshot planner;
+- a dedicated manual 2024 capture workflow may exist;
+- the exact 2024 confirmation is
+  `CAPTURE_2024_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW`;
+- **no 2024 provider call is authorized merely by the merge**.
 
-When capability is later implemented, the exact 2024 confirmation must be:
-
-`CAPTURE_2024_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW`
-
-A separate explicit user authorization will still be required before that provider run.
+A separate explicit user authorization remains required before that provider run.
 
 ## Continuing leakage boundaries
 
