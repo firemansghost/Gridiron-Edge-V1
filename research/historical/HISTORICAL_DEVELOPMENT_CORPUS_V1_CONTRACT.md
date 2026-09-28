@@ -620,22 +620,25 @@ feature/model/database/provider activity during corpus construction.
 
 ## Next authorization boundary
 
-The next research step is a separately frozen **Historical Feature Definition V1
-contract**.
+Historical Feature Definition V1 is now frozen separately in
+[`HISTORICAL_FEATURE_DEFINITION_V1_CONTRACT.md`](./HISTORICAL_FEATURE_DEFINITION_V1_CONTRACT.md).
 
-The audited corpus does **not** by itself authorize feature-matrix generation or model
-tuning.
+Merging that feature contract does not compute a feature matrix and does not authorize
+model tuning.
+
+The next reviewed engineering slice may implement an artifact-only Feature V1 builder
+that consumes only the accepted corpus artifact and emits exactly the frozen feature
+vocabulary.
 
 The required sequence remains:
 
-1. freeze Historical Feature Definition V1;
-2. compute candidate features only after that feature contract is frozen;
-3. independently audit the feature artifact;
-4. freeze a model-development/tuning protocol;
-5. tune only on 2022–2023;
-6. freeze the candidate model;
-7. separately capture/use 2024 for validation;
-8. only after validation, explicitly unlock 2025 for final holdout evaluation.
+1. implement artifact-only Historical Feature V1 builder;
+2. independently audit the feature artifact;
+3. freeze a model-development/tuning protocol;
+4. tune only on 2022–2023;
+5. freeze the candidate model;
+6. separately capture/use 2024 for validation;
+7. only after validation, explicitly unlock 2025 for final holdout evaluation.
 
 ## Versioning
 
