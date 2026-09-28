@@ -9,13 +9,20 @@ import {
 function makeSource(
   season: 2022 | 2023,
   gameCount: number,
-  teamCount: number,
-  missingReturningTeam?: string
+  teamCount: number
 ): HistoricalDevelopmentSeasonSource {
   const teams = Array.from(
     { length: teamCount },
     (_, index) => `Team ${String(index + 1).padStart(3, '0')}`
   );
+  if (season === 2022) {
+    teams[0] = 'James Madison';
+    teams[1] = 'Florida International';
+  } else {
+    teams[0] = 'Jacksonville State';
+    teams[1] = 'Sam Houston';
+    teams[2] = 'Florida International';
+  }
 
   const games: any[] = [];
   const lines: any[] = [];
@@ -151,8 +158,12 @@ function makeSource(
     team,
     talent: 500 + index,
   }));
+  const frozenReturningMissing =
+    season === 2022
+      ? new Set(['James Madison'])
+      : new Set(['Jacksonville State', 'Sam Houston']);
   const returningProduction = teams
-    .filter((team) => team !== missingReturningTeam)
+    .filter((team) => !frozenReturningMissing.has(team))
     .map((team, index) => ({
       season,
       team,
@@ -161,12 +172,14 @@ function makeSource(
 
   const recruitingByYear: Record<number, unknown[]> = {};
   for (let year = season - 3; year <= season; year += 1) {
-    recruitingByYear[year] = teams.map((team, index) => ({
-      year,
-      team,
-      rank: index + 1,
-      points: 300 - index / 10,
-    }));
+    recruitingByYear[year] = teams
+      .filter((team) => !(year === 2022 && team === 'Florida International'))
+      .map((team, index) => ({
+        year,
+        team,
+        rank: index + 1,
+        points: 300 - index / 10,
+      }));
   }
 
   const eloPreseason = teams.map((team, index) => ({
@@ -199,7 +212,7 @@ function makeSource(
 
 describe('historical development corpus v1', () => {
   it('builds the frozen 2022 universe without same-week history leakage', () => {
-    const source = makeSource(2022, 734, 131, 'Team 001');
+    const source = makeSource(2022, 734, 131);
     const corpus = buildHistoricalDevelopmentSeasonCorpus(source);
 
     expect(corpus.gameFrames).toHaveLength(734);
@@ -257,13 +270,18 @@ describe('historical development corpus v1', () => {
     expect('finalHomePoints' in (weekOneFrame as any)).toBe(false);
     expect('homeMargin' in (weekOneFrame as any)).toBe(false);
 
-    const teamOne = corpus.staticPriors.find(
-      (row) => row.team === 'Team 001'
+    const jamesMadison = corpus.staticPriors.find(
+      (row) => row.team === 'James Madison'
     )!;
-    expect(teamOne.returningProduction.status).toBe(
+    expect(jamesMadison.returningProduction.status).toBe(
       'SOURCE_ROW_UNAVAILABLE'
     );
-    expect(corpus.qa.missingReturningProductionTeams).toContain('Team 001');
+    expect(corpus.qa.missingReturningProductionTeams).toEqual([
+      'James Madison',
+    ]);
+    expect(corpus.qa.missingRecruitingTeamsByYear['2022']).toEqual([
+      'Florida International',
+    ]);
   });
 
   it('builds only the combined 2022-2023 development universe', () => {
