@@ -3,6 +3,11 @@ import { createHash } from 'crypto';
 export const HISTORICAL_SNAPSHOT_VERSION =
   'historical_research_snapshot_v1' as const;
 export const HISTORICAL_SNAPSHOT_TARGET_SEASON = 2025 as const;
+export const HISTORICAL_SNAPSHOT_DEVELOPMENT_SEASON = 2022 as const;
+export const HISTORICAL_SNAPSHOT_AUTHORIZED_SEASONS = [
+  HISTORICAL_SNAPSHOT_DEVELOPMENT_SEASON,
+  HISTORICAL_SNAPSHOT_TARGET_SEASON,
+] as const;
 export const HISTORICAL_SNAPSHOT_SEASON_TYPE = 'regular' as const;
 export const HISTORICAL_SNAPSHOT_MAX_PROVIDER_CALLS = 32 as const;
 export const HISTORICAL_SNAPSHOT_RECRUITING_LOOKBACK = 4 as const;
@@ -58,11 +63,28 @@ function positiveInt(value: unknown): number | null {
 }
 
 export function assertHistoricalSnapshotSeason(season: number): void {
-  if (season !== HISTORICAL_SNAPSHOT_TARGET_SEASON) {
+  if (
+    !(HISTORICAL_SNAPSHOT_AUTHORIZED_SEASONS as readonly number[]).includes(
+      season
+    )
+  ) {
     throw new Error(
-      `historical snapshot v1 season must equal ${HISTORICAL_SNAPSHOT_TARGET_SEASON}`
+      `historical snapshot v1 season must be one of ${HISTORICAL_SNAPSHOT_AUTHORIZED_SEASONS.join(', ')}`
     );
   }
+}
+
+export function historicalSnapshotConfirmation(season: number): string {
+  assertHistoricalSnapshotSeason(season);
+  return `CAPTURE_${season}_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW`;
+}
+
+export function historicalSnapshotSeasonRole(season: number): string {
+  assertHistoricalSnapshotSeason(season);
+  if (season === HISTORICAL_SNAPSHOT_TARGET_SEASON) {
+    return 'PIPELINE_VERIFICATION_COMPLETE_LOCKED_HOLDOUT_FOR_LATER_FINAL_TEST';
+  }
+  return 'DEVELOPMENT_CORPUS_CAPTURE_RESEARCH_ONLY_PENDING_AUDIT';
 }
 
 export function isFbsVsFbsRegularGame(
