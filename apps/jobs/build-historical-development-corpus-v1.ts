@@ -41,6 +41,7 @@ interface LoadedSource {
   portalRawBytes: Buffer;
   providerCalls: number;
   portalRowCount: number;
+  rawSourceRowCounts: Record<string, unknown>;
   snapshotManifestSha256: string;
   snapshotReportSha256: string;
 }
@@ -318,25 +319,51 @@ function loadFrozenSource(
     eloByWeek[Number(match[1])] = rowsForRequest(requestId);
   }
 
+  const gamesRows = rowsForRequest('games');
+  const linesRows = rowsForRequest('lines');
+  const advancedRows = rowsForRequest('advanced-game-stats');
+  const ppaRows = rowsForRequest('ppa-games');
+  const talentRows = rowsForRequest('talent');
+  const returningRows = rowsForRequest('returning-production');
   const portalRows = rowsForRequest('transfer-portal');
+  const eloPreseasonRows = rowsForRequest('elo-preseason');
 
   return {
     config,
     source: {
       season: config.season,
-      games: rowsForRequest('games'),
-      lines: rowsForRequest('lines'),
-      advanced: rowsForRequest('advanced-game-stats'),
-      ppa: rowsForRequest('ppa-games'),
-      talent: rowsForRequest('talent'),
-      returningProduction: rowsForRequest('returning-production'),
+      games: gamesRows,
+      lines: linesRows,
+      advanced: advancedRows,
+      ppa: ppaRows,
+      talent: talentRows,
+      returningProduction: returningRows,
       recruitingByYear,
-      eloPreseason: rowsForRequest('elo-preseason'),
+      eloPreseason: eloPreseasonRows,
       eloByWeek,
     },
     portalRawBytes: rawBytesForRequest('transfer-portal'),
     providerCalls: provider.callsAttempted as number,
     portalRowCount: portalRows.length,
+    rawSourceRowCounts: {
+      games: gamesRows.length,
+      lines: linesRows.length,
+      advanced: advancedRows.length,
+      ppa: ppaRows.length,
+      talent: talentRows.length,
+      returningProduction: returningRows.length,
+      transferPortal: portalRows.length,
+      recruitingByYear: Object.fromEntries(
+        Object.entries(recruitingByYear).map(([year, rows]) => [
+          year,
+          rows.length,
+        ])
+      ),
+      eloPreseason: eloPreseasonRows.length,
+      eloByWeek: Object.fromEntries(
+        Object.entries(eloByWeek).map(([week, rows]) => [week, rows.length])
+      ),
+    },
     snapshotManifestSha256: sha256Bytes(manifestRaw),
     snapshotReportSha256: sha256Bytes(reportRaw),
   };
@@ -498,6 +525,7 @@ function main(): void {
           sourceRepoSha: source2022.config.sourceRepoSha,
           snapshotManifestSha256: source2022.snapshotManifestSha256,
           snapshotReportSha256: source2022.snapshotReportSha256,
+          rawSourceRowCounts: source2022.rawSourceRowCounts,
         },
         {
           season: 2023,
@@ -508,6 +536,7 @@ function main(): void {
           sourceRepoSha: source2023.config.sourceRepoSha,
           snapshotManifestSha256: source2023.snapshotManifestSha256,
           snapshotReportSha256: source2023.snapshotReportSha256,
+          rawSourceRowCounts: source2023.rawSourceRowCounts,
         },
       ],
     };
@@ -529,6 +558,10 @@ function main(): void {
       modelFittingInvoked: false,
       seasons: [2022, 2023],
       coverage: corpus.qa,
+      rawSourceRowCounts: {
+        '2022': source2022.rawSourceRowCounts,
+        '2023': source2023.rawSourceRowCounts,
+      },
       layerCounts: {
         gameFrames: corpus.gameFrames.length,
         staticPriors: corpus.staticPriors.length,
