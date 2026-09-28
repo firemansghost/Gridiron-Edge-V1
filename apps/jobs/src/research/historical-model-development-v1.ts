@@ -807,7 +807,7 @@ function tune(
 
       const disabledScalerFeatures = state.scaler
         ? HISTORICAL_MODEL_CONTINUOUS_FEATURES.filter(
-            (name) => state.scaler![name].disabledZeroVariance
+            (name) => state.scaler?.[name]?.disabledZeroVariance === true
           )
         : [];
 
