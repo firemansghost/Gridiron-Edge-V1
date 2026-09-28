@@ -691,13 +691,17 @@ The audited Feature V1 artifact does **not** authorize:
 
 ## Next authorization boundary
 
-The next research step is a separately frozen **Historical Model Development / Tuning
-Protocol V1**.
+Historical Model Development / Tuning Protocol V1 is now frozen separately in
+[`HISTORICAL_MODEL_DEVELOPMENT_TUNING_PROTOCOL_V1.md`](./HISTORICAL_MODEL_DEVELOPMENT_TUNING_PROTOCOL_V1.md).
 
-No model fit or tuning run should occur before that protocol is reviewed and frozen.
+Merging that protocol does not fit or tune a model.
 
-Development must remain confined to the accepted 2022–2023 Feature V1 artifact and the
-accepted 2022–2023 outcome labels under explicit source-read boundaries.
+The next reviewed engineering slice may implement the deterministic artifact-only V1
+development engine and guarded workflow. A separate explicit authorization is still
+required before the one legitimate model-development run.
+
+Development remains confined to the accepted 2022–2023 Feature V1 artifact and the
+accepted 2022–2023 outcome labels under the protocol's source-read boundaries.
 
 2024 remains reserved for later validation and 2025 remains locked as the final
 holdout.
