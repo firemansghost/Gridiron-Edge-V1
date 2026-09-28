@@ -716,6 +716,51 @@ export function buildHistoricalDevelopmentSeasonCorpus(
   };
 }
 
+const FORBIDDEN_PREDICTIVE_KEYS = new Set([
+  'homePoints',
+  'awayPoints',
+  'homeScore',
+  'awayScore',
+  'homeLineScores',
+  'awayLineScores',
+  'homePostgameWinProbability',
+  'awayPostgameWinProbability',
+  'homePregameElo',
+  'awayPregameElo',
+  'homePostgameElo',
+  'awayPostgameElo',
+  'lines',
+  'spread',
+  'formattedSpread',
+  'spreadOpen',
+  'overUnder',
+  'overUnderOpen',
+  'homeMoneyline',
+  'awayMoneyline',
+]);
+
+function assertNoForbiddenPredictiveKeys(
+  value: unknown,
+  pathLabel = 'predictive'
+): void {
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      assertNoForbiddenPredictiveKeys(value[index], `${pathLabel}[${index}]`);
+    }
+    return;
+  }
+
+  const obj = asObject(value);
+  if (!obj) return;
+
+  for (const [key, child] of Object.entries(obj)) {
+    if (FORBIDDEN_PREDICTIVE_KEYS.has(key)) {
+      throw new Error(`forbidden_predictive_key:${key}:${pathLabel}`);
+    }
+    assertNoForbiddenPredictiveKeys(child, `${pathLabel}.${key}`);
+  }
+}
+
 export function buildHistoricalDevelopmentCorpus(
   sources: HistoricalDevelopmentSeasonSource[]
 ): HistoricalDevelopmentCorpus {
@@ -753,6 +798,14 @@ export function buildHistoricalDevelopmentCorpus(
   if (gameFrames.length !== 1484 || outcomes.length !== 1484) {
     throw new Error('combined_canonical_game_count_mismatch');
   }
+
+  assertNoForbiddenPredictiveKeys({
+    gameFrames,
+    staticPriors,
+    advancedHistory,
+    ppaHistory,
+    historyEligibility,
+  });
 
   return {
     version: HISTORICAL_DEVELOPMENT_CORPUS_V1_VERSION,
