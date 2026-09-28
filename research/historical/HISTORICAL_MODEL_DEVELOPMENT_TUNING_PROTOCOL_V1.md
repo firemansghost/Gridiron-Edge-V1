@@ -841,19 +841,24 @@ The audited V1 result does **not** authorize:
 
 ## Next authorization boundary
 
-The next research step is a separately frozen **2024 Historical Validation V1
-contract**.
+2024 Historical Validation V1 is now frozen separately in
+[`HISTORICAL_VALIDATION_V1_CONTRACT.md`](./HISTORICAL_VALIDATION_V1_CONTRACT.md).
 
-No 2024 provider capture, feature construction, outcome read, or candidate scoring
-should occur before that validation contract is reviewed and frozen.
+Merging that validation contract does not authorize a 2024 provider call or validation
+score.
 
-The validation contract must reuse the frozen candidate exactly:
+The next reviewed engineering slice may implement the 2024 capture/corpus/feature and
+validation-scoring capability while preserving the frozen candidate exactly:
 
 - lambda unchanged;
 - coefficients unchanged;
 - scaler unchanged;
 - feature semantics unchanged;
 - HFA treatment unchanged.
+
+A separate explicit authorization remains required before the first 2024 provider
+capture, and another explicit authorization remains required before the one-shot 2024
+outcome-scoring run.
 
 2025 remains locked as the final holdout.
 
