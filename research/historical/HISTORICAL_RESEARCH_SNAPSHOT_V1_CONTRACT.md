@@ -202,8 +202,14 @@ generation, database persistence, or later-season provider calls.
 
 ## Next authorization boundary
 
-The next research step is a separately frozen **2022–2023 Historical Development
-Corpus V1 contract** before any historical feature computation or model tuning begins.
+The 2022–2023 Historical Development Corpus V1 construction semantics are now frozen
+separately in
+[`HISTORICAL_DEVELOPMENT_CORPUS_V1_CONTRACT.md`](./HISTORICAL_DEVELOPMENT_CORPUS_V1_CONTRACT.md).
+
+Merging that contract does not construct the corpus and does not authorize feature
+computation or tuning. The next reviewed slice is an artifact-only, zero-provider,
+zero-database corpus builder that must consume the exact audited 2022/2023 source
+bytes and satisfy the frozen construction gates.
 
 The audited 2022–2023 snapshots do **not** authorize:
 
