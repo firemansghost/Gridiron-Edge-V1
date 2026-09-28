@@ -93,7 +93,23 @@ export interface ScalerEntry {
   disabledZeroVariance: boolean;
 }
 
-export type ScalerState = Record<ContinuousFeatureName, ScalerEntry>;
+export type ScalerState = Partial<Record<ContinuousFeatureName, ScalerEntry>>;
+
+export interface StageAProvenance {
+  builderRepoSha: string;
+  featureArtifact: {
+    runId: number;
+    artifactId: number;
+    zipSha256: string;
+    featureMemberSha256: string;
+  };
+  corpusOutcomeArtifact: {
+    runId: number;
+    artifactId: number;
+    zipSha256: string;
+    outcomeMemberSha256: string;
+  };
+}
 
 export interface ModelState {
   kind: 'PRIMARY' | 'ELO_BASELINE' | 'HFA_BASELINE';
@@ -149,6 +165,12 @@ export interface TuningReport {
   selectionMetric: 'MAE_THEN_RMSE_THEN_LARGER_LAMBDA';
 }
 
+export interface HfaBaselineTuningReport {
+  modelKind: 'HFA_BASELINE';
+  folds: FoldReport[];
+  aggregateMetrics: Metrics;
+}
+
 export interface StageASelection {
   protocolId: typeof HISTORICAL_MODEL_DEVELOPMENT_V1_PROTOCOL;
   modelDefinitionId: typeof HISTORICAL_MODEL_DEFINITION_ID;
@@ -160,6 +182,7 @@ export interface StageASelection {
   penalizedPredictorOrder: string[];
   fullCoefficientOrder: string[];
   continuousFeatureOrder: string[];
+  provenance: StageAProvenance;
   scaling: {
     method: 'TRAIN_ONLY_POPULATION_Z';
     unavailableStandardizedValue: 0;
@@ -177,6 +200,7 @@ export interface StageASelection {
   selectedEloBaselineLambda: number;
   primaryTuning: TuningReport;
   eloBaselineTuning: TuningReport;
+  hfaBaselineTuning: HfaBaselineTuningReport;
 }
 
 export interface ConfirmationReport {
@@ -323,9 +347,11 @@ function parseTeam(value: unknown, label: string): ParsedTeamFeatures {
 }
 
 function parseDevelopmentRows(
-  input: HistoricalModelDevelopmentInput
+  input: HistoricalModelDevelopmentInput,
+  mode: '2022_ONLY' | 'ALL'
 ): HistoricalDevelopmentModelRow[] {
-  if (input.featureRows.length !== 1484 || input.outcomeRows.length !== 1484) {
+  const expected = mode === '2022_ONLY' ? 734 : 1484;
+  if (input.featureRows.length !== expected || input.outcomeRows.length !== expected) {
     throw new Error('development_source_count_mismatch');
   }
 
@@ -336,6 +362,9 @@ function parseDevelopmentRows(
     const gameId = obj ? integer(obj.gameId) : null;
     if ((season !== 2022 && season !== 2023) || gameId === null) {
       throw new Error('invalid_outcome_identity');
+    }
+    if (mode === '2022_ONLY' && season !== 2022) {
+      throw new Error('stage_a_non_2022_outcome');
     }
     const k = `${season}:${gameId}`;
     if (outcomes.has(k)) throw new Error(`duplicate_outcome:${k}`);
@@ -361,6 +390,9 @@ function parseDevelopmentRows(
       !awayTeam
     ) {
       throw new Error('invalid_feature_row_identity');
+    }
+    if (mode === '2022_ONLY' && season !== 2022) {
+      throw new Error('stage_a_non_2022_feature');
     }
     const k = `${season}:${gameId}`;
     if (seen.has(k)) throw new Error(`duplicate_feature_target:${k}`);
@@ -393,7 +425,7 @@ function parseDevelopmentRows(
     });
   }
 
-  if (seen.size !== 1484 || outcomes.size !== 1484) {
+  if (seen.size !== expected || outcomes.size !== expected) {
     throw new Error('development_target_key_mismatch');
   }
 
@@ -401,7 +433,10 @@ function parseDevelopmentRows(
     2022: rows.filter((row) => row.season === 2022).length,
     2023: rows.filter((row) => row.season === 2023).length,
   };
-  if (counts[2022] !== 734 || counts[2023] !== 750) {
+  if (
+    counts[2022] !== 734 ||
+    (mode === 'ALL' ? counts[2023] !== 750 : counts[2023] !== 0)
+  ) {
     throw new Error('development_season_count_mismatch');
   }
 
@@ -417,9 +452,12 @@ function featureFor(team: ParsedTeamFeatures, name: ContinuousFeatureName): Nume
   return team[name];
 }
 
-function fitScaler(rows: HistoricalDevelopmentModelRow[]): ScalerState {
-  const state = {} as ScalerState;
-  for (const name of HISTORICAL_MODEL_CONTINUOUS_FEATURES) {
+function fitScaler(
+  rows: HistoricalDevelopmentModelRow[],
+  featureNames: readonly ContinuousFeatureName[] = HISTORICAL_MODEL_CONTINUOUS_FEATURES
+): ScalerState {
+  const state: ScalerState = {};
+  for (const name of featureNames) {
     const values: number[] = [];
     for (const row of rows) {
       for (const team of [row.home, row.away]) {
@@ -453,6 +491,7 @@ function zValue(
   const raw = featureFor(team, name);
   if (raw.status !== 'AVAILABLE' || raw.value === null) return 0;
   const s = scaler[name];
+  if (!s) throw new Error(`scaler_feature_missing:${name}`);
   if (s.disabledZeroVariance) return 0;
   const z = (raw.value - s.mean) / s.populationSd;
   if (!Number.isFinite(z)) throw new Error(`standardized_value_nonfinite:${name}`);
@@ -681,7 +720,7 @@ function fitEloState(
   rows: HistoricalDevelopmentModelRow[],
   lambda: number
 ): ModelState {
-  const scaler = fitScaler(rows);
+  const scaler = fitScaler(rows, ['elo']);
   const X = rows.map((row) => designElo(row, scaler));
   const y = rows.map((row) => row.homeMargin);
   const coefficients = fitRegression(X, y, lambda, [2]);
@@ -800,12 +839,55 @@ function tune(
   };
 }
 
+function tuneHfaBaseline(
+  rows: HistoricalDevelopmentModelRow[]
+): HfaBaselineTuningReport {
+  const folds: FoldReport[] = [];
+  const aggregate: PredictionRow[] = [];
+  for (const fold of FOLDS) {
+    const trainRows = rows.filter(
+      (row) => row.season === 2022 && fold.trainWeeks.includes(row.week as never)
+    );
+    const validationRows = rows.filter(
+      (row) =>
+        row.season === 2022 && fold.validationWeeks.includes(row.week as never)
+    );
+    if (trainRows.length === 0 || validationRows.length === 0) {
+      throw new Error(`empty_hfa_frozen_fold:${fold.id}`);
+    }
+    const state = fitHfaState(trainRows);
+    const predictions = evaluateState(state, validationRows);
+    aggregate.push(...predictions);
+    folds.push({
+      foldId: fold.id,
+      trainWeeks: [...fold.trainWeeks],
+      validationWeeks: [...fold.validationWeeks],
+      trainGames: trainRows.length,
+      validationGames: validationRows.length,
+      metrics: metrics(predictions),
+      disabledScalerFeatures: [],
+      coefficientOrder: [...state.coefficientOrder],
+      coefficients: [...state.coefficients],
+    });
+  }
+  return {
+    modelKind: 'HFA_BASELINE',
+    folds,
+    aggregateMetrics: metrics(aggregate),
+  };
+}
+
 export function buildStageASelection(
-  input: HistoricalModelDevelopmentInput
+  input: HistoricalModelDevelopmentInput,
+  provenance: StageAProvenance
 ): StageASelection {
-  const rows = parseDevelopmentRows(input);
+  if (!/^[0-9a-f]{40}$/i.test(provenance.builderRepoSha)) {
+    throw new Error('stage_a_builder_repo_sha_invalid');
+  }
+  const rows = parseDevelopmentRows(input, '2022_ONLY');
   const primaryTuning = tune(rows, 'PRIMARY');
   const eloBaselineTuning = tune(rows, 'ELO_BASELINE');
+  const hfaBaselineTuning = tuneHfaBaseline(rows);
 
   return {
     protocolId: HISTORICAL_MODEL_DEVELOPMENT_V1_PROTOCOL,
@@ -818,6 +900,7 @@ export function buildStageASelection(
     penalizedPredictorOrder: [...HISTORICAL_MODEL_PENALIZED_PREDICTORS],
     fullCoefficientOrder: [...HISTORICAL_MODEL_FULL_COEFFICIENT_ORDER],
     continuousFeatureOrder: [...HISTORICAL_MODEL_CONTINUOUS_FEATURES],
+    provenance,
     scaling: {
       method: 'TRAIN_ONLY_POPULATION_Z',
       unavailableStandardizedValue: 0,
@@ -835,15 +918,16 @@ export function buildStageASelection(
     selectedEloBaselineLambda: eloBaselineTuning.selectedLambda,
     primaryTuning,
     eloBaselineTuning,
+    hfaBaselineTuning,
   };
 }
 
 function allFiniteState(state: ModelState): boolean {
   if (state.coefficients.some((v) => !Number.isFinite(v))) return false;
   if (state.scaler) {
-    for (const name of HISTORICAL_MODEL_CONTINUOUS_FEATURES) {
-      const s = state.scaler[name];
+    for (const s of Object.values(state.scaler)) {
       if (
+        !s ||
         !Number.isFinite(s.mean) ||
         !Number.isFinite(s.populationSd) ||
         !Number.isFinite(s.availableCount)
@@ -858,7 +942,8 @@ function allFiniteState(state: ModelState): boolean {
 export function run2023Confirmation(
   input: HistoricalModelDevelopmentInput,
   stageA: StageASelection,
-  stageASelectionSha256: string
+  stageASelectionSha256: string,
+  sourceLeakageBlockerAbsent: boolean
 ): ConfirmationReport {
   if (!/^[0-9a-f]{64}$/i.test(stageASelectionSha256)) {
     throw new Error('stage_a_selection_hash_required');
@@ -873,7 +958,7 @@ export function run2023Confirmation(
     throw new Error('stage_a_selection_identity_mismatch');
   }
 
-  const rows = parseDevelopmentRows(input);
+  const rows = parseDevelopmentRows(input, 'ALL');
   const train2022 = rows.filter((row) => row.season === 2022);
   const confirm2023 = rows.filter((row) => row.season === 2023);
   if (train2022.length !== 734 || confirm2023.length !== 750) {
@@ -903,7 +988,7 @@ export function run2023Confirmation(
       primaryMetrics.rmse <= eloMetrics.rmse,
     finiteModelState:
       allFiniteState(primary) && allFiniteState(elo) && allFiniteState(hfa),
-    sourceLeakageBlockerAbsent: true,
+    sourceLeakageBlockerAbsent,
   };
 
   const status = Object.values(gateChecks).every(Boolean)
@@ -939,7 +1024,7 @@ export function fitFinalCandidateIfPassed(
     throw new Error('final_candidate_stage_a_mismatch');
   }
 
-  const rows = parseDevelopmentRows(input);
+  const rows = parseDevelopmentRows(input, 'ALL');
   const state = fitPrimaryState(rows, stageA.selectedPrimaryLambda);
   if (!state.scaler || !allFiniteState(state)) {
     throw new Error('final_candidate_nonfinite');
@@ -962,5 +1047,5 @@ export function fitFinalCandidateIfPassed(
 export function buildDevelopmentRowsForAudit(
   input: HistoricalModelDevelopmentInput
 ): HistoricalDevelopmentModelRow[] {
-  return parseDevelopmentRows(input);
+  return parseDevelopmentRows(input, 'ALL');
 }
