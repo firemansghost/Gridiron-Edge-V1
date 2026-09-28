@@ -1,0 +1,172 @@
+name: Build Historical Feature V1 (Manual, Guarded)
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_main_sha:
+        description: 'Exact current main SHA'
+        required: true
+        type: string
+      confirmation:
+        description: 'Type BUILD_2022_2023_HISTORICAL_FEATURE_V1 exactly'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: historical-feature-v1
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      SOURCE_CORPUS_ARTIFACT_ID: '10997010171'
+      SOURCE_CORPUS_SHA256: 'cea83762d2b6e492caec680a74a085ef5a5e283c36a402ef4b35acbe2ce22b7d'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Source SHA guard
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          echo "ACTUAL_SHA=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+          echo "actual_sha=${ACTUAL_SHA}"
+          echo "expected_main_sha=${EXPECTED_MAIN_SHA}"
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Refusing feature build outside refs/heads/main."
+            exit 1
+          fi
+          if [ -z "${EXPECTED_MAIN_SHA}" ] || [ "${ACTUAL_SHA}" != "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing feature build because main SHA does not match expected_main_sha."
+            exit 1
+          fi
+          echo "Source SHA guard passed."
+
+      - name: Preflight
+        env:
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          if [ "${INPUT_CONFIRMATION}" != "BUILD_2022_2023_HISTORICAL_FEATURE_V1" ]; then
+            echo "::error::Exact feature-build confirmation is required."
+            exit 1
+          fi
+          command -v curl >/dev/null
+          command -v unzip >/dev/null
+          command -v sha256sum >/dev/null
+          echo "mode=ARTIFACT_ONLY_OFFLINE_FEATURE_BUILD"
+          echo "developmentSeasons=2022,2023"
+          echo "sourceProviderCalls=0"
+          echo "databaseReads=false"
+          echo "databaseWrites=false"
+          echo "normalization=false"
+          echo "modelFitting=false"
+          echo "outcomesRead=false"
+          echo "marketRead=false"
+          echo "ppaSidecarRead=false"
+          echo "quarantineRead=false"
+          echo "validation2024=false"
+          echo "holdout2025=false"
+
+      - name: Download frozen corpus artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p .research-inputs
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts"
+
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${API}/${SOURCE_CORPUS_ARTIFACT_ID}/zip" \
+            -o .research-inputs/historical-development-corpus-v1-36479515332.zip
+
+      - name: Verify frozen corpus ZIP hash
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' \
+            "${SOURCE_CORPUS_SHA256}" \
+            ".research-inputs/historical-development-corpus-v1-36479515332.zip" \
+            | sha256sum -c -
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Compile feature builder without lifecycle-dependent runtime
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/historical-feature-v1
+          npx tsc --module commonjs \
+            --moduleResolution node \
+            --target ES2019 \
+            --esModuleInterop \
+            --skipLibCheck \
+            --outDir .tmp/historical-feature-v1 \
+            apps/jobs/src/research/historical-feature-v1.ts \
+            apps/jobs/build-historical-feature-v1.ts
+
+      - name: Build Historical Feature V1
+        env:
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          OUT="reports/historical-feature-v1/${GITHUB_RUN_ID}"
+          node .tmp/historical-feature-v1/build-historical-feature-v1.js \
+            --source-corpus-zip .research-inputs/historical-development-corpus-v1-36479515332.zip \
+            --confirm "${INPUT_CONFIRMATION}" \
+            --output-dir "${OUT}"
+
+      - name: Upload immutable feature evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-feature-v1-${{ github.run_id }}
+          path: reports/historical-feature-v1/**
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 6
+          overwrite: false
+          include-hidden-files: false
+
+      - name: Summary
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "==================================================="
+          echo "HISTORICAL FEATURE V1"
+          echo "==================================================="
+          echo "status=${JOB_STATUS}"
+          echo "sourceSha=${ACTUAL_SHA:-unavailable}"
+          echo "mode=ARTIFACT_ONLY_OFFLINE_FEATURE_BUILD"
+          echo "frozenCorpusArtifactId=${SOURCE_CORPUS_ARTIFACT_ID}"
+          echo "sourceProviderCalls=0"
+          echo "databaseReads=false"
+          echo "databaseWrites=false"
+          echo "prisma=false"
+          echo "normalization=false"
+          echo "modelFitting=false"
+          echo "outcomesRead=false"
+          echo "marketRead=false"
+          echo "ppaSidecarRead=false"
+          echo "quarantineRead=false"
+          echo "2024=reserved validation; not included"
+          echo "2025=locked final holdout; not included"
+          echo "==================================================="
