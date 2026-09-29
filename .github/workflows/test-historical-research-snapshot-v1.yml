@@ -7,6 +7,7 @@ on:
       - 'research/historical/HISTORICAL_DEVELOPMENT_CORPUS_V1_CONTRACT.md'
       - 'research/historical/HISTORICAL_VALIDATION_V1_CONTRACT.md'
       - 'research/historical/HISTORICAL_SOURCE_RESOLUTION_CONFIRMATION_V2_CONTRACT.md'
+      - 'research/historical/HISTORICAL_SOURCE_RESILIENT_CONFIRMATION_V3_CONTRACT.md'
       - 'apps/jobs/src/research/historical-research-snapshot-v1.ts'
       - 'apps/jobs/capture-historical-research-snapshot-v1.ts'
       - 'apps/jobs/__tests__/historical-research-snapshot-v1.test.ts'
