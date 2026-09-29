@@ -1,6 +1,6 @@
 # Historical Final Holdout V1 — Contract
 
-**Status:** FROZEN DESIGN CANDIDATE — 2025 OUTCOMES REMAIN SEALED  
+**Status:** FROZEN DESIGN — 2025 OUTCOMES REMAIN SEALED  
 **Primary model:** `historical_ridge_margin_v3`  
 **Development seasons:** 2022–2023  
 **Observed confirmation season:** 2024  
