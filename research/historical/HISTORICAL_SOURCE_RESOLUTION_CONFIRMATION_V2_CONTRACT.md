@@ -161,6 +161,13 @@ A later source-equivalence capability must be reviewed and merged first.
 
 The provider qualification run then requires a separate explicit user authorization.
 
+The guarded run uses the exact confirmation:
+
+`RUN_HISTORICAL_V2_SOURCE_EQUIVALENCE_RECOVERY`
+
+The run must also require the exact current `main` SHA and execute only from
+`refs/heads/main`.
+
 ### Calibration universe
 
 Qualification uses **2022–2023 only**.
