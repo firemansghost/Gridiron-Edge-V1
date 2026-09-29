@@ -848,6 +848,23 @@ No V1 rule may be weakened after this observed result.
 Any revised model/validation path requires a new version and must explicitly acknowledge
 that 2024 source evidence is now observed.
 
+## Future research path after V1 input block
+
+Historical Validation V1 is closed as:
+
+`HISTORICAL_VALIDATION_INPUT_BLOCKED`
+
+Future research must not modify or rerun V1 as if 2024 source evidence were unseen.
+
+The separately versioned continuation is frozen in:
+
+[`HISTORICAL_SOURCE_RESOLUTION_CONFIRMATION_V2_CONTRACT.md`](./HISTORICAL_SOURCE_RESOLUTION_CONFIRMATION_V2_CONTRACT.md)
+
+V2 explicitly treats 2024 source availability as observed while preserving the fact that
+no legal 2024 V1 model-performance score occurred.
+
+2025 remains locked.
+
 ## Versioning
 
 Any change to the following requires a new validation contract version:
