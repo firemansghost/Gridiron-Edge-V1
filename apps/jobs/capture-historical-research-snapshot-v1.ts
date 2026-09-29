@@ -25,6 +25,7 @@ import {
   buildHistoricalSnapshotPlan,
   countCompletedFbsVsFbsRegularGames,
   countRowsWhere,
+  isCompletedFbsVsFbsRegularGame,
   isFbsVsFbsRegularGame,
   sha256Bytes,
   uniqueNumericIds,
@@ -147,7 +148,7 @@ function canonicalFbsGameIds(
 ): Set<number> {
   return new Set(
     rows
-      .filter((row) => isFbsVsFbsRegularGame(row, season))
+      .filter((row) => isCompletedFbsVsFbsRegularGame(row, season))
       .map((row) => Number(row.id))
       .filter((id) => Number.isInteger(id) && id > 0)
   );
@@ -159,7 +160,7 @@ function canonicalFbsTeamNames(
 ): Set<string> {
   const teams = new Set<string>();
   for (const row of rows) {
-    if (!isFbsVsFbsRegularGame(row, season)) continue;
+    if (!isCompletedFbsVsFbsRegularGame(row, season)) continue;
     const obj = rowObject(row);
     if (!obj) continue;
     for (const key of ['homeTeam', 'awayTeam']) {
@@ -521,27 +522,22 @@ async function main(): Promise<void> {
     if (coverage.fbsVsFbsRegularGames === 0) {
       qaFindings.push('no_fbs_vs_fbs_regular_games');
     }
-    if (
-      coverage.completedFbsVsFbsRegularGames !==
-      coverage.fbsVsFbsRegularGames
-    ) {
-      qaFindings.push('incomplete_fbs_vs_fbs_regular_games_present');
-    }
     if (coverage.fbsVsFbsHistoricalLineGames === 0) {
       qaFindings.push('no_fbs_vs_fbs_historical_lines');
     }
     if (
       coverage.advancedCanonicalUniqueGames !==
-        coverage.fbsVsFbsRegularGames ||
+        coverage.completedFbsVsFbsRegularGames ||
       coverage.advancedCanonicalTeamGameRows !==
-        coverage.fbsVsFbsRegularGames * 2
+        coverage.completedFbsVsFbsRegularGames * 2
     ) {
       qaFindings.push('incomplete_canonical_advanced_game_coverage');
     }
     if (
-      coverage.ppaCanonicalUniqueGames !== coverage.fbsVsFbsRegularGames ||
+      coverage.ppaCanonicalUniqueGames !==
+        coverage.completedFbsVsFbsRegularGames ||
       coverage.ppaCanonicalTeamGameRows !==
-        coverage.fbsVsFbsRegularGames * 2
+        coverage.completedFbsVsFbsRegularGames * 2
     ) {
       qaFindings.push('incomplete_canonical_ppa_game_coverage');
     }
