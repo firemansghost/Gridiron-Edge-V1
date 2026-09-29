@@ -112,6 +112,13 @@ export function isFbsVsFbsRegularGame(
   );
 }
 
+export function isCompletedFbsVsFbsRegularGame(
+  row: HistoricalGameLike,
+  season: number
+): boolean {
+  return isFbsVsFbsRegularGame(row, season) && row.completed === true;
+}
+
 export function deriveFbsVsFbsRegularWeeks(
   rows: HistoricalGameLike[],
   season: number
@@ -120,7 +127,7 @@ export function deriveFbsVsFbsRegularWeeks(
   return [
     ...new Set(
       rows
-        .filter((row) => isFbsVsFbsRegularGame(row, season))
+        .filter((row) => isCompletedFbsVsFbsRegularGame(row, season))
         .map((row) => positiveInt(row.week))
         .filter((week): week is number => week !== null)
     ),
@@ -132,8 +139,8 @@ export function countCompletedFbsVsFbsRegularGames(
   season: number
 ): number {
   assertHistoricalSnapshotSeason(season);
-  return rows.filter(
-    (row) => isFbsVsFbsRegularGame(row, season) && row.completed === true
+  return rows.filter((row) =>
+    isCompletedFbsVsFbsRegularGame(row, season)
   ).length;
 }
 
