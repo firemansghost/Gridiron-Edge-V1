@@ -13,7 +13,6 @@ on:
       - '.github/workflows/capture-historical-research-snapshot-v1.yml'
       - '.github/workflows/capture-historical-research-snapshot-v1-2022.yml'
       - '.github/workflows/capture-historical-research-snapshot-v1-2023.yml'
-      - '.github/workflows/capture-historical-research-snapshot-v1-2024.yml'
       - '.github/workflows/test-historical-research-snapshot-v1.yml'
 
 permissions:
