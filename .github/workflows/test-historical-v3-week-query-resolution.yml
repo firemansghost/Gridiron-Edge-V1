@@ -1,0 +1,73 @@
+name: Test Historical V3 Week Query Resolution
+
+on:
+  pull_request:
+    paths:
+      - 'research/historical/HISTORICAL_SOURCE_RESILIENT_CONFIRMATION_V3_CONTRACT.md'
+      - 'apps/jobs/src/research/historical-v3-week-query-resolution.ts'
+      - 'apps/jobs/run-historical-v3-week-query-resolution.ts'
+      - 'apps/jobs/__tests__/historical-v3-week-query-resolution.test.ts'
+      - '.github/workflows/run-historical-v3-week-query-resolution.yml'
+      - '.github/workflows/test-historical-v3-week-query-resolution.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: TypeScript smoke compile
+        run: |
+          npx tsc --noEmit \
+            --module commonjs \
+            --moduleResolution node \
+            --target ES2019 \
+            --esModuleInterop \
+            --skipLibCheck \
+            apps/jobs/src/research/historical-v3-week-query-resolution.ts \
+            apps/jobs/run-historical-v3-week-query-resolution.ts
+
+      - name: Compile and start guarded runtime without provider access
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/historical-v3-week-query
+          npx tsc --module commonjs \
+            --moduleResolution node \
+            --target ES2019 \
+            --esModuleInterop \
+            --skipLibCheck \
+            --outDir .tmp/historical-v3-week-query \
+            apps/jobs/src/research/historical-v3-week-query-resolution.ts \
+            apps/jobs/run-historical-v3-week-query-resolution.ts
+
+          test -f .tmp/historical-v3-week-query/run-historical-v3-week-query-resolution.js
+
+          set +e
+          OUTPUT="$(node .tmp/historical-v3-week-query/run-historical-v3-week-query-resolution.js \
+            --corpus-zip .tmp/does-not-exist-corpus.zip \
+            --snapshot-zip .tmp/does-not-exist-snapshot.zip \
+            --confirm RUN_HISTORICAL_V3_WEEK_QUERY_QUALIFICATION_RECOVERY \
+            --output-dir .tmp/no-v3-week-query-run 2>&1)"
+          STATUS=$?
+          set -e
+
+          test "${STATUS}" -eq 1
+          echo "${OUTPUT}" | grep -F "[historical-v3-week-query] corpus_zip_missing"
+
+      - name: Test Historical V3 Week Query Resolution
+        run: npx jest apps/jobs/__tests__/historical-v3-week-query-resolution.test.ts --runInBand
