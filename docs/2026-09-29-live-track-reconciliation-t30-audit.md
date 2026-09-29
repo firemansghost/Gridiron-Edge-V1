@@ -1,6 +1,6 @@
 # 2026-09-29 Live Track Reconciliation + T-30 Cost/Value Audit
 
-**Status:** Week 4 closeout verified; Week 5 production state verified; T-30 recurring clock currently disabled  
+**Status:** Week 4 closeout verified; Week 5 production verified; T-30 cost audit complete; optimized Week 5 window gate implemented and out-of-window live-proven  
 **Repository checkpoint before this audit:** `dd0cac5c42d64ea7ad6024a95b5fe33764e54163`
 
 ## Bottom line
@@ -22,8 +22,7 @@ That audit shows the five-minute continuous external clock was operationally rel
 very inefficient: roughly **98% of recurring external-clock cycles produced no market
 refresh, no closing write, and no meaningful failure signal**.
 
-The Supabase cron job is now present but **inactive**. Leave it inactive until a narrower
-dispatch gate is reviewed and explicitly authorized.
+The audit originally left the Supabase cron inactive pending a narrower design. That recommendation was subsequently implemented under the September 29 operator authorization: active week moved to version-controlled Week 5 config, the cron command was gated to kickoffs 20–55 minutes away, explicit proof run **36614235554** passed, and Supabase run **1689** proved out-of-window suppression with `0 rows` and no GitHub dispatch.
 
 ## Week 4 production closeout
 
@@ -388,9 +387,11 @@ The window gate should remain a dispatch optimization only. It must not move mar
 selection, model eligibility, freshness, T-30 selection, or persistence semantics into
 Supabase.
 
-## Recommendation
+## Recommendation and implementation outcome
 
-1. **Keep the existing cron inactive for now.**
+The following was the audit recommendation before implementation. It has now been carried through the out-of-window proof stage; see `docs/2026-09-29-week5-t30-window-gated-activation.md`.
+
+1. **Keep the existing cron inactive while staging the optimized design.**
 2. Do not reactivate 24/7 five-minute GitHub dispatch for Week 5.
 3. Design/review a Supabase-side kickoff-window predicate whose only job is deciding
    whether to dispatch the unchanged GitHub coordinator.
@@ -402,7 +403,7 @@ Supabase.
    production-proven.
 7. Keep Hybrid Stage E disabled for Week 5 unless separately reviewed and authorized.
 
-No production cron mutation is authorized by this document alone.
+Implementation later on September 29 used the user's standing authorization for the recommended sequence. Current state: cron `active=true`, 20–55 minute gate installed, Week 5 authority version-controlled, Hybrid Stage E disabled, out-of-window proof passed, first in-window proof pending.
 
 ## Separate security advisory
 
