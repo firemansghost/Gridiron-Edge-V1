@@ -28,6 +28,15 @@ export const BETTING_TICKET_ML_C = 1.0;
 const EPS = 1e-9;
 const KICKOFF_GATE_MS = 30 * 60 * 1000;
 
+/**
+ * Operator freshness gate only.
+ *
+ * This is intentionally looser than the prospective T-30 research freshness
+ * contract. The ticket is an early-week decision surface, but it must not
+ * label an old persisted number BET NOW.
+ */
+export const BETTING_TICKET_MAX_MARKET_AGE_MINUTES = 180;
+
 export interface BettingTicketClassificationInput {
   marketType: string;
   side: string;
@@ -35,6 +44,7 @@ export interface BettingTicketClassificationInput {
   lockedPrice: number | null;
   lockedGrade: string | null;
   currentPrice: number | null;
+  marketAgeMinutes?: number | null;
   gameStatus: string;
   kickoffIso: string;
   nowIso: string;
@@ -319,6 +329,26 @@ export function classifyBettingTicketWager(
       playableToPrice,
       priorityPrice,
       reason: 'Current persisted market price unavailable',
+      actionLabel: 'Refresh market before betting',
+    };
+  }
+
+  if (
+    input.marketAgeMinutes !== null &&
+    input.marketAgeMinutes !== undefined &&
+    Number.isFinite(input.marketAgeMinutes) &&
+    input.marketAgeMinutes > BETTING_TICKET_MAX_MARKET_AGE_MINUTES
+  ) {
+    const ageHours = input.marketAgeMinutes / 60;
+    return {
+      bucket: 'watch',
+      currentEdgeOrValue,
+      currentGrade,
+      movement,
+      priceNotWorse,
+      playableToPrice,
+      priorityPrice,
+      reason: `Persisted market snapshot is ${ageHours.toFixed(1)}h old; refresh odds before betting`,
       actionLabel: 'Refresh market before betting',
     };
   }

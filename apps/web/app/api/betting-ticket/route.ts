@@ -111,18 +111,6 @@ function ticketItem(
   nowIso: string
 ) {
   const current = currentPriceForWager(wager, selection);
-  const classification = classifyBettingTicketWager({
-    marketType: wager.marketType,
-    side: wager.side,
-    modelPrice: wager.modelPrice,
-    lockedPrice: wager.closePrice,
-    lockedGrade: wager.notesMeta.grade,
-    currentPrice: current.price,
-    gameStatus: game.status,
-    kickoffIso: game.kickoffIso,
-    nowIso,
-  });
-
   const marketAgeMinutes =
     current.timestamp == null
       ? null
@@ -131,6 +119,19 @@ function ticketItem(
           (new Date(nowIso).getTime() - new Date(current.timestamp).getTime()) /
             60000
         );
+
+  const classification = classifyBettingTicketWager({
+    marketType: wager.marketType,
+    side: wager.side,
+    modelPrice: wager.modelPrice,
+    lockedPrice: wager.closePrice,
+    lockedGrade: wager.notesMeta.grade,
+    currentPrice: current.price,
+    marketAgeMinutes,
+    gameStatus: game.status,
+    kickoffIso: game.kickoffIso,
+    nowIso,
+  });
 
   return {
     betId: wager.id,
@@ -222,7 +223,7 @@ export async function GET(request: NextRequest) {
             pass: 'Current C/no qualifying value, unavailable market, or kickoff gate',
             playableTo: 'B-grade threshold from frozen persisted modelPrice',
           },
-          summary: { total: 0, bet: 0, watch: 0, pass: 0 },
+          summary: { total: 0, bet: 0, watch: 0, pass: 0, freshMarket: 0, staleMarket: 0, unavailableMarket: 0 },
           officialSummary,
           items: [],
         },
@@ -297,9 +298,24 @@ export async function GET(request: NextRequest) {
       (acc, item) => {
         acc.total += 1;
         acc[item.bucket] += 1;
+        if (item.marketAgeMinutes === null) {
+          acc.unavailableMarket += 1;
+        } else if (item.marketAgeMinutes > 180) {
+          acc.staleMarket += 1;
+        } else {
+          acc.freshMarket += 1;
+        }
         return acc;
       },
-      { total: 0, bet: 0, watch: 0, pass: 0 }
+      {
+        total: 0,
+        bet: 0,
+        watch: 0,
+        pass: 0,
+        freshMarket: 0,
+        staleMarket: 0,
+        unavailableMarket: 0,
+      }
     );
 
     return NextResponse.json(

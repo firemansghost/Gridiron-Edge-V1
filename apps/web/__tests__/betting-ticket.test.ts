@@ -193,6 +193,25 @@ describe('Betting Ticket operator buckets', () => {
     expect(result.bucket).toBe('watch');
     expect(result.actionLabel).toBe('Refresh market before betting');
   });
+
+  it('WATCHes strong value when the persisted market snapshot is stale', () => {
+    const result = classifyBettingTicketWager({
+      ...base,
+      marketAgeMinutes: 181,
+    });
+    expect(result.currentGrade).toBe('A');
+    expect(result.bucket).toBe('watch');
+    expect(result.reason).toMatch(/snapshot is .*old/i);
+    expect(result.actionLabel).toBe('Refresh market before betting');
+  });
+
+  it('permits BET NOW at the freshness boundary', () => {
+    const result = classifyBettingTicketWager({
+      ...base,
+      marketAgeMinutes: 180,
+    });
+    expect(result.bucket).toBe('bet');
+  });
 });
 
 describe('Betting Ticket read-only product boundary', () => {
@@ -234,6 +253,8 @@ describe('Betting Ticket read-only product boundary', () => {
     expect(page).toContain('BET NOW');
     expect(page).toContain('WATCH');
     expect(page).toContain('PASS / NO CHASE');
+    expect(page).toContain('Market freshness guard active');
+    expect(page).toContain('older than 3 hours');
     expect(page).toContain('View locked Official Card');
     expect(page).toContain('View full Current Slate');
     expect(page).not.toContain('ProductionModelSelector');

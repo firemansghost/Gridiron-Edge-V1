@@ -57,6 +57,9 @@ interface TicketResponse {
     bet: number;
     watch: number;
     pass: number;
+    freshMarket: number;
+    staleMarket: number;
+    unavailableMarket: number;
   };
   items: TicketItem[];
   error?: string;
@@ -401,6 +404,21 @@ export default function BettingTicketPage() {
                   <div className="text-2xl font-bold text-gray-800">{data.summary.pass}</div>
                 </div>
               </div>
+
+              {(data.summary.staleMarket > 0 || data.summary.unavailableMarket > 0) && (
+                <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 mb-5 text-sm text-amber-900">
+                  <div className="font-semibold">Market freshness guard active</div>
+                  <div className="mt-1">
+                    {data.summary.staleMarket > 0
+                      ? `${data.summary.staleMarket} wager${data.summary.staleMarket === 1 ? '' : 's'} use market snapshots older than 3 hours. `
+                      : ''}
+                    {data.summary.unavailableMarket > 0
+                      ? `${data.summary.unavailableMarket} wager${data.summary.unavailableMarket === 1 ? '' : 's'} have no current persisted market. `
+                      : ''}
+                    Those rows cannot be labeled BET NOW until fresh persisted odds are available.
+                  </div>
+                </div>
+              )}
 
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-5 text-sm text-blue-900">
                 <div className="font-semibold">Ticket rule</div>
