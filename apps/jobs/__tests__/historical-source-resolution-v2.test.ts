@@ -258,30 +258,15 @@ describe('historical source resolution v2', () => {
     });
   });
 
-  it('keeps the V2 workflow guarded, pinned, and isolated', () => {
-    const workflow = fs.readFileSync(
-      path.resolve(
-        process.cwd(),
-        '.github/workflows/run-historical-v2-source-resolution.yml'
-      ),
-      'utf8'
-    );
-
-    expect(workflow).toMatch(/workflow_dispatch/);
-    expect(workflow).toMatch(/expected_main_sha/);
-    expect(workflow).toMatch(/RUN_HISTORICAL_V2_SOURCE_EQUIVALENCE_RECOVERY/);
-    expect(workflow).toMatch(/CORPUS_ARTIFACT_ID: '10997010171'/);
-    expect(workflow).toMatch(/SNAPSHOT_2024_ARTIFACT_ID: '11008470975'/);
-    expect(workflow).toMatch(/providerCallsHardMax=12/);
-    expect(workflow).toMatch(/\/game\/box\/advanced/);
-    expect(workflow).toMatch(/npm ci --ignore-scripts/);
-    expect(workflow).not.toMatch(/DIRECT_URL|DATABASE_URL/);
-    expect(workflow).not.toMatch(
-      /npx prisma|npm run prisma|prisma migrate|prisma db/i
-    );
-    expect(workflow).not.toMatch(
-      /ODDS_API_KEY|SGO_API_KEY|VISUALCROSSING/i
-    );
+  it('keeps the rejected V2 provider workflow retired', () => {
+    expect(
+      fs.existsSync(
+        path.resolve(
+          process.cwd(),
+          '.github/workflows/run-historical-v2-source-resolution.yml'
+        )
+      )
+    ).toBe(false);
 
     expect(
       fs.existsSync(

@@ -1,6 +1,6 @@
 # Historical Source Resolution & Confirmation V2 — Contract
 
-**Status:** FROZEN DESIGN — NO V2 PROVIDER RUN / NO 2024 MODEL SCORE YET  
+**Status:** SOURCE EQUIVALENCE REJECTED — V2 CLOSED BEFORE 2024 RECOVERY OR MODEL SCORE  
 **Prior V1 status:** `HISTORICAL_VALIDATION_INPUT_BLOCKED`  
 **Development seasons:** 2022–2023  
 **Observed source season:** 2024  
@@ -719,6 +719,88 @@ Merging this contract does **not** authorize:
 8. separately authorize one 2024 V2 source-informed confirmation score;
 9. audit result;
 10. only after audited PASS may a 2025 final-holdout contract be designed.
+
+## Retired V2 provider workflow
+
+After the audited Stage 1 rejection, the one-shot manual provider workflow:
+
+`.github/workflows/run-historical-v2-source-resolution.yml`
+
+is retired and removed from the active repository.
+
+This does not delete or invalidate the canonical V2 evidence:
+
+- run: `36569502741`
+- artifact ID: `11033760438`
+- artifact ZIP SHA-256:
+  `cdfb0c533c8ae6ffc44a29b6929185fd30229a73e18f87635227e5b8ecc3237c`
+
+The frozen V2 contract does not permit repeating calibration after the observed
+`HISTORICAL_V2_SOURCE_EQUIVALENCE_REJECTED` result.
+
+Any new provider qualification requires a new version and a new explicit authorization.
+
+## Audited V2 Stage 1 result
+
+The authorized V2 source-equivalence run executed in GitHub Actions:
+
+- run: `36569502741`
+- source SHA:
+  `49fa04db10c3b11c0dac4f7e334aee0515189c05`
+- artifact ID: `11033760438`
+- artifact ZIP SHA-256:
+  `cdfb0c533c8ae6ffc44a29b6929185fd30229a73e18f87635227e5b8ecc3237c`
+
+Independent audit is recorded in:
+
+[`docs/2026-09-29-historical-v2-source-equivalence-rejected-audit.md`](../../docs/2026-09-29-historical-v2-source-equivalence-rejected-audit.md)
+
+Frozen Stage 1 status:
+
+`HISTORICAL_V2_SOURCE_EQUIVALENCE_REJECTED`
+
+Observed execution:
+
+- calibration games: **8**
+- calibration provider calls: **8**
+- 2024 recovery provider calls: **0**
+- total provider calls: **8**
+- market reads: **0**
+- PPA-sidecar reads: **0**
+- outcome reads: **0**
+- 2025 reads: **0**
+- DB reads/writes: **0 / 0**
+- model fit: **false**
+- 2024 model score: **false**
+
+The frozen `1e-9` gate failed on all **64 / 64** scalar comparisons.
+
+The endpoint behavior was not uniformly a rounding-only difference. Three calibration
+games had materially different source values, including maximum scalar differences of:
+
+- **0.15035787080941188** — Hawai'i vs Vanderbilt;
+- **0.061** — Arkansas vs Ole Miss;
+- **0.05696914579172313** — Arkansas vs Florida International.
+
+Therefore `/game/box/advanced` is **not** accepted as a lossless V2 fallback for the
+frozen bulk advanced source.
+
+No V2 tolerance relaxation, transformation, selective calibration exclusion, or
+post-hoc mapping repair is permitted.
+
+V2 stops before:
+
+- the four 2024 recovery calls;
+- Historical Model V2 construction for this confirmation path;
+- 2024 V2 predictive-input construction;
+- 2024 confirmation scoring.
+
+2025 remains locked.
+
+Any further historical source-recovery/model path requires a new version that explicitly
+acknowledges the observed V1 source gaps and this V2 cross-endpoint calibration evidence.
+
+2024 model-performance evidence remains unobserved.
 
 ## Versioning
 
