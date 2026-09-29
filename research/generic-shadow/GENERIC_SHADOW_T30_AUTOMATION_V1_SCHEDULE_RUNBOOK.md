@@ -1,6 +1,6 @@
 # Generic Shadow T-30 Automation V1 — Schedule Enablement Runbook
 
-**Status:** production clock proven 2026-09-24; Supabase external clock is the sole recurring scheduler. Native GitHub `schedule` is intentionally disabled.
+**Status:** production clock proven 2026-09-24; Supabase remains the sole recurring scheduler. Native GitHub `schedule` is intentionally disabled. The external cron is currently inactive while the window-gated Week 5 activation is being staged.
 
 The coordinator remains activation-gated in GitHub and is invoked by the proven Supabase external clock through `workflow_dispatch`; see `GENERIC_SHADOW_T30_EXTERNAL_CLOCK_RUNBOOK.md`.
 
@@ -39,21 +39,27 @@ The externally clocked Generic coordinator is inert unless this repository varia
 
 `GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED=true`
 
-The active week must also be supplied explicitly:
+The active week is supplied by version-controlled config:
 
-`GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK=<positive integer>`
+`research/generic-shadow/GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json`
+
+The config must contain the matching season and a positive integer week. The current Week 5 activation pins:
+
+`{"season": 2026, "week": 5}`
+
+This replaces the inaccessible repository-variable week pointer. The enable/disable gate remains the existing repository variable.
 
 For Week 4 only, Hybrid Snapshot V1 closing capture is explicitly authorized to inherit the already-proven Generic activation gate while:
 
 `GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED=true`
 
-and:
+and the version-controlled active-week config resolves to:
 
-`GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK=4`
+`week=4`
 
 No second repository variable or second clock is required. The Hybrid stage does not create Hybrid predictions or alter Hybrid qualification. It only invokes the already-proven `capture-shadow-t30-closing-v1-2026.ts` append-only closing writer after Generic Stage C/D succeed, reusing the same persisted board refreshed by Stage C and the same Supabase external clock.
 
-Advancing the active Generic week away from 4 automatically disables Hybrid Stage E. Any future-week Hybrid closing automation requires a separate reviewed authorization.
+Advancing the version-controlled active Generic week away from 4 automatically disables Hybrid Stage E. Any future-week Hybrid closing automation requires a separate reviewed authorization.
 
 ## Source safety
 
@@ -140,6 +146,6 @@ Prediction cohorts are intentionally outside Automation V1.
 
 Before the external clock can protect a new week, eligible Generic Shadow capture runs must already exist for that week.
 
-For Week 4, eligible COMPLETE cohorts currently include the original Core observation plus the later same-board paired research cohort. The coordinator discovers eligible capture runs from persisted state; it is not limited to one capture context. Current legitimate contexts include `week4_post_official_card` and `week4_tuesday_paired_research`.
+Week 4 historical evidence remains frozen. For Week 5, eligible COMPLETE Generic cohorts already exist before clock reactivation, including the first Candidate B Elo Prior V1 prospective observation. The coordinator discovers eligible capture runs from persisted state; it is not limited to one capture context.
 
-Those captures remain separately guarded research writes.
+Weekly rollover now requires an auditable PR updating only `GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json` after the new week's prediction cohorts are verified. Those captures remain separately guarded research writes.
