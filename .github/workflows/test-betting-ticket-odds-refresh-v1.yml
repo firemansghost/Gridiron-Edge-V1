@@ -1,0 +1,34 @@
+name: Test Betting Ticket Odds Refresh V1
+
+on:
+  pull_request:
+    paths:
+      - 'apps/jobs/src/betting-ticket-odds-refresh-v1.ts'
+      - 'apps/jobs/plan-betting-ticket-odds-refresh-v1.ts'
+      - 'apps/jobs/__tests__/betting-ticket-odds-refresh-v1.test.ts'
+      - '.github/workflows/run-betting-ticket-odds-refresh-v1-2026.yml'
+      - '.github/workflows/test-betting-ticket-odds-refresh-v1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Run Betting Ticket odds-refresh tests
+        run: npx jest apps/jobs/__tests__/betting-ticket-odds-refresh-v1.test.ts --runInBand

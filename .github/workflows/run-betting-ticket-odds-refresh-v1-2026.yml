@@ -1,0 +1,242 @@
+# Betting Ticket Odds Refresh V1 — external-clock coordinator.
+#
+# Purpose:
+# - maintain fresh persisted MarketLine evidence for the betting-day operator ticket;
+# - refresh before the 3-hour BET NOW freshness guard expires;
+# - avoid provider calls when all future active-week games already have recent
+#   spread / total / moneyline coverage;
+# - hand the final 60 minutes before any kickoff to the existing Generic T-30
+#   automation so the two refresh paths never intentionally race.
+#
+# CLOCK:
+# - workflow_dispatch only.
+# - Supabase pg_cron is the intended recurring clock after guarded live proof.
+# - No native GitHub schedule.
+#
+# PROVIDER:
+# - PLAN: providerCalls=0; DIRECT_URL SELECTs only.
+# - REFRESH: invokes the already-proven append-only Live Odds COMMIT once.
+#
+# FORBIDDEN:
+# - Bet writes
+# - ratings/model writes
+# - Game writes
+# - T-30 closing writes
+# - migrations
+
+name: Betting Ticket Odds Refresh V1 2026 (External Clock, Freshness Gated)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: betting-ticket-odds-refresh-v1-production
+  cancel-in-progress: false
+
+jobs:
+  refresh-cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      INPUT_SEASON: '2026'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Load version-controlled active week
+        id: active_week
+        shell: bash
+        run: |
+          set -euo pipefail
+          CONFIG="research/generic-shadow/GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json"
+          if [ ! -f "$CONFIG" ]; then
+            echo "::error::Active-week config is missing: $CONFIG"
+            exit 1
+          fi
+
+          CONFIG_SEASON="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["season"])' "$CONFIG")"
+          ACTIVE_WEEK="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["week"])' "$CONFIG")"
+
+          if [ "$CONFIG_SEASON" != "$INPUT_SEASON" ]; then
+            echo "::error::Active-week config season $CONFIG_SEASON does not match INPUT_SEASON=$INPUT_SEASON"
+            exit 1
+          fi
+          if ! [[ "$ACTIVE_WEEK" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::Active-week config week must be a positive integer"
+            exit 1
+          fi
+
+          echo "INPUT_WEEK=$ACTIVE_WEEK" >> "$GITHUB_ENV"
+          echo "week=$ACTIVE_WEEK" >> "$GITHUB_OUTPUT"
+          echo "active_week=$ACTIVE_WEEK"
+          echo "active_week_source=version_controlled_config"
+
+      - name: Source/ref guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          echo "ACTUAL_SHA=$ACTUAL_SHA" >> "$GITHUB_ENV"
+          echo "actual_sha=$ACTUAL_SHA"
+          echo "github_ref=${GITHUB_REF:-}"
+          echo "season=$INPUT_SEASON"
+          echo "week=${INPUT_WEEK:-}"
+
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Refusing odds refresh. Workflow must run from main."
+            exit 1
+          fi
+          if ! [[ "${INPUT_WEEK:-}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::Active-week config must resolve to a positive integer"
+            exit 1
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Plan operator-board freshness (read-only)
+        id: plan
+        env:
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          REPORT="reports/betting-ticket-odds-refresh-v1-2026-week-${INPUT_WEEK}-PLAN.json"
+          echo "ODDS_API_KEY: not provided"
+          npx tsx apps/jobs/plan-betting-ticket-odds-refresh-v1.ts             --season "$INPUT_SEASON"             --week "$INPUT_WEEK"             --report "$REPORT"
+
+      - name: Conditional guarded Live Odds refresh
+        if: ${{ steps.plan.outputs.should_refresh == 'true' }}
+        env:
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          DATABASE_URL: ${{ secrets.DIRECT_URL }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          CONFIRMATION="WRITE_2026_WEEK_${INPUT_WEEK}_ODDS"
+          REPORT="reports/betting-ticket-live-odds-2026-week-${INPUT_WEEK}-COMMIT.json"
+
+          if [ -z "${DIRECT_URL:-}" ]; then
+            echo "::error::DIRECT_URL secret is missing"
+            exit 1
+          fi
+          if [ -z "${ODDS_API_KEY:-}" ]; then
+            echo "::error::ODDS_API_KEY secret is missing"
+            exit 1
+          fi
+
+          npx tsx apps/jobs/write-live-odds-2026.ts             --season "$INPUT_SEASON"             --week "$INPUT_WEEK"             --mode COMMIT             --confirm "$CONFIRMATION"             --report "$REPORT"
+
+      - name: Write refresh-cycle report
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          PLAN_OUTCOME: ${{ steps.plan.outputs.outcome }}
+          SHOULD_REFRESH: ${{ steps.plan.outputs.should_refresh }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+
+          const season = Number(process.env.INPUT_SEASON || 2026);
+          const week = Number(process.env.INPUT_WEEK || NaN);
+          const planPath = path.join('reports', `betting-ticket-odds-refresh-v1-2026-week-${week}-PLAN.json`);
+          const oddsPath = path.join('reports', `betting-ticket-live-odds-2026-week-${week}-COMMIT.json`);
+
+          function readJson(p) {
+            if (!fs.existsSync(p)) return null;
+            return JSON.parse(fs.readFileSync(p, 'utf8'));
+          }
+
+          const plan = readJson(planPath);
+          const odds = readJson(oddsPath);
+          const providerCalls = Number(odds?.plan?.providerCalls || 0);
+          const insertedRows =
+            odds?.execution?.insertedThisRun ??
+            odds?.execution?.createManyCount ??
+            0;
+          const providerUsage = odds?.plan?.providerUsage || null;
+          const refreshRequested = process.env.SHOULD_REFRESH === 'true';
+          const jobStatus = process.env.JOB_STATUS || 'unknown';
+
+          let outcome = plan?.outcome || process.env.PLAN_OUTCOME || 'UNKNOWN';
+          if (jobStatus !== 'success') outcome = 'FAILED';
+          else if (refreshRequested && odds) outcome = 'REFRESHED';
+
+          const report = {
+            capability: 'betting_ticket_odds_refresh_v1_cycle',
+            season,
+            week,
+            observedTimestamp: new Date().toISOString(),
+            repoCommitSha: process.env.ACTUAL_SHA || process.env.GITHUB_SHA || null,
+            githubRef: process.env.GITHUB_REF || null,
+            triggerEvent: process.env.GITHUB_EVENT_NAME || null,
+            clockAuthority: 'SUPABASE_EXTERNAL',
+            nativeGithubScheduleEnabled: false,
+            activeWeekSource: 'VERSION_CONTROLLED_CONFIG',
+            staleAfterMinutes: plan?.staleAfterMinutes ?? 150,
+            t30HandoffMinutes: plan?.t30HandoffMinutes ?? 60,
+            planOutcome: plan?.outcome || null,
+            refreshRequested,
+            providerCalls,
+            providerUsage,
+            insertedRows,
+            marketLinePersistenceInvoked: Boolean(odds?.execution?.marketLinePersistenceInvoked),
+            postWriteVerificationSucceeded: odds?.execution?.postWriteVerificationSucceeded ?? null,
+            betWrites: false,
+            modelWrites: false,
+            gameWrites: false,
+            t30ClosingWrites: false,
+            prismaMigrateInvoked: false,
+            outcome,
+            plan,
+            liveOddsReport: odds,
+          };
+
+          const target = path.join('reports', `betting-ticket-odds-refresh-v1-2026-week-${week}-CYCLE.json`);
+          fs.writeFileSync(target, JSON.stringify(report, null, 2));
+          console.log(`cycleReport=${target}`);
+          console.log(`outcome=${outcome} refreshRequested=${refreshRequested} providerCalls=${providerCalls} insertedRows=${insertedRows}`);
+          NODE
+
+      - name: Upload audit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: betting-ticket-odds-refresh-v1-2026-w${{ steps.active_week.outputs.week }}
+          path: |
+            reports/betting-ticket-odds-refresh-v1-2026-week-*.json
+            reports/betting-ticket-live-odds-2026-week-*.json
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          echo "============================================"
+          echo "BETTING TICKET ODDS REFRESH V1"
+          echo "============================================"
+          echo "season=$INPUT_SEASON"
+          echo "week=${INPUT_WEEK:-}"
+          echo "stale guard: 150 minutes"
+          echo "T-30 handoff: 60 minutes before any kickoff"
+          echo "native GitHub schedule: disabled"
+          echo "Bet/model/Game/T-30 closing writes: false"
+          echo "provider call: conditional, at most 1"
+          echo "============================================"
