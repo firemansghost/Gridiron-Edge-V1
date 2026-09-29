@@ -9,8 +9,8 @@
 # - Merging this workflow does NOT activate production automation.
 # - The job is gated by repository variable:
 #     GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED == "true"
-# - The active CFB week is supplied by repository variable:
-#     GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK
+# - The active CFB week is supplied by version-controlled config:
+#     research/generic-shadow/GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json
 # - Week 4 Hybrid Snapshot V1 closing capture is explicitly authorized to inherit
 #   the proven Generic activation gate while the active week equals 4.
 # - Advancing the active week automatically disables Hybrid Stage E; future-week
@@ -64,11 +64,39 @@ jobs:
 
     env:
       INPUT_SEASON: '2026'
-      INPUT_WEEK: ${{ vars.GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Load version-controlled active week
+        id: active_week
+        shell: bash
+        run: |
+          set -euo pipefail
+          CONFIG="research/generic-shadow/GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json"
+          if [ ! -f "$CONFIG" ]; then
+            echo "::error::Active-week config is missing: $CONFIG"
+            exit 1
+          fi
+
+          CONFIG_SEASON="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["season"])' "$CONFIG")"
+          ACTIVE_WEEK="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["week"])' "$CONFIG")"
+
+          if [ "$CONFIG_SEASON" != "$INPUT_SEASON" ]; then
+            echo "::error::Active-week config season $CONFIG_SEASON does not match INPUT_SEASON=$INPUT_SEASON"
+            exit 1
+          fi
+          if ! [[ "$ACTIVE_WEEK" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::Active-week config week must be a positive integer"
+            exit 1
+          fi
+
+          echo "INPUT_WEEK=$ACTIVE_WEEK" >> "$GITHUB_ENV"
+          echo "week=$ACTIVE_WEEK" >> "$GITHUB_OUTPUT"
+          echo "source=version_controlled_config" >> "$GITHUB_OUTPUT"
+          echo "active_week=$ACTIVE_WEEK"
+          echo "active_week_source=version_controlled_config"
 
       - name: Scheduled source/ref and activation guard
         run: |
@@ -89,7 +117,7 @@ jobs:
             exit 1
           fi
           if ! [[ "${INPUT_WEEK:-}" =~ ^[1-9][0-9]*$ ]]; then
-            echo "::error::GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK must be a positive integer"
+            echo "::error::Active-week config must resolve to a positive integer"
             exit 1
           fi
           echo "Scheduled source/ref and activation guard passed."
@@ -207,7 +235,7 @@ jobs:
             --initial-report "$PLAN_REPORT"
 
       - name: Stage E Week 4 Hybrid T-30 closing COMMIT/no-op
-        if: ${{ vars.GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED == 'true' && vars.GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK == '4' }}
+        if: ${{ vars.GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED == 'true' && steps.active_week.outputs.week == '4' }}
         env:
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
         run: |
@@ -227,7 +255,7 @@ jobs:
         if: always()
         env:
           JOB_STATUS: ${{ job.status }}
-          HYBRID_T30_ENABLED: ${{ vars.GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED == 'true' && vars.GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK == '4' }}
+          HYBRID_T30_ENABLED: ${{ vars.GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED == 'true' && steps.active_week.outputs.week == '4' }}
         run: |
           set -euo pipefail
           mkdir -p reports
@@ -332,7 +360,8 @@ jobs:
             nativeGithubScheduleEnabled: false,
             activationGateVariable: 'GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED',
             activationGatePassed: true,
-            activeWeekVariable: 'GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK',
+            activeWeekSource: 'VERSION_CONTROLLED_CONFIG',
+            activeWeekConfigPath: 'research/generic-shadow/GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json',
             hybridClosingActivation: 'WEEK4_INHERITS_GENERIC_GATE',
             hybridClosingEnabled,
             cadenceMinutes: 5,
@@ -403,7 +432,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: generic-shadow-t30-automation-v1-2026-w${{ vars.GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK }}-scheduled-cycle
+          name: generic-shadow-t30-automation-v1-2026-w${{ steps.active_week.outputs.week }}-scheduled-cycle
           path: |
             reports/generic-shadow-t30-automation-v1-2026-*.json
             reports/live-odds-2026-*-generic-shadow-t30-market-refresh.json
@@ -424,6 +453,7 @@ jobs:
           echo "trigger_event: ${GITHUB_EVENT_NAME:-unavailable}"
           echo "cadence: every 5 minutes"
           echo "activation gate: GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED=true"
+          echo "active week source: research/generic-shadow/GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json"
           echo "Stage C window: T-45..T-35 only"
           echo "Stage C max provider board calls/cycle: 1"
           echo "Stage D target: T-30"
