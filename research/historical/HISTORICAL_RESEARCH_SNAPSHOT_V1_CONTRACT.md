@@ -65,6 +65,32 @@ Each season uses a season-specific manual guarded workflow and exact confirmatio
 A workflow must run from `refs/heads/main` and require an exact
 `expected_main_sha`.
 
+## Canonical historical target definition
+
+For snapshot coverage and downstream historical target identity, a canonical game is:
+
+- season equals the authorized season;
+- season type = regular;
+- home classification = FBS;
+- away classification = FBS;
+- `completed = true`.
+
+Incomplete, canceled, or otherwise unfinished FBS-vs-FBS rows remain archived as raw
+provider evidence but are **not** canonical target games.
+
+Accordingly:
+
+- canonical game IDs use completed games only;
+- canonical team identity is derived from completed canonical games only;
+- the observed-week set used for weekly Elo capture is derived from completed
+  canonical games only;
+- advanced/PPA canonical coverage denominators use completed canonical games only;
+- the mere presence of an incomplete FBS-vs-FBS row is informational and is not itself
+  a snapshot QA failure.
+
+This definition aligns the shared snapshot implementation with the frozen 2024
+Historical Validation V1 contract.
+
 ## Provider call budget
 
 Every run has a hard ceiling of **32 CFBD calls**.
