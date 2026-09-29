@@ -247,6 +247,10 @@ function BetNowSection({
         All rows still satisfy the strict BET NOW rule. The priority overlay only compresses
         the operator card; it does not change Core V1 grade or stake.
       </p>
+      <p className="text-sm font-medium text-gray-700 mt-1">
+        BET NOW means the wager qualifies at the latest persisted market snapshot. Verify the
+        current executable price before placing a wager.
+      </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 mb-5">
         <div className="bg-green-50 border border-green-200 rounded-lg p-3">
@@ -277,16 +281,29 @@ function BetNowSection({
         )}
       </div>
 
-      <div className="space-y-3 mt-6">
-        <h3 className="text-base font-bold text-blue-900">Secondary Plays</h3>
-        {secondary.length === 0 ? (
-          <div className="bg-white border border-gray-200 rounded-lg p-4 text-sm text-gray-600">
-            No current secondary BET NOW plays.
+      <details className="mt-6 group">
+        <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-bold text-blue-900">
+              Secondary Plays ({secondary.length})
+            </h3>
+            <p className="text-sm text-gray-600">
+              BET NOW remains valid, but current cushion is below the Primary Card cutoff.
+            </p>
           </div>
-        ) : (
-          secondary.map((item) => <TicketCard key={item.betId} item={item} />)
-        )}
-      </div>
+          <span className="text-sm font-medium text-gray-500 group-open:hidden">Show</span>
+          <span className="text-sm font-medium text-gray-500 hidden group-open:inline">Hide</span>
+        </summary>
+        <div className="space-y-3 mt-3">
+          {secondary.length === 0 ? (
+            <div className="bg-white border border-gray-200 rounded-lg p-4 text-sm text-gray-600">
+              No current secondary BET NOW plays.
+            </div>
+          ) : (
+            secondary.map((item) => <TicketCard key={item.betId} item={item} />)
+          )}
+        </div>
+      </details>
 
       {alternates.length > 0 && (
         <details className="mt-6 group">
@@ -446,6 +463,7 @@ export default function BettingTicketPage() {
               </p>
               <p className="text-xs text-gray-500 mt-2">
                 BET NOW is intentionally selective. WATCH is not a rejection—it is a price-monitoring list.
+                BET NOW reflects the latest persisted market snapshot; verify the executable price before wagering.
               </p>
             </div>
 
@@ -473,7 +491,7 @@ export default function BettingTicketPage() {
                 onClick={() => void loadTicket(week ?? undefined)}
                 className="px-3 py-2 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
               >
-                Refresh
+                Reload Ticket
               </button>
             </div>
           </div>
@@ -523,7 +541,7 @@ export default function BettingTicketPage() {
                   “Playable to” is the B-grade threshold calculated from the frozen persisted model price.
                 </div>
                 <div className="mt-2 border-t border-blue-200 pt-2">
-                  <span className="font-semibold">Primary Card overlay:</span> {data.policy.primary}. {data.policy.alternate}.
+                  <span className="font-semibold">Primary Card overlay:</span> {data.policy.primary}. {data.policy.secondary}. {data.policy.alternate}.
                   This is an operator ranking only—not a new model grade, confidence score, or stake change.
                 </div>
               </div>
@@ -564,7 +582,7 @@ export default function BettingTicketPage() {
                   secondary={groups.secondary}
                   alternates={groups.alternate}
                 />
-                <TicketSection bucket="watch" items={groups.watch} />
+                <TicketSection bucket="watch" items={groups.watch} collapse />
                 <TicketSection bucket="pass" items={groups.pass} collapse />
               </div>
 
