@@ -1,0 +1,67 @@
+name: Test Historical V3 Confirmation Capability
+
+on:
+  pull_request:
+    paths:
+      - 'apps/jobs/src/research/historical-v3-confirmation.ts'
+      - 'apps/jobs/freeze-historical-v3-prescore.ts'
+      - 'apps/jobs/run-historical-v3-confirmation.ts'
+      - 'apps/jobs/__tests__/historical-v3-confirmation.test.ts'
+      - '.github/workflows/freeze-historical-v3-prescore.yml'
+      - '.github/workflows/run-historical-v3-confirmation.yml'
+      - '.github/workflows/test-historical-v3-confirmation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: TypeScript smoke compile
+        run: |
+          set -euo pipefail
+          npx tsc --noEmit             --module commonjs             --moduleResolution node             --target ES2019             --esModuleInterop             --skipLibCheck             apps/jobs/src/research/historical-model-development-v1.ts             apps/jobs/src/research/historical-model-v3.ts             apps/jobs/src/research/historical-v3-predictive-inputs.ts             apps/jobs/src/research/historical-v3-confirmation.ts             apps/jobs/freeze-historical-v3-prescore.ts             apps/jobs/run-historical-v3-confirmation.ts
+
+      - name: Compile guarded runtimes
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/historical-v3-confirmation
+          npx tsc             --module commonjs             --moduleResolution node             --target ES2019             --esModuleInterop             --skipLibCheck             --outDir .tmp/historical-v3-confirmation             apps/jobs/src/research/historical-model-development-v1.ts             apps/jobs/src/research/historical-model-v3.ts             apps/jobs/src/research/historical-v3-predictive-inputs.ts             apps/jobs/src/research/historical-v3-confirmation.ts             apps/jobs/freeze-historical-v3-prescore.ts             apps/jobs/run-historical-v3-confirmation.ts
+
+      - name: Smoke prescore guard without artifacts
+        run: |
+          set -euo pipefail
+          set +e
+          OUTPUT="$(node .tmp/historical-v3-confirmation/freeze-historical-v3-prescore.js             --feature-zip .tmp/missing-feature.zip             --corpus-zip .tmp/missing-corpus.zip             --v3-model-zip .tmp/missing-v3.zip             --v3-model-zip-sha256 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa             --predictive-zip .tmp/missing-predictive.zip             --predictive-zip-sha256 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb             --resolution-zip .tmp/missing-resolution.zip             --resolution-zip-sha256 cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc             --confirm FREEZE_2024_HISTORICAL_V3_PRESCORE_INPUTS             --output-dir .tmp/no-prescore 2>&1)"
+          STATUS=$?
+          set -e
+          test "${STATUS}" -eq 1
+          echo "${OUTPUT}" | grep -F "[historical-v3-prescore] feature_zip_missing"
+
+      - name: Smoke confirmation guard without artifacts
+        run: |
+          set -euo pipefail
+          set +e
+          OUTPUT="$(node .tmp/historical-v3-confirmation/run-historical-v3-confirmation.js             --snapshot-zip .tmp/missing-snapshot.zip             --prescore-zip .tmp/missing-prescore.zip             --prescore-zip-sha256 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa             --v3-model-zip .tmp/missing-v3.zip             --v3-model-zip-sha256 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb             --predictive-zip .tmp/missing-predictive.zip             --predictive-zip-sha256 cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc             --resolution-zip .tmp/missing-resolution.zip             --resolution-zip-sha256 dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd             --confirm SCORE_2024_HISTORICAL_V3_CONFIRMATION_ONCE             --output-dir .tmp/no-confirmation 2>&1)"
+          STATUS=$?
+          set -e
+          test "${STATUS}" -eq 1
+          echo "${OUTPUT}" | grep -F "[historical-v3-confirmation] snapshot_zip_missing"
+
+      - name: Test Historical V3 Confirmation
+        run: npx jest apps/jobs/__tests__/historical-v3-confirmation.test.ts --runInBand
