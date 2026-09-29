@@ -1,0 +1,162 @@
+name: Evaluate Historical Final Holdout V1 Required Inputs (Manual, Guarded)
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_main_sha:
+        description: 'Exact current main SHA'
+        required: true
+        type: string
+      confirmation:
+        description: 'Type EVALUATE_2025_HISTORICAL_FINAL_HOLDOUT_REQUIRED_INPUTS exactly'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: historical-final-holdout-v1-required-inputs
+  cancel-in-progress: false
+
+env:
+  SNAPSHOT_ARTIFACT_ID: '10973848747'
+  SNAPSHOT_ZIP_SHA256: 'fda9a410faf3f648de1135a7ed841a497d947d844978513e0bfcd88aea9d0b22'
+  V3_MODEL_ARTIFACT_ID: '11045955232'
+  V3_MODEL_ZIP_SHA256: 'dfa1bb276d6aa353bbf89db800c9185487f4b77b21f4b5b98d819d69b0ae1257'
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Source SHA and confirmation guard
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          echo "ACTUAL_SHA=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Refusing Final Holdout V1 preflight outside refs/heads/main."
+            exit 1
+          fi
+          if [ -z "${EXPECTED_MAIN_SHA}" ] || [ "${ACTUAL_SHA}" != "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing Final Holdout V1 preflight because main SHA does not match expected_main_sha."
+            exit 1
+          fi
+          if [ "${INPUT_CONFIRMATION}" != "EVALUATE_2025_HISTORICAL_FINAL_HOLDOUT_REQUIRED_INPUTS" ]; then
+            echo "::error::Exact Final Holdout V1 preflight confirmation is required."
+            exit 1
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Preflight
+        run: |
+          set -euo pipefail
+          command -v curl >/dev/null
+          command -v unzip >/dev/null
+          command -v sha256sum >/dev/null
+          echo "mode=ARTIFACT_ONLY_2025_FINAL_HOLDOUT_REQUIRED_INPUT_PREFLIGHT"
+          echo "providerCalls=0"
+          echo "marketReads=0"
+          echo "ppaSidecarReads=0"
+          echo "portalReads=0"
+          echo "outcomeFieldsUsed=false"
+          echo "modelPredictionsComputed=false"
+          echo "databaseReads=false"
+          echo "databaseWrites=false"
+
+      - name: Download exact sealed source and frozen V3
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p .research-inputs
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts"
+
+          curl -fL -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" \
+            "${API}/${SNAPSHOT_ARTIFACT_ID}/zip" \
+            -o .research-inputs/historical-research-snapshot-v1-2025.zip
+
+          curl -fL -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" \
+            "${API}/${V3_MODEL_ARTIFACT_ID}/zip" \
+            -o .research-inputs/historical-model-v3-backcompat.zip
+
+      - name: Verify source ZIP hashes
+        run: |
+          set -euo pipefail
+          echo "${SNAPSHOT_ZIP_SHA256}  .research-inputs/historical-research-snapshot-v1-2025.zip" | sha256sum -c -
+          echo "${V3_MODEL_ZIP_SHA256}  .research-inputs/historical-model-v3-backcompat.zip" | sha256sum -c -
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Compile Final Holdout V1 preflight runtime
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/historical-final-holdout-v1-preflight
+          npx tsc \
+            --module commonjs \
+            --moduleResolution node \
+            --target ES2019 \
+            --esModuleInterop \
+            --skipLibCheck \
+            --outDir .tmp/historical-final-holdout-v1-preflight \
+            apps/jobs/src/research/historical-model-development-v1.ts \
+            apps/jobs/src/research/historical-model-v3.ts \
+            apps/jobs/src/research/historical-final-holdout-v1-preflight.ts \
+            apps/jobs/evaluate-historical-final-holdout-v1-inputs.ts
+
+      - name: Evaluate exact required-input gate
+        env:
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          OUT="reports/historical-final-holdout-v1-required-inputs/${GITHUB_RUN_ID}"
+          node .tmp/historical-final-holdout-v1-preflight/evaluate-historical-final-holdout-v1-inputs.js \
+            --snapshot-zip .research-inputs/historical-research-snapshot-v1-2025.zip \
+            --v3-model-zip .research-inputs/historical-model-v3-backcompat.zip \
+            --v3-model-zip-sha256 "${V3_MODEL_ZIP_SHA256}" \
+            --confirm "${INPUT_CONFIRMATION}" \
+            --output-dir "${OUT}"
+
+      - name: Upload immutable Final Holdout V1 preflight evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-final-holdout-v1-required-inputs-${{ github.run_id }}
+          path: reports/historical-final-holdout-v1-required-inputs/**
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Summary
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "==================================================="
+          echo "HISTORICAL FINAL HOLDOUT V1 REQUIRED INPUT PREFLIGHT"
+          echo "==================================================="
+          echo "status=${JOB_STATUS}"
+          echo "sourceSha=${ACTUAL_SHA:-unavailable}"
+          echo "providerCalls=0"
+          echo "marketReads=0"
+          echo "ppaSidecarReads=0"
+          echo "portalReads=0"
+          echo "outcomeFieldsUsed=false"
+          echo "modelPredictionsComputed=false"
+          echo "database reads/writes=false/false"
+          echo "==================================================="

@@ -1,0 +1,79 @@
+name: Test Historical Final Holdout V1 Preflight
+
+on:
+  pull_request:
+    paths:
+      - 'research/historical/HISTORICAL_FINAL_HOLDOUT_V1_CONTRACT.md'
+      - 'apps/jobs/src/research/historical-model-development-v1.ts'
+      - 'apps/jobs/src/research/historical-model-v3.ts'
+      - 'apps/jobs/src/research/historical-final-holdout-v1-preflight.ts'
+      - 'apps/jobs/evaluate-historical-final-holdout-v1-inputs.ts'
+      - 'apps/jobs/__tests__/historical-final-holdout-v1-preflight.test.ts'
+      - '.github/workflows/evaluate-historical-final-holdout-v1-inputs.yml'
+      - '.github/workflows/test-historical-final-holdout-v1-preflight.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: TypeScript smoke compile
+        run: |
+          npx tsc --noEmit \
+            --module commonjs \
+            --moduleResolution node \
+            --target ES2019 \
+            --esModuleInterop \
+            --skipLibCheck \
+            apps/jobs/src/research/historical-model-development-v1.ts \
+            apps/jobs/src/research/historical-model-v3.ts \
+            apps/jobs/src/research/historical-final-holdout-v1-preflight.ts \
+            apps/jobs/evaluate-historical-final-holdout-v1-inputs.ts
+
+      - name: Compile and start offline runtime without artifacts
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/historical-final-holdout-v1-preflight
+          npx tsc \
+            --module commonjs \
+            --moduleResolution node \
+            --target ES2019 \
+            --esModuleInterop \
+            --skipLibCheck \
+            --outDir .tmp/historical-final-holdout-v1-preflight \
+            apps/jobs/src/research/historical-model-development-v1.ts \
+            apps/jobs/src/research/historical-model-v3.ts \
+            apps/jobs/src/research/historical-final-holdout-v1-preflight.ts \
+            apps/jobs/evaluate-historical-final-holdout-v1-inputs.ts
+
+          set +e
+          OUTPUT="$(node .tmp/historical-final-holdout-v1-preflight/evaluate-historical-final-holdout-v1-inputs.js \
+            --snapshot-zip .tmp/missing-2025-snapshot.zip \
+            --v3-model-zip .tmp/missing-v3-model.zip \
+            --v3-model-zip-sha256 dfa1bb276d6aa353bbf89db800c9185487f4b77b21f4b5b98d819d69b0ae1257 \
+            --confirm EVALUATE_2025_HISTORICAL_FINAL_HOLDOUT_REQUIRED_INPUTS \
+            --output-dir .tmp/no-final-holdout-v1-output 2>&1)"
+          STATUS=$?
+          set -e
+
+          test "${STATUS}" -eq 1
+          echo "${OUTPUT}" | grep -F "[historical-final-holdout-v1-preflight] snapshot_zip_missing"
+
+      - name: Test Historical Final Holdout V1 Preflight
+        run: npx jest apps/jobs/__tests__/historical-final-holdout-v1-preflight.test.ts --runInBand
