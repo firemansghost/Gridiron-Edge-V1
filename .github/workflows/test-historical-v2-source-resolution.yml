@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'research/historical/HISTORICAL_SOURCE_RESOLUTION_CONFIRMATION_V2_CONTRACT.md'
+      - 'research/historical/HISTORICAL_SOURCE_RESILIENT_CONFIRMATION_V3_CONTRACT.md'
       - 'research/historical/HISTORICAL_VALIDATION_V1_CONTRACT.md'
       - 'apps/jobs/src/research/historical-source-resolution-v2.ts'
       - 'apps/jobs/run-historical-v2-source-resolution.ts'
