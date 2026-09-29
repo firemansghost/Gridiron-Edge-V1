@@ -1,0 +1,85 @@
+name: Advance Generic Shadow T-30 Active Week to 5 (One Shot)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/advance-generic-shadow-t30-week5-once.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: advance-generic-shadow-t30-week5-once
+  cancel-in-progress: false
+
+jobs:
+  advance:
+    if: ${{ github.repository == 'firemansghost/Gridiron-Edge-V1' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Guard and advance repository variable
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          WEEK_VAR: GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK
+          ENABLED_VAR: GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          api="https://api.github.com/repos/${REPO}/actions/variables"
+          headers=(
+            -H "Accept: application/vnd.github+json"
+            -H "Authorization: Bearer ${GH_TOKEN}"
+            -H "X-GitHub-Api-Version: 2022-11-28"
+          )
+
+          week_json="$(curl -fsSL "${headers[@]}" "${api}/${WEEK_VAR}")"
+          enabled_json="$(curl -fsSL "${headers[@]}" "${api}/${ENABLED_VAR}")"
+
+          before_week="$(jq -r '.value' <<<"${week_json}")"
+          enabled="$(jq -r '.value' <<<"${enabled_json}")"
+
+          echo "before_week=${before_week}"
+          echo "automation_enabled=${enabled}"
+
+          if [[ "${enabled}" != "true" ]]; then
+            echo "::error::Refusing to advance active week because ${ENABLED_VAR} is not true."
+            exit 1
+          fi
+
+          if [[ "${before_week}" != "4" && "${before_week}" != "5" ]]; then
+            echo "::error::Refusing to advance unexpected active week: ${before_week}"
+            exit 1
+          fi
+
+          if [[ "${before_week}" == "4" ]]; then
+            body="$(jq -nc --arg name "${WEEK_VAR}" --arg value "5" '{name:$name,value:$value}')"
+            curl -fsSL -X PATCH "${headers[@]}"               -H "Content-Type: application/json"               -d "${body}"               "${api}/${WEEK_VAR}" >/dev/null
+            echo "mutation=week_4_to_5"
+          else
+            echo "mutation=idempotent_noop_already_week_5"
+          fi
+
+          after_week="$(curl -fsSL "${headers[@]}" "${api}/${WEEK_VAR}" | jq -r '.value')"
+          after_enabled="$(curl -fsSL "${headers[@]}" "${api}/${ENABLED_VAR}" | jq -r '.value')"
+
+          echo "after_week=${after_week}"
+          echo "after_enabled=${after_enabled}"
+
+          if [[ "${after_week}" != "5" ]]; then
+            echo "::error::Post-write verification failed: active week is ${after_week}, expected 5."
+            exit 1
+          fi
+
+          if [[ "${after_enabled}" != "true" ]]; then
+            echo "::error::Post-write verification failed: automation enable flag changed unexpectedly."
+            exit 1
+          fi
+
+          echo "verification=passed"
