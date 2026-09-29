@@ -33,7 +33,7 @@ describe('Generic Shadow T-30 Automation V1 external-clock coordinator', () => {
     expect(wf).toContain('GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json');
     expect(wf).not.toContain('vars.GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK');
     expect(wf).toContain("steps.active_week.outputs.week == '4'");
-    expect(runbook).toContain('Supabase external clock is the sole recurring scheduler');
+    expect(runbook).toContain('Supabase remains the sole recurring scheduler');
   });
 
   it('loads the active week from version-controlled Week 5 config', () => {
