@@ -1,6 +1,6 @@
 # Generic Shadow T-30 Automation V1 — External Clock Fallback
 
-**Status:** ACTIVE / PROVEN. Supabase external clock is the sole recurring production clock as of the 2026-09-24 Week 4 live proof.
+**Status:** PROVEN / CURRENTLY DISABLED. Supabase remains the proven external clock architecture, but production cron `generic-shadow-t30-github-dispatch-v1` is `active=false` as of 2026-09-29 after the Week 4 cost/value audit. See `GENERIC_SHADOW_T30_WINDOW_GATED_DISPATCH_V2_PROPOSAL.md` for the reviewed next design; no reactivation is authorized by this runbook.
 
 ## Why this exists
 
@@ -70,6 +70,22 @@ No operator-supplied season/week inputs are accepted. The workflow continues to 
 - season = hardcoded `2026`;
 - week = `GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK`;
 - enabled = `GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED`.
+
+## Current post-Week-4 posture
+
+The 2026-09-29 audit found the continuous five-minute external clock reliable but
+inefficient:
+
+- 1,688 recurring external ticks;
+- 37 refresh/closing/failure-signal cycles;
+- 2.19% useful-signal rate;
+- roughly 28 runner-hours by observed runtime proxy.
+
+The cron is therefore intentionally inactive pending review of the window-gated V2
+dispatch proposal.
+
+Do not interpret the absence of new coordinator runs after 2026-09-28 13:07 UTC as an
+outage.
 
 ## Preferred external clock
 
