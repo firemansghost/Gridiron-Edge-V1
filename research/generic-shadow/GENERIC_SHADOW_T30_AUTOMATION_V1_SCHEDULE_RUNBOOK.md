@@ -1,6 +1,6 @@
 # Generic Shadow T-30 Automation V1 — Schedule Enablement Runbook
 
-**Status:** production clock proven 2026-09-24; Supabase remains the sole recurring scheduler. Native GitHub `schedule` is intentionally disabled. The external cron is currently inactive while the window-gated Week 5 activation is being staged.
+**Status:** WEEK 5 ACTIVE / WINDOW-GATED / OUT-OF-WINDOW PROVEN. Supabase remains the sole recurring scheduler. Native GitHub `schedule` is intentionally disabled. The first in-window Week 5 dispatch proof remains pending.
 
 The coordinator remains activation-gated in GitHub and is invoked by the proven Supabase external clock through `workflow_dispatch`; see `GENERIC_SHADOW_T30_EXTERNAL_CLOCK_RUNBOOK.md`.
 
@@ -34,6 +34,8 @@ It does not authorize or automate:
 - no postkick backfill.
 
 ## Activation gates
+
+Current Week 5 production state: the Supabase cron is `active=true`, the 20–55 minute dispatch predicate is installed, and out-of-window suppression was proven by Supabase cron run **1689** (`0 rows`, no GitHub coordinator run). Explicit Week 5 coordinator proof run **36614235554** passed with providerCalls=0, zero mutations, and Hybrid Stage E disabled.
 
 The externally clocked Generic coordinator is inert unless this repository variable is explicitly set:
 

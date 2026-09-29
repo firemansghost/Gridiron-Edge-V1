@@ -1,8 +1,9 @@
 # 2026-09-29 Week Plan Crosswalk — Reconciled Live Track vs Historical Research
 
 **Status:** RECONCILED / live backlog refreshed from GitHub Actions + production DB evidence  
-**Reconciliation base:** `dd0cac5c42d64ea7ad6024a95b5fe33764e54163`  
-**Detailed live audit:** `docs/2026-09-29-live-track-reconciliation-t30-audit.md`
+**Reconciliation base:** `c8587a8157af0993a41a66e14117ecfb7c34f2be`  
+**Detailed live audit:** `docs/2026-09-29-live-track-reconciliation-t30-audit.md`  
+**Week 5 T-30 activation:** `docs/2026-09-29-week5-t30-window-gated-activation.md`
 
 ## Operating rule
 
@@ -85,7 +86,7 @@ Do not create a replacement "first" observation.
 
 ### 3. T-30 scheduler cost/value audit
 
-**Status: COMPLETE / RECOMMENDATION PENDING PRODUCTION AUTHORIZATION.**
+**Status: COMPLETE / WINDOW-GATED WEEK 5 ACTIVATION LIVE / OUT-OF-WINDOW PROVEN.**
 
 Recurring Supabase clock history:
 
@@ -93,7 +94,8 @@ Recurring Supabase clock history:
 - last tick: `2026-09-28 13:07 UTC`;
 - ticks: **1,688**;
 - successful Supabase dispatch executions: **1,688 / 1,688**;
-- current cron state: **active=false**.
+- historical audit-end cron state: **active=false**;
+- current Week 5 cron state after optimized activation: **active=true**.
 
 Coordinator interval:
 
@@ -122,12 +124,13 @@ Runtime proxy:
 - projected external runner time: **~1,682 minutes / ~28.0 hours**;
 - this is an engineering runtime estimate, not billing-grade GitHub usage.
 
-Recommendation:
+Implemented recommendation:
 
-- leave the clock inactive;
-- do not use a blind 10/15-minute cadence;
-- preserve five-minute timing but gate dispatch to actual kickoff windows;
-- first optimized live design should favor a **20–55 minute before-kickoff safety band**.
+- blind 10/15-minute cadence rejected;
+- five-minute Supabase phase preserved;
+- GitHub dispatch gated to **20–55 minutes before kickoff**;
+- active week moved to version-controlled Week 5 config because both automation credentials correctly lacked GitHub repository-variable settings permission;
+- Hybrid Stage E remains disabled for Week 5.
 
 Week 4 replay:
 
@@ -143,7 +146,7 @@ Week 5 simulation, aligned to the actual cron phase (`:02/:07/:12/...`):
 The wider 20–55 band still removes >93% of Week 4 dispatch overhead while retaining
 extra timing safety.
 
-No production cron mutation is authorized merely by this crosswalk.
+Week 5 explicit proof run **36614235554** passed with Week 5 loaded from version control, providerCalls=0, zero mutations, and Hybrid Stage E disabled. The first live post-reactivation Supabase tick, run **1689** at `2026-09-29 18:52 UTC`, succeeded with **`0 rows`** and created no GitHub coordinator run. Out-of-window suppression is therefore live-proven. The first legitimate in-window Week 5 dispatch remains pending.
 
 ### 4. Authoritative historical-data inventory
 
@@ -213,14 +216,13 @@ The principle remains:
 
 ## Remaining live-track backlog
 
-The original six verification items are now closed except for the scheduler redesign.
+The original live verification backlog is now closed through out-of-window T-30 activation proof.
 
 Remaining live priorities:
 
-1. design/review a kickoff-window T-30 dispatch gate;
-2. explicitly authorize and live-prove it before Week 5 T-30 windows if desired;
-3. keep Hybrid Stage E disabled for Week 5 unless separately reviewed;
-4. preserve the betting-day product goal:
+1. audit the **first in-window Week 5 T-30 dispatch** when the first real target window arrives;
+2. keep Hybrid Stage E disabled for Week 5 unless separately reviewed;
+3. preserve the betting-day product goal:
    - short BET / WATCH / PASS ticket;
    - explicit acceptable price/line ranges;
    - no hour-long operator readout.
@@ -262,7 +264,7 @@ This crosswalk records verified state and recommendations.
 
 It does not:
 
-- authorize a new production cron definition;
+- broaden the T-30 timing semantics beyond the proven 20–55 minute dispatch gate;
 - authorize Hybrid Week 5 closing automation;
 - authorize model promotion;
 - authorize historical 2025 scoring;

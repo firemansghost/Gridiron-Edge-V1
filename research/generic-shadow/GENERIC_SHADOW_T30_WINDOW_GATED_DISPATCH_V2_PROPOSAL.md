@@ -1,8 +1,8 @@
 # Generic Shadow T-30 External Clock — Window-Gated Dispatch V2 Proposal
 
-**Status:** IMPLEMENTATION STAGED / NOT YET ACTIVE  
+**Status:** WEEK 5 ACTIVE / OUT-OF-WINDOW PROVEN / FIRST IN-WINDOW PROOF PENDING  
 **Date:** 2026-09-29  
-**Current cron state:** `generic-shadow-t30-github-dispatch-v1 active=false`; 20–55 minute gate already staged while inactive  
+**Current cron state:** `generic-shadow-t30-github-dispatch-v1 active=true`; 20–55 minute gate live  
 **Current production coordinator:** `.github/workflows/run-generic-shadow-t30-automation-v1-scheduled-2026.yml`
 
 ## Objective
@@ -219,9 +219,9 @@ Do not generalize Stage E to Week 5 as part of this optimization.
 
 Week 5 Hybrid closing automation remains separately reviewable/authorizable.
 
-## Required production activation sequence
+## Production activation sequence
 
-A future authorized production operation should use this sequence:
+The Week 5 activation used this sequence:
 
 1. verify current `main` SHA;
 2. verify Week 5 production Game universe remains **56**;
@@ -229,10 +229,10 @@ A future authorized production operation should use this sequence:
 4. merge and verify `GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json` with season 2026 / week 5;
 5. verify the cron job remains `active=false`;
 6. verify the already-staged cron command contains the 20–55 minute predicate and the unchanged GitHub endpoint;
-7. reactivate the cron;
-8. verify `cron.job.active=true`;
-9. verify an out-of-window cron tick records success but creates **no GitHub run**;
-10. verify the first in-window tick creates exactly one GitHub `workflow_dispatch`;
+7. reactivate the cron — **COMPLETE**;
+8. verify `cron.job.active=true` — **COMPLETE**;
+9. verify an out-of-window cron tick records success but creates **no GitHub run** — **COMPLETE**, Supabase run **1689** returned `0 rows` and no coordinator run appeared;
+10. verify the first in-window tick creates exactly one GitHub `workflow_dispatch` — **PENDING first Week 5 target window**;
 11. audit the GitHub run:
     - branch `main`;
     - active week = 5 from version-controlled config;
@@ -259,9 +259,9 @@ Do not restore a 24/7 continuous clock automatically.
 
 ## Acceptance criteria
 
-The window-gated external clock is production-proven only after:
+The window-gated external clock has passed the out-of-window acceptance gate. Full two-sided live proof requires:
 
-- out-of-window tick -> no GitHub dispatch;
+- out-of-window tick -> no GitHub dispatch — **PROVEN** by Supabase run **1689**;
 - in-window tick -> one GitHub dispatch;
 - GitHub active week = 5;
 - Stage E = disabled;

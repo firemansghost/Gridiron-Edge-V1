@@ -1,6 +1,6 @@
 # Generic Shadow T-30 Automation V1 — External Clock Fallback
 
-**Status:** PROVEN / WINDOW-GATED COMMAND STAGED / CURRENTLY DISABLED. Supabase remains the proven external clock architecture. The production cron `generic-shadow-t30-github-dispatch-v1` is still `active=false`, and its command has been updated while inactive to dispatch GitHub only when a 2026 kickoff is 20–55 minutes away. Week authority is moving to version-controlled config before reactivation.
+**Status:** WEEK 5 ACTIVE / WINDOW-GATED / OUT-OF-WINDOW PROVEN. Supabase remains the sole recurring clock. The production cron `generic-shadow-t30-github-dispatch-v1` is `active=true` and dispatches GitHub only when a 2026 kickoff is 20–55 minutes away. Week authority is version-controlled. The first in-window Week 5 proof remains pending.
 
 ## Why this exists
 
@@ -83,7 +83,7 @@ inefficient:
 - 2.19% useful-signal rate;
 - roughly 28 runner-hours by observed runtime proxy.
 
-The cron remains intentionally inactive while the version-controlled Week 5 pointer is merged and verified. The 20–55 minute window-gated command is already staged in `cron.job` with `active=false`.
+The version-controlled Week 5 pointer is merged and verified. The 20–55 minute window-gated cron is active. Explicit proof run **36614235554** established Week 5 config provenance and a clean no-action cycle. Supabase cron run **1689** at `2026-09-29 18:52 UTC` then succeeded with `0 rows` while the gate was closed, and no GitHub coordinator run was created.
 
 Do not interpret the absence of new coordinator runs after 2026-09-28 13:07 UTC as an
 outage.
@@ -175,7 +175,7 @@ where exists (
 );
 ```
 
-The actual `cron.job` remains `active=false` until Week 5 GitHub-side authority is merged and verified.
+The actual `cron.job` is now `active=true`. Out-of-window suppression is live-proven; first in-window dispatch proof remains pending.
 
 ## Activation verification
 
@@ -183,8 +183,8 @@ Activation is not complete until all of the following are observed:
 
 1. `cron.job` contains exactly one active job named
    `generic-shadow-t30-github-dispatch-v1`.
-2. `cron.job_run_details` records a successful cron execution.
-3. GitHub creates a corresponding `workflow_dispatch` run.
+2. Out of window, `cron.job_run_details` records a successful execution with `0 rows` and GitHub creates no coordinator run. **PROVEN** by Supabase run **1689**.
+3. In window, GitHub creates a corresponding `workflow_dispatch` run. **PENDING first Week 5 target window**.
 4. The GitHub run executes from `refs/heads/main`.
 5. The first in-window scheduled-cycle report records:
    - `triggerEvent = workflow_dispatch`;
@@ -198,7 +198,7 @@ Activation is not complete until all of the following are observed:
    - official Week 5 card unchanged;
    - no Hybrid writes;
    - no duplicate or unexpected Generic closing rows.
-7. At least one out-of-window cron tick succeeds without creating a GitHub workflow run.
+7. At least one out-of-window cron tick succeeds without creating a GitHub workflow run. **PROVEN** by run **1689** at `18:52 UTC`.
 
 A successful Supabase cron record without a GitHub run is not sufficient.
 
@@ -233,4 +233,4 @@ No path, manual or automated, may:
 
 ## Production mutation boundary
 
-The production external clock is proven but currently inactive. The 20–55 minute command update was staged while inactive under the September 29 authorization. Reactivation must occur only after the version-controlled Week 5 pointer is on `main` and verified. Any later infrastructure change to `pg_cron`, `pg_net`, Vault credentials, or the cron job remains separately reviewable and must be verified immediately after execution.
+The production external clock is active for Week 5 under the 20–55 minute gate. The version-controlled Week 5 pointer is on `main`, explicit proof run **36614235554** passed, and out-of-window cron suppression is proven by Supabase run **1689**. The first in-window Week 5 dispatch remains the final live acceptance item. Any later infrastructure change to `pg_cron`, `pg_net`, Vault credentials, or the cron job remains separately reviewable and must be verified immediately after execution.
