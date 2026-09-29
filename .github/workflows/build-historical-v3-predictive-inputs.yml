@@ -15,6 +15,14 @@ on:
         description: 'Exact audited Historical Model V3 artifact ZIP SHA-256'
         required: true
         type: string
+      resolution_artifact_id:
+        description: 'Audited Historical V3 week-query resolution artifact ID'
+        required: true
+        type: string
+      resolution_zip_sha256:
+        description: 'Exact audited V3 week-query resolution ZIP SHA-256'
+        required: true
+        type: string
       confirmation:
         description: 'Type BUILD_2024_HISTORICAL_V3_PREDICTIVE_INPUTS exactly'
         required: true
@@ -47,6 +55,8 @@ jobs:
           INPUT_CONFIRMATION: ${{ inputs.confirmation }}
           V3_MODEL_ARTIFACT_ID_INPUT: ${{ inputs.v3_model_artifact_id }}
           V3_MODEL_ZIP_SHA256_INPUT: ${{ inputs.v3_model_zip_sha256 }}
+          RESOLUTION_ARTIFACT_ID_INPUT: ${{ inputs.resolution_artifact_id }}
+          RESOLUTION_ZIP_SHA256_INPUT: ${{ inputs.resolution_zip_sha256 }}
         run: |
           set -euo pipefail
           ACTUAL_SHA="$(git rev-parse HEAD)"
@@ -72,9 +82,19 @@ jobs:
             echo "::error::v3_model_zip_sha256 must be an exact SHA-256."
             exit 1
           fi
+          if ! printf '%s' "${RESOLUTION_ARTIFACT_ID_INPUT}" | grep -Eq '^[0-9]+$'; then
+            echo "::error::resolution_artifact_id must be numeric."
+            exit 1
+          fi
+          if ! printf '%s' "${RESOLUTION_ZIP_SHA256_INPUT}" | grep -Eq '^[0-9a-fA-F]{64}$'; then
+            echo "::error::resolution_zip_sha256 must be an exact SHA-256."
+            exit 1
+          fi
 
           echo "V3_MODEL_ARTIFACT_ID=${V3_MODEL_ARTIFACT_ID_INPUT}" >> "$GITHUB_ENV"
           echo "V3_MODEL_ZIP_SHA256=$(printf '%s' "${V3_MODEL_ZIP_SHA256_INPUT}" | tr 'A-F' 'a-f')" >> "$GITHUB_ENV"
+          echo "RESOLUTION_ARTIFACT_ID=${RESOLUTION_ARTIFACT_ID_INPUT}" >> "$GITHUB_ENV"
+          echo "RESOLUTION_ZIP_SHA256=$(printf '%s' "${RESOLUTION_ZIP_SHA256_INPUT}" | tr 'A-F' 'a-f')" >> "$GITHUB_ENV"
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -98,9 +118,9 @@ jobs:
           echo "holdout2025Reads=0"
           echo "databaseReads=false"
           echo "databaseWrites=false"
-          echo "recoveryArtifactUsed=false"
+          echo "recoveryArtifactUsed=true"
 
-      - name: Download frozen source and audited V3 model artifacts
+      - name: Download frozen source and audited V3 artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -108,15 +128,24 @@ jobs:
           mkdir -p .research-inputs
           API="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts"
 
-          curl -fL -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json"             "${API}/${SNAPSHOT_ARTIFACT_ID}/zip"             -o .research-inputs/historical-research-snapshot-v1-2024.zip
+          curl -fL -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" \
+            "${API}/${SNAPSHOT_ARTIFACT_ID}/zip" \
+            -o .research-inputs/historical-research-snapshot-v1-2024.zip
 
-          curl -fL -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json"             "${API}/${V3_MODEL_ARTIFACT_ID}/zip"             -o .research-inputs/historical-model-v3-backcompat.zip
+          curl -fL -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" \
+            "${API}/${V3_MODEL_ARTIFACT_ID}/zip" \
+            -o .research-inputs/historical-model-v3-backcompat.zip
+
+          curl -fL -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" \
+            "${API}/${RESOLUTION_ARTIFACT_ID}/zip" \
+            -o .research-inputs/historical-v3-week-query-resolution.zip
 
       - name: Verify source ZIP hashes
         run: |
           set -euo pipefail
           echo "${SNAPSHOT_ZIP_SHA256}  .research-inputs/historical-research-snapshot-v1-2024.zip" | sha256sum -c -
           echo "${V3_MODEL_ZIP_SHA256}  .research-inputs/historical-model-v3-backcompat.zip" | sha256sum -c -
+          echo "${RESOLUTION_ZIP_SHA256}  .research-inputs/historical-v3-week-query-resolution.zip" | sha256sum -c -
 
       - name: Install dependencies without lifecycle scripts
         run: npm ci --ignore-scripts
@@ -125,15 +154,31 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf .tmp/historical-v3-predictive
-          npx tsc --module commonjs             --moduleResolution node             --target ES2019             --esModuleInterop             --skipLibCheck             --outDir .tmp/historical-v3-predictive             apps/jobs/src/research/historical-model-development-v1.ts             apps/jobs/src/research/historical-model-v3.ts             apps/jobs/src/research/historical-v3-predictive-inputs.ts             apps/jobs/build-historical-v3-predictive-inputs.ts
+          npx tsc --module commonjs \
+            --moduleResolution node \
+            --target ES2019 \
+            --esModuleInterop \
+            --skipLibCheck \
+            --outDir .tmp/historical-v3-predictive \
+            apps/jobs/src/research/historical-model-development-v1.ts \
+            apps/jobs/src/research/historical-model-v3.ts \
+            apps/jobs/src/research/historical-v3-predictive-inputs.ts \
+            apps/jobs/build-historical-v3-predictive-inputs.ts
 
-      - name: Build source-resilient predictive inputs from frozen bulk source
+      - name: Build source-resilient predictive inputs
         env:
           INPUT_CONFIRMATION: ${{ inputs.confirmation }}
         run: |
           set -euo pipefail
           OUT="reports/historical-v3-predictive-inputs/${GITHUB_RUN_ID}"
-          node .tmp/historical-v3-predictive/build-historical-v3-predictive-inputs.js             --snapshot-zip .research-inputs/historical-research-snapshot-v1-2024.zip             --v3-model-zip .research-inputs/historical-model-v3-backcompat.zip             --v3-model-zip-sha256 "${V3_MODEL_ZIP_SHA256}"             --confirm "${INPUT_CONFIRMATION}"             --output-dir "${OUT}"
+          node .tmp/historical-v3-predictive/build-historical-v3-predictive-inputs.js \
+            --snapshot-zip .research-inputs/historical-research-snapshot-v1-2024.zip \
+            --v3-model-zip .research-inputs/historical-model-v3-backcompat.zip \
+            --v3-model-zip-sha256 "${V3_MODEL_ZIP_SHA256}" \
+            --resolution-zip .research-inputs/historical-v3-week-query-resolution.zip \
+            --resolution-zip-sha256 "${RESOLUTION_ZIP_SHA256}" \
+            --confirm "${INPUT_CONFIRMATION}" \
+            --output-dir "${OUT}"
 
       - name: Upload immutable V3 predictive-input evidence
         if: always()
@@ -161,6 +206,6 @@ jobs:
           echo "outcomeFieldsUsed=false"
           echo "modelPredictionsComputed=false"
           echo "2025 reads=0"
-          echo "recoveryArtifactUsed=false"
+          echo "recoveryArtifactUsed=true"
           echo "database reads/writes=false/false"
           echo "==================================================="
