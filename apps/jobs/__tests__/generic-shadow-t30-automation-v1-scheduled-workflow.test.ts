@@ -9,6 +9,7 @@ import * as path from 'path';
 const ROOT = path.resolve(__dirname, '../../..');
 const WF = path.join(ROOT, '.github/workflows/run-generic-shadow-t30-automation-v1-scheduled-2026.yml');
 const RUNBOOK = path.join(ROOT, 'research/generic-shadow/GENERIC_SHADOW_T30_AUTOMATION_V1_SCHEDULE_RUNBOOK.md');
+const ACTIVE_WEEK_CONFIG = path.join(ROOT, 'research/generic-shadow/GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json');
 
 function stepBlock(src: string, stepName: string): string {
   const marker = '- name: ' + stepName;
@@ -22,15 +23,33 @@ function stepBlock(src: string, stepName: string): string {
 describe('Generic Shadow T-30 Automation V1 external-clock coordinator', () => {
   const wf = fs.readFileSync(WF, 'utf8');
   const runbook = fs.readFileSync(RUNBOOK, 'utf8');
+  const activeWeekConfig = JSON.parse(fs.readFileSync(ACTIVE_WEEK_CONFIG, 'utf8'));
 
   it('uses workflow_dispatch only and preserves the explicit activation gate', () => {
     expect(wf).toContain('workflow_dispatch:');
     expect(wf).not.toMatch(/\nschedule:\s*\n/m);
     expect(wf).not.toMatch(/cron:\s*['\"]2-59\/5 \* \* \* \*['\"]/m);
     expect(wf).toContain("vars.GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED == 'true'");
-    expect(wf).toContain('vars.GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK');
-    expect(wf).toContain("vars.GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK == '4'");
+    expect(wf).toContain('GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json');
+    expect(wf).not.toContain('vars.GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK');
+    expect(wf).toContain("steps.active_week.outputs.week == '4'");
     expect(runbook).toContain('Supabase external clock is the sole recurring scheduler');
+  });
+
+  it('loads the active week from version-controlled Week 5 config', () => {
+    const load = stepBlock(wf, 'Load version-controlled active week');
+    expect(activeWeekConfig).toMatchObject({
+      capability: 'generic_shadow_t30_active_week_2026',
+      season: 2026,
+      week: 5,
+      authority: 'version_controlled_active_week',
+    });
+    expect(load).toContain('GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json');
+    expect(load).toContain('echo "INPUT_WEEK=$ACTIVE_WEEK" >> "$GITHUB_ENV"');
+    expect(load).toContain('echo "week=$ACTIVE_WEEK" >> "$GITHUB_OUTPUT"');
+    expect(load).toContain('active_week_source=version_controlled_config');
+    expect(wf).toContain("activeWeekSource: 'VERSION_CONTROLLED_CONFIG'");
+    expect(wf).toContain("activeWeekConfigPath: 'research/generic-shadow/GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json'");
   });
 
   it('preserves main-only execution and one production concurrency group', () => {
@@ -68,7 +87,7 @@ describe('Generic Shadow T-30 Automation V1 external-clock coordinator', () => {
   it('activates Hybrid closing only for Week 4 under the proven Generic gate and keeps it provider-free', () => {
     const hybrid = stepBlock(wf, 'Stage E Week 4 Hybrid T-30 closing COMMIT/no-op');
     expect(hybrid).toContain("vars.GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED == 'true'");
-    expect(hybrid).toContain("vars.GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK == '4'");
+    expect(hybrid).toContain("steps.active_week.outputs.week == '4'");
     expect(hybrid).toContain('capture-shadow-t30-closing-v1-2026.ts');
     expect(hybrid).toContain('CAPTURE_2026_WEEK_${INPUT_WEEK}_T30_CLOSING_V1');
     expect(hybrid).toContain('--mode COMMIT');
