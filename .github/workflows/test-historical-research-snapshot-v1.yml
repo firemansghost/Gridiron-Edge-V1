@@ -12,6 +12,7 @@ on:
       - '.github/workflows/capture-historical-research-snapshot-v1.yml'
       - '.github/workflows/capture-historical-research-snapshot-v1-2022.yml'
       - '.github/workflows/capture-historical-research-snapshot-v1-2023.yml'
+      - '.github/workflows/capture-historical-research-snapshot-v1-2024.yml'
       - '.github/workflows/test-historical-research-snapshot-v1.yml'
 
 permissions:
@@ -56,7 +57,7 @@ jobs:
 
           set +e
           OUTPUT="$(node .tmp/historical-research-snapshot-v1/capture-historical-research-snapshot-v1.js \
-            --season 2024 \
+            --season 2026 \
             --confirm INVALID \
             --output-dir .tmp/historical-research-snapshot-v1/no-provider-run 2>&1)"
           STATUS=$?
