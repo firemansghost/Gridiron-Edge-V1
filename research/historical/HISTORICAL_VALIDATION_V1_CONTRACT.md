@@ -1,6 +1,6 @@
 # 2024 Historical Validation V1 — Contract
 
-**Status:** FROZEN VALIDATION DESIGN — 2024 NOT YET CAPTURED OR SCORED  
+**Status:** FROZEN VALIDATION DESIGN — 2024 INPUT BLOCKED BEFORE SCORING  
 **Frozen candidate:** `historical_ridge_margin_v1`  
 **Development seasons already consumed:** 2022 tuning / 2023 one-shot confirmation  
 **Validation season:** 2024 only  
@@ -793,6 +793,60 @@ Merging this contract does **not** authorize:
 9. explicitly authorize one one-shot 2024 validation scoring run;
 10. audit validation;
 11. only after an audited PASS may 2025 holdout-contract work begin.
+
+## Audited 2024 input-blocked result
+
+The first authorized 2024 snapshot capture was executed in GitHub Actions run
+`36508377627` at source SHA
+`e1b27f6c5681f6ab4f8d24e50f88e387c64657a7`.
+
+Independent audit is recorded in:
+
+[`docs/2026-09-29-historical-validation-v1-input-blocked-audit.md`](../../docs/2026-09-29-historical-validation-v1-input-blocked-audit.md)
+
+Preserved failed snapshot artifact:
+
+- artifact ID: `11008470975`
+- artifact name:
+  `historical-research-snapshot-v1-2024-36508377627`
+- ZIP SHA-256:
+  `b41e934b26952100e7e056a56114dc81df6bbe77f5c787f28b75b646ae7ea544`
+- provider calls: **28 / 28 successful**
+- database reads/writes: **0 / 0**
+
+The frozen V1 status is:
+
+`HISTORICAL_VALIDATION_INPUT_BLOCKED`
+
+The candidate was **not scored on 2024**.
+
+Independent blockers include:
+
+1. advanced-game coverage missing four completed canonical games;
+2. PPA sidecar coverage missing three completed canonical games;
+3. required recruiting Y2 / 2022-class coverage missing for:
+   - Florida International;
+   - Kennesaw State.
+
+The Y2 gap alone blocks V1 because recruiting Y2 was pre-registered as
+required-available for every validation side and the validation pass/fail gate requires
+predictions for 100% of canonical games.
+
+The 2024 snapshot also exposed one implementation defect:
+
+- Liberty @ App State is present as `completed=false`;
+- the shared snapshot QA used all regular FBS-vs-FBS rows rather than only completed
+  rows as its canonical denominator.
+
+That implementation defect should be repaired separately for correctness, but fixing
+it does not unblock V1.
+
+No V1 rule may be weakened after this observed result.
+
+2025 remains locked.
+
+Any revised model/validation path requires a new version and must explicitly acknowledge
+that 2024 source evidence is now observed.
 
 ## Versioning
 
