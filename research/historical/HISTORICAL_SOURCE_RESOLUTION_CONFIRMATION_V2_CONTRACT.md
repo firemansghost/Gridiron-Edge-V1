@@ -720,6 +720,26 @@ Merging this contract does **not** authorize:
 9. audit result;
 10. only after audited PASS may a 2025 final-holdout contract be designed.
 
+## Retired V2 provider workflow
+
+After the audited Stage 1 rejection, the one-shot manual provider workflow:
+
+`.github/workflows/run-historical-v2-source-resolution.yml`
+
+is retired and removed from the active repository.
+
+This does not delete or invalidate the canonical V2 evidence:
+
+- run: `36569502741`
+- artifact ID: `11033760438`
+- artifact ZIP SHA-256:
+  `cdfb0c533c8ae6ffc44a29b6929185fd30229a73e18f87635227e5b8ecc3237c`
+
+The frozen V2 contract does not permit repeating calibration after the observed
+`HISTORICAL_V2_SOURCE_EQUIVALENCE_REJECTED` result.
+
+Any new provider qualification requires a new version and a new explicit authorization.
+
 ## Audited V2 Stage 1 result
 
 The authorized V2 source-equivalence run executed in GitHub Actions:
