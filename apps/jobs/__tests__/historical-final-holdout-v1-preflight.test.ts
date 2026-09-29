@@ -151,6 +151,11 @@ describe('Historical Final Holdout V1 required-input preflight', () => {
 
   it('blocks when missing preseason Elo is required by a Week 1 canonical side', () => {
     const input = fixture();
+    const unlvGame = (input.games as any[]).find(
+      (game) => game.homeTeam === 'UNLV' || game.awayTeam === 'UNLV'
+    );
+    expect(unlvGame).toBeDefined();
+    unlvGame.week = 1;
     input.eloPreseasonRows = (input.eloPreseasonRows as any[]).filter(
       (row) => row.team !== 'UNLV'
     );
