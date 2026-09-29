@@ -34,6 +34,9 @@ export function HeaderNav() {
 
           {/* Center: Navigation Links */}
           <div className="hidden md:flex items-center space-x-1">
+            <Link href="/ticket" className={linkClass('/ticket')} title="Fast BET / WATCH / PASS operator ticket">
+              Betting Ticket
+            </Link>
             <Link href="/picks" className={linkClass('/picks')} title="View the persisted Official Card for this week">
               Official Card
             </Link>
@@ -81,6 +84,9 @@ export function HeaderNav() {
         {/* Mobile Navigation */}
         <div className="md:hidden pb-3">
           <div className="flex flex-wrap gap-2">
+            <Link href="/ticket" className={linkClass('/ticket')} title="Fast BET / WATCH / PASS operator ticket">
+              Betting Ticket
+            </Link>
             <Link href="/picks" className={linkClass('/picks')} title="View the persisted Official Card for this week">
               Official Card
             </Link>
