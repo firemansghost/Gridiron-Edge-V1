@@ -1,6 +1,6 @@
 # 2026-09-29 Week 5 Generic T-30 Window-Gated Activation
 
-**Status:** ACTIVATED / OUT-OF-WINDOW CRON PROOF PENDING  
+**Status:** ACTIVATED / OUT-OF-WINDOW CRON PROOF PASSED / FIRST IN-WINDOW PROOF PENDING  
 **Week 5 runtime:** `c8587a8157af0993a41a66e14117ecfb7c34f2be`  
 **Active-week authority:** `research/generic-shadow/GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json`  
 **External clock:** Supabase `generic-shadow-t30-github-dispatch-v1`
@@ -188,8 +188,9 @@ Top-level report independently confirms:
 
 ## Post-proof production fingerprint
 
-After the proof run:
+After the proof run and first live out-of-window cron tick:
 
+- cron active: **true**
 - MarketLine rows: **5,488**
 - official Core bets: **96**
 - official stake: **$9,600**
@@ -208,14 +209,27 @@ The window-gated Supabase cron is now:
 - gate at activation: **closed**
 - command contains the reviewed 20–55 minute predicate
 
-The first actual out-of-window post-reactivation cron tick is still pending verification
-in this document.
+The first actual post-reactivation out-of-window cron tick is verified:
 
-Do not call the window gate fully production-proven until both are observed:
+- Supabase cron run ID: **1689**
+- start: `2026-09-29 18:52:00.516880 UTC`
+- end: `2026-09-29 18:52:00.671350 UTC`
+- status: **succeeded**
+- return message: **`0 rows`**
+- kickoff gate at that time: closed
 
-1. an out-of-window cron tick succeeds and creates **no GitHub coordinator run**;
-2. the first legitimate in-window Week 5 cron tick creates exactly one coordinator run
-   and preserves the frozen Stage C / Stage D semantics.
+GitHub verification immediately after the tick found **no new Generic T-30 coordinator
+run**. Run **36614235554** remained the latest coordinator execution.
+
+This proves the Supabase cron remains healthy while the 20–55 minute predicate suppresses
+the expensive GitHub dispatch outside legitimate target windows.
+
+The out-of-window gate is now live-proven.
+
+The remaining acceptance item is the first legitimate in-window Week 5 cron tick. It
+must create exactly one coordinator run and preserve the frozen Stage C / Stage D
+semantics. Until then, classify the optimized clock as **ACTIVE / OUT-OF-WINDOW
+PROVEN / IN-WINDOW PROOF PENDING**.
 
 The first Week 5 kickoff is Thursday, October 1 at 7:00 PM CT.
 
