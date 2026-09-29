@@ -135,10 +135,10 @@ Week 4 replay:
 - 25–50 minute gate: **85**;
 - 20–55 minute safety gate: **114**.
 
-Week 5 simulation:
+Week 5 simulation, aligned to the actual cron phase (`:02/:07/:12/...`):
 
-- 25–50 minute gate: **110**;
-- 20–55 minute gate: **134**.
+- 25–50 minute gate: **95**;
+- 20–55 minute gate: **123**.
 
 The wider 20–55 band still removes >93% of Week 4 dispatch overhead while retaining
 extra timing safety.
