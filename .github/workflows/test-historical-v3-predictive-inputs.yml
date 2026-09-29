@@ -1,0 +1,78 @@
+name: Test Historical V3 Predictive Inputs
+
+on:
+  pull_request:
+    paths:
+      - 'research/historical/HISTORICAL_SOURCE_RESILIENT_CONFIRMATION_V3_CONTRACT.md'
+      - 'apps/jobs/src/research/historical-model-development-v1.ts'
+      - 'apps/jobs/src/research/historical-model-v3.ts'
+      - 'apps/jobs/src/research/historical-v3-predictive-inputs.ts'
+      - 'apps/jobs/build-historical-v3-predictive-inputs.ts'
+      - 'apps/jobs/__tests__/historical-v3-predictive-inputs.test.ts'
+      - '.github/workflows/build-historical-v3-predictive-inputs.yml'
+      - '.github/workflows/test-historical-v3-predictive-inputs.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: TypeScript smoke compile
+        run: |
+          npx tsc --noEmit \
+            --module commonjs \
+            --moduleResolution node \
+            --target ES2019 \
+            --esModuleInterop \
+            --skipLibCheck \
+            apps/jobs/src/research/historical-model-development-v1.ts \
+            apps/jobs/src/research/historical-model-v3.ts \
+            apps/jobs/src/research/historical-v3-predictive-inputs.ts \
+            apps/jobs/build-historical-v3-predictive-inputs.ts
+
+      - name: Compile and start offline runtime without artifacts
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/historical-v3-predictive
+          npx tsc --module commonjs \
+            --moduleResolution node \
+            --target ES2019 \
+            --esModuleInterop \
+            --skipLibCheck \
+            --outDir .tmp/historical-v3-predictive \
+            apps/jobs/src/research/historical-model-development-v1.ts \
+            apps/jobs/src/research/historical-model-v3.ts \
+            apps/jobs/src/research/historical-v3-predictive-inputs.ts \
+            apps/jobs/build-historical-v3-predictive-inputs.ts
+
+          set +e
+          OUTPUT="$(node .tmp/historical-v3-predictive/build-historical-v3-predictive-inputs.js \
+            --snapshot-zip .tmp/missing-snapshot.zip \
+            --v3-model-zip .tmp/missing-v3.zip \
+            --v3-model-zip-sha256 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --confirm BUILD_2024_HISTORICAL_V3_PREDICTIVE_INPUTS \
+            --output-dir .tmp/no-v3-predictive-output 2>&1)"
+          STATUS=$?
+          set -e
+
+          test "${STATUS}" -eq 1
+          echo "${OUTPUT}" | grep -F "[historical-v3-predictive] snapshot_zip_missing"
+
+      - name: Test Historical V3 Predictive Inputs
+        run: npx jest apps/jobs/__tests__/historical-v3-predictive-inputs.test.ts --runInBand
