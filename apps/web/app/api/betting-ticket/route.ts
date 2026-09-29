@@ -35,6 +35,7 @@ import {
   buildBettingTicketPriority,
   classifyBettingTicketWager,
   formatTicketPrice,
+  formatTicketThresholdPrice,
   type BettingTicketBucket,
   type BettingTicketOperatorTier,
 } from '@/lib/betting-ticket';
@@ -113,6 +114,16 @@ function operatorTierOrder(tier: BettingTicketOperatorTier): number {
   return 3;
 }
 
+const BETTING_TICKET_POLICY = {
+  bet: 'Locked A + current A + current price not worse than lock',
+  watch: 'Current A/B value outside the strict BET NOW filter',
+  pass: 'Current C/no qualifying value, unavailable market, or kickoff gate',
+  playableTo: 'B-grade threshold from frozen persisted modelPrice',
+  primary: 'Operator priority only: preferred BET NOW expression is at least 2x the existing A-grade floor',
+  secondary: 'BET NOW remains valid, but current cushion is below 2x A',
+  alternate: 'Additional same-game BET NOW expression; avoid accidental double exposure',
+} as const;
+
 function ticketItem(
   game: OfficialCardGameView,
   wager: OfficialCardWager,
@@ -184,12 +195,12 @@ function ticketItem(
     movementLabel: movementLabel(wager.marketType, classification.movement),
     priceNotWorse: classification.priceNotWorse,
     playableToPrice: classification.playableToPrice,
-    playableToLabel: formatTicketPrice(
+    playableToLabel: formatTicketThresholdPrice(
       wager.marketType,
       classification.playableToPrice
     ),
     priorityPrice: classification.priorityPrice,
-    priorityPriceLabel: formatTicketPrice(
+    priorityPriceLabel: formatTicketThresholdPrice(
       wager.marketType,
       classification.priorityPrice
     ),
@@ -226,15 +237,7 @@ export async function GET(request: NextRequest) {
           season: OFFICIAL_CARD_SEASON,
           week,
           generatedAt: new Date().toISOString(),
-          policy: {
-            bet: 'Locked A + current A + current price not worse than lock',
-            watch: 'Current A/B value outside the strict BET NOW filter',
-            pass: 'Current C/no qualifying value, unavailable market, or kickoff gate',
-            playableTo: 'B-grade threshold from frozen persisted modelPrice',
-          primary: 'Operator priority only: preferred BET NOW expression is at least 2x the existing A-grade floor',
-          secondary: 'BET NOW remains valid, but current cushion is below 2x A',
-          alternate: 'Additional same-game BET NOW expression; avoid accidental double exposure',
-          },
+          policy: BETTING_TICKET_POLICY,
           summary: {
             total: 0,
             bet: 0,
@@ -385,12 +388,7 @@ export async function GET(request: NextRequest) {
         season: OFFICIAL_CARD_SEASON,
         week,
         generatedAt: nowIso,
-        policy: {
-          bet: 'Locked A + current A + current price not worse than lock',
-          watch: 'Current A/B value outside the strict BET NOW filter',
-          pass: 'Current C/no qualifying value, unavailable market, or kickoff gate',
-          playableTo: 'B-grade threshold from frozen persisted modelPrice',
-        },
+        policy: BETTING_TICKET_POLICY,
         summary,
         officialSummary,
         items,

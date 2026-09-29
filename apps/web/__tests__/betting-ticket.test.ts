@@ -3,6 +3,7 @@ import * as path from 'path';
 import {
   buildBettingTicketPriority,
   classifyBettingTicketWager,
+  formatTicketThresholdPrice,
   probabilityToAmerican,
   ticketCurrentEdge,
   ticketGrade,
@@ -122,6 +123,60 @@ describe('Betting Ticket price/value math', () => {
         currentPrice: 150,
       })!
     ).toBeGreaterThan(0);
+  });
+});
+
+describe('Betting Ticket threshold presentation', () => {
+  it('keeps raw spread thresholds unchanged while displaying conservative half-points', () => {
+    const plusRaw = ticketThresholdPrice({
+      marketType: 'spread',
+      side: 'home',
+      modelPrice: 8.3,
+      grade: 'B',
+    });
+    const pickRaw = ticketThresholdPrice({
+      marketType: 'spread',
+      side: 'home',
+      modelPrice: -3.3,
+      grade: 'B',
+    });
+    const minusRaw = ticketThresholdPrice({
+      marketType: 'spread',
+      side: 'home',
+      modelPrice: -4.7,
+      grade: 'B',
+    });
+
+    expect(plusRaw).toBeCloseTo(11.3, 8);
+    expect(pickRaw).toBeCloseTo(-0.3, 8);
+    expect(minusRaw).toBeCloseTo(-1.7, 8);
+
+    expect(formatTicketThresholdPrice('spread', plusRaw)).toBe('+11.5');
+    expect(formatTicketThresholdPrice('spread', pickRaw)).toBe('PK');
+    expect(formatTicketThresholdPrice('spread', minusRaw)).toBe('-1.5');
+  });
+
+  it('leaves moneyline threshold presentation in American odds', () => {
+    expect(formatTicketThresholdPrice('moneyline', -177)).toBe('-177');
+    expect(formatTicketThresholdPrice('moneyline', 132)).toBe('+132');
+  });
+
+  it('uses conservative spread display in operator action labels', () => {
+    const result = classifyBettingTicketWager({
+      marketType: 'spread',
+      side: 'home',
+      modelPrice: 8.3,
+      lockedPrice: 13,
+      lockedGrade: 'A',
+      currentPrice: 13,
+      marketAgeMinutes: 30,
+      gameStatus: 'scheduled',
+      kickoffIso: '2026-10-03T17:00:00.000Z',
+      nowIso: '2026-10-03T12:00:00.000Z',
+    });
+
+    expect(result.playableToPrice).toBeCloseTo(11.3, 8);
+    expect(result.actionLabel).toBe('Playable to +11.5 or better');
   });
 });
 
@@ -327,6 +382,14 @@ describe('Betting Ticket read-only product boundary', () => {
     expect(route).toContain('buildBettingTicketPriority');
   });
 
+  it('returns the same complete policy contract for empty and populated success responses', () => {
+    expect(route).toContain('const BETTING_TICKET_POLICY = {');
+    expect(route).toContain("primary: 'Operator priority only: preferred BET NOW expression is at least 2x the existing A-grade floor'");
+    expect(route).toContain("secondary: 'BET NOW remains valid, but current cushion is below 2x A'");
+    expect(route).toContain("alternate: 'Additional same-game BET NOW expression; avoid accidental double exposure'");
+    expect(route.match(/policy: BETTING_TICKET_POLICY/g)).toHaveLength(2);
+  });
+
   it('is GET/read-only and does not recalculate or persist a model', () => {
     expect(route).toContain('export async function GET');
     expect(route).not.toMatch(/export async function (POST|PUT|PATCH|DELETE)/);
@@ -352,10 +415,19 @@ describe('Betting Ticket read-only product boundary', () => {
     expect(page).toContain('Secondary Plays');
     expect(page).toContain('Correlated / Same-Game Alternates');
     expect(page).toContain('operator ranking only');
+    expect(page).toContain('BET NOW means the wager qualifies at the latest persisted market snapshot.');
+    expect(page).toContain('Verify the');
+    expect(page).toContain('current executable price before placing a wager.');
+    expect(page).toContain('Reload Ticket');
+    expect(page).not.toMatch(/>\s*Refresh\s*</);
     expect(page).toContain('Market freshness guard active');
     expect(page).toContain('older than 3 hours');
     expect(page).toContain('View locked Official Card');
     expect(page).toContain('View full Current Slate');
+    expect(page).toContain('<details className="mt-6 group">');
+    expect(page).toContain('Secondary Plays ({secondary.length})');
+    expect(page).toContain('<TicketSection bucket="watch" items={groups.watch} collapse />');
+    expect(page).toContain('<TicketSection bucket="pass" items={groups.pass} collapse />');
     expect(page).not.toContain('ProductionModelSelector');
   });
 });
