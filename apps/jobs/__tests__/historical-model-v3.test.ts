@@ -122,7 +122,7 @@ function v1FromV3(
     ),
   ];
 
-  const byName = new Map(
+  const byName = new Map<string, number>(
     HISTORICAL_MODEL_V3_FULL_COEFFICIENT_ORDER.map((name, index) => [
       name,
       v3.coefficients[index],
