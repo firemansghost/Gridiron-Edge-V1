@@ -1,6 +1,6 @@
 # Betting Ticket Odds Refresh V1 — Operator Runbook
 
-**Status:** IMPLEMENTED CAPABILITY / EXTERNAL CLOCK NOT YET ACTIVATED  
+**Status:** ACTIVE / FRESH-BOARD NO-OP PROVEN / FIRST NATURAL CLOCK TICK PENDING  
 **Date:** 2026-09-29  
 **Season:** 2026  
 **Active-week authority:** `research/generic-shadow/GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json`
@@ -138,27 +138,39 @@ Actual provider usage should be lower because:
 API credits are therefore not the primary constraint. Append-only MarketLine row growth and
 unnecessary GitHub work are the reasons for freshness gating.
 
-## Production activation sequence
+## Production activation status
 
-1. Merge and verify the workflow/planner/tests on `main`.
-2. Keep any new Supabase cron inactive.
-3. Issue one explicit `workflow_dispatch` proof while the board is fresh:
-   - expected outcome `BOARD_FRESH`;
-   - providerCalls=0;
-   - DB writes=0.
-4. Read the proof artifact.
-5. Create the Supabase cron **inactive** with the local operator-hours predicate.
-6. Read back exact cron schedule/command.
-7. Activate the cron.
-8. Verify the first natural operator-clock tick:
-   - Supabase succeeds;
-   - GitHub dispatch occurs only at an eligible local time;
-   - GitHub PLAN decides whether a provider call is required.
-9. Verify the first stale-board refresh:
-   - exactly one provider call;
-   - append-only MarketLine write;
-   - post-write verification succeeds;
-   - Betting Ticket returns freshMarket for actionable rows.
+Completed:
+
+1. workflow/planner/tests merged to `main`;
+2. explicit fresh-board proof run **36629755387**;
+3. proof outcome **BOARD_FRESH**;
+4. providerCalls=0 / insertedRows=0;
+5. artifact **11061657135** independently SHA-verified;
+6. Supabase cron created inactive;
+7. exact schedule/command read back;
+8. cron activated.
+
+Current Supabase job:
+
+- job ID: **2**
+- name: `betting-ticket-odds-refresh-github-dispatch-v1`
+- schedule: `20 * * * *`
+- active: **true**
+
+Pending natural acceptance:
+
+1. verify first eligible operator-hours cron tick dispatches GitHub exactly once;
+2. verify GitHub PLAN still decides provider/no-provider behavior;
+3. later, verify first stale-board refresh performs exactly one provider call and append-only
+   MarketLine persistence with post-write verification.
+
+Proof artifact:
+
+- run: **36629755387**
+- artifact: **11061657135**
+- ZIP SHA-256:
+  `f2813031e59716af30e55c10f379b4ad701df6a828035cb619189c07777ae170`
 
 ## Rollback
 

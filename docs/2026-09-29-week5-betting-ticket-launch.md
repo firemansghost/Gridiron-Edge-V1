@@ -1,7 +1,7 @@
 # 2026-09-29 Week 5 Betting Ticket Launch
 
-**Status:** LIVE / READ-ONLY / WEEK 5 FRESH MARKET VERIFIED  
-**Production runtime:** `59c58046e086a14a109eca2f35d850750ba05966`  
+**Status:** LIVE / READ-ONLY / PRIORITY CARD LIVE / SMART ODDS REFRESH ACTIVE  
+**Current repository checkpoint:** `0c11ebe7ee339f6954c356325935a4de8b9bcdf8`  
 **Page:** `/ticket`
 
 ## Purpose
@@ -191,6 +191,26 @@ At launch:
 - moneyline BET NOW: **6**
 - spread BET NOW: **15**
 
+The BET NOW section now carries an **operator-priority overlay**:
+
+- **Primary Card: 7**
+- **Secondary Plays: 12**
+- **Correlated / Same-Game Alternates: 2**
+
+The two current same-game alternates are:
+
+- UConn spread, with UConn moneyline preferred on the main card;
+- Fresno State spread, with Fresno State moneyline preferred on the main card.
+
+Primary / Secondary / Alternate is **not** a new model grade, confidence score, staking rule,
+or promotion. It normalizes current BET NOW edge/value against the existing A-grade floor and
+keeps only one preferred expression per game on the main operator cards.
+
+Current Primary rule:
+
+> preferred BET NOW expression for a game with current edge/value cushion at least **2x**
+> the existing A-grade floor.
+
 These counts are dynamic because the page overlays the frozen Official Card with the latest
 persisted market.
 
@@ -209,6 +229,68 @@ Do not interpret a WATCH-to-BET or BET-to-WATCH transition as a change to the of
 
 It is a change in current market playability only.
 
+## Automated Betting Ticket odds freshness
+
+The 3-hour Betting Ticket stale-market guard remains unchanged.
+
+Rather than weaken that guard to six hours, Betting Ticket Odds Refresh V1 now keeps the
+persisted operator board fresh efficiently.
+
+Workflow:
+
+`.github/workflows/run-betting-ticket-odds-refresh-v1-2026.yml`
+
+Rules:
+
+- planner freshness threshold: **150 minutes**;
+- Betting Ticket actionability threshold: **180 minutes**;
+- required future-game coverage: spread / total / moneyline;
+- if any active-week kickoff is within **60 minutes**, outcome is `T30_HANDOFF` and
+  providerCalls=0;
+- T-30 Stage C remains the sole final-hour board-refresh path;
+- conditional refresh invokes the existing guarded append-only Live Odds COMMIT once;
+- no Bet, model, Game, T-30 closing, or migration writes.
+
+Explicit proof:
+
+- GitHub run: **36629755387**
+- runtime SHA: `0c11ebe7ee339f6954c356325935a4de8b9bcdf8`
+- outcome: **BOARD_FRESH**
+- future games: **56**
+- stale games: **0**
+- T-30 handoff games: **0**
+- provider calls: **0**
+- inserted rows: **0**
+- conditional provider step: **skipped**
+
+Artifact:
+
+- ID: **11061657135**
+- ZIP SHA-256:
+  `f2813031e59716af30e55c10f379b4ad701df6a828035cb619189c07777ae170`
+
+Independent ZIP SHA matched GitHub.
+
+Supabase production clock:
+
+- job ID: **2**
+- name: `betting-ticket-odds-refresh-github-dispatch-v1`
+- schedule: `20 * * * *`
+- active: **true**
+- operator-time gate: Tuesday–Saturday at 07:20 / 10:20 / 13:20 / 16:20 / 19:20 /
+  22:20 America/Chicago
+- GitHub still performs the authoritative freshness / T-30 handoff decision.
+
+Observed provider economics from the latest Week 5 board refresh:
+
+- provider board cost: **3 credits**
+- requests used: **280**
+- requests remaining: **19,720**
+
+Even if every eligible operator-clock opportunity required a provider call, the theoretical
+maximum is about **90 credits/week**. Actual usage should be lower because fresh boards,
+T-30 handoffs, and no-future-game states no-op.
+
 ## Next enhancement boundary
 
 Barnes / Crick overlays may later be added as a separate operator layer after their weekly
@@ -218,7 +300,9 @@ Do not bake external tipster opinion into Core V1 or rewrite Official Card truth
 
 ## Current live priorities
 
-1. use the Week 5 Betting Ticket for actual betting workflow;
-2. audit the first natural in-window T-30 automation cycle on Thursday;
-3. add Barnes / Crick overlays when source picks arrive;
-4. run normal Week 5 score / grading / TeamGameStat / lifecycle closeout after games.
+1. work the **7-play Primary Card** first, then Secondary Plays;
+2. treat same-game Alternates as intentional exposure choices, not automatic additional bets;
+3. audit the first natural operator-hours odds-refresh cron tick;
+4. audit the first natural in-window T-30 automation cycle on Thursday;
+5. add Barnes / Crick overlays when source picks arrive;
+6. run normal Week 5 score / grading / TeamGameStat / lifecycle closeout after games.
