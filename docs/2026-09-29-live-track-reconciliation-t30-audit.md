@@ -378,10 +378,11 @@ A wider safety band of 20–55 minutes:
 - reduction: **93.25%**
 - estimated runner time: **~114 minutes / 1.9 hours**
 
-Week 5 schedule simulation:
+Week 5 schedule simulation, aligned to the actual cron phase (`:02/:07/:12/...`):
 
-- 25–50 minute gate: **110 dispatches**
-- 20–55 minute safety band: **134 dispatches**
+- 25–50 minute gate: **95 dispatches**
+- 20–55 minute safety band: **123 dispatches**
+- estimated runner time at the observed average for the 20–55 band: **~123 minutes / ~2.0 hours**
 
 The window gate should remain a dispatch optimization only. It must not move market
 selection, model eligibility, freshness, T-30 selection, or persistence semantics into
