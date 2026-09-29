@@ -1,8 +1,8 @@
 # Generic Shadow T-30 External Clock — Window-Gated Dispatch V2 Proposal
 
-**Status:** DESIGN ONLY / NOT ACTIVE / PRODUCTION MUTATION NOT YET AUTHORIZED  
+**Status:** IMPLEMENTATION STAGED / NOT YET ACTIVE  
 **Date:** 2026-09-29  
-**Current cron state:** `generic-shadow-t30-github-dispatch-v1 active=false`  
+**Current cron state:** `generic-shadow-t30-github-dispatch-v1 active=false`; 20–55 minute gate already staged while inactive  
 **Current production coordinator:** `.github/workflows/run-generic-shadow-t30-automation-v1-scheduled-2026.yml`
 
 ## Objective
@@ -186,35 +186,34 @@ the live environment or use the supported unschedule/re-schedule path if require
 
 ## Week authority
 
-The GitHub repository variable remains the authoritative active CFB week:
+The active CFB week is moving from an inaccessible GitHub repository variable to
+version-controlled config:
 
-`GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK`
+`research/generic-shadow/GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json`
 
-At the final Week 4 external cycles it still resolved to:
+A read-only GitHub Actions probe on 2026-09-29 established the pre-change state:
 
-`4`
+- legacy repository week variable: **4**
+- Generic automation enable variable: **true**
+- mutation: **none**
 
-Before any Week 5 reactivation, it must be explicitly changed to:
+Both the normal workflow token and the existing Supabase fine-grained dispatch token
+returned HTTP 403 for the repository-variable settings endpoint. Credentials were not
+broadened.
 
-`5`
+The Week 5 config is therefore pinned in Git as:
 
-and independently verified in the first GitHub coordinator log.
+`{"season": 2026, "week": 5}`
 
-Do not add a second mutable active-week value in Supabase merely to optimize dispatch.
-The time gate may look at all 2026 games because GitHub remains the week/model authority.
-
-If a future-week game happens to fall inside the gate while GitHub is still pointed at
-an older week, the coordinator may no-op; it must not reinterpret the week from
-Supabase.
+Supabase still sends only `{"ref":"main"}` and does not supply season/week/model inputs.
+GitHub remains the active-week authority through the checked-in config.
 
 ## Hybrid Stage E
 
-Week 4 Hybrid Stage E was separately scoped to:
+Week 4 Hybrid Stage E remains separately scoped to active week **4**.
 
-`GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK == '4'`
-
-Therefore changing the active GitHub week to 5 disables Week 4 Hybrid Stage E
-automatically.
+The scheduled workflow now evaluates the loaded version-controlled week, so pinning the
+config to Week 5 disables Week 4 Hybrid Stage E automatically.
 
 Do not generalize Stage E to Week 5 as part of this optimization.
 
@@ -227,26 +226,24 @@ A future authorized production operation should use this sequence:
 1. verify current `main` SHA;
 2. verify Week 5 production Game universe remains **56**;
 3. verify Candidate B Elo prospective cohort remains frozen and unchanged;
-4. set GitHub repository variable
-   `GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK=5`;
+4. merge and verify `GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json` with season 2026 / week 5;
 5. verify the cron job remains `active=false`;
-6. update only the cron command to add the 20–55 minute predicate;
-7. read back `cron.job` and compare exact schedule/command;
-8. reactivate the cron;
-9. verify `cron.job.active=true`;
-10. verify an out-of-window cron tick records success but creates **no GitHub run**;
-11. verify the first in-window tick creates exactly one GitHub `workflow_dispatch`;
-12. audit the GitHub run:
+6. verify the already-staged cron command contains the 20–55 minute predicate and the unchanged GitHub endpoint;
+7. reactivate the cron;
+8. verify `cron.job.active=true`;
+9. verify an out-of-window cron tick records success but creates **no GitHub run**;
+10. verify the first in-window tick creates exactly one GitHub `workflow_dispatch`;
+11. audit the GitHub run:
     - branch `main`;
-    - active week = 5;
+    - active week = 5 from version-controlled config;
     - Hybrid Stage E disabled;
     - expected Stage C/D reports present;
     - no forbidden writes;
-13. after first actual Week 5 T-30 group:
+12. after first actual Week 5 T-30 group:
     - verify expected MarketLine refresh evidence;
     - verify Generic closing rows;
     - verify no duplicate rows;
-14. retain manual guarded Stage C/D workflows as emergency fallback.
+13. retain manual guarded Stage C/D workflows as emergency fallback.
 
 ## Rollback
 
@@ -278,14 +275,9 @@ The window-gated external clock is production-proven only after:
 
 ## Authorization boundary
 
-This document is design and verification planning only.
+The September 29 operator authorization covers the recommended optimized activation
+sequence. The cron command has been staged only while inactive. Week 5 Hybrid Stage E
+remains outside that authorization and stays disabled.
 
-It does not itself authorize:
-
-- changing the GitHub active-week repository variable;
-- altering the Supabase cron command;
-- reactivating the Supabase cron;
-- enabling Week 5 Hybrid Stage E.
-
-Those are production configuration changes and require explicit authorization for this
-specific optimized activation.
+Any future change to timing semantics, provider-call limits, model eligibility, or
+Hybrid Week 5 automation requires separate review.
