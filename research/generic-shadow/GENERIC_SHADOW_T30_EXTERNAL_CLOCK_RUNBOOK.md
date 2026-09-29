@@ -1,6 +1,6 @@
 # Generic Shadow T-30 Automation V1 — External Clock Fallback
 
-**Status:** PROVEN / CURRENTLY DISABLED. Supabase remains the proven external clock architecture, but production cron `generic-shadow-t30-github-dispatch-v1` is `active=false` as of 2026-09-29 after the Week 4 cost/value audit. See `GENERIC_SHADOW_T30_WINDOW_GATED_DISPATCH_V2_PROPOSAL.md` for the reviewed next design; no reactivation is authorized by this runbook.
+**Status:** PROVEN / WINDOW-GATED COMMAND STAGED / CURRENTLY DISABLED. Supabase remains the proven external clock architecture. The production cron `generic-shadow-t30-github-dispatch-v1` is still `active=false`, and its command has been updated while inactive to dispatch GitHub only when a 2026 kickoff is 20–55 minutes away. Week authority is moving to version-controlled config before reactivation.
 
 ## Why this exists
 
@@ -54,7 +54,7 @@ Native GitHub `schedule` is intentionally disabled after the 2026-09-24 live pro
 The recurring route uses:
 
 - the same Generic repository activation gate;
-- the same active-week repository variable;
+- the version-controlled active-week config `research/generic-shadow/GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json`;
 - Week 4-only Hybrid closing activation inherited from the same Generic gate while the active week equals 4;
 - the same production concurrency group;
 - the same Stage C / Stage D commands;
@@ -65,11 +65,13 @@ An externally dispatched run must use:
 
 `ref=main`
 
-No operator-supplied season/week inputs are accepted. The workflow continues to read:
+No operator-supplied season/week inputs are accepted. The workflow reads:
 
 - season = hardcoded `2026`;
-- week = `GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK`;
+- week = `research/generic-shadow/GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json`;
 - enabled = `GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED`.
+
+The legacy repository variable `GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK` is no longer authoritative because both available automation credentials are intentionally denied repository-variable settings access. A read-only Actions probe on 2026-09-29 confirmed the legacy value remained `4` and the enable flag remained `true`.
 
 ## Current post-Week-4 posture
 
@@ -81,8 +83,7 @@ inefficient:
 - 2.19% useful-signal rate;
 - roughly 28 runner-hours by observed runtime proxy.
 
-The cron is therefore intentionally inactive pending review of the window-gated V2
-dispatch proposal.
+The cron remains intentionally inactive while the version-controlled Week 5 pointer is merged and verified. The 20–55 minute window-gated command is already staged in `cron.job` with `active=false`.
 
 Do not interpret the absence of new coordinator runs after 2026-09-28 13:07 UTC as an
 outage.
@@ -143,37 +144,38 @@ Required body:
 
 The external clock must not send week, season, mode, confirmation, or model inputs.
 
-## Canonical Supabase Cron shape
+## Current window-gated Supabase Cron shape
 
-The intended five-minute job is conceptually:
+The production job retains the five-minute phase but the expensive GitHub dispatch is now guarded by the kickoff window:
 
 ```sql
-select cron.schedule(
-  'generic-shadow-t30-github-dispatch-v1',
-  '2-59/5 * * * *',
-  $cron$
-  select net.http_post(
-    url :=
-      'https://api.github.com/repos/firemansghost/Gridiron-Edge-V1/actions/workflows/' ||
-      'run-generic-shadow-t30-automation-v1-scheduled-2026.yml/dispatches',
-    headers := jsonb_build_object(
-      'Accept', 'application/vnd.github+json',
-      'Authorization', 'Bearer ' || (
-        select decrypted_secret
-        from vault.decrypted_secrets
-        where name = 'generic_shadow_t30_github_dispatch_token'
-      ),
-      'X-GitHub-Api-Version', '2026-03-10',
-      'Content-Type', 'application/json'
+select net.http_post(
+  url := 'https://api.github.com/repos/firemansghost/Gridiron-Edge-V1/actions/workflows/run-generic-shadow-t30-automation-v1-scheduled-2026.yml/dispatches',
+  body := '{"ref":"main"}'::jsonb,
+  params := '{}'::jsonb,
+  headers := jsonb_build_object(
+    'Accept', 'application/vnd.github+json',
+    'Authorization', 'Bearer ' || (
+      select decrypted_secret
+      from vault.decrypted_secrets
+      where name = 'generic_shadow_t30_github_dispatch_token'
     ),
-    body := '{"ref":"main"}'::jsonb,
-    timeout_milliseconds := 10000
-  );
-  $cron$
+    'X-GitHub-Api-Version', '2026-03-10',
+    'Content-Type', 'application/json',
+    'User-Agent', 'gridiron-edge-supabase-cron/1.0'
+  ),
+  timeout_milliseconds := 10000
+)
+where exists (
+  select 1
+  from public.games g
+  where g.season = 2026
+    and g.date >= (now() at time zone 'UTC') + interval '20 minutes'
+    and g.date <= (now() at time zone 'UTC') + interval '55 minutes'
 );
 ```
 
-This SQL is an **activation template**, not authorization to execute it.
+The actual `cron.job` remains `active=false` until Week 5 GitHub-side authority is merged and verified.
 
 ## Activation verification
 
@@ -184,17 +186,19 @@ Activation is not complete until all of the following are observed:
 2. `cron.job_run_details` records a successful cron execution.
 3. GitHub creates a corresponding `workflow_dispatch` run.
 4. The GitHub run executes from `refs/heads/main`.
-5. The scheduled-cycle report records:
+5. The first in-window scheduled-cycle report records:
    - `triggerEvent = workflow_dispatch`;
    - expected main SHA;
-   - expected Week 4 eligible capture runs;
-   - providerCalls=0 outside Stage C window;
-   - closingRowsInserted=0 before a T-30 window;
+   - active week = **5** from version-controlled config;
+   - Hybrid Stage E disabled;
+   - expected Week 5 eligible Generic capture runs;
+   - Stage C / Stage D semantics unchanged;
    - no forbidden mutation target.
 6. Independent production verification confirms:
-   - official Week 4 card unchanged;
-   - Hybrid unchanged;
-   - no unexpected closing rows.
+   - official Week 5 card unchanged;
+   - no Hybrid writes;
+   - no duplicate or unexpected Generic closing rows.
+7. At least one out-of-window cron tick succeeds without creating a GitHub workflow run.
 
 A successful Supabase cron record without a GitHub run is not sufficient.
 
@@ -229,4 +233,4 @@ No path, manual or automated, may:
 
 ## Production mutation boundary
 
-The production external clock is already active and proven. Any future infrastructure change to `pg_cron`, `pg_net`, Vault credentials, or the cron job remains a separately authorized production operation and must be verified immediately after execution.
+The production external clock is proven but currently inactive. The 20–55 minute command update was staged while inactive under the September 29 authorization. Reactivation must occur only after the version-controlled Week 5 pointer is on `main` and verified. Any later infrastructure change to `pg_cron`, `pg_net`, Vault credentials, or the cron job remains separately reviewable and must be verified immediately after execution.
