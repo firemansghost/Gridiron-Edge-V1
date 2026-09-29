@@ -28,7 +28,7 @@ Prospective Week 4 research evidence is frozen for Core V1, Candidate B roster p
 
 Week 5 production is established: **56** scheduled games, **5,488** current MarketLine rows across **56 / 56** games, and **96** persisted `official_flat_100` bets. Candidate B Elo Prior V1 has its first legitimate Week 5 prospective observation frozen: run UUID `396e8213-7317-4678-b9b2-a982d2d487ed`, **56 / 56 AVAILABLE**, **56 selections**.
 
-Generic T-30 closing automation is **REACTIVATED FOR WEEK 5 WITH WINDOW-GATED DISPATCH**. The active week now comes from version-controlled config (`GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json`, week **5**) while the existing GitHub enable variable remains the kill gate. Supabase cron `generic-shadow-t30-github-dispatch-v1` is `active=true` with the same five-minute phase but dispatches GitHub only when a 2026 kickoff is **20–55 minutes** away. Explicit proof run **36614235554** passed on `c8587a8157af0993a41a66e14117ecfb7c34f2be`: Week 5 loaded from config, providerCalls=0, closingRowsInserted=0, no mutations, no blockers, and Hybrid Stage E disabled. First live out-of-window cron-tick verification is pending. Week 4 remains frozen with **174** Generic T-30 rows and **57** Hybrid closing rows; the one legitimate Hybrid pre-cohort miss remains unfilled.
+Generic T-30 closing automation is **REACTIVATED FOR WEEK 5 WITH WINDOW-GATED DISPATCH**. The active week now comes from version-controlled config (`GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json`, week **5**) while the existing GitHub enable variable remains the kill gate. Supabase cron `generic-shadow-t30-github-dispatch-v1` is `active=true` with the same five-minute phase but dispatches GitHub only when a 2026 kickoff is **20–55 minutes** away. Explicit proof run **36614235554** passed on `c8587a8157af0993a41a66e14117ecfb7c34f2be`: Week 5 loaded from config, providerCalls=0, closingRowsInserted=0, no mutations, no blockers, and Hybrid Stage E disabled. The first live post-reactivation cron tick, Supabase run **1689** at `2026-09-29 18:52 UTC`, succeeded with `0 rows` and created no GitHub coordinator run, proving out-of-window dispatch suppression. First in-window live proof remains pending. Week 4 remains frozen with **174** Generic T-30 rows and **57** Hybrid closing rows; the one legitimate Hybrid pre-cohort miss remains unfilled.
 
 No additional Week 4 prediction cohorts should be created. No Hybrid/Candidate B/V4 evidence changes official model status.
 
@@ -59,7 +59,7 @@ The connected Supabase project currently reports **41 public-schema tables with 
 | Generic Core V1 Shadow | **FIRST WEEK 3 PRODUCTION COMMIT PROVEN** (research-only / additive; run **34785370466**) |
 | Candidate B V1 Generic Shadow | **IMPLEMENTED + FIRST PROSPECTIVE COMMIT PROVEN AND FROZEN**; SHADOW / RESEARCH ONLY; future COMMITs **per-run authorization only** |
 | Candidate B Week 3 cohort | **FROZEN / DO NOT REPLACE** — run **35128215811**; UUID `74234d87-bb32-47c6-927b-6de3d24cfc88` |
-| Generic T−30 automation | **WEEK 5 REACTIVATED / WINDOW-GATED**; Supabase cron `active=true`; GitHub dispatch only for kickoffs 20–55 minutes away; explicit Week 5 proof run **36614235554** passed; first live out-of-window cron-tick verification pending |
+| Generic T−30 automation | **WEEK 5 ACTIVE / WINDOW-GATED / OUT-OF-WINDOW PROVEN**; Supabase cron `active=true`; GitHub dispatch only for kickoffs 20–55 minutes away; explicit Week 5 proof run **36614235554** passed; cron run **1689** proved `0 rows` / no GitHub dispatch outside the window; first in-window proof pending |
 | Recurring production schedules | Generic T−30 external clock **active with 20–55 minute dispatch gate**; Week 5 Hybrid Stage E disabled; other recurring production schedules remain stopped unless separately authorized |
 
 ## Verified production snapshot
@@ -90,7 +90,7 @@ Historical September 8 verification remains valid for Week 1 / TeamUnitGrades / 
 | Week 4 V4 prospective run | `149e59c2-801a-4535-bfc0-1b2d2f4a5198` — **57 / 58 AVAILABLE** |
 | Week 4 Hybrid run | `86505023-0ba6-4838-bbd6-21091c73057f` — **57 / 58 AVAILABLE; 8 Super Tier A** |
 | Hybrid idempotent verification | run **36146124407** — existing COMPLETE cohort unchanged |
-| Generic T-30 external clock | **WEEK 5 WINDOW-GATED / ACTIVE** — active week from version-controlled config; explicit proof run **36614235554** = NO_ACTION / providerCalls 0 / closingRowsInserted 0 / Hybrid disabled; live cron no-dispatch proof pending |
+| Generic T-30 external clock | **WEEK 5 WINDOW-GATED / ACTIVE / OUT-OF-WINDOW PROVEN** — active week from version-controlled config; proof run **36614235554** = NO_ACTION / providerCalls 0 / closingRowsInserted 0 / Hybrid disabled; Supabase run **1689** = succeeded / `0 rows` / no GitHub dispatch; first in-window proof pending |
 | Week 4 Hybrid T-30 Stage E proof | run **36148638315** — enabled, providerCalls=0, zero mutation before first due window |
 
 Historical Week 3 Live Odds states that are **not** current:
