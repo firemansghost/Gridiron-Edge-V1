@@ -68,7 +68,7 @@ Current production state:
 
 - scheduled games: **56**;
 - market coverage: **56 / 56 games**;
-- MarketLine rows: **5,488**;
+- MarketLine rows: **8,406** after the Sep 29 fresh-odds COMMIT;
 - official Core V1 bets: **96**;
 - official stake: **$9,600**;
 - first kickoff: `2026-10-02 00:00 UTC`.
@@ -220,12 +220,51 @@ The original live verification backlog is now closed through out-of-window T-30 
 
 Remaining live priorities:
 
-1. audit the **first in-window Week 5 T-30 dispatch** when the first real target window arrives;
-2. keep Hybrid Stage E disabled for Week 5 unless separately reviewed;
-3. preserve the betting-day product goal:
-   - short BET / WATCH / PASS ticket;
-   - explicit acceptable price/line ranges;
-   - no hour-long operator readout.
+1. use the live Betting Ticket operator hierarchy:
+   - **7 Primary**
+   - **12 Secondary**
+   - **2 same-game Alternates**
+   - WATCH and PASS remain separate price/actionability states;
+2. verify the first natural Betting Ticket odds-refresh operator-clock tick;
+3. audit the **first in-window Week 5 T-30 dispatch** when the first real target window arrives;
+4. keep Hybrid Stage E disabled for Week 5 unless separately reviewed;
+5. add Barnes / Crick only as a separate operator overlay after their picks arrive.
+
+The betting-day product goal is now implemented: short BET / WATCH / PASS, explicit
+playable-to ranges, fresh-market protection, and a compressed Primary / Secondary card.
+
+## Betting Ticket operator checkpoint
+
+**Status: LIVE / PRIORITY CARD + SMART REFRESH ACTIVE.**
+
+Production ticket:
+
+- official wagers: **96**
+- BET NOW: **21**
+- WATCH: **43**
+- PASS / NO CHASE: **32**
+- Primary Card: **7**
+- Secondary Plays: **12**
+- same-game Alternates: **2**
+
+Freshness service:
+
+- Betting Ticket display stale gate: **180 minutes**
+- refresh planner stale threshold: **150 minutes**
+- final-hour T-30 handoff: **60 minutes**
+- proof run: **36629755387**
+- proof outcome: **BOARD_FRESH**
+- provider calls: **0**
+- inserted rows: **0**
+- artifact: **11061657135**
+- artifact SHA:
+  `f2813031e59716af30e55c10f379b4ad701df6a828035cb619189c07777ae170`
+- Supabase job **2**:
+  `betting-ticket-odds-refresh-github-dispatch-v1`
+- active: **true**
+
+Primary / Secondary / Alternate is an operator-priority overlay only. It does not alter
+Core V1 grades, official flat stakes, or model status.
 
 ## Research backlog
 
