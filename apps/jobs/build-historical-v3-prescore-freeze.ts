@@ -57,10 +57,13 @@ interface Args {
   v1ModelZip: string;
   v2RejectedZip: string;
   v3ModelZip: string;
+  v3ModelArtifactId: number;
   v3ModelZipSha256: string;
   resolutionZip: string;
+  resolutionArtifactId: number;
   resolutionZipSha256: string;
   predictiveZip: string;
+  predictiveArtifactId: number;
   predictiveZipSha256: string;
   outputDir: string;
   confirm: string;
@@ -81,6 +84,13 @@ function parseArgs(argv: string[]): Args {
     if (value === undefined) throw new Error(`missing_value:${key}`);
     values.set(key, value);
   }
+  const artifactId = (name: string): number => {
+    const value = Number(values.get(name) ?? '');
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new Error(`invalid_artifact_id:${name}`);
+    }
+    return value;
+  };
   const sha = (name: string): string => {
     const value = (values.get(name) ?? '').toLowerCase();
     if (!/^[0-9a-f]{64}$/.test(value)) {
@@ -100,10 +110,13 @@ function parseArgs(argv: string[]): Args {
     v1ModelZip: required('--v1-model-zip'),
     v2RejectedZip: required('--v2-rejected-zip'),
     v3ModelZip: required('--v3-model-zip'),
+    v3ModelArtifactId: artifactId('--v3-model-artifact-id'),
     v3ModelZipSha256: sha('--v3-model-zip-sha256'),
     resolutionZip: required('--resolution-zip'),
+    resolutionArtifactId: artifactId('--resolution-artifact-id'),
     resolutionZipSha256: sha('--resolution-zip-sha256'),
     predictiveZip: required('--predictive-zip'),
+    predictiveArtifactId: artifactId('--predictive-artifact-id'),
     predictiveZipSha256: sha('--predictive-zip-sha256'),
     outputDir: required('--output-dir'),
     confirm: required('--confirm'),
@@ -307,6 +320,7 @@ function sanitizeError(error: unknown): string {
   for (const prefix of [
     'required_argument',
     'invalid_sha256',
+    'invalid_artifact_id',
     'invalid_confirmation',
     'feature_',
     'corpus_',
@@ -588,17 +602,20 @@ function main(): void {
       observed2024Snapshot: FROZEN_2024_SNAPSHOT,
       v2RejectedSource: FROZEN_V2_REJECTED,
       v3Model: {
+        artifactId: args.v3ModelArtifactId,
         zipSha256: args.v3ModelZipSha256,
         candidateMemberSha256: v3Candidate.sha256,
         backcompatMemberSha256: v3BackcompatSha,
       },
       v3Resolution: {
+        artifactId: args.resolutionArtifactId,
         zipSha256: args.resolutionZipSha256,
         status: resolutionReport.status,
         manifestSha256: sha256Bytes(resolutionManifestBytes),
         reportSha256: sha256Bytes(resolutionReportBytes),
       },
       v3PredictiveInputs: {
+        artifactId: args.predictiveArtifactId,
         zipSha256: args.predictiveZipSha256,
         inputMemberSha256: predictive.sha256,
         qaMemberSha256: predictiveQaSha,
