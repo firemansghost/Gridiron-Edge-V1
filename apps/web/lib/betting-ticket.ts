@@ -195,7 +195,7 @@ export function buildBettingTicketPriority(
     byGame.set(item.gameId, group);
   }
 
-  for (const group of byGame.values()) {
+  byGame.forEach((group) => {
     const ranked = [...group].sort((a, b) => {
       const aStrength =
         ticketAStrengthMultiple(a.marketType, a.currentEdgeOrValue) ?? -Infinity;
@@ -233,7 +233,7 @@ export function buildBettingTicketPriority(
           : 'Still BET NOW, but current edge/value cushion is below 2x the A-grade floor.',
       });
     });
-  }
+  });
 
   return out;
 }
