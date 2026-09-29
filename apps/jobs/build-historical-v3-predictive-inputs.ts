@@ -36,6 +36,8 @@ interface Args {
   snapshotZip: string;
   v3ModelZip: string;
   v3ModelZipSha256: string;
+  resolutionZip: string;
+  resolutionZipSha256: string;
   outputDir: string;
   confirm: string;
 }
@@ -61,6 +63,10 @@ function parseArgs(argv: string[]): Args {
   const v3ModelZipSha256 = (
     values.get('--v3-model-zip-sha256') ?? ''
   ).toLowerCase();
+  const resolutionZip = values.get('--resolution-zip') ?? '';
+  const resolutionZipSha256 = (
+    values.get('--resolution-zip-sha256') ?? ''
+  ).toLowerCase();
   const outputDir = values.get('--output-dir') ?? '';
   const confirm = values.get('--confirm') ?? '';
 
@@ -69,6 +75,10 @@ function parseArgs(argv: string[]): Args {
   if (!/^[0-9a-f]{64}$/.test(v3ModelZipSha256)) {
     throw new Error('v3_model_zip_sha256_required');
   }
+  if (!resolutionZip) throw new Error('resolution_zip_required');
+  if (!/^[0-9a-f]{64}$/.test(resolutionZipSha256)) {
+    throw new Error('resolution_zip_sha256_required');
+  }
   if (!outputDir) throw new Error('output_dir_required');
   if (confirm !== CONFIRMATION) throw new Error('invalid_confirmation');
 
@@ -76,6 +86,8 @@ function parseArgs(argv: string[]): Args {
     snapshotZip,
     v3ModelZip,
     v3ModelZipSha256,
+    resolutionZip,
+    resolutionZipSha256,
     outputDir,
     confirm,
   };
@@ -284,6 +296,10 @@ function sanitizeError(error: unknown): string {
     'snapshot_zip_required',
     'v3_model_zip_required',
     'v3_model_zip_sha256_required',
+    'resolution_zip_required',
+    'resolution_zip_sha256_required',
+    'resolution_zip_missing',
+    'resolution_zip_hash_mismatch',
     'output_dir_required',
     'snapshot_zip_missing',
     'snapshot_zip_hash_mismatch',
@@ -300,6 +316,7 @@ function sanitizeError(error: unknown): string {
     'manifest_',
     'snapshot_',
     'v3_model_',
+    'v3_resolution_',
     'v3_predictive_',
     'duplicate_',
     'invalid_',
@@ -314,6 +331,7 @@ function main(): void {
   const args = parseArgs(process.argv.slice(2));
   const snapshotZip = path.resolve(args.snapshotZip);
   const v3ModelZip = path.resolve(args.v3ModelZip);
+  const resolutionZip = path.resolve(args.resolutionZip);
   const outputDir = path.resolve(args.outputDir);
 
   assertFile(
@@ -327,6 +345,12 @@ function main(): void {
     args.v3ModelZipSha256,
     'v3_model_zip_missing',
     'v3_model_zip_hash_mismatch'
+  );
+  assertFile(
+    resolutionZip,
+    args.resolutionZipSha256,
+    'resolution_zip_missing',
+    'resolution_zip_hash_mismatch'
   );
 
   if (fs.existsSync(outputDir)) throw new Error('output_dir_already_exists');
@@ -501,10 +525,92 @@ function main(): void {
     V3_MODEL_PATHS.candidate
   ) as HistoricalModelV3Candidate;
 
+  const resolutionRoot = findArchiveRoot(resolutionZip);
+  const resolutionManifestBytes = archiveRead(
+    resolutionZip,
+    resolutionRoot,
+    'manifest.json'
+  );
+  const resolutionReportBytes = archiveRead(
+    resolutionZip,
+    resolutionRoot,
+    'report.json'
+  );
+  const resolutionRowsBytes = archiveRead(
+    resolutionZip,
+    resolutionRoot,
+    'recovery/accepted_advanced_rows.json'
+  );
+  const resolutionManifest = jsonObject(
+    resolutionManifestBytes,
+    'v3_resolution_manifest'
+  );
+  const resolutionReport = jsonObject(
+    resolutionReportBytes,
+    'v3_resolution_report'
+  );
+  if (
+    resolutionManifest.version !== 'historical_v3_week_query_resolution_v1' ||
+    resolutionReport.version !== 'historical_v3_week_query_resolution_v1' ||
+    ![
+      'HISTORICAL_V3_WEEK_QUERY_QUALIFIED',
+      'HISTORICAL_V3_WEEK_QUERY_REJECTED',
+    ].includes(String(resolutionManifest.status)) ||
+    resolutionManifest.status !== resolutionReport.status
+  ) {
+    throw new Error('v3_resolution_artifact_identity_mismatch');
+  }
+  const resolutionManifestMap = manifestMap(resolutionManifest);
+  const resolutionRowsSha = verifyManifestedBytes(
+    resolutionManifestMap,
+    'recovery/accepted_advanced_rows.json',
+    resolutionRowsBytes
+  );
+  verifyManifestedBytes(
+    resolutionManifestMap,
+    'report.json',
+    resolutionReportBytes
+  );
+  const resolutionRows = jsonArray(
+    resolutionRowsBytes,
+    'v3_resolution_recovery_rows'
+  );
+  const resolutionBoundaries = asObject(resolutionReport.boundaries);
+  if (
+    !resolutionBoundaries ||
+    resolutionBoundaries.databaseReads !== false ||
+    resolutionBoundaries.databaseWrites !== false ||
+    resolutionBoundaries.prismaInvoked !== false ||
+    resolutionBoundaries.marketReads !== 0 ||
+    resolutionBoundaries.ppaSidecarReads !== 0 ||
+    resolutionBoundaries.outcomeScoringReads !== 0 ||
+    resolutionBoundaries.modelScore2024 !== false ||
+    resolutionBoundaries.holdout2025Reads !== 0
+  ) {
+    throw new Error('v3_resolution_boundary_mismatch');
+  }
+  const resolutionRecovery = asObject(resolutionReport.recovery);
+  if (!resolutionRecovery) {
+    throw new Error('v3_resolution_recovery_metadata_missing');
+  }
+  if (
+    resolutionReport.status === 'HISTORICAL_V3_WEEK_QUERY_REJECTED' &&
+    (resolutionRows.length !== 0 ||
+      resolutionRecovery.attempted !== false)
+  ) {
+    throw new Error('v3_resolution_rejected_with_recovery_rows');
+  }
+  if (
+    resolutionReport.status === 'HISTORICAL_V3_WEEK_QUERY_QUALIFIED' &&
+    resolutionRecovery.attempted !== true
+  ) {
+    throw new Error('v3_resolution_qualified_without_recovery_attempt');
+  }
+
   const built = buildHistoricalV3PredictiveInputs({
     games,
     advancedBulkRows,
-    recoveryAdvancedRows: [],
+    recoveryAdvancedRows: resolutionRows,
     talentRows,
     returningProductionRows,
     recruitingByYear,
@@ -546,8 +652,16 @@ function main(): void {
       reportSha256: sha256Bytes(v3ReportBytes),
       provenanceSha256: sha256Bytes(v3ProvenanceBytes),
     },
-    recoveryArtifactUsed: false,
-    recoveryRowsUsed: 0,
+    v3ResolutionArtifact: {
+      zipSha256: args.resolutionZipSha256,
+      status: resolutionReport.status,
+      recoveryRowsMember: 'recovery/accepted_advanced_rows.json',
+      recoveryRowsMemberSha256: resolutionRowsSha,
+      manifestSha256: sha256Bytes(resolutionManifestBytes),
+      reportSha256: sha256Bytes(resolutionReportBytes),
+    },
+    recoveryArtifactUsed: true,
+    recoveryRowsUsed: resolutionRows.length,
   };
   artifacts.push(
     writeJsonExclusive(outputDir, 'source_provenance.json', provenance)
@@ -573,8 +687,9 @@ function main(): void {
     outcomeScoringReads: 0,
     modelPredictionsComputed: false,
     holdout2025Reads: 0,
-    recoveryArtifactUsed: false,
-    recoveryRowsUsed: 0,
+    recoveryArtifactUsed: true,
+    recoveryQualificationStatus: resolutionReport.status,
+    recoveryRowsUsed: resolutionRows.length,
     snapshotReads,
     modelReads,
     qa: built.qa,
@@ -599,7 +714,9 @@ function main(): void {
         teamSides: built.qa.teamSides,
         sourceGapFormSides: built.qa.sourceGapFormSides,
         naturalNoPriorFormSides: built.qa.naturalNoPriorFormSides,
-        recoveryArtifactUsed: false,
+        recoveryArtifactUsed: true,
+        recoveryQualificationStatus: resolutionReport.status,
+        recoveryRowsUsed: resolutionRows.length,
         providerCalls: 0,
         marketReads: 0,
         ppaSidecarReads: 0,

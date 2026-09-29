@@ -66,6 +66,8 @@ jobs:
             --snapshot-zip .tmp/missing-snapshot.zip \
             --v3-model-zip .tmp/missing-v3.zip \
             --v3-model-zip-sha256 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            --resolution-zip .tmp/missing-resolution.zip \
+            --resolution-zip-sha256 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
             --confirm BUILD_2024_HISTORICAL_V3_PREDICTIVE_INPUTS \
             --output-dir .tmp/no-v3-predictive-output 2>&1)"
           STATUS=$?
