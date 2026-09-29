@@ -9,6 +9,7 @@ import {
   deriveFbsVsFbsRegularWeeks,
   historicalSnapshotConfirmation,
   historicalSnapshotSeasonRole,
+  isCompletedFbsVsFbsRegularGame,
 } from '../src/research/historical-research-snapshot-v1';
 
 describe('historical research snapshot v1', () => {
@@ -51,9 +52,24 @@ describe('historical research snapshot v1', () => {
     },
   ];
 
-  it('derives only regular FBS-vs-FBS weeks', () => {
-    expect(deriveFbsVsFbsRegularWeeks(games, 2025)).toEqual([1, 2]);
-    expect(countCompletedFbsVsFbsRegularGames(games, 2025)).toBe(2);
+  it('derives canonical weeks from completed regular FBS-vs-FBS games only', () => {
+    const withIncomplete = [
+      ...games,
+      {
+        id: 5,
+        season: 2025,
+        week: 9,
+        seasonType: 'regular',
+        homeClassification: 'fbs',
+        awayClassification: 'fbs',
+        completed: false,
+      },
+    ];
+
+    expect(deriveFbsVsFbsRegularWeeks(withIncomplete, 2025)).toEqual([1, 2]);
+    expect(countCompletedFbsVsFbsRegularGames(withIncomplete, 2025)).toBe(2);
+    expect(isCompletedFbsVsFbsRegularGame(withIncomplete[4], 2025)).toBe(false);
+    expect(isCompletedFbsVsFbsRegularGame(withIncomplete[0], 2025)).toBe(true);
   });
 
   it('builds a bounded research-only provider plan', () => {
@@ -193,6 +209,27 @@ describe('historical research snapshot v1', () => {
     expect(() => buildHistoricalSnapshotPlan(2025, tooManyWeeks)).toThrow(
       /provider call budget exceeded/
     );
+  });
+
+  it('keeps snapshot QA denominators on completed canonical games', () => {
+    const cli = fs.readFileSync(
+      path.resolve(
+        process.cwd(),
+        'apps/jobs/capture-historical-research-snapshot-v1.ts'
+      ),
+      'utf8'
+    );
+
+    expect(cli).not.toContain(
+      "qaFindings.push('incomplete_fbs_vs_fbs_regular_games_present')"
+    );
+    expect(cli).toMatch(
+      /advancedCanonicalUniqueGames[^]*completedFbsVsFbsRegularGames/
+    );
+    expect(cli).toMatch(
+      /ppaCanonicalUniqueGames[^]*completedFbsVsFbsRegularGames/
+    );
+    expect(cli).toContain('isCompletedFbsVsFbsRegularGame');
   });
 
   it('keeps the GitHub workflow provider-only and database-free', () => {
