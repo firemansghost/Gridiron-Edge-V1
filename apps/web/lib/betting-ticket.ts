@@ -334,6 +334,26 @@ export function formatTicketPrice(
   return String(price);
 }
 
+/**
+ * Presentation-only formatter for operator-facing threshold labels.
+ *
+ * Raw threshold math remains unchanged. Spread thresholds are rounded upward
+ * to the next common half-point because spread value improves as the selected
+ * team's line increases. This makes the displayed action range conservative:
+ * it never permits a worse line than the raw threshold.
+ */
+export function formatTicketThresholdPrice(
+  marketType: string,
+  price: number | null
+): string {
+  if (price === null || !Number.isFinite(price)) return '—';
+  if (marketType !== 'spread') return formatTicketPrice(marketType, price);
+
+  const conservativeHalfPoint = Math.ceil((price - EPS) * 2) / 2;
+  if (Math.abs(conservativeHalfPoint) < EPS) return 'PK';
+  return formatSignedSpread(conservativeHalfPoint);
+}
+
 function thresholdActionLabel(options: {
   marketType: string;
   side: string;
@@ -345,11 +365,11 @@ function thresholdActionLabel(options: {
     return grade === 'A' ? 'Watch for A-grade value' : 'Wait for B-grade value';
   }
 
-  const label = formatTicketPrice(marketType, price);
+  const label = formatTicketThresholdPrice(marketType, price);
   if (marketType === 'spread') {
     return grade === 'A'
       ? `A-grade at ${label} or better`
-      : `Playable to ${label}`;
+      : `Playable to ${label} or better`;
   }
   if (marketType === 'moneyline') {
     return grade === 'A'
