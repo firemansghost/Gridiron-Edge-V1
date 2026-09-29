@@ -848,6 +848,28 @@ No V1 rule may be weakened after this observed result.
 Any revised model/validation path requires a new version and must explicitly acknowledge
 that 2024 source evidence is now observed.
 
+## Retired V1 2024 capture workflow
+
+After the audited V1 input-block closeout, the manual workflow:
+
+`.github/workflows/capture-historical-research-snapshot-v1-2024.yml`
+
+is retired and removed from the active repository.
+
+This retirement does **not** delete or invalidate historical evidence.
+
+The canonical preserved V1 attempt remains:
+
+- run: `36508377627`
+- artifact ID: `11008470975`
+- artifact ZIP SHA-256:
+  `b41e934b26952100e7e056a56114dc81df6bbe77f5c787f28b75b646ae7ea544`
+
+V1 must not expose a new 2024 provider-dispatch path after its status became
+`HISTORICAL_VALIDATION_INPUT_BLOCKED`.
+
+Any new provider work belongs to a separately versioned research path.
+
 ## Future research path after V1 input block
 
 Historical Validation V1 is closed as:
