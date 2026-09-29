@@ -802,6 +802,27 @@ acknowledges the observed V1 source gaps and this V2 cross-endpoint calibration 
 
 2024 model-performance evidence remains unobserved.
 
+## Future research path after V2 source rejection
+
+Historical Source Resolution & Confirmation V2 is closed as:
+
+`HISTORICAL_V2_SOURCE_EQUIVALENCE_REJECTED`
+
+Future work must not relax the V2 equivalence tolerance, remap the rejected
+`/game/box/advanced` source, or rerun V2 as though the calibration evidence were
+unseen.
+
+The separately versioned continuation is frozen in:
+
+[`HISTORICAL_SOURCE_RESILIENT_CONFIRMATION_V3_CONTRACT.md`](./HISTORICAL_SOURCE_RESILIENT_CONFIRMATION_V3_CONTRACT.md)
+
+V3 returns to the original `/stats/game/advanced` source family and treats unresolved
+historical source gaps explicitly in the feature/model contract.
+
+2024 model-performance evidence remains unobserved.
+
+2025 remains locked.
+
 ## Versioning
 
 Any change to these items requires a new contract version:
