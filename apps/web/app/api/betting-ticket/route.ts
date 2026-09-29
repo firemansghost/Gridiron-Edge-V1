@@ -32,9 +32,11 @@ import {
   type MarketLineObservation,
 } from '@/lib/market-line-snapshot';
 import {
+  buildBettingTicketPriority,
   classifyBettingTicketWager,
   formatTicketPrice,
   type BettingTicketBucket,
+  type BettingTicketOperatorTier,
 } from '@/lib/betting-ticket';
 
 function currentPriceForWager(
@@ -102,6 +104,13 @@ function bucketOrder(bucket: BettingTicketBucket): number {
   if (bucket === 'bet') return 0;
   if (bucket === 'watch') return 1;
   return 2;
+}
+
+function operatorTierOrder(tier: BettingTicketOperatorTier): number {
+  if (tier === 'primary') return 0;
+  if (tier === 'secondary') return 1;
+  if (tier === 'alternate') return 2;
+  return 3;
 }
 
 function ticketItem(
@@ -222,8 +231,22 @@ export async function GET(request: NextRequest) {
             watch: 'Current A/B value outside the strict BET NOW filter',
             pass: 'Current C/no qualifying value, unavailable market, or kickoff gate',
             playableTo: 'B-grade threshold from frozen persisted modelPrice',
+          primary: 'Operator priority only: preferred BET NOW expression is at least 2x the existing A-grade floor',
+          secondary: 'BET NOW remains valid, but current cushion is below 2x A',
+          alternate: 'Additional same-game BET NOW expression; avoid accidental double exposure',
           },
-          summary: { total: 0, bet: 0, watch: 0, pass: 0, freshMarket: 0, staleMarket: 0, unavailableMarket: 0 },
+          summary: {
+            total: 0,
+            bet: 0,
+            watch: 0,
+            pass: 0,
+            primary: 0,
+            secondary: 0,
+            alternate: 0,
+            freshMarket: 0,
+            staleMarket: 0,
+            unavailableMarket: 0,
+          },
           officialSummary,
           items: [],
         },
@@ -272,23 +295,55 @@ export async function GET(request: NextRequest) {
     });
 
     const nowIso = new Date().toISOString();
-    const items = games
-      .flatMap((game) =>
-        game.markets.map((wager) =>
-          ticketItem(
-            game,
-            wager,
-            marketSelections.get(game.gameId) ?? null,
-            nowIso
-          )
+    const rawItems = games.flatMap((game) =>
+      game.markets.map((wager) =>
+        ticketItem(
+          game,
+          wager,
+          marketSelections.get(game.gameId) ?? null,
+          nowIso
         )
       )
+    );
+
+    const priority = buildBettingTicketPriority(
+      rawItems.map((item) => ({
+        betId: item.betId,
+        gameId: item.gameId,
+        bucket: item.bucket,
+        marketType: item.marketType,
+        currentEdgeOrValue: item.currentEdgeOrValue,
+      }))
+    );
+
+    const items = rawItems
+      .map((item) => ({
+        ...item,
+        ...(priority.get(item.betId) ?? {
+          operatorTier: null,
+          strengthMultiple: null,
+          priorityReason: null,
+        }),
+      }))
       .sort((a, b) => {
         const bucket = bucketOrder(a.bucket) - bucketOrder(b.bucket);
         if (bucket !== 0) return bucket;
+
+        if (a.bucket === 'bet' && b.bucket === 'bet') {
+          const tier =
+            operatorTierOrder(a.operatorTier) -
+            operatorTierOrder(b.operatorTier);
+          if (tier !== 0) return tier;
+        }
+
         const kickoff =
           new Date(a.kickoffIso).getTime() - new Date(b.kickoffIso).getTime();
         if (kickoff !== 0) return kickoff;
+
+        const aStrength = a.strengthMultiple ?? -Infinity;
+        const bStrength = b.strengthMultiple ?? -Infinity;
+        if (bStrength !== aStrength) return bStrength - aStrength;
+
         const market = a.marketType.localeCompare(b.marketType);
         if (market !== 0) return market;
         return a.pickLabel.localeCompare(b.pickLabel);
@@ -298,6 +353,9 @@ export async function GET(request: NextRequest) {
       (acc, item) => {
         acc.total += 1;
         acc[item.bucket] += 1;
+        if (item.operatorTier === 'primary') acc.primary += 1;
+        if (item.operatorTier === 'secondary') acc.secondary += 1;
+        if (item.operatorTier === 'alternate') acc.alternate += 1;
         if (item.marketAgeMinutes === null) {
           acc.unavailableMarket += 1;
         } else if (item.marketAgeMinutes > 180) {
@@ -312,6 +370,9 @@ export async function GET(request: NextRequest) {
         bet: 0,
         watch: 0,
         pass: 0,
+        primary: 0,
+        secondary: 0,
+        alternate: 0,
         freshMarket: 0,
         staleMarket: 0,
         unavailableMarket: 0,

@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+  buildBettingTicketPriority,
   classifyBettingTicketWager,
   probabilityToAmerican,
   ticketCurrentEdge,
@@ -124,6 +125,99 @@ describe('Betting Ticket price/value math', () => {
   });
 });
 
+describe('Betting Ticket operator priority overlay', () => {
+  it('promotes preferred >=2x A expressions to Primary', () => {
+    const result = buildBettingTicketPriority([
+      {
+        betId: 'a',
+        gameId: 'g1',
+        bucket: 'bet',
+        marketType: 'spread',
+        currentEdgeOrValue: 8,
+      },
+      {
+        betId: 'b',
+        gameId: 'g2',
+        bucket: 'bet',
+        marketType: 'moneyline',
+        currentEdgeOrValue: 20,
+      },
+    ]);
+
+    expect(result.get('a')).toMatchObject({
+      operatorTier: 'primary',
+      strengthMultiple: 2,
+    });
+    expect(result.get('b')).toMatchObject({
+      operatorTier: 'primary',
+      strengthMultiple: 2,
+    });
+  });
+
+  it('keeps BET NOW below 2x A on the Secondary card', () => {
+    const result = buildBettingTicketPriority([
+      {
+        betId: 'a',
+        gameId: 'g1',
+        bucket: 'bet',
+        marketType: 'spread',
+        currentEdgeOrValue: 7.9,
+      },
+    ]);
+
+    expect(result.get('a')).toMatchObject({
+      operatorTier: 'secondary',
+      strengthMultiple: 1.975,
+    });
+  });
+
+  it('keeps only the strongest normalized BET NOW expression on the main same-game card', () => {
+    const result = buildBettingTicketPriority([
+      {
+        betId: 'ml',
+        gameId: 'same-game',
+        bucket: 'bet',
+        marketType: 'moneyline',
+        currentEdgeOrValue: 35,
+      },
+      {
+        betId: 'spread',
+        gameId: 'same-game',
+        bucket: 'bet',
+        marketType: 'spread',
+        currentEdgeOrValue: 11.2,
+      },
+    ]);
+
+    expect(result.get('ml')?.operatorTier).toBe('primary');
+    expect(result.get('ml')?.strengthMultiple).toBeCloseTo(3.5, 8);
+    expect(result.get('spread')?.operatorTier).toBe('alternate');
+    expect(result.get('spread')?.priorityReason).toMatch(/Same-game BET NOW exposure/);
+  });
+
+  it('does not assign priority tiers to WATCH or PASS rows', () => {
+    const result = buildBettingTicketPriority([
+      {
+        betId: 'watch',
+        gameId: 'g1',
+        bucket: 'watch',
+        marketType: 'spread',
+        currentEdgeOrValue: 8,
+      },
+      {
+        betId: 'pass',
+        gameId: 'g2',
+        bucket: 'pass',
+        marketType: 'moneyline',
+        currentEdgeOrValue: 20,
+      },
+    ]);
+
+    expect(result.get('watch')?.operatorTier).toBeNull();
+    expect(result.get('pass')?.operatorTier).toBeNull();
+  });
+});
+
 describe('Betting Ticket operator buckets', () => {
   const base = {
     marketType: 'spread',
@@ -230,6 +324,7 @@ describe('Betting Ticket read-only product boundary', () => {
     expect(route).toContain('prisma.marketLine.findMany');
     expect(route).toContain('indexGameMarketSelections');
     expect(route).toContain('classifyBettingTicketWager');
+    expect(route).toContain('buildBettingTicketPriority');
   });
 
   it('is GET/read-only and does not recalculate or persist a model', () => {
@@ -253,6 +348,10 @@ describe('Betting Ticket read-only product boundary', () => {
     expect(page).toContain('BET NOW');
     expect(page).toContain('WATCH');
     expect(page).toContain('PASS / NO CHASE');
+    expect(page).toContain('Primary Card');
+    expect(page).toContain('Secondary Plays');
+    expect(page).toContain('Correlated / Same-Game Alternates');
+    expect(page).toContain('operator ranking only');
     expect(page).toContain('Market freshness guard active');
     expect(page).toContain('older than 3 hours');
     expect(page).toContain('View locked Official Card');

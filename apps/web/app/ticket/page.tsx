@@ -39,6 +39,9 @@ interface TicketItem {
   bucket: TicketBucket;
   reason: string;
   actionLabel: string;
+  operatorTier: 'primary' | 'secondary' | 'alternate' | null;
+  strengthMultiple: number | null;
+  priorityReason: string | null;
 }
 
 interface TicketResponse {
@@ -51,12 +54,18 @@ interface TicketResponse {
     watch: string;
     pass: string;
     playableTo: string;
+    primary: string;
+    secondary: string;
+    alternate: string;
   };
   summary: {
     total: number;
     bet: number;
     watch: number;
     pass: number;
+    primary: number;
+    secondary: number;
+    alternate: number;
     freshMarket: number;
     staleMarket: number;
     unavailableMarket: number;
@@ -220,6 +229,89 @@ function TicketCard({ item }: { item: TicketItem }) {
   );
 }
 
+function BetNowSection({
+  primary,
+  secondary,
+  alternates,
+}: {
+  primary: TicketItem[];
+  secondary: TicketItem[];
+  alternates: TicketItem[];
+}) {
+  return (
+    <section>
+      <h2 className="text-xl font-bold text-green-800">
+        BET NOW ({primary.length + secondary.length + alternates.length})
+      </h2>
+      <p className="text-sm text-gray-600">
+        All rows still satisfy the strict BET NOW rule. The priority overlay only compresses
+        the operator card; it does not change Core V1 grade or stake.
+      </p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 mb-5">
+        <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-green-800">Primary Card</div>
+          <div className="text-2xl font-bold text-green-900">{primary.length}</div>
+          <div className="text-xs text-green-800 mt-1">Preferred game expression with ≥2× the existing A-grade floor.</div>
+        </div>
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-blue-800">Secondary Plays</div>
+          <div className="text-2xl font-bold text-blue-900">{secondary.length}</div>
+          <div className="text-xs text-blue-800 mt-1">Still BET NOW, but below the 2× A operator-priority cutoff.</div>
+        </div>
+        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-700">Alternates</div>
+          <div className="text-2xl font-bold text-slate-900">{alternates.length}</div>
+          <div className="text-xs text-slate-700 mt-1">Same-game duplicate exposure; use intentionally, not accidentally.</div>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-base font-bold text-green-900">Primary Card</h3>
+        {primary.length === 0 ? (
+          <div className="bg-white border border-gray-200 rounded-lg p-4 text-sm text-gray-600">
+            No current BET NOW wager clears the Primary Card cutoff.
+          </div>
+        ) : (
+          primary.map((item) => <TicketCard key={item.betId} item={item} />)
+        )}
+      </div>
+
+      <div className="space-y-3 mt-6">
+        <h3 className="text-base font-bold text-blue-900">Secondary Plays</h3>
+        {secondary.length === 0 ? (
+          <div className="bg-white border border-gray-200 rounded-lg p-4 text-sm text-gray-600">
+            No current secondary BET NOW plays.
+          </div>
+        ) : (
+          secondary.map((item) => <TicketCard key={item.betId} item={item} />)
+        )}
+      </div>
+
+      {alternates.length > 0 && (
+        <details className="mt-6 group">
+          <summary className="cursor-pointer list-none flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-bold text-slate-800">
+                Correlated / Same-Game Alternates ({alternates.length})
+              </h3>
+              <p className="text-sm text-gray-600">
+                These also qualify BET NOW, but another market from the same game has the stronger
+                normalized A-grade cushion.
+              </p>
+            </div>
+            <span className="text-sm font-medium text-gray-500 group-open:hidden">Show</span>
+            <span className="text-sm font-medium text-gray-500 hidden group-open:inline">Hide</span>
+          </summary>
+          <div className="space-y-3 mt-3">
+            {alternates.map((item) => <TicketCard key={item.betId} item={item} />)}
+          </div>
+        </details>
+      )}
+    </section>
+  );
+}
+
 function TicketSection({
   bucket,
   items,
@@ -316,7 +408,9 @@ export default function BettingTicketPage() {
 
   const groups = useMemo(
     () => ({
-      bet: filtered.filter((item) => item.bucket === 'bet'),
+      primary: filtered.filter((item) => item.bucket === 'bet' && item.operatorTier === 'primary'),
+      secondary: filtered.filter((item) => item.bucket === 'bet' && item.operatorTier === 'secondary'),
+      alternate: filtered.filter((item) => item.bucket === 'bet' && item.operatorTier === 'alternate'),
       watch: filtered.filter((item) => item.bucket === 'watch'),
       pass: filtered.filter((item) => item.bucket === 'pass'),
     }),
@@ -428,6 +522,10 @@ export default function BettingTicketPage() {
                 <div className="mt-1 text-blue-800">
                   “Playable to” is the B-grade threshold calculated from the frozen persisted model price.
                 </div>
+                <div className="mt-2 border-t border-blue-200 pt-2">
+                  <span className="font-semibold">Primary Card overlay:</span> {data.policy.primary}. {data.policy.alternate}.
+                  This is an operator ranking only—not a new model grade, confidence score, or stake change.
+                </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-2 mb-6">
@@ -461,7 +559,11 @@ export default function BettingTicketPage() {
               </div>
 
               <div className="space-y-8">
-                <TicketSection bucket="bet" items={groups.bet} />
+                <BetNowSection
+                  primary={groups.primary}
+                  secondary={groups.secondary}
+                  alternates={groups.alternate}
+                />
                 <TicketSection bucket="watch" items={groups.watch} />
                 <TicketSection bucket="pass" items={groups.pass} collapse />
               </div>

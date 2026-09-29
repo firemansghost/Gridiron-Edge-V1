@@ -16,6 +16,7 @@ import { americanToProb } from './market-line-helpers';
 
 export type BettingTicketBucket = 'bet' | 'watch' | 'pass';
 export type BettingTicketGrade = 'A' | 'B' | 'C' | null;
+export type BettingTicketOperatorTier = 'primary' | 'secondary' | 'alternate' | null;
 
 export const BETTING_TICKET_SPREAD_TOTAL_A = 4.0;
 export const BETTING_TICKET_SPREAD_TOTAL_B = 3.0;
@@ -24,6 +25,12 @@ export const BETTING_TICKET_SPREAD_TOTAL_C = 0.1;
 export const BETTING_TICKET_ML_A = 10.0;
 export const BETTING_TICKET_ML_B = 5.0;
 export const BETTING_TICKET_ML_C = 1.0;
+
+/**
+ * Operator-priority overlay only. This does not change Core V1 grade or stake.
+ * "Primary" means the current value cushion is at least 2x the existing A-grade floor.
+ */
+export const BETTING_TICKET_PRIMARY_A_MULTIPLE = 2.0;
 
 const EPS = 1e-9;
 const KICKOFF_GATE_MS = 30 * 60 * 1000;
@@ -128,6 +135,107 @@ export function ticketGrade(
   }
 
   return null;
+}
+
+export function ticketAStrengthMultiple(
+  marketType: string,
+  edgeOrValue: number | null
+): number | null {
+  if (edgeOrValue === null || !Number.isFinite(edgeOrValue)) return null;
+  if (marketType === 'moneyline') return edgeOrValue / BETTING_TICKET_ML_A;
+  if (marketType === 'spread' || marketType === 'total') {
+    return edgeOrValue / BETTING_TICKET_SPREAD_TOTAL_A;
+  }
+  return null;
+}
+
+export interface BettingTicketPriorityInput {
+  betId: string;
+  gameId: string;
+  bucket: BettingTicketBucket;
+  marketType: string;
+  currentEdgeOrValue: number | null;
+}
+
+export interface BettingTicketPriorityResult {
+  operatorTier: BettingTicketOperatorTier;
+  strengthMultiple: number | null;
+  priorityReason: string | null;
+}
+
+/**
+ * Builds a compact operator hierarchy without changing model grade/stake.
+ *
+ * - one preferred BET NOW expression per game
+ * - Primary: preferred expression is >= 2x the existing A-grade floor
+ * - Secondary: preferred expression remains BET NOW but is < 2x A
+ * - Alternate: another BET NOW market on a game already represented above
+ */
+export function buildBettingTicketPriority(
+  items: BettingTicketPriorityInput[]
+): Map<string, BettingTicketPriorityResult> {
+  const out = new Map<string, BettingTicketPriorityResult>();
+
+  for (const item of items) {
+    out.set(item.betId, {
+      operatorTier: null,
+      strengthMultiple: ticketAStrengthMultiple(
+        item.marketType,
+        item.currentEdgeOrValue
+      ),
+      priorityReason: null,
+    });
+  }
+
+  const byGame = new Map<string, BettingTicketPriorityInput[]>();
+  for (const item of items) {
+    if (item.bucket !== 'bet') continue;
+    const group = byGame.get(item.gameId) ?? [];
+    group.push(item);
+    byGame.set(item.gameId, group);
+  }
+
+  byGame.forEach((group) => {
+    const ranked = [...group].sort((a, b) => {
+      const aStrength =
+        ticketAStrengthMultiple(a.marketType, a.currentEdgeOrValue) ?? -Infinity;
+      const bStrength =
+        ticketAStrengthMultiple(b.marketType, b.currentEdgeOrValue) ?? -Infinity;
+      if (bStrength !== aStrength) return bStrength - aStrength;
+      return a.betId.localeCompare(b.betId);
+    });
+
+    ranked.forEach((item, index) => {
+      const strengthMultiple = ticketAStrengthMultiple(
+        item.marketType,
+        item.currentEdgeOrValue
+      );
+
+      if (index > 0) {
+        out.set(item.betId, {
+          operatorTier: 'alternate',
+          strengthMultiple,
+          priorityReason:
+            'Same-game BET NOW exposure; keep one preferred expression on the main card unless intentionally doubling exposure.',
+        });
+        return;
+      }
+
+      const isPrimary =
+        strengthMultiple !== null &&
+        strengthMultiple >= BETTING_TICKET_PRIMARY_A_MULTIPLE;
+
+      out.set(item.betId, {
+        operatorTier: isPrimary ? 'primary' : 'secondary',
+        strengthMultiple,
+        priorityReason: isPrimary
+          ? 'Current edge/value cushion is at least 2x the existing A-grade floor.'
+          : 'Still BET NOW, but current edge/value cushion is below 2x the A-grade floor.',
+      });
+    });
+  });
+
+  return out;
 }
 
 /**
