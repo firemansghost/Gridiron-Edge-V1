@@ -5,6 +5,7 @@ on:
     paths:
       - 'research/historical/HISTORICAL_MODEL_DEVELOPMENT_TUNING_PROTOCOL_V1.md'
       - 'research/historical/HISTORICAL_VALIDATION_V1_CONTRACT.md'
+      - 'research/historical/HISTORICAL_SOURCE_RESOLUTION_CONFIRMATION_V2_CONTRACT.md'
       - 'apps/jobs/src/research/historical-model-development-v1.ts'
       - 'apps/jobs/run-historical-model-development-v1.ts'
       - 'apps/jobs/__tests__/historical-model-development-v1.test.ts'
