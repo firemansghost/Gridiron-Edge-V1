@@ -15,7 +15,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { PrismaClient } from '@prisma/client';
+import { LineType, PrismaClient } from '@prisma/client';
 import {
   BETTING_TICKET_ODDS_REFRESH_STALE_MINUTES,
   planBettingTicketOddsRefresh,
@@ -114,7 +114,7 @@ async function main(): Promise<void> {
             where: {
               gameId: { in: gameIds },
               timestamp: { gte: recentCutoff },
-              lineType: { in: ['spread', 'total', 'moneyline'] },
+              lineType: { in: [LineType.spread, LineType.total, LineType.moneyline] },
             },
             select: {
               gameId: true,
