@@ -1,0 +1,74 @@
+name: Test Historical Model V3
+
+on:
+  pull_request:
+    paths:
+      - 'research/historical/HISTORICAL_SOURCE_RESILIENT_CONFIRMATION_V3_CONTRACT.md'
+      - 'apps/jobs/src/research/historical-model-v3.ts'
+      - 'apps/jobs/run-historical-model-v3-backcompat.ts'
+      - 'apps/jobs/__tests__/historical-model-v3.test.ts'
+      - '.github/workflows/build-historical-model-v3-backcompat.yml'
+      - '.github/workflows/test-historical-model-v3.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: TypeScript smoke compile
+        run: |
+          npx tsc --noEmit \
+            --module commonjs \
+            --moduleResolution node \
+            --target ES2019 \
+            --esModuleInterop \
+            --skipLibCheck \
+            apps/jobs/src/research/historical-model-development-v1.ts \
+            apps/jobs/src/research/historical-model-v3.ts \
+            apps/jobs/run-historical-model-v3-backcompat.ts
+
+      - name: Compile and start offline V3 runtime without artifacts
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/historical-model-v3
+          npx tsc --module commonjs \
+            --moduleResolution node \
+            --target ES2019 \
+            --esModuleInterop \
+            --skipLibCheck \
+            --outDir .tmp/historical-model-v3 \
+            apps/jobs/src/research/historical-model-development-v1.ts \
+            apps/jobs/src/research/historical-model-v3.ts \
+            apps/jobs/run-historical-model-v3-backcompat.ts
+
+          set +e
+          OUTPUT="$(node .tmp/historical-model-v3/run-historical-model-v3-backcompat.js \
+            --feature-zip .tmp/missing-feature.zip \
+            --corpus-zip .tmp/missing-corpus.zip \
+            --v1-model-zip .tmp/missing-v1.zip \
+            --confirm BUILD_HISTORICAL_MODEL_V3_BACKCOMPAT \
+            --output-dir .tmp/no-v3-output 2>&1)"
+          STATUS=$?
+          set -e
+
+          test "${STATUS}" -eq 1
+          echo "${OUTPUT}" | grep -F "[historical-v3-model] feature_zip_missing"
+
+      - name: Test Historical Model V3
+        run: npx jest apps/jobs/__tests__/historical-model-v3.test.ts --runInBand

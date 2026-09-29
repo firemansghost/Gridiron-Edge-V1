@@ -296,6 +296,31 @@ A future qualification/recovery capability must be implemented and reviewed firs
 
 The provider run then requires a separate explicit authorization.
 
+## Offline V3 candidate-build boundary
+
+The first V3 implementation slice may build and audit the development-only candidate
+without provider access or 2024/2025 reads.
+
+The guarded offline build uses the exact confirmation:
+
+`BUILD_HISTORICAL_MODEL_V3_BACKCOMPAT`
+
+It must:
+
+- execute from `refs/heads/main`;
+- require exact current `main` SHA;
+- pin the accepted Historical Feature V1 artifact;
+- pin the accepted 2022–2023 development outcome artifact;
+- pin the frozen Historical Model V1 candidate artifact;
+- make zero provider calls;
+- read zero market members;
+- read zero 2024 members;
+- read zero 2025 members;
+- perform zero DB/Prisma operations;
+- emit immutable V3 candidate and V1-vs-V3 backcompat evidence.
+
+Merging capability does not itself execute this offline build.
+
 ## Stage 2 — Historical Model V3
 
 V3 uses a new immutable identity:
