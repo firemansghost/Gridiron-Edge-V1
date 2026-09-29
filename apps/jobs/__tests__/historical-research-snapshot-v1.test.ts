@@ -309,32 +309,14 @@ describe('historical research snapshot v1', () => {
       /ODDS_API_KEY|SGO_API_KEY|VISUALCROSSING/i
     );
 
-    const workflow2024 = fs.readFileSync(
-      path.resolve(
-        process.cwd(),
-        '.github/workflows/capture-historical-research-snapshot-v1-2024.yml'
-      ),
-      'utf8'
-    );
-    expect(workflow2024).toMatch(/CFBD_API_KEY/);
-    expect(workflow2024).toMatch(/expected_main_sha/);
-    expect(workflow2024).toMatch(
-      /CAPTURE_2024_HISTORICAL_RESEARCH_SNAPSHOT_PREVIEW/
-    );
-    expect(workflow2024).toMatch(/season=2024/);
-    expect(workflow2024).toMatch(/npm ci --ignore-scripts/);
-    expect(workflow2024).toMatch(/npx tsc/);
-    expect(workflow2024).toMatch(
-      /node \.tmp\/historical-research-snapshot-v1\/capture-historical-research-snapshot-v1\.js/
-    );
-    expect(workflow2024).not.toMatch(/npx tsx/);
-    expect(workflow2024).not.toMatch(/DIRECT_URL|DATABASE_URL/);
-    expect(workflow2024).not.toMatch(
-      /npx prisma|npm run prisma|prisma migrate|prisma db/i
-    );
-    expect(workflow2024).not.toMatch(
-      /ODDS_API_KEY|SGO_API_KEY|VISUALCROSSING/i
-    );
+    expect(
+      fs.existsSync(
+        path.resolve(
+          process.cwd(),
+          '.github/workflows/capture-historical-research-snapshot-v1-2024.yml'
+        )
+      )
+    ).toBe(false);
 
     const cli = fs.readFileSync(
       path.resolve(
