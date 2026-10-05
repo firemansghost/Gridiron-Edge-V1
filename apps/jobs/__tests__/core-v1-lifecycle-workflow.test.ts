@@ -60,6 +60,8 @@ describe('2C-2J-6D-2 Core V1 lifecycle workflow security', () => {
 
   it('CLI Serializable transaction + week-tied confirmation helper', () => {
     expect(cli).toContain('Prisma.TransactionIsolationLevel.Serializable');
+    expect(cli).toContain('CORE_V1_LIFECYCLE_TRANSACTION_TIMEOUT_MS = 15_000');
+    expect(cli).toContain('timeout: CORE_V1_LIFECYCLE_TRANSACTION_TIMEOUT_MS');
     expect(cli).toContain('executeAtomicCoreV1LifecycleCommit');
     expect(pure).toContain('expectedCoreV1LifecycleConfirmation');
     expect(pure).toContain('PHASE = \'2C-2J-6D-2\'');

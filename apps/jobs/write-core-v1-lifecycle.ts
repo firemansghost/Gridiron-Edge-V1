@@ -116,6 +116,8 @@ export interface CoreV1LifecycleReadStore {
   >;
 }
 
+const CORE_V1_LIFECYCLE_TRANSACTION_TIMEOUT_MS = 15_000;
+
 export interface CoreV1LifecycleWriteDeps {
   transaction: <T>(
     fn: (txStore: CoreV1LifecycleReadStore & {
@@ -128,7 +130,10 @@ export interface CoreV1LifecycleWriteDeps {
         }>
       ) => Promise<{ upserted: number }>;
     }) => Promise<T>,
-    options?: { isolationLevel: Prisma.TransactionIsolationLevel }
+    options?: {
+      isolationLevel: Prisma.TransactionIsolationLevel;
+      timeout?: number;
+    }
   ) => Promise<T>;
 }
 
@@ -295,6 +300,8 @@ export function createPrismaCoreV1LifecycleWriteDeps(
           isolationLevel:
             options?.isolationLevel ??
             Prisma.TransactionIsolationLevel.Serializable,
+          timeout:
+            options?.timeout ?? CORE_V1_LIFECYCLE_TRANSACTION_TIMEOUT_MS,
         }
       );
     },
@@ -439,7 +446,10 @@ export async function runCoreV1Lifecycle(options: {
           });
           return outcome;
         },
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+        {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+          timeout: CORE_V1_LIFECYCLE_TRANSACTION_TIMEOUT_MS,
+        }
       );
 
       result = {
@@ -463,6 +473,7 @@ export async function runCoreV1Lifecycle(options: {
       }
       writeReport(options.reportPath, result, execution, verification, {
         isolationLevel: 'Serializable',
+        transactionTimeoutMs: CORE_V1_LIFECYCLE_TRANSACTION_TIMEOUT_MS,
         transactionalVerification: true,
       });
       console.log('mutationsInvoked=true');
@@ -486,6 +497,7 @@ export async function runCoreV1Lifecycle(options: {
         writeReport(options.reportPath, result, execution, verification, {
           rolledBack: true,
           isolationLevel: 'Serializable',
+          transactionTimeoutMs: CORE_V1_LIFECYCLE_TRANSACTION_TIMEOUT_MS,
           transactionalVerificationFailed: verificationFailed,
         });
       }
