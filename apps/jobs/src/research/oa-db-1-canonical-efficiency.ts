@@ -276,6 +276,21 @@ export function buildOaDb1PlannedRows(input: {
     }
 
     const providerGameId = String(raw.providerGameId);
+    const frozenSource = FROZEN_SOURCE_BY_SEASON.get(raw.season);
+    if (
+      !frozenSource ||
+      raw.sourceSeason !== raw.season ||
+      String(raw.sourceArtifactId) !== frozenSource.artifactId ||
+      text(raw.sourceArtifactZipSha256) !== frozenSource.zipSha256 ||
+      text(raw.sourceEndpoint) !== '/stats/game/advanced' ||
+      text(raw.sourceRawMember) !== 'raw/003-advanced-game-stats.json'
+    ) {
+      blockers.push(
+        `source provenance mismatch: ${raw.season}/${providerGameId}/${raw.team}`
+      );
+      continue;
+    }
+
     const teamName = text(raw.team);
     const opponentName = text(raw.opponent);
     const homeName = text(raw.homeTeam);
