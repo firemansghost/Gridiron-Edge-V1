@@ -1,0 +1,175 @@
+name: Build OA-DATA-1 Canonical Historical Archive (Manual, Guarded)
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_main_sha:
+        description: 'Exact current main SHA'
+        required: true
+        type: string
+      confirmation:
+        description: 'Type BUILD_OA_DATA_1_CANONICAL_HISTORICAL_ARCHIVE_V1 exactly'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: oa-data-1-canonical-historical-archive
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      SOURCE_2022_ARTIFACT_ID: '10988661299'
+      SOURCE_2023_ARTIFACT_ID: '10990949531'
+      SOURCE_2024_ARTIFACT_ID: '11008470975'
+      SOURCE_2025_ARTIFACT_ID: '10973848747'
+      RESOLUTION_2024_ARTIFACT_ID: '11043269261'
+      SOURCE_2022_SHA256: '7a5b76b681b0ef1873853956cdc5b39cb3581675cf84e6ca6f972141ea2dfe99'
+      SOURCE_2023_SHA256: '479d5dc4481a6f7ab7b2c034976b8845814121cfc0f11c0b18a8166c61fc5bd4'
+      SOURCE_2024_SHA256: 'b41e934b26952100e7e056a56114dc81df6bbe77f5c787f28b75b646ae7ea544'
+      SOURCE_2025_SHA256: 'fda9a410faf3f648de1135a7ed841a497d947d844978513e0bfcd88aea9d0b22'
+      RESOLUTION_2024_SHA256: 'c0c307af5b008b0e35baabc89f5ea743dae496991dcb83ead679478b6b109444'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Source SHA guard
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          echo "ACTUAL_SHA=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+          echo "actual_sha=${ACTUAL_SHA}"
+          echo "expected_main_sha=${EXPECTED_MAIN_SHA}"
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Refusing OA-DATA-1 build outside refs/heads/main."
+            exit 1
+          fi
+          if [ -z "${EXPECTED_MAIN_SHA}" ] || [ "${ACTUAL_SHA}" != "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing OA-DATA-1 build because main SHA does not match expected_main_sha."
+            exit 1
+          fi
+          echo "Source SHA guard passed."
+
+      - name: Preflight
+        env:
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          if [ "${INPUT_CONFIRMATION}" != "BUILD_OA_DATA_1_CANONICAL_HISTORICAL_ARCHIVE_V1" ]; then
+            echo "::error::Exact OA-DATA-1 build confirmation is required."
+            exit 1
+          fi
+          command -v curl >/dev/null
+          command -v unzip >/dev/null
+          command -v sha256sum >/dev/null
+          echo "mode=ARTIFACT_ONLY_CANONICAL_HISTORICAL_ARCHIVE_BUILD"
+          echo "seasons=2022,2023,2024,2025"
+          echo "providerCalls=0"
+          echo "databaseReads=false"
+          echo "databaseWrites=false"
+          echo "prismaInvoked=false"
+          echo "marketReads=0"
+          echo "outcomeFieldsUsed=false"
+          echo "modelFit=false"
+          echo "modelPredictionsComputed=false"
+          echo "modelPerformanceComputed=false"
+          echo "holdout2025PerformanceReads=0"
+
+      - name: Download frozen GitHub source artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p .research-inputs
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts"
+
+          curl --fail --location --silent --show-error             -H "Authorization: Bearer ${GH_TOKEN}"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "${API}/${SOURCE_2022_ARTIFACT_ID}/zip"             -o .research-inputs/historical-2022.zip
+
+          curl --fail --location --silent --show-error             -H "Authorization: Bearer ${GH_TOKEN}"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "${API}/${SOURCE_2023_ARTIFACT_ID}/zip"             -o .research-inputs/historical-2023.zip
+
+          curl --fail --location --silent --show-error             -H "Authorization: Bearer ${GH_TOKEN}"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "${API}/${SOURCE_2024_ARTIFACT_ID}/zip"             -o .research-inputs/historical-2024.zip
+
+          curl --fail --location --silent --show-error             -H "Authorization: Bearer ${GH_TOKEN}"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "${API}/${SOURCE_2025_ARTIFACT_ID}/zip"             -o .research-inputs/historical-2025.zip
+
+          curl --fail --location --silent --show-error             -H "Authorization: Bearer ${GH_TOKEN}"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "${API}/${RESOLUTION_2024_ARTIFACT_ID}/zip"             -o .research-inputs/historical-2024-resolution.zip
+
+      - name: Verify frozen ZIP hashes
+        run: |
+          set -euo pipefail
+          echo "${SOURCE_2022_SHA256}  .research-inputs/historical-2022.zip" | sha256sum -c -
+          echo "${SOURCE_2023_SHA256}  .research-inputs/historical-2023.zip" | sha256sum -c -
+          echo "${SOURCE_2024_SHA256}  .research-inputs/historical-2024.zip" | sha256sum -c -
+          echo "${SOURCE_2025_SHA256}  .research-inputs/historical-2025.zip" | sha256sum -c -
+          echo "${RESOLUTION_2024_SHA256}  .research-inputs/historical-2024-resolution.zip" | sha256sum -c -
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Compile OA-DATA-1 builder
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/oa-data-1
+          npx tsc --module commonjs             --moduleResolution node             --target ES2019             --esModuleInterop             --skipLibCheck             --outDir .tmp/oa-data-1             apps/jobs/src/research/oa-data-1-canonical-historical-archive.ts             apps/jobs/build-oa-data-1-canonical-historical-archive.ts
+
+      - name: Build OA-DATA-1 canonical archive
+        env:
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          OUT="reports/oa-data-1-canonical-historical-archive/${GITHUB_RUN_ID}"
+          node .tmp/oa-data-1/build-oa-data-1-canonical-historical-archive.js             --source-2022-zip .research-inputs/historical-2022.zip             --source-2023-zip .research-inputs/historical-2023.zip             --source-2024-zip .research-inputs/historical-2024.zip             --source-2025-zip .research-inputs/historical-2025.zip             --resolution-2024-zip .research-inputs/historical-2024-resolution.zip             --confirm "${INPUT_CONFIRMATION}"             --output-dir "${OUT}"
+
+      - name: Upload immutable OA-DATA-1 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: oa-data-1-canonical-historical-archive-v1-${{ github.run_id }}
+          path: reports/oa-data-1-canonical-historical-archive/**
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 6
+          overwrite: false
+          include-hidden-files: false
+
+      - name: Summary
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          echo "==================================================="
+          echo "OA-DATA-1 CANONICAL HISTORICAL ARCHIVE"
+          echo "==================================================="
+          echo "status=${JOB_STATUS}"
+          echo "sourceSha=${ACTUAL_SHA:-unavailable}"
+          echo "mode=ARTIFACT_ONLY_CANONICAL_HISTORICAL_ARCHIVE_BUILD"
+          echo "source2022ArtifactId=${SOURCE_2022_ARTIFACT_ID}"
+          echo "source2023ArtifactId=${SOURCE_2023_ARTIFACT_ID}"
+          echo "source2024ArtifactId=${SOURCE_2024_ARTIFACT_ID}"
+          echo "source2025ArtifactId=${SOURCE_2025_ARTIFACT_ID}"
+          echo "resolution2024ArtifactId=${RESOLUTION_2024_ARTIFACT_ID}"
+          echo "providerCalls=0"
+          echo "databaseReads=false"
+          echo "databaseWrites=false"
+          echo "prismaInvoked=false"
+          echo "marketReads=0"
+          echo "outcomeFieldsUsed=false"
+          echo "modelFit=false"
+          echo "modelPredictionsComputed=false"
+          echo "modelPerformanceComputed=false"
+          echo "holdout2025PerformanceReads=0"
+          echo "==================================================="
