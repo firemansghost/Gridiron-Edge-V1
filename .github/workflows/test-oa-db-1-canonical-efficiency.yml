@@ -1,0 +1,47 @@
+name: Test OA-DB-1 Canonical Efficiency Preview
+
+on:
+  pull_request:
+    paths:
+      - 'research/opponent-adjustment/OA_DB_1_CANONICAL_EFFICIENCY_PERSISTENCE_V1_CONTRACT.md'
+      - 'prisma/schema.prisma'
+      - 'prisma/migrations/20261006194500_add_canonical_team_game_efficiency_v1/**'
+      - 'apps/jobs/src/research/oa-db-1-canonical-efficiency.ts'
+      - 'apps/jobs/preview-oa-db-1-canonical-efficiency.ts'
+      - 'apps/jobs/__tests__/oa-db-1-canonical-efficiency.test.ts'
+      - '.github/workflows/test-oa-db-1-canonical-efficiency.yml'
+      - '.github/workflows/preview-oa-db-1-canonical-efficiency.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Generate Prisma client
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/db
+          DIRECT_URL: postgresql://user:pass@localhost:5432/db
+        run: npx prisma generate
+
+      - name: TypeScript smoke compile
+        run: |
+          npx tsc --noEmit             --module commonjs             --moduleResolution node             --target ES2019             --esModuleInterop             --skipLibCheck             apps/jobs/src/research/oa-db-1-canonical-efficiency.ts             apps/jobs/preview-oa-db-1-canonical-efficiency.ts
+
+      - name: Test OA-DB-1 preview planner
+        run: npx jest apps/jobs/__tests__/oa-db-1-canonical-efficiency.test.ts --runInBand
