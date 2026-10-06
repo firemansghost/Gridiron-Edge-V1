@@ -114,6 +114,46 @@ model TeamGameStat {
   @@map("team_game_stats")
 }
 
+
+model CanonicalTeamGameEfficiencyV1 {
+  season                   Int
+  providerGameId           String   @map("provider_game_id")
+  providerWeek             Int      @map("provider_week")
+  startDate                DateTime? @map("start_date")
+  neutralSite              Boolean? @map("neutral_site")
+  homeTeamNameCfbd         String   @map("home_team_name_cfbd")
+  awayTeamNameCfbd         String   @map("away_team_name_cfbd")
+  teamNameCfbd             String   @map("team_name_cfbd")
+  opponentNameCfbd         String   @map("opponent_name_cfbd")
+  teamIdInternal           String   @map("team_id_internal")
+  opponentTeamIdInternal   String   @map("opponent_team_id_internal")
+  isHome                   Boolean  @map("is_home")
+  availabilityStatus       String   @map("availability_status")
+  ppaOff                   Float?   @map("ppa_off")
+  ppaDef                   Float?   @map("ppa_def")
+  successOff               Float?   @map("success_off")
+  successDef               Float?   @map("success_def")
+  sourceSeason             Int      @map("source_season")
+  sourceArtifactId         String   @map("source_artifact_id")
+  sourceArtifactZipSha256  String   @map("source_artifact_zip_sha256")
+  sourceEndpoint           String   @map("source_endpoint")
+  sourceRawMember          String   @map("source_raw_member")
+  sourceMethod             String   @map("source_method")
+  archiveContractVersion   String   @map("archive_contract_version")
+  archiveRunId             String   @map("archive_run_id")
+  archiveArtifactId        String   @map("archive_artifact_id")
+  archiveArtifactZipSha256 String   @map("archive_artifact_zip_sha256")
+  recordFingerprintSha256  String   @map("record_fingerprint_sha256")
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@id([season, providerGameId, teamIdInternal], map: "team_game_efficiency_canonical_v1_pkey")
+  @@index([season, providerWeek], map: "team_game_efficiency_canonical_v1_season_week_idx")
+  @@index([teamIdInternal, season], map: "team_game_efficiency_canonical_v1_team_season_idx")
+  @@index([availabilityStatus], map: "team_game_efficiency_canonical_v1_status_idx")
+  @@map("team_game_efficiency_canonical_v1")
+}
+
 model Recruiting {
   id              String   @id @default(cuid())
   teamId          String   @map("team_id")
