@@ -130,14 +130,37 @@ export interface OaDb1PreviewPlan {
 }
 
 const FROZEN_COUNTS = new Map<number, {
+  games: number;
   rows: number;
   available: number;
   unavailable: number;
 }>([
-  [2022, { rows: 1468, available: 1468, unavailable: 0 }],
-  [2023, { rows: 1500, available: 1500, unavailable: 0 }],
-  [2024, { rows: 1504, available: 1496, unavailable: 8 }],
-  [2025, { rows: 1524, available: 1524, unavailable: 0 }],
+  [2022, { games: 734, rows: 1468, available: 1468, unavailable: 0 }],
+  [2023, { games: 750, rows: 1500, available: 1500, unavailable: 0 }],
+  [2024, { games: 752, rows: 1504, available: 1496, unavailable: 8 }],
+  [2025, { games: 762, rows: 1524, available: 1524, unavailable: 0 }],
+]);
+
+const FROZEN_SOURCE_BY_SEASON = new Map<number, {
+  artifactId: string;
+  zipSha256: string;
+}>([
+  [2022, {
+    artifactId: '10988661299',
+    zipSha256: '7a5b76b681b0ef1873853956cdc5b39cb3581675cf84e6ca6f972141ea2dfe99',
+  }],
+  [2023, {
+    artifactId: '10990949531',
+    zipSha256: '479d5dc4481a6f7ab7b2c034976b8845814121cfc0f11c0b18a8166c61fc5bd4',
+  }],
+  [2024, {
+    artifactId: '11008470975',
+    zipSha256: 'b41e934b26952100e7e056a56114dc81df6bbe77f5c787f28b75b646ae7ea544',
+  }],
+  [2025, {
+    artifactId: '10973848747',
+    zipSha256: 'fda9a410faf3f648de1135a7ed841a497d947d844978513e0bfcd88aea9d0b22',
+  }],
 ]);
 
 function text(value: unknown): string {
