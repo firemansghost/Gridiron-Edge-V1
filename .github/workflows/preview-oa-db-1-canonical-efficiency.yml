@@ -93,6 +93,20 @@ jobs:
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
         run: npx prisma generate
 
+      - name: Compile OA-DB-1 PREVIEW
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/oa-db-1-preview
+          npx tsc --module commonjs \
+            --moduleResolution node \
+            --target ES2019 \
+            --esModuleInterop \
+            --skipLibCheck \
+            --rootDir apps/jobs \
+            --outDir .tmp/oa-db-1-preview \
+            apps/jobs/src/research/oa-db-1-canonical-efficiency.ts \
+            apps/jobs/preview-oa-db-1-canonical-efficiency.ts
+
       - name: Run OA-DB-1 PREVIEW
         env:
           DATABASE_URL: ${{ secrets.DIRECT_URL }}
@@ -101,7 +115,10 @@ jobs:
           set -euo pipefail
           OUT="reports/oa-db-1-preview/${GITHUB_RUN_ID}"
           mkdir -p "${OUT}"
-          npx tsx apps/jobs/preview-oa-db-1-canonical-efficiency.ts             --source-zip .research-inputs/oa-data-1-accepted.zip             --report "${OUT}/report.json"             --plan "${OUT}/planned_rows.json"
+          node .tmp/oa-db-1-preview/preview-oa-db-1-canonical-efficiency.js \
+            --source-zip .research-inputs/oa-data-1-accepted.zip \
+            --report "${OUT}/report.json" \
+            --plan "${OUT}/planned_rows.json"
 
       - name: Upload OA-DB-1 PREVIEW evidence
         if: always()
