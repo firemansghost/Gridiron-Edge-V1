@@ -644,9 +644,10 @@ function writeReport(filePath: string, value: unknown): void {
 
 async function main(): Promise<void> {
   const parsed = parseOaDb1CommitArgs(process.argv.slice(2));
-  if (!parsed.ok) {
+  if (parsed.ok === false) {
     console.error(parsed.errors.join('\n'));
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
   const args = parsed.value;
 
