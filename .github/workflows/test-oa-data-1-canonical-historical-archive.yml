@@ -1,0 +1,39 @@
+name: Test OA-DATA-1 Canonical Historical Archive
+
+on:
+  pull_request:
+    paths:
+      - 'research/opponent-adjustment/OA_DATA_1_CANONICAL_HISTORICAL_TEAM_GAME_ARCHIVE_V1_CONTRACT.md'
+      - 'apps/jobs/src/research/oa-data-1-canonical-historical-archive.ts'
+      - 'apps/jobs/build-oa-data-1-canonical-historical-archive.ts'
+      - 'apps/jobs/__tests__/oa-data-1-canonical-historical-archive.test.ts'
+      - '.github/workflows/build-oa-data-1-canonical-historical-archive.yml'
+      - '.github/workflows/test-oa-data-1-canonical-historical-archive.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: TypeScript smoke compile
+        run: |
+          npx tsc --noEmit             --module commonjs             --moduleResolution node             --target ES2019             --esModuleInterop             --skipLibCheck             apps/jobs/src/research/oa-data-1-canonical-historical-archive.ts             apps/jobs/build-oa-data-1-canonical-historical-archive.ts
+
+      - name: Test OA-DATA-1 planner
+        run: npx jest apps/jobs/__tests__/oa-data-1-canonical-historical-archive.test.ts --runInBand
