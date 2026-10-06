@@ -1,0 +1,214 @@
+name: Commit OA-DB-1 Canonical Efficiency (Manual, Guarded)
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_main_sha:
+        description: 'Exact current main SHA authorized for this COMMIT'
+        required: true
+        type: string
+      reviewed_preview_run_id:
+        description: 'Reviewed OA-DB-1 PREVIEW workflow run ID from this exact main SHA'
+        required: true
+        type: string
+      reviewed_preview_artifact_id:
+        description: 'Reviewed OA-DB-1 PREVIEW artifact ID'
+        required: true
+        type: string
+      reviewed_preview_artifact_sha256:
+        description: 'SHA-256 of the reviewed PREVIEW artifact ZIP'
+        required: true
+        type: string
+      confirm:
+        description: 'Type WRITE_OA_DB_1_CANONICAL_EFFICIENCY_2022_2025 exactly'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: oa-db-1-canonical-efficiency-write
+  cancel-in-progress: false
+
+jobs:
+  commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    env:
+      OA_ARCHIVE_ARTIFACT_ID: '11436781151'
+      OA_ARCHIVE_SHA256: '0d5371f7dda6f95a14bbd4d40d7a04c442c998daa1a0e47a3459b76364631e10'
+      OA_COMMIT_CONFIRMATION: 'WRITE_OA_DB_1_CANONICAL_EFFICIENCY_2022_2025'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Source SHA guard
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          echo "ACTUAL_SHA=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+          echo "actual_sha=${ACTUAL_SHA}"
+          echo "expected_main_sha=${EXPECTED_MAIN_SHA}"
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Refusing OA-DB-1 COMMIT outside refs/heads/main."
+            exit 1
+          fi
+          if [ -z "${EXPECTED_MAIN_SHA}" ] || [ "${ACTUAL_SHA}" != "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing OA-DB-1 COMMIT because main SHA does not match expected_main_sha."
+            exit 1
+          fi
+          echo "Source SHA guard passed."
+
+      - name: COMMIT authorization and input guard
+        env:
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+          REVIEWED_PREVIEW_RUN_ID: ${{ inputs.reviewed_preview_run_id }}
+          REVIEWED_PREVIEW_ARTIFACT_ID: ${{ inputs.reviewed_preview_artifact_id }}
+          REVIEWED_PREVIEW_ARTIFACT_SHA256: ${{ inputs.reviewed_preview_artifact_sha256 }}
+        run: |
+          set -euo pipefail
+          if [ "${INPUT_CONFIRM}" != "${OA_COMMIT_CONFIRMATION}" ]; then
+            echo "::error::COMMIT requires confirm=${OA_COMMIT_CONFIRMATION}"
+            exit 1
+          fi
+          if ! printf '%s' "${REVIEWED_PREVIEW_RUN_ID}" | grep -Eq '^[0-9]+$'; then
+            echo "::error::reviewed_preview_run_id must be numeric"
+            exit 1
+          fi
+          if ! printf '%s' "${REVIEWED_PREVIEW_ARTIFACT_ID}" | grep -Eq '^[0-9]+$'; then
+            echo "::error::reviewed_preview_artifact_id must be numeric"
+            exit 1
+          fi
+          if ! printf '%s' "${REVIEWED_PREVIEW_ARTIFACT_SHA256}" | grep -Eq '^[0-9a-f]{64}$'; then
+            echo "::error::reviewed_preview_artifact_sha256 must be lowercase 64-char hex"
+            exit 1
+          fi
+          echo "confirmation=accepted"
+          echo "reviewedPreviewRunId=${REVIEWED_PREVIEW_RUN_ID}"
+          echo "reviewedPreviewArtifactId=${REVIEWED_PREVIEW_ARTIFACT_ID}"
+          echo "providerCalls=0"
+          echo "prismaMigrateInvoked=false"
+          echo "legacyTeamGameStatsWrites=false"
+          echo "gamesWrites=false"
+          echo "marketReads=0"
+          echo "outcomePerformanceReads=0"
+          echo "planned2026Mutations=0"
+
+      - name: Preflight DIRECT_URL
+        env:
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DIRECT_URL:-}" ]; then
+            echo "::error::DIRECT_URL secret is missing"
+            exit 1
+          fi
+          echo "DIRECT_URL: present (value not printed)"
+          echo "CFBD_API_KEY: not provided"
+          echo "ODDS_API_KEY: not provided"
+
+      - name: Download accepted OA-DATA-1 artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p .research-inputs
+          curl --fail --location --silent --show-error             -H "Authorization: Bearer ${GH_TOKEN}"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${OA_ARCHIVE_ARTIFACT_ID}/zip"             -o .research-inputs/oa-data-1-accepted.zip
+
+      - name: Verify accepted OA-DATA-1 artifact ZIP hash
+        run: |
+          set -euo pipefail
+          echo "${OA_ARCHIVE_SHA256}  .research-inputs/oa-data-1-accepted.zip" | sha256sum -c -
+
+      - name: Download reviewed OA-DB-1 PREVIEW artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEWED_PREVIEW_ARTIFACT_ID: ${{ inputs.reviewed_preview_artifact_id }}
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error             -H "Authorization: Bearer ${GH_TOKEN}"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${REVIEWED_PREVIEW_ARTIFACT_ID}/zip"             -o .research-inputs/reviewed-oa-db-1-preview.zip
+
+      - name: Verify reviewed PREVIEW artifact ZIP hash
+        env:
+          REVIEWED_PREVIEW_ARTIFACT_SHA256: ${{ inputs.reviewed_preview_artifact_sha256 }}
+        run: |
+          set -euo pipefail
+          echo "${REVIEWED_PREVIEW_ARTIFACT_SHA256}  .research-inputs/reviewed-oa-db-1-preview.zip" | sha256sum -c -
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Generate Prisma client
+        env:
+          DATABASE_URL: ${{ secrets.DIRECT_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: npx prisma generate
+
+      - name: Compile OA-DB-1 COMMIT writer
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/oa-db-1-commit
+          npx tsc --module commonjs             --moduleResolution node             --target ES2019             --esModuleInterop             --skipLibCheck             --rootDir apps/jobs             --outDir .tmp/oa-db-1-commit             apps/jobs/src/research/oa-db-1-canonical-efficiency.ts             apps/jobs/commit-oa-db-1-canonical-efficiency.ts
+
+      - name: Run guarded OA-DB-1 COMMIT
+        env:
+          DATABASE_URL: ${{ secrets.DIRECT_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          REVIEWED_PREVIEW_RUN_ID: ${{ inputs.reviewed_preview_run_id }}
+          REVIEWED_PREVIEW_ARTIFACT_SHA256: ${{ inputs.reviewed_preview_artifact_sha256 }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          OUT="reports/oa-db-1-commit/${GITHUB_RUN_ID}"
+          mkdir -p "${OUT}"
+          node .tmp/oa-db-1-commit/commit-oa-db-1-canonical-efficiency.js             --source-zip .research-inputs/oa-data-1-accepted.zip             --reviewed-preview-zip .research-inputs/reviewed-oa-db-1-preview.zip             --reviewed-preview-sha256 "${REVIEWED_PREVIEW_ARTIFACT_SHA256}"             --reviewed-preview-run-id "${REVIEWED_PREVIEW_RUN_ID}"             --expected-repo-sha "${EXPECTED_MAIN_SHA}"             --confirm "${INPUT_CONFIRM}"             --report "${OUT}/report.json"
+
+      - name: Upload OA-DB-1 COMMIT evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oa-db-1-canonical-efficiency-commit-${{ github.run_id }}
+          path: reports/oa-db-1-commit/**
+          if-no-files-found: warn
+          retention-days: 90
+          compression-level: 6
+          overwrite: false
+          include-hidden-files: false
+
+      - name: Summary
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          REVIEWED_PREVIEW_RUN_ID: ${{ inputs.reviewed_preview_run_id }}
+          REVIEWED_PREVIEW_ARTIFACT_ID: ${{ inputs.reviewed_preview_artifact_id }}
+        run: |
+          echo "==================================================="
+          echo "OA-DB-1 CANONICAL EFFICIENCY COMMIT"
+          echo "==================================================="
+          echo "status=${JOB_STATUS}"
+          echo "expectedMainSha=${EXPECTED_MAIN_SHA}"
+          echo "actualSha=${ACTUAL_SHA:-unavailable}"
+          echo "reviewedPreviewRunId=${REVIEWED_PREVIEW_RUN_ID}"
+          echo "reviewedPreviewArtifactId=${REVIEWED_PREVIEW_ARTIFACT_ID}"
+          echo "providerCalls=0"
+          echo "prismaMigrateInvoked=false"
+          echo "legacyTeamGameStatsWrites=false"
+          echo "gamesWrites=false"
+          echo "marketReads=0"
+          echo "outcomePerformanceReads=0"
+          echo "planned2026Mutations=0"
+          echo "==================================================="
