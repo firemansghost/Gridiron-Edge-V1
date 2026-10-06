@@ -86,6 +86,27 @@ Frozen Prisma model name:
 The table is versioned explicitly so a future incompatible semantic revision can use a
 new table/version rather than silently rewriting accepted V1 evidence.
 
+## Supabase / Data API security boundary
+
+The V1 table is created in the `public` schema for Prisma compatibility, but it is a
+research-only direct-database table.
+
+At schema deployment:
+
+- Row Level Security must be enabled on `team_game_efficiency_canonical_v1`;
+- `anon` and `authenticated` receive no table privileges;
+- V1 defines no public Data API policies;
+- research/maintenance access remains through trusted direct database credentials only.
+
+This is table-local hardening for OA-DB-1. It does not authorize or alter the separate
+project-wide RLS remediation workstream.
+
+Post-deploy verification must confirm:
+
+- `relrowsecurity=true`;
+- no `anon` or `authenticated` table privileges;
+- zero RLS policies on the table unless a later separately frozen contract authorizes one.
+
 ## Canonical source binding
 
 The only authorized initial-load source is the accepted OA-DATA-1 artifact:
