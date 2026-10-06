@@ -456,8 +456,42 @@ export function buildOaDb1PlannedRows(input: {
     );
   }
 
+  const gameGroups = new Map<string, OaDb1PlannedRow[]>();
+  for (const row of rows) {
+    const gameKey = `${row.season}|${row.providerGameId}`;
+    const gameRows = gameGroups.get(gameKey) ?? [];
+    gameRows.push(row);
+    gameGroups.set(gameKey, gameRows);
+  }
+
+  for (const [gameKey, gameRows] of gameGroups) {
+    if (
+      gameRows.length !== 2 ||
+      gameRows.filter((row) => row.isHome).length !== 1 ||
+      gameRows.filter((row) => !row.isHome).length !== 1
+    ) {
+      blockers.push(`canonical game-side count mismatch: ${gameKey}`);
+      continue;
+    }
+    const home = gameRows.find((row) => row.isHome)!;
+    const away = gameRows.find((row) => !row.isHome)!;
+    if (
+      home.homeTeamNameCfbd !== away.homeTeamNameCfbd ||
+      home.awayTeamNameCfbd !== away.awayTeamNameCfbd ||
+      home.teamNameCfbd !== home.homeTeamNameCfbd ||
+      home.opponentNameCfbd !== home.awayTeamNameCfbd ||
+      away.teamNameCfbd !== away.awayTeamNameCfbd ||
+      away.opponentNameCfbd !== away.homeTeamNameCfbd
+    ) {
+      blockers.push(`canonical game identity mismatch: ${gameKey}`);
+    }
+  }
+
   for (const [season, expected] of FROZEN_COUNTS) {
     const seasonRows = rows.filter((row) => row.season === season);
+    const seasonGames = new Set(
+      seasonRows.map((row) => `${row.season}|${row.providerGameId}`)
+    ).size;
     const available = seasonRows.filter(
       (row) => row.availabilityStatus === 'AVAILABLE'
     ).length;
@@ -465,12 +499,13 @@ export function buildOaDb1PlannedRows(input: {
       (row) => row.availabilityStatus === 'SOURCE_UNAVAILABLE'
     ).length;
     if (
+      seasonGames !== expected.games ||
       seasonRows.length !== expected.rows ||
       available !== expected.available ||
       unavailable !== expected.unavailable
     ) {
       blockers.push(
-        `season ${season} count mismatch: rows=${seasonRows.length} available=${available} unavailable=${unavailable}`
+        `season ${season} count mismatch: games=${seasonGames} rows=${seasonRows.length} available=${available} unavailable=${unavailable}`
       );
     }
   }
