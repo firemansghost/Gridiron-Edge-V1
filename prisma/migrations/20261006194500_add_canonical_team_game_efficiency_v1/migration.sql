@@ -70,3 +70,7 @@ CREATE INDEX "team_game_efficiency_canonical_v1_team_season_idx"
 
 CREATE INDEX "team_game_efficiency_canonical_v1_status_idx"
   ON "team_game_efficiency_canonical_v1"("availability_status");
+
+-- Research-only table in public: private by default for Data API roles.
+ALTER TABLE "team_game_efficiency_canonical_v1" ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE "team_game_efficiency_canonical_v1" FROM anon, authenticated;

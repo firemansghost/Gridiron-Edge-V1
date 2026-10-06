@@ -337,6 +337,12 @@ describe('OA-DB-1 schema / CLI static safety', () => {
       'CREATE TABLE "team_game_efficiency_canonical_v1"'
     );
     expect(MIGRATION).toContain('SOURCE_UNAVAILABLE');
+    expect(MIGRATION).toContain(
+      'ALTER TABLE "team_game_efficiency_canonical_v1" ENABLE ROW LEVEL SECURITY'
+    );
+    expect(MIGRATION).toContain(
+      'REVOKE ALL ON TABLE "team_game_efficiency_canonical_v1" FROM anon, authenticated'
+    );
     expect(MIGRATION).not.toContain('ALTER TABLE "team_game_stats"');
     expect(MIGRATION).not.toContain('ALTER TABLE "games"');
     expect(MIGRATION).not.toContain('INSERT INTO');
