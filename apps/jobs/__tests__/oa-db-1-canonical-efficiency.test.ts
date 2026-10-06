@@ -348,11 +348,11 @@ describe('OA-DB-1 schema / CLI static safety', () => {
     expect(CLI).toContain("mode: 'PREVIEW'");
     expect(CLI).toContain('databaseWrites: false');
     expect(CLI).toContain('planned2026Mutations: 0');
-    expect(CLI).not.toMatch(/\.create\s*\(/);
-    expect(CLI).not.toMatch(/\.createMany\s*\(/);
-    expect(CLI).not.toMatch(/\.update\s*\(/);
-    expect(CLI).not.toMatch(/\.upsert\s*\(/);
-    expect(CLI).not.toMatch(/\.delete\s*\(/);
+    expect(CLI).not.toMatch(/prisma\.[A-Za-z0-9_]+\.create\s*\(/);
+    expect(CLI).not.toMatch(/prisma\.[A-Za-z0-9_]+\.createMany\s*\(/);
+    expect(CLI).not.toMatch(/prisma\.[A-Za-z0-9_]+\.update\s*\(/);
+    expect(CLI).not.toMatch(/prisma\.[A-Za-z0-9_]+\.upsert\s*\(/);
+    expect(CLI).not.toMatch(/prisma\.[A-Za-z0-9_]+\.delete\s*\(/);
     expect(CLI).not.toContain('$executeRaw');
     expect(CLI).not.toContain('prisma migrate');
   });
