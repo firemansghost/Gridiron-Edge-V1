@@ -1,4 +1,4 @@
-name: Test OA-DB-1 Canonical Efficiency Preview
+name: Test OA-DB-1 Canonical Efficiency
 
 on:
   pull_request:
@@ -8,9 +8,12 @@ on:
       - 'prisma/migrations/20261006194500_add_canonical_team_game_efficiency_v1/**'
       - 'apps/jobs/src/research/oa-db-1-canonical-efficiency.ts'
       - 'apps/jobs/preview-oa-db-1-canonical-efficiency.ts'
+      - 'apps/jobs/commit-oa-db-1-canonical-efficiency.ts'
       - 'apps/jobs/__tests__/oa-db-1-canonical-efficiency.test.ts'
+      - 'apps/jobs/__tests__/oa-db-1-canonical-efficiency-writer.test.ts'
       - '.github/workflows/test-oa-db-1-canonical-efficiency.yml'
       - '.github/workflows/preview-oa-db-1-canonical-efficiency.yml'
+      - '.github/workflows/commit-oa-db-1-canonical-efficiency.yml'
 
 permissions:
   contents: read
@@ -41,7 +44,7 @@ jobs:
 
       - name: TypeScript smoke compile
         run: |
-          npx tsc --noEmit             --module commonjs             --moduleResolution node             --target ES2019             --esModuleInterop             --skipLibCheck             apps/jobs/src/research/oa-db-1-canonical-efficiency.ts             apps/jobs/preview-oa-db-1-canonical-efficiency.ts
+          npx tsc --noEmit             --module commonjs             --moduleResolution node             --target ES2019             --esModuleInterop             --skipLibCheck             apps/jobs/src/research/oa-db-1-canonical-efficiency.ts             apps/jobs/preview-oa-db-1-canonical-efficiency.ts             apps/jobs/commit-oa-db-1-canonical-efficiency.ts
 
-      - name: Test OA-DB-1 preview planner
-        run: npx jest apps/jobs/__tests__/oa-db-1-canonical-efficiency.test.ts --runInBand
+      - name: Test OA-DB-1 preview and commit safety
+        run: npx jest apps/jobs/__tests__/oa-db-1-canonical-efficiency.test.ts apps/jobs/__tests__/oa-db-1-canonical-efficiency-writer.test.ts --runInBand

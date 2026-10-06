@@ -240,9 +240,15 @@ async function main(): Promise<void> {
       existingRows,
     });
 
+    const executionContext = {
+      repoCommitSha: String(process.env.GITHUB_SHA ?? '').trim() || null,
+      workflowRunId: String(process.env.GITHUB_RUN_ID ?? '').trim() || null,
+    };
+
     const report = {
       version: OA_DB_1_VERSION,
       mode: 'PREVIEW',
+      executionContext,
       targetTable: OA_DB_1_TABLE,
       source: {
         archiveRunId: OA_DB_1_ARCHIVE_RUN_ID,
@@ -282,6 +288,7 @@ async function main(): Promise<void> {
     writeJsonExclusive(args.report, report);
     writeJsonExclusive(args.plan, {
       version: OA_DB_1_VERSION,
+      executionContext,
       sourceArtifactId: OA_DB_1_ARCHIVE_ARTIFACT_ID,
       sourceArtifactZipSha256: OA_DB_1_ARCHIVE_ZIP_SHA256,
       rows: plan.plannedRows,
