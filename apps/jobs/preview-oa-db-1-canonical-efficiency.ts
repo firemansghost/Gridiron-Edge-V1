@@ -250,6 +250,7 @@ async function main(): Promise<void> {
       mode: 'PREVIEW',
       executionContext,
       targetTable: OA_DB_1_TABLE,
+      targetTableExists: plan.targetTableExists,
       source: {
         archiveRunId: OA_DB_1_ARCHIVE_RUN_ID,
         archiveArtifactId: OA_DB_1_ARCHIVE_ARTIFACT_ID,
