@@ -1,18 +1,26 @@
 /**
- * ML-CAL-1 Capture V1 — pure evidence planner + artifact helpers.
+ * ML-CAL-1 Capture V1.1 — pure evidence planner + artifact helpers.
  *
  * Read-only artifact capture for prospective Core V1 moneyline calibration.
  * Does NOT write bets/ratings/markets, call providers, read scores/outcomes,
  * or freeze the draft evaluation protocol (PR 243 remains draft).
  *
  * Timing rule (frozen for adapters):
- *   predictionReferenceTime === captureEndTime (server clock at end of snapshot reads).
- *   Market evidence and known-at must be <= predictionReferenceTime.
- *   Available forecasts require captureEndTime <= kickoff - 30 minutes.
- *   Do not substitute captureStartTime for publication/as-of checks.
+ *   captureStartTime      - diagnostic only; never used for as-of/age/known-at.
+ *   snapshotReferenceTime - end of the DB/fixture snapshot reads. This IS the
+ *                           predictionReferenceTime. Market observation age,
+ *                           observation timestamp and known-at (createdAt /
+ *                           updatedAt) are evaluated against this value ONLY.
+ *   computationTime       - when forecast planning ran (diagnostic).
+ *   publicationTime       - seal/publish boundary. Taken by the artifact writer
+ *                           immediately before eligibility is finalized.
+ *   Available forecasts require:
+ *     publicationTime <= kickoff - 30 minutes AND publicationTime < kickoff.
+ *   A later timestamp is never used to salvage a stale market.
  */
 
 import { createHash, randomUUID } from 'crypto';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { computeEffectiveHfa } from '../../web/lib/core-v1-spread';
@@ -29,9 +37,10 @@ import {
   selectGameMarketSnapshots,
   type MarketLineObservation,
 } from '../../web/lib/market-line-snapshot';
+import { b1CanonicalWeight } from '../src/preseason/balanced-v1-transition-blend-eval';
 
 export const ML_CAL_1_CAPTURE_SCHEMA_VERSION = 'ml-cal-1-capture-artifact-v1';
-export const ML_CAL_1_CAPTURE_PRODUCER_VERSION = 'ml-cal-1-capture-v1.0.0';
+export const ML_CAL_1_CAPTURE_PRODUCER_VERSION = 'ml-cal-1-capture-v1.1.0';
 export const ML_CAL_1_SUPPORTED_SEASON = 2026;
 export const ML_CAL_1_MODEL_VERSION = 'v1';
 export const ML_CAL_1_LIVE_ODDS_SOURCE = 'oddsapi';
@@ -39,6 +48,29 @@ export const ML_CAL_1_MAX_MARKET_AGE_SECONDS = 1800;
 export const ML_CAL_1_MIN_PRE_KICKOFF_MS = 30 * 60 * 1000;
 export const ML_CAL_1_LIFECYCLE_POLICY = 'GLOBAL_BLEND_W3_W6';
 export const ML_CAL_1_FULL_WEIGHT = 1;
+export const ML_CAL_1_FULL_WEIGHT_MIN_COMPLETED_WEEK = 6;
+
+/** Canonical Git blob byte hashes (SHA-256 of `git show <ref>:<path>` bytes, LF as committed). */
+export const ML_CAL_1_CANONICAL_GIT_BYTE_HASHES = {
+  'apps/web/lib/core-v1-moneyline.ts':
+    'c47c8faad10a6cfec2cb38fa329216233f80c3a2cfb1efd8faf4a9aa1dfab853',
+  'apps/web/lib/core-v1-weekly-card.ts':
+    '68f29f7c7588aeb16afa0588d0ac9c5b1b87f55b6e2310a62145b5331528ee91',
+  'apps/web/lib/market-line-snapshot.ts':
+    'd4b274154d588e5a262f0f2e63ebe58e9eab1c70f4fd8dbd322ee56e7d3dc7d2',
+  'apps/web/lib/market-line-helpers.ts':
+    'd0ebc1776a8342b8eaf5f444db90152f6f093cff04c23b25969930861ce975eb',
+  'apps/web/lib/core-v1-spread.ts':
+    '54c07653cef67f93d69df9835a5aac8759feefd11e457107b249196f1614e98c',
+  'apps/web/lib/data/core_v1_hfa_config.json':
+    'c6f90be8d51127078e18213120529a6d04e5f20ef8a91e0f06d359285451f59d',
+} as const;
+
+/** Capture runner + planner are hashed from Git bytes but are not pinned (they change with the PR). */
+export const ML_CAL_1_CAPTURE_SELF_PATHS = [
+  'apps/jobs/capture-ml-cal-1-2026.ts',
+  'apps/jobs/lib/ml-cal-1-capture.ts',
+] as const;
 
 /** Forbidden Game select fields — scores/outcomes must never be projected. */
 export const ML_CAL_1_FORBIDDEN_GAME_FIELDS = [
@@ -55,10 +87,15 @@ export const ML_CAL_1_FORBIDDEN_MODELS = [
   'matchupOutput',
 ] as const;
 
+/** Keys that must never appear in any select/include/where/orderBy. */
+const FORBIDDEN_KEY_PATTERN = /score|pnl|result|clv/i;
+
 export type MlCal1CaptureStatus =
   | 'EVIDENCE_CAPTURED'
   | 'PRIMARY_READINESS_BLOCKED'
   | 'INFRASTRUCTURE_ERROR';
+
+export type MlCal1LifecycleMode = 'fixture_hypothetical' | 'live';
 
 export type MlCal1DecimalLike = { toString(): string } | number | string | null | undefined;
 
@@ -81,6 +118,7 @@ export interface MlCal1ExportedRatingInput {
   powerRatingRaw: string | null;
   ratingRaw: string | null;
   chosenField: 'powerRating' | 'rating' | 'default_zero';
+  /** null when the row would have been defaulted to zero by `|| 0` or is non-finite. */
   valueUsed: number | null;
   games: number;
   dataSource: string | null;
@@ -88,6 +126,11 @@ export interface MlCal1ExportedRatingInput {
   updatedAt: string;
   rowContentHash: string;
   unavailableReasons: string[];
+  /**
+   * True only when modelVersion==='v1', no unavailable reasons, valueUsed is finite
+   * (legitimate Decimal(0) included) and chosenField is powerRating|rating.
+   */
+  inputUsable: boolean;
 }
 
 export interface MlCal1HfaBreakdown {
@@ -139,6 +182,47 @@ export interface MlCal1LifecycleReceipt {
   /** SHA-256 of canonical exported rating readback identity used at lifecycle write. */
   ratingFingerprint: string;
   acceptedImmutable: boolean;
+  /** Optional season binding. When absent, binding is via ratingFingerprint only. */
+  season?: number;
+}
+
+export interface MlCal1LifecycleVerificationInput {
+  mode: MlCal1LifecycleMode;
+  /** Exact UTF-8 bytes of the claimed accepted receipt artifact (JSON text). */
+  receiptBytes: string | null;
+  /** Independently pinned expected digest of those bytes. */
+  pinnedReceiptDigest: string | null;
+  /** Parsed claims. `claims.receiptDigest` must equal sha256(receiptBytes). */
+  claims: MlCal1LifecycleReceipt | null;
+  expectedRatingFingerprint: string;
+  /** Capture producer repository SHA — recorded separately; NOT required equal to claims.sourceSha. */
+  captureProducerSha: string;
+  expectedSeason: number;
+  prospectiveWeek: number;
+}
+
+export interface MlCal1LifecycleVerificationResult {
+  qualified: boolean;
+  reasons: string[];
+  mode: MlCal1LifecycleMode;
+  /** True when verification ran in fixture_hypothetical mode (never live-accepted). */
+  fixtureHypothetical: boolean;
+  /** True only when mode==='live' AND every check passed. */
+  liveAccepted: boolean;
+  /** Claims actually evaluated (parsed from receiptBytes when available). */
+  receipt: MlCal1LifecycleReceipt | null;
+  /** sha256(receiptBytes) when bytes were provided. */
+  verifiedReceiptDigest: string | null;
+  lifecycleSourceSha: string | null;
+  producerRepositorySha: string;
+  /** Non-blocking informational notes (e.g. fixture without receipt bytes). */
+  notes: string[];
+}
+
+export interface MlCal1DependencyHashes {
+  gitByteHashes: Record<string, string>;
+  checkoutRawHashes?: Record<string, string>;
+  dirty: string[];
 }
 
 export interface MlCal1UniverseRow {
@@ -159,13 +243,17 @@ export interface MlCal1UniverseRow {
 
 export interface MlCal1ForecastRow {
   gameId: string;
+  /** Equals snapshotReferenceTime (market as-of reference). */
   predictionTime: string;
+  snapshotReferenceTime: string;
+  publicationTime: string;
   kickoffAsKnown: string;
   homeTeamId: string;
   awayTeamId: string;
   neutralSite: boolean;
   forecastAvailable: boolean;
   unavailableReasons: string[];
+  /** True when publicationTime > kickoff - 30 minutes. */
   lateCapture: boolean;
   coreSpreadHma: number | null;
   modelHomeWinProb: number | null;
@@ -225,6 +313,24 @@ export interface MlCal1SpreadMarketEvidence {
   homeLine: number | null;
   awayLine: number | null;
   marketSpreadHma: number | null;
+  homeCreatedAt: string | null;
+  awayCreatedAt: string | null;
+  homeUpdatedAt: string | null;
+  awayUpdatedAt: string | null;
+}
+
+export interface MlCal1RejectionLedgerEntry {
+  gameId: string;
+  rowId: string;
+  reasons: string[];
+  lineType: string;
+  lineValue: number;
+  bookName: string;
+  source: string | null;
+  teamId: string | null;
+  timestamp: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface MlCal1CaptureEnvelope {
@@ -233,40 +339,71 @@ export interface MlCal1CaptureEnvelope {
   captureId: string;
   season: number;
   week: number;
+  /** Repository SHA of the capture producer (git rev-parse HEAD in live mode). */
+  producerRepositorySha: string;
+  /** Deprecated alias of producerRepositorySha. */
   repositorySha: string;
+  /** Source SHA claimed by the lifecycle receipt (separate from the producer SHA). */
+  lifecycleSourceSha: string | null;
   captureStartTime: string;
+  /** End of DB/fixture snapshot reads. */
+  snapshotReferenceTime: string;
+  /** Deprecated alias of snapshotReferenceTime. */
   captureEndTime: string;
+  /** Equals snapshotReferenceTime. */
   predictionReferenceTime: string;
+  computationTime: string;
+  /** Seal/publish boundary. Provisional until publicationFinalized===true. */
+  publicationTime: string;
+  publicationFinalized: boolean;
+  publicationDowngradedGameIds: string[];
   status: MlCal1CaptureStatus;
   primaryReadinessBlocked: boolean;
   primaryBlockReasons: string[];
   providerCalls: 0;
   businessDataWrites: 0;
-  dependencyHashes: Record<string, string>;
+  dependencyHashes: MlCal1DependencyHashes;
   timingRule: {
-    predictionReferenceTimeEquals: 'captureEndTime';
-    marketAsOfUses: 'predictionReferenceTime';
+    captureStartTime: string;
+    snapshotReferenceTime: string;
+    predictionReferenceTimeEquals: 'snapshotReferenceTime';
+    captureEndTimeIsAliasOf: 'snapshotReferenceTime';
+    marketAsOfUses: 'snapshotReferenceTime';
+    marketAgeUses: 'snapshotReferenceTime';
+    knownAtUses: 'snapshotReferenceTime';
+    computationTime: string;
+    publicationTime: string;
+    availableForecastRequires: string;
+    laterTimestampsNeverSalvageStaleMarkets: true;
     minPreKickoffMs: typeof ML_CAL_1_MIN_PRE_KICKOFF_MS;
     maxMarketAgeSecondsInclusive: typeof ML_CAL_1_MAX_MARKET_AGE_SECONDS;
   };
   lifecycleQualification: {
     qualified: boolean;
+    mode: MlCal1LifecycleMode;
+    /** True when verified only against fixture claims. Never described as live-accepted. */
+    fixtureHypothetical: boolean;
+    liveAccepted: boolean;
     reasons: string[];
+    notes: string[];
     receipt: MlCal1LifecycleReceipt | null;
+    verifiedReceiptDigest: string | null;
     expectedRatingFingerprint: string | null;
   };
-  counts: {
-    universeGames: number;
-    trackedGames: number;
-    availableForecasts: number;
-    inGateForecasts: number;
-    pairedMarkets: number;
-    missingMarkets: number;
-    selectedBets: number;
-    noSelection: number;
-    primaryEligibleCandidates: number;
-    modelOnlyEligible: number;
-  };
+  counts: MlCal1Counts;
+}
+
+export interface MlCal1Counts {
+  universeGames: number;
+  trackedGames: number;
+  availableForecasts: number;
+  inGateForecasts: number;
+  pairedMarkets: number;
+  missingMarkets: number;
+  selectedBets: number;
+  noSelection: number;
+  primaryEligibleCandidates: number;
+  modelOnlyEligible: number;
 }
 
 export interface MlCal1ArtifactBundle {
@@ -284,11 +421,7 @@ export interface MlCal1ArtifactBundle {
   markets: {
     moneyline: MlCal1PairedMarketEvidence[];
     spread: MlCal1SpreadMarketEvidence[];
-    candidateRejectionLedger: Array<{
-      gameId: string;
-      rowId: string;
-      reasons: string[];
-    }>;
+    candidateRejectionLedger: MlCal1RejectionLedgerEntry[];
   };
 }
 
@@ -296,20 +429,39 @@ export interface MlCal1FixtureInput {
   captureId: string;
   season: number;
   week: number;
+  /** Producer repository SHA (fixture value, or git rev-parse HEAD in live mode). */
   repositorySha: string;
   captureStartTime: string;
-  captureEndTime: string;
+  /** End of snapshot reads. Provide this OR captureEndTime (alias); if both, they must match. */
+  snapshotReferenceTime?: string;
+  /** Alias of snapshotReferenceTime kept for fixture backward compatibility. */
+  captureEndTime?: string;
   games: MlCal1GameMeta[];
   fbsTeamIds: string[];
   ratings: MlCal1RawRatingRow[];
   marketLines: MlCal1MarketLineCandidate[];
+  /** Parsed lifecycle claims. */
   lifecycleReceipt: MlCal1LifecycleReceipt | null;
+  /** Exact bytes of the claimed receipt artifact. */
+  receiptBytes?: string | null;
+  /** Independently pinned digest of receiptBytes. */
+  pinnedReceiptDigest?: string | null;
+  /** Defaults to 'fixture_hypothetical'. */
+  lifecycleMode?: MlCal1LifecycleMode;
+}
+
+export interface MlCal1PlanOptions {
+  /** Clock used for computationTime (and default provisional publicationTime). */
+  now?: () => Date;
+  /** Provisional publication boundary; the artifact writer re-takes it at seal time. */
+  publicationTime?: string;
 }
 
 export interface MlCal1PlanResult {
   status: MlCal1CaptureStatus;
   primaryReadinessBlocked: boolean;
   primaryBlockReasons: string[];
+  lifecycle: MlCal1LifecycleVerificationResult;
   bundle: MlCal1ArtifactBundle;
 }
 
@@ -327,6 +479,25 @@ function toMs(value: Date | string): number {
     throw new Error(`invalid_timestamp:${String(value)}`);
   }
   return d.getTime();
+}
+
+function safeMs(value: unknown): number {
+  if (value == null) return Number.NaN;
+  const d = value instanceof Date ? value : new Date(value as string);
+  return d.getTime();
+}
+
+function safeIso(value: unknown): string {
+  const ms = safeMs(value);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : `invalid:${String(value)}`;
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function uniq<T>(items: T[]): T[] {
+  return Array.from(new Set(items));
 }
 
 export function sha256Utf8Bytes(value: string | Buffer): string {
@@ -362,11 +533,58 @@ export function getActiveHfaConfigHash(): string {
   return sha256Canonical(hfaConfigJson);
 }
 
+// ---------------------------------------------------------------------------
+// R6: redaction and capture-id / path safety
+// ---------------------------------------------------------------------------
+
+const SAFE_CAPTURE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
+export function assertSafeCaptureId(id: string): void {
+  if (typeof id !== 'string' || !SAFE_CAPTURE_ID.test(id)) {
+    throw new Error('invalid_capture_id');
+  }
+}
+
+/** Resolve the capture directory and prove it stays inside rootDir. */
+export function resolveCaptureDir(rootDir: string, captureId: string): string {
+  assertSafeCaptureId(captureId);
+  const root = path.resolve(rootDir);
+  const resolved = path.resolve(root, captureId);
+  const rel = path.relative(root, resolved);
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error('capture_dir_escapes_root');
+  }
+  return resolved;
+}
+
+export function redactSensitive(text: string): string {
+  let out = String(text);
+  const patterns: RegExp[] = [
+    /postgres(?:ql)?:\/\/[^\s"'`<>]+/gi,
+    /[a-z][a-z0-9+.-]*:\/\/[^\s"'`<>/:@]+:[^\s"'`<>@]+@[^\s"'`<>]+/gi,
+    /\bbearer\s+[A-Za-z0-9._~+/=-]+/gi,
+    /\b(?:database_url|direct_url|connection[_-]?string)\s*[=:]\s*[^\s"'`&;,]+/gi,
+    /\bpass(?:word|wd)?\s*[=:]\s*[^\s"'`&;,]+/gi,
+    /\b(?:x-)?api[_-]?key\s*[=:]\s*[^\s"'`&;,]+/gi,
+    /\b(?:secret|token)\s*[=:]\s*[^\s"'`&;,]+/gi,
+  ];
+  for (const p of patterns) {
+    out = out.replace(p, '[REDACTED]');
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// R1: ratings
+// ---------------------------------------------------------------------------
+
 /**
  * Preserve production field precedence from the official Core V1 spread helper:
  *   Number(powerRating || rating || 0)
  * Truthiness is evaluated on the Decimal/object BEFORE Number().
- * Prisma Decimal(0) objects are truthy; numeric 0 / null are falsy.
+ * Prisma Decimal(0) objects are truthy (valid zero); numeric 0 / null are falsy.
+ * When production would default via `|| 0`, this capture path does NOT impute a
+ * zero: value is null, chosenField is 'default_zero' and the rating is unusable.
  * This capture path never invokes the Prisma-backed team spread helper.
  */
 export function chooseRatingField(row: {
@@ -380,33 +598,38 @@ export function chooseRatingField(row: {
 } {
   const reasons: string[] = [];
 
-  let chosenField: 'powerRating' | 'rating' | 'default_zero';
-  let selectedRaw: MlCal1DecimalLike;
-
   if (row.powerRating) {
-    chosenField = 'powerRating';
-    selectedRaw = row.powerRating;
-  } else if (row.rating) {
-    chosenField = 'rating';
-    selectedRaw = row.rating;
-  } else {
-    // Mirrors `|| 0` when both operands are falsy (null/undefined/0/'').
-    chosenField = 'default_zero';
-    selectedRaw = 0;
-    if (row.powerRating == null && row.rating == null) {
-      reasons.push('missing_rating_fields');
-    } else {
-      reasons.push('falsy_rating_fields_defaulted_zero');
-    }
+    return finishChosen('powerRating', row.powerRating, reasons);
+  }
+  if (row.rating) {
+    return finishChosen('rating', row.rating, reasons);
   }
 
-  const value = Number(selectedRaw);
+  // Production would evaluate `|| 0` here; never turn that into an available forecast.
+  if (row.powerRating == null && row.rating == null) {
+    reasons.push('missing_rating_fields');
+  } else {
+    reasons.push('falsy_rating_fields_defaulted_zero');
+  }
+  return { chosenField: 'default_zero', raw: null, value: null, reasons };
+}
+
+function finishChosen(
+  chosenField: 'powerRating' | 'rating',
+  raw: MlCal1DecimalLike,
+  reasons: string[]
+): {
+  chosenField: 'powerRating' | 'rating';
+  raw: MlCal1DecimalLike;
+  value: number | null;
+  reasons: string[];
+} {
+  const value = Number(raw);
   if (!Number.isFinite(value)) {
     reasons.push('nonfinite_rating_value');
-    return { chosenField, raw: selectedRaw, value: null, reasons };
+    return { chosenField, raw, value: null, reasons };
   }
-
-  return { chosenField, raw: selectedRaw, value, reasons };
+  return { chosenField, raw, value, reasons };
 }
 
 function decimalToRawString(value: MlCal1DecimalLike): string | null {
@@ -444,11 +667,19 @@ export function exportRatingInput(row: MlCal1RawRatingRow): MlCal1ExportedRating
     updatedAt,
   };
 
+  const inputUsable =
+    row.modelVersion === ML_CAL_1_MODEL_VERSION &&
+    unavailableReasons.length === 0 &&
+    chosen.value != null &&
+    Number.isFinite(chosen.value) &&
+    (chosen.chosenField === 'powerRating' || chosen.chosenField === 'rating');
+
   const rowContentHash = sha256Canonical(base);
   return {
     ...base,
     rowContentHash,
     unavailableReasons,
+    inputUsable,
   };
 }
 
@@ -496,6 +727,7 @@ export function buildRatingFingerprint(
         modelVersion: r.modelVersion,
         valueUsed: r.valueUsed,
         chosenField: r.chosenField,
+        inputUsable: r.inputUsable,
         games: r.games,
         dataSource: r.dataSource,
         rowContentHash: r.rowContentHash,
@@ -504,53 +736,325 @@ export function buildRatingFingerprint(
   return sha256Canonical(entries);
 }
 
-export function qualifyLifecycleReceipt(options: {
-  receipt: MlCal1LifecycleReceipt | null;
-  expectedRatingFingerprint: string;
-  repositorySha: string;
-}): { qualified: boolean; reasons: string[] } {
+// ---------------------------------------------------------------------------
+// R3: lifecycle verification
+// ---------------------------------------------------------------------------
+
+const HEX64 = /^[0-9a-f]{64}$/;
+const HEX40 = /^[0-9a-f]{40}$/i;
+
+function omitReceiptDigest(value: unknown): unknown {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return value;
+  const { receiptDigest: _ignored, ...rest } = value as Record<string, unknown>;
+  return rest;
+}
+
+/**
+ * Verify a lifecycle receipt against pinned bytes. Boolean `acceptedImmutable`
+ * alone never qualifies. Live primary eligibility needs mode==='live' + every check.
+ *
+ * Note on `receiptDigest`: a receipt cannot contain the hash of its own bytes, so
+ * canonical comparison between claims and parsed bytes ignores the `receiptDigest`
+ * field; `claims.receiptDigest` must instead equal sha256(receiptBytes), which in
+ * turn must equal the independently pinned digest.
+ */
+export function qualifyLifecycleReceipt(
+  input: MlCal1LifecycleVerificationInput
+): MlCal1LifecycleVerificationResult {
   const reasons: string[] = [];
-  if (!options.receipt) {
-    return { qualified: false, reasons: ['lifecycle_receipt_missing'] };
+  const notes: string[] = [];
+  const mode = input.mode;
+
+  const finish = (
+    receipt: MlCal1LifecycleReceipt | null,
+    verifiedReceiptDigest: string | null
+  ): MlCal1LifecycleVerificationResult => {
+    const qualified = reasons.length === 0;
+    return {
+      qualified,
+      reasons: uniq(reasons),
+      mode,
+      fixtureHypothetical: mode === 'fixture_hypothetical',
+      liveAccepted: qualified && mode === 'live',
+      receipt,
+      verifiedReceiptDigest,
+      lifecycleSourceSha: receipt?.sourceSha ?? null,
+      producerRepositorySha: input.captureProducerSha,
+      notes,
+    };
+  };
+
+  if (mode !== 'live' && mode !== 'fixture_hypothetical') {
+    reasons.push('lifecycle_mode_invalid');
+    return finish(null, null);
   }
-  const r = options.receipt;
-  if (!r.acceptedImmutable) {
+
+  const hasBytes = typeof input.receiptBytes === 'string' && input.receiptBytes.length > 0;
+  const hasPinned =
+    typeof input.pinnedReceiptDigest === 'string' && input.pinnedReceiptDigest.length > 0;
+
+  // Both live and fixture_hypothetical require actual receipt bytes + pinned digest.
+  // Fixture mode may still qualify when verified, but is always labeled
+  // fixtureHypothetical / liveAccepted=false. Claims alone never qualify.
+  if (!hasBytes || !hasPinned) {
+    reasons.push(
+      mode === 'live'
+        ? 'lifecycle_verification_unavailable'
+        : 'lifecycle_fixture_receipt_bytes_or_pin_missing'
+    );
+    return finish(input.claims, null);
+  }
+
+  let claims: MlCal1LifecycleReceipt | null = input.claims;
+  let verifiedDigest: string | null = null;
+
+  if (hasBytes) {
+    const actualDigest = sha256Utf8Bytes(Buffer.from(input.receiptBytes as string, 'utf8'));
+    verifiedDigest = actualDigest;
+
+    if (!hasPinned) {
+      reasons.push('lifecycle_pinned_digest_missing');
+    } else {
+      const pinned = String(input.pinnedReceiptDigest).toLowerCase();
+      if (!HEX64.test(pinned) || pinned !== actualDigest) {
+        reasons.push('lifecycle_receipt_digest_pinned_mismatch');
+      }
+    }
+
+    if (input.claims) {
+      const claimed = String(input.claims.receiptDigest ?? '').toLowerCase();
+      if (claimed !== actualDigest) {
+        reasons.push('lifecycle_receipt_digest_claim_mismatch');
+      }
+    }
+
+    let parsed: unknown = null;
+    let parsedOk = false;
+    try {
+      parsed = JSON.parse(input.receiptBytes as string);
+      parsedOk = parsed != null && typeof parsed === 'object' && !Array.isArray(parsed);
+    } catch {
+      parsedOk = false;
+    }
+
+    if (!parsedOk) {
+      reasons.push('lifecycle_receipt_bytes_unparseable');
+    } else {
+      if (input.claims) {
+        if (
+          stableStringify(omitReceiptDigest(parsed)) !==
+          stableStringify(omitReceiptDigest(input.claims))
+        ) {
+          reasons.push('lifecycle_claims_do_not_match_receipt_bytes');
+        }
+      }
+      // Evaluate the bytes-derived claims; never trust caller-supplied claims over bytes.
+      claims = {
+        ...(parsed as MlCal1LifecycleReceipt),
+        receiptDigest: actualDigest,
+      };
+    }
+  } else {
+    // fixture_hypothetical without receipt bytes
+    if (hasPinned) {
+      reasons.push('lifecycle_receipt_bytes_missing');
+    } else {
+      notes.push('fixture_receipt_bytes_not_provided');
+    }
+  }
+
+  if (!claims) {
+    if (!reasons.includes('lifecycle_receipt_bytes_unparseable')) {
+      reasons.push('lifecycle_receipt_missing');
+    }
+    return finish(null, verifiedDigest);
+  }
+
+  const r = claims;
+  if (r.acceptedImmutable !== true) {
     reasons.push('lifecycle_receipt_not_accepted_immutable');
   }
   if (r.selectedPolicy !== ML_CAL_1_LIFECYCLE_POLICY) {
     reasons.push('lifecycle_policy_mismatch');
   }
+
+  const weekValid = Number.isInteger(r.completedThroughWeek) && r.completedThroughWeek >= 0;
+  if (!weekValid) {
+    reasons.push('lifecycle_completed_through_week_invalid');
+  } else {
+    if (r.canonicalWeight !== b1CanonicalWeight(r.completedThroughWeek)) {
+      reasons.push('lifecycle_canonical_weight_inconsistent_with_week');
+    }
+    if (r.completedThroughWeek >= input.prospectiveWeek) {
+      reasons.push('lifecycle_completed_through_week_not_before_prospective_week');
+    }
+    if (r.completedThroughWeek < ML_CAL_1_FULL_WEIGHT_MIN_COMPLETED_WEEK) {
+      reasons.push('lifecycle_completed_through_week_below_full_weight_week');
+    }
+  }
   if (r.canonicalWeight !== ML_CAL_1_FULL_WEIGHT) {
     reasons.push('lifecycle_weight_not_full');
   }
-  if (r.sourceSha !== options.repositorySha) {
-    reasons.push('lifecycle_source_sha_mismatch');
-  }
-  if (r.ratingFingerprint !== options.expectedRatingFingerprint) {
+
+  if (r.ratingFingerprint !== input.expectedRatingFingerprint) {
     reasons.push('lifecycle_rating_fingerprint_mismatch');
   }
-  if (!r.receiptDigest || !/^[0-9a-f]{64}$/i.test(r.receiptDigest)) {
+  if (r.season != null && r.season !== input.expectedSeason) {
+    reasons.push('lifecycle_season_mismatch');
+  }
+  if (!r.receiptDigest || !HEX64.test(String(r.receiptDigest).toLowerCase())) {
     reasons.push('lifecycle_receipt_digest_invalid');
   }
-  if (!Number.isInteger(r.completedThroughWeek) || r.completedThroughWeek < 0) {
-    reasons.push('lifecycle_completed_through_week_invalid');
+  if (typeof r.sourceSha !== 'string' || !HEX40.test(r.sourceSha)) {
+    reasons.push('lifecycle_source_sha_invalid');
   }
-  return { qualified: reasons.length === 0, reasons };
+
+  return finish(r, verifiedDigest);
 }
+
+export const verifyLifecycleReceipt = qualifyLifecycleReceipt;
+
+// ---------------------------------------------------------------------------
+// R4: canonical Git-byte hashes
+// ---------------------------------------------------------------------------
+
+export function hashGitBlobContent(bytes: Buffer | string): string {
+  return sha256Utf8Bytes(typeof bytes === 'string' ? Buffer.from(bytes, 'utf8') : bytes);
+}
+
+export function containsCrlf(bytes: Buffer | string): boolean {
+  const s = typeof bytes === 'string' ? bytes : bytes.toString('latin1');
+  return s.includes('\r\n');
+}
+
+export function normalizeNewlinesToLf(bytes: string): string;
+export function normalizeNewlinesToLf(bytes: Buffer): Buffer;
+export function normalizeNewlinesToLf(bytes: Buffer | string): Buffer | string {
+  if (typeof bytes === 'string') return bytes.replace(/\r\n/g, '\n');
+  return Buffer.from(bytes.toString('latin1').replace(/\r\n/g, '\n'), 'latin1');
+}
+
+function assertSafeGitArgs(repoRelPath: string, ref: string): void {
+  if (!/^[A-Za-z0-9._/-]{1,200}$/.test(ref) || ref.startsWith('-')) {
+    throw new Error(`invalid_git_ref:${ref}`);
+  }
+  if (
+    repoRelPath.length === 0 ||
+    repoRelPath.startsWith('-') ||
+    repoRelPath.startsWith('/') ||
+    repoRelPath.includes('..') ||
+    repoRelPath.includes('\\') ||
+    repoRelPath.includes(':')
+  ) {
+    throw new Error(`invalid_git_path:${repoRelPath}`);
+  }
+}
+
+/** Exact committed bytes of `relPath` at `ref` (no checkout/autocrlf conversion). */
+export function readGitShowBytes(repoRoot: string, relPath: string, ref = 'HEAD'): Buffer {
+  assertSafeGitArgs(relPath, ref);
+  return execFileSync('git', ['show', `${ref}:${relPath}`], {
+    cwd: repoRoot,
+    maxBuffer: 64 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+/**
+ * Hash the six pinned dependencies (plus capture runner + planner) from Git bytes.
+ * Throws when any pinned dependency differs from its canonical hash.
+ * `dirty` lists paths whose working-tree content (LF-normalized) differs from Git bytes.
+ */
+export function resolveCanonicalDependencyHashes(
+  repoRoot: string,
+  ref = 'HEAD'
+): MlCal1DependencyHashes {
+  const gitByteHashes: Record<string, string> = {};
+  const checkoutRawHashes: Record<string, string> = {};
+  const dirty: string[] = [];
+  const mismatches: string[] = [];
+
+  const pinnedPaths = Object.keys(ML_CAL_1_CANONICAL_GIT_BYTE_HASHES);
+  const allPaths = [...pinnedPaths, ...ML_CAL_1_CAPTURE_SELF_PATHS];
+
+  for (const rel of allPaths) {
+    const checkoutPath = path.join(repoRoot, rel);
+    const pinned = (ML_CAL_1_CANONICAL_GIT_BYTE_HASHES as Record<string, string>)[rel];
+    const isPinned = pinned !== undefined;
+
+    let gitBytes: Buffer | null = null;
+    try {
+      gitBytes = readGitShowBytes(repoRoot, rel, ref);
+    } catch {
+      // Self-paths may be new/uncommitted on the PR branch; pinned paths must exist.
+      if (isPinned) {
+        mismatches.push(`${rel}:git_show_failed`);
+        continue;
+      }
+      dirty.push(rel);
+      if (fs.existsSync(checkoutPath)) {
+        const checkoutBytes = fs.readFileSync(checkoutPath);
+        checkoutRawHashes[rel] = hashGitBlobContent(checkoutBytes);
+        gitByteHashes[rel] = checkoutRawHashes[rel];
+      }
+      continue;
+    }
+
+    const gitHash = hashGitBlobContent(gitBytes);
+    gitByteHashes[rel] = gitHash;
+
+    if (isPinned && pinned !== gitHash) {
+      mismatches.push(`${rel}:expected=${pinned}:actual=${gitHash}`);
+    }
+
+    if (!fs.existsSync(checkoutPath)) {
+      dirty.push(rel);
+      continue;
+    }
+    const checkoutBytes = fs.readFileSync(checkoutPath);
+    checkoutRawHashes[rel] = hashGitBlobContent(checkoutBytes);
+    if (
+      hashGitBlobContent(normalizeNewlinesToLf(checkoutBytes)) !==
+      hashGitBlobContent(normalizeNewlinesToLf(gitBytes))
+    ) {
+      dirty.push(rel);
+    }
+  }
+
+  if (mismatches.length > 0) {
+    throw new Error(`dependency_git_byte_hash_mismatch:${mismatches.join(',')}`);
+  }
+
+  return { gitByteHashes, checkoutRawHashes, dirty };
+}
+
+// ---------------------------------------------------------------------------
+// Market evidence
+// ---------------------------------------------------------------------------
 
 function validateMarketCandidate(
   row: MlCal1MarketLineCandidate,
-  predictionReferenceTime: Date | string,
+  snapshotReferenceTime: Date | string,
   expectedGameId: string
 ): string[] {
   const reasons: string[] = [];
   if (row.gameId !== expectedGameId) reasons.push('game_id_mismatch');
   if (row.source !== ML_CAL_1_LIVE_ODDS_SOURCE) reasons.push('source_mismatch');
 
-  const obsMs = toMs(row.timestamp);
-  const knownAtMs = toMs(row.createdAt);
-  const updatedMs = toMs(row.updatedAt);
-  const refMs = toMs(predictionReferenceTime);
+  const obsMs = safeMs(row.timestamp);
+  const knownAtMs = safeMs(row.createdAt);
+  const updatedMs = safeMs(row.updatedAt);
+  const refMs = safeMs(snapshotReferenceTime);
+
+  if (
+    !Number.isFinite(obsMs) ||
+    !Number.isFinite(knownAtMs) ||
+    !Number.isFinite(updatedMs) ||
+    !Number.isFinite(refMs)
+  ) {
+    reasons.push('invalid_timestamp');
+    return reasons;
+  }
 
   if (obsMs > refMs) reasons.push('observation_timestamp_after_reference');
   if (knownAtMs > refMs) reasons.push('known_at_after_reference');
@@ -570,6 +1074,72 @@ function validateMarketCandidate(
   return reasons;
 }
 
+function ledgerEntry(
+  row: MlCal1MarketLineCandidate,
+  gameId: string,
+  reasons: string[]
+): MlCal1RejectionLedgerEntry {
+  return {
+    gameId,
+    rowId: row.id,
+    reasons,
+    lineType: row.lineType,
+    lineValue: row.lineValue,
+    bookName: row.bookName,
+    source: row.source ?? null,
+    teamId: row.teamId ?? null,
+    timestamp: safeIso(row.timestamp),
+    createdAt: safeIso(row.createdAt),
+    updatedAt: safeIso(row.updatedAt),
+  };
+}
+
+function emptyPairedEvidence(
+  gameId: string,
+  overrides: Partial<MlCal1PairedMarketEvidence>
+): MlCal1PairedMarketEvidence {
+  return {
+    gameId,
+    available: false,
+    rejectionReasons: [],
+    observationAgeSeconds: null,
+    bookName: null,
+    source: null,
+    observationTimestamp: null,
+    homeRowId: null,
+    awayRowId: null,
+    homePrice: null,
+    awayPrice: null,
+    homeCreatedAt: null,
+    awayCreatedAt: null,
+    homeUpdatedAt: null,
+    awayUpdatedAt: null,
+    rawImpliedHome: null,
+    rawImpliedAway: null,
+    overround: null,
+    deVigHome: null,
+    deVigAway: null,
+    ...overrides,
+  };
+}
+
+function toObservation(r: MlCal1MarketLineCandidate): MarketLineObservation {
+  return {
+    id: r.id,
+    gameId: r.gameId,
+    lineType: r.lineType,
+    lineValue: r.lineValue,
+    bookName: r.bookName,
+    timestamp: r.timestamp,
+    teamId: r.teamId,
+    source: r.source,
+  };
+}
+
+/**
+ * `predictionReferenceTime` here is the snapshotReferenceTime. Never pass a later
+ * (computation/publication) timestamp to salvage stale markets.
+ */
 export function selectAsOfMoneylineEvidence(options: {
   gameId: string;
   homeTeamId: string;
@@ -578,9 +1148,9 @@ export function selectAsOfMoneylineEvidence(options: {
   candidates: MlCal1MarketLineCandidate[];
 }): {
   evidence: MlCal1PairedMarketEvidence;
-  rejectionLedger: Array<{ gameId: string; rowId: string; reasons: string[] }>;
+  rejectionLedger: MlCal1RejectionLedgerEntry[];
 } {
-  const rejectionLedger: Array<{ gameId: string; rowId: string; reasons: string[] }> = [];
+  const rejectionLedger: MlCal1RejectionLedgerEntry[] = [];
   const eligible: MlCal1MarketLineCandidate[] = [];
 
   for (const row of options.candidates) {
@@ -592,7 +1162,7 @@ export function selectAsOfMoneylineEvidence(options: {
       options.gameId
     );
     if (reasons.length > 0) {
-      rejectionLedger.push({ gameId: options.gameId, rowId: row.id, reasons });
+      rejectionLedger.push(ledgerEntry(row, options.gameId, reasons));
       continue;
     }
     eligible.push(row);
@@ -605,37 +1175,22 @@ export function selectAsOfMoneylineEvidence(options: {
     if (!frameKeys.has(key)) frameKeys.set(key, []);
     frameKeys.get(key)!.push(row.id);
   }
+  const ambiguousIds = new Set<string>();
   for (const [key, ids] of Array.from(frameKeys.entries())) {
     if (ids.length > 1) {
       for (const id of ids) {
-        rejectionLedger.push({
-          gameId: options.gameId,
-          rowId: id,
-          reasons: [`ambiguous_same_frame:${key}`],
-        });
+        ambiguousIds.add(id);
+        const row = eligible.find((r) => r.id === id)!;
+        rejectionLedger.push(
+          ledgerEntry(row, options.gameId, [`ambiguous_same_frame:${key}`])
+        );
       }
     }
   }
-  const ambiguousIds = new Set(
-    Array.from(frameKeys.values())
-      .filter((ids) => ids.length > 1)
-      .flat()
-  );
   const clean = eligible.filter((r) => !ambiguousIds.has(r.id));
 
-  const observations: MarketLineObservation[] = clean.map((r) => ({
-    id: r.id,
-    gameId: r.gameId,
-    lineType: r.lineType,
-    lineValue: r.lineValue,
-    bookName: r.bookName,
-    timestamp: r.timestamp,
-    teamId: r.teamId,
-    source: r.source,
-  }));
-
   const selection = selectGameMarketSnapshots({
-    rows: observations,
+    rows: clean.map(toObservation),
     homeTeamId: options.homeTeamId,
     awayTeamId: options.awayTeamId,
     mode: 'current',
@@ -650,115 +1205,59 @@ export function selectAsOfMoneylineEvidence(options: {
       );
     }
     return {
-      evidence: {
-        gameId: options.gameId,
-        available: false,
-        rejectionReasons: reasons,
-        observationAgeSeconds: null,
-        bookName: null,
-        source: null,
-        observationTimestamp: null,
-        homeRowId: null,
-        awayRowId: null,
-        homePrice: null,
-        awayPrice: null,
-        homeCreatedAt: null,
-        awayCreatedAt: null,
-        homeUpdatedAt: null,
-        awayUpdatedAt: null,
-        rawImpliedHome: null,
-        rawImpliedAway: null,
-        overround: null,
-        deVigHome: null,
-        deVigAway: null,
-      },
+      evidence: emptyPairedEvidence(options.gameId, { rejectionReasons: reasons }),
       rejectionLedger,
     };
   }
 
-  // Require same provider/source on both selected rows.
   const homeRow = clean.find((r) => r.id === display.homeRowId);
   const awayRow = clean.find((r) => r.id === display.awayRowId);
   if (!homeRow || !awayRow) {
     return {
-      evidence: {
-        gameId: options.gameId,
-        available: false,
+      evidence: emptyPairedEvidence(options.gameId, {
         rejectionReasons: ['selected_pair_rows_missing_from_eligible_set'],
-        observationAgeSeconds: null,
         bookName: display.bookName,
-        source: null,
         observationTimestamp: display.timestamp,
         homeRowId: display.homeRowId,
         awayRowId: display.awayRowId,
         homePrice: display.homePrice,
         awayPrice: display.awayPrice,
-        homeCreatedAt: null,
-        awayCreatedAt: null,
-        homeUpdatedAt: null,
-        awayUpdatedAt: null,
-        rawImpliedHome: null,
-        rawImpliedAway: null,
-        overround: null,
-        deVigHome: null,
-        deVigAway: null,
-      },
+      }),
       rejectionLedger,
     };
   }
 
+  const pairBase: Partial<MlCal1PairedMarketEvidence> = {
+    bookName: display.bookName,
+    source: homeRow.source,
+    observationTimestamp: display.timestamp,
+    homeRowId: display.homeRowId,
+    awayRowId: display.awayRowId,
+    homePrice: display.homePrice,
+    awayPrice: display.awayPrice,
+    homeCreatedAt: toIso(homeRow.createdAt),
+    awayCreatedAt: toIso(awayRow.createdAt),
+    homeUpdatedAt: toIso(homeRow.updatedAt),
+    awayUpdatedAt: toIso(awayRow.updatedAt),
+  };
+
+  // Require same provider/source on both selected rows.
   if (homeRow.source !== awayRow.source || homeRow.source !== ML_CAL_1_LIVE_ODDS_SOURCE) {
     return {
-      evidence: {
-        gameId: options.gameId,
-        available: false,
+      evidence: emptyPairedEvidence(options.gameId, {
+        ...pairBase,
         rejectionReasons: ['provider_or_source_mismatch_on_pair'],
-        observationAgeSeconds: null,
-        bookName: display.bookName,
-        source: homeRow.source,
-        observationTimestamp: display.timestamp,
-        homeRowId: display.homeRowId,
-        awayRowId: display.awayRowId,
-        homePrice: display.homePrice,
-        awayPrice: display.awayPrice,
-        homeCreatedAt: toIso(homeRow.createdAt),
-        awayCreatedAt: toIso(awayRow.createdAt),
-        homeUpdatedAt: toIso(homeRow.updatedAt),
-        awayUpdatedAt: toIso(awayRow.updatedAt),
-        rawImpliedHome: null,
-        rawImpliedAway: null,
-        overround: null,
-        deVigHome: null,
-        deVigAway: null,
-      },
+      }),
       rejectionLedger,
     };
   }
 
   if (homeRow.teamId !== options.homeTeamId || awayRow.teamId !== options.awayTeamId) {
     return {
-      evidence: {
-        gameId: options.gameId,
-        available: false,
+      evidence: emptyPairedEvidence(options.gameId, {
+        ...pairBase,
         rejectionReasons: ['team_orientation_mismatch'],
-        observationAgeSeconds: null,
-        bookName: display.bookName,
-        source: homeRow.source,
-        observationTimestamp: display.timestamp,
-        homeRowId: display.homeRowId,
-        awayRowId: display.awayRowId,
-        homePrice: display.homePrice,
-        awayPrice: display.awayPrice,
-        homeCreatedAt: toIso(homeRow.createdAt),
-        awayCreatedAt: toIso(awayRow.createdAt),
-        homeUpdatedAt: toIso(homeRow.updatedAt),
-        awayUpdatedAt: toIso(awayRow.updatedAt),
-        rawImpliedHome: null,
-        rawImpliedAway: null,
-        overround: null,
-        deVigHome: null,
-        deVigAway: null,
-      },
+      }),
       rejectionLedger,
     };
   }
@@ -769,28 +1268,13 @@ export function selectAsOfMoneylineEvidence(options: {
   const rawImpliedAway = americanToProb(display.awayPrice);
   if (rawImpliedHome == null || rawImpliedAway == null) {
     return {
-      evidence: {
-        gameId: options.gameId,
-        available: false,
+      evidence: emptyPairedEvidence(options.gameId, {
+        ...pairBase,
         rejectionReasons: ['implied_probability_null'],
         observationAgeSeconds: ageSec,
-        bookName: display.bookName,
-        source: homeRow.source,
-        observationTimestamp: display.timestamp,
-        homeRowId: display.homeRowId,
-        awayRowId: display.awayRowId,
-        homePrice: display.homePrice,
-        awayPrice: display.awayPrice,
-        homeCreatedAt: toIso(homeRow.createdAt),
-        awayCreatedAt: toIso(awayRow.createdAt),
-        homeUpdatedAt: toIso(homeRow.updatedAt),
-        awayUpdatedAt: toIso(awayRow.updatedAt),
         rawImpliedHome,
         rawImpliedAway,
-        overround: null,
-        deVigHome: null,
-        deVigAway: null,
-      },
+      }),
       rejectionLedger,
     };
   }
@@ -801,41 +1285,34 @@ export function selectAsOfMoneylineEvidence(options: {
   const deVigAway = sum > 0 ? rawImpliedAway / sum : null;
 
   return {
-    evidence: {
-      gameId: options.gameId,
+    evidence: emptyPairedEvidence(options.gameId, {
+      ...pairBase,
       available: true,
       rejectionReasons: [],
       observationAgeSeconds: ageSec,
-      bookName: display.bookName,
-      source: homeRow.source,
-      observationTimestamp: display.timestamp,
-      homeRowId: display.homeRowId,
-      awayRowId: display.awayRowId,
-      homePrice: display.homePrice,
-      awayPrice: display.awayPrice,
-      homeCreatedAt: toIso(homeRow.createdAt),
-      awayCreatedAt: toIso(awayRow.createdAt),
-      homeUpdatedAt: toIso(homeRow.updatedAt),
-      awayUpdatedAt: toIso(awayRow.updatedAt),
       rawImpliedHome,
       rawImpliedAway,
       overround,
       deVigHome,
       deVigAway,
-    },
+    }),
     rejectionLedger,
   };
 }
 
-export function selectAsOfSpreadEvidence(options: {
+export function selectAsOfSpreadEvidenceWithLedger(options: {
   gameId: string;
   homeTeamId: string;
   awayTeamId: string;
   predictionReferenceTime: Date | string;
   candidates: MlCal1MarketLineCandidate[];
-}): MlCal1SpreadMarketEvidence {
+}): {
+  evidence: MlCal1SpreadMarketEvidence;
+  rejectionLedger: MlCal1RejectionLedgerEntry[];
+} {
   const eligible: MlCal1MarketLineCandidate[] = [];
   const rejectionReasons: string[] = [];
+  const rejectionLedger: MlCal1RejectionLedgerEntry[] = [];
 
   for (const row of options.candidates) {
     if (row.gameId !== options.gameId || row.lineType !== 'spread') continue;
@@ -850,24 +1327,14 @@ export function selectAsOfSpreadEvidence(options: {
     }
     if (reasons.length > 0) {
       rejectionReasons.push(...reasons.map((r) => `${row.id}:${r}`));
+      rejectionLedger.push(ledgerEntry(row, options.gameId, reasons));
       continue;
     }
     eligible.push(row);
   }
 
-  const observations: MarketLineObservation[] = eligible.map((r) => ({
-    id: r.id,
-    gameId: r.gameId,
-    lineType: r.lineType,
-    lineValue: r.lineValue,
-    bookName: r.bookName,
-    timestamp: r.timestamp,
-    teamId: r.teamId,
-    source: r.source,
-  }));
-
   const selection = selectGameMarketSnapshots({
-    rows: observations,
+    rows: eligible.map(toObservation),
     homeTeamId: options.homeTeamId,
     awayTeamId: options.awayTeamId,
     mode: 'current',
@@ -876,42 +1343,103 @@ export function selectAsOfSpreadEvidence(options: {
   const display = selection.displaySpread;
   if (!display) {
     return {
-      gameId: options.gameId,
-      available: false,
-      rejectionReasons:
-        rejectionReasons.length > 0
-          ? rejectionReasons
-          : ['no_coherent_spread_pair'],
-      observationAgeSeconds: null,
-      bookName: null,
-      source: null,
-      observationTimestamp: null,
-      homeRowId: null,
-      awayRowId: null,
-      homeLine: null,
-      awayLine: null,
-      marketSpreadHma: null,
+      evidence: {
+        gameId: options.gameId,
+        available: false,
+        rejectionReasons:
+          rejectionReasons.length > 0 ? rejectionReasons : ['no_coherent_spread_pair'],
+        observationAgeSeconds: null,
+        bookName: null,
+        source: null,
+        observationTimestamp: null,
+        homeRowId: null,
+        awayRowId: null,
+        homeLine: null,
+        awayLine: null,
+        marketSpreadHma: null,
+        homeCreatedAt: null,
+        awayCreatedAt: null,
+        homeUpdatedAt: null,
+        awayUpdatedAt: null,
+      },
+      rejectionLedger,
     };
   }
 
   const homeRow = eligible.find((r) => r.id === display.homeRowId);
+  const awayRow = eligible.find((r) => r.id === display.awayRowId);
   const ageSec =
     (toMs(options.predictionReferenceTime) - toMs(display.timestamp)) / 1000;
 
   return {
-    gameId: options.gameId,
-    available: true,
-    rejectionReasons: [],
-    observationAgeSeconds: ageSec,
-    bookName: display.bookName,
-    source: homeRow?.source ?? null,
-    observationTimestamp: display.timestamp,
-    homeRowId: display.homeRowId,
-    awayRowId: display.awayRowId,
-    homeLine: display.homeLine,
-    awayLine: display.awayLine,
-    marketSpreadHma: display.marketSpreadHma,
+    evidence: {
+      gameId: options.gameId,
+      available: true,
+      rejectionReasons: [],
+      observationAgeSeconds: ageSec,
+      bookName: display.bookName,
+      source: homeRow?.source ?? null,
+      observationTimestamp: display.timestamp,
+      homeRowId: display.homeRowId,
+      awayRowId: display.awayRowId,
+      homeLine: display.homeLine,
+      awayLine: display.awayLine,
+      marketSpreadHma: display.marketSpreadHma,
+      homeCreatedAt: homeRow ? toIso(homeRow.createdAt) : null,
+      awayCreatedAt: awayRow ? toIso(awayRow.createdAt) : null,
+      homeUpdatedAt: homeRow ? toIso(homeRow.updatedAt) : null,
+      awayUpdatedAt: awayRow ? toIso(awayRow.updatedAt) : null,
+    },
+    rejectionLedger,
   };
+}
+
+export function selectAsOfSpreadEvidence(options: {
+  gameId: string;
+  homeTeamId: string;
+  awayTeamId: string;
+  predictionReferenceTime: Date | string;
+  candidates: MlCal1MarketLineCandidate[];
+}): MlCal1SpreadMarketEvidence {
+  return selectAsOfSpreadEvidenceWithLedger(options).evidence;
+}
+
+// ---------------------------------------------------------------------------
+// Universe + identity validation
+// ---------------------------------------------------------------------------
+
+export function validateGameIdentity(
+  games: MlCal1GameMeta[],
+  season: number,
+  week: number
+): Array<{ index: number; gameId: string; reasons: string[] }> {
+  const out: Array<{ index: number; gameId: string; reasons: string[] }> = [];
+  games.forEach((g, index) => {
+    const reasons: string[] = [];
+    const label = g.gameId ? g.gameId : `index_${index}`;
+    if (typeof g.gameId !== 'string' || g.gameId.length === 0) {
+      reasons.push(`game_id_empty:${label}`);
+    }
+    if (
+      typeof g.homeTeamId !== 'string' ||
+      g.homeTeamId.length === 0 ||
+      typeof g.awayTeamId !== 'string' ||
+      g.awayTeamId.length === 0
+    ) {
+      reasons.push(`team_id_empty:${label}`);
+    }
+    if (g.homeTeamId && g.homeTeamId === g.awayTeamId) {
+      reasons.push(`home_equals_away:${label}`);
+    }
+    if (g.season !== season) {
+      reasons.push(`game_season_mismatch:${label}:${String(g.season)}`);
+    }
+    if (g.week !== week) {
+      reasons.push(`game_week_mismatch:${label}:${String(g.week)}`);
+    }
+    if (reasons.length > 0) out.push({ index, gameId: g.gameId, reasons });
+  });
+  return out;
 }
 
 export function buildUniverse(options: {
@@ -983,8 +1511,129 @@ export function buildUniverse(options: {
   return { rows, duplicateOrConflictReasons };
 }
 
-export function planMlCal1Capture(input: MlCal1FixtureInput): MlCal1PlanResult {
+// ---------------------------------------------------------------------------
+// R2: publication eligibility
+// ---------------------------------------------------------------------------
+
+function publicationReasons(kickMs: number, publicationMs: number, snapshotMs: number): string[] {
+  const reasons: string[] = [];
+  if (publicationMs < snapshotMs) reasons.push('publication_before_snapshot_reference');
+  if (publicationMs > kickMs - ML_CAL_1_MIN_PRE_KICKOFF_MS) {
+    reasons.push('publication_within_30m_of_kickoff_or_later');
+  }
+  if (publicationMs >= kickMs) reasons.push('publication_at_or_after_kickoff');
+  return reasons;
+}
+
+function computeCounts(
+  universeRows: MlCal1UniverseRow[],
+  forecasts: MlCal1ForecastRow[],
+  marketsMl: MlCal1PairedMarketEvidence[]
+): MlCal1Counts {
+  return {
+    universeGames: universeRows.length,
+    trackedGames: universeRows.filter((r) => r.tracked).length,
+    availableForecasts: forecasts.filter((f) => f.forecastAvailable).length,
+    inGateForecasts: forecasts.filter((f) => f.inGateForecast).length,
+    pairedMarkets: marketsMl.filter((m) => m.available).length,
+    missingMarkets: marketsMl.filter((m) => !m.available).length,
+    selectedBets: forecasts.filter((f) => f.selectionStatus === 'SELECTED').length,
+    noSelection: forecasts.filter((f) => f.selectionStatus === 'NO_SELECTION').length,
+    primaryEligibleCandidates: forecasts.filter((f) => f.primaryEligibleCandidate).length,
+    modelOnlyEligible: forecasts.filter((f) => f.modelOnlyEligible).length,
+  };
+}
+
+/**
+ * Pure. Re-evaluates every game against the seal/publication boundary and only ever
+ * downgrades: clears forecastAvailable / primaryEligibleCandidate / modelOnlyEligible
+ * (and model outputs) when publication crossed kickoff - 30 minutes. Returns a new bundle.
+ */
+export function finalizePublicationEligibility(
+  bundle: MlCal1ArtifactBundle,
+  publicationTime: Date | string
+): MlCal1ArtifactBundle {
+  const pubMs = toMs(publicationTime);
+  const pubIso = new Date(pubMs).toISOString();
+  const out = cloneJson(bundle);
+  const snapMs = toMs(out.envelope.snapshotReferenceTime);
+  const downgraded: string[] = [];
+  const extraBlocks: string[] = [];
+
+  for (const f of out.forecasts.rows) {
+    f.publicationTime = pubIso;
+    const reasons = publicationReasons(toMs(f.kickoffAsKnown), pubMs, snapMs);
+    if (reasons.length === 0) continue;
+
+    if (reasons.includes('publication_before_snapshot_reference')) {
+      extraBlocks.push('publication_before_snapshot_reference');
+    }
+    if (f.forecastAvailable || f.primaryEligibleCandidate || f.modelOnlyEligible) {
+      downgraded.push(f.gameId);
+    }
+    f.lateCapture =
+      f.lateCapture ||
+      reasons.includes('publication_within_30m_of_kickoff_or_later') ||
+      reasons.includes('publication_at_or_after_kickoff');
+    f.forecastAvailable = false;
+    f.inGateForecast = false;
+    f.primaryEligibleCandidate = false;
+    f.modelOnlyEligible = false;
+    f.coreSpreadHma = null;
+    f.modelHomeWinProb = null;
+    f.modelAwayWinProb = null;
+    f.absSpreadWithinGate = null;
+    f.ratingDiff = null;
+    f.hfa = null;
+    f.selection = null;
+    f.selectionStatus = 'FORECAST_UNAVAILABLE';
+    f.unavailableReasons = uniq([...f.unavailableReasons, ...reasons]);
+    f.selectionReasons = [...f.unavailableReasons];
+    f.primaryEligibilityReasons = uniq([
+      ...f.primaryEligibilityReasons,
+      'forecast_unavailable',
+      'not_in_gate',
+      'publication_timing_ineligible',
+    ]);
+  }
+
+  const env = out.envelope;
+  env.publicationTime = pubIso;
+  env.publicationFinalized = true;
+  env.publicationDowngradedGameIds = uniq([...env.publicationDowngradedGameIds, ...downgraded]);
+  env.timingRule.publicationTime =
+    'seal boundary taken by the artifact writer immediately before eligibility is finalized';
+  if (extraBlocks.length > 0) {
+    env.primaryBlockReasons = uniq([...env.primaryBlockReasons, ...extraBlocks]);
+    env.primaryReadinessBlocked = true;
+    env.status = 'PRIMARY_READINESS_BLOCKED';
+  }
+  env.counts = computeCounts(out.universe.rows, out.forecasts.rows, out.markets.moneyline);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Planner
+// ---------------------------------------------------------------------------
+
+function resolveSnapshotReferenceTime(input: MlCal1FixtureInput): string {
+  const snap = input.snapshotReferenceTime;
+  const alias = input.captureEndTime;
+  if (snap == null && alias == null) {
+    throw new Error('snapshot_reference_time_required');
+  }
+  if (snap != null && alias != null && toMs(snap) !== toMs(alias)) {
+    throw new Error('snapshot_reference_time_capture_end_time_mismatch');
+  }
+  return toIso((snap ?? alias) as string);
+}
+
+export function planMlCal1Capture(
+  input: MlCal1FixtureInput,
+  options: MlCal1PlanOptions = {}
+): MlCal1PlanResult {
   const primaryBlockReasons: string[] = [];
+  const identityBlockReasons: string[] = [];
 
   if (input.season !== ML_CAL_1_SUPPORTED_SEASON) {
     throw new Error(`unsupported_season:${input.season}`);
@@ -993,20 +1642,35 @@ export function planMlCal1Capture(input: MlCal1FixtureInput): MlCal1PlanResult {
     throw new Error(`invalid_week:${input.week}`);
   }
 
-  const predictionReferenceTime = toIso(input.captureEndTime);
+  const snapshotReferenceTime = resolveSnapshotReferenceTime(input);
+  const snapshotMs = toMs(snapshotReferenceTime);
+  const captureStartTime = toIso(input.captureStartTime);
   // Reject forged backdated production clocks relative to start.
-  if (toMs(input.captureEndTime) < toMs(input.captureStartTime)) {
-    throw new Error('capture_end_before_start');
+  if (snapshotMs < toMs(captureStartTime)) {
+    throw new Error('snapshot_reference_before_capture_start');
+  }
+
+  const now = options.now ?? (() => new Date());
+  const computationTime = toIso(now());
+  const publicationTime = toIso(options.publicationTime ?? computationTime);
+  const publicationMs = toMs(publicationTime);
+  if (publicationMs < snapshotMs) {
+    primaryBlockReasons.push('publication_before_snapshot_reference');
   }
 
   const fbsSet = new Set(input.fbsTeamIds);
   const universe = buildUniverse({
     games: input.games,
     fbsTeamIds: fbsSet,
-    predictionReferenceTime,
+    predictionReferenceTime: snapshotReferenceTime,
   });
-  if (universe.duplicateOrConflictReasons.length > 0) {
-    primaryBlockReasons.push(...universe.duplicateOrConflictReasons);
+  identityBlockReasons.push(...universe.duplicateOrConflictReasons);
+
+  const invalidIdentities = validateGameIdentity(input.games, input.season, input.week);
+  const invalidIdentityByIndex = new Map<number, string[]>();
+  for (const item of invalidIdentities) {
+    invalidIdentityByIndex.set(item.index, item.reasons);
+    identityBlockReasons.push(...item.reasons.map((r) => `invalid_game_identity:${r}`));
   }
 
   // Index ratings; detect duplicates for same composite key.
@@ -1018,80 +1682,92 @@ export function planMlCal1Capture(input: MlCal1FixtureInput): MlCal1PlanResult {
   }
   for (const [key, rows] of Array.from(ratingsByKey.entries())) {
     if (rows.length > 1) {
-      primaryBlockReasons.push(`duplicate_rating_rows:${key}`);
+      const relevant =
+        rows[0].modelVersion === ML_CAL_1_MODEL_VERSION && rows[0].season === input.season;
+      // Duplicates of the rating rows this capture consumes are identity blockers;
+      // duplicates of unrelated (other season/model) rows only block primary readiness.
+      (relevant ? identityBlockReasons : primaryBlockReasons).push(
+        `duplicate_rating_rows:${key}`
+      );
     }
   }
 
   const ratingsByTeamId: Record<string, MlCal1ExportedRatingInput> = {};
+  const duplicateRatingTeams = new Set<string>();
   for (const r of input.ratings) {
     if (r.modelVersion !== ML_CAL_1_MODEL_VERSION) continue;
     if (r.season !== input.season) continue;
     const exported = exportRatingInput(r);
     if (ratingsByTeamId[r.teamId]) {
-      primaryBlockReasons.push(`duplicate_v1_rating_team:${r.teamId}`);
+      identityBlockReasons.push(`duplicate_v1_rating_team:${r.teamId}`);
+      duplicateRatingTeams.add(r.teamId);
+      continue;
     }
     ratingsByTeamId[r.teamId] = exported;
   }
+  for (const teamId of Array.from(duplicateRatingTeams)) {
+    const entry = ratingsByTeamId[teamId];
+    ratingsByTeamId[teamId] = {
+      ...entry,
+      inputUsable: false,
+      unavailableReasons: uniq([...entry.unavailableReasons, 'duplicate_v1_rating_rows']),
+    };
+  }
 
   const ratingFingerprint = buildRatingFingerprint(ratingsByTeamId);
+  const lifecycleMode: MlCal1LifecycleMode = input.lifecycleMode ?? 'fixture_hypothetical';
   const lifecycle = qualifyLifecycleReceipt({
-    receipt: input.lifecycleReceipt,
+    mode: lifecycleMode,
+    receiptBytes: input.receiptBytes ?? null,
+    pinnedReceiptDigest: input.pinnedReceiptDigest ?? null,
+    claims: input.lifecycleReceipt,
     expectedRatingFingerprint: ratingFingerprint,
-    repositorySha: input.repositorySha,
+    captureProducerSha: input.repositorySha,
+    expectedSeason: input.season,
+    prospectiveWeek: input.week,
   });
   if (!lifecycle.qualified) {
     primaryBlockReasons.push(...lifecycle.reasons.map((r) => `lifecycle:${r}`));
   }
 
+  const identityBlocked = identityBlockReasons.length > 0;
+  primaryBlockReasons.push(...identityBlockReasons);
+
   const marketsMl: MlCal1PairedMarketEvidence[] = [];
   const marketsSp: MlCal1SpreadMarketEvidence[] = [];
-  const candidateRejectionLedger: Array<{
-    gameId: string;
-    rowId: string;
-    reasons: string[];
-  }> = [];
+  const candidateRejectionLedger: MlCal1RejectionLedgerEntry[] = [];
   const forecasts: MlCal1ForecastRow[] = [];
 
-  for (const game of input.games) {
-    const urow = universe.rows.find((r) => r.gameId === game.gameId)!;
+  input.games.forEach((game, index) => {
+    const urow = universe.rows[index];
     const homeRating = ratingsByTeamId[game.homeTeamId] ?? null;
     const awayRating = ratingsByTeamId[game.awayTeamId] ?? null;
 
     const unavailableReasons: string[] = [];
+    const identityReasons = invalidIdentityByIndex.get(index);
+    if (identityReasons) {
+      unavailableReasons.push(...identityReasons.map((r) => `invalid_game_identity:${r}`));
+    }
     if (!urow.bothFbs) unavailableReasons.push('non_fbs_matchup');
     if (!homeRating) unavailableReasons.push('missing_home_v1_rating');
     if (!awayRating) unavailableReasons.push('missing_away_v1_rating');
-    if (homeRating?.unavailableReasons.length) {
-      unavailableReasons.push(
-        ...homeRating.unavailableReasons.map((r) => `home:${r}`)
-      );
+    if (homeRating) {
+      unavailableReasons.push(...homeRating.unavailableReasons.map((r) => `home:${r}`));
+      if (!homeRating.inputUsable && homeRating.unavailableReasons.length === 0) {
+        unavailableReasons.push('home:input_not_usable');
+      }
     }
-    if (awayRating?.unavailableReasons.length) {
-      unavailableReasons.push(
-        ...awayRating.unavailableReasons.map((r) => `away:${r}`)
-      );
-    }
-    if (
-      homeRating?.valueUsed == null ||
-      awayRating?.valueUsed == null ||
-      !Number.isFinite(homeRating?.valueUsed as number) ||
-      !Number.isFinite(awayRating?.valueUsed as number)
-    ) {
-      if (!unavailableReasons.includes('missing_home_v1_rating') &&
-          !unavailableReasons.includes('missing_away_v1_rating')) {
-        unavailableReasons.push('nonfinite_or_null_rating_value');
+    if (awayRating) {
+      unavailableReasons.push(...awayRating.unavailableReasons.map((r) => `away:${r}`));
+      if (!awayRating.inputUsable && awayRating.unavailableReasons.length === 0) {
+        unavailableReasons.push('away:input_not_usable');
       }
     }
 
     const kickMs = toMs(game.kickoffAsKnown);
-    const endMs = toMs(predictionReferenceTime);
-    const lateCapture = endMs > kickMs - ML_CAL_1_MIN_PRE_KICKOFF_MS;
-    if (lateCapture) {
-      unavailableReasons.push('capture_end_within_30m_of_kickoff_or_later');
-    }
-    if (endMs >= kickMs) {
-      unavailableReasons.push('not_prospective_post_or_at_kickoff');
-    }
+    const pubReasons = publicationReasons(kickMs, publicationMs, snapshotMs);
+    unavailableReasons.push(...pubReasons);
+    const lateCapture = publicationMs > kickMs - ML_CAL_1_MIN_PRE_KICKOFF_MS;
 
     let coreSpreadHma: number | null = null;
     let ratingDiff: number | null = null;
@@ -1101,14 +1777,11 @@ export function planMlCal1Capture(input: MlCal1FixtureInput): MlCal1PlanResult {
     let forecastAvailable = false;
 
     if (
-      homeRating?.valueUsed != null &&
-      awayRating?.valueUsed != null &&
-      Number.isFinite(homeRating.valueUsed) &&
-      Number.isFinite(awayRating.valueUsed) &&
-      homeRating.modelVersion === ML_CAL_1_MODEL_VERSION &&
-      awayRating.modelVersion === ML_CAL_1_MODEL_VERSION &&
-      !lateCapture &&
-      endMs < kickMs &&
+      homeRating?.inputUsable === true &&
+      awayRating?.inputUsable === true &&
+      homeRating.valueUsed != null &&
+      awayRating.valueUsed != null &&
+      unavailableReasons.length === 0 &&
       urow.bothFbs
     ) {
       const computed = computeDirectV1Margin({
@@ -1124,29 +1797,30 @@ export function planMlCal1Capture(input: MlCal1FixtureInput): MlCal1PlanResult {
       modelHomeWinProb = probs.modelHomeWinProb;
       modelAwayWinProb = probs.modelAwayWinProb;
       forecastAvailable = true;
-    } else if (!forecastAvailable && unavailableReasons.length === 0) {
+    } else if (unavailableReasons.length === 0) {
       unavailableReasons.push('forecast_inputs_incomplete');
     }
 
+    // Market as-of / age / known-at use snapshotReferenceTime ONLY.
     const mlResult = selectAsOfMoneylineEvidence({
       gameId: game.gameId,
       homeTeamId: game.homeTeamId,
       awayTeamId: game.awayTeamId,
-      predictionReferenceTime,
+      predictionReferenceTime: snapshotReferenceTime,
       candidates: input.marketLines,
     });
     marketsMl.push(mlResult.evidence);
     candidateRejectionLedger.push(...mlResult.rejectionLedger);
 
-    marketsSp.push(
-      selectAsOfSpreadEvidence({
-        gameId: game.gameId,
-        homeTeamId: game.homeTeamId,
-        awayTeamId: game.awayTeamId,
-        predictionReferenceTime,
-        candidates: input.marketLines,
-      })
-    );
+    const spResult = selectAsOfSpreadEvidenceWithLedger({
+      gameId: game.gameId,
+      homeTeamId: game.homeTeamId,
+      awayTeamId: game.awayTeamId,
+      predictionReferenceTime: snapshotReferenceTime,
+      candidates: input.marketLines,
+    });
+    marketsSp.push(spResult.evidence);
+    candidateRejectionLedger.push(...spResult.rejectionLedger);
 
     const absWithin =
       coreSpreadHma != null ? Math.abs(coreSpreadHma) <= ML_MAX_ABS_SPREAD : null;
@@ -1197,29 +1871,34 @@ export function planMlCal1Capture(input: MlCal1FixtureInput): MlCal1PlanResult {
     if (!mlResult.evidence.available) {
       primaryEligibilityReasons.push('paired_market_unavailable');
     }
+    if (identityBlocked) {
+      primaryEligibilityReasons.push('identity_blocker');
+    }
     if (universe.duplicateOrConflictReasons.length > 0) {
       primaryEligibilityReasons.push('universe_frame_conflict');
     }
 
     const primaryEligibleCandidate =
+      !identityBlocked &&
       lifecycle.qualified &&
       forecastAvailable &&
       inGateForecast &&
-      mlResult.evidence.available &&
-      universe.duplicateOrConflictReasons.length === 0;
+      mlResult.evidence.available;
 
     const modelOnlyEligible =
-      forecastAvailable && inGateForecast && lifecycle.qualified;
+      !identityBlocked && forecastAvailable && inGateForecast && lifecycle.qualified;
 
     forecasts.push({
       gameId: game.gameId,
-      predictionTime: predictionReferenceTime,
+      predictionTime: snapshotReferenceTime,
+      snapshotReferenceTime,
+      publicationTime,
       kickoffAsKnown: toIso(game.kickoffAsKnown),
       homeTeamId: game.homeTeamId,
       awayTeamId: game.awayTeamId,
       neutralSite: game.neutralSite,
       forecastAvailable,
-      unavailableReasons,
+      unavailableReasons: uniq(unavailableReasons),
       lateCapture,
       coreSpreadHma,
       modelHomeWinProb,
@@ -1237,9 +1916,9 @@ export function planMlCal1Capture(input: MlCal1FixtureInput): MlCal1PlanResult {
       primaryEligibilityReasons,
       modelOnlyEligible,
     });
-  }
+  });
 
-  // Independent reproduction check: exported inputs → margins.
+  // Independent reproduction check: exported inputs -> margins.
   for (const f of forecasts) {
     if (!f.forecastAvailable || f.coreSpreadHma == null) continue;
     if (f.homeRatingInput?.valueUsed == null || f.awayRatingInput?.valueUsed == null) {
@@ -1257,23 +1936,12 @@ export function planMlCal1Capture(input: MlCal1FixtureInput): MlCal1PlanResult {
     }
   }
 
-  const availableForecasts = forecasts.filter((f) => f.forecastAvailable).length;
-  const inGateForecasts = forecasts.filter((f) => f.inGateForecast).length;
-  const pairedMarkets = marketsMl.filter((m) => m.available).length;
-  const missingMarkets = marketsMl.filter((m) => !m.available).length;
-  const selectedBets = forecasts.filter((f) => f.selectionStatus === 'SELECTED').length;
-  const noSelection = forecasts.filter((f) => f.selectionStatus === 'NO_SELECTION').length;
-  const primaryEligibleCandidates = forecasts.filter(
-    (f) => f.primaryEligibleCandidate
-  ).length;
-  const modelOnlyEligible = forecasts.filter((f) => f.modelOnlyEligible).length;
-
   // Capture success is evidence emission; primary readiness is separate.
   if (!lifecycle.qualified) {
     primaryBlockReasons.push('primary_blocked_lifecycle');
   }
 
-  const uniqueBlocks = Array.from(new Set(primaryBlockReasons));
+  const uniqueBlocks = uniq(primaryBlockReasons);
   const primaryReadinessBlocked = uniqueBlocks.length > 0;
   const status: MlCal1CaptureStatus = primaryReadinessBlocked
     ? 'PRIMARY_READINESS_BLOCKED'
@@ -1285,46 +1953,61 @@ export function planMlCal1Capture(input: MlCal1FixtureInput): MlCal1PlanResult {
     captureId: input.captureId,
     season: input.season,
     week: input.week,
+    producerRepositorySha: input.repositorySha,
     repositorySha: input.repositorySha,
-    captureStartTime: toIso(input.captureStartTime),
-    captureEndTime: toIso(input.captureEndTime),
-    predictionReferenceTime,
+    lifecycleSourceSha: lifecycle.lifecycleSourceSha,
+    captureStartTime,
+    snapshotReferenceTime,
+    captureEndTime: snapshotReferenceTime,
+    predictionReferenceTime: snapshotReferenceTime,
+    computationTime,
+    publicationTime,
+    publicationFinalized: false,
+    publicationDowngradedGameIds: [],
     status,
     primaryReadinessBlocked,
     primaryBlockReasons: uniqueBlocks,
     providerCalls: 0,
     businessDataWrites: 0,
-    dependencyHashes: {}, // filled by runner/tests with file hashes
+    dependencyHashes: { gitByteHashes: {}, dirty: [] }, // filled by runner/writer
     timingRule: {
-      predictionReferenceTimeEquals: 'captureEndTime',
-      marketAsOfUses: 'predictionReferenceTime',
+      captureStartTime:
+        'diagnostic only; never used for market as-of, age, or known-at checks',
+      snapshotReferenceTime:
+        'end of the DB/fixture snapshot reads; this is the predictionReferenceTime',
+      predictionReferenceTimeEquals: 'snapshotReferenceTime',
+      captureEndTimeIsAliasOf: 'snapshotReferenceTime',
+      marketAsOfUses: 'snapshotReferenceTime',
+      marketAgeUses: 'snapshotReferenceTime',
+      knownAtUses: 'snapshotReferenceTime',
+      computationTime: 'when forecast planning ran; diagnostic, not used for market evidence',
+      publicationTime:
+        'seal boundary taken by the artifact writer immediately before eligibility is finalized (provisional until publicationFinalized)',
+      availableForecastRequires:
+        'publicationTime <= kickoff - 30 minutes AND publicationTime < kickoff',
+      laterTimestampsNeverSalvageStaleMarkets: true,
       minPreKickoffMs: ML_CAL_1_MIN_PRE_KICKOFF_MS,
       maxMarketAgeSecondsInclusive: ML_CAL_1_MAX_MARKET_AGE_SECONDS,
     },
     lifecycleQualification: {
       qualified: lifecycle.qualified,
+      mode: lifecycle.mode,
+      fixtureHypothetical: lifecycle.fixtureHypothetical,
+      liveAccepted: lifecycle.liveAccepted,
       reasons: lifecycle.reasons,
-      receipt: input.lifecycleReceipt,
+      notes: lifecycle.notes,
+      receipt: lifecycle.receipt,
+      verifiedReceiptDigest: lifecycle.verifiedReceiptDigest,
       expectedRatingFingerprint: ratingFingerprint,
     },
-    counts: {
-      universeGames: universe.rows.length,
-      trackedGames: universe.rows.filter((r) => r.tracked).length,
-      availableForecasts,
-      inGateForecasts,
-      pairedMarkets,
-      missingMarkets,
-      selectedBets,
-      noSelection,
-      primaryEligibleCandidates,
-      modelOnlyEligible,
-    },
+    counts: computeCounts(universe.rows, forecasts, marketsMl),
   };
 
   return {
     status,
     primaryReadinessBlocked,
     primaryBlockReasons: uniqueBlocks,
+    lifecycle,
     bundle: {
       envelope,
       universe: {
@@ -1346,25 +2029,55 @@ export function planMlCal1Capture(input: MlCal1FixtureInput): MlCal1PlanResult {
   };
 }
 
-export function buildArtifactMembers(bundle: MlCal1ArtifactBundle): Record<
-  string,
-  string
-> {
-  return {
+// ---------------------------------------------------------------------------
+// Artifact members / manifest / atomic write
+// ---------------------------------------------------------------------------
+
+export const ML_CAL_1_BLOCKED_RECEIPT_MEMBER = 'primary-readiness-blocked.json';
+
+export function buildPrimaryReadinessBlockedReceiptBody(bundle: MlCal1ArtifactBundle): string {
+  const env = bundle.envelope;
+  return `${stableStringify({
+    schemaVersion: ML_CAL_1_CAPTURE_SCHEMA_VERSION,
+    captureId: env.captureId,
+    status: env.status,
+    primaryReadinessBlocked: env.primaryReadinessBlocked,
+    reasons: env.primaryBlockReasons.map((r) => redactSensitive(r)),
+    counts: env.counts,
+    snapshotReferenceTime: env.snapshotReferenceTime,
+    publicationTime: env.publicationTime,
+    providerCalls: 0,
+    businessDataWrites: 0,
+  })}\n`;
+}
+
+/**
+ * Members of the sealed capture directory (excluding manifest.json).
+ * When primary readiness is blocked, the blocked receipt is a manifested member.
+ */
+export function buildArtifactMembers(bundle: MlCal1ArtifactBundle): Record<string, string> {
+  const members: Record<string, string> = {
     'envelope.json': `${stableStringify(bundle.envelope)}\n`,
     'universe.json': `${stableStringify(bundle.universe)}\n`,
     'inputs.json': `${stableStringify(bundle.inputs)}\n`,
     'forecasts.json': `${stableStringify(bundle.forecasts)}\n`,
     'markets.json': `${stableStringify(bundle.markets)}\n`,
   };
+  if (bundle.envelope.primaryReadinessBlocked) {
+    members[ML_CAL_1_BLOCKED_RECEIPT_MEMBER] = buildPrimaryReadinessBlockedReceiptBody(bundle);
+  }
+  return members;
 }
 
 export function buildManifest(options: {
   captureId: string;
   members: Record<string, string>;
-  dependencyHashes: Record<string, string>;
+  dependencyHashes: MlCal1DependencyHashes;
   repositorySha: string;
   producerVersion: string;
+  lifecycleSourceSha?: string | null;
+  snapshotReferenceTime?: string;
+  publicationTime?: string;
 }): {
   manifestJson: string;
   manifest: Record<string, unknown>;
@@ -1379,11 +2092,15 @@ export function buildManifest(options: {
     };
   }
 
-  const manifest = {
+  const manifest: Record<string, unknown> = {
     schemaVersion: ML_CAL_1_CAPTURE_SCHEMA_VERSION,
     captureId: options.captureId,
     repositorySha: options.repositorySha,
+    producerRepositorySha: options.repositorySha,
+    lifecycleSourceSha: options.lifecycleSourceSha ?? null,
     producerVersion: options.producerVersion,
+    snapshotReferenceTime: options.snapshotReferenceTime ?? null,
+    publicationTime: options.publicationTime ?? null,
     dependencyHashes: options.dependencyHashes,
     members: memberDigests,
     // Explicitly no self-hash field.
@@ -1400,55 +2117,129 @@ export function writeCaptureArtifactsAtomic(options: {
   rootDir: string;
   captureId: string;
   bundle: MlCal1ArtifactBundle;
-  dependencyHashes: Record<string, string>;
+  dependencyHashes: MlCal1DependencyHashes;
+  /** Clock for publicationTime (taken first) and the post-rename check. */
+  now?: () => Date;
+  /** Test hook simulating delay between publicationTime and rename. */
+  beforeRename?: () => void;
 }): {
   captureDir: string;
   manifestPath: string;
   memberDigests: Record<string, { sha256: string; byteCount: number }>;
   manifestSha256: string;
+  publicationTime: string;
+  bundle: MlCal1ArtifactBundle;
+  publicationInvalidationPath: string | null;
+  invalidatedGameIds: string[];
 } {
-  const captureDir = path.join(options.rootDir, options.captureId);
+  const now = options.now ?? (() => new Date());
+  const captureDir = resolveCaptureDir(options.rootDir, options.captureId);
   if (fs.existsSync(captureDir)) {
     throw new Error(`capture_directory_exists:${captureDir}`);
   }
+  fs.mkdirSync(path.resolve(options.rootDir), { recursive: true });
 
-  const tmpDir = path.join(
-    options.rootDir,
-    `.tmp-${options.captureId}-${randomUUID()}`
-  );
-  fs.mkdirSync(tmpDir, { recursive: true });
+  // 1. Take publicationTime BEFORE finalizing eligibility.
+  const publicationTime = now();
 
-  const members = buildArtifactMembers({
-    ...options.bundle,
-    envelope: {
-      ...options.bundle.envelope,
-      dependencyHashes: options.dependencyHashes,
-    },
-  });
+  // 2. Pure finalization against the seal boundary.
+  const finalized = finalizePublicationEligibility(options.bundle, publicationTime);
+  finalized.envelope.dependencyHashes = options.dependencyHashes;
 
+  // 3. All members (including the blocked receipt when blocked) enter the manifest.
+  const members = buildArtifactMembers(finalized);
   const { manifestJson, memberDigests } = buildManifest({
     captureId: options.captureId,
     members,
     dependencyHashes: options.dependencyHashes,
-    repositorySha: options.bundle.envelope.repositorySha,
-    producerVersion: options.bundle.envelope.producerVersion,
+    repositorySha: finalized.envelope.producerRepositorySha,
+    producerVersion: finalized.envelope.producerVersion,
+    lifecycleSourceSha: finalized.envelope.lifecycleSourceSha,
+    snapshotReferenceTime: finalized.envelope.snapshotReferenceTime,
+    publicationTime: finalized.envelope.publicationTime,
   });
+  const manifestSha256 = sha256Utf8Bytes(Buffer.from(manifestJson, 'utf8'));
 
-  for (const [name, body] of Object.entries(members)) {
-    fs.writeFileSync(path.join(tmpDir, name), body, 'utf8');
+  const tmpDir = path.join(
+    path.resolve(options.rootDir),
+    `.tmp-${options.captureId}-${randomUUID()}`
+  );
+  fs.mkdirSync(tmpDir, { recursive: true });
+
+  try {
+    for (const [name, body] of Object.entries(members)) {
+      fs.writeFileSync(path.join(tmpDir, name), body, { encoding: 'utf8', flag: 'wx' });
+    }
+    fs.writeFileSync(path.join(tmpDir, 'manifest.json'), manifestJson, {
+      encoding: 'utf8',
+      flag: 'wx',
+    });
+
+    if (options.beforeRename) options.beforeRename();
+
+    // Never overwrite an existing destination (POSIX rename would replace an empty dir).
+    if (fs.existsSync(captureDir)) {
+      throw new Error(`capture_directory_exists:${captureDir}`);
+    }
+    fs.renameSync(tmpDir, captureDir);
+  } catch (err) {
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+    throw err;
   }
-  fs.writeFileSync(path.join(tmpDir, 'manifest.json'), manifestJson, 'utf8');
 
-  fs.renameSync(tmpDir, captureDir);
+  // 4. Post-rename check. Sealed members are never extended; if time advanced past a
+  // cutoff for a game published as available, write an EXTERNAL invalidation receipt.
+  const postCheckTime = now();
+  const postMs = postCheckTime.getTime();
+  const invalidatedGameIds = finalized.forecasts.rows
+    .filter((f) => {
+      if (!f.forecastAvailable) return false;
+      const kickMs = toMs(f.kickoffAsKnown);
+      return (
+        postMs > kickMs - ML_CAL_1_MIN_PRE_KICKOFF_MS || postMs >= kickMs
+      );
+    })
+    .map((f) => f.gameId);
+
+  let publicationInvalidationPath: string | null = null;
+  if (invalidatedGameIds.length > 0) {
+    publicationInvalidationPath = path.join(
+      path.resolve(options.rootDir),
+      `${options.captureId}.publication-invalidation.json`
+    );
+    const body = `${stableStringify({
+      schemaVersion: ML_CAL_1_CAPTURE_SCHEMA_VERSION,
+      kind: 'publication-invalidation',
+      captureId: options.captureId,
+      manifestSha256,
+      publicationTime: finalized.envelope.publicationTime,
+      postRenameCheckTime: postCheckTime.toISOString(),
+      invalidatedGameIds,
+      reasons: ['post_rename_check_after_kickoff_minus_30m_for_published_available_forecast'],
+      sealedMembersUnchanged: true,
+      providerCalls: 0,
+      businessDataWrites: 0,
+    })}\n`;
+    fs.writeFileSync(publicationInvalidationPath, body, { encoding: 'utf8', flag: 'wx' });
+  }
 
   return {
     captureDir,
     manifestPath: path.join(captureDir, 'manifest.json'),
     memberDigests,
-    manifestSha256: sha256Utf8Bytes(Buffer.from(manifestJson, 'utf8')),
+    manifestSha256,
+    publicationTime: finalized.envelope.publicationTime,
+    bundle: finalized,
+    publicationInvalidationPath,
+    invalidatedGameIds,
   };
 }
 
+/** Standalone receipt (outside any sealed capture dir), e.g. infrastructure errors. */
 export function writeBlockedReasonReceipt(options: {
   path: string;
   captureId: string;
@@ -1460,13 +2251,17 @@ export function writeBlockedReasonReceipt(options: {
     schemaVersion: ML_CAL_1_CAPTURE_SCHEMA_VERSION,
     captureId: options.captureId,
     status: options.status,
-    reasons: options.reasons,
+    reasons: options.reasons.map((r) => redactSensitive(r)),
     redacted: options.redacted ?? {},
     providerCalls: 0,
     businessDataWrites: 0,
   })}\n`;
-  fs.writeFileSync(options.path, body, 'utf8');
+  fs.writeFileSync(options.path, body, { encoding: 'utf8', flag: 'wx' });
 }
+
+// ---------------------------------------------------------------------------
+// CLI argument parsing
+// ---------------------------------------------------------------------------
 
 /** CLI arg validation before any DB access. */
 export function parseMlCal1CliArgs(argv: string[]): {
@@ -1477,6 +2272,7 @@ export function parseMlCal1CliArgs(argv: string[]): {
   captureId?: string;
   repositorySha?: string;
   lifecycleReceiptPath?: string;
+  pinnedLifecycleDigest?: string;
   enableLiveDbRead: boolean;
 } {
   let season: number | undefined;
@@ -1486,20 +2282,58 @@ export function parseMlCal1CliArgs(argv: string[]): {
   let captureId: string | undefined;
   let repositorySha: string | undefined;
   let lifecycleReceiptPath: string | undefined;
+  let pinnedLifecycleDigest: string | undefined;
   let enableLiveDbRead = false;
 
+  const takeValue = (name: string, inline: string | undefined, i: number): [string, number] => {
+    if (inline !== undefined) return [inline, i];
+    const next = argv[i + 1];
+    if (next === undefined || next.startsWith('--')) {
+      throw new Error(`missing_value_for_flag:${name}`);
+    }
+    return [next, i + 1];
+  };
+
   for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === '--season') season = Number(argv[++i]);
-    else if (a === '--week') week = Number(argv[++i]);
-    else if (a === '--fixture') fixturePath = String(argv[++i] ?? '');
-    else if (a === '--out') outDir = String(argv[++i] ?? '');
-    else if (a === '--capture-id') captureId = String(argv[++i] ?? '');
-    else if (a === '--repository-sha') repositorySha = String(argv[++i] ?? '');
-    else if (a === '--lifecycle-receipt')
-      lifecycleReceiptPath = String(argv[++i] ?? '');
-    else if (a === '--enable-live-db-read') enableLiveDbRead = true;
-    else if (a === '--mode' || a === '--confirm' || a === '--confirmation') {
+    const raw = argv[i];
+    const eq = raw.startsWith('--') ? raw.indexOf('=') : -1;
+    const a = eq > 0 ? raw.slice(0, eq) : raw;
+    const inline = eq > 0 ? raw.slice(eq + 1) : undefined;
+    let value: string;
+
+    if (a === '--season') {
+      [value, i] = takeValue(a, inline, i);
+      season = Number(value);
+    } else if (a === '--week') {
+      [value, i] = takeValue(a, inline, i);
+      week = Number(value);
+    } else if (a === '--fixture') {
+      [value, i] = takeValue(a, inline, i);
+      fixturePath = value;
+    } else if (a === '--out') {
+      [value, i] = takeValue(a, inline, i);
+      outDir = value;
+    } else if (a === '--capture-id') {
+      [value, i] = takeValue(a, inline, i);
+      captureId = value;
+    } else if (a === '--repository-sha') {
+      [value, i] = takeValue(a, inline, i);
+      repositorySha = value;
+    } else if (a === '--lifecycle-receipt') {
+      [value, i] = takeValue(a, inline, i);
+      lifecycleReceiptPath = value;
+    } else if (a === '--pinned-lifecycle-digest') {
+      [value, i] = takeValue(a, inline, i);
+      pinnedLifecycleDigest = value;
+    } else if (a === '--enable-live-db-read') {
+      enableLiveDbRead = true;
+    } else if (
+      a === '--mode' ||
+      a === '--confirm' ||
+      a === '--confirmation' ||
+      a === '--commit' ||
+      a === '--apply'
+    ) {
       throw new Error(
         `unsupported_cli_flag:${a}:ml-cal-1-capture-has-no-commit-mode`
       );
@@ -1518,6 +2352,23 @@ export function parseMlCal1CliArgs(argv: string[]): {
     throw new Error(`invalid_week:${String(week)}`);
   }
 
+  // Live mode derives the producer SHA from git rev-parse HEAD only.
+  if (repositorySha !== undefined && !fixturePath) {
+    throw new Error('repository_sha_not_allowed_in_live_mode:--repository-sha_requires_--fixture');
+  }
+  if (repositorySha !== undefined && !HEX40.test(repositorySha)) {
+    throw new Error('invalid_repository_sha');
+  }
+  if (fixturePath && enableLiveDbRead) {
+    throw new Error('fixture_and_live_db_read_conflict');
+  }
+  if (captureId !== undefined) {
+    assertSafeCaptureId(captureId);
+  }
+  if (pinnedLifecycleDigest !== undefined && !HEX64.test(pinnedLifecycleDigest.toLowerCase())) {
+    throw new Error('invalid_pinned_lifecycle_digest');
+  }
+
   return {
     season,
     week,
@@ -1526,39 +2377,265 @@ export function parseMlCal1CliArgs(argv: string[]): {
     captureId,
     repositorySha,
     lifecycleReceiptPath,
+    pinnedLifecycleDigest,
     enableLiveDbRead,
   };
 }
 
-export function assertNoForbiddenGameSelect(select: Record<string, unknown>): void {
-  for (const key of Object.keys(select)) {
-    if (
-      (ML_CAL_1_FORBIDDEN_GAME_FIELDS as readonly string[]).includes(key) ||
-      /score/i.test(key) ||
-      /pnl|result|clv/i.test(key)
-    ) {
-      throw new Error(`forbidden_game_select_field:${key}`);
+// ---------------------------------------------------------------------------
+// R5: instrumented read client
+// ---------------------------------------------------------------------------
+
+type ReadModel = 'game' | 'teamMembership' | 'teamSeasonRating' | 'marketLine';
+
+interface ModelSelectAllowlist {
+  scalars: readonly string[];
+  relations: Record<string, readonly string[]>;
+}
+
+export const ML_CAL_1_SELECT_ALLOWLIST: Record<ReadModel, ModelSelectAllowlist> = {
+  game: {
+    scalars: [
+      'id',
+      'season',
+      'week',
+      'homeTeamId',
+      'awayTeamId',
+      'date',
+      'neutralSite',
+      'status',
+    ],
+    relations: {
+      homeTeam: ['id', 'name'],
+      awayTeam: ['id', 'name'],
+    },
+  },
+  teamMembership: {
+    scalars: ['teamId', 'level', 'season'],
+    relations: {},
+  },
+  teamSeasonRating: {
+    scalars: [
+      'season',
+      'teamId',
+      'modelVersion',
+      'powerRating',
+      'rating',
+      'games',
+      'dataSource',
+      'createdAt',
+      'updatedAt',
+    ],
+    relations: {},
+  },
+  marketLine: {
+    scalars: [
+      'id',
+      'gameId',
+      'lineType',
+      'lineValue',
+      'bookName',
+      'timestamp',
+      'createdAt',
+      'updatedAt',
+      'teamId',
+      'source',
+      'season',
+      'week',
+    ],
+    relations: {},
+  },
+};
+
+const ALLOWED_FIND_MANY_ARGS = ['where', 'select', 'orderBy', 'take', 'skip'];
+const MUTATION_METHODS = [
+  'create',
+  'createMany',
+  'update',
+  'updateMany',
+  'delete',
+  'deleteMany',
+  'upsert',
+];
+
+function assertForbiddenKeyFree(model: string, where: string, key: string): void {
+  if (
+    (ML_CAL_1_FORBIDDEN_GAME_FIELDS as readonly string[]).includes(key) ||
+    FORBIDDEN_KEY_PATTERN.test(key)
+  ) {
+    throw new Error(`forbidden_${model}_${where}_field:${key}`);
+  }
+}
+
+function validateSelect(
+  model: string,
+  select: unknown,
+  scalars: readonly string[],
+  relations: Record<string, readonly string[]>
+): void {
+  if (select == null || typeof select !== 'object' || Array.isArray(select)) {
+    throw new Error(`select_required:${model}`);
+  }
+  for (const [key, val] of Object.entries(select as Record<string, unknown>)) {
+    assertForbiddenKeyFree(model, 'select', key);
+    if (key === 'include') {
+      throw new Error(`forbidden_${model}_include`);
+    }
+    if (scalars.includes(key)) {
+      if (val !== true) throw new Error(`invalid_${model}_select_value:${key}`);
+      continue;
+    }
+    if (Object.prototype.hasOwnProperty.call(relations, key)) {
+      if (val == null || typeof val !== 'object' || Array.isArray(val)) {
+        throw new Error(`relation_requires_explicit_select:${model}.${key}`);
+      }
+      const nested = val as Record<string, unknown>;
+      for (const nk of Object.keys(nested)) {
+        if (nk !== 'select') throw new Error(`forbidden_${model}_relation_arg:${key}.${nk}`);
+      }
+      validateSelect(`${model}.${key}`, nested.select, relations[key], {});
+      continue;
+    }
+    throw new Error(`unknown_${model}_select_field:${key}`);
+  }
+}
+
+function collectKeys(node: unknown, visit: (key: string, value: unknown) => void): void {
+  if (node == null || typeof node !== 'object') return;
+  if (Array.isArray(node)) {
+    for (const item of node) collectKeys(item, visit);
+    return;
+  }
+  for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+    visit(key, value);
+    collectKeys(value, visit);
+  }
+}
+
+function validateWhere(
+  model: ReadModel,
+  where: unknown,
+  allowedSeason: number,
+  allowedWeek: number | undefined
+): void {
+  if (where == null || typeof where !== 'object' || Array.isArray(where)) {
+    throw new Error(`missing_where:${model}`);
+  }
+  const w = where as Record<string, unknown>;
+
+  collectKeys(w, (key, value) => {
+    if (key === 'OR' || key === 'NOT') {
+      throw new Error(`forbidden_where_operator:${model}:${key}`);
+    }
+    assertForbiddenKeyFree(model, 'where', key);
+    if (key === 'season' && value !== allowedSeason) {
+      throw new Error(`forbidden_season_read:${model}:${JSON.stringify(value)}`);
+    }
+  });
+
+  if (!('season' in w) || w.season === undefined) {
+    throw new Error(`missing_season_filter:${model}`);
+  }
+  if (w.season !== allowedSeason) {
+    throw new Error(`forbidden_season_read:${model}:${JSON.stringify(w.season)}`);
+  }
+
+  if (model === 'game' && allowedWeek !== undefined && w.week !== allowedWeek) {
+    throw new Error(`forbidden_week_read:game:${JSON.stringify(w.week)}`);
+  }
+
+  if (model === 'marketLine') {
+    const weekOk = allowedWeek !== undefined && w.week === allowedWeek;
+    if (w.week !== undefined && allowedWeek !== undefined && w.week !== allowedWeek) {
+      throw new Error(`forbidden_week_read:marketLine:${JSON.stringify(w.week)}`);
+    }
+    const gid = w.gameId as { in?: unknown } | undefined;
+    const gameIdsOk =
+      gid != null &&
+      typeof gid === 'object' &&
+      Array.isArray(gid.in) &&
+      gid.in.length > 0 &&
+      gid.in.every((x) => typeof x === 'string' && x.length > 0);
+    if (!weekOk && !gameIdsOk) {
+      throw new Error('marketLine_where_requires_week_or_gameId_in');
     }
   }
 }
 
-export function createInstrumentedReadClient(options: {
-  delegate: {
-    game: { findMany: (args: unknown) => Promise<unknown> };
-    teamMembership: { findMany: (args: unknown) => Promise<unknown> };
-    teamSeasonRating: { findMany: (args: unknown) => Promise<unknown> };
-    marketLine: { findMany: (args: unknown) => Promise<unknown> };
-  };
-  allowedSeason: number;
-}): {
-  game: { findMany: (args: any) => Promise<unknown> };
-  teamMembership: { findMany: (args: any) => Promise<unknown> };
-  teamSeasonRating: { findMany: (args: any) => Promise<unknown> };
-  marketLine: { findMany: (args: any) => Promise<unknown> };
+function validateOrderBy(model: ReadModel, orderBy: unknown): void {
+  if (orderBy == null) return;
+  const entries = Array.isArray(orderBy) ? orderBy : [orderBy];
+  const allowed = ML_CAL_1_SELECT_ALLOWLIST[model].scalars;
+  for (const entry of entries) {
+    if (entry == null || typeof entry !== 'object') {
+      throw new Error(`invalid_orderBy:${model}`);
+    }
+    for (const key of Object.keys(entry as Record<string, unknown>)) {
+      assertForbiddenKeyFree(model, 'orderBy', key);
+      if (!allowed.includes(key)) {
+        throw new Error(`unknown_${model}_orderBy_field:${key}`);
+      }
+    }
+  }
+}
+
+function validateFindManyArgs(
+  model: ReadModel,
+  args: any,
+  allowedSeason: number,
+  allowedWeek: number | undefined
+): void {
+  if (args == null || typeof args !== 'object') {
+    throw new Error(`findMany_args_required:${model}`);
+  }
+  for (const key of Object.keys(args)) {
+    if (key === 'include') throw new Error(`forbidden_${model}_include`);
+    if (!ALLOWED_FIND_MANY_ARGS.includes(key)) {
+      throw new Error(`forbidden_findMany_arg:${model}:${key}`);
+    }
+  }
+  if (args.select === undefined) {
+    throw new Error(`select_required:${model}`);
+  }
+  const allow = ML_CAL_1_SELECT_ALLOWLIST[model];
+  validateSelect(model, args.select, allow.scalars, allow.relations);
+  validateWhere(model, args.where, allowedSeason, allowedWeek);
+  validateOrderBy(model, args.orderBy);
+}
+
+export function assertNoForbiddenGameSelect(select: Record<string, unknown>): void {
+  collectKeys(select, (key) => {
+    assertForbiddenKeyFree('game', 'select', key);
+  });
+}
+
+export interface MlCal1FindManyDelegate {
+  findMany: (args: any) => Promise<unknown>;
+}
+
+export interface MlCal1ReadDelegates {
+  game: MlCal1FindManyDelegate;
+  teamMembership: MlCal1FindManyDelegate;
+  teamSeasonRating: MlCal1FindManyDelegate;
+  marketLine: MlCal1FindManyDelegate;
+}
+
+export interface MlCal1InstrumentedReadClient extends MlCal1ReadDelegates {
   mutations: string[];
-  providerCalls: number;
-} {
+  /** Validated findMany calls in order (model + args). */
+  reads: Array<{ model: string; args: unknown }>;
+  providerCalls: 0;
+  [model: string]: any;
+}
+
+export function createInstrumentedReadClient(options: {
+  allowedSeason: number;
+  allowedWeek?: number;
+  delegate: MlCal1ReadDelegates;
+}): MlCal1InstrumentedReadClient {
   const mutations: string[] = [];
+  const reads: Array<{ model: string; args: unknown }> = [];
+
   const wrapMutation = (model: string, method: string) => {
     return async () => {
       mutations.push(`${model}.${method}`);
@@ -1566,79 +2643,178 @@ export function createInstrumentedReadClient(options: {
     };
   };
 
-  const guardSeason = (where: any, model: string) => {
-    if (where?.season != null && where.season !== options.allowedSeason) {
-      throw new Error(`forbidden_season_read:${model}:${where.season}`);
-    }
-    if (where?.season?.in) {
-      for (const s of where.season.in) {
-        if (s !== options.allowedSeason) {
-          throw new Error(`forbidden_season_read:${model}:${s}`);
-        }
-      }
-    }
+  const mutationStubs = (model: string): Record<string, () => Promise<never>> => {
+    const stubs: Record<string, () => Promise<never>> = {};
+    for (const m of MUTATION_METHODS) stubs[m] = wrapMutation(model, m);
+    return stubs;
   };
+
+  const readModel = (model: ReadModel) => ({
+    findMany: async (args: any) => {
+      validateFindManyArgs(model, args, options.allowedSeason, options.allowedWeek);
+      reads.push({ model, args });
+      return options.delegate[model].findMany(args);
+    },
+    ...mutationStubs(model),
+  });
+
+  const forbiddenModel = (model: string, readMessage: string) => ({
+    findMany: async () => {
+      throw new Error(readMessage);
+    },
+    findFirst: async () => {
+      throw new Error(readMessage);
+    },
+    findUnique: async () => {
+      throw new Error(readMessage);
+    },
+    ...mutationStubs(model),
+  });
 
   return {
     mutations,
+    reads,
     providerCalls: 0,
-    game: {
-      findMany: async (args: any) => {
-        guardSeason(args?.where, 'game');
-        if (args?.select) assertNoForbiddenGameSelect(args.select);
-        if (args?.include) {
-          const inc = JSON.stringify(args.include);
-          if (/score/i.test(inc)) {
-            throw new Error('forbidden_game_include_score');
-          }
-        }
-        return options.delegate.game.findMany(args);
-      },
-      create: wrapMutation('game', 'create'),
-      update: wrapMutation('game', 'update'),
-      delete: wrapMutation('game', 'delete'),
-      upsert: wrapMutation('game', 'upsert'),
-    } as any,
-    teamMembership: {
-      findMany: async (args: any) => {
-        guardSeason(args?.where, 'teamMembership');
-        return options.delegate.teamMembership.findMany(args);
-      },
-      create: wrapMutation('teamMembership', 'create'),
-      update: wrapMutation('teamMembership', 'update'),
-    } as any,
-    teamSeasonRating: {
-      findMany: async (args: any) => {
-        guardSeason(args?.where, 'teamSeasonRating');
-        if (args?.where?.season === 2025 || args?.where?.season < options.allowedSeason) {
-          throw new Error('forbidden_2025_or_prior_rating_read');
-        }
-        return options.delegate.teamSeasonRating.findMany(args);
-      },
-      create: wrapMutation('teamSeasonRating', 'create'),
-      update: wrapMutation('teamSeasonRating', 'update'),
-      upsert: wrapMutation('teamSeasonRating', 'upsert'),
-    } as any,
-    marketLine: {
-      findMany: async (args: any) => {
-        return options.delegate.marketLine.findMany(args);
-      },
-      create: wrapMutation('marketLine', 'create'),
-      update: wrapMutation('marketLine', 'update'),
-      createMany: wrapMutation('marketLine', 'createMany'),
-    } as any,
-    bet: {
-      findMany: async () => {
-        throw new Error('forbidden_bet_read');
-      },
-      create: wrapMutation('bet', 'create'),
-    },
-    teamGameStat: {
-      findMany: async () => {
-        throw new Error('forbidden_team_game_stat_read');
-      },
-    },
-  } as any;
+    game: readModel('game'),
+    teamMembership: readModel('teamMembership'),
+    teamSeasonRating: readModel('teamSeasonRating'),
+    marketLine: readModel('marketLine'),
+    bet: forbiddenModel('bet', 'forbidden_bet_read'),
+    teamGameStat: forbiddenModel('teamGameStat', 'forbidden_team_game_stat_read'),
+  } as MlCal1InstrumentedReadClient;
+}
+
+export interface MlCal1LiveSnapshotReadResult {
+  games: MlCal1GameMeta[];
+  fbsTeamIds: string[];
+  ratings: MlCal1RawRatingRow[];
+  marketLines: MlCal1MarketLineCandidate[];
+}
+
+export const ML_CAL_1_GAME_SELECT = {
+  id: true,
+  season: true,
+  week: true,
+  homeTeamId: true,
+  awayTeamId: true,
+  date: true,
+  neutralSite: true,
+  status: true,
+  homeTeam: { select: { id: true, name: true } },
+  awayTeam: { select: { id: true, name: true } },
+} as const;
+
+export const ML_CAL_1_MEMBERSHIP_SELECT = {
+  teamId: true,
+  level: true,
+  season: true,
+} as const;
+
+export const ML_CAL_1_RATING_SELECT = {
+  season: true,
+  teamId: true,
+  modelVersion: true,
+  powerRating: true,
+  rating: true,
+  games: true,
+  dataSource: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
+export const ML_CAL_1_MARKET_LINE_SELECT = {
+  id: true,
+  gameId: true,
+  lineType: true,
+  lineValue: true,
+  bookName: true,
+  timestamp: true,
+  createdAt: true,
+  updatedAt: true,
+  teamId: true,
+  source: true,
+  season: true,
+  week: true,
+} as const;
+
+/**
+ * Pure read helper used by the CLI loader. Accepts any client exposing
+ * `findMany` per model (instrumented client or a test fake) and issues the
+ * exact production selects.
+ */
+export async function runMlCal1LiveSnapshotReads(
+  client: MlCal1ReadDelegates,
+  options: { season: number; week: number }
+): Promise<MlCal1LiveSnapshotReadResult> {
+  const { season, week } = options;
+
+  const gameRows = (await client.game.findMany({
+    where: { season, week },
+    select: ML_CAL_1_GAME_SELECT,
+    orderBy: { date: 'asc' },
+  })) as Array<{
+    id: string;
+    season: number;
+    week: number;
+    homeTeamId: string;
+    awayTeamId: string;
+    date: Date | string;
+    neutralSite: boolean;
+    status: string | null;
+    homeTeam?: { id: string; name: string } | null;
+    awayTeam?: { id: string; name: string } | null;
+  }>;
+
+  const games: MlCal1GameMeta[] = gameRows.map((g) => ({
+    gameId: g.id,
+    season: g.season,
+    week: g.week,
+    homeTeamId: g.homeTeamId,
+    awayTeamId: g.awayTeamId,
+    homeTeamName: g.homeTeam?.name ?? '',
+    awayTeamName: g.awayTeam?.name ?? '',
+    kickoffAsKnown: g.date,
+    neutralSite: g.neutralSite,
+    status: g.status,
+  }));
+
+  const invalid = validateGameIdentity(games, season, week);
+  if (invalid.length > 0) {
+    throw new Error(
+      `invalid_game_identity:${invalid.map((x) => x.reasons.join('|')).join(',')}`
+    );
+  }
+
+  const memberships = (await client.teamMembership.findMany({
+    where: { season, level: 'fbs' },
+    select: ML_CAL_1_MEMBERSHIP_SELECT,
+  })) as Array<{ teamId: string }>;
+
+  const ratings = (await client.teamSeasonRating.findMany({
+    where: { season, modelVersion: ML_CAL_1_MODEL_VERSION },
+    select: ML_CAL_1_RATING_SELECT,
+  })) as MlCal1RawRatingRow[];
+
+  const gameIds = games.map((g) => g.gameId);
+  const marketLines =
+    gameIds.length === 0
+      ? []
+      : ((await client.marketLine.findMany({
+          where: {
+            season,
+            gameId: { in: gameIds },
+            source: ML_CAL_1_LIVE_ODDS_SOURCE,
+            lineType: { in: ['moneyline', 'spread'] },
+          },
+          select: ML_CAL_1_MARKET_LINE_SELECT,
+        })) as MlCal1MarketLineCandidate[]);
+
+  return {
+    games,
+    fbsTeamIds: memberships.map((m) => m.teamId),
+    ratings,
+    marketLines,
+  };
 }
 
 export { HARD_MIN_ML_VALUE, ML_MAX_ABS_SPREAD, modelWinProbsFromCoreSpreadHma };

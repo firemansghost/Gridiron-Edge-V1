@@ -1,15 +1,24 @@
 /**
- * CLI — ML-CAL-1 Capture V1 (artifact-only, read-only).
+ * CLI — ML-CAL-1 Capture V1.1 (artifact-only, read-only).
  *
  * Writes local JSON capture artifacts only. No COMMIT mode, no provider calls,
  * no Bet/ratings/market writes, no score/outcome reads, no study evaluation.
  *
  * Fixture route (offline / CI):
  *   npx tsx apps/jobs/capture-ml-cal-1-2026.ts --season 2026 --week 7 --fixture path/to/fixture.json
+ *   Fixture lifecycle verification is always labeled fixture_hypothetical.
  *
  * Live DB route (manual, later reviewed — NOT authorized by this PR alone):
  *   requires an explicit reviewed study-window registration before use.
- *   Uses server clock; injectable time only via fixture.
+ *   Uses server clock; the producer SHA comes from `git rev-parse HEAD` only
+ *   (--repository-sha is rejected without --fixture). Lifecycle qualification needs
+ *   --lifecycle-receipt <file> AND --pinned-lifecycle-digest <sha256>; without both
+ *   the capture still emits evidence but primary readiness is blocked
+ *   (lifecycle_verification_unavailable).
+ *
+ * Timing: snapshotReferenceTime is stamped after the snapshot reads finish and is the
+ * market as-of reference. It is NOT the publication time; the artifact writer takes
+ * publicationTime from the real clock at seal time and finalizes eligibility itself.
  */
 
 import * as fs from 'fs';
@@ -18,24 +27,29 @@ import { execFileSync } from 'child_process';
 import { randomUUID } from 'crypto';
 import { Prisma, PrismaClient } from '@prisma/client';
 import {
+  ML_CAL_1_CANONICAL_GIT_BYTE_HASHES,
   ML_CAL_1_CAPTURE_PRODUCER_VERSION,
-  ML_CAL_1_LIVE_ODDS_SOURCE,
-  ML_CAL_1_MODEL_VERSION,
   ML_CAL_1_SUPPORTED_SEASON,
+  assertSafeCaptureId,
   createInstrumentedReadClient,
-  hashFileUtf8,
   parseMlCal1CliArgs,
   planMlCal1Capture,
+  redactSensitive,
+  resolveCanonicalDependencyHashes,
+  runMlCal1LiveSnapshotReads,
+  sha256Utf8Bytes,
   writeBlockedReasonReceipt,
   writeCaptureArtifactsAtomic,
+  type MlCal1DependencyHashes,
   type MlCal1FixtureInput,
   type MlCal1LifecycleReceipt,
-  type MlCal1MarketLineCandidate,
-  type MlCal1RawRatingRow,
 } from './lib/ml-cal-1-capture';
 
-function readRepoCommitSha(): string {
+export { runMlCal1LiveSnapshotReads };
+
+export function readRepoCommitSha(repoRoot: string = process.cwd()): string {
   const sha = execFileSync('git', ['rev-parse', 'HEAD'], {
+    cwd: repoRoot,
     encoding: 'utf8',
   }).trim();
   if (!/^[0-9a-f]{40}$/i.test(sha)) {
@@ -44,46 +58,64 @@ function readRepoCommitSha(): string {
   return sha;
 }
 
-function resolveDependencyHashes(repoRoot: string): Record<string, string> {
-  const rels = [
-    'apps/web/lib/core-v1-moneyline.ts',
-    'apps/web/lib/core-v1-spread.ts',
-    'apps/web/lib/core-v1-weekly-card.ts',
-    'apps/web/lib/market-line-snapshot.ts',
-    'apps/web/lib/market-line-helpers.ts',
-    'apps/web/lib/data/core_v1_hfa_config.json',
-    'apps/jobs/lib/ml-cal-1-capture.ts',
-  ];
-  const out: Record<string, string> = {};
-  for (const rel of rels) {
-    out[rel] = hashFileUtf8(path.join(repoRoot, rel));
+/**
+ * Git-byte dependency hashes. Fails closed when pinned production Git bytes differ
+ * from ML_CAL_1_CANONICAL_GIT_BYTE_HASHES (thrown by resolveCanonicalDependencyHashes)
+ * or when a pinned production checkout is dirty vs Git bytes.
+ * Capture self-paths may be dirty during PR development; they are recorded but do not
+ * block fixture runs. After merge they should match committed bytes.
+ */
+export function resolveDependencyHashes(
+  repoRoot: string,
+  ref = 'HEAD'
+): MlCal1DependencyHashes {
+  const hashes = resolveCanonicalDependencyHashes(repoRoot, ref);
+  const pinnedDirty = hashes.dirty.filter(
+    (rel) =>
+      Object.prototype.hasOwnProperty.call(ML_CAL_1_CANONICAL_GIT_BYTE_HASHES, rel)
+  );
+  if (pinnedDirty.length > 0) {
+    throw new Error(`dependency_dirty_vs_git_bytes:${pinnedDirty.join(',')}`);
   }
-  return out;
+  return hashes;
 }
 
 function defaultOutRoot(): string {
   return path.join(process.cwd(), 'reports', 'ml-cal-1-captures');
 }
 
-async function loadLiveSnapshot(options: {
+export interface MlCal1LiveLoadOptions {
   season: number;
   week: number;
   lifecycleReceipt: MlCal1LifecycleReceipt | null;
+  receiptBytes: string | null;
+  pinnedReceiptDigest: string | null;
   repositorySha: string;
   captureId: string;
   now: () => Date;
-}): Promise<MlCal1FixtureInput> {
+  /** Injectable for tests; defaults to a real PrismaClient. */
+  prismaFactory?: () => any;
+}
+
+/**
+ * Loads a read-only live snapshot. snapshotReferenceTime is stamped AFTER all reads
+ * complete and is never treated as publication time.
+ */
+export async function loadLiveSnapshot(
+  options: MlCal1LiveLoadOptions
+): Promise<MlCal1FixtureInput> {
   const captureStartTime = options.now();
-  const prisma = new PrismaClient();
+  const prisma = options.prismaFactory ? options.prismaFactory() : new PrismaClient();
 
   try {
     const snapshot = await prisma.$transaction(
-      async (tx) => {
+      async (tx: any) => {
         // Enforce read-only for the snapshot window.
         await tx.$executeRaw`SET TRANSACTION READ ONLY`;
 
         const instrumented = createInstrumentedReadClient({
           allowedSeason: options.season,
+          allowedWeek: options.week,
           delegate: {
             game: tx.game,
             teamMembership: tx.teamMembership,
@@ -92,95 +124,17 @@ async function loadLiveSnapshot(options: {
           },
         });
 
-        const games = (await instrumented.game.findMany({
-          where: { season: options.season, week: options.week },
-          select: {
-            id: true,
-            season: true,
-            week: true,
-            homeTeamId: true,
-            awayTeamId: true,
-            date: true,
-            neutralSite: true,
-            status: true,
-            homeTeam: { select: { id: true, name: true } },
-            awayTeam: { select: { id: true, name: true } },
-          },
-          orderBy: { date: 'asc' },
-        })) as Array<{
-          id: string;
-          season: number;
-          week: number;
-          homeTeamId: string;
-          awayTeamId: string;
-          date: Date;
-          neutralSite: boolean;
-          status: string;
-          homeTeam: { id: string; name: string };
-          awayTeam: { id: string; name: string };
-        }>;
-
-        const memberships = (await instrumented.teamMembership.findMany({
-          where: { season: options.season, level: 'fbs' },
-          select: { teamId: true, level: true, season: true },
-        })) as Array<{ teamId: string }>;
-
-        const ratings = (await instrumented.teamSeasonRating.findMany({
-          where: {
-            season: options.season,
-            modelVersion: ML_CAL_1_MODEL_VERSION,
-          },
-          select: {
-            season: true,
-            teamId: true,
-            modelVersion: true,
-            powerRating: true,
-            rating: true,
-            games: true,
-            dataSource: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-        })) as MlCal1RawRatingRow[];
-
-        const gameIds = games.map((g) => g.id);
-        const marketLines =
-          gameIds.length === 0
-            ? []
-            : ((await instrumented.marketLine.findMany({
-                where: {
-                  gameId: { in: gameIds },
-                  source: ML_CAL_1_LIVE_ODDS_SOURCE,
-                  lineType: { in: ['moneyline', 'spread'] },
-                },
-                select: {
-                  id: true,
-                  gameId: true,
-                  lineType: true,
-                  lineValue: true,
-                  bookName: true,
-                  timestamp: true,
-                  createdAt: true,
-                  updatedAt: true,
-                  teamId: true,
-                  source: true,
-                  season: true,
-                  week: true,
-                },
-              })) as MlCal1MarketLineCandidate[]);
+        const result = await runMlCal1LiveSnapshotReads(instrumented, {
+          season: options.season,
+          week: options.week,
+        });
 
         if (instrumented.mutations.length > 0) {
           throw new Error(
             `unexpected_mutations:${instrumented.mutations.join(',')}`
           );
         }
-
-        return {
-          games,
-          fbsTeamIds: memberships.map((m) => m.teamId),
-          ratings,
-          marketLines,
-        };
+        return result;
       },
       {
         isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
@@ -188,7 +142,7 @@ async function loadLiveSnapshot(options: {
       }
     );
 
-    const captureEndTime = options.now();
+    const snapshotReferenceTime = options.now();
 
     return {
       captureId: options.captureId,
@@ -196,135 +150,179 @@ async function loadLiveSnapshot(options: {
       week: options.week,
       repositorySha: options.repositorySha,
       captureStartTime: captureStartTime.toISOString(),
-      captureEndTime: captureEndTime.toISOString(),
-      games: snapshot.games.map((g) => ({
-        gameId: g.id,
-        season: g.season,
-        week: g.week,
-        homeTeamId: g.homeTeamId,
-        awayTeamId: g.awayTeamId,
-        homeTeamName: g.homeTeam.name,
-        awayTeamName: g.awayTeam.name,
-        kickoffAsKnown: g.date,
-        neutralSite: g.neutralSite,
-        status: g.status,
-      })),
+      snapshotReferenceTime: snapshotReferenceTime.toISOString(),
+      captureEndTime: snapshotReferenceTime.toISOString(),
+      games: snapshot.games,
       fbsTeamIds: snapshot.fbsTeamIds,
       ratings: snapshot.ratings,
       marketLines: snapshot.marketLines,
       lifecycleReceipt: options.lifecycleReceipt,
+      receiptBytes: options.receiptBytes,
+      pinnedReceiptDigest: options.pinnedReceiptDigest,
+      lifecycleMode: 'live',
     };
   } finally {
     await prisma.$disconnect();
   }
 }
 
-async function main(): Promise<void> {
+function loadLifecycleFile(
+  receiptPath: string | undefined,
+  pinnedDigest: string | undefined
+): {
+  claims: MlCal1LifecycleReceipt | null;
+  receiptBytes: string | null;
+  pinnedReceiptDigest: string | null;
+} {
+  const pinnedReceiptDigest = pinnedDigest ? pinnedDigest.toLowerCase() : null;
+  if (!receiptPath) {
+    return { claims: null, receiptBytes: null, pinnedReceiptDigest };
+  }
+  const receiptBytes = fs.readFileSync(receiptPath, 'utf8');
+  let claims: MlCal1LifecycleReceipt | null = null;
+  try {
+    const parsed = JSON.parse(receiptBytes) as MlCal1LifecycleReceipt;
+    // A receipt cannot contain the hash of its own bytes; bind claims to the file bytes.
+    claims = { ...parsed, receiptDigest: sha256Utf8Bytes(Buffer.from(receiptBytes, 'utf8')) };
+  } catch {
+    claims = null; // verification reports lifecycle_receipt_bytes_unparseable
+  }
+  return { claims, receiptBytes, pinnedReceiptDigest };
+}
+
+export interface MlCal1CliDeps {
+  now?: () => Date;
+  cwd?: string;
+  resolveDependencyHashes?: (repoRoot: string) => MlCal1DependencyHashes;
+  readRepoCommitSha?: (repoRoot: string) => string;
+  loadLiveSnapshot?: (options: MlCal1LiveLoadOptions) => Promise<MlCal1FixtureInput>;
+  /** Test hook forwarded to writeCaptureArtifactsAtomic. */
+  beforeRename?: () => void;
+  stdout?: (line: string) => void;
+  stderr?: (line: string) => void;
+}
+
+/** Returns the process exit code. */
+export async function runMlCal1Cli(
+  argv: string[],
+  deps: MlCal1CliDeps = {}
+): Promise<number> {
+  const now = deps.now ?? (() => new Date());
+  const repoRoot = deps.cwd ?? process.cwd();
+  const out = deps.stdout ?? ((line: string) => console.log(line));
+  const err = deps.stderr ?? ((line: string) => console.error(line));
+
   // Parse/validate CLI BEFORE any DB connection.
   let args: ReturnType<typeof parseMlCal1CliArgs>;
   try {
-    args = parseMlCal1CliArgs(process.argv.slice(2));
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(JSON.stringify({ ok: false, error: message }));
-    process.exitCode = 2;
-    return;
+    args = parseMlCal1CliArgs(argv);
+  } catch (e) {
+    const message = redactSensitive(e instanceof Error ? e.message : String(e));
+    err(JSON.stringify({ ok: false, error: message }));
+    return 2;
+  }
+
+  if (!args.fixturePath && !args.enableLiveDbRead) {
+    // Live DB reads are implemented but gated: study-window registration,
+    // receipt qualification, and workflow wiring remain subsequent review steps.
+    err(
+      JSON.stringify({
+        ok: false,
+        error:
+          'live_db_read_gated:provide_--fixture_or_pass_--enable-live-db-read_after_reviewed_registration',
+        hint: 'This PR ships fixture capture only for CI. Do not dispatch a live capture without reviewed registration + workflow PR.',
+      })
+    );
+    return 3;
   }
 
   const outRoot = args.outDir ?? defaultOutRoot();
-  fs.mkdirSync(outRoot, { recursive: true });
-
   const captureId =
     args.captureId ??
     `ml-cal-1-${args.season}-w${String(args.week).padStart(2, '0')}-${randomUUID()}`;
 
-  const repoRoot = process.cwd();
-  const dependencyHashes = resolveDependencyHashes(repoRoot);
-
-  let fixtureInput: MlCal1FixtureInput;
-  let repositorySha: string;
-
   try {
+    assertSafeCaptureId(captureId);
+    fs.mkdirSync(outRoot, { recursive: true });
+
+    const dependencyHashes = (deps.resolveDependencyHashes ?? resolveDependencyHashes)(
+      repoRoot
+    );
+
+    let fixtureInput: MlCal1FixtureInput;
+
     if (args.fixturePath) {
       const raw = JSON.parse(
         fs.readFileSync(args.fixturePath, 'utf8')
       ) as MlCal1FixtureInput;
-      repositorySha = args.repositorySha ?? raw.repositorySha;
+      const repositorySha = args.repositorySha ?? raw.repositorySha;
+      if (!repositorySha || !/^[0-9a-f]{40}$/i.test(repositorySha)) {
+        throw new Error('fixture_repository_sha_required');
+      }
       fixtureInput = {
         ...raw,
         captureId: args.captureId ?? raw.captureId ?? captureId,
         season: args.season,
         week: args.week,
         repositorySha,
+        // A fixture can never claim live verification.
+        lifecycleMode: 'fixture_hypothetical',
       };
+      if (args.lifecycleReceiptPath || args.pinnedLifecycleDigest) {
+        const lc = loadLifecycleFile(args.lifecycleReceiptPath, args.pinnedLifecycleDigest);
+        fixtureInput.lifecycleReceipt = lc.claims;
+        fixtureInput.receiptBytes = lc.receiptBytes;
+        fixtureInput.pinnedReceiptDigest = lc.pinnedReceiptDigest;
+      }
       if (fixtureInput.season !== ML_CAL_1_SUPPORTED_SEASON) {
         throw new Error(`unsupported_season:${fixtureInput.season}`);
       }
-    } else if (!args.enableLiveDbRead) {
-      // Live DB reads are implemented but gated: study-window registration,
-      // receipt qualification, and workflow wiring remain subsequent review steps.
-      console.error(
-        JSON.stringify({
-          ok: false,
-          error:
-            'live_db_read_gated:provide_--fixture_or_pass_--enable-live-db-read_after_reviewed_registration',
-          hint: 'This PR ships fixture capture only for CI. Do not dispatch a live capture without reviewed registration + workflow PR.',
-        })
-      );
-      process.exitCode = 3;
-      return;
+      assertSafeCaptureId(fixtureInput.captureId);
     } else {
-      repositorySha = args.repositorySha ?? readRepoCommitSha();
-      let lifecycleReceipt: MlCal1LifecycleReceipt | null = null;
-      if (args.lifecycleReceiptPath) {
-        lifecycleReceipt = JSON.parse(
-          fs.readFileSync(args.lifecycleReceiptPath, 'utf8')
-        ) as MlCal1LifecycleReceipt;
-      }
-      fixtureInput = await loadLiveSnapshot({
+      // Live: producer SHA from git only; lifecycle needs bytes + pinned digest.
+      const repositorySha = (deps.readRepoCommitSha ?? readRepoCommitSha)(repoRoot);
+      const lc = loadLifecycleFile(args.lifecycleReceiptPath, args.pinnedLifecycleDigest);
+      fixtureInput = await (deps.loadLiveSnapshot ?? loadLiveSnapshot)({
         season: args.season,
         week: args.week,
-        lifecycleReceipt,
+        lifecycleReceipt: lc.claims,
+        receiptBytes: lc.receiptBytes,
+        pinnedReceiptDigest: lc.pinnedReceiptDigest,
         repositorySha,
         captureId,
-        now: () => new Date(),
+        now,
       });
     }
 
-    const planned = planMlCal1Capture(fixtureInput);
-    planned.bundle.envelope.dependencyHashes = dependencyHashes;
+    const planned = planMlCal1Capture(fixtureInput, { now });
 
     const written = writeCaptureArtifactsAtomic({
       rootDir: outRoot,
       captureId: fixtureInput.captureId,
       bundle: planned.bundle,
       dependencyHashes,
+      now,
+      beforeRename: deps.beforeRename,
     });
 
-    if (planned.primaryReadinessBlocked) {
-      writeBlockedReasonReceipt({
-        path: path.join(written.captureDir, 'primary-readiness-blocked.json'),
-        captureId: fixtureInput.captureId,
-        status: planned.status,
-        reasons: planned.primaryBlockReasons,
-        redacted: {
-          season: args.season,
-          week: args.week,
-          counts: planned.bundle.envelope.counts,
-        },
-      });
-    }
+    const finalEnvelope = written.bundle.envelope;
 
-    console.log(
+    out(
       JSON.stringify(
         {
           ok: true,
-          status: planned.status,
-          primaryReadinessBlocked: planned.primaryReadinessBlocked,
+          status: finalEnvelope.status,
+          primaryReadinessBlocked: finalEnvelope.primaryReadinessBlocked,
+          lifecycleMode: finalEnvelope.lifecycleQualification.mode,
+          fixtureHypothetical: finalEnvelope.lifecycleQualification.fixtureHypothetical,
           captureDir: written.captureDir,
           manifestPath: written.manifestPath,
           manifestSha256: written.manifestSha256,
-          counts: planned.bundle.envelope.counts,
+          snapshotReferenceTime: finalEnvelope.snapshotReferenceTime,
+          publicationTime: written.publicationTime,
+          publicationInvalidationPath: written.publicationInvalidationPath,
+          invalidatedGameIds: written.invalidatedGameIds,
+          counts: finalEnvelope.counts,
           producerVersion: ML_CAL_1_CAPTURE_PRODUCER_VERSION,
           providerCalls: 0,
           businessDataWrites: 0,
@@ -334,12 +332,19 @@ async function main(): Promise<void> {
       )
     );
 
-    process.exitCode = planned.primaryReadinessBlocked ? 1 : 0;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    return finalEnvelope.primaryReadinessBlocked ? 1 : 0;
+  } catch (e) {
+    const message = redactSensitive(e instanceof Error ? e.message : String(e));
+    // Only a validated capture id may name a file (no path escape via the id).
+    let safeId = true;
+    try {
+      assertSafeCaptureId(captureId);
+    } catch {
+      safeId = false;
+    }
     const receiptPath = path.join(
       outRoot,
-      `${captureId}-infrastructure-error.json`
+      `${safeId ? captureId : `ml-cal-1-invalid-capture-id-${randomUUID()}`}-infrastructure-error.json`
     );
     try {
       writeBlockedReasonReceipt({
@@ -351,7 +356,7 @@ async function main(): Promise<void> {
     } catch {
       // best-effort
     }
-    console.error(
+    err(
       JSON.stringify({
         ok: false,
         status: 'INFRASTRUCTURE_ERROR',
@@ -359,13 +364,12 @@ async function main(): Promise<void> {
         receiptPath,
       })
     );
-    process.exitCode = 2;
+    return 2;
   }
 }
 
-// Export live loader for unit tests that inject a client (not invoked by default CLI).
-export { loadLiveSnapshot, readRepoCommitSha, resolveDependencyHashes };
-
 if (require.main === module) {
-  main();
+  runMlCal1Cli(process.argv.slice(2)).then((code) => {
+    process.exitCode = code;
+  });
 }

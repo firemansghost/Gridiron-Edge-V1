@@ -4,7 +4,9 @@
   "week": 7,
   "repositorySha": "c37b5d367a364398d479c52844466aa4fd3306c2",
   "captureStartTime": "2026-10-12T17:59:50.000Z",
+  "snapshotReferenceTime": "2026-10-12T18:00:00.000Z",
   "captureEndTime": "2026-10-12T18:00:00.000Z",
+  "lifecycleMode": "fixture_hypothetical",
   "games": [
     {
       "gameId": "2026-wk7-alabama-georgia",
@@ -166,13 +168,16 @@
       "source": "oddsapi"
     }
   ],
+  "receiptBytes": "{\"acceptedImmutable\":true,\"canonicalWeight\":1,\"completedThroughWeek\":6,\"ratingFingerprint\":\"3d09604ecfd013331c57e77a9541d7938cd0bf98e8e63b1e258510ac355c3f84\",\"season\":2026,\"selectedPolicy\":\"GLOBAL_BLEND_W3_W6\",\"sourceSha\":\"c37b5d367a364398d479c52844466aa4fd3306c2\"}\n",
+  "pinnedReceiptDigest": "8328bf1ad0d1dfb89e471a7aa49cc3949474977f50c304a99565827f587692ce",
   "lifecycleReceipt": {
     "sourceSha": "c37b5d367a364398d479c52844466aa4fd3306c2",
     "completedThroughWeek": 6,
     "selectedPolicy": "GLOBAL_BLEND_W3_W6",
     "canonicalWeight": 1,
-    "receiptDigest": "d5bfa59941a62e54b99ff3ec8b11addbb2b4ef68bf527d76deeaf74610ff7857",
-    "ratingFingerprint": "4382c15bb48dc5244c8e868e42445ccb15c9b00ceb2adce8bd1ad0d6ce712e17",
-    "acceptedImmutable": true
+    "season": 2026,
+    "acceptedImmutable": true,
+    "ratingFingerprint": "3d09604ecfd013331c57e77a9541d7938cd0bf98e8e63b1e258510ac355c3f84",
+    "receiptDigest": "8328bf1ad0d1dfb89e471a7aa49cc3949474977f50c304a99565827f587692ce"
   }
 }
