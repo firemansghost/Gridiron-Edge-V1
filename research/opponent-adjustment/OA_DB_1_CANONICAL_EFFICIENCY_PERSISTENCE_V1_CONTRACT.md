@@ -213,15 +213,22 @@ Rules:
 
 The four selected efficiency metrics are stored as PostgreSQL `DOUBLE PRECISION`.
 The live production database currently reports `extra_float_digits=0`, which can
-render a correctly stored float8 value at 15 significant digits when it is read back
-through the application client.
+render a correctly stored float8 value at approximately 15 significant digits when it
+is read back through the application client.
+
+A full audit of the accepted OA-DATA-1 archive contains **23,952 non-null efficiency
+metrics**. Simulating PostgreSQL's 15-significant-digit readback over that frozen set
+produced a maximum relative round-trip error of approximately
+**4.756901377026931e-15**.
 
 Therefore COMMIT verification must:
 
-- compare `ppa_off`, `ppa_def`, `success_off`, and `success_def` at
-  **15 significant digits**;
+- compare `ppa_off`, `ppa_def`, `success_off`, and `success_def` using a
+  frozen relative-error tolerance of **5e-15**;
+- compute relative error as
+  `abs(expected - actual) / max(abs(expected), abs(actual))`;
+- preserve exact equality for exact matches and exact zero/null semantics;
 - reject non-finite values;
-- preserve exact null semantics;
 - continue to compare every non-floating field exactly, including natural keys,
   team identities, side/orientation, status, timestamp, source provenance, artifact
   hashes, and `record_fingerprint_sha256`.
@@ -457,7 +464,7 @@ After any future authorized COMMIT, independently verify:
 - per-season counts exactly match the frozen table above;
 - duplicate natural keys = 0;
 - fingerprint mismatches vs accepted artifact = 0;
-- all four efficiency metrics match the accepted plan at the frozen 15-significant-digit PostgreSQL readback precision;
+- all four efficiency metrics match the accepted plan within the frozen 5e-15 relative PostgreSQL float8 readback tolerance;
 - all non-floating persisted fields match exactly;
 - unexpected existing rows = 0;
 - 2026 mutation count = 0;
