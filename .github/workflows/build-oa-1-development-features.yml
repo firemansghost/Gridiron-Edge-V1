@@ -1,0 +1,153 @@
+name: Build OA-1 Development Features (Manual, Guarded)
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_main_sha:
+        description: 'Exact current main SHA authorized for this read-only build'
+        required: true
+        type: string
+      confirm:
+        description: 'Type BUILD_OA_1_DEVELOPMENT_FEATURES_2022_2023 exactly'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oa-1-development-feature-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      OA_1_CONFIRMATION: 'BUILD_OA_1_DEVELOPMENT_FEATURES_2022_2023'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Source SHA guard
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          echo "ACTUAL_SHA=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+          echo "actual_sha=${ACTUAL_SHA}"
+          echo "expected_main_sha=${EXPECTED_MAIN_SHA}"
+          if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+            echo "::error::Refusing OA-1 development build outside refs/heads/main."
+            exit 1
+          fi
+          if [ -z "${EXPECTED_MAIN_SHA}" ] || [ "${ACTUAL_SHA}" != "${EXPECTED_MAIN_SHA}" ]; then
+            echo "::error::Refusing OA-1 development build because main SHA does not match expected_main_sha."
+            exit 1
+          fi
+          echo "Source SHA guard passed."
+
+      - name: Build authorization guard
+        env:
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          if [ "${INPUT_CONFIRM}" != "${OA_1_CONFIRMATION}" ]; then
+            echo "::error::Build requires confirm=${OA_1_CONFIRMATION}"
+            exit 1
+          fi
+          echo "confirmation=accepted"
+          echo "providerCalls=0"
+          echo "databaseWrites=false"
+          echo "databaseReadSeasons=2022,2023"
+          echo "season2024RowsRead=0"
+          echo "season2025RowsRead=0"
+          echo "season2026RowsRead=0"
+          echo "outcomeReads=0"
+          echo "marketReads=0"
+
+      - name: Preflight DIRECT_URL
+        env:
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DIRECT_URL:-}" ]; then
+            echo "::error::DIRECT_URL secret is missing"
+            exit 1
+          fi
+          echo "DIRECT_URL: present (value not printed)"
+          echo "CFBD_API_KEY: not provided"
+          echo "ODDS_API_KEY: not provided"
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Generate Prisma client
+        env:
+          DATABASE_URL: ${{ secrets.DIRECT_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+        run: npx prisma generate
+
+      - name: Compile OA-1 development builder
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/oa-1-development
+          npx tsc             --module commonjs             --moduleResolution node             --target ES2019             --esModuleInterop             --skipLibCheck             --rootDir apps/jobs             --outDir .tmp/oa-1-development             apps/jobs/src/research/oa-1-opponent-adjusted-efficiency.ts             apps/jobs/build-oa-1-development-features.ts
+
+      - name: Run read-only OA-1 development build
+        env:
+          DATABASE_URL: ${{ secrets.DIRECT_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          OUT="reports/oa-1-development-features/${GITHUB_RUN_ID}"
+          node .tmp/oa-1-development/build-oa-1-development-features.js             --output-dir "${OUT}"             --expected-repo-sha "${EXPECTED_MAIN_SHA}"             --confirm "${INPUT_CONFIRM}"
+
+      - name: Upload OA-1 development feature evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oa-1-development-features-v1-${{ github.run_id }}
+          path: reports/oa-1-development-features/**
+          if-no-files-found: warn
+          retention-days: 90
+          compression-level: 6
+          overwrite: false
+          include-hidden-files: false
+
+      - name: Summary
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          echo "==================================================="
+          echo "OA-1 DEVELOPMENT FEATURE BUILD"
+          echo "==================================================="
+          echo "status=${JOB_STATUS}"
+          echo "expectedMainSha=${EXPECTED_MAIN_SHA}"
+          echo "actualSha=${ACTUAL_SHA:-unavailable}"
+          echo "providerCalls=0"
+          echo "databaseWrites=false"
+          echo "databaseReadSeasons=2022,2023"
+          echo "season2024RowsRead=0"
+          echo "season2025RowsRead=0"
+          echo "season2026RowsRead=0"
+          echo "legacyTeamGameStatsReads=0"
+          echo "gameTableReads=0"
+          echo "outcomeReads=0"
+          echo "marketReads=0"
+          echo "betReads=0"
+          echo "modelPredictionReads=0"
+          echo "==================================================="
