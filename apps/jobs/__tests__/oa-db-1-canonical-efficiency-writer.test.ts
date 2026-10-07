@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
   OA_DB_1_COMMIT_CONFIRMATION,
-  OA_DB_1_FLOAT_COMPARE_SIGNIFICANT_DIGITS,
+  OA_DB_1_FLOAT_READBACK_RELATIVE_TOLERANCE,
   OA_DB_1_INSERT_BATCH_SIZE,
   OA_DB_1_TRANSACTION_TIMEOUT_MS,
   oaDb1FloatReadbackEqual,
@@ -98,8 +98,8 @@ describe('OA-DB-1 COMMIT argument guard', () => {
 });
 
 describe('OA-DB-1 float readback verification', () => {
-  it('matches PostgreSQL extra_float_digits=0 readback at 15 significant digits', () => {
-    expect(OA_DB_1_FLOAT_COMPARE_SIGNIFICANT_DIGITS).toBe(15);
+  it('matches PostgreSQL extra_float_digits=0 readback within the frozen relative-error bound', () => {
+    expect(OA_DB_1_FLOAT_READBACK_RELATIVE_TOLERANCE).toBe(5e-15);
     expect(
       oaDb1FloatReadbackEqual(-0.27626448555417216, -0.276264485554172)
     ).toBe(true);
@@ -108,6 +108,9 @@ describe('OA-DB-1 float readback verification', () => {
     ).toBe(true);
     expect(
       oaDb1FloatReadbackEqual(0.5217391304347826, 0.521739130434783)
+    ).toBe(true);
+    expect(
+      oaDb1FloatReadbackEqual(0.10210902744783851, 0.102109027447839)
     ).toBe(true);
   });
 
@@ -160,7 +163,7 @@ describe('OA-DB-1 COMMIT static safety', () => {
     expect(WRITER).toContain('reviewedPreviewMatchesCurrentPlan');
     expect(WRITER).toContain('persistedRowsExactlyMatchPlan');
     expect(WRITER).toContain('oaDb1FloatReadbackEqual');
-    expect(WRITER).toContain('floatComparisonSignificantDigits');
+    expect(WRITER).toContain('floatReadbackRelativeTolerance');
     expect(WRITER).toContain('snapshot2026');
   });
 
