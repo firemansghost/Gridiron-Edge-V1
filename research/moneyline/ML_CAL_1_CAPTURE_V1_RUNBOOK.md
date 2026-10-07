@@ -14,7 +14,7 @@ Produce immutable, all-game Core V1 forecast + as-of moneyline evidence artifact
 |------|------|
 | `apps/jobs/lib/ml-cal-1-capture.ts` | Pure evidence planner + artifact helpers |
 | `apps/jobs/capture-ml-cal-1-2026.ts` | Read-only CLI (fixture route; gated live DB read) |
-| `apps/jobs/__tests__/ml-cal-1-capture.test.ts` | Fixture tests covering review items R1–R6 |
+| `apps/jobs/__tests__/ml-cal-1-capture.test.ts` | Fixture tests covering review items R1–R6 and F1–F4 |
 | `apps/jobs/__tests__/fixtures/ml-cal-1-capture-demo.json` | Offline demo fixture with a verified lifecycle receipt |
 | `.github/workflows/test-ml-cal-1-capture-v1.yml` | Secret-free CI that runs only the capture test file |
 | `research/moneyline/ML_CAL_1_CAPTURE_V1_RUNBOOK.md` | This runbook |
@@ -40,35 +40,39 @@ Rules:
 - `publicationTime` before `snapshotReferenceTime` is a primary-readiness block (`publication_before_snapshot_reference`).
 - Post-kickoff computation is never labeled a prospective forecast.
 
-### Publication boundary — R2
+### Publication boundary — R2 / F2
 
 1. `planMlCal1Capture(input, { now, publicationTime })` produces a **provisional** `publicationTime` (default `computationTime`) and marks each game accordingly. `publicationFinalized` stays `false`.
 2. `writeCaptureArtifactsAtomic({ now, beforeRename })` takes `publicationTime` from `now()` at seal start, then calls the pure `finalizePublicationEligibility(bundle, publicationTime)`. This only ever **downgrades**: `forecastAvailable`, `primaryEligibleCandidate`, `modelOnlyEligible` and model outputs are cleared, `lateCapture` is set, and the game id is listed in `publicationDowngradedGameIds`. It never restores eligibility.
 3. Sealed members are never extended. After the rename the writer re-reads `now()`; if any game published as available is now past `kickoff − 30m` (or at/after kickoff) it writes an **external** `<captureId>.publication-invalidation.json` (outside the sealed directory) naming the invalidated game ids, the manifest SHA-256, and `sealedMembersUnchanged: true`. Landing exactly on `kickoff − 30m` does not invalidate.
-4. `beforeRename` is a test hook that simulates delay between sealing and renaming.
+4. The writer always writes an external `<captureId>.terminal-completion.json` bound to the manifest SHA. Terminal status is `EVIDENCE_CAPTURED`, `PRIMARY_READINESS_BLOCKED`, or `PUBLICATION_INVALIDATED`. Effective counts/eligibility incorporate invalidation; sealed forecast bytes remain historical evidence.
+5. CLI success (`ok=true`, exit 0) requires `terminalStatus === EVIDENCE_CAPTURED` and no effective primary block. `PUBLICATION_INVALIDATED` → exit 4 / `ok=false`. `readCaptureTerminalResult` fails closed on a naked capture directory, missing/tampered terminal receipt, or missing invalidation when games were invalidated.
+6. `beforeRename` is a test hook that simulates delay between sealing and renaming.
 
-## Lifecycle verification (R3)
+## Lifecycle verification (R3 / F1)
 
-A boolean `acceptedImmutable` is never enough. Qualification verifies **bytes**:
+A boolean `acceptedImmutable` is never enough. **Integrity ≠ live acceptance.**
 
 1. `receiptBytes` is the exact UTF-8 text of the receipt (`stableStringify(core) + '\n'`, where `core` excludes `receiptDigest`).
-2. `pinnedReceiptDigest` is independently supplied and must equal `sha256(receiptBytes)`.
-3. `claims.receiptDigest` must also equal `sha256(receiptBytes)`; claims must match the parsed bytes (ignoring `receiptDigest`, since a receipt cannot contain the hash of its own bytes). Qualification evaluates the **bytes-derived** claims.
-4. Receipt checks: `selectedPolicy === GLOBAL_BLEND_W3_W6`; `acceptedImmutable === true`; `sourceSha` is 40-hex; `season` (when present) is 2026; `ratingFingerprint` equals the fingerprint of the exported V1 ratings; `canonicalWeight === b1CanonicalWeight(completedThroughWeek)` **and** equals `1`; `completedThroughWeek >= 6` and `< prospective week` (week 6 is valid for prospective week 7; week 0 with weight 1 fails).
+2. `pinnedReceiptDigest` is independently supplied and must equal `sha256(receiptBytes)` → `receiptIntegrityVerified` when hash/parse/claim consistency succeeds.
+3. `claims.receiptDigest` must also equal `sha256(receiptBytes)`; claims must match the parsed bytes (ignoring `receiptDigest`). Qualification evaluates the **bytes-derived** claims.
+4. Receipt checks: `selectedPolicy === GLOBAL_BLEND_W3_W6`; `acceptedImmutable === true`; `sourceSha` is 40-hex; `season` when present must be 2026; missing season on a fixture fails (`lifecycle_season_binding_missing`); missing season on live requires an external trust season binding; `ratingFingerprint` equals the fingerprint of the exported V1 ratings; `canonicalWeight === b1CanonicalWeight(completedThroughWeek)` **and** equals `1`; `completedThroughWeek >= 6` and `< prospective week`.
+5. **`liveAccepted` requires a separately reviewed `trustedAcceptance` record** tying the approved receipt digest to season, policy, week, weight, rating fingerprint, and lifecycle source SHA. CLI bytes plus a matching caller digest never create that trust record. Until trust exists, the live route stays primary-blocked even when hashing succeeds.
 
 Modes:
 
 | Mode | Source | Result |
 |------|--------|--------|
-| `fixture_hypothetical` | Fixtures (the CLI forces this for `--fixture`, even when the file says `live`) | May qualify with `fixtureHypothetical: true`, `liveAccepted: false`. Never described as live-accepted. |
-| `live` | Live DB route | Requires receipt bytes **and** `--pinned-lifecycle-digest`. Missing either → `lifecycle_verification_unavailable`: evidence is still emitted but primary readiness is blocked. Only a fully verified live receipt yields `liveAccepted: true`. |
+| `fixture_hypothetical` | Fixtures (the CLI forces this for `--fixture`, even when the file says `live`) | May qualify with `fixtureHypothetical: true`, `liveAccepted: false`, after integrity + policy. Never described as live-accepted. |
+| `live` | Live DB route | Bytes + pin → integrity only. Missing either → `lifecycle_verification_unavailable`. Integrity without trust → `lifecycle_trusted_acceptance_missing` / `liveAccepted: false`. Live acceptance needs the independently reviewed trust record. |
 
-The lifecycle `sourceSha` is recorded separately (`lifecycleSourceSha`) from the capture producer SHA (`producerRepositorySha`); they are **not** required to be equal.
+The lifecycle `sourceSha` is recorded separately (`lifecycleSourceSha`) from the capture producer SHA (`producerRepositorySha`); they are **not** required to be equal. Trusted receipt retrieval / prospective registration remain later work; missing trust fails closed now.
 
-### Ratings (R1 recap)
+### Ratings (R1 / F4)
 
-- Direct V1 margin: `homeRating − awayRating + effectiveHfa` from **exported** rating inputs, with production precedence `Number(powerRating || rating || 0)` evaluated on the Decimal/object **before** `Number()`.
+- Direct V1 margin: `homeRating − awayRating + effectiveHfa` from **exported** rating inputs, with production precedence `powerRating || rating` evaluated for truthiness **before** numeric conversion.
 - A Decimal(0)-like object (`{ toString: () => '0', valueOf: () => 0 }`) is truthy and is a valid usable zero. A numeric `0` falls through to `rating`.
+- Whitespace-only strings, blank Decimal-like text, booleans, and arrays are rejected (`blank_or_whitespace_rating_value` / `unsupported_rating_value_type`) and never become an eligible zero forecast.
 - `powerRating` and `rating` both null/falsy → `valueUsed: null`, `chosenField: 'default_zero'`, `inputUsable: false`. The capture never imputes a zero and must not produce an available forecast.
 - Non-finite values, a wrong `modelVersion`, a missing row, or duplicate V1 rows for a team make the forecast unavailable and block primary eligibility.
 
@@ -89,9 +93,10 @@ The PR 243 draft hash table was correct for Git bytes. The alternate digests bel
 
 Canonical values are pinned in `ML_CAL_1_CANONICAL_GIT_BYTE_HASHES`.
 
-- `resolveCanonicalDependencyHashes(repoRoot, ref)` hashes Git bytes and **throws** `dependency_git_byte_hash_mismatch` if any pinned file differs from the table (wrong content with LF line endings still fails). Working-tree files are compared after LF normalization (`normalizeNewlinesToLf`), so a CRLF checkout of identical content is not dirty; its raw hash is reported separately in `checkoutRawHashes`.
-- The capture runner and planner (`apps/jobs/capture-ml-cal-1-2026.ts`, `apps/jobs/lib/ml-cal-1-capture.ts`) are hashed from Git bytes but are not pinned; they may be dirty while the PR is in development and are recorded as such.
-- The CLI's `resolveDependencyHashes` additionally fails closed on a dirty pinned file. Tests inject `{ gitByteHashes: { ...ML_CAL_1_CANONICAL_GIT_BYTE_HASHES }, dirty: [] }` instead of calling it, because the self-paths are dirty during PR development.
+- `resolveCanonicalDependencyHashes(repoRoot, ref)` hashes Git bytes of the six pins **plus** capture runner/planner and the lifecycle-weight source (`apps/jobs/src/preseason/balanced-v1-transition-blend-eval.ts`). It **throws** `dependency_git_byte_hash_mismatch` if any of the six pinned files differs from the table. Working-tree files are compared after LF normalization (`normalizeNewlinesToLf`), so a CRLF checkout of identical content is not dirty; its raw hash is reported separately in `checkoutRawHashes`.
+- Fixture/offline: runner, planner, and lifecycle-weight path may be dirty during PR development and are recorded in `dirty` without throwing.
+- Live (F3): before any DB access, `resolveDependencyHashes(..., { mode: 'live' })` rejects dirty/missing runner, planner, lifecycle-weight dependency, or any of the six pinned web deps (`live_executable_dependency_dirty` / `live_executable_dependency_unhashed`). Producer SHA alone does not prove executable-byte identity.
+- Tests inject `{ gitByteHashes: { ...ML_CAL_1_CANONICAL_GIT_BYTE_HASHES }, dirty: [] }` for fixture artifact writes, because self-paths are dirty during PR development.
 - Live mode derives the producer SHA from `git rev-parse HEAD` only. `--repository-sha` without `--fixture` is rejected before any DB access (`repository_sha_not_allowed_in_live_mode`); with `--fixture` it must be a 40-hex SHA and overrides only the producer SHA.
 
 ## Read isolation (R5)

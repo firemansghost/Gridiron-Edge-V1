@@ -11,10 +11,13 @@
  * Live DB route (manual, later reviewed — NOT authorized by this PR alone):
  *   requires an explicit reviewed study-window registration before use.
  *   Uses server clock; the producer SHA comes from `git rev-parse HEAD` only
- *   (--repository-sha is rejected without --fixture). Lifecycle qualification needs
- *   --lifecycle-receipt <file> AND --pinned-lifecycle-digest <sha256>; without both
- *   the capture still emits evidence but primary readiness is blocked
- *   (lifecycle_verification_unavailable).
+ *   (--repository-sha is rejected without --fixture). Receipt bytes + matching
+ *   --pinned-lifecycle-digest prove integrity only (receiptIntegrityVerified).
+ *   liveAccepted requires a separately reviewed trustedAcceptance record; CLI
+ *   bytes+digest alone never create that trust. Until trust exists, live primary
+ *   qualification stays blocked even when hashing succeeds. Missing receipt bytes
+ *   → lifecycle_verification_unavailable. Live also rejects dirty runner/planner/
+ *   lifecycle-weight / pinned web deps before any DB access.
  *
  * Timing: snapshotReferenceTime is stamped after the snapshot reads finish and is the
  * market as-of reference. It is NOT the publication time; the artifact writer takes
@@ -29,6 +32,8 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import {
   ML_CAL_1_CANONICAL_GIT_BYTE_HASHES,
   ML_CAL_1_CAPTURE_PRODUCER_VERSION,
+  ML_CAL_1_CAPTURE_SELF_PATHS,
+  ML_CAL_1_LIFECYCLE_WEIGHT_PATH,
   ML_CAL_1_SUPPORTED_SEASON,
   assertSafeCaptureId,
   createInstrumentedReadClient,
@@ -43,6 +48,7 @@ import {
   type MlCal1DependencyHashes,
   type MlCal1FixtureInput,
   type MlCal1LifecycleReceipt,
+  type MlCal1TrustedAcceptanceRecord,
 } from './lib/ml-cal-1-capture';
 
 export { runMlCal1LiveSnapshotReads };
@@ -59,23 +65,41 @@ export function readRepoCommitSha(repoRoot: string = process.cwd()): string {
 }
 
 /**
- * Git-byte dependency hashes. Fails closed when pinned production Git bytes differ
- * from ML_CAL_1_CANONICAL_GIT_BYTE_HASHES (thrown by resolveCanonicalDependencyHashes)
- * or when a pinned production checkout is dirty vs Git bytes.
- * Capture self-paths may be dirty during PR development; they are recorded but do not
- * block fixture runs. After merge they should match committed bytes.
+ * Git-byte dependency hashes.
+ * - Always fail closed when pinned production Git bytes differ from the canonical table.
+ * - Fixture/offline: producer self-paths and the lifecycle-weight dependency may be dirty
+ *   during development (recorded in `dirty`, not thrown).
+ * - Live: reject ANY dirty path among pinned web deps, capture runner/planner, and the
+ *   lifecycle-weight source before DB access. Producer SHA alone is not executable identity.
  */
 export function resolveDependencyHashes(
   repoRoot: string,
-  ref = 'HEAD'
+  ref = 'HEAD',
+  options: { mode?: 'fixture' | 'live' } = {}
 ): MlCal1DependencyHashes {
+  const mode = options.mode ?? 'fixture';
   const hashes = resolveCanonicalDependencyHashes(repoRoot, ref);
-  const pinnedDirty = hashes.dirty.filter(
-    (rel) =>
-      Object.prototype.hasOwnProperty.call(ML_CAL_1_CANONICAL_GIT_BYTE_HASHES, rel)
+  const pinnedDirty = hashes.dirty.filter((rel) =>
+    Object.prototype.hasOwnProperty.call(ML_CAL_1_CANONICAL_GIT_BYTE_HASHES, rel)
   );
   if (pinnedDirty.length > 0) {
     throw new Error(`dependency_dirty_vs_git_bytes:${pinnedDirty.join(',')}`);
+  }
+  if (mode === 'live') {
+    const liveRequired = new Set<string>([
+      ...Object.keys(ML_CAL_1_CANONICAL_GIT_BYTE_HASHES),
+      ...ML_CAL_1_CAPTURE_SELF_PATHS,
+      ML_CAL_1_LIFECYCLE_WEIGHT_PATH,
+    ]);
+    const liveDirty = hashes.dirty.filter((rel) => liveRequired.has(rel));
+    if (liveDirty.length > 0) {
+      throw new Error(`live_executable_dependency_dirty:${liveDirty.join(',')}`);
+    }
+    for (const rel of liveRequired) {
+      if (!hashes.gitByteHashes[rel]) {
+        throw new Error(`live_executable_dependency_unhashed:${rel}`);
+      }
+    }
   }
   return hashes;
 }
@@ -193,11 +217,18 @@ function loadLifecycleFile(
 export interface MlCal1CliDeps {
   now?: () => Date;
   cwd?: string;
-  resolveDependencyHashes?: (repoRoot: string) => MlCal1DependencyHashes;
+  resolveDependencyHashes?: (
+    repoRoot: string,
+    ref?: string,
+    options?: { mode?: 'fixture' | 'live' }
+  ) => MlCal1DependencyHashes;
   readRepoCommitSha?: (repoRoot: string) => string;
   loadLiveSnapshot?: (options: MlCal1LiveLoadOptions) => Promise<MlCal1FixtureInput>;
+  /** Optional independently reviewed live trust record (never synthesized from CLI digest alone). */
+  trustedAcceptance?: MlCal1TrustedAcceptanceRecord | null;
   /** Test hook forwarded to writeCaptureArtifactsAtomic. */
   beforeRename?: () => void;
+  failTerminalWrite?: boolean;
   stdout?: (line: string) => void;
   stderr?: (line: string) => void;
 }
@@ -245,8 +276,11 @@ export async function runMlCal1Cli(
     assertSafeCaptureId(captureId);
     fs.mkdirSync(outRoot, { recursive: true });
 
+    const isLive = !args.fixturePath && args.enableLiveDbRead;
     const dependencyHashes = (deps.resolveDependencyHashes ?? resolveDependencyHashes)(
-      repoRoot
+      repoRoot,
+      'HEAD',
+      { mode: isLive ? 'live' : 'fixture' }
     );
 
     let fixtureInput: MlCal1FixtureInput;
@@ -267,6 +301,7 @@ export async function runMlCal1Cli(
         repositorySha,
         // A fixture can never claim live verification.
         lifecycleMode: 'fixture_hypothetical',
+        trustedAcceptance: null,
       };
       if (args.lifecycleReceiptPath || args.pinnedLifecycleDigest) {
         const lc = loadLifecycleFile(args.lifecycleReceiptPath, args.pinnedLifecycleDigest);
@@ -279,7 +314,9 @@ export async function runMlCal1Cli(
       }
       assertSafeCaptureId(fixtureInput.captureId);
     } else {
-      // Live: producer SHA from git only; lifecycle needs bytes + pinned digest.
+      // Live: producer SHA from git only. Bytes+digest prove integrity only;
+      // liveAccepted requires an independently reviewed trust record (deps.trustedAcceptance).
+      // Executable deps must already be clean (checked above) before DB access.
       const repositorySha = (deps.readRepoCommitSha ?? readRepoCommitSha)(repoRoot);
       const lc = loadLifecycleFile(args.lifecycleReceiptPath, args.pinnedLifecycleDigest);
       fixtureInput = await (deps.loadLiveSnapshot ?? loadLiveSnapshot)({
@@ -292,6 +329,8 @@ export async function runMlCal1Cli(
         captureId,
         now,
       });
+      fixtureInput.trustedAcceptance = deps.trustedAcceptance ?? null;
+      fixtureInput.lifecycleMode = 'live';
     }
 
     const planned = planMlCal1Capture(fixtureInput, { now });
@@ -303,26 +342,37 @@ export async function runMlCal1Cli(
       dependencyHashes,
       now,
       beforeRename: deps.beforeRename,
+      failTerminalWrite: deps.failTerminalWrite,
     });
 
     const finalEnvelope = written.bundle.envelope;
+    const ok =
+      written.terminalStatus === 'EVIDENCE_CAPTURED' &&
+      !written.primaryReadinessBlockedEffective;
 
     out(
       JSON.stringify(
         {
-          ok: true,
-          status: finalEnvelope.status,
-          primaryReadinessBlocked: finalEnvelope.primaryReadinessBlocked,
+          ok,
+          status: written.terminalStatus,
+          sealedStatus: finalEnvelope.status,
+          primaryReadinessBlocked: written.primaryReadinessBlockedEffective,
+          sealedPrimaryReadinessBlocked: finalEnvelope.primaryReadinessBlocked,
           lifecycleMode: finalEnvelope.lifecycleQualification.mode,
           fixtureHypothetical: finalEnvelope.lifecycleQualification.fixtureHypothetical,
+          receiptIntegrityVerified:
+            finalEnvelope.lifecycleQualification.receiptIntegrityVerified,
+          liveAccepted: finalEnvelope.lifecycleQualification.liveAccepted,
           captureDir: written.captureDir,
           manifestPath: written.manifestPath,
           manifestSha256: written.manifestSha256,
           snapshotReferenceTime: finalEnvelope.snapshotReferenceTime,
           publicationTime: written.publicationTime,
           publicationInvalidationPath: written.publicationInvalidationPath,
+          terminalReceiptPath: written.terminalReceiptPath,
           invalidatedGameIds: written.invalidatedGameIds,
-          counts: finalEnvelope.counts,
+          sealedCounts: finalEnvelope.counts,
+          effectiveCounts: written.effectiveCounts,
           producerVersion: ML_CAL_1_CAPTURE_PRODUCER_VERSION,
           providerCalls: 0,
           businessDataWrites: 0,
@@ -332,7 +382,9 @@ export async function runMlCal1Cli(
       )
     );
 
-    return finalEnvelope.primaryReadinessBlocked ? 1 : 0;
+    if (written.terminalStatus === 'PUBLICATION_INVALIDATED') return 4;
+    if (written.primaryReadinessBlockedEffective) return 1;
+    return 0;
   } catch (e) {
     const message = redactSensitive(e instanceof Error ? e.message : String(e));
     // Only a validated capture id may name a file (no path escape via the id).

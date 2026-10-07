@@ -72,6 +72,26 @@ export const ML_CAL_1_CAPTURE_SELF_PATHS = [
   'apps/jobs/lib/ml-cal-1-capture.ts',
 ] as const;
 
+/**
+ * Behavior dependency for lifecycle week→weight consistency.
+ * Live mode requires this path clean vs Git bytes; fixture mode may be dirty in development.
+ */
+export const ML_CAL_1_LIFECYCLE_WEIGHT_PATH =
+  'apps/jobs/src/preseason/balanced-v1-transition-blend-eval.ts' as const;
+
+/** All paths that must be clean before live DB access. */
+export const ML_CAL_1_LIVE_EXECUTABLE_PATHS = [
+  ...Object.keys(ML_CAL_1_CANONICAL_GIT_BYTE_HASHES),
+  ...ML_CAL_1_CAPTURE_SELF_PATHS,
+  ML_CAL_1_LIFECYCLE_WEIGHT_PATH,
+] as const;
+
+export type MlCal1TerminalStatus =
+  | 'EVIDENCE_CAPTURED'
+  | 'PRIMARY_READINESS_BLOCKED'
+  | 'PUBLICATION_INVALIDATED'
+  | 'INFRASTRUCTURE_ERROR';
+
 /** Forbidden Game select fields — scores/outcomes must never be projected. */
 export const ML_CAL_1_FORBIDDEN_GAME_FIELDS = [
   'homeScore',
@@ -182,15 +202,35 @@ export interface MlCal1LifecycleReceipt {
   /** SHA-256 of canonical exported rating readback identity used at lifecycle write. */
   ratingFingerprint: string;
   acceptedImmutable: boolean;
-  /** Optional season binding. When absent, binding is via ratingFingerprint only. */
+  /**
+   * Season binding. Fixture mode requires this field; live mode may omit it only when
+   * an independently reviewed trustedAcceptance supplies the season binding.
+   */
   season?: number;
+}
+
+/**
+ * Separately reviewed immutable trust record for live acceptance.
+ * Matching caller-supplied bytes to a caller-supplied digest is integrity only —
+ * it does NOT create this trust record.
+ */
+export interface MlCal1TrustedAcceptanceRecord {
+  /** Approved digest of the accepted lifecycle receipt artifact. */
+  approvedReceiptDigest: string;
+  season: number;
+  selectedPolicy: string;
+  completedThroughWeek: number;
+  canonicalWeight: number;
+  ratingFingerprint: string;
+  /** Lifecycle producer / source lineage SHA (not the capture producer SHA). */
+  lifecycleSourceSha: string;
 }
 
 export interface MlCal1LifecycleVerificationInput {
   mode: MlCal1LifecycleMode;
   /** Exact UTF-8 bytes of the claimed accepted receipt artifact (JSON text). */
   receiptBytes: string | null;
-  /** Independently pinned expected digest of those bytes. */
+  /** Digest expected to match sha256(receiptBytes) — integrity pin only. */
   pinnedReceiptDigest: string | null;
   /** Parsed claims. `claims.receiptDigest` must equal sha256(receiptBytes). */
   claims: MlCal1LifecycleReceipt | null;
@@ -199,15 +239,26 @@ export interface MlCal1LifecycleVerificationInput {
   captureProducerSha: string;
   expectedSeason: number;
   prospectiveWeek: number;
+  /**
+   * Live acceptance trust record. Required for liveAccepted / live primary qualification.
+   * Fixture mode ignores this for hypothetical qualification.
+   */
+  trustedAcceptance?: MlCal1TrustedAcceptanceRecord | null;
 }
 
 export interface MlCal1LifecycleVerificationResult {
+  /** Primary-eligibility qualification (fixture may qualify hypothetically; live needs trust). */
   qualified: boolean;
   reasons: string[];
   mode: MlCal1LifecycleMode;
   /** True when verification ran in fixture_hypothetical mode (never live-accepted). */
   fixtureHypothetical: boolean;
-  /** True only when mode==='live' AND every check passed. */
+  /** Bytes hash matched the integrity pin and internal claims consistency. */
+  receiptIntegrityVerified: boolean;
+  /**
+   * True only when mode==='live' AND integrity verified AND trustedAcceptance
+   * independently binds the approved digest/season/policy/week/fingerprint/source.
+   */
   liveAccepted: boolean;
   /** Claims actually evaluated (parsed from receiptBytes when available). */
   receipt: MlCal1LifecycleReceipt | null;
@@ -383,6 +434,8 @@ export interface MlCal1CaptureEnvelope {
     mode: MlCal1LifecycleMode;
     /** True when verified only against fixture claims. Never described as live-accepted. */
     fixtureHypothetical: boolean;
+    /** Bytes matched the integrity pin (not live acceptance). */
+    receiptIntegrityVerified: boolean;
     liveAccepted: boolean;
     reasons: string[];
     notes: string[];
@@ -444,10 +497,15 @@ export interface MlCal1FixtureInput {
   lifecycleReceipt: MlCal1LifecycleReceipt | null;
   /** Exact bytes of the claimed receipt artifact. */
   receiptBytes?: string | null;
-  /** Independently pinned digest of receiptBytes. */
+  /** Integrity pin for receiptBytes (not a live trust record). */
   pinnedReceiptDigest?: string | null;
   /** Defaults to 'fixture_hypothetical'. */
   lifecycleMode?: MlCal1LifecycleMode;
+  /**
+   * Independently reviewed live trust record. Required for liveAccepted.
+   * Fixture hypothetical qualification does not require this.
+   */
+  trustedAcceptance?: MlCal1TrustedAcceptanceRecord | null;
 }
 
 export interface MlCal1PlanOptions {
@@ -624,7 +682,34 @@ function finishChosen(
   value: number | null;
   reasons: string[];
 } {
-  const value = Number(raw);
+  // Reject unsupported runtime types that are truthy but not numeric ratings.
+  if (typeof raw === 'boolean' || Array.isArray(raw)) {
+    reasons.push('unsupported_rating_value_type');
+    return { chosenField, raw, value: null, reasons };
+  }
+  if (raw != null && typeof raw === 'object' && !('toString' in raw)) {
+    reasons.push('unsupported_rating_value_type');
+    return { chosenField, raw, value: null, reasons };
+  }
+
+  let text: string;
+  if (typeof raw === 'object' && raw !== null && 'toString' in raw) {
+    text = raw.toString();
+  } else if (typeof raw === 'number' || typeof raw === 'string') {
+    text = String(raw);
+  } else {
+    reasons.push('unsupported_rating_value_type');
+    return { chosenField, raw, value: null, reasons };
+  }
+
+  if (typeof text !== 'string' || text.trim() === '') {
+    // Whitespace-only / blank Decimal-like text must not become Number('') === 0.
+    reasons.push('blank_or_whitespace_rating_value');
+    return { chosenField, raw, value: null, reasons };
+  }
+
+  const trimmed = text.trim();
+  const value = Number(trimmed);
   if (!Number.isFinite(value)) {
     reasons.push('nonfinite_rating_value');
     return { chosenField, raw, value: null, reasons };
@@ -750,13 +835,18 @@ function omitReceiptDigest(value: unknown): unknown {
 }
 
 /**
- * Verify a lifecycle receipt against pinned bytes. Boolean `acceptedImmutable`
- * alone never qualifies. Live primary eligibility needs mode==='live' + every check.
+ * Verify a lifecycle receipt.
+ *
+ * Integrity (bytes ↔ digest) is separate from live acceptance. CLI bytes plus a
+ * matching caller digest never create a trust record. Live acceptance requires an
+ * independently reviewed `trustedAcceptance` binding. Until that exists, live
+ * primary qualification remains blocked even when hashing succeeds. Fixture mode
+ * may qualify hypothetically (liveAccepted=false) after integrity + policy checks.
  *
  * Note on `receiptDigest`: a receipt cannot contain the hash of its own bytes, so
  * canonical comparison between claims and parsed bytes ignores the `receiptDigest`
  * field; `claims.receiptDigest` must instead equal sha256(receiptBytes), which in
- * turn must equal the independently pinned digest.
+ * turn must equal the integrity pin.
  */
 export function qualifyLifecycleReceipt(
   input: MlCal1LifecycleVerificationInput
@@ -764,18 +854,60 @@ export function qualifyLifecycleReceipt(
   const reasons: string[] = [];
   const notes: string[] = [];
   const mode = input.mode;
+  let receiptIntegrityVerified = false;
 
   const finish = (
     receipt: MlCal1LifecycleReceipt | null,
-    verifiedReceiptDigest: string | null
+    verifiedReceiptDigest: string | null,
+    opts?: { forceUnqualified?: boolean }
   ): MlCal1LifecycleVerificationResult => {
-    const qualified = reasons.length === 0;
+    // Snapshot policy/integrity reasons before live-trust appends.
+    const policyAndIntegrityOk = reasons.length === 0 && receiptIntegrityVerified;
+    let qualified = false;
+    let liveAccepted = false;
+
+    if (!opts?.forceUnqualified) {
+      if (mode === 'fixture_hypothetical') {
+        // Offline hypothetical may qualify for primary study prep; never liveAccepted.
+        qualified = policyAndIntegrityOk;
+      } else if (mode === 'live') {
+        const trust = input.trustedAcceptance ?? null;
+        if (!trust) {
+          reasons.push('lifecycle_trusted_acceptance_missing');
+          notes.push(
+            'receipt_integrity_is_not_live_acceptance:supply_independently_reviewed_trust_record'
+          );
+          qualified = false;
+        } else if (!policyAndIntegrityOk || !receipt || !verifiedReceiptDigest) {
+          if (policyAndIntegrityOk && (!receipt || !verifiedReceiptDigest)) {
+            reasons.push('lifecycle_trust_requires_verified_receipt');
+          }
+          qualified = false;
+        } else {
+          const trustReasons = matchTrustedAcceptance(
+            trust,
+            receipt,
+            verifiedReceiptDigest,
+            input
+          );
+          if (trustReasons.length > 0) {
+            reasons.push(...trustReasons);
+            qualified = false;
+          } else {
+            qualified = true;
+            liveAccepted = true;
+          }
+        }
+      }
+    }
+
     return {
       qualified,
       reasons: uniq(reasons),
       mode,
       fixtureHypothetical: mode === 'fixture_hypothetical',
-      liveAccepted: qualified && mode === 'live',
+      receiptIntegrityVerified,
+      liveAccepted,
       receipt,
       verifiedReceiptDigest,
       lifecycleSourceSha: receipt?.sourceSha ?? null,
@@ -786,88 +918,84 @@ export function qualifyLifecycleReceipt(
 
   if (mode !== 'live' && mode !== 'fixture_hypothetical') {
     reasons.push('lifecycle_mode_invalid');
-    return finish(null, null);
+    return finish(null, null, { forceUnqualified: true });
   }
 
   const hasBytes = typeof input.receiptBytes === 'string' && input.receiptBytes.length > 0;
   const hasPinned =
     typeof input.pinnedReceiptDigest === 'string' && input.pinnedReceiptDigest.length > 0;
 
-  // Both live and fixture_hypothetical require actual receipt bytes + pinned digest.
-  // Fixture mode may still qualify when verified, but is always labeled
-  // fixtureHypothetical / liveAccepted=false. Claims alone never qualify.
   if (!hasBytes || !hasPinned) {
     reasons.push(
       mode === 'live'
         ? 'lifecycle_verification_unavailable'
         : 'lifecycle_fixture_receipt_bytes_or_pin_missing'
     );
-    return finish(input.claims, null);
+    return finish(input.claims, null, { forceUnqualified: true });
   }
 
   let claims: MlCal1LifecycleReceipt | null = input.claims;
   let verifiedDigest: string | null = null;
+  let integrityReasonsBeforePolicy = 0;
 
-  if (hasBytes) {
-    const actualDigest = sha256Utf8Bytes(Buffer.from(input.receiptBytes as string, 'utf8'));
-    verifiedDigest = actualDigest;
+  const actualDigest = sha256Utf8Bytes(Buffer.from(input.receiptBytes as string, 'utf8'));
+  verifiedDigest = actualDigest;
 
-    if (!hasPinned) {
-      reasons.push('lifecycle_pinned_digest_missing');
-    } else {
-      const pinned = String(input.pinnedReceiptDigest).toLowerCase();
-      if (!HEX64.test(pinned) || pinned !== actualDigest) {
-        reasons.push('lifecycle_receipt_digest_pinned_mismatch');
-      }
-    }
+  const pinned = String(input.pinnedReceiptDigest).toLowerCase();
+  if (!HEX64.test(pinned) || pinned !== actualDigest) {
+    reasons.push('lifecycle_receipt_digest_pinned_mismatch');
+  }
 
-    if (input.claims) {
-      const claimed = String(input.claims.receiptDigest ?? '').toLowerCase();
-      if (claimed !== actualDigest) {
-        reasons.push('lifecycle_receipt_digest_claim_mismatch');
-      }
-    }
-
-    let parsed: unknown = null;
-    let parsedOk = false;
-    try {
-      parsed = JSON.parse(input.receiptBytes as string);
-      parsedOk = parsed != null && typeof parsed === 'object' && !Array.isArray(parsed);
-    } catch {
-      parsedOk = false;
-    }
-
-    if (!parsedOk) {
-      reasons.push('lifecycle_receipt_bytes_unparseable');
-    } else {
-      if (input.claims) {
-        if (
-          stableStringify(omitReceiptDigest(parsed)) !==
-          stableStringify(omitReceiptDigest(input.claims))
-        ) {
-          reasons.push('lifecycle_claims_do_not_match_receipt_bytes');
-        }
-      }
-      // Evaluate the bytes-derived claims; never trust caller-supplied claims over bytes.
-      claims = {
-        ...(parsed as MlCal1LifecycleReceipt),
-        receiptDigest: actualDigest,
-      };
-    }
-  } else {
-    // fixture_hypothetical without receipt bytes
-    if (hasPinned) {
-      reasons.push('lifecycle_receipt_bytes_missing');
-    } else {
-      notes.push('fixture_receipt_bytes_not_provided');
+  if (input.claims) {
+    const claimed = String(input.claims.receiptDigest ?? '').toLowerCase();
+    if (claimed !== actualDigest) {
+      reasons.push('lifecycle_receipt_digest_claim_mismatch');
     }
   }
+
+  let parsed: unknown = null;
+  let parsedOk = false;
+  try {
+    parsed = JSON.parse(input.receiptBytes as string);
+    parsedOk = parsed != null && typeof parsed === 'object' && !Array.isArray(parsed);
+  } catch {
+    parsedOk = false;
+  }
+
+  if (!parsedOk) {
+    reasons.push('lifecycle_receipt_bytes_unparseable');
+  } else {
+    if (input.claims) {
+      if (
+        stableStringify(omitReceiptDigest(parsed)) !==
+        stableStringify(omitReceiptDigest(input.claims))
+      ) {
+        reasons.push('lifecycle_claims_do_not_match_receipt_bytes');
+      }
+    }
+    claims = {
+      ...(parsed as MlCal1LifecycleReceipt),
+      receiptDigest: actualDigest,
+    };
+  }
+
+  integrityReasonsBeforePolicy = reasons.length;
+  // Integrity means digest+parse+claim consistency only (policy checked next).
+  const digestIntegrityOk =
+    reasons.filter((r) =>
+      [
+        'lifecycle_receipt_digest_pinned_mismatch',
+        'lifecycle_receipt_digest_claim_mismatch',
+        'lifecycle_receipt_bytes_unparseable',
+        'lifecycle_claims_do_not_match_receipt_bytes',
+      ].includes(r)
+    ).length === 0;
 
   if (!claims) {
     if (!reasons.includes('lifecycle_receipt_bytes_unparseable')) {
       reasons.push('lifecycle_receipt_missing');
     }
-    return finish(null, verifiedDigest);
+    return finish(null, verifiedDigest, { forceUnqualified: true });
   }
 
   const r = claims;
@@ -899,9 +1027,19 @@ export function qualifyLifecycleReceipt(
   if (r.ratingFingerprint !== input.expectedRatingFingerprint) {
     reasons.push('lifecycle_rating_fingerprint_mismatch');
   }
-  if (r.season != null && r.season !== input.expectedSeason) {
+
+  // Season: explicit on receipt must match; missing season requires external trust binding.
+  if (r.season == null) {
+    if (mode === 'fixture_hypothetical') {
+      reasons.push('lifecycle_season_binding_missing');
+    } else {
+      // Live: trustedAcceptance must supply season; checked in finish().
+      notes.push('lifecycle_receipt_season_absent_requires_external_trust_binding');
+    }
+  } else if (r.season !== input.expectedSeason) {
     reasons.push('lifecycle_season_mismatch');
   }
+
   if (!r.receiptDigest || !HEX64.test(String(r.receiptDigest).toLowerCase())) {
     reasons.push('lifecycle_receipt_digest_invalid');
   }
@@ -909,7 +1047,59 @@ export function qualifyLifecycleReceipt(
     reasons.push('lifecycle_source_sha_invalid');
   }
 
+  // receiptIntegrityVerified = digest match succeeded (even if policy later fails).
+  receiptIntegrityVerified = digestIntegrityOk;
+  void integrityReasonsBeforePolicy;
+
   return finish(r, verifiedDigest);
+}
+
+function matchTrustedAcceptance(
+  trust: MlCal1TrustedAcceptanceRecord,
+  receipt: MlCal1LifecycleReceipt,
+  verifiedDigest: string,
+  input: MlCal1LifecycleVerificationInput
+): string[] {
+  const reasons: string[] = [];
+  const approved = String(trust.approvedReceiptDigest).toLowerCase();
+  if (!HEX64.test(approved) || approved !== verifiedDigest.toLowerCase()) {
+    reasons.push('lifecycle_trust_digest_mismatch');
+  }
+  if (trust.season !== input.expectedSeason) {
+    reasons.push('lifecycle_trust_season_mismatch');
+  }
+  if (receipt.season != null && trust.season !== receipt.season) {
+    reasons.push('lifecycle_trust_season_disagrees_with_receipt');
+  }
+  if (receipt.season == null && trust.season !== input.expectedSeason) {
+    reasons.push('lifecycle_trust_season_binding_invalid');
+  }
+  if (trust.selectedPolicy !== ML_CAL_1_LIFECYCLE_POLICY) {
+    reasons.push('lifecycle_trust_policy_mismatch');
+  }
+  if (trust.selectedPolicy !== receipt.selectedPolicy) {
+    reasons.push('lifecycle_trust_policy_disagrees_with_receipt');
+  }
+  if (trust.completedThroughWeek !== receipt.completedThroughWeek) {
+    reasons.push('lifecycle_trust_week_disagrees_with_receipt');
+  }
+  if (trust.canonicalWeight !== receipt.canonicalWeight) {
+    reasons.push('lifecycle_trust_weight_disagrees_with_receipt');
+  }
+  if (trust.ratingFingerprint !== receipt.ratingFingerprint) {
+    reasons.push('lifecycle_trust_fingerprint_disagrees_with_receipt');
+  }
+  if (trust.ratingFingerprint !== input.expectedRatingFingerprint) {
+    reasons.push('lifecycle_trust_fingerprint_mismatch');
+  }
+  if (
+    typeof trust.lifecycleSourceSha !== 'string' ||
+    !HEX40.test(trust.lifecycleSourceSha) ||
+    trust.lifecycleSourceSha !== receipt.sourceSha
+  ) {
+    reasons.push('lifecycle_trust_source_sha_mismatch');
+  }
+  return reasons;
 }
 
 export const verifyLifecycleReceipt = qualifyLifecycleReceipt;
@@ -975,7 +1165,11 @@ export function resolveCanonicalDependencyHashes(
   const mismatches: string[] = [];
 
   const pinnedPaths = Object.keys(ML_CAL_1_CANONICAL_GIT_BYTE_HASHES);
-  const allPaths = [...pinnedPaths, ...ML_CAL_1_CAPTURE_SELF_PATHS];
+  const allPaths = [
+    ...pinnedPaths,
+    ...ML_CAL_1_CAPTURE_SELF_PATHS,
+    ML_CAL_1_LIFECYCLE_WEIGHT_PATH,
+  ];
 
   for (const rel of allPaths) {
     const checkoutPath = path.join(repoRoot, rel);
@@ -1725,6 +1919,7 @@ export function planMlCal1Capture(
     captureProducerSha: input.repositorySha,
     expectedSeason: input.season,
     prospectiveWeek: input.week,
+    trustedAcceptance: input.trustedAcceptance ?? null,
   });
   if (!lifecycle.qualified) {
     primaryBlockReasons.push(...lifecycle.reasons.map((r) => `lifecycle:${r}`));
@@ -1993,6 +2188,7 @@ export function planMlCal1Capture(
       qualified: lifecycle.qualified,
       mode: lifecycle.mode,
       fixtureHypothetical: lifecycle.fixtureHypothetical,
+      receiptIntegrityVerified: lifecycle.receiptIntegrityVerified,
       liveAccepted: lifecycle.liveAccepted,
       reasons: lifecycle.reasons,
       notes: lifecycle.notes,
@@ -2113,6 +2309,124 @@ export function buildManifest(options: {
   };
 }
 
+/** Effective counts after applying terminal invalidation (sealed bytes unchanged). */
+export function computeEffectiveCountsAfterInvalidation(
+  bundle: MlCal1ArtifactBundle,
+  invalidatedGameIds: string[]
+): MlCal1Counts {
+  const invalidated = new Set(invalidatedGameIds);
+  const forecasts = bundle.forecasts.rows.map((f) => {
+    if (!invalidated.has(f.gameId)) return f;
+    return {
+      ...f,
+      forecastAvailable: false,
+      lateCapture: true,
+      primaryEligibleCandidate: false,
+      modelOnlyEligible: false,
+      inGateForecast: false,
+      unavailableReasons: uniq([
+        ...f.unavailableReasons,
+        'terminal_publication_invalidated_after_rename',
+      ]),
+      primaryEligibilityReasons: uniq([
+        ...f.primaryEligibilityReasons,
+        'terminal_publication_invalidated_after_rename',
+      ]),
+    };
+  });
+  return computeCounts(bundle.universe.rows, forecasts, bundle.markets.moneyline);
+}
+
+export const ML_CAL_1_TERMINAL_COMPLETION_SUFFIX = '.terminal-completion.json';
+export const ML_CAL_1_PUBLICATION_INVALIDATION_SUFFIX =
+  '.publication-invalidation.json';
+
+export function terminalCompletionPath(rootDir: string, captureId: string): string {
+  return path.join(path.resolve(rootDir), `${captureId}${ML_CAL_1_TERMINAL_COMPLETION_SUFFIX}`);
+}
+
+export function publicationInvalidationPathFor(
+  rootDir: string,
+  captureId: string
+): string {
+  return path.join(
+    path.resolve(rootDir),
+    `${captureId}${ML_CAL_1_PUBLICATION_INVALIDATION_SUFFIX}`
+  );
+}
+
+/**
+ * Offline reader: a naked capture directory without a verified terminal completion
+ * receipt must fail closed. Returns effective terminal status/counts.
+ */
+export function readCaptureTerminalResult(options: {
+  rootDir: string;
+  captureId: string;
+}): {
+  terminalStatus: MlCal1TerminalStatus;
+  manifestSha256: string;
+  sealedCounts: MlCal1Counts;
+  effectiveCounts: MlCal1Counts;
+  invalidatedGameIds: string[];
+  terminalReceiptPath: string;
+  publicationInvalidationPath: string | null;
+} {
+  const captureDir = resolveCaptureDir(options.rootDir, options.captureId);
+  const terminalPath = terminalCompletionPath(options.rootDir, options.captureId);
+  if (!fs.existsSync(terminalPath)) {
+    throw new Error('terminal_completion_receipt_missing');
+  }
+  const terminalRaw = fs.readFileSync(terminalPath, 'utf8');
+  let terminal: any;
+  try {
+    terminal = JSON.parse(terminalRaw);
+  } catch {
+    throw new Error('terminal_completion_receipt_unparseable');
+  }
+  if (terminal?.kind !== 'terminal-completion' || terminal?.captureId !== options.captureId) {
+    throw new Error('terminal_completion_receipt_invalid');
+  }
+  const manifestPath = path.join(captureDir, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error('sealed_manifest_missing');
+  }
+  const manifestBytes = fs.readFileSync(manifestPath);
+  const manifestSha = sha256Utf8Bytes(manifestBytes);
+  if (terminal.manifestSha256 !== manifestSha) {
+    throw new Error('terminal_completion_manifest_digest_mismatch');
+  }
+  const envelope = JSON.parse(
+    fs.readFileSync(path.join(captureDir, 'envelope.json'), 'utf8')
+  );
+  const sealedCounts = envelope.counts as MlCal1Counts;
+  const invalidatedGameIds: string[] = Array.isArray(terminal.invalidatedGameIds)
+    ? terminal.invalidatedGameIds
+    : [];
+  let publicationInvalidationPath: string | null = null;
+  if (invalidatedGameIds.length > 0) {
+    publicationInvalidationPath = publicationInvalidationPathFor(
+      options.rootDir,
+      options.captureId
+    );
+    if (!fs.existsSync(publicationInvalidationPath)) {
+      throw new Error('publication_invalidation_receipt_missing');
+    }
+    const inv = JSON.parse(fs.readFileSync(publicationInvalidationPath, 'utf8'));
+    if (inv.manifestSha256 !== manifestSha) {
+      throw new Error('publication_invalidation_manifest_digest_mismatch');
+    }
+  }
+  return {
+    terminalStatus: terminal.terminalStatus as MlCal1TerminalStatus,
+    manifestSha256: manifestSha,
+    sealedCounts,
+    effectiveCounts: terminal.effectiveCounts as MlCal1Counts,
+    invalidatedGameIds,
+    terminalReceiptPath: terminalPath,
+    publicationInvalidationPath,
+  };
+}
+
 export function writeCaptureArtifactsAtomic(options: {
   rootDir: string;
   captureId: string;
@@ -2122,15 +2436,25 @@ export function writeCaptureArtifactsAtomic(options: {
   now?: () => Date;
   /** Test hook simulating delay between publicationTime and rename. */
   beforeRename?: () => void;
+  /** Test hook: force failure writing the external invalidation receipt. */
+  failInvalidationWrite?: boolean;
+  /** Test hook: force failure writing the terminal receipt after rename. */
+  failTerminalWrite?: boolean;
 }): {
   captureDir: string;
   manifestPath: string;
   memberDigests: Record<string, { sha256: string; byteCount: number }>;
   manifestSha256: string;
   publicationTime: string;
+  /** Sealed (immutable) bundle — historical evidence; may still show pre-invalidation eligibility. */
   bundle: MlCal1ArtifactBundle;
   publicationInvalidationPath: string | null;
+  terminalReceiptPath: string;
   invalidatedGameIds: string[];
+  terminalStatus: MlCal1TerminalStatus;
+  /** Effective counts after terminal invalidation (use these for CLI success reporting). */
+  effectiveCounts: MlCal1Counts;
+  primaryReadinessBlockedEffective: boolean;
 } {
   const now = options.now ?? (() => new Date());
   const captureDir = resolveCaptureDir(options.rootDir, options.captureId);
@@ -2191,27 +2515,27 @@ export function writeCaptureArtifactsAtomic(options: {
     throw err;
   }
 
-  // 4. Post-rename check. Sealed members are never extended; if time advanced past a
-  // cutoff for a game published as available, write an EXTERNAL invalidation receipt.
+  // 4. Post-rename check. Sealed members are never extended; invalidation is external.
   const postCheckTime = now();
   const postMs = postCheckTime.getTime();
   const invalidatedGameIds = finalized.forecasts.rows
     .filter((f) => {
       if (!f.forecastAvailable) return false;
       const kickMs = toMs(f.kickoffAsKnown);
-      return (
-        postMs > kickMs - ML_CAL_1_MIN_PRE_KICKOFF_MS || postMs >= kickMs
-      );
+      return postMs > kickMs - ML_CAL_1_MIN_PRE_KICKOFF_MS || postMs >= kickMs;
     })
     .map((f) => f.gameId);
 
   let publicationInvalidationPath: string | null = null;
   if (invalidatedGameIds.length > 0) {
-    publicationInvalidationPath = path.join(
-      path.resolve(options.rootDir),
-      `${options.captureId}.publication-invalidation.json`
+    publicationInvalidationPath = publicationInvalidationPathFor(
+      options.rootDir,
+      options.captureId
     );
-    const body = `${stableStringify({
+    if (options.failInvalidationWrite) {
+      throw new Error('publication_invalidation_write_forced_failure');
+    }
+    const invBody = `${stableStringify({
       schemaVersion: ML_CAL_1_CAPTURE_SCHEMA_VERSION,
       kind: 'publication-invalidation',
       captureId: options.captureId,
@@ -2219,13 +2543,56 @@ export function writeCaptureArtifactsAtomic(options: {
       publicationTime: finalized.envelope.publicationTime,
       postRenameCheckTime: postCheckTime.toISOString(),
       invalidatedGameIds,
-      reasons: ['post_rename_check_after_kickoff_minus_30m_for_published_available_forecast'],
+      reasons: [
+        'post_rename_check_after_kickoff_minus_30m_for_published_available_forecast',
+      ],
       sealedMembersUnchanged: true,
       providerCalls: 0,
       businessDataWrites: 0,
     })}\n`;
-    fs.writeFileSync(publicationInvalidationPath, body, { encoding: 'utf8', flag: 'wx' });
+    fs.writeFileSync(publicationInvalidationPath, invBody, {
+      encoding: 'utf8',
+      flag: 'wx',
+    });
   }
+
+  const effectiveCounts = computeEffectiveCountsAfterInvalidation(
+    finalized,
+    invalidatedGameIds
+  );
+  const terminalStatus: MlCal1TerminalStatus =
+    invalidatedGameIds.length > 0
+      ? 'PUBLICATION_INVALIDATED'
+      : finalized.envelope.primaryReadinessBlocked
+        ? 'PRIMARY_READINESS_BLOCKED'
+        : 'EVIDENCE_CAPTURED';
+
+  const terminalReceiptPath = terminalCompletionPath(options.rootDir, options.captureId);
+  if (options.failTerminalWrite) {
+    throw new Error('terminal_completion_write_forced_failure');
+  }
+  const terminalBody = `${stableStringify({
+    schemaVersion: ML_CAL_1_CAPTURE_SCHEMA_VERSION,
+    kind: 'terminal-completion',
+    captureId: options.captureId,
+    manifestSha256,
+    publicationTime: finalized.envelope.publicationTime,
+    postRenameCheckTime: postCheckTime.toISOString(),
+    terminalStatus,
+    sealedStatus: finalized.envelope.status,
+    sealedPrimaryReadinessBlocked: finalized.envelope.primaryReadinessBlocked,
+    sealedCounts: finalized.envelope.counts,
+    effectiveCounts,
+    invalidatedGameIds,
+    publicationInvalidationPath,
+    sealedMembersUnchanged: true,
+    providerCalls: 0,
+    businessDataWrites: 0,
+  })}\n`;
+  fs.writeFileSync(terminalReceiptPath, terminalBody, {
+    encoding: 'utf8',
+    flag: 'wx',
+  });
 
   return {
     captureDir,
@@ -2235,7 +2602,13 @@ export function writeCaptureArtifactsAtomic(options: {
     publicationTime: finalized.envelope.publicationTime,
     bundle: finalized,
     publicationInvalidationPath,
+    terminalReceiptPath,
     invalidatedGameIds,
+    terminalStatus,
+    effectiveCounts,
+    primaryReadinessBlockedEffective:
+      terminalStatus === 'PRIMARY_READINESS_BLOCKED' ||
+      terminalStatus === 'PUBLICATION_INVALIDATED',
   };
 }
 

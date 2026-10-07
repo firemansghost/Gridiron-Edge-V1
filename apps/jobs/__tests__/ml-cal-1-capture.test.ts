@@ -1,13 +1,17 @@
 /**
  * ML-CAL-1 Capture V1.1 — fixture tests (no live DB, no providers, no secrets).
  *
- * Covers the repaired review items R1–R6:
+ * Covers the repaired review items R1–R6 and follow-up F1–F4:
  *   R1 ratings            (null/null, Decimal(0), nonfinite, version, duplicates, HFA parity)
  *   R2 publication timing (plan option, writer seal/rename delay, kickoff-30 boundary)
  *   R3 lifecycle bytes    (pinned digest, altered bytes, week/weight/fingerprint/season)
  *   R4 Git-byte hashes    (canonical hashes, LF/CRLF reproducibility, false live SHA)
  *   R5 read isolation     (select/season/OR/2025/mutations, live-read helper with fakes)
  *   R6 artifacts          (blocked receipt, redaction, id safety, no-overwrite, ledgers)
+ *   F1 integrity≠live trust (trustedAcceptance; receiptIntegrityVerified)
+ *   F2 terminal invalidation (non-success exit; terminal receipt required)
+ *   F3 live dirty producer / lifecycle-weight rejection before DB
+ *   F4 whitespace/malformed truthy ratings rejected (not zero)
  *
  * PR 243 draft hashes note: the PR 243 draft hash table was correct for Git bytes
  * (`git show <ref>:<path>`, LF as committed). Windows CRLF checkouts hash to the
@@ -25,9 +29,11 @@ import {
   ML_CAL_1_CANONICAL_GIT_BYTE_HASHES,
   ML_CAL_1_CAPTURE_PRODUCER_VERSION,
   ML_CAL_1_CAPTURE_SCHEMA_VERSION,
+  ML_CAL_1_CAPTURE_SELF_PATHS,
   ML_CAL_1_FORBIDDEN_GAME_FIELDS,
   ML_CAL_1_GAME_SELECT,
   ML_CAL_1_LIFECYCLE_POLICY,
+  ML_CAL_1_LIFECYCLE_WEIGHT_PATH,
   ML_CAL_1_LIVE_ODDS_SOURCE,
   ML_CAL_1_MARKET_LINE_SELECT,
   ML_CAL_1_MAX_MARKET_AGE_SECONDS,
@@ -52,6 +58,7 @@ import {
   parseMlCal1CliArgs,
   planMlCal1Capture,
   qualifyLifecycleReceipt,
+  readCaptureTerminalResult,
   readGitShowBytes,
   redactSensitive,
   resolveCanonicalDependencyHashes,
@@ -73,9 +80,11 @@ import {
   type MlCal1MarketLineCandidate,
   type MlCal1RawRatingRow,
   type MlCal1ReadDelegates,
+  type MlCal1TrustedAcceptanceRecord,
 } from '../lib/ml-cal-1-capture';
 import {
   loadLiveSnapshot,
+  resolveDependencyHashes,
   runMlCal1Cli,
   runMlCal1LiveSnapshotReads as cliReExportedReads,
   type MlCal1LiveLoadOptions,
@@ -270,6 +279,24 @@ function buildVerifiedReceipt(core: Omit<MlCal1LifecycleReceipt, 'receiptDigest'
   const digest = sha256Utf8Bytes(receiptBytes);
   const claims = { ...core, receiptDigest: digest };
   return { receiptBytes, pinnedReceiptDigest: digest, claims };
+}
+
+/** Independently reviewed live trust record (never synthesized from CLI digest alone). */
+function trustFor(
+  core: ReceiptCore,
+  digest: string,
+  overrides: Partial<MlCal1TrustedAcceptanceRecord> = {}
+): MlCal1TrustedAcceptanceRecord {
+  return {
+    approvedReceiptDigest: digest,
+    season: core.season ?? 2026,
+    selectedPolicy: core.selectedPolicy,
+    completedThroughWeek: core.completedThroughWeek,
+    canonicalWeight: core.canonicalWeight,
+    ratingFingerprint: core.ratingFingerprint,
+    lifecycleSourceSha: core.sourceSha,
+    ...overrides,
+  };
 }
 
 function receiptCore(
@@ -546,6 +573,48 @@ describe('R1 — rating inputs', () => {
     ).bundle.forecasts.rows[0];
     expect(row.forecastAvailable).toBe(false);
     expect(row.unavailableReasons).toContain('home:nonfinite_rating_value');
+  });
+
+  it('F4: whitespace-only / blank Decimal-like / boolean / array never become zero forecasts', () => {
+    const whitespace = chooseRatingField({ powerRating: ' ', rating: null });
+    expect(whitespace.value).toBeNull();
+    expect(whitespace.reasons).toContain('blank_or_whitespace_rating_value');
+
+    const blankObj = chooseRatingField({
+      powerRating: { toString: () => '   ' },
+      rating: null,
+    });
+    expect(blankObj.value).toBeNull();
+    expect(blankObj.reasons).toContain('blank_or_whitespace_rating_value');
+
+    expect(chooseRatingField({ powerRating: true as unknown as number, rating: null }).reasons).toContain(
+      'unsupported_rating_value_type'
+    );
+    expect(chooseRatingField({ powerRating: [1] as unknown as number, rating: null }).reasons).toContain(
+      'unsupported_rating_value_type'
+    );
+
+    const fx = makeFixture({
+      ratings: [rating('alabama', ' ', null), rating('georgia', 4.25)],
+    });
+    // Rebuild lifecycle so fingerprint matches the malformed input.
+    const rebuilt = makeFixture({
+      ratings: fx.ratings,
+      games: fx.games,
+      marketLines: fx.marketLines,
+    });
+    const row = plan(rebuilt).bundle.forecasts.rows[0];
+    expect(row.homeRatingInput!.valueUsed).toBeNull();
+    expect(row.forecastAvailable).toBe(false);
+    expect(row.primaryEligibleCandidate).toBe(false);
+    expect(row.modelOnlyEligible).toBe(false);
+    expect(row.unavailableReasons).toContain('home:blank_or_whitespace_rating_value');
+  });
+
+  it('F4: valid negative/positive decimal strings and Decimal(0) remain usable', () => {
+    expect(chooseRatingField({ powerRating: '-3.5', rating: null }).value).toBe(-3.5);
+    expect(chooseRatingField({ powerRating: '12.25', rating: null }).value).toBe(12.25);
+    expect(chooseRatingField({ powerRating: { toString: () => '0' }, rating: null }).value).toBe(0);
   });
 
   it('wrong model version is unusable and ignored by the planner', () => {
@@ -903,6 +972,14 @@ describe('R2 — writeCaptureArtifactsAtomic seal-time publication', () => {
     expect(written.bundle.forecasts.rows[0].forecastAvailable).toBe(true);
     expect(written.invalidatedGameIds).toEqual([]);
     expect(written.publicationInvalidationPath).toBeNull();
+    expect(written.terminalStatus).toBe('EVIDENCE_CAPTURED');
+    expect(written.primaryReadinessBlockedEffective).toBe(false);
+    expect(fs.existsSync(written.terminalReceiptPath)).toBe(true);
+    const terminal = readCaptureTerminalResult({ rootDir: root, captureId: 'seal-on-time' });
+    expect(terminal.terminalStatus).toBe('EVIDENCE_CAPTURED');
+    expect(terminal.effectiveCounts.primaryEligibleCandidates).toBe(
+      written.effectiveCounts.primaryEligibleCandidates
+    );
     // Planning result is untouched (pure).
     expect(p.bundle.envelope.publicationFinalized).toBe(false);
   });
@@ -946,8 +1023,15 @@ describe('R2 — writeCaptureArtifactsAtomic seal-time publication', () => {
     expect(written.publicationInvalidationPath).toBe(
       path.join(root, 'delay-1.publication-invalidation.json')
     );
-    // Sealed forecast still reports what was true at publication time.
+    expect(written.terminalStatus).toBe('PUBLICATION_INVALIDATED');
+    expect(written.primaryReadinessBlockedEffective).toBe(true);
+    expect(written.effectiveCounts.primaryEligibleCandidates).toBe(0);
+    expect(written.effectiveCounts.availableForecasts).toBe(0);
+    // Sealed forecast still reports what was true at publication time (historical evidence).
     expect(readJson(path.join(written.captureDir, 'forecasts.json')).rows[0].forecastAvailable).toBe(
+      true
+    );
+    expect(readJson(path.join(written.captureDir, 'forecasts.json')).rows[0].primaryEligibleCandidate).toBe(
       true
     );
 
@@ -961,6 +1045,128 @@ describe('R2 — writeCaptureArtifactsAtomic seal-time publication', () => {
     // The invalidation lives outside the sealed directory.
     expect(fs.readdirSync(written.captureDir)).not.toContain('delay-1.publication-invalidation.json');
     expect(sha256Utf8Bytes(fs.readFileSync(written.manifestPath))).toBe(written.manifestSha256);
+
+    const terminal = readCaptureTerminalResult({ rootDir: root, captureId: 'delay-1' });
+    expect(terminal.terminalStatus).toBe('PUBLICATION_INVALIDATED');
+    expect(terminal.effectiveCounts.primaryEligibleCandidates).toBe(0);
+    expect(terminal.invalidatedGameIds).toEqual([GAME_ID]);
+  });
+
+  it('F2: naked capture directory without terminal receipt fails closed', () => {
+    const root = makeTmp();
+    const written = writeCaptureArtifactsAtomic({
+      rootDir: root,
+      captureId: 'naked-term',
+      bundle: plan(makeFixture()).bundle,
+      dependencyHashes: CANONICAL_DEPS,
+      now: () => new Date('2026-10-12T18:00:10.000Z'),
+    });
+    fs.unlinkSync(written.terminalReceiptPath);
+    expect(() =>
+      readCaptureTerminalResult({ rootDir: root, captureId: 'naked-term' })
+    ).toThrow(/terminal_completion_receipt_missing/);
+  });
+
+  it('F2: tampered terminal receipt / missing invalidation fail closed', () => {
+    const root = makeTmp();
+    const clock = mutableClock('2026-10-12T18:00:10.000Z');
+    const written = writeCaptureArtifactsAtomic({
+      rootDir: root,
+      captureId: 'tamper-term',
+      bundle: plan(makeFixture()).bundle,
+      dependencyHashes: CANONICAL_DEPS,
+      now: clock.now,
+      beforeRename: () => clock.set(iso(1, KICK_MINUS_30M)),
+    });
+    const honestTerminal = fs.readFileSync(written.terminalReceiptPath, 'utf8');
+    const raw = JSON.parse(honestTerminal);
+    raw.manifestSha256 = 'a'.repeat(64);
+    fs.writeFileSync(written.terminalReceiptPath, JSON.stringify(raw));
+    expect(() =>
+      readCaptureTerminalResult({ rootDir: root, captureId: 'tamper-term' })
+    ).toThrow(/terminal_completion_manifest_digest_mismatch/);
+
+    // Restore honest terminal, delete invalidation → fail closed.
+    fs.writeFileSync(written.terminalReceiptPath, honestTerminal);
+    fs.unlinkSync(written.publicationInvalidationPath!);
+    expect(() =>
+      readCaptureTerminalResult({ rootDir: root, captureId: 'tamper-term' })
+    ).toThrow(/publication_invalidation_receipt_missing/);
+  });
+
+  it('F2: invalidation write failure leaves no terminal success path', () => {
+    const root = makeTmp();
+    const clock = mutableClock('2026-10-12T18:00:10.000Z');
+    expect(() =>
+      writeCaptureArtifactsAtomic({
+        rootDir: root,
+        captureId: 'fail-inv',
+        bundle: plan(makeFixture()).bundle,
+        dependencyHashes: CANONICAL_DEPS,
+        now: clock.now,
+        beforeRename: () => clock.set(iso(1, KICK_MINUS_30M)),
+        failInvalidationWrite: true,
+      })
+    ).toThrow(/publication_invalidation_write_forced_failure/);
+    expect(fs.existsSync(path.join(root, 'fail-inv'))).toBe(true);
+    expect(() =>
+      readCaptureTerminalResult({ rootDir: root, captureId: 'fail-inv' })
+    ).toThrow(/terminal_completion_receipt_missing/);
+  });
+
+  it('F2: partial invalidation keeps unaffected games eligible in effective counts', () => {
+    const root = makeTmp();
+    const lateKick = '2026-10-13T23:00:00.000Z';
+    const g2 = '2026-wk7-troy-southern-mississippi';
+    const ratings = [
+      rating('alabama', 12.5),
+      rating('georgia', 4.25),
+      rating('troy', 1.0),
+      rating('southern-mississippi', -2.0),
+    ];
+    const fx = makeFixture({
+      ratings,
+      games: [
+        game(GAME_ID, 'alabama', 'georgia'),
+        game(g2, 'troy', 'southern-mississippi', { kickoffAsKnown: lateKick }),
+      ],
+      marketLines: [
+        ...mlPair({
+          gameId: GAME_ID,
+          homeTeamId: 'alabama',
+          awayTeamId: 'georgia',
+          homePrice: -150,
+          awayPrice: 130,
+          timestamp: '2026-10-12T17:45:00.000Z',
+        }),
+        ...mlPair({
+          gameId: g2,
+          homeTeamId: 'troy',
+          awayTeamId: 'southern-mississippi',
+          homePrice: -110,
+          awayPrice: -110,
+          timestamp: '2026-10-12T17:45:00.000Z',
+        }),
+      ],
+    });
+    const clock = mutableClock('2026-10-12T18:00:10.000Z');
+    const written = writeCaptureArtifactsAtomic({
+      rootDir: root,
+      captureId: 'partial-inv',
+      bundle: plan(fx).bundle,
+      dependencyHashes: CANONICAL_DEPS,
+      now: clock.now,
+      beforeRename: () => clock.set(iso(1, KICK_MINUS_30M)),
+    });
+    expect(written.invalidatedGameIds).toEqual([GAME_ID]);
+    expect(written.terminalStatus).toBe('PUBLICATION_INVALIDATED');
+    expect(written.effectiveCounts.availableForecasts).toBe(1);
+    expect(written.effectiveCounts.primaryEligibleCandidates).toBe(1);
+    // Sealed ledger retains both games; first still sealed as available historically.
+    const sealed = readJson(path.join(written.captureDir, 'forecasts.json')).rows;
+    expect(sealed).toHaveLength(2);
+    expect(sealed.find((r: any) => r.gameId === GAME_ID).forecastAvailable).toBe(true);
+    expect(sealed.find((r: any) => r.gameId === g2).forecastAvailable).toBe(true);
   });
 
   it('beforeRename delay crossing kickoff itself also invalidates', () => {
@@ -1022,17 +1228,63 @@ describe('R3 — lifecycle receipt verification', () => {
     expect(result.qualified).toBe(true);
     expect(result.fixtureHypothetical).toBe(true);
     expect(result.liveAccepted).toBe(false);
+    expect(result.receiptIntegrityVerified).toBe(true);
     expect(result.mode).toBe('fixture_hypothetical');
     expect(result.verifiedReceiptDigest).toBe(sha256Utf8Bytes(stableStringify(core) + '\n'));
     expect(result.lifecycleSourceSha).toBe(LIFECYCLE_SHA);
     expect(result.producerRepositorySha).toBe(REF_SHA);
   });
 
-  it('the same verified bytes in live mode are liveAccepted', () => {
+  it('F1: self-created bytes + matching pin in live mode verify integrity but are NOT liveAccepted', () => {
     const result = qualifyLifecycleReceipt(lifecycleInput(core, { mode: 'live' }));
+    expect(result.receiptIntegrityVerified).toBe(true);
+    expect(result.qualified).toBe(false);
+    expect(result.liveAccepted).toBe(false);
+    expect(result.fixtureHypothetical).toBe(false);
+    expect(result.reasons).toContain('lifecycle_trusted_acceptance_missing');
+  });
+
+  it('F1: liveAccepted requires an independently reviewed trust record matching the digest', () => {
+    const v = buildVerifiedReceipt(core);
+    const trust = trustFor(core, v.pinnedReceiptDigest);
+    const result = qualifyLifecycleReceipt(
+      lifecycleInput(core, { mode: 'live', trustedAcceptance: trust })
+    );
+    expect(result.receiptIntegrityVerified).toBe(true);
     expect(result.qualified).toBe(true);
     expect(result.liveAccepted).toBe(true);
-    expect(result.fixtureHypothetical).toBe(false);
+  });
+
+  it('F1: wrong/changed trusted pin or missing season binding fail closed', () => {
+    const v = buildVerifiedReceipt(core);
+    const wrongPin = qualifyLifecycleReceipt(
+      lifecycleInput(core, {
+        mode: 'live',
+        trustedAcceptance: trustFor(core, v.pinnedReceiptDigest, {
+          approvedReceiptDigest: 'b'.repeat(64),
+        }),
+      })
+    );
+    expect(wrongPin.liveAccepted).toBe(false);
+    expect(wrongPin.reasons).toContain('lifecycle_trust_digest_mismatch');
+
+    const noSeasonCore = { ...core };
+    delete (noSeasonCore as { season?: number }).season;
+    const missingSeasonFixture = qualifyLifecycleReceipt(lifecycleInput(noSeasonCore));
+    expect(missingSeasonFixture.qualified).toBe(false);
+    expect(missingSeasonFixture.reasons).toContain('lifecycle_season_binding_missing');
+
+    const vNoSeason = buildVerifiedReceipt(noSeasonCore);
+    const liveBound = qualifyLifecycleReceipt(
+      lifecycleInput(noSeasonCore, {
+        mode: 'live',
+        trustedAcceptance: trustFor(noSeasonCore, vNoSeason.pinnedReceiptDigest, { season: 2026 }),
+      })
+    );
+    expect(liveBound.liveAccepted).toBe(true);
+    expect(liveBound.notes).toContain(
+      'lifecycle_receipt_season_absent_requires_external_trust_binding'
+    );
   });
 
   it('completedThroughWeek 6 is valid for prospective week 7; the producer SHA need not equal the lifecycle SHA', () => {
@@ -1357,6 +1609,7 @@ describe('R4 — canonical Git-byte dependency hashes', () => {
       expect(resolved.dirty.sort()).toEqual([
         'apps/jobs/capture-ml-cal-1-2026.ts',
         'apps/jobs/lib/ml-cal-1-capture.ts',
+        ML_CAL_1_LIFECYCLE_WEIGHT_PATH,
       ]);
     });
 
@@ -2683,7 +2936,7 @@ describe('demo fixture and CLI (offline, injected clock and dependency hashes)',
     expect(Object.keys(manifest.members)).toContain(ML_CAL_1_BLOCKED_RECEIPT_MEMBER);
   });
 
-  it('publication delay through the CLI beforeRename hook writes an invalidation receipt', async () => {
+  it('F2: publication delay exits non-zero with PUBLICATION_INVALIDATED and effective counts', async () => {
     const out = makeTmp();
     let t = Date.parse('2026-10-12T18:00:30.000Z');
     const { code, stdout } = await runCli(
@@ -2691,14 +2944,28 @@ describe('demo fixture and CLI (offline, injected clock and dependency hashes)',
       {
         now: () => new Date(t),
         beforeRename: () => {
-          t = Date.parse('2026-10-12T23:10:00.000Z'); // past kickoff-30 for the first game
+          t = Date.parse('2026-10-12T23:10:00.000Z'); // past kickoff-30 for the first paired games
         },
       }
     );
-    expect(code).toBe(0);
+    expect(code).toBe(4);
     const summary = JSON.parse(stdout);
-    expect(summary.invalidatedGameIds).toContain('2026-wk7-alabama-georgia');
+    expect(summary.ok).toBe(false);
+    expect(summary.status).toBe('PUBLICATION_INVALIDATED');
+    expect(summary.sealedStatus).toBe('EVIDENCE_CAPTURED');
+    expect(summary.primaryReadinessBlocked).toBe(true);
+    expect(summary.invalidatedGameIds).toEqual(
+      expect.arrayContaining([
+        '2026-wk7-alabama-georgia',
+        '2026-wk7-troy-southern-mississippi',
+      ])
+    );
+    expect(summary.invalidatedGameIds).not.toContain('2026-wk7-missing-market');
+    expect(summary.effectiveCounts.primaryEligibleCandidates).toBe(0);
     expect(fs.existsSync(summary.publicationInvalidationPath)).toBe(true);
+    expect(fs.existsSync(summary.terminalReceiptPath)).toBe(true);
+    const terminal = readCaptureTerminalResult({ rootDir: out, captureId: 'cli-delay' });
+    expect(terminal.terminalStatus).toBe('PUBLICATION_INVALIDATED');
   });
 
   it('gates live DB reads unless explicitly enabled and never touches the DB when gated', async () => {
@@ -2711,7 +2978,7 @@ describe('demo fixture and CLI (offline, injected clock and dependency hashes)',
     expect(loadLive).not.toHaveBeenCalled();
   });
 
-  it('live route: producer SHA from git only; lifecycle files are bound to bytes + pinned digest', async () => {
+  it('F1: live route with bytes+pin but no trust record is integrity-only and primary-blocked', async () => {
     const dir = makeTmp();
     const core = receiptCore([rating('alabama', 12.5), rating('georgia', 4.25)]);
     const verified = buildVerifiedReceipt(core);
@@ -2745,12 +3012,47 @@ describe('demo fixture and CLI (offline, injected clock and dependency hashes)',
     expect(captured.receiptBytes).toBe(verified.receiptBytes);
     expect(captured.pinnedReceiptDigest).toBe(verified.pinnedReceiptDigest);
     expect(captured.lifecycleReceipt!.receiptDigest).toBe(verified.pinnedReceiptDigest);
-    expect(code).toBe(0);
+    expect(code).toBe(1);
     const summary = JSON.parse(stdout);
+    expect(summary.ok).toBe(false);
     expect(summary.lifecycleMode).toBe('live');
     expect(summary.fixtureHypothetical).toBe(false);
+    expect(summary.receiptIntegrityVerified).toBe(true);
+    expect(summary.liveAccepted).toBe(false);
     const envelope = readJson(path.join(out, 'cli-live', 'envelope.json'));
-    expect(envelope.lifecycleQualification.liveAccepted).toBe(true);
+    expect(envelope.lifecycleQualification.receiptIntegrityVerified).toBe(true);
+    expect(envelope.lifecycleQualification.liveAccepted).toBe(false);
+    expect(envelope.lifecycleQualification.reasons).toContain('lifecycle_trusted_acceptance_missing');
+  });
+
+  it('F1: live route with independently injected trust record can liveAccept', async () => {
+    const dir = makeTmp();
+    const core = receiptCore([rating('alabama', 12.5), rating('georgia', 4.25)]);
+    const verified = buildVerifiedReceipt(core);
+    const receiptPath = path.join(dir, 'receipt.json');
+    fs.writeFileSync(receiptPath, verified.receiptBytes, 'utf8');
+    const out = makeTmp();
+    const liveFixture = makeFixture({ lifecycleMode: 'live', base: { repositorySha: 'c'.repeat(40) } });
+    liveFixture.receiptBytes = verified.receiptBytes;
+    liveFixture.pinnedReceiptDigest = verified.pinnedReceiptDigest;
+    liveFixture.lifecycleReceipt = verified.claims;
+
+    const { code, stdout } = await runCli(
+      [
+        '--season', '2026', '--week', '7', '--enable-live-db-read', '--out', out,
+        '--capture-id', 'cli-live-trust', '--lifecycle-receipt', receiptPath,
+        '--pinned-lifecycle-digest', verified.pinnedReceiptDigest,
+      ],
+      {
+        readRepoCommitSha: () => 'c'.repeat(40),
+        trustedAcceptance: trustFor(core, verified.pinnedReceiptDigest),
+        loadLiveSnapshot: async (opts) => ({ ...liveFixture, captureId: opts.captureId }),
+      }
+    );
+    expect(code).toBe(0);
+    const summary = JSON.parse(stdout);
+    expect(summary.liveAccepted).toBe(true);
+    expect(summary.receiptIntegrityVerified).toBe(true);
   });
 
   it('live route without receipt bytes blocks primary readiness (lifecycle_verification_unavailable)', async () => {
@@ -2817,6 +3119,127 @@ describe('demo fixture and CLI (offline, injected clock and dependency hashes)',
 });
 
 // ---------------------------------------------------------------------------
+// F3 — live executable dependency identity
+// ---------------------------------------------------------------------------
+
+describe('F3 — live rejects dirty producer / lifecycle-weight before DB', () => {
+  function git(cwd: string, args: string[]) {
+    execFileSync(
+      'git',
+      [
+        '-c',
+        'user.name=ml-cal-test',
+        '-c',
+        'user.email=ml-cal-test@example.invalid',
+        '-c',
+        'commit.gpgsign=false',
+        '-c',
+        'core.autocrlf=false',
+        ...args,
+      ],
+      { cwd, stdio: 'pipe' }
+    );
+  }
+
+  function makeLiveIdentityRepo(): string {
+    const dir = makeTmp('ml-cal-1-live-id-');
+    git(dir, ['init']);
+    const paths = [
+      ...Object.keys(ML_CAL_1_CANONICAL_GIT_BYTE_HASHES),
+      ...ML_CAL_1_CAPTURE_SELF_PATHS,
+      ML_CAL_1_LIFECYCLE_WEIGHT_PATH,
+    ];
+    for (const rel of paths) {
+      const target = path.join(dir, rel);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, readGitShowBytes(REPO, rel, 'HEAD'));
+    }
+    git(dir, ['add', '-A']);
+    git(dir, ['commit', '-m', 'live identity deps']);
+    return dir;
+  }
+
+  it('fixture mode records dirty runner without throwing', () => {
+    const dir = makeLiveIdentityRepo();
+    fs.writeFileSync(
+      path.join(dir, 'apps/jobs/capture-ml-cal-1-2026.ts'),
+      fs.readFileSync(path.join(dir, 'apps/jobs/capture-ml-cal-1-2026.ts')) + '\n// dirty\n'
+    );
+    const resolved = resolveDependencyHashes(dir, 'HEAD', { mode: 'fixture' });
+    expect(resolved.dirty).toContain('apps/jobs/capture-ml-cal-1-2026.ts');
+  });
+
+  it('live mode rejects dirty runner, dirty planner, dirty weight path, and missing producer', () => {
+    const dir = makeLiveIdentityRepo();
+    // Dirty runner
+    fs.writeFileSync(
+      path.join(dir, 'apps/jobs/capture-ml-cal-1-2026.ts'),
+      fs.readFileSync(path.join(dir, 'apps/jobs/capture-ml-cal-1-2026.ts')) + '\n// dirty-runner\n'
+    );
+    expect(() => resolveDependencyHashes(dir, 'HEAD', { mode: 'live' })).toThrow(
+      /live_executable_dependency_dirty:.*capture-ml-cal-1-2026\.ts/
+    );
+
+    // Restore runner, dirty planner
+    fs.writeFileSync(
+      path.join(dir, 'apps/jobs/capture-ml-cal-1-2026.ts'),
+      readGitShowBytes(REPO, 'apps/jobs/capture-ml-cal-1-2026.ts', 'HEAD')
+    );
+    fs.writeFileSync(
+      path.join(dir, 'apps/jobs/lib/ml-cal-1-capture.ts'),
+      fs.readFileSync(path.join(dir, 'apps/jobs/lib/ml-cal-1-capture.ts')) + '\n// dirty-planner\n'
+    );
+    expect(() => resolveDependencyHashes(dir, 'HEAD', { mode: 'live' })).toThrow(
+      /live_executable_dependency_dirty:.*ml-cal-1-capture\.ts/
+    );
+
+    // Restore planner, dirty lifecycle-weight dependency
+    fs.writeFileSync(
+      path.join(dir, 'apps/jobs/lib/ml-cal-1-capture.ts'),
+      readGitShowBytes(REPO, 'apps/jobs/lib/ml-cal-1-capture.ts', 'HEAD')
+    );
+    fs.writeFileSync(
+      path.join(dir, ML_CAL_1_LIFECYCLE_WEIGHT_PATH),
+      fs.readFileSync(path.join(dir, ML_CAL_1_LIFECYCLE_WEIGHT_PATH)) + '\n// dirty-weight\n'
+    );
+    expect(() => resolveDependencyHashes(dir, 'HEAD', { mode: 'live' })).toThrow(
+      /live_executable_dependency_dirty:.*balanced-v1-transition-blend-eval\.ts/
+    );
+
+    // Missing producer file
+    fs.writeFileSync(
+      path.join(dir, ML_CAL_1_LIFECYCLE_WEIGHT_PATH),
+      readGitShowBytes(REPO, ML_CAL_1_LIFECYCLE_WEIGHT_PATH, 'HEAD')
+    );
+    fs.unlinkSync(path.join(dir, 'apps/jobs/capture-ml-cal-1-2026.ts'));
+    expect(() => resolveDependencyHashes(dir, 'HEAD', { mode: 'live' })).toThrow(
+      /live_executable_dependency_dirty:.*capture-ml-cal-1-2026\.ts/
+    );
+  });
+
+  it('CLI live route never calls the live loader when executable deps are dirty', async () => {
+    const loadLive = jest.fn();
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const code = await runMlCal1Cli(
+      ['--season', '2026', '--week', '7', '--enable-live-db-read', '--out', makeTmp(), '--capture-id', 'cli-dirty'],
+      {
+        cwd: REPO,
+        resolveDependencyHashes: () => {
+          throw new Error('live_executable_dependency_dirty:apps/jobs/capture-ml-cal-1-2026.ts');
+        },
+        loadLiveSnapshot: loadLive,
+        stdout: (l) => stdout.push(l),
+        stderr: (l) => stderr.push(l),
+      }
+    );
+    expect(code).toBe(2);
+    expect(loadLive).not.toHaveBeenCalled();
+    expect(stderr.join('\n')).toMatch(/live_executable_dependency_dirty/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Source hygiene
 // ---------------------------------------------------------------------------
 
@@ -2842,7 +3265,10 @@ describe('source hygiene', () => {
     }
   });
 
-  it('helper imports only node built-ins and the pinned web/jobs libraries', () => {
+  it('helper imports only node built-ins and hashed web/jobs behavior dependencies', () => {
+    // The six web pins live in ML_CAL_1_CANONICAL_GIT_BYTE_HASHES.
+    // balanced-v1-transition-blend-eval is a live-executable hashed behavior dep
+    // (ML_CAL_1_LIFECYCLE_WEIGHT_PATH), not one of the six production pins.
     const allowed = new Set([
       'crypto',
       'child_process',
