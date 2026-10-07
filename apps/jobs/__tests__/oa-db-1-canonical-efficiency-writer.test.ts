@@ -2,8 +2,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
   OA_DB_1_COMMIT_CONFIRMATION,
+  OA_DB_1_FLOAT_COMPARE_SIGNIFICANT_DIGITS,
   OA_DB_1_INSERT_BATCH_SIZE,
   OA_DB_1_TRANSACTION_TIMEOUT_MS,
+  oaDb1FloatReadbackEqual,
   parseOaDb1CommitArgs,
   validateOaDb1CommitPlan,
 } from '../commit-oa-db-1-canonical-efficiency';
@@ -95,6 +97,29 @@ describe('OA-DB-1 COMMIT argument guard', () => {
   });
 });
 
+describe('OA-DB-1 float readback verification', () => {
+  it('matches PostgreSQL extra_float_digits=0 readback at 15 significant digits', () => {
+    expect(OA_DB_1_FLOAT_COMPARE_SIGNIFICANT_DIGITS).toBe(15);
+    expect(
+      oaDb1FloatReadbackEqual(-0.27626448555417216, -0.276264485554172)
+    ).toBe(true);
+    expect(
+      oaDb1FloatReadbackEqual(0.29294212919058815, 0.292942129190588)
+    ).toBe(true);
+    expect(
+      oaDb1FloatReadbackEqual(0.5217391304347826, 0.521739130434783)
+    ).toBe(true);
+  });
+
+  it('still rejects a materially different metric', () => {
+    expect(oaDb1FloatReadbackEqual(0.29294212919058815, 0.2929421292)).toBe(
+      false
+    );
+    expect(oaDb1FloatReadbackEqual(null, null)).toBe(true);
+    expect(oaDb1FloatReadbackEqual(null, 0)).toBe(false);
+  });
+});
+
 describe('OA-DB-1 COMMIT plan gate', () => {
   it('accepts the clean 5,996-row post-schema plan', () => {
     expect(validateOaDb1CommitPlan(cleanPlan())).toEqual([]);
@@ -134,6 +159,8 @@ describe('OA-DB-1 COMMIT static safety', () => {
     );
     expect(WRITER).toContain('reviewedPreviewMatchesCurrentPlan');
     expect(WRITER).toContain('persistedRowsExactlyMatchPlan');
+    expect(WRITER).toContain('oaDb1FloatReadbackEqual');
+    expect(WRITER).toContain('floatComparisonSignificantDigits');
     expect(WRITER).toContain('snapshot2026');
   });
 
