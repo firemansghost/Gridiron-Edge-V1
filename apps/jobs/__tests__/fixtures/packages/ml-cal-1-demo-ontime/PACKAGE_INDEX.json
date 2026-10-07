@@ -1,0 +1,72 @@
+{
+  "captureId": "ml-cal-1-demo-ontime",
+  "exitCode": 0,
+  "packageRoot": "apps/jobs/__tests__/fixtures/packages/ml-cal-1-demo-ontime",
+  "terminalStatus": "EVIDENCE_CAPTURED",
+  "eligibilityAccepted": true,
+  "independentlyVerifiedIntegrity": true,
+  "structuralConsistencyVerified": true,
+  "manifestSha256": "760d98612495bcc424aeab8ca440b5cdf3e02a9758255dd328b4e7c77bf7062e",
+  "terminalSha256": "57a109e96ea8c0eebe21a3d088bc96c87764362c2789d7bc21c377dd12ac207d",
+  "invalidationSha256": null,
+  "packageChecksumsSha256": "59479ab25925ffe5a95a5537c06d599fd065ec6e3654886ab7e79b7bf96d791a",
+  "sealedCounts": {
+    "universeGames": 3,
+    "trackedGames": 3,
+    "availableForecasts": 3,
+    "inGateForecasts": 3,
+    "pairedMarkets": 2,
+    "missingMarkets": 1,
+    "selectedBets": 2,
+    "noSelection": 0,
+    "primaryEligibleCandidates": 2,
+    "modelOnlyEligible": 3
+  },
+  "effectiveCounts": {
+    "universeGames": 3,
+    "trackedGames": 3,
+    "availableForecasts": 3,
+    "inGateForecasts": 3,
+    "pairedMarkets": 2,
+    "missingMarkets": 1,
+    "selectedBets": 2,
+    "noSelection": 0,
+    "primaryEligibleCandidates": 2,
+    "modelOnlyEligible": 3
+  },
+  "invalidatedGameIds": [],
+  "files": {
+    "ml-cal-1-demo-ontime/envelope.json": {
+      "sha256": "b058f7197f6d8aabdca7a2f78b6b4014fbf75b297530a7f48e0315741bbcf3e3",
+      "byteCount": 3264
+    },
+    "ml-cal-1-demo-ontime/forecasts.json": {
+      "sha256": "27ed0c5f19dc1aac31846913201f713cf97ebc6fa14bae80ea367d12d72ed7e1",
+      "byteCount": 5639
+    },
+    "ml-cal-1-demo-ontime/inputs.json": {
+      "sha256": "7f8e5f2693601872fc3d23cf3df097f8a3134e66ae59bfff9fc785ef2ee9163d",
+      "byteCount": 2556
+    },
+    "ml-cal-1-demo-ontime/manifest.json": {
+      "sha256": "760d98612495bcc424aeab8ca440b5cdf3e02a9758255dd328b4e7c77bf7062e",
+      "byteCount": 1658
+    },
+    "ml-cal-1-demo-ontime/markets.json": {
+      "sha256": "dc2d068a5de44307b56118eb2b7eadef3adb637bd41bd90dfe2fa382ed507be0",
+      "byteCount": 2805
+    },
+    "ml-cal-1-demo-ontime/universe.json": {
+      "sha256": "d9e04200f4961c06e87d5e7d883979edc2ee8fa7ca0d37577dc864e8cce83ff3",
+      "byteCount": 959
+    },
+    "ml-cal-1-demo-ontime.package-checksums.json": {
+      "sha256": "59479ab25925ffe5a95a5537c06d599fd065ec6e3654886ab7e79b7bf96d791a",
+      "byteCount": 957
+    },
+    "ml-cal-1-demo-ontime.terminal-completion.json": {
+      "sha256": "57a109e96ea8c0eebe21a3d088bc96c87764362c2789d7bc21c377dd12ac207d",
+      "byteCount": 968
+    }
+  }
+}
