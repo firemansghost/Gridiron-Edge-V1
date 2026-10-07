@@ -485,6 +485,99 @@ function buildTeamBundle(
   };
 }
 
+export function computeOa1FeatureRows(rows: Oa1CanonicalRow[]): {
+  games: Oa1GameFeatureRow[];
+  residualAudit: Oa1ResidualAuditRow[];
+  badGameFrames: number;
+  blockers: string[];
+} {
+  const blockers: string[] = [];
+  let badGameFrames = 0;
+
+  const gameGroups = new Map<string, Oa1CanonicalRow[]>();
+  for (const row of rows) {
+    const key = gameKey(row);
+    const bucket = gameGroups.get(key) ?? [];
+    bucket.push(row);
+    gameGroups.set(key, bucket);
+  }
+
+  for (const [key, gameRows] of gameGroups) {
+    const homeRows = gameRows.filter((row) => row.isHome);
+    const awayRows = gameRows.filter((row) => !row.isHome);
+    if (gameRows.length !== 2 || homeRows.length !== 1 || awayRows.length !== 1) {
+      badGameFrames += 1;
+      blockers.push(`bad game frame: ${key}`);
+      continue;
+    }
+
+    const home = homeRows[0];
+    const away = awayRows[0];
+    if (
+      home.providerWeek !== away.providerWeek ||
+      home.homeTeamNameCfbd !== away.homeTeamNameCfbd ||
+      home.awayTeamNameCfbd !== away.awayTeamNameCfbd ||
+      home.teamIdInternal !== away.opponentTeamIdInternal ||
+      away.teamIdInternal !== home.opponentTeamIdInternal ||
+      home.teamNameCfbd !== home.homeTeamNameCfbd ||
+      away.teamNameCfbd !== away.awayTeamNameCfbd
+    ) {
+      badGameFrames += 1;
+      blockers.push(`game identity mismatch: ${key}`);
+    }
+  }
+
+  const teamIndex = new Map<string, Oa1CanonicalRow[]>();
+  for (const row of rows) {
+    const key = teamIndexKey(row.season, row.teamIdInternal);
+    const bucket = teamIndex.get(key) ?? [];
+    bucket.push(row);
+    teamIndex.set(key, bucket);
+  }
+  for (const bucket of teamIndex.values()) {
+    bucket.sort(
+      (a, b) =>
+        a.providerWeek - b.providerWeek ||
+        a.providerGameId.localeCompare(b.providerGameId)
+    );
+  }
+
+  const residualAudit: Oa1ResidualAuditRow[] = [];
+  const games: Oa1GameFeatureRow[] = [];
+
+  for (const [, gameRows] of [...gameGroups.entries()].sort((a, b) => {
+    const [aSeason, aGame] = a[0].split('|');
+    const [bSeason, bGame] = b[0].split('|');
+    return Number(aSeason) - Number(bSeason) || aGame.localeCompare(bGame);
+  })) {
+    if (gameRows.length !== 2) continue;
+    const home = gameRows.find((row) => row.isHome);
+    const away = gameRows.find((row) => !row.isHome);
+    if (!home || !away) continue;
+
+    games.push({
+      season: home.season,
+      providerGameId: home.providerGameId,
+      providerWeek: home.providerWeek,
+      startDate: isoDate(home.startDate),
+      neutralSite: home.neutralSite,
+      homeTeamIdInternal: home.teamIdInternal,
+      homeTeamNameCfbd: home.teamNameCfbd,
+      awayTeamIdInternal: away.teamIdInternal,
+      awayTeamNameCfbd: away.teamNameCfbd,
+      home: buildTeamBundle(home, teamIndex, residualAudit),
+      away: buildTeamBundle(away, teamIndex, residualAudit),
+    });
+  }
+
+  return {
+    games,
+    residualAudit,
+    badGameFrames,
+    blockers,
+  };
+}
+
 export function buildOa1DevelopmentFeatures(
   rows: Oa1CanonicalRow[]
 ): Oa1BuildResult {
@@ -577,84 +670,11 @@ export function buildOa1DevelopmentFeatures(
     };
   });
 
-  const gameGroups = new Map<string, Oa1CanonicalRow[]>();
-  for (const row of rows) {
-    const key = gameKey(row);
-    const bucket = gameGroups.get(key) ?? [];
-    bucket.push(row);
-    gameGroups.set(key, bucket);
-  }
-
-  for (const [key, gameRows] of gameGroups) {
-    const homeRows = gameRows.filter((row) => row.isHome);
-    const awayRows = gameRows.filter((row) => !row.isHome);
-    if (gameRows.length !== 2 || homeRows.length !== 1 || awayRows.length !== 1) {
-      badGameFrames += 1;
-      blockers.push(`bad game frame: ${key}`);
-      continue;
-    }
-
-    const home = homeRows[0];
-    const away = awayRows[0];
-    if (
-      home.providerWeek !== away.providerWeek ||
-      home.homeTeamNameCfbd !== away.homeTeamNameCfbd ||
-      home.awayTeamNameCfbd !== away.awayTeamNameCfbd ||
-      home.teamIdInternal !== away.opponentTeamIdInternal ||
-      away.teamIdInternal !== home.opponentTeamIdInternal ||
-      home.teamNameCfbd !== home.homeTeamNameCfbd ||
-      away.teamNameCfbd !== away.awayTeamNameCfbd
-    ) {
-      badGameFrames += 1;
-      blockers.push(`game identity mismatch: ${key}`);
-    }
-  }
-
-  const teamIndex = new Map<string, Oa1CanonicalRow[]>();
-  for (const row of rows) {
-    const key = teamIndexKey(row.season, row.teamIdInternal);
-    const bucket = teamIndex.get(key) ?? [];
-    bucket.push(row);
-    teamIndex.set(key, bucket);
-  }
-  for (const bucket of teamIndex.values()) {
-    bucket.sort(
-      (a, b) =>
-        a.providerWeek - b.providerWeek ||
-        a.providerGameId.localeCompare(b.providerGameId)
-    );
-  }
-
-  const residualAudit: Oa1ResidualAuditRow[] = [];
-  const games: Oa1GameFeatureRow[] = [];
-
-  for (const [key, gameRows] of [...gameGroups.entries()].sort((a, b) => {
-    const [aSeason, aGame] = a[0].split('|');
-    const [bSeason, bGame] = b[0].split('|');
-    return (
-      Number(aSeason) - Number(bSeason) ||
-      aGame.localeCompare(bGame)
-    );
-  })) {
-    if (gameRows.length !== 2) continue;
-    const home = gameRows.find((row) => row.isHome);
-    const away = gameRows.find((row) => !row.isHome);
-    if (!home || !away) continue;
-
-    games.push({
-      season: home.season,
-      providerGameId: home.providerGameId,
-      providerWeek: home.providerWeek,
-      startDate: isoDate(home.startDate),
-      neutralSite: home.neutralSite,
-      homeTeamIdInternal: home.teamIdInternal,
-      homeTeamNameCfbd: home.teamNameCfbd,
-      awayTeamIdInternal: away.teamIdInternal,
-      awayTeamNameCfbd: away.teamNameCfbd,
-      home: buildTeamBundle(home, teamIndex, residualAudit),
-      away: buildTeamBundle(away, teamIndex, residualAudit),
-    });
-  }
+  const computed = computeOa1FeatureRows(rows);
+  const games = computed.games;
+  const residualAudit = computed.residualAudit;
+  badGameFrames += computed.badGameFrames;
+  blockers.push(...computed.blockers);
 
   const expectedTargetGames =
     OA_1_DEVELOPMENT_SOURCE[2022].games +
