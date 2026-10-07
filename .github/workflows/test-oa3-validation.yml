@@ -1,0 +1,29 @@
+name: Test OA-3 Validation
+on:
+  pull_request:
+    paths:
+      - 'apps/jobs/research/oa3*'
+      - 'apps/jobs/research/test_oa3*'
+      - 'research/opponent-adjustment/OA_3_2024_VALIDATION_V1_CONTRACT.md'
+      - '.github/workflows/test-oa3-validation.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python -m pip install numpy==2.3.5
+      - name: Compile validation runner
+        run: python -m py_compile apps/jobs/research/oa3_validation.py
+      - name: Boundary and frozen math tests
+        run: python -m unittest discover -s apps/jobs/research -p 'test_oa*.py' -v
+      - name: Original TypeScript feature core import
+        run: node --input-type=module -e "import('./apps/jobs/src/research/oa-1-opponent-adjusted-efficiency.ts').then(m=>{if(typeof m.computeOa1FeatureRows!=='function')throw Error('core_missing')})"
