@@ -4,6 +4,8 @@ on:
     paths:
       - 'apps/jobs/research/oa2_margin_study.py'
       - 'apps/jobs/research/test_oa2_margin_study.py'
+      - 'apps/jobs/research/oa2_combined_refit.py'
+      - 'apps/jobs/research/test_oa2_combined_refit.py'
       - '.github/workflows/test-oa2-margin-study.yml'
       - '.github/workflows/run-oa2-margin-study.yml'
 permissions:
