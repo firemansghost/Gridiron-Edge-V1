@@ -209,6 +209,26 @@ Rules:
 - AVAILABLE -> all four selected metrics finite / non-null;
 - SOURCE_UNAVAILABLE -> all four selected metrics null.
 
+### Floating-point readback verification
+
+The four selected efficiency metrics are stored as PostgreSQL `DOUBLE PRECISION`.
+The live production database currently reports `extra_float_digits=0`, which can
+render a correctly stored float8 value at 15 significant digits when it is read back
+through the application client.
+
+Therefore COMMIT verification must:
+
+- compare `ppa_off`, `ppa_def`, `success_off`, and `success_def` at
+  **15 significant digits**;
+- reject non-finite values;
+- preserve exact null semantics;
+- continue to compare every non-floating field exactly, including natural keys,
+  team identities, side/orientation, status, timestamp, source provenance, artifact
+  hashes, and `record_fingerprint_sha256`.
+
+This is a readback-verification rule only. It does not retune, round, rewrite, or
+otherwise alter the accepted OA-DATA-1 source metrics before insertion.
+
 ### Row provenance
 
 - `source_season INTEGER NOT NULL`
@@ -437,6 +457,8 @@ After any future authorized COMMIT, independently verify:
 - per-season counts exactly match the frozen table above;
 - duplicate natural keys = 0;
 - fingerprint mismatches vs accepted artifact = 0;
+- all four efficiency metrics match the accepted plan at the frozen 15-significant-digit PostgreSQL readback precision;
+- all non-floating persisted fields match exactly;
 - unexpected existing rows = 0;
 - 2026 mutation count = 0;
 - legacy `team_game_stats` unchanged by OA-DB-1;
