@@ -21,7 +21,7 @@ export const OA_DB_1_COMMIT_CONFIRMATION =
   'WRITE_OA_DB_1_CANONICAL_EFFICIENCY_2022_2025' as const;
 export const OA_DB_1_TRANSACTION_TIMEOUT_MS = 180_000;
 export const OA_DB_1_INSERT_BATCH_SIZE = 200;
-export const OA_DB_1_FLOAT_COMPARE_SIGNIFICANT_DIGITS = 15;
+export const OA_DB_1_FLOAT_READBACK_RELATIVE_TOLERANCE = 5e-15;
 
 const EXPECTED_ARCHIVE_MEMBER_SHA256 =
   '6ccea22db8e74feabdc08bbe9b422703486d48fa6820a4dfa802475e04420ff2';
@@ -536,10 +536,11 @@ export function oaDb1FloatReadbackEqual(
   if (!Number.isFinite(expected) || !Number.isFinite(actual)) return false;
   if (Object.is(expected, actual)) return true;
 
-  return (
-    expected.toPrecision(OA_DB_1_FLOAT_COMPARE_SIGNIFICANT_DIGITS) ===
-    actual.toPrecision(OA_DB_1_FLOAT_COMPARE_SIGNIFICANT_DIGITS)
-  );
+  const scale = Math.max(Math.abs(expected), Math.abs(actual));
+  if (scale === 0) return true;
+
+  const relativeError = Math.abs(expected - actual) / scale;
+  return relativeError <= OA_DB_1_FLOAT_READBACK_RELATIVE_TOLERANCE;
 }
 
 export function persistedRowsExactlyMatchPlan(
@@ -911,7 +912,7 @@ async function main(): Promise<void> {
         isolation: 'Serializable',
         timeoutMs: OA_DB_1_TRANSACTION_TIMEOUT_MS,
         insertBatchSize: OA_DB_1_INSERT_BATCH_SIZE,
-        floatComparisonSignificantDigits: OA_DB_1_FLOAT_COMPARE_SIGNIFICANT_DIGITS,
+        floatReadbackRelativeTolerance: OA_DB_1_FLOAT_READBACK_RELATIVE_TOLERANCE,
         mutationCallsAttempted,
         attemptedRowCount,
         createCountInsideTransaction,
