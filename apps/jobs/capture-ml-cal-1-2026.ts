@@ -43,6 +43,7 @@ import {
   resolveCanonicalDependencyHashes,
   runMlCal1LiveSnapshotReads,
   sha256Utf8Bytes,
+  readCaptureTerminalResult,
   writeBlockedReasonReceipt,
   writeCaptureArtifactsAtomic,
   type MlCal1DependencyHashes,
@@ -345,34 +346,51 @@ export async function runMlCal1Cli(
       failTerminalWrite: deps.failTerminalWrite,
     });
 
+    // CLI reporting uses the same validated reader as offline consumers. Write-time
+    // digests are the external pin for this process (not a self-hash inside the file).
+    const validated = readCaptureTerminalResult({
+      rootDir: outRoot,
+      captureId: fixtureInput.captureId,
+      expectedManifestSha256: written.manifestSha256,
+      expectedTerminalSha256: written.terminalSha256,
+      expectedInvalidationSha256: written.invalidationSha256,
+      expectedPackageChecksumsSha256: written.packageChecksumsSha256,
+    });
+
     const finalEnvelope = written.bundle.envelope;
-    const ok =
-      written.terminalStatus === 'EVIDENCE_CAPTURED' &&
-      !written.primaryReadinessBlockedEffective;
+    const ok = validated.eligibilityAccepted;
 
     out(
       JSON.stringify(
         {
           ok,
-          status: written.terminalStatus,
-          sealedStatus: finalEnvelope.status,
-          primaryReadinessBlocked: written.primaryReadinessBlockedEffective,
+          status: validated.terminalStatus,
+          sealedStatus: validated.sealedStatus,
+          primaryReadinessBlocked: validated.primaryReadinessBlockedEffective,
           sealedPrimaryReadinessBlocked: finalEnvelope.primaryReadinessBlocked,
           lifecycleMode: finalEnvelope.lifecycleQualification.mode,
           fixtureHypothetical: finalEnvelope.lifecycleQualification.fixtureHypothetical,
           receiptIntegrityVerified:
             finalEnvelope.lifecycleQualification.receiptIntegrityVerified,
           liveAccepted: finalEnvelope.lifecycleQualification.liveAccepted,
+          structuralConsistencyVerified: validated.structuralConsistencyVerified,
+          independentlyVerifiedIntegrity: validated.independentlyVerifiedIntegrity,
+          eligibilityAccepted: validated.eligibilityAccepted,
           captureDir: written.captureDir,
           manifestPath: written.manifestPath,
-          manifestSha256: written.manifestSha256,
+          manifestSha256: validated.manifestSha256,
           snapshotReferenceTime: finalEnvelope.snapshotReferenceTime,
-          publicationTime: written.publicationTime,
-          publicationInvalidationPath: written.publicationInvalidationPath,
-          terminalReceiptPath: written.terminalReceiptPath,
-          invalidatedGameIds: written.invalidatedGameIds,
-          sealedCounts: finalEnvelope.counts,
-          effectiveCounts: written.effectiveCounts,
+          publicationTime: validated.publicationTime,
+          publicationInvalidationPath: validated.publicationInvalidationPath,
+          terminalReceiptPath: validated.terminalReceiptPath,
+          packageChecksumsPath: validated.packageChecksumsPath,
+          invalidatedGameIds: validated.invalidatedGameIds,
+          sealedCounts: validated.sealedCounts,
+          effectiveCounts: validated.effectiveCounts,
+          terminalSha256: validated.terminalSha256,
+          invalidationSha256: validated.invalidationSha256,
+          packageChecksumsSha256: validated.packageChecksumsSha256,
+          integrityNotes: validated.integrityNotes,
           producerVersion: ML_CAL_1_CAPTURE_PRODUCER_VERSION,
           providerCalls: 0,
           businessDataWrites: 0,
@@ -382,8 +400,8 @@ export async function runMlCal1Cli(
       )
     );
 
-    if (written.terminalStatus === 'PUBLICATION_INVALIDATED') return 4;
-    if (written.primaryReadinessBlockedEffective) return 1;
+    if (validated.terminalStatus === 'PUBLICATION_INVALIDATED') return 4;
+    if (!validated.eligibilityAccepted) return 1;
     return 0;
   } catch (e) {
     const message = redactSensitive(e instanceof Error ? e.message : String(e));

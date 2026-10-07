@@ -975,11 +975,27 @@ describe('R2 — writeCaptureArtifactsAtomic seal-time publication', () => {
     expect(written.terminalStatus).toBe('EVIDENCE_CAPTURED');
     expect(written.primaryReadinessBlockedEffective).toBe(false);
     expect(fs.existsSync(written.terminalReceiptPath)).toBe(true);
-    const terminal = readCaptureTerminalResult({ rootDir: root, captureId: 'seal-on-time' });
-    expect(terminal.terminalStatus).toBe('EVIDENCE_CAPTURED');
-    expect(terminal.effectiveCounts.primaryEligibleCandidates).toBe(
+    expect(fs.existsSync(written.packageChecksumsPath)).toBe(true);
+    // Without external pins: structural OK, but eligibility is not accepted.
+    const structural = readCaptureTerminalResult({ rootDir: root, captureId: 'seal-on-time' });
+    expect(structural.terminalStatus).toBe('EVIDENCE_CAPTURED');
+    expect(structural.structuralConsistencyVerified).toBe(true);
+    expect(structural.independentlyVerifiedIntegrity).toBe(false);
+    expect(structural.eligibilityAccepted).toBe(false);
+    expect(structural.effectiveCounts.primaryEligibleCandidates).toBe(
       written.effectiveCounts.primaryEligibleCandidates
     );
+    // Write-time digests are the external pin for this process.
+    const verified = readCaptureTerminalResult({
+      rootDir: root,
+      captureId: 'seal-on-time',
+      expectedManifestSha256: written.manifestSha256,
+      expectedTerminalSha256: written.terminalSha256,
+      expectedInvalidationSha256: written.invalidationSha256,
+      expectedPackageChecksumsSha256: written.packageChecksumsSha256,
+    });
+    expect(verified.independentlyVerifiedIntegrity).toBe(true);
+    expect(verified.eligibilityAccepted).toBe(true);
     // Planning result is untouched (pure).
     expect(p.bundle.envelope.publicationFinalized).toBe(false);
   });
@@ -1046,10 +1062,131 @@ describe('R2 — writeCaptureArtifactsAtomic seal-time publication', () => {
     expect(fs.readdirSync(written.captureDir)).not.toContain('delay-1.publication-invalidation.json');
     expect(sha256Utf8Bytes(fs.readFileSync(written.manifestPath))).toBe(written.manifestSha256);
 
-    const terminal = readCaptureTerminalResult({ rootDir: root, captureId: 'delay-1' });
+    const terminal = readCaptureTerminalResult({
+      rootDir: root,
+      captureId: 'delay-1',
+      expectedManifestSha256: written.manifestSha256,
+      expectedTerminalSha256: written.terminalSha256,
+      expectedInvalidationSha256: written.invalidationSha256,
+      expectedPackageChecksumsSha256: written.packageChecksumsSha256,
+    });
     expect(terminal.terminalStatus).toBe('PUBLICATION_INVALIDATED');
     expect(terminal.effectiveCounts.primaryEligibleCandidates).toBe(0);
     expect(terminal.invalidatedGameIds).toEqual([GAME_ID]);
+    expect(terminal.independentlyVerifiedIntegrity).toBe(true);
+    expect(terminal.eligibilityAccepted).toBe(false);
+  });
+
+  it('F2 reproduction A: semantic terminal edit with unchanged manifestSha256 fails closed', () => {
+    const root = makeTmp();
+    const clock = mutableClock('2026-10-12T18:00:10.000Z');
+    const written = writeCaptureArtifactsAtomic({
+      rootDir: root,
+      captureId: 'repro-a',
+      bundle: plan(makeFixture()).bundle,
+      dependencyHashes: CANONICAL_DEPS,
+      now: clock.now,
+      beforeRename: () => clock.set(iso(1, KICK_MINUS_30M)),
+    });
+    expect(written.terminalStatus).toBe('PUBLICATION_INVALIDATED');
+    expect(written.invalidatedGameIds).toEqual([GAME_ID]);
+    expect(fs.existsSync(written.publicationInvalidationPath!)).toBe(true);
+
+    // Edit only the terminal: restore success-looking claims while keeping manifestSha256.
+    const honest = JSON.parse(fs.readFileSync(written.terminalReceiptPath, 'utf8'));
+    const tampered = {
+      ...honest,
+      terminalStatus: 'EVIDENCE_CAPTURED',
+      invalidatedGameIds: [],
+      effectiveCounts: honest.sealedCounts,
+    };
+    fs.writeFileSync(written.terminalReceiptPath, `${stableStringify(tampered)}\n`);
+
+    // Fail closed: package pin (if checked) and/or recomputed invalidation rejects the lie.
+    // Semantic recomputation is authoritative even when manifestSha256 is left unchanged.
+    expect(() =>
+      readCaptureTerminalResult({ rootDir: root, captureId: 'repro-a' })
+    ).toThrow(
+      /package_checksums_digest_mismatch|terminal_invalidated_game_ids_mismatch|terminal_status_mismatch|terminal_effective_counts_mismatch/
+    );
+
+    // After removing the package pin, recomputed timing still rejects the semantic lie.
+    if (fs.existsSync(written.packageChecksumsPath)) {
+      fs.unlinkSync(written.packageChecksumsPath);
+    }
+    expect(() =>
+      readCaptureTerminalResult({ rootDir: root, captureId: 'repro-a' })
+    ).toThrow(
+      /terminal_invalidated_game_ids_mismatch|terminal_status_mismatch|terminal_effective_counts_mismatch/
+    );
+  });
+
+  it('F2 reproduction B: modified manifested member fails closed on digest', () => {
+    const root = makeTmp();
+    const written = writeCaptureArtifactsAtomic({
+      rootDir: root,
+      captureId: 'repro-b',
+      bundle: plan(makeFixture()).bundle,
+      dependencyHashes: CANONICAL_DEPS,
+      now: () => new Date('2026-10-12T18:00:10.000Z'),
+    });
+    const envPath = path.join(written.captureDir, 'envelope.json');
+    const env = JSON.parse(fs.readFileSync(envPath, 'utf8'));
+    env.counts = { ...env.counts, primaryEligibleCandidates: 999 };
+    fs.writeFileSync(envPath, `${stableStringify(env)}\n`);
+    // Manifest unchanged → member digest mismatch (never trust the tampered counts).
+    expect(() =>
+      readCaptureTerminalResult({ rootDir: root, captureId: 'repro-b' })
+    ).toThrow(/sealed_member_digest_mismatch:envelope\.json/);
+  });
+
+  it('F2: terminal count/status/time lies and wrong invalidation fail closed', () => {
+    const root = makeTmp();
+    const clock = mutableClock('2026-10-12T18:00:10.000Z');
+    const written = writeCaptureArtifactsAtomic({
+      rootDir: root,
+      captureId: 'term-lies',
+      bundle: plan(makeFixture()).bundle,
+      dependencyHashes: CANONICAL_DEPS,
+      now: clock.now,
+      beforeRename: () => clock.set(iso(1, KICK_MINUS_30M)),
+    });
+    fs.unlinkSync(written.packageChecksumsPath);
+    const honest = JSON.parse(fs.readFileSync(written.terminalReceiptPath, 'utf8'));
+
+    const statusLie = {
+      ...honest,
+      terminalStatus: 'PRIMARY_READINESS_BLOCKED',
+      manifestSha256: written.manifestSha256,
+    };
+    fs.writeFileSync(written.terminalReceiptPath, `${stableStringify(statusLie)}\n`);
+    expect(() =>
+      readCaptureTerminalResult({ rootDir: root, captureId: 'term-lies' })
+    ).toThrow(/terminal_status_mismatch/);
+
+    const timeLie = {
+      ...honest,
+      postRenameCheckTime: '2026-10-12T18:00:11.000Z',
+      invalidatedGameIds: honest.invalidatedGameIds,
+      effectiveCounts: honest.effectiveCounts,
+      terminalStatus: honest.terminalStatus,
+    };
+    fs.writeFileSync(written.terminalReceiptPath, `${stableStringify(timeLie)}\n`);
+    // Earlier post-check may yield empty derived invalidation → ID/status mismatch vs claims.
+    expect(() =>
+      readCaptureTerminalResult({ rootDir: root, captureId: 'term-lies' })
+    ).toThrow(
+      /terminal_invalidated_game_ids_mismatch|terminal_status_mismatch|publication_invalidation/
+    );
+
+    // Restore honest terminal; corrupt invalidation game-id set.
+    fs.writeFileSync(written.terminalReceiptPath, `${stableStringify(honest)}\n`);
+    const inv = JSON.parse(fs.readFileSync(written.publicationInvalidationPath!, 'utf8'));
+    inv.invalidatedGameIds = ['not-a-real-game'];
+    fs.writeFileSync(written.publicationInvalidationPath!, `${stableStringify(inv)}\n`);
+    expect(() =>
+      readCaptureTerminalResult({ rootDir: root, captureId: 'term-lies' })
+    ).toThrow(/publication_invalidation_game_ids_mismatch/);
   });
 
   it('F2: naked capture directory without terminal receipt fails closed', () => {
@@ -1112,6 +1249,43 @@ describe('R2 — writeCaptureArtifactsAtomic seal-time publication', () => {
     expect(() =>
       readCaptureTerminalResult({ rootDir: root, captureId: 'fail-inv' })
     ).toThrow(/terminal_completion_receipt_missing/);
+  });
+
+  it('F2: committed fixture packages verify structurally and with package pins', () => {
+    const packagesRoot = path.join(__dirname, 'fixtures', 'packages');
+    const ontimeRoot = path.join(packagesRoot, 'ml-cal-1-demo-ontime');
+    const delayedRoot = path.join(packagesRoot, 'ml-cal-1-demo-delayed');
+    const ontimeIndex = readJson(path.join(ontimeRoot, 'PACKAGE_INDEX.json'));
+    const delayedIndex = readJson(path.join(delayedRoot, 'PACKAGE_INDEX.json'));
+
+    const ontime = readCaptureTerminalResult({
+      rootDir: ontimeRoot,
+      captureId: 'ml-cal-1-demo-ontime',
+      expectedManifestSha256: ontimeIndex.manifestSha256,
+      expectedTerminalSha256: ontimeIndex.terminalSha256,
+      expectedInvalidationSha256: ontimeIndex.invalidationSha256,
+      expectedPackageChecksumsSha256: ontimeIndex.packageChecksumsSha256,
+    });
+    expect(ontime.terminalStatus).toBe('EVIDENCE_CAPTURED');
+    expect(ontime.eligibilityAccepted).toBe(true);
+    expect(ontime.independentlyVerifiedIntegrity).toBe(true);
+    expect(ontime.effectiveCounts.universeGames).toBe(3);
+    expect(ontime.effectiveCounts.primaryEligibleCandidates).toBe(2);
+
+    const delayed = readCaptureTerminalResult({
+      rootDir: delayedRoot,
+      captureId: 'ml-cal-1-demo-delayed',
+      expectedManifestSha256: delayedIndex.manifestSha256,
+      expectedTerminalSha256: delayedIndex.terminalSha256,
+      expectedInvalidationSha256: delayedIndex.invalidationSha256,
+      expectedPackageChecksumsSha256: delayedIndex.packageChecksumsSha256,
+    });
+    expect(delayed.terminalStatus).toBe('PUBLICATION_INVALIDATED');
+    expect(delayed.eligibilityAccepted).toBe(false);
+    expect(delayed.independentlyVerifiedIntegrity).toBe(true);
+    expect(delayed.effectiveCounts.primaryEligibleCandidates).toBe(0);
+    expect(delayed.invalidatedGameIds.length).toBeGreaterThanOrEqual(2);
+    expect(delayed.publicationInvalidationPath).not.toBeNull();
   });
 
   it('F2: partial invalidation keeps unaffected games eligible in effective counts', () => {
@@ -2954,6 +3128,9 @@ describe('demo fixture and CLI (offline, injected clock and dependency hashes)',
     expect(summary.status).toBe('PUBLICATION_INVALIDATED');
     expect(summary.sealedStatus).toBe('EVIDENCE_CAPTURED');
     expect(summary.primaryReadinessBlocked).toBe(true);
+    expect(summary.structuralConsistencyVerified).toBe(true);
+    expect(summary.independentlyVerifiedIntegrity).toBe(true);
+    expect(summary.eligibilityAccepted).toBe(false);
     expect(summary.invalidatedGameIds).toEqual(
       expect.arrayContaining([
         '2026-wk7-alabama-georgia',
@@ -2964,8 +3141,17 @@ describe('demo fixture and CLI (offline, injected clock and dependency hashes)',
     expect(summary.effectiveCounts.primaryEligibleCandidates).toBe(0);
     expect(fs.existsSync(summary.publicationInvalidationPath)).toBe(true);
     expect(fs.existsSync(summary.terminalReceiptPath)).toBe(true);
-    const terminal = readCaptureTerminalResult({ rootDir: out, captureId: 'cli-delay' });
+    expect(fs.existsSync(summary.packageChecksumsPath)).toBe(true);
+    const terminal = readCaptureTerminalResult({
+      rootDir: out,
+      captureId: 'cli-delay',
+      expectedManifestSha256: summary.manifestSha256,
+      expectedTerminalSha256: summary.terminalSha256,
+      expectedInvalidationSha256: summary.invalidationSha256,
+      expectedPackageChecksumsSha256: summary.packageChecksumsSha256,
+    });
     expect(terminal.terminalStatus).toBe('PUBLICATION_INVALIDATED');
+    expect(terminal.eligibilityAccepted).toBe(false);
   });
 
   it('gates live DB reads unless explicitly enabled and never touches the DB when gated', async () => {

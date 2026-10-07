@@ -2340,6 +2340,18 @@ export function computeEffectiveCountsAfterInvalidation(
 export const ML_CAL_1_TERMINAL_COMPLETION_SUFFIX = '.terminal-completion.json';
 export const ML_CAL_1_PUBLICATION_INVALIDATION_SUFFIX =
   '.publication-invalidation.json';
+export const ML_CAL_1_PACKAGE_CHECKSUMS_SUFFIX = '.package-checksums.json';
+
+/** Required sealed members (blocked receipt is conditional). */
+export const ML_CAL_1_REQUIRED_SEALED_MEMBERS = [
+  'envelope.json',
+  'universe.json',
+  'inputs.json',
+  'forecasts.json',
+  'markets.json',
+] as const;
+
+const SAFE_MEMBER_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 export function terminalCompletionPath(rootDir: string, captureId: string): string {
   return path.join(path.resolve(rootDir), `${captureId}${ML_CAL_1_TERMINAL_COMPLETION_SUFFIX}`);
@@ -2355,37 +2367,176 @@ export function publicationInvalidationPathFor(
   );
 }
 
-/**
- * Offline reader: a naked capture directory without a verified terminal completion
- * receipt must fail closed. Returns effective terminal status/counts.
- */
-export function readCaptureTerminalResult(options: {
+export function packageChecksumsPath(rootDir: string, captureId: string): string {
+  return path.join(path.resolve(rootDir), `${captureId}${ML_CAL_1_PACKAGE_CHECKSUMS_SUFFIX}`);
+}
+
+export function assertSafeMemberName(name: string): void {
+  if (typeof name !== 'string' || !SAFE_MEMBER_NAME.test(name)) {
+    throw new Error(`unsafe_sealed_member_name:${String(name)}`);
+  }
+  if (name.includes('/') || name.includes('\\') || name.includes('..')) {
+    throw new Error(`unsafe_sealed_member_name:${name}`);
+  }
+}
+
+export function countsEqual(a: MlCal1Counts, b: MlCal1Counts): boolean {
+  return (
+    a.universeGames === b.universeGames &&
+    a.trackedGames === b.trackedGames &&
+    a.availableForecasts === b.availableForecasts &&
+    a.inGateForecasts === b.inGateForecasts &&
+    a.pairedMarkets === b.pairedMarkets &&
+    a.missingMarkets === b.missingMarkets &&
+    a.selectedBets === b.selectedBets &&
+    a.noSelection === b.noSelection &&
+    a.primaryEligibleCandidates === b.primaryEligibleCandidates &&
+    a.modelOnlyEligible === b.modelOnlyEligible
+  );
+}
+
+function sortedIdSetEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sa = [...a].sort();
+  const sb = [...b].sort();
+  return sa.every((v, i) => v === sb[i]);
+}
+
+/** Recompute post-rename invalidation from sealed forecast rows + check time. */
+export function deriveInvalidatedGameIds(
+  forecastRows: Array<{ gameId: string; forecastAvailable: boolean; kickoffAsKnown: string }>,
+  postRenameCheckTime: Date | string
+): string[] {
+  const postMs = toMs(postRenameCheckTime);
+  return forecastRows
+    .filter((f) => {
+      if (!f.forecastAvailable) return false;
+      const kickMs = toMs(f.kickoffAsKnown);
+      return postMs > kickMs - ML_CAL_1_MIN_PRE_KICKOFF_MS || postMs >= kickMs;
+    })
+    .map((f) => f.gameId);
+}
+
+export function deriveTerminalStatus(options: {
+  invalidatedGameIds: string[];
+  primaryReadinessBlocked: boolean;
+}): MlCal1TerminalStatus {
+  if (options.invalidatedGameIds.length > 0) return 'PUBLICATION_INVALIDATED';
+  if (options.primaryReadinessBlocked) return 'PRIMARY_READINESS_BLOCKED';
+  return 'EVIDENCE_CAPTURED';
+}
+
+export interface MlCal1PackageChecksums {
+  schemaVersion: typeof ML_CAL_1_CAPTURE_SCHEMA_VERSION;
+  kind: 'capture-package-checksums';
+  captureId: string;
+  manifestSha256: string;
+  terminalSha256: string;
+  invalidationSha256: string | null;
+  sealedMemberDigests: Record<string, { sha256: string; byteCount: number }>;
+  /** Explicit: this file does not authenticate itself. */
+  selfHashFieldAbsent: true;
+  providerCalls: 0;
+  businessDataWrites: 0;
+}
+
+export function buildPackageChecksumsBody(pkg: MlCal1PackageChecksums): string {
+  return `${stableStringify(pkg)}\n`;
+}
+
+export interface MlCal1TerminalReadOptions {
   rootDir: string;
   captureId: string;
-}): {
+  /**
+   * Externally supplied expected digests (writer return, trusted channel, or reviewed
+   * package pin). A terminal's own reference to the manifest is not independent proof
+   * of the terminal bytes. Without these, structural consistency may still be verified
+   * but independentlyVerifiedIntegrity / eligibilityAccepted stay false.
+   */
+  expectedTerminalSha256?: string | null;
+  expectedInvalidationSha256?: string | null;
+  expectedManifestSha256?: string | null;
+  expectedPackageChecksumsSha256?: string | null;
+}
+
+export interface MlCal1TerminalReadResult {
   terminalStatus: MlCal1TerminalStatus;
+  sealedStatus: MlCal1CaptureStatus;
   manifestSha256: string;
   sealedCounts: MlCal1Counts;
   effectiveCounts: MlCal1Counts;
   invalidatedGameIds: string[];
   terminalReceiptPath: string;
   publicationInvalidationPath: string | null;
-} {
+  packageChecksumsPath: string | null;
+  terminalSha256: string;
+  invalidationSha256: string | null;
+  packageChecksumsSha256: string | null;
+  /** All sealed members, terminal claims, and derived timing/counts agree. */
+  structuralConsistencyVerified: boolean;
+  /**
+   * Terminal/invalidation/manifest bytes match externally supplied expected digests
+   * (or a reviewed package-checksums pin). Not established by self-hashes alone.
+   */
+  independentlyVerifiedIntegrity: boolean;
+  /**
+   * True only when independently verified AND terminalStatus===EVIDENCE_CAPTURED.
+   * Unverified terminals never grant accepted eligibility.
+   */
+  eligibilityAccepted: boolean;
+  primaryReadinessBlockedEffective: boolean;
+  integrityNotes: string[];
+  publicationTime: string;
+  postRenameCheckTime: string;
+}
+
+/**
+ * Offline reader / validator for sealed capture + external terminal evidence.
+ * Verifies manifested member digests, recomputes sealed/effective counts and
+ * invalidation from sealed ledgers + terminal times, and fails closed on mismatch.
+ * Structural consistency ≠ independently verified integrity.
+ */
+export function readCaptureTerminalResult(
+  options: MlCal1TerminalReadOptions
+): MlCal1TerminalReadResult {
+  const integrityNotes: string[] = [];
   const captureDir = resolveCaptureDir(options.rootDir, options.captureId);
+  if (!fs.existsSync(captureDir) || !fs.statSync(captureDir).isDirectory()) {
+    throw new Error('sealed_capture_directory_missing');
+  }
+
   const terminalPath = terminalCompletionPath(options.rootDir, options.captureId);
   if (!fs.existsSync(terminalPath)) {
     throw new Error('terminal_completion_receipt_missing');
   }
-  const terminalRaw = fs.readFileSync(terminalPath, 'utf8');
+  const terminalBytes = fs.readFileSync(terminalPath);
+  const terminalSha256 = sha256Utf8Bytes(terminalBytes);
   let terminal: any;
   try {
-    terminal = JSON.parse(terminalRaw);
+    terminal = JSON.parse(terminalBytes.toString('utf8'));
   } catch {
     throw new Error('terminal_completion_receipt_unparseable');
   }
-  if (terminal?.kind !== 'terminal-completion' || terminal?.captureId !== options.captureId) {
+  if (
+    terminal?.kind !== 'terminal-completion' ||
+    terminal?.captureId !== options.captureId ||
+    terminal?.schemaVersion !== ML_CAL_1_CAPTURE_SCHEMA_VERSION
+  ) {
     throw new Error('terminal_completion_receipt_invalid');
   }
+  if (typeof terminal.manifestSha256 !== 'string' || !HEX64.test(terminal.manifestSha256)) {
+    throw new Error('terminal_completion_manifest_digest_invalid');
+  }
+  if (typeof terminal.publicationTime !== 'string' || !Number.isFinite(toMs(terminal.publicationTime))) {
+    throw new Error('terminal_completion_publication_time_invalid');
+  }
+  if (
+    typeof terminal.postRenameCheckTime !== 'string' ||
+    !Number.isFinite(toMs(terminal.postRenameCheckTime))
+  ) {
+    throw new Error('terminal_completion_post_rename_check_time_invalid');
+  }
+
   const manifestPath = path.join(captureDir, 'manifest.json');
   if (!fs.existsSync(manifestPath)) {
     throw new Error('sealed_manifest_missing');
@@ -2395,35 +2546,305 @@ export function readCaptureTerminalResult(options: {
   if (terminal.manifestSha256 !== manifestSha) {
     throw new Error('terminal_completion_manifest_digest_mismatch');
   }
-  const envelope = JSON.parse(
-    fs.readFileSync(path.join(captureDir, 'envelope.json'), 'utf8')
+
+  let manifest: any;
+  try {
+    manifest = JSON.parse(manifestBytes.toString('utf8'));
+  } catch {
+    throw new Error('sealed_manifest_unparseable');
+  }
+  if (
+    manifest?.schemaVersion !== ML_CAL_1_CAPTURE_SCHEMA_VERSION ||
+    manifest?.captureId !== options.captureId ||
+    manifest?.members == null ||
+    typeof manifest.members !== 'object' ||
+    Array.isArray(manifest.members)
+  ) {
+    throw new Error('sealed_manifest_identity_invalid');
+  }
+  if (manifest.publicationTime !== terminal.publicationTime) {
+    throw new Error('terminal_publication_time_disagrees_with_manifest');
+  }
+
+  const memberDigests = manifest.members as Record<
+    string,
+    { sha256?: string; byteCount?: number }
+  >;
+  const verifiedBodies: Record<string, Buffer> = {};
+  for (const [name, expected] of Object.entries(memberDigests)) {
+    assertSafeMemberName(name);
+    const memberPath = path.join(captureDir, name);
+    const rel = path.relative(captureDir, path.resolve(memberPath));
+    if (rel.startsWith('..') || path.isAbsolute(rel) || rel.includes('..')) {
+      throw new Error(`sealed_member_path_escape:${name}`);
+    }
+    if (!fs.existsSync(memberPath)) {
+      throw new Error(`sealed_member_missing:${name}`);
+    }
+    const body = fs.readFileSync(memberPath);
+    const actualSha = sha256Utf8Bytes(body);
+    if (
+      typeof expected?.sha256 !== 'string' ||
+      typeof expected?.byteCount !== 'number' ||
+      expected.sha256 !== actualSha ||
+      expected.byteCount !== body.byteLength
+    ) {
+      throw new Error(`sealed_member_digest_mismatch:${name}`);
+    }
+    verifiedBodies[name] = body;
+  }
+
+  for (const required of ML_CAL_1_REQUIRED_SEALED_MEMBERS) {
+    if (!verifiedBodies[required]) {
+      throw new Error(`sealed_required_member_missing:${required}`);
+    }
+  }
+
+  const parseMember = <T>(name: string): T => {
+    try {
+      return JSON.parse(verifiedBodies[name].toString('utf8')) as T;
+    } catch {
+      throw new Error(`sealed_member_unparseable:${name}`);
+    }
+  };
+
+  const envelope = parseMember<MlCal1CaptureEnvelope>('envelope.json');
+  const universe = parseMember<MlCal1ArtifactBundle['universe']>('universe.json');
+  const forecasts = parseMember<MlCal1ArtifactBundle['forecasts']>('forecasts.json');
+  const markets = parseMember<MlCal1ArtifactBundle['markets']>('markets.json');
+
+  if (envelope.captureId !== options.captureId) {
+    throw new Error('envelope_capture_id_mismatch');
+  }
+  if (envelope.schemaVersion !== ML_CAL_1_CAPTURE_SCHEMA_VERSION) {
+    throw new Error('envelope_schema_version_mismatch');
+  }
+  if (envelope.publicationTime !== terminal.publicationTime) {
+    throw new Error('terminal_publication_time_disagrees_with_envelope');
+  }
+  if (envelope.primaryReadinessBlocked && !verifiedBodies[ML_CAL_1_BLOCKED_RECEIPT_MEMBER]) {
+    throw new Error('sealed_blocked_receipt_member_missing');
+  }
+
+  const sealedBundle: MlCal1ArtifactBundle = {
+    envelope,
+    universe,
+    inputs: parseMember('inputs.json'),
+    forecasts,
+    markets,
+  };
+  const recomputedSealedCounts = computeCounts(
+    universe.rows,
+    forecasts.rows,
+    markets.moneyline
   );
-  const sealedCounts = envelope.counts as MlCal1Counts;
-  const invalidatedGameIds: string[] = Array.isArray(terminal.invalidatedGameIds)
-    ? terminal.invalidatedGameIds
+  if (!countsEqual(recomputedSealedCounts, envelope.counts)) {
+    throw new Error('sealed_envelope_counts_mismatch');
+  }
+  if (terminal.sealedCounts != null && !countsEqual(recomputedSealedCounts, terminal.sealedCounts)) {
+    throw new Error('terminal_sealed_counts_mismatch');
+  }
+  if (
+    typeof terminal.sealedPrimaryReadinessBlocked === 'boolean' &&
+    terminal.sealedPrimaryReadinessBlocked !== envelope.primaryReadinessBlocked
+  ) {
+    throw new Error('terminal_sealed_primary_blocked_mismatch');
+  }
+  if (
+    terminal.sealedStatus != null &&
+    terminal.sealedStatus !== envelope.status
+  ) {
+    throw new Error('terminal_sealed_status_mismatch');
+  }
+
+  const derivedInvalidated = deriveInvalidatedGameIds(
+    forecasts.rows,
+    terminal.postRenameCheckTime
+  );
+  const claimedInvalidated: string[] = Array.isArray(terminal.invalidatedGameIds)
+    ? terminal.invalidatedGameIds.map(String)
     : [];
+  if (!sortedIdSetEqual(derivedInvalidated, claimedInvalidated)) {
+    throw new Error('terminal_invalidated_game_ids_mismatch');
+  }
+
+  const derivedStatus = deriveTerminalStatus({
+    invalidatedGameIds: derivedInvalidated,
+    primaryReadinessBlocked: envelope.primaryReadinessBlocked,
+  });
+  if (terminal.terminalStatus !== derivedStatus) {
+    throw new Error('terminal_status_mismatch');
+  }
+
+  const recomputedEffective = computeEffectiveCountsAfterInvalidation(
+    sealedBundle,
+    derivedInvalidated
+  );
+  if (
+    terminal.effectiveCounts == null ||
+    !countsEqual(recomputedEffective, terminal.effectiveCounts as MlCal1Counts)
+  ) {
+    throw new Error('terminal_effective_counts_mismatch');
+  }
+
+  const invPath = publicationInvalidationPathFor(options.rootDir, options.captureId);
+  const invExists = fs.existsSync(invPath);
   let publicationInvalidationPath: string | null = null;
-  if (invalidatedGameIds.length > 0) {
-    publicationInvalidationPath = publicationInvalidationPathFor(
-      options.rootDir,
-      options.captureId
-    );
-    if (!fs.existsSync(publicationInvalidationPath)) {
+  let invalidationSha256: string | null = null;
+
+  // Timing-derived invalidation requires evidence even if the terminal array was emptied
+  // (emptied array already fails above); also reject orphan invalidation files.
+  if (derivedInvalidated.length > 0) {
+    if (!invExists) {
       throw new Error('publication_invalidation_receipt_missing');
     }
-    const inv = JSON.parse(fs.readFileSync(publicationInvalidationPath, 'utf8'));
+    publicationInvalidationPath = invPath;
+    const invBytes = fs.readFileSync(invPath);
+    invalidationSha256 = sha256Utf8Bytes(invBytes);
+    let inv: any;
+    try {
+      inv = JSON.parse(invBytes.toString('utf8'));
+    } catch {
+      throw new Error('publication_invalidation_receipt_unparseable');
+    }
+    if (
+      inv?.kind !== 'publication-invalidation' ||
+      inv?.captureId !== options.captureId ||
+      inv?.schemaVersion !== ML_CAL_1_CAPTURE_SCHEMA_VERSION
+    ) {
+      throw new Error('publication_invalidation_receipt_invalid');
+    }
     if (inv.manifestSha256 !== manifestSha) {
       throw new Error('publication_invalidation_manifest_digest_mismatch');
     }
+    if (inv.publicationTime !== terminal.publicationTime) {
+      throw new Error('publication_invalidation_publication_time_mismatch');
+    }
+    if (inv.postRenameCheckTime !== terminal.postRenameCheckTime) {
+      throw new Error('publication_invalidation_post_rename_check_time_mismatch');
+    }
+    const invIds: string[] = Array.isArray(inv.invalidatedGameIds)
+      ? inv.invalidatedGameIds.map(String)
+      : [];
+    if (!sortedIdSetEqual(invIds, derivedInvalidated)) {
+      throw new Error('publication_invalidation_game_ids_mismatch');
+    }
+  } else if (invExists) {
+    throw new Error('publication_invalidation_receipt_unexpected');
   }
+
+  const pkgPath = packageChecksumsPath(options.rootDir, options.captureId);
+  let packageChecksumsPathOut: string | null = null;
+  let packageChecksumsSha256: string | null = null;
+  if (fs.existsSync(pkgPath)) {
+    packageChecksumsPathOut = pkgPath;
+    const pkgBytes = fs.readFileSync(pkgPath);
+    packageChecksumsSha256 = sha256Utf8Bytes(pkgBytes);
+    let pkg: any;
+    try {
+      pkg = JSON.parse(pkgBytes.toString('utf8'));
+    } catch {
+      throw new Error('package_checksums_unparseable');
+    }
+    if (
+      pkg?.kind !== 'capture-package-checksums' ||
+      pkg?.captureId !== options.captureId ||
+      pkg?.schemaVersion !== ML_CAL_1_CAPTURE_SCHEMA_VERSION
+    ) {
+      throw new Error('package_checksums_invalid');
+    }
+    if (pkg.manifestSha256 !== manifestSha || pkg.terminalSha256 !== terminalSha256) {
+      throw new Error('package_checksums_digest_mismatch');
+    }
+    if ((pkg.invalidationSha256 ?? null) !== invalidationSha256) {
+      throw new Error('package_checksums_invalidation_digest_mismatch');
+    }
+    integrityNotes.push(
+      'package_checksums_present_but_not_independent_proof_without_external_pin'
+    );
+  }
+
+  // Structural path succeeded if we reached here.
+  const structuralConsistencyVerified = true;
+
+  let independentlyVerifiedIntegrity = false;
+  const expectedTerminal = options.expectedTerminalSha256
+    ? String(options.expectedTerminalSha256).toLowerCase()
+    : null;
+  const expectedInv = options.expectedInvalidationSha256
+    ? String(options.expectedInvalidationSha256).toLowerCase()
+    : null;
+  const expectedManifest = options.expectedManifestSha256
+    ? String(options.expectedManifestSha256).toLowerCase()
+    : null;
+  const expectedPkg = options.expectedPackageChecksumsSha256
+    ? String(options.expectedPackageChecksumsSha256).toLowerCase()
+    : null;
+
+  if (expectedTerminal || expectedInv || expectedManifest || expectedPkg) {
+    if (expectedTerminal && expectedTerminal !== terminalSha256) {
+      throw new Error('terminal_bytes_digest_mismatch_vs_expected');
+    }
+    if (expectedManifest && expectedManifest !== manifestSha) {
+      throw new Error('manifest_bytes_digest_mismatch_vs_expected');
+    }
+    if (derivedInvalidated.length > 0) {
+      if (!expectedInv) {
+        throw new Error('expected_invalidation_digest_required');
+      }
+      if (expectedInv !== invalidationSha256) {
+        throw new Error('invalidation_bytes_digest_mismatch_vs_expected');
+      }
+    } else if (expectedInv) {
+      throw new Error('expected_invalidation_digest_unexpected');
+    }
+    if (expectedPkg) {
+      if (!packageChecksumsSha256) {
+        throw new Error('package_checksums_missing_for_expected_pin');
+      }
+      if (expectedPkg !== packageChecksumsSha256) {
+        throw new Error('package_checksums_digest_mismatch_vs_expected');
+      }
+    }
+    // Require at least the terminal pin for independent verification.
+    if (!expectedTerminal && !expectedPkg) {
+      integrityNotes.push(
+        'partial_external_pins_without_terminal_or_package_pin_do_not_establish_independent_integrity'
+      );
+    } else {
+      independentlyVerifiedIntegrity = true;
+    }
+  } else {
+    integrityNotes.push(
+      'structural_consistency_only:supply_expected_terminal_digest_or_package_pin_for_independent_integrity'
+    );
+  }
+
+  const eligibilityAccepted =
+    independentlyVerifiedIntegrity && derivedStatus === 'EVIDENCE_CAPTURED';
+  // Unverified packages and any non-EVIDENCE_CAPTURED terminal never grant acceptance.
+  const primaryReadinessBlockedEffective = !eligibilityAccepted;
+
   return {
-    terminalStatus: terminal.terminalStatus as MlCal1TerminalStatus,
+    terminalStatus: derivedStatus,
+    sealedStatus: envelope.status,
     manifestSha256: manifestSha,
-    sealedCounts,
-    effectiveCounts: terminal.effectiveCounts as MlCal1Counts,
-    invalidatedGameIds,
+    sealedCounts: recomputedSealedCounts,
+    effectiveCounts: recomputedEffective,
+    invalidatedGameIds: derivedInvalidated,
     terminalReceiptPath: terminalPath,
     publicationInvalidationPath,
+    packageChecksumsPath: packageChecksumsPathOut,
+    terminalSha256,
+    invalidationSha256,
+    packageChecksumsSha256,
+    structuralConsistencyVerified,
+    independentlyVerifiedIntegrity,
+    eligibilityAccepted,
+    primaryReadinessBlockedEffective,
+    integrityNotes,
+    publicationTime: terminal.publicationTime,
+    postRenameCheckTime: terminal.postRenameCheckTime,
   };
 }
 
@@ -2450,10 +2871,14 @@ export function writeCaptureArtifactsAtomic(options: {
   bundle: MlCal1ArtifactBundle;
   publicationInvalidationPath: string | null;
   terminalReceiptPath: string;
+  packageChecksumsPath: string;
   invalidatedGameIds: string[];
   terminalStatus: MlCal1TerminalStatus;
-  /** Effective counts after terminal invalidation (use these for CLI success reporting). */
+  /** Effective counts after terminal invalidation (historical writer view; prefer validated reader). */
   effectiveCounts: MlCal1Counts;
+  terminalSha256: string;
+  invalidationSha256: string | null;
+  packageChecksumsSha256: string;
   primaryReadinessBlockedEffective: boolean;
 } {
   const now = options.now ?? (() => new Date());
@@ -2468,6 +2893,8 @@ export function writeCaptureArtifactsAtomic(options: {
 
   // 2. Pure finalization against the seal boundary.
   const finalized = finalizePublicationEligibility(options.bundle, publicationTime);
+  // Seal-time capture id is authoritative for the package (CLI may override fixture id).
+  finalized.envelope.captureId = options.captureId;
   finalized.envelope.dependencyHashes = options.dependencyHashes;
 
   // 3. All members (including the blocked receipt when blocked) enter the manifest.
@@ -2527,6 +2954,7 @@ export function writeCaptureArtifactsAtomic(options: {
     .map((f) => f.gameId);
 
   let publicationInvalidationPath: string | null = null;
+  let invalidationSha256: string | null = null;
   if (invalidatedGameIds.length > 0) {
     publicationInvalidationPath = publicationInvalidationPathFor(
       options.rootDir,
@@ -2554,18 +2982,17 @@ export function writeCaptureArtifactsAtomic(options: {
       encoding: 'utf8',
       flag: 'wx',
     });
+    invalidationSha256 = sha256Utf8Bytes(Buffer.from(invBody, 'utf8'));
   }
 
   const effectiveCounts = computeEffectiveCountsAfterInvalidation(
     finalized,
     invalidatedGameIds
   );
-  const terminalStatus: MlCal1TerminalStatus =
-    invalidatedGameIds.length > 0
-      ? 'PUBLICATION_INVALIDATED'
-      : finalized.envelope.primaryReadinessBlocked
-        ? 'PRIMARY_READINESS_BLOCKED'
-        : 'EVIDENCE_CAPTURED';
+  const terminalStatus = deriveTerminalStatus({
+    invalidatedGameIds,
+    primaryReadinessBlocked: finalized.envelope.primaryReadinessBlocked,
+  });
 
   const terminalReceiptPath = terminalCompletionPath(options.rootDir, options.captureId);
   if (options.failTerminalWrite) {
@@ -2593,6 +3020,27 @@ export function writeCaptureArtifactsAtomic(options: {
     encoding: 'utf8',
     flag: 'wx',
   });
+  const terminalSha256 = sha256Utf8Bytes(Buffer.from(terminalBody, 'utf8'));
+
+  const packageChecksums: MlCal1PackageChecksums = {
+    schemaVersion: ML_CAL_1_CAPTURE_SCHEMA_VERSION,
+    kind: 'capture-package-checksums',
+    captureId: options.captureId,
+    manifestSha256,
+    terminalSha256,
+    invalidationSha256,
+    sealedMemberDigests: memberDigests,
+    selfHashFieldAbsent: true,
+    providerCalls: 0,
+    businessDataWrites: 0,
+  };
+  const packageChecksumsPathOut = packageChecksumsPath(options.rootDir, options.captureId);
+  const packageBody = buildPackageChecksumsBody(packageChecksums);
+  fs.writeFileSync(packageChecksumsPathOut, packageBody, {
+    encoding: 'utf8',
+    flag: 'wx',
+  });
+  const packageChecksumsSha256 = sha256Utf8Bytes(Buffer.from(packageBody, 'utf8'));
 
   return {
     captureDir,
@@ -2603,9 +3051,13 @@ export function writeCaptureArtifactsAtomic(options: {
     bundle: finalized,
     publicationInvalidationPath,
     terminalReceiptPath,
+    packageChecksumsPath: packageChecksumsPathOut,
     invalidatedGameIds,
     terminalStatus,
     effectiveCounts,
+    terminalSha256,
+    invalidationSha256,
+    packageChecksumsSha256,
     primaryReadinessBlockedEffective:
       terminalStatus === 'PRIMARY_READINESS_BLOCKED' ||
       terminalStatus === 'PUBLICATION_INVALIDATED',
