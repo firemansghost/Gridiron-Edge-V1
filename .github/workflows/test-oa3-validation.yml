@@ -26,4 +26,4 @@ jobs:
       - name: Boundary and frozen math tests
         run: python -m unittest discover -s apps/jobs/research -p 'test_oa*.py' -v
       - name: Original TypeScript feature core import
-        run: node --input-type=module -e "import('./apps/jobs/src/research/oa-1-opponent-adjusted-efficiency.ts').then(m=>{if(typeof m.computeOa1FeatureRows!=='function')throw Error('core_missing')})"
+        run: echo '[]' | node apps/jobs/research/oa3_feature_bridge.mjs
