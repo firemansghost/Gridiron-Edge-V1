@@ -92,3 +92,33 @@ Read-only production inventory found:
 **Blocked before execution:** establish an immutable all-game Core snapshot source (an existing guarded workflow artifact may qualify after a full source audit), prove paired ML provenance/as-of coverage, pin and test the read-only adapter, freeze capture/run IDs and universe before outcomes, and independently audit the pre-score manifest. Do not create a new DB writer merely to meet this draft. Any required capture capability must be designed as a separately reviewable change under existing mutation discipline.
 
 Implementation checks must cover sign, probability clipping, exact 1pp/24 boundaries, tie handling, paired-price provenance, no-selection retention, duplicate games, missingness, outcome isolation, reproducible metrics, and blocked 2025 access. Current work prepared the draft and audited inventory only; no calibration dataset was built, fitted or scored.
+
+## Artifact qualification audit — October 7 continuation
+
+Original Week 6 official card archives were downloaded and independently matched their GitHub ZIP digests:
+
+| Run | Artifact | ZIP SHA-256 |
+|---|---|---|
+| PREVIEW 37358910735 | 11365069606 | `7b8de95bbc97d35bdfb9540cef53b0793ea324a9ab103e07c844b96e073d5974` |
+| COMMIT 37361669627 | 11367102101 | `45616f2f0432c2142ebe02769236a18889e82a3b89e3b68e3817edfb88142a1e` |
+
+Both reports cover 58 game IDs and 96 selected bets, but expose full-precision Core margin only through 57 selected spread rows. `2026-wk6-iowa-washington` has no selected bet and its full forecast is absent. `consensusComparisons` records display/consensus market spreads, not Core forecasts. Selected ML rows contain one market side, fair American odds and a six-decimal probability note; these do not substitute for full-precision all-game predictions and paired ML row lineage. The report omits paired ML row IDs, actual ratings/input values and row-version provenance.
+
+All 96 selected rows reference BetRivers observations at 2026-10-05 18:16:01 UTC. PREVIEW generation at 18:51:30.786 gives 2,129.786 seconds of age; COMMIT generation at 19:13:29.297 gives 3,448.297 seconds. Both exceed this study's 1,800-second limit. A read-only as-of database inventory found valid unique HOME/AWAY pairs across 58 games at some books, but zero paired games within the preview's 30-minute window. BetRivers at the selected timestamp covered 54 paired games; that narrower query does not imply the other four lacked prices at other books. This is source qualification under ML-CAL-1, not a claim that an existing production card failed its own separately defined execution contract.
+
+**Qualification: REJECTED_AS_PRIMARY_STUDY_SOURCE.** Do not relax freshness, invent the no-bet forecast, reconstruct probabilities from rounded odds, or substitute post-capture observations.
+
+## Next capture capability — reviewable dependency scope
+
+Prepare a separately reviewed artifact-only evidence capability before the first registered prospective cohort. Prefer extending the existing guarded card's evidence export if exact forecast/input lineage can be retained without changing planning or persistence; otherwise use a distinct read-only runner. This draft does not authorize a new writer or production COMMIT.
+
+Required envelope and per-game evidence:
+
+1. Explicit season/week, repository/model/HFA/probability-function hashes, capture start/end and per-game prediction timestamps, canonical expected-game universe and lifecycle receipt.
+2. Every game retained, including NO_SELECTION, unavailable forecasts, missing paired markets and large-spread suppression; identity, membership, neutral-site and kickoff-as-known ledger.
+3. Full-precision Core margin and both probabilities, the actual rating values/versions and HFA inputs used in that computation, and lineage hashes. The existing helper re-reads ratings internally; a preflight ratings map alone is not evidence of the values actually used. Pin the actual helper result and used inputs, or prove read consistency. Do not silently copy its legacy fallback into the primary full-V1 cohort.
+4. Full paired ML row IDs/prices/book/provider/observation and known-at times, capture-time as-of filtering, freshness reasons, deterministic pairing/selection and all unavailable reasons. Missing or stale ML must not drop the forecast from the game universe.
+5. Immutable forecast/market artifacts, byte counts and SHA-256 manifest before outcomes; zero score-field decoding, zero provider calls and zero DB/Bet/ratings writes.
+6. Meaningful fixture tests for NO_SELECTION retention, duplicate identity, future/stale market rejection, exact sign/probability/selection boundaries, input-version mismatch, outcome isolation and repeatable manifests. Independently verify a fresh prospective PREVIEW before registering its study cohort.
+
+Do not merge this draft as an accepted study contract until the capability and read-only adapter have passed independent qualification. A later market refresh cannot repair the original Week 6 observations. If Week 7 readiness is missed, register a new future window before captures/outcomes rather than rolling this one silently.
