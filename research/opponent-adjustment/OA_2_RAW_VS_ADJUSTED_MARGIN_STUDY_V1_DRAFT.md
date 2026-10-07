@@ -1,7 +1,7 @@
-# OA-2 Raw versus Opponent-Adjusted Margin Study V1 — Proposed Contract
+# OA-2 Raw versus Opponent-Adjusted Margin Study V1 — Contract
 
 **Date:** 2026-10-07  
-**Status:** DRAFT FOR REVIEW — NOT FROZEN; NO EXECUTION AUTHORIZATION  
+**Status:** FROZEN ON MERGE — RESEARCH ONLY; GUARDED EXECUTION AFTER PREVIEW AUDIT  
 **Repository:** firemansghost/Gridiron-Edge-V1  
 **Reviewed base main:** 3423cec87a87f6c6e0802ee43cb7b33b7ac44b8c  
 **Purpose:** Test whether frozen opponent adjustment improves margin prediction over matched raw efficiency.
@@ -202,7 +202,9 @@ Core V1, lifecycle, grades, live ML conversion and CORE_EVAL_V1 remain unchanged
 
 ## 9. Engineering and execution sequence
 
-This draft PR is documentation-only. It does not authorize execution.
+This contract PR is documentation-only and does not itself execute the study.
+Bobby authorized merge and continuation on 2026-10-07. Execution still follows
+implementation review, source/cohort PREVIEW, independent audit, then guarded fitting/scoring.
 
 After protocol review/freeze:
 - implement an artifact-only, read-only planner/fitter/scorer;
