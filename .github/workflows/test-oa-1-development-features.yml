@@ -1,0 +1,45 @@
+name: Test OA-1 Development Features
+
+on:
+  pull_request:
+    paths:
+      - 'research/opponent-adjustment/OA_1_OPPONENT_ADJUSTED_EFFICIENCY_FEATURE_V1_CONTRACT.md'
+      - 'apps/jobs/src/research/oa-1-opponent-adjusted-efficiency.ts'
+      - 'apps/jobs/build-oa-1-development-features.ts'
+      - 'apps/jobs/__tests__/oa-1-opponent-adjusted-efficiency.test.ts'
+      - '.github/workflows/test-oa-1-development-features.yml'
+      - '.github/workflows/build-oa-1-development-features.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Generate Prisma client
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/db
+          DIRECT_URL: postgresql://user:pass@localhost:5432/db
+        run: npx prisma generate
+
+      - name: TypeScript smoke compile
+        run: |
+          npx tsc --noEmit             --module commonjs             --moduleResolution node             --target ES2019             --esModuleInterop             --skipLibCheck             apps/jobs/src/research/oa-1-opponent-adjusted-efficiency.ts             apps/jobs/build-oa-1-development-features.ts
+
+      - name: Test OA-1 feature semantics and safety
+        run: npx jest apps/jobs/__tests__/oa-1-opponent-adjusted-efficiency.test.ts --runInBand
