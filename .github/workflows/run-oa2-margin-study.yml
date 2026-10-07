@@ -1,0 +1,146 @@
+name: OA-2 Margin Study (Manual, Guarded, Artifact Only)
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [PREVIEW, STUDY]
+        required: true
+      expected_main_sha:
+        type: string
+        required: true
+      confirm:
+        description: 'OA_2_PREVIEW_2022_2023 or OA_2_STUDY_2022_2023'
+        type: string
+        required: true
+      reviewed_preview_artifact_id:
+        type: string
+        required: false
+      reviewed_preview_zip_sha256:
+        type: string
+        required: false
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: oa-2-margin-study
+  cancel-in-progress: false
+jobs:
+  study:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v6
+      - name: Exact source and authorization guards
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_main_sha }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM: ${{ inputs.confirm }}
+          PREVIEW_ID: ${{ inputs.reviewed_preview_artifact_id }}
+          PREVIEW_SHA: ${{ inputs.reviewed_preview_zip_sha256 }}
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF}" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          test "${GITHUB_SHA}" = "${EXPECTED_SHA}"
+          test "${CONFIRM}" = "OA_2_${MODE}_2022_2023"
+          case "${MODE}" in
+            PREVIEW) ;;
+            STUDY)
+              [[ "${PREVIEW_ID}" =~ ^[0-9]+$ ]]
+              [[ "${PREVIEW_SHA}" =~ ^[0-9a-f]{64}$ ]]
+              ;;
+            *) exit 1 ;;
+          esac
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python -m pip install numpy==2.3.5
+      - name: Download exact source archives and reviewed preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODE: ${{ inputs.mode }}
+          PREVIEW_ID: ${{ inputs.reviewed_preview_artifact_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p .research-inputs
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts"
+          for SPEC in '11479616709:features' '10997010171:corpus'; do
+            ID="${SPEC%%:*}"
+            NAME="${SPEC##*:}"
+            curl --fail --location --silent --show-error \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H 'Accept: application/vnd.github+json' \
+              "${API}/${ID}/zip" -o ".research-inputs/${NAME}.zip"
+          done
+          if [ "${MODE}" = STUDY ]; then
+            curl --fail --location --silent --show-error \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H 'Accept: application/vnd.github+json' \
+              "${API}/${PREVIEW_ID}/zip" -o .research-inputs/preview.zip
+          fi
+      - name: PREVIEW only
+        if: inputs.mode == 'PREVIEW'
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          python apps/jobs/research/oa2_margin_study.py \
+            --mode PREVIEW --confirm OA_2_PREVIEW_2022_2023 \
+            --feature-zip .research-inputs/features.zip --corpus-zip .research-inputs/corpus.zip \
+            --expected-repo-sha "${EXPECTED_SHA}" \
+            --output-dir "reports/oa-2/${GITHUB_RUN_ID}/preview"
+      - name: Verify reviewed PREVIEW receipt
+        if: inputs.mode == 'STUDY'
+        env:
+          PREVIEW_SHA: ${{ inputs.reviewed_preview_zip_sha256 }}
+        run: |
+          python - <<'PY'
+          import os, sys
+          sys.path.insert(0, 'apps/jobs/research')
+          import oa2_margin_study as s
+          h = s.unpack_receipt('.research-inputs/preview.zip', os.environ['PREVIEW_SHA'], '.research-inputs/preview')
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              f.write('REVIEWED_PREVIEW_MANIFEST_SHA=' + h + '\n')
+          PY
+      - name: Fit 2022 only and freeze immutable model receipt
+        if: inputs.mode == 'STUDY'
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          python apps/jobs/research/oa2_margin_study.py \
+            --mode FIT --confirm OA_2_FIT_2022_2023 \
+            --feature-zip .research-inputs/features.zip --corpus-zip .research-inputs/corpus.zip \
+            --expected-repo-sha "${EXPECTED_SHA}" \
+            --preview-dir .research-inputs/preview \
+            --expected-preview-manifest-sha "${REVIEWED_PREVIEW_MANIFEST_SHA}" \
+            --output-dir "reports/oa-2/${GITHUB_RUN_ID}/fit"
+          FIT_SHA="$(sha256sum "reports/oa-2/${GITHUB_RUN_ID}/fit/manifest.json" | cut -d ' ' -f1)"
+          echo "FROZEN_FIT_MANIFEST_SHA=${FIT_SHA}" >> "${GITHUB_ENV}"
+      - name: Score 2023 from verified frozen models in separate process
+        if: inputs.mode == 'STUDY'
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          python apps/jobs/research/oa2_margin_study.py \
+            --mode SCORE --confirm OA_2_SCORE_2022_2023 \
+            --feature-zip .research-inputs/features.zip --corpus-zip .research-inputs/corpus.zip \
+            --expected-repo-sha "${EXPECTED_SHA}" \
+            --preview-dir .research-inputs/preview \
+            --expected-preview-manifest-sha "${REVIEWED_PREVIEW_MANIFEST_SHA}" \
+            --fit-dir "reports/oa-2/${GITHUB_RUN_ID}/fit" \
+            --expected-fit-manifest-sha "${FROZEN_FIT_MANIFEST_SHA}" \
+            --output-dir "reports/oa-2/${GITHUB_RUN_ID}/score"
+      - name: Upload immutable evidence including blocked partial stages
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oa-2-${{ inputs.mode }}-${{ github.run_id }}
+          path: reports/oa-2/**
+          if-no-files-found: warn
+          retention-days: 90
+          overwrite: false

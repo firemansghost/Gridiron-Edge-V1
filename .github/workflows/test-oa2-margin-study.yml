@@ -1,0 +1,24 @@
+name: Test OA-2 Margin Study
+on:
+  pull_request:
+    paths:
+      - 'apps/jobs/research/oa2_margin_study.py'
+      - 'apps/jobs/research/test_oa2_margin_study.py'
+      - '.github/workflows/test-oa2-margin-study.yml'
+      - '.github/workflows/run-oa2-margin-study.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python -m pip install numpy==2.3.5
+      - name: Compile
+        run: python -m py_compile apps/jobs/research/oa2_margin_study.py
+      - name: Frozen math and boundary tests
+        run: python -m unittest discover -s apps/jobs/research -p 'test_oa2*.py' -v
