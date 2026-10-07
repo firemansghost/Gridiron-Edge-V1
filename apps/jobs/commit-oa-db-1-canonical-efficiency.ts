@@ -21,6 +21,7 @@ export const OA_DB_1_COMMIT_CONFIRMATION =
   'WRITE_OA_DB_1_CANONICAL_EFFICIENCY_2022_2025' as const;
 export const OA_DB_1_TRANSACTION_TIMEOUT_MS = 180_000;
 export const OA_DB_1_INSERT_BATCH_SIZE = 200;
+export const OA_DB_1_FLOAT_COMPARE_SIGNIFICANT_DIGITS = 15;
 
 const EXPECTED_ARCHIVE_MEMBER_SHA256 =
   '6ccea22db8e74feabdc08bbe9b422703486d48fa6820a4dfa802475e04420ff2';
@@ -527,6 +528,20 @@ function timeEqual(expected: string | null, actual: Date | null): boolean {
   return Number.isFinite(millis) && millis === actual.getTime();
 }
 
+export function oaDb1FloatReadbackEqual(
+  expected: number | null,
+  actual: number | null
+): boolean {
+  if (expected === null || actual === null) return expected === null && actual === null;
+  if (!Number.isFinite(expected) || !Number.isFinite(actual)) return false;
+  if (Object.is(expected, actual)) return true;
+
+  return (
+    expected.toPrecision(OA_DB_1_FLOAT_COMPARE_SIGNIFICANT_DIGITS) ===
+    actual.toPrecision(OA_DB_1_FLOAT_COMPARE_SIGNIFICANT_DIGITS)
+  );
+}
+
 export function persistedRowsExactlyMatchPlan(
   plannedRows: OaDb1PlannedRow[],
   persistedRows: PersistedRow[]
@@ -549,38 +564,38 @@ export function persistedRowsExactlyMatchPlan(
       continue;
     }
 
-    const same =
-      actual.season === expected.season &&
-      actual.providerGameId === expected.providerGameId &&
-      actual.providerWeek === expected.providerWeek &&
-      timeEqual(expected.startDate, actual.startDate) &&
-      actual.neutralSite === expected.neutralSite &&
-      actual.homeTeamNameCfbd === expected.homeTeamNameCfbd &&
-      actual.awayTeamNameCfbd === expected.awayTeamNameCfbd &&
-      actual.teamNameCfbd === expected.teamNameCfbd &&
-      actual.opponentNameCfbd === expected.opponentNameCfbd &&
-      actual.teamIdInternal === expected.teamIdInternal &&
-      actual.opponentTeamIdInternal === expected.opponentTeamIdInternal &&
-      actual.isHome === expected.isHome &&
-      actual.availabilityStatus === expected.availabilityStatus &&
-      actual.ppaOff === expected.ppaOff &&
-      actual.ppaDef === expected.ppaDef &&
-      actual.successOff === expected.successOff &&
-      actual.successDef === expected.successDef &&
-      actual.sourceSeason === expected.sourceSeason &&
-      actual.sourceArtifactId === expected.sourceArtifactId &&
-      actual.sourceArtifactZipSha256 === expected.sourceArtifactZipSha256 &&
-      actual.sourceEndpoint === expected.sourceEndpoint &&
-      actual.sourceRawMember === expected.sourceRawMember &&
-      actual.sourceMethod === expected.sourceMethod &&
-      actual.archiveContractVersion === expected.archiveContractVersion &&
-      actual.archiveRunId === expected.archiveRunId &&
-      actual.archiveArtifactId === expected.archiveArtifactId &&
-      actual.archiveArtifactZipSha256 === expected.archiveArtifactZipSha256 &&
-      actual.recordFingerprintSha256 === expected.recordFingerprintSha256;
+    const differingFields: string[] = [];
+    if (actual.season !== expected.season) differingFields.push('season');
+    if (actual.providerGameId !== expected.providerGameId) differingFields.push('providerGameId');
+    if (actual.providerWeek !== expected.providerWeek) differingFields.push('providerWeek');
+    if (!timeEqual(expected.startDate, actual.startDate)) differingFields.push('startDate');
+    if (actual.neutralSite !== expected.neutralSite) differingFields.push('neutralSite');
+    if (actual.homeTeamNameCfbd !== expected.homeTeamNameCfbd) differingFields.push('homeTeamNameCfbd');
+    if (actual.awayTeamNameCfbd !== expected.awayTeamNameCfbd) differingFields.push('awayTeamNameCfbd');
+    if (actual.teamNameCfbd !== expected.teamNameCfbd) differingFields.push('teamNameCfbd');
+    if (actual.opponentNameCfbd !== expected.opponentNameCfbd) differingFields.push('opponentNameCfbd');
+    if (actual.teamIdInternal !== expected.teamIdInternal) differingFields.push('teamIdInternal');
+    if (actual.opponentTeamIdInternal !== expected.opponentTeamIdInternal) differingFields.push('opponentTeamIdInternal');
+    if (actual.isHome !== expected.isHome) differingFields.push('isHome');
+    if (actual.availabilityStatus !== expected.availabilityStatus) differingFields.push('availabilityStatus');
+    if (!oaDb1FloatReadbackEqual(expected.ppaOff, actual.ppaOff)) differingFields.push('ppaOff');
+    if (!oaDb1FloatReadbackEqual(expected.ppaDef, actual.ppaDef)) differingFields.push('ppaDef');
+    if (!oaDb1FloatReadbackEqual(expected.successOff, actual.successOff)) differingFields.push('successOff');
+    if (!oaDb1FloatReadbackEqual(expected.successDef, actual.successDef)) differingFields.push('successDef');
+    if (actual.sourceSeason !== expected.sourceSeason) differingFields.push('sourceSeason');
+    if (actual.sourceArtifactId !== expected.sourceArtifactId) differingFields.push('sourceArtifactId');
+    if (actual.sourceArtifactZipSha256 !== expected.sourceArtifactZipSha256) differingFields.push('sourceArtifactZipSha256');
+    if (actual.sourceEndpoint !== expected.sourceEndpoint) differingFields.push('sourceEndpoint');
+    if (actual.sourceRawMember !== expected.sourceRawMember) differingFields.push('sourceRawMember');
+    if (actual.sourceMethod !== expected.sourceMethod) differingFields.push('sourceMethod');
+    if (actual.archiveContractVersion !== expected.archiveContractVersion) differingFields.push('archiveContractVersion');
+    if (actual.archiveRunId !== expected.archiveRunId) differingFields.push('archiveRunId');
+    if (actual.archiveArtifactId !== expected.archiveArtifactId) differingFields.push('archiveArtifactId');
+    if (actual.archiveArtifactZipSha256 !== expected.archiveArtifactZipSha256) differingFields.push('archiveArtifactZipSha256');
+    if (actual.recordFingerprintSha256 !== expected.recordFingerprintSha256) differingFields.push('recordFingerprintSha256');
 
-    if (!same) {
-      mismatches.push(`value_mismatch:${key}`);
+    if (differingFields.length > 0) {
+      mismatches.push(`value_mismatch:${key}:fields=${differingFields.join(',')}`);
       if (mismatches.length >= 25) break;
     }
   }
@@ -896,6 +911,7 @@ async function main(): Promise<void> {
         isolation: 'Serializable',
         timeoutMs: OA_DB_1_TRANSACTION_TIMEOUT_MS,
         insertBatchSize: OA_DB_1_INSERT_BATCH_SIZE,
+        floatComparisonSignificantDigits: OA_DB_1_FLOAT_COMPARE_SIGNIFICANT_DIGITS,
         mutationCallsAttempted,
         attemptedRowCount,
         createCountInsideTransaction,
