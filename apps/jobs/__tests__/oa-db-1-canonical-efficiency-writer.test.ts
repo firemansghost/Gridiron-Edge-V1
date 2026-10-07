@@ -155,9 +155,10 @@ describe('OA-DB-1 COMMIT static safety', () => {
     expect(WRITER).not.toContain('ODDS_API_KEY');
   });
 
-  it('binds the reviewed PREVIEW to repo SHA and workflow run ID', () => {
+  it('binds the reviewed PREVIEW to repo SHA, workflow run ID, and target-table state', () => {
     expect(PREVIEW).toContain('repoCommitSha');
     expect(PREVIEW).toContain('workflowRunId');
+    expect(PREVIEW).toContain('targetTableExists: plan.targetTableExists');
     expect(WORKFLOW).toContain('reviewed_preview_run_id:');
     expect(WORKFLOW).toContain('reviewed_preview_artifact_id:');
     expect(WORKFLOW).toContain('reviewed_preview_artifact_sha256:');
