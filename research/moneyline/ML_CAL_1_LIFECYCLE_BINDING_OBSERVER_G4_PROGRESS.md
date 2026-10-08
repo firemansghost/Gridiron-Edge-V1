@@ -30,7 +30,7 @@
 | M2 | Archive prerequisites + injectable TX adapter | **DONE** | `evaluateG4ArchivePrerequisites`, `createMockRepeatableReadAdapter` |
 | M3 | Decimal/fingerprint/timing/cohort/numeric + atomic package | **DONE** | `runG4ObserverAttempt`, `sealG4ObservationPackage` |
 | M4 | Full fixture matrix + secret-free local tests | **DONE** | `ml-cal-1-lifecycle-binding-observer-g4.test.ts` (local green) |
-| M5 | Draft PR + report SHAs/results/hashes; stop | **IN PROGRESS** | |
+| M5 | Draft PR + report SHAs/results/hashes; stop | **DONE** | Draft PR https://github.com/firemansghost/Gridiron-Edge-V1/pull/249 ; head `42947e18bf2b624a81e055736f67ec654828c1ba` |
 
 ---
 
