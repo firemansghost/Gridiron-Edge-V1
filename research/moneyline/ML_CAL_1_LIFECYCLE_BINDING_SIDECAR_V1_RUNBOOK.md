@@ -7,9 +7,12 @@
 
 Verify a later TeamSeasonRating observation against an immutable lifecycle COMMIT archive without trusting sidecar self-declarations. Live qualification additionally requires:
 
-1. External lineage attestation with `checkedThroughTime` coverage
-2. Independently reviewed registry pin provenance
+1. External lineage attestation bytes bound to `approvedLineageAttestationDigest` + inventory anchor, with `checkedThroughTime` coverage
+2. Registry document bytes bound to `approvedRegistryDocumentDigest` (external approval anchor) and field-equal to the supplied pin
 3. Recomputed full-weight eligibility (`completedThroughWeek >= 6`, weight `1`, prospective week strict)
+4. Non-fixture provenance (`mode=binding_observation`, `readMode=repeatable_read_readonly`, non-fixture registry id)
+
+`liveQualifying` may be true for synthetic gates in offline tests; `liveAccepted` remains false whenever fixture/test-only provenance is retained.
 
 ## Module
 
