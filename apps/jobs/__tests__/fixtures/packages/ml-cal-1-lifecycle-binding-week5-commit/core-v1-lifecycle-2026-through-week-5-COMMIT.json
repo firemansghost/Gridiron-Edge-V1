@@ -1,0 +1,1198 @@
+{
+  "phase": "2C-2J-6D-2",
+  "season": 2026,
+  "completedThroughWeek": 5,
+  "mode": "COMMIT",
+  "selectedPolicy": "GLOBAL_BLEND_W3_W6",
+  "candidateAFormula": "talentZ*3.5",
+  "canonicalWeight": 0.75,
+  "modelVersion": "v1",
+  "writeSafe": true,
+  "ok": true,
+  "findings": [],
+  "blockers": [],
+  "expectedConfirmation": "WRITE_2026_CORE_V1_THROUGH_WEEK_5",
+  "confirmationValid": true,
+  "commitEligible": true,
+  "fbsCount": 138,
+  "distinctFbs": 138,
+  "talentRowsFbs": 138,
+  "talentDistinctFbs": 138,
+  "finiteTalent": 138,
+  "talentSetExact": true,
+  "highlightTeamsPresent": true,
+  "relevantCanonicalWeeksPresent": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "missingRelevantCanonicalWeeks": [],
+  "relevantGamesThroughCutoff": 271,
+  "nonFinalRelevantGamesThroughCutoff": 0,
+  "finalFbsVsFbsMissingScoreGames": 0,
+  "finalFbsGamesThroughCompletedWeek": 271,
+  "fbsVsFbsFinalsThroughCutoff": 271,
+  "finalGamesWithFbsParticipantThroughCutoff": 271,
+  "epaEligibleGameCount": 271,
+  "futureFinalFbsGamesBeyondCompletedWeek": 0,
+  "futureFinalGamesWithFbsParticipantBeyondCutoff": 0,
+  "expectedEpaParticipantRows": 542,
+  "actualEpaParticipantRows": 542,
+  "missingEpaKeys": [],
+  "unexpectedEpaKeys": [],
+  "duplicateEpaKeys": [],
+  "nullOrNonFiniteEpaRows": [],
+  "epaCoverageExact": true,
+  "existingV1Count": 138,
+  "proposedCreateCount": 0,
+  "proposedUpdateCount": 138,
+  "outputCount": 138,
+  "ratingsSummary": {
+    "count": 138,
+    "min": -20.963742435975,
+    "avg": 1.2679068744994542e-14,
+    "median": -0.2068982135585693,
+    "max": 23.454549989164192,
+    "stdDev": 9.852522940044883,
+    "range": 44.41829242513919
+  },
+  "rows": [
+    {
+      "teamId": "air-force",
+      "candidateA": -10.332435836097911,
+      "canonicalRating": -7.459109954943463,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -8.177441425232075,
+      "games": 3
+    },
+    {
+      "teamId": "akron",
+      "candidateA": -3.2358544025549985,
+      "canonicalRating": -21.418784286319774,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -16.873051815378577,
+      "games": 4
+    },
+    {
+      "teamId": "alabama",
+      "candidateA": 7.7956597942406045,
+      "canonicalRating": 27.81416423401494,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 22.809538124071356,
+      "games": 5
+    },
+    {
+      "teamId": "app-state",
+      "candidateA": -1.302773438636446,
+      "canonicalRating": 0.506575737130782,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 0.05423844318897497,
+      "games": 3
+    },
+    {
+      "teamId": "arizona",
+      "candidateA": 0.713297894336254,
+      "canonicalRating": 9.117991985810304,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 7.016818462941791,
+      "games": 4
+    },
+    {
+      "teamId": "arizona-state",
+      "candidateA": 1.2926792558638014,
+      "canonicalRating": -10.606068030908643,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -7.631381209215531,
+      "games": 3
+    },
+    {
+      "teamId": "arkansas",
+      "candidateA": 1.8997240737427323,
+      "canonicalRating": -7.596548912414297,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -5.22248066587504,
+      "games": 4
+    },
+    {
+      "teamId": "arkansas-state",
+      "candidateA": -1.7006618435409064,
+      "canonicalRating": -9.375710393542043,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -7.456948256041759,
+      "games": 4
+    },
+    {
+      "teamId": "army",
+      "candidateA": -9.518561438021731,
+      "canonicalRating": -13.53965685071027,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -12.534382997538135,
+      "games": 3
+    },
+    {
+      "teamId": "auburn",
+      "candidateA": 4.038083396007057,
+      "canonicalRating": 7.683645245651276,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 6.7722547832402205,
+      "games": 5
+    },
+    {
+      "teamId": "ball-state",
+      "candidateA": -2.795307396734856,
+      "canonicalRating": -20.922862001919054,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -16.390973350623003,
+      "games": 4
+    },
+    {
+      "teamId": "baylor",
+      "candidateA": 1.3257719886953607,
+      "canonicalRating": 11.101956598331043,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 8.657910445922122,
+      "games": 4
+    },
+    {
+      "teamId": "boise-state",
+      "candidateA": -0.7970751150541698,
+      "canonicalRating": 10.31810074721757,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 7.5393067816496355,
+      "games": 4
+    },
+    {
+      "teamId": "boston-college",
+      "candidateA": -0.3102499906648904,
+      "canonicalRating": -4.831430625538096,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -3.7011354668197947,
+      "games": 4
+    },
+    {
+      "teamId": "bowling-green",
+      "candidateA": -2.6802584427501337,
+      "canonicalRating": -14.863390109012691,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -11.817607192447053,
+      "games": 4
+    },
+    {
+      "teamId": "buffalo",
+      "candidateA": -3.1719957696690995,
+      "canonicalRating": -16.600279301096553,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -13.243208418239691,
+      "games": 3
+    },
+    {
+      "teamId": "byu",
+      "candidateA": 0.4503657905104974,
+      "canonicalRating": 13.05629752155729,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 9.904814588795592,
+      "games": 3
+    },
+    {
+      "teamId": "california",
+      "candidateA": 2.066221885801517,
+      "canonicalRating": -6.812517594231872,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -4.592832724223525,
+      "games": 4
+    },
+    {
+      "teamId": "central-michigan",
+      "candidateA": -3.412435156648402,
+      "canonicalRating": -7.3297232341959635,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -6.350401214809073,
+      "games": 4
+    },
+    {
+      "teamId": "charlotte",
+      "candidateA": -2.462053235642036,
+      "canonicalRating": -20.529527570701518,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -16.012658986936646,
+      "games": 4
+    },
+    {
+      "teamId": "cincinnati",
+      "candidateA": -0.9752070909990516,
+      "canonicalRating": 2.756269188685581,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 1.823400118764423,
+      "games": 4
+    },
+    {
+      "teamId": "clemson",
+      "candidateA": 4.934172552211645,
+      "canonicalRating": 3.525897048958494,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 3.8779659247717815,
+      "games": 5
+    },
+    {
+      "teamId": "coastal-carolina",
+      "candidateA": -2.534702125686319,
+      "canonicalRating": -11.478933466372244,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -9.242875631200762,
+      "games": 4
+    },
+    {
+      "teamId": "colorado",
+      "candidateA": 1.5413918260509953,
+      "canonicalRating": -6.960813986463541,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -4.835262533334907,
+      "games": 4
+    },
+    {
+      "teamId": "colorado-state",
+      "candidateA": -0.8193092949253747,
+      "canonicalRating": -7.2209280618977285,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -5.62052337015464,
+      "games": 4
+    },
+    {
+      "teamId": "delaware",
+      "candidateA": -4.8739446777172235,
+      "canonicalRating": -14.723679240779466,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -12.261245600013906,
+      "games": 4
+    },
+    {
+      "teamId": "duke",
+      "candidateA": -0.09126917263105067,
+      "canonicalRating": 14.018527833501032,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 10.491078581968011,
+      "games": 3
+    },
+    {
+      "teamId": "east-carolina",
+      "candidateA": -1.2464123780326966,
+      "canonicalRating": -7.594026849854591,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -6.007123231899118,
+      "games": 3
+    },
+    {
+      "teamId": "eastern-michigan",
+      "candidateA": -2.361999426221616,
+      "canonicalRating": -7.532255032705013,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -6.239691131084164,
+      "games": 5
+    },
+    {
+      "teamId": "florida",
+      "candidateA": 5.663763896357446,
+      "canonicalRating": 13.8542226619855,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 11.806607970578485,
+      "games": 4
+    },
+    {
+      "teamId": "florida-atlantic",
+      "candidateA": -2.033140393707987,
+      "canonicalRating": -0.17652690746020994,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -0.6406802790221542,
+      "games": 4
+    },
+    {
+      "teamId": "florida-international",
+      "candidateA": -1.6660178888578692,
+      "canonicalRating": -3.537119025741161,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -3.069343741520338,
+      "games": 3
+    },
+    {
+      "teamId": "florida-state",
+      "candidateA": 3.314438402291927,
+      "canonicalRating": 6.460487652239657,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 5.673975339752724,
+      "games": 4
+    },
+    {
+      "teamId": "fresno-state",
+      "candidateA": -1.6093982912788702,
+      "canonicalRating": 7.137914957904652,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 4.951086645608771,
+      "games": 5
+    },
+    {
+      "teamId": "georgia",
+      "candidateA": 8.574890237633745,
+      "canonicalRating": 28.414436573007674,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 23.454549989164192,
+      "games": 4
+    },
+    {
+      "teamId": "georgia-southern",
+      "candidateA": -0.9775339237762685,
+      "canonicalRating": -6.332961084897663,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -4.994104294617315,
+      "games": 4
+    },
+    {
+      "teamId": "georgia-state",
+      "candidateA": -2.5380631063645245,
+      "canonicalRating": 6.962842268735423,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 4.587615924960436,
+      "games": 4
+    },
+    {
+      "teamId": "georgia-tech",
+      "candidateA": 2.0592413874698607,
+      "canonicalRating": -7.276793388005548,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -4.942784694136696,
+      "games": 3
+    },
+    {
+      "teamId": "hawai-i",
+      "candidateA": -2.9778345012589282,
+      "canonicalRating": -10.327525563799567,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -8.490102798164406,
+      "games": 5
+    },
+    {
+      "teamId": "houston",
+      "candidateA": 0.6186733613960098,
+      "canonicalRating": 7.293174768962667,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 5.624549417071003,
+      "games": 4
+    },
+    {
+      "teamId": "illinois",
+      "candidateA": 0.827571237395234,
+      "canonicalRating": -4.501611182004161,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -3.169315577154312,
+      "games": 4
+    },
+    {
+      "teamId": "indiana",
+      "candidateA": 1.6354992850407437,
+      "canonicalRating": 21.356029662204243,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 16.42589706791337,
+      "games": 4
+    },
+    {
+      "teamId": "iowa",
+      "candidateA": 1.311552455056801,
+      "canonicalRating": 5.887973533061996,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 4.743868263560698,
+      "games": 4
+    },
+    {
+      "teamId": "iowa-state",
+      "candidateA": -0.06334717930442373,
+      "canonicalRating": 2.7514914583497387,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 2.047781798936198,
+      "games": 4
+    },
+    {
+      "teamId": "jacksonville-state",
+      "candidateA": -1.7883058781494912,
+      "canonicalRating": -2.1665693331053117,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -2.072003469366357,
+      "games": 4
+    },
+    {
+      "teamId": "james-madison",
+      "candidateA": -2.163701566207503,
+      "canonicalRating": 12.262966618448306,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 8.656299572284356,
+      "games": 4
+    },
+    {
+      "teamId": "kansas",
+      "candidateA": 0.32342413566443573,
+      "canonicalRating": 6.732487144910572,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 5.130221392599038,
+      "games": 3
+    },
+    {
+      "teamId": "kansas-state",
+      "candidateA": 1.2065864431066946,
+      "canonicalRating": 8.785046600335795,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 6.890431561028519,
+      "games": 3
+    },
+    {
+      "teamId": "kennesaw-state",
+      "candidateA": -4.372900019689384,
+      "canonicalRating": -17.378708139405088,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -14.12725610947616,
+      "games": 3
+    },
+    {
+      "teamId": "kent-state",
+      "candidateA": -3.8566016801219964,
+      "canonicalRating": -17.537281003634504,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -14.117111172756378,
+      "games": 4
+    },
+    {
+      "teamId": "kentucky",
+      "candidateA": 2.964120800832832,
+      "canonicalRating": 8.420645889801358,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 7.056514617559227,
+      "games": 4
+    },
+    {
+      "teamId": "liberty",
+      "candidateA": -0.9992510296969808,
+      "canonicalRating": 8.18442676064759,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 5.888507313061447,
+      "games": 4
+    },
+    {
+      "teamId": "louisiana",
+      "candidateA": -2.0957063417176545,
+      "canonicalRating": 5.991269788066376,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 3.969525755620368,
+      "games": 4
+    },
+    {
+      "teamId": "louisiana-tech",
+      "candidateA": -3.334615527099187,
+      "canonicalRating": -12.190867493335773,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -9.976804501776627,
+      "games": 3
+    },
+    {
+      "teamId": "louisville",
+      "candidateA": 1.7572702003818763,
+      "canonicalRating": 0.5069540610401226,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 0.8195330958755611,
+      "games": 4
+    },
+    {
+      "teamId": "lsu",
+      "candidateA": 6.71575084863571,
+      "canonicalRating": 22.076180713844558,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 18.236073247542343,
+      "games": 4
+    },
+    {
+      "teamId": "marshall",
+      "candidateA": -1.9982379020497005,
+      "canonicalRating": -9.735603125912904,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -7.801261819947104,
+      "games": 4
+    },
+    {
+      "teamId": "maryland",
+      "candidateA": 1.231664529705612,
+      "canonicalRating": -7.746550349133541,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -5.501996629423752,
+      "games": 4
+    },
+    {
+      "teamId": "massachusetts",
+      "candidateA": -3.776196680820315,
+      "canonicalRating": 2.335595193782365,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 0.807647225131695,
+      "games": 3
+    },
+    {
+      "teamId": "memphis",
+      "candidateA": -0.04369836918568516,
+      "canonicalRating": 8.196917551556252,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 6.136763571370768,
+      "games": 4
+    },
+    {
+      "teamId": "miami",
+      "candidateA": 5.53113442805596,
+      "canonicalRating": 25.00050395759318,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 20.133161575208874,
+      "games": 4
+    },
+    {
+      "teamId": "miami-oh",
+      "candidateA": -1.308978326042364,
+      "canonicalRating": -8.364277175628017,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -6.600452463231603,
+      "games": 4
+    },
+    {
+      "teamId": "michigan",
+      "candidateA": 5.636617513956556,
+      "canonicalRating": 11.75709725474076,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 10.22697731954471,
+      "games": 5
+    },
+    {
+      "teamId": "michigan-state",
+      "candidateA": 0.3366095214020102,
+      "canonicalRating": -5.060719438319841,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -3.711387198389378,
+      "games": 5
+    },
+    {
+      "teamId": "middle-tennessee",
+      "candidateA": -2.5983022215969744,
+      "canonicalRating": -11.814662896193532,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -9.510572727544393,
+      "games": 4
+    },
+    {
+      "teamId": "minnesota",
+      "candidateA": 1.4682258620562167,
+      "canonicalRating": 4.897812520855114,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 4.04041585615539,
+      "games": 4
+    },
+    {
+      "teamId": "mississippi-state",
+      "candidateA": 3.4263849125736865,
+      "canonicalRating": 12.358789627878842,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 10.125688449052554,
+      "games": 5
+    },
+    {
+      "teamId": "missouri",
+      "candidateA": 3.5254045740931215,
+      "canonicalRating": 12.782933781958702,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 10.468551479992307,
+      "games": 4
+    },
+    {
+      "teamId": "missouri-state",
+      "candidateA": -3.156225014179059,
+      "canonicalRating": -19.0068093527775,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -15.044163268127889,
+      "games": 3
+    },
+    {
+      "teamId": "navy",
+      "candidateA": -12.314638825313313,
+      "canonicalRating": -19.74280665514498,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -17.885764697687065,
+      "games": 3
+    },
+    {
+      "teamId": "nc-state",
+      "candidateA": 2.2011781868802243,
+      "canonicalRating": -1.357772556034893,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -0.46803487030611357,
+      "games": 4
+    },
+    {
+      "teamId": "nebraska",
+      "candidateA": 2.9848037588525584,
+      "canonicalRating": 22.506831101895447,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 17.626324266134727,
+      "games": 4
+    },
+    {
+      "teamId": "nevada",
+      "candidateA": -3.154415255352332,
+      "canonicalRating": -2.033116519812687,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -2.313441203697598,
+      "games": 3
+    },
+    {
+      "teamId": "new-mexico",
+      "candidateA": -2.683877960403586,
+      "canonicalRating": 10.920202866555366,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 7.519182659815629,
+      "games": 4
+    },
+    {
+      "teamId": "new-mexico-state",
+      "candidateA": -5.471165090536784,
+      "canonicalRating": -11.57961136407589,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -10.052499795691114,
+      "games": 4
+    },
+    {
+      "teamId": "north-carolina",
+      "candidateA": 2.479105435270279,
+      "canonicalRating": -1.789800598718481,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -0.7225740902212912,
+      "games": 3
+    },
+    {
+      "teamId": "north-dakota-state",
+      "candidateA": -4.043782450200508,
+      "canonicalRating": 11.10964488338737,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 7.3212880499904,
+      "games": 4
+    },
+    {
+      "teamId": "north-texas",
+      "candidateA": -1.8076961512929832,
+      "canonicalRating": -3.462428081547781,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -3.0487450989840816,
+      "games": 4
+    },
+    {
+      "teamId": "northern-illinois",
+      "candidateA": -3.501113339157972,
+      "canonicalRating": -21.395494066013715,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -16.92189888429978,
+      "games": 3
+    },
+    {
+      "teamId": "northwestern",
+      "candidateA": 0.4219267232333778,
+      "canonicalRating": 9.37959982419023,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 7.140181548951016,
+      "games": 3
+    },
+    {
+      "teamId": "notre-dame",
+      "candidateA": 7.2656589949851496,
+      "canonicalRating": 26.13397806124937,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 21.416898294683314,
+      "games": 5
+    },
+    {
+      "teamId": "ohio",
+      "candidateA": -3.8563431431467503,
+      "canonicalRating": -7.471490876218649,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -6.567703942950674,
+      "games": 4
+    },
+    {
+      "teamId": "ohio-state",
+      "candidateA": 7.556254555162287,
+      "canonicalRating": 25.17251873806898,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 20.768452692342304,
+      "games": 5
+    },
+    {
+      "teamId": "oklahoma",
+      "candidateA": 4.631425754197918,
+      "canonicalRating": 8.557658770439396,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 7.576100516379026,
+      "games": 4
+    },
+    {
+      "teamId": "oklahoma-state",
+      "candidateA": 0.017833430922999702,
+      "canonicalRating": 3.6464965783890984,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 2.739330791522574,
+      "games": 3
+    },
+    {
+      "teamId": "old-dominion",
+      "candidateA": -3.302815479143859,
+      "canonicalRating": -17.260761405127212,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -13.771274923631374,
+      "games": 4
+    },
+    {
+      "teamId": "ole-miss",
+      "candidateA": 5.5254466146005345,
+      "canonicalRating": 10.355672303591069,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 9.148115881343434,
+      "games": 4
+    },
+    {
+      "teamId": "oregon",
+      "candidateA": 8.074879727506895,
+      "canonicalRating": 12.584934877414723,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 11.457421089937766,
+      "games": 3
+    },
+    {
+      "teamId": "oregon-state",
+      "candidateA": -0.9361680077368209,
+      "canonicalRating": 3.7137584271984885,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 2.551276818464661,
+      "games": 4
+    },
+    {
+      "teamId": "penn-state",
+      "candidateA": 2.638105675046915,
+      "canonicalRating": 11.029498851255253,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 8.931650557203168,
+      "games": 5
+    },
+    {
+      "teamId": "pittsburgh",
+      "candidateA": 0.07807254615544704,
+      "canonicalRating": 12.714959871905627,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 9.555738040468082,
+      "games": 4
+    },
+    {
+      "teamId": "purdue",
+      "candidateA": 0.6807222354551874,
+      "canonicalRating": -6.325103029310737,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -4.573646713119255,
+      "games": 4
+    },
+    {
+      "teamId": "rice",
+      "candidateA": -2.122852724118545,
+      "canonicalRating": -15.752683307332626,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -12.345225661529106,
+      "games": 4
+    },
+    {
+      "teamId": "rutgers",
+      "candidateA": 0.9576153359442545,
+      "canonicalRating": -12.47703143800311,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -9.118369744516269,
+      "games": 4
+    },
+    {
+      "teamId": "sacramento-state",
+      "candidateA": -2.8589074926455114,
+      "canonicalRating": -19.686847748501997,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -15.479862684537876,
+      "games": 4
+    },
+    {
+      "teamId": "sam-houston",
+      "candidateA": -3.038590690441871,
+      "canonicalRating": -15.353383987670112,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -12.274685663363051,
+      "games": 3
+    },
+    {
+      "teamId": "san-diego-state",
+      "candidateA": -1.6231007509669375,
+      "canonicalRating": -11.769984464062112,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -9.233263535788318,
+      "games": 4
+    },
+    {
+      "teamId": "san-jos-state",
+      "candidateA": -2.6564730410274513,
+      "canonicalRating": -3.3566485092758196,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -3.1816046422137276,
+      "games": 4
+    },
+    {
+      "teamId": "smu",
+      "candidateA": 2.391461400661695,
+      "canonicalRating": 6.520878292917458,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 5.488524069853517,
+      "games": 4
+    },
+    {
+      "teamId": "south-alabama",
+      "candidateA": -2.5496972702506207,
+      "canonicalRating": -3.698657035156166,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -3.411417093929779,
+      "games": 4
+    },
+    {
+      "teamId": "south-carolina",
+      "candidateA": 4.934689626162137,
+      "canonicalRating": 3.191281723802428,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 3.6271336993923553,
+      "games": 4
+    },
+    {
+      "teamId": "south-florida",
+      "candidateA": 0.8224004978903015,
+      "canonicalRating": 6.238016812425139,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 4.884112733791429,
+      "games": 4
+    },
+    {
+      "teamId": "southern-miss",
+      "candidateA": -1.7934766176544235,
+      "canonicalRating": -16.520007057227375,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -12.838374447334136,
+      "games": 3
+    },
+    {
+      "teamId": "stanford",
+      "candidateA": 0.8741078929396142,
+      "canonicalRating": -9.058924478044682,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -6.575666385298609,
+      "games": 5
+    },
+    {
+      "teamId": "syracuse",
+      "candidateA": 1.9030850544209374,
+      "canonicalRating": -1.7664033719083214,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -0.8490312653260067,
+      "games": 3
+    },
+    {
+      "teamId": "tcu",
+      "candidateA": 1.5199332571055293,
+      "canonicalRating": 0.2819419002544717,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 0.5914397394672362,
+      "games": 4
+    },
+    {
+      "teamId": "temple",
+      "candidateA": -1.0581974600531965,
+      "canonicalRating": -4.726292109094029,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -3.809268446833821,
+      "games": 4
+    },
+    {
+      "teamId": "tennessee",
+      "candidateA": 5.530100280154971,
+      "canonicalRating": 15.279595853862396,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 12.84222196043554,
+      "games": 4
+    },
+    {
+      "teamId": "texas",
+      "candidateA": 8.096596833427602,
+      "canonicalRating": 21.252435393111064,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 17.9634757531902,
+      "games": 4
+    },
+    {
+      "teamId": "texas-a-m",
+      "candidateA": 6.747809433566284,
+      "canonicalRating": 12.645052969109074,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 11.170742085223376,
+      "games": 5
+    },
+    {
+      "teamId": "texas-state",
+      "candidateA": -1.2200416065575477,
+      "canonicalRating": -6.571582160735993,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -5.233697022191381,
+      "games": 4
+    },
+    {
+      "teamId": "texas-tech",
+      "candidateA": 2.479105435270279,
+      "canonicalRating": 15.512305239264494,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 12.25400528826594,
+      "games": 4
+    },
+    {
+      "teamId": "toledo",
+      "candidateA": -2.9923125718727372,
+      "canonicalRating": 4.472713728624943,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 2.606457153500523,
+      "games": 4
+    },
+    {
+      "teamId": "troy",
+      "candidateA": -1.959974429713209,
+      "canonicalRating": -7.437602218609876,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -6.06819527138571,
+      "games": 3
+    },
+    {
+      "teamId": "tulane",
+      "candidateA": -0.17813759631389625,
+      "canonicalRating": -2.1282201420305116,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -1.6406995056013578,
+      "games": 4
+    },
+    {
+      "teamId": "tulsa",
+      "candidateA": -1.2709733906811183,
+      "canonicalRating": -0.6711811536109342,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -0.8211292128784802,
+      "games": 4
+    },
+    {
+      "teamId": "uab",
+      "candidateA": -1.7016959914418948,
+      "canonicalRating": -2.974808433302374,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -2.656530322837254,
+      "games": 4
+    },
+    {
+      "teamId": "ucf",
+      "candidateA": 0.0036138972844369614,
+      "canonicalRating": 0.9118461943971197,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 0.6847881201189491,
+      "games": 4
+    },
+    {
+      "teamId": "ucla",
+      "candidateA": 2.6487056910320264,
+      "canonicalRating": 20.768455714034552,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 16.23851820828392,
+      "games": 4
+    },
+    {
+      "teamId": "uconn",
+      "candidateA": -0.5026015002483348,
+      "canonicalRating": -3.379789151962773,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -2.6604922390341637,
+      "games": 4
+    },
+    {
+      "teamId": "ul-monroe",
+      "candidateA": -4.304904795199538,
+      "canonicalRating": -20.55244567263908,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -16.490560453279194,
+      "games": 4
+    },
+    {
+      "teamId": "unlv",
+      "candidateA": 0.6212587311484761,
+      "canonicalRating": 2.9054762403096,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 2.334421863019319,
+      "games": 5
+    },
+    {
+      "teamId": "usc",
+      "candidateA": 5.86878371772797,
+      "canonicalRating": 15.009181612923424,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 12.72408213912456,
+      "games": 6
+    },
+    {
+      "teamId": "utah",
+      "candidateA": 0.613244084915834,
+      "canonicalRating": 18.457519211181676,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 13.996450429615216,
+      "games": 3
+    },
+    {
+      "teamId": "utah-state",
+      "candidateA": -3.309795977475516,
+      "canonicalRating": -11.102091507075519,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -9.154017624675518,
+      "games": 4
+    },
+    {
+      "teamId": "utep",
+      "candidateA": -2.2296284948953757,
+      "canonicalRating": -27.20844708300154,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -20.963742435975,
+      "games": 4
+    },
+    {
+      "teamId": "utsa",
+      "candidateA": -0.4183184463179525,
+      "canonicalRating": 3.1753203277163866,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 2.276910634207802,
+      "games": 4
+    },
+    {
+      "teamId": "vanderbilt",
+      "candidateA": 1.4320306855216984,
+      "canonicalRating": 0.6882643052858665,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 0.8742059003448244,
+      "games": 4
+    },
+    {
+      "teamId": "virginia",
+      "candidateA": 0.7285515758757992,
+      "canonicalRating": 3.697151187340088,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 2.955001284474016,
+      "games": 4
+    },
+    {
+      "teamId": "virginia-tech",
+      "candidateA": 2.5109054832256072,
+      "canonicalRating": 8.655854749689809,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 7.119617433073758,
+      "games": 4
+    },
+    {
+      "teamId": "wake-forest",
+      "candidateA": 0.22931667667468708,
+      "canonicalRating": 10.758667900545143,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 8.12633009457753,
+      "games": 5
+    },
+    {
+      "teamId": "washington",
+      "candidateA": 2.730920449160432,
+      "canonicalRating": 4.850980088743151,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 4.320965178847471,
+      "games": 4
+    },
+    {
+      "teamId": "washington-state",
+      "candidateA": -1.0783633441224305,
+      "canonicalRating": -15.95385273820328,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -12.234980389683066,
+      "games": 4
+    },
+    {
+      "teamId": "west-virginia",
+      "candidateA": 0.9203860115087509,
+      "canonicalRating": -0.1694855429756608,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 0.10298234564544212,
+      "games": 4
+    },
+    {
+      "teamId": "western-kentucky",
+      "candidateA": -1.563637246660229,
+      "canonicalRating": -23.238026025265537,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -17.81942883061421,
+      "games": 4
+    },
+    {
+      "teamId": "western-michigan",
+      "candidateA": -2.5802046333297137,
+      "canonicalRating": -5.657544982000513,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -4.888209894832813,
+      "games": 4
+    },
+    {
+      "teamId": "wisconsin",
+      "candidateA": 2.473676158790101,
+      "canonicalRating": 12.476329140116732,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": 9.975665894785074,
+      "games": 4
+    },
+    {
+      "teamId": "wyoming",
+      "candidateA": -3.7154404916373744,
+      "canonicalRating": -11.701494451307326,
+      "canonicalWeight": 0.75,
+      "finalPowerRating": -9.704980961389838,
+      "games": 4
+    }
+  ],
+  "providerCalls": 0,
+  "Odds": false,
+  "providersInvoked": false,
+  "mutationsInvoked": true,
+  "execution": {
+    "mode": "COMMIT",
+    "commitAttempted": true,
+    "transactionStarted": true,
+    "mutationsInvoked": true,
+    "mutationAttempts": 138,
+    "upsertCount": 138,
+    "commitSucceeded": true,
+    "postWriteVerificationSucceeded": true,
+    "error": null,
+    "providerCalls": 0,
+    "isolationLevel": "Serializable"
+  },
+  "verification": {
+    "ok": true,
+    "reasons": [],
+    "afterRows": 138,
+    "verifiedTeams": 138
+  },
+  "meta": {
+    "isolationLevel": "Serializable",
+    "Odds": false,
+    "providersInvoked": false,
+    "providerCalls": 0,
+    "transactionTimeoutMs": 15000,
+    "transactionalVerification": true
+  }
+}
