@@ -1,0 +1,9 @@
+{
+  "provenance": "test-only",
+  "schemaVersion": "ml-cal-1-capture-binding-integration-g2-fixture-v1",
+  "kind": "synthetic-week6-hypothetical",
+  "liveAccepted": false,
+  "note": "Synthetic full-weight archive for offline G2 tests. Not production evidence.",
+  "derivedFromAuthenticWeek5MemberSha256": "c20b789ce45b58362a23b2ab2a69184fda2a39377c99d58db6268376b79a2e1e",
+  "week5AuthenticPinsUnchanged": true
+}
