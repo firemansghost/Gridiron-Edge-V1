@@ -13,7 +13,7 @@
 - `lifecycleMode: 'live'` is rejected before any database read.
 - Outer and nested `liveAccepted` stay false.
 - Successful **and** rejected captures seal versioned `binding-integration-evidence.json` (manifested) with producer identities, provenance, as-of, lineage, fingerprints, approval anchors, rejection reasons, and exact verification bytes (archive/report embedded base64 plus sidecar/registry/lineage/pin).
-- `bindingEvidenceAccepted` requires full accepted binding/G2 replay (`verifyBindingThenQualifyCaptureLifecycle`) against retained evidence bytes + sealed capture inputs via `evaluateBindingEvidenceAcceptance` / `readCaptureTerminalResultWithBindingReplay`. Stored `ok` / `qualified` flags and byte integrity alone never grant acceptance; missing replay evaluator fails closed.
+- `bindingEvidenceAccepted` requires full accepted binding/G2 replay (`verifyBindingThenQualifyCaptureLifecycle`) against retained evidence bytes + sealed capture inputs via `evaluateBindingEvidenceAcceptance` / `readCaptureTerminalResultWithBindingReplay`. G2 season/week are taken from the sealed envelope; retained replay-context disagreement fails closed. Retained producer/lineage/fingerprint mirrors must correspond to authoritative replay results. Stored `ok` / `qualified` flags and byte integrity alone never grant acceptance; missing replay evaluator fails closed.
 - External approval anchors stay distinct fields compared to byte digests (not self-approved by hashing alone).
 - A copied sealed package remains independently verifiable after the original temporary binding-fixture directory is removed.
 

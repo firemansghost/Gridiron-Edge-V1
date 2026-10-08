@@ -2,21 +2,19 @@
 
 **Branch:** `feat/ml-cal-1-capture-binding-g3-fixture-v1`  
 **Worktree:** `Gridiron-Edge-V1-ml-cal-1-g3`  
-**Head:** `e13bfe34c44eeb7ec6f263dfa0b35ceb90f27bdf`  
-**Prior reviewed head:** `62b73d795ea467a46d0c8baf87841587bd88501f`  
+**Prior tip:** `de1c809ce4e67fe29d2ce9df33fbab0883efba2d`  
 **PR:** https://github.com/firemansghost/Gridiron-Edge-V1/pull/248  
 **Updated:** 2026-10-08 (America/Chicago)
 
-## F1-A full G2 replay delivered
+## F1-A correspondence (local)
 
-- [x] Removed partial capture-helper checklist evaluator
-- [x] `evaluateBindingEvidenceAcceptance` calls `verifyBindingThenQualifyCaptureLifecycle` on retained evidence + sealed inputs
-- [x] Complete trust record retained in `evidence.replay`
-- [x] Reader fails closed when full-replay evaluator unavailable
-- [x] Regressions: invalid ZIP, empty pin, wrong week, superseding lineage, stale rating hash, unknown integration schema
-- [x] Local G3 15/15; Capture V1 128; G2+lifecycle 63
-- [x] Pushed for independent re-review
+- [x] G2 expectedSeason/prospectiveWeek derived from sealed envelope
+- [x] Retained replayCtx season/week disagreement rejected
+- [x] Retained producer/lineage/fingerprint mirrors must match authoritative replay
+- [x] Regressions: Week 8 vs retained Week 7, season mismatch, observer/lineage/fingerprint mirrors
+- [x] Local G3 16/16
+- [ ] Push + observe CI
 
 ## Holdings
 
-F1-B remains closed for offline fixture scope. No merge/live/registration/calibration/2025.
+F1-B closed for offline fixture scope. No merge/live/registration/calibration/2025.

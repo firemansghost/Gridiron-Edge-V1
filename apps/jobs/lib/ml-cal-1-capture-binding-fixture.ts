@@ -682,6 +682,22 @@ export function evaluateBindingEvidenceAcceptance(options: {
       replay: null,
     };
   }
+  // Authoritative capture scope is the sealed envelope. Retained replay context
+  // may not disagree; G2 still enforces binding/registry agreement against it.
+  if (replayCtx.expectedSeason !== options.envelope.season) {
+    return {
+      accepted: false,
+      reasons: ['binding_integration_replay_expected_season_mismatch'],
+      replay: null,
+    };
+  }
+  if (replayCtx.prospectiveWeek !== options.envelope.week) {
+    return {
+      accepted: false,
+      reasons: ['binding_integration_replay_prospective_week_mismatch'],
+      replay: null,
+    };
+  }
   if (replayCtx.trustedAcceptance == null) {
     return {
       accepted: false,
@@ -725,10 +741,10 @@ export function evaluateBindingEvidenceAcceptance(options: {
     },
     captureSnapshotReferenceTime: options.envelope.snapshotReferenceTime,
     trustedAcceptance: replayCtx.trustedAcceptance,
-    captureProducerSha: replayCtx.captureProducerSha,
+    captureProducerSha: options.envelope.producerRepositorySha,
     lifecycleMode: 'fixture_hypothetical',
-    expectedSeason: replayCtx.expectedSeason,
-    prospectiveWeek: replayCtx.prospectiveWeek,
+    expectedSeason: options.envelope.season,
+    prospectiveWeek: options.envelope.week,
     approvedDerivedCoreDigest: replayCtx.approvedDerivedCoreDigest ?? null,
   };
 
@@ -745,7 +761,7 @@ export function evaluateBindingEvidenceAcceptance(options: {
     };
   }
 
-  const accepted =
+  const replayQualified =
     result.ok === true &&
     result.lifecycle != null &&
     result.lifecycle.qualified === true &&
@@ -754,17 +770,105 @@ export function evaluateBindingEvidenceAcceptance(options: {
     result.fixtureProvenanceRetained === true &&
     options.envelope.lifecycleQualification.liveAccepted === false;
 
+  const correspondenceReasons = collectRetainedMirrorCorrespondenceReasons(
+    evidence,
+    result
+  );
+
+  const accepted = replayQualified && correspondenceReasons.length === 0;
   const reasons = accepted
     ? []
     : Array.from(
         new Set([
-          ...result.reasons,
-          ...(result.lifecycle == null ? ['binding_integration_lifecycle_null'] : []),
-          ...(result.ok ? [] : ['binding_integration_replay_not_ok']),
+          ...(replayQualified
+            ? []
+            : [
+                ...result.reasons,
+                ...(result.lifecycle == null
+                  ? ['binding_integration_lifecycle_null']
+                  : []),
+                ...(result.ok ? [] : ['binding_integration_replay_not_ok']),
+              ]),
+          ...correspondenceReasons,
         ])
       );
 
   return { accepted, reasons, replay: result };
+}
+
+/**
+ * Fail closed when retained audit mirrors disagree with authoritative G2 replay.
+ * Replay remains the only qualification authority; mirrors are correspondence only.
+ */
+function collectRetainedMirrorCorrespondenceReasons(
+  evidence: MlCal1BindingIntegrationEvidenceV1,
+  result: MlCal1CaptureBindingIntegrationResult
+): string[] {
+  const reasons: string[] = [];
+
+  if (
+    evidence.producers?.lifecycleProducerSha !== result.producers.lifecycleProducerSha
+  ) {
+    reasons.push('retained_lifecycle_producer_mirror_mismatch');
+  }
+  if (
+    evidence.producers?.bindingObserverSha !== result.producers.bindingObserverSha
+  ) {
+    reasons.push('retained_binding_observer_mirror_mismatch');
+  }
+  if (
+    evidence.producers?.captureProducerSha !== result.producers.captureProducerSha
+  ) {
+    reasons.push('retained_capture_producer_mirror_mismatch');
+  }
+
+  const retainedLineage = evidence.lineage ?? ({} as MlCal1BindingIntegrationEvidenceV1['lineage']);
+  const replayLineage = result.lineage;
+  if (retainedLineage.checkedThroughTime !== replayLineage.checkedThroughTime) {
+    reasons.push('retained_lineage_checked_through_mirror_mismatch');
+  }
+  if (retainedLineage.coversCaptureAsOf !== replayLineage.coversCaptureAsOf) {
+    reasons.push('retained_lineage_coverage_mirror_mismatch');
+  }
+  if (
+    retainedLineage.bindingSnapshotReferenceTime !==
+    replayLineage.bindingSnapshotReferenceTime
+  ) {
+    reasons.push('retained_lineage_binding_snapshot_mirror_mismatch');
+  }
+  if (retainedLineage.observationEndTime !== replayLineage.observationEndTime) {
+    reasons.push('retained_lineage_observation_end_mirror_mismatch');
+  }
+  if (
+    retainedLineage.captureSnapshotReferenceTime !==
+    replayLineage.captureSnapshotReferenceTime
+  ) {
+    reasons.push('retained_lineage_capture_as_of_mirror_mismatch');
+  }
+  if (retainedLineage.requiredThroughTime !== replayLineage.requiredThroughTime) {
+    reasons.push('retained_lineage_required_through_mirror_mismatch');
+  }
+
+  const retainedFp = evidence.fingerprints ?? {};
+  const replayFp = result.fingerprints;
+  const fpKeys = [
+    'captureRecomputed',
+    'declaredBundleInputs',
+    'binding',
+    'registryPin',
+    'adaptedClaim',
+    'qualifierExpectation',
+  ] as const;
+  for (const key of fpKeys) {
+    if (retainedFp[key] !== replayFp[key]) {
+      reasons.push(`retained_fingerprint_${key}_mirror_mismatch`);
+    }
+  }
+  if (evidence.binding?.ratingFingerprint !== result.binding.ratingFingerprint) {
+    reasons.push('retained_binding_rating_fingerprint_mirror_mismatch');
+  }
+
+  return reasons;
 }
 
 /** Reader entry that always supplies the authoritative G2 replay evaluator. */

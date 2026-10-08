@@ -1001,6 +1001,8 @@ describe('G3 fixture capture/binding wiring', () => {
     mutate: (ctx: {
       evidence: MlCal1BindingIntegrationEvidenceV1;
       inputs: typeof planned.bundle.inputs;
+      envelope: typeof planned.bundle.envelope;
+      universe: typeof planned.bundle.universe;
     }) => void,
     captureId: string
   ) {
@@ -1008,14 +1010,21 @@ describe('G3 fixture capture/binding wiring', () => {
       JSON.stringify(planned.bindingIntegrationEvidence)
     ) as MlCal1BindingIntegrationEvidenceV1;
     const inputs = JSON.parse(JSON.stringify(planned.bundle.inputs)) as typeof planned.bundle.inputs;
-    mutate({ evidence, inputs });
+    const envelope = JSON.parse(
+      JSON.stringify(planned.bundle.envelope)
+    ) as typeof planned.bundle.envelope;
+    const universe = JSON.parse(
+      JSON.stringify(planned.bundle.universe)
+    ) as typeof planned.bundle.universe;
+    mutate({ evidence, inputs, envelope, universe });
     // Stored ok/qualified remain true so acceptance must come from full G2 replay.
     evidence.ok = true;
     const bundle = {
       ...planned.bundle,
       inputs,
+      universe,
       envelope: {
-        ...planned.bundle.envelope,
+        ...envelope,
         bindingIntegrationAudit: {
           schemaVersion: ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_SCHEMA,
           used: true as const,
@@ -1023,7 +1032,7 @@ describe('G3 fixture capture/binding wiring', () => {
           outcome: 'accepted' as const,
         },
         lifecycleQualification: {
-          ...planned.bundle.envelope.lifecycleQualification,
+          ...envelope.lifecycleQualification,
           qualified: true,
         },
       },
@@ -1230,6 +1239,95 @@ describe('G3 fixture capture/binding wiring', () => {
     expect(ML_CAL_1_CAPTURE_BINDING_INTEGRATION_SCHEMA).toBe(
       planned.bindingIntegrationEvidence.integrationSchemaVersion
     );
+  });
+
+  it('F1-A: sealed capture scope and retained mirrors must correspond to authoritative replay', () => {
+    const planned = planFixtureCaptureWithBindingIntegration(
+      captureInput(built.ratings, built.rows, built.fingerprint),
+      { binding: built.binding, trustedAcceptance: trust },
+      { now: () => new Date(T_PUB), publicationTime: T_PUB }
+    );
+
+    // Envelope/universe/evidence week 8 with retained replayCtx prospectiveWeek 7.
+    const weekMismatch = sealMutatedPackage(
+      planned,
+      ({ evidence, envelope, universe }) => {
+        envelope.week = 8;
+        evidence.week = 8;
+        universe.rows = universe.rows.map((row) => ({ ...row, week: 8 }));
+        // Retain stale Week 7 replay context and binding/registry target.
+        evidence.replay.prospectiveWeek = 7;
+      },
+      'g3-week8-vs-replay7'
+    );
+    expect(weekMismatch.validated.bindingEvidenceAccepted).toBe(false);
+    expect(
+      weekMismatch.validated.integrityNotes.some((n) =>
+        n.includes('binding_integration_replay_prospective_week_mismatch')
+      )
+    ).toBe(true);
+
+    const seasonMismatch = sealMutatedPackage(
+      planned,
+      ({ evidence }) => {
+        evidence.replay.expectedSeason = 2025;
+      },
+      'g3-season-mismatch'
+    );
+    expect(seasonMismatch.validated.bindingEvidenceAccepted).toBe(false);
+    expect(
+      seasonMismatch.validated.integrityNotes.some((n) =>
+        n.includes('binding_integration_replay_expected_season_mismatch')
+      )
+    ).toBe(true);
+
+    const observerMirror = sealMutatedPackage(
+      planned,
+      ({ evidence }) => {
+        evidence.producers.bindingObserverSha = 'cccccccccccccccccccccccccccccccccccccccc';
+      },
+      'g3-observer-mirror'
+    );
+    expect(observerMirror.validated.bindingEvidenceAccepted).toBe(false);
+    expect(
+      observerMirror.validated.integrityNotes.some((n) =>
+        n.includes('retained_binding_observer_mirror_mismatch')
+      )
+    ).toBe(true);
+
+    const lineageMirror = sealMutatedPackage(
+      planned,
+      ({ evidence }) => {
+        evidence.lineage.checkedThroughTime = '2020-01-01T00:00:00.000Z';
+        evidence.lineage.coversCaptureAsOf = false;
+      },
+      'g3-lineage-mirror'
+    );
+    expect(lineageMirror.validated.bindingEvidenceAccepted).toBe(false);
+    expect(
+      lineageMirror.validated.integrityNotes.some(
+        (n) =>
+          n.includes('retained_lineage_checked_through_mirror_mismatch') ||
+          n.includes('retained_lineage_coverage_mirror_mismatch')
+      )
+    ).toBe(true);
+
+    const fingerprintMirror = sealMutatedPackage(
+      planned,
+      ({ evidence }) => {
+        evidence.fingerprints.binding = 'd'.repeat(64);
+        evidence.binding.ratingFingerprint = 'e'.repeat(64);
+      },
+      'g3-fingerprint-mirror'
+    );
+    expect(fingerprintMirror.validated.bindingEvidenceAccepted).toBe(false);
+    expect(
+      fingerprintMirror.validated.integrityNotes.some(
+        (n) =>
+          n.includes('retained_fingerprint_binding_mirror_mismatch') ||
+          n.includes('retained_binding_rating_fingerprint_mirror_mismatch')
+      )
+    ).toBe(true);
   });
 
   it('F1-B: copy-away sealed package verifies without the original binding fixture directory', () => {
