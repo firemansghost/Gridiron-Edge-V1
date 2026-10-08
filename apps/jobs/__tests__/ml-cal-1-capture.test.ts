@@ -1464,7 +1464,7 @@ describe('R3 — lifecycle receipt verification', () => {
   it('completedThroughWeek 6 is valid for prospective week 7; the producer SHA need not equal the lifecycle SHA', () => {
     const fx = makeFixture();
     const p = plan(fx);
-    expect(p.lifecycle.qualified).toBe(true);
+    expect(p.lifecycle?.qualified).toBe(true);
     expect(p.bundle.envelope.lifecycleSourceSha).toBe(LIFECYCLE_SHA);
     expect(p.bundle.envelope.producerRepositorySha).toBe(REF_SHA);
     expect(p.bundle.envelope.lifecycleQualification.fixtureHypothetical).toBe(true);
@@ -3036,7 +3036,7 @@ describe('demo fixture and CLI (offline, injected clock and dependency hashes)',
     expect(parsed.ratingFingerprint).toBe(fingerprintFor(fx.ratings));
 
     const p = planMlCal1Capture(fx, { now: clock });
-    expect(p.lifecycle.qualified).toBe(true);
+    expect(p.lifecycle?.qualified).toBe(true);
     expect(p.bundle.envelope.lifecycleQualification.fixtureHypothetical).toBe(true);
     expect(p.bundle.envelope.lifecycleQualification.liveAccepted).toBe(false);
     expect(p.status).toBe('EVIDENCE_CAPTURED');

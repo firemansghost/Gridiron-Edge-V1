@@ -304,6 +304,13 @@ export async function runMlCal1Cli(
         lifecycleMode: 'fixture_hypothetical',
         trustedAcceptance: null,
       };
+      if (args.bindingIntegrationDir) {
+        // Binding integration is the only qualification path.
+        fixtureInput.lifecycleReceipt = null;
+        fixtureInput.receiptBytes = null;
+        fixtureInput.pinnedReceiptDigest = null;
+        fixtureInput.trustedAcceptance = null;
+      }
       if (args.lifecycleReceiptPath || args.pinnedLifecycleDigest) {
         const lc = loadLifecycleFile(args.lifecycleReceiptPath, args.pinnedLifecycleDigest);
         fixtureInput.lifecycleReceipt = lc.claims;
@@ -334,7 +341,15 @@ export async function runMlCal1Cli(
       fixtureInput.lifecycleMode = 'live';
     }
 
-    const planned = planMlCal1Capture(fixtureInput, { now });
+    const planned = args.bindingIntegrationDir
+      ? await import('./lib/ml-cal-1-capture-binding-fixture').then((mod) =>
+          mod.planFixtureCaptureWithBindingIntegration(
+            fixtureInput,
+            mod.loadBindingFixturePackage(args.bindingIntegrationDir as string),
+            { now }
+          )
+        )
+      : planMlCal1Capture(fixtureInput, { now });
 
     const written = writeCaptureArtifactsAtomic({
       rootDir: outRoot,

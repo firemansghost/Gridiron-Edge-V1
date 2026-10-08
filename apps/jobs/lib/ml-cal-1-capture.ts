@@ -508,18 +508,41 @@ export interface MlCal1FixtureInput {
   trustedAcceptance?: MlCal1TrustedAcceptanceRecord | null;
 }
 
+export interface MlCal1PlannerLifecycleContext {
+  ratingsByTeamId: Record<string, MlCal1ExportedRatingInput>;
+  ratingFingerprint: string;
+  snapshotReferenceTime: string;
+}
+
+/**
+ * Fixture binding integration supplies the only lifecycle result.
+ * Returning lifecycle:null must not fall through to qualifyLifecycleReceipt.
+ */
+export interface MlCal1ResolvedLifecycle {
+  lifecycle: MlCal1LifecycleVerificationResult | null;
+  blockReasons: string[];
+}
+
 export interface MlCal1PlanOptions {
   /** Clock used for computationTime (and default provisional publicationTime). */
   now?: () => Date;
   /** Provisional publication boundary; the artifact writer re-takes it at seal time. */
   publicationTime?: string;
+  /**
+   * When set, replaces the direct receipt qualifier. Used by G3 fixture wiring.
+   * A null lifecycle is terminal for this plan — no second qualification path.
+   */
+  resolveLifecycle?: (
+    ctx: MlCal1PlannerLifecycleContext
+  ) => MlCal1ResolvedLifecycle;
 }
 
 export interface MlCal1PlanResult {
   status: MlCal1CaptureStatus;
   primaryReadinessBlocked: boolean;
   primaryBlockReasons: string[];
-  lifecycle: MlCal1LifecycleVerificationResult;
+  /** Null when fixture binding integration rejected qualification. */
+  lifecycle: MlCal1LifecycleVerificationResult | null;
   bundle: MlCal1ArtifactBundle;
 }
 
@@ -1910,20 +1933,37 @@ export function planMlCal1Capture(
 
   const ratingFingerprint = buildRatingFingerprint(ratingsByTeamId);
   const lifecycleMode: MlCal1LifecycleMode = input.lifecycleMode ?? 'fixture_hypothetical';
-  const lifecycle = qualifyLifecycleReceipt({
-    mode: lifecycleMode,
-    receiptBytes: input.receiptBytes ?? null,
-    pinnedReceiptDigest: input.pinnedReceiptDigest ?? null,
-    claims: input.lifecycleReceipt,
-    expectedRatingFingerprint: ratingFingerprint,
-    captureProducerSha: input.repositorySha,
-    expectedSeason: input.season,
-    prospectiveWeek: input.week,
-    trustedAcceptance: input.trustedAcceptance ?? null,
-  });
-  if (!lifecycle.qualified) {
-    primaryBlockReasons.push(...lifecycle.reasons.map((r) => `lifecycle:${r}`));
+  let lifecycle: MlCal1LifecycleVerificationResult | null;
+  if (options.resolveLifecycle) {
+    // G3: the resolver is the only qualification path. Null does not fall back.
+    const resolved = options.resolveLifecycle({
+      ratingsByTeamId,
+      ratingFingerprint,
+      snapshotReferenceTime,
+    });
+    lifecycle = resolved.lifecycle;
+    primaryBlockReasons.push(...resolved.blockReasons);
+    if (lifecycle?.liveAccepted) {
+      lifecycle = null;
+      primaryBlockReasons.push('binding_integration_nested_live_accepted_forbidden');
+    }
+  } else {
+    lifecycle = qualifyLifecycleReceipt({
+      mode: lifecycleMode,
+      receiptBytes: input.receiptBytes ?? null,
+      pinnedReceiptDigest: input.pinnedReceiptDigest ?? null,
+      claims: input.lifecycleReceipt,
+      expectedRatingFingerprint: ratingFingerprint,
+      captureProducerSha: input.repositorySha,
+      expectedSeason: input.season,
+      prospectiveWeek: input.week,
+      trustedAcceptance: input.trustedAcceptance ?? null,
+    });
+    if (!lifecycle.qualified) {
+      primaryBlockReasons.push(...lifecycle.reasons.map((r) => `lifecycle:${r}`));
+    }
   }
+  const lifecycleQualified = lifecycle?.qualified === true;
 
   const identityBlocked = identityBlockReasons.length > 0;
   primaryBlockReasons.push(...identityBlockReasons);
@@ -2054,7 +2094,7 @@ export function planMlCal1Capture(
     }
 
     const primaryEligibilityReasons: string[] = [];
-    if (!lifecycle.qualified) {
+    if (!lifecycleQualified) {
       primaryEligibilityReasons.push('lifecycle_not_qualified');
     }
     if (!forecastAvailable) {
@@ -2075,13 +2115,13 @@ export function planMlCal1Capture(
 
     const primaryEligibleCandidate =
       !identityBlocked &&
-      lifecycle.qualified &&
+      lifecycleQualified &&
       forecastAvailable &&
       inGateForecast &&
       mlResult.evidence.available;
 
     const modelOnlyEligible =
-      !identityBlocked && forecastAvailable && inGateForecast && lifecycle.qualified;
+      !identityBlocked && forecastAvailable && inGateForecast && lifecycleQualified;
 
     forecasts.push({
       gameId: game.gameId,
@@ -2132,7 +2172,7 @@ export function planMlCal1Capture(
   }
 
   // Capture success is evidence emission; primary readiness is separate.
-  if (!lifecycle.qualified) {
+  if (!lifecycleQualified) {
     primaryBlockReasons.push('primary_blocked_lifecycle');
   }
 
@@ -2150,7 +2190,7 @@ export function planMlCal1Capture(
     week: input.week,
     producerRepositorySha: input.repositorySha,
     repositorySha: input.repositorySha,
-    lifecycleSourceSha: lifecycle.lifecycleSourceSha,
+    lifecycleSourceSha: lifecycle?.lifecycleSourceSha ?? null,
     captureStartTime,
     snapshotReferenceTime,
     captureEndTime: snapshotReferenceTime,
@@ -2184,18 +2224,31 @@ export function planMlCal1Capture(
       minPreKickoffMs: ML_CAL_1_MIN_PRE_KICKOFF_MS,
       maxMarketAgeSecondsInclusive: ML_CAL_1_MAX_MARKET_AGE_SECONDS,
     },
-    lifecycleQualification: {
-      qualified: lifecycle.qualified,
-      mode: lifecycle.mode,
-      fixtureHypothetical: lifecycle.fixtureHypothetical,
-      receiptIntegrityVerified: lifecycle.receiptIntegrityVerified,
-      liveAccepted: lifecycle.liveAccepted,
-      reasons: lifecycle.reasons,
-      notes: lifecycle.notes,
-      receipt: lifecycle.receipt,
-      verifiedReceiptDigest: lifecycle.verifiedReceiptDigest,
-      expectedRatingFingerprint: ratingFingerprint,
-    },
+    lifecycleQualification: lifecycle
+      ? {
+          qualified: lifecycle.qualified,
+          mode: lifecycle.mode,
+          fixtureHypothetical: lifecycle.fixtureHypothetical,
+          receiptIntegrityVerified: lifecycle.receiptIntegrityVerified,
+          liveAccepted: options.resolveLifecycle ? false : lifecycle.liveAccepted,
+          reasons: lifecycle.reasons,
+          notes: lifecycle.notes,
+          receipt: lifecycle.receipt,
+          verifiedReceiptDigest: lifecycle.verifiedReceiptDigest,
+          expectedRatingFingerprint: ratingFingerprint,
+        }
+      : {
+          qualified: false,
+          mode: 'fixture_hypothetical',
+          fixtureHypothetical: true,
+          receiptIntegrityVerified: false,
+          liveAccepted: false,
+          reasons: ['binding_integration_lifecycle_null'],
+          notes: ['rejected_integration_does_not_qualify'],
+          receipt: null,
+          verifiedReceiptDigest: null,
+          expectedRatingFingerprint: ratingFingerprint,
+        },
     counts: computeCounts(universe.rows, forecasts, marketsMl),
   };
 
@@ -3099,6 +3152,7 @@ export function parseMlCal1CliArgs(argv: string[]): {
   lifecycleReceiptPath?: string;
   pinnedLifecycleDigest?: string;
   enableLiveDbRead: boolean;
+  bindingIntegrationDir?: string;
 } {
   let season: number | undefined;
   let week: number | undefined;
@@ -3109,6 +3163,7 @@ export function parseMlCal1CliArgs(argv: string[]): {
   let lifecycleReceiptPath: string | undefined;
   let pinnedLifecycleDigest: string | undefined;
   let enableLiveDbRead = false;
+  let bindingIntegrationDir: string | undefined;
 
   const takeValue = (name: string, inline: string | undefined, i: number): [string, number] => {
     if (inline !== undefined) return [inline, i];
@@ -3150,6 +3205,9 @@ export function parseMlCal1CliArgs(argv: string[]): {
     } else if (a === '--pinned-lifecycle-digest') {
       [value, i] = takeValue(a, inline, i);
       pinnedLifecycleDigest = value;
+    } else if (a === '--binding-integration-dir') {
+      [value, i] = takeValue(a, inline, i);
+      bindingIntegrationDir = value;
     } else if (a === '--enable-live-db-read') {
       enableLiveDbRead = true;
     } else if (
@@ -3187,6 +3245,18 @@ export function parseMlCal1CliArgs(argv: string[]): {
   if (fixturePath && enableLiveDbRead) {
     throw new Error('fixture_and_live_db_read_conflict');
   }
+  if (bindingIntegrationDir && !fixturePath) {
+    throw new Error('g3_binding_integration_requires_fixture');
+  }
+  if (bindingIntegrationDir && enableLiveDbRead) {
+    throw new Error('g3_binding_integration_rejects_live_mode');
+  }
+  if (
+    bindingIntegrationDir &&
+    (lifecycleReceiptPath !== undefined || pinnedLifecycleDigest !== undefined)
+  ) {
+    throw new Error('g3_binding_integration_rejects_parallel_receipt_path');
+  }
   if (captureId !== undefined) {
     assertSafeCaptureId(captureId);
   }
@@ -3204,6 +3274,7 @@ export function parseMlCal1CliArgs(argv: string[]): {
     lifecycleReceiptPath,
     pinnedLifecycleDigest,
     enableLiveDbRead,
+    bindingIntegrationDir,
   };
 }
 
