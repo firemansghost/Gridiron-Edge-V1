@@ -11,6 +11,10 @@
 - [x] Rejected integration keeps `lifecycle: null` (no receipt fallback)
 - [x] Live binding path rejected before DB
 - [x] Local suites: capture + binding + G2 + G3 = 202 passed
+- [x] Draft PR #248
+- [x] Observed CI on `46912098a2abc2499f4e953057256c72fee2a7fa`:
+  - G3 https://github.com/firemansghost/Gridiron-Edge-V1/actions/runs/37819746988 success
+  - Capture, binding, and G2 targeted workflows also success
 
 ## Local command
 
