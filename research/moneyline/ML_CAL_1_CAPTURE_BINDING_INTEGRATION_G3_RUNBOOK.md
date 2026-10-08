@@ -12,8 +12,10 @@
 - A rejected integration sets `lifecycle` to null and does not call `qualifyLifecycleReceipt` as a fallback.
 - `lifecycleMode: 'live'` is rejected before any database read.
 - Outer and nested `liveAccepted` stay false.
-- Successful **and** rejected captures seal versioned `binding-integration-evidence.json` (manifested) with producer identities, provenance, as-of, lineage, fingerprints, approval anchors, rejection reasons, and exact/pinned verification bytes.
-- `readCaptureTerminalResult` validates evidence integrity and correspondence; missing/tampered/mismatched evidence fails closed and never grants `bindingEvidenceAccepted`.
+- Successful **and** rejected captures seal versioned `binding-integration-evidence.json` (manifested) with producer identities, provenance, as-of, lineage, fingerprints, approval anchors, rejection reasons, and exact verification bytes (archive/report embedded base64 plus sidecar/registry/lineage/pin).
+- `bindingEvidenceAccepted` is recomputed from retained proof + sealed ratings (`evaluateBindingEvidenceAcceptance`); stored `ok` / `qualified` flags are never treated as proof.
+- External approval anchors stay distinct fields compared to byte digests (not self-approved by hashing alone).
+- A copied sealed package remains independently verifiable after the original temporary binding-fixture directory is removed.
 
 Market freshness and the pre-kickoff publication deadline are unchanged.
 

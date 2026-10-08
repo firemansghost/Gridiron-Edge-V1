@@ -20,10 +20,14 @@ import {
   type MlCal1ProducerIdentities,
 } from './ml-cal-1-capture-binding-integration';
 import {
+  ML_CAL_1_BINDING_ARCHIVE_EMBEDDED_RETRIEVAL,
   ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER,
   ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_SCHEMA,
+  ML_CAL_1_BINDING_REPORT_EMBEDDED_RETRIEVAL,
   assertBindingIntegrationEvidenceCorrespondence,
+  evaluateBindingEvidenceAcceptance,
   planMlCal1Capture,
+  resolveEmbeddedBindingArchiveBytes,
   sha256Utf8Bytes,
   type MlCal1ArtifactBundle,
   type MlCal1FixtureInput,
@@ -34,9 +38,13 @@ import {
 import type { MlCal1LifecycleBindingVerifyInput } from './ml-cal-1-lifecycle-binding';
 
 export {
+  ML_CAL_1_BINDING_ARCHIVE_EMBEDDED_RETRIEVAL,
   ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER,
   ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_SCHEMA,
+  ML_CAL_1_BINDING_REPORT_EMBEDDED_RETRIEVAL,
   assertBindingIntegrationEvidenceCorrespondence,
+  evaluateBindingEvidenceAcceptance,
+  resolveEmbeddedBindingArchiveBytes,
 };
 
 export interface MlCal1BindingFixtureRequest {
@@ -82,8 +90,10 @@ export interface MlCal1BindingIntegrationEvidenceV1 {
     expectedReportMemberPath: string;
   };
   /**
-   * Exact verification bytes for small artifacts, plus pinned retrieval
-   * references for large ZIP / report member blobs.
+   * Exact verification bytes retained in the manifested evidence member.
+   * Archive/report use embedded base64 with declared digests so a copied
+   * sealed package remains independently verifiable without the original
+   * temporary binding-fixture directory.
    */
   evidenceBytes: {
     zipSha256: string;
@@ -96,6 +106,16 @@ export interface MlCal1BindingIntegrationEvidenceV1 {
     registryDocumentUtf8: string | null;
     lineageAttestationUtf8: string | null;
     adaptedReceiptUtf8: string | null;
+    /** Exact ZIP bytes (base64) for offline archive replay. */
+    zipBytesBase64: string;
+    /** Exact report member bytes (base64) for offline archive replay. */
+    reportMemberBytesBase64: string;
+    /** Exact registry pin JSON retained for verifier replay. */
+    registryPinUtf8: string | null;
+    registryPinSha256: string | null;
+    /** Verifier controls required to rebuild binding verify input. */
+    prospectiveTargetWeek: number;
+    nowCeiling: string;
     zipBytesPin: MlCal1BindingEvidenceBytePin;
     reportMemberBytesPin: MlCal1BindingEvidenceBytePin;
   };
@@ -234,12 +254,15 @@ export function buildBindingIntegrationEvidence(options: {
     typeof binding.registryDocumentBytes === 'string' ? binding.registryDocumentBytes : null;
   const lineageAttestationUtf8 =
     typeof binding.lineageAttestationBytes === 'string' ? binding.lineageAttestationBytes : null;
+  const registryPinUtf8 =
+    binding.registryPin != null ? `${JSON.stringify(binding.registryPin)}\n` : null;
   const registryDocumentSha256 = registryDocumentUtf8
     ? sha256Utf8Bytes(registryDocumentUtf8)
     : null;
   const lineageAttestationSha256 = lineageAttestationUtf8
     ? sha256Utf8Bytes(lineageAttestationUtf8)
     : null;
+  const registryPinSha256 = registryPinUtf8 ? sha256Utf8Bytes(registryPinUtf8) : null;
 
   const integration = options.bindingIntegration;
   const adaptedReceiptUtf8 = integration?.adapted?.receiptBytes ?? null;
@@ -362,15 +385,21 @@ export function buildBindingIntegrationEvidence(options: {
       registryDocumentUtf8,
       lineageAttestationUtf8,
       adaptedReceiptUtf8,
+      zipBytesBase64: binding.zipBytes.toString('base64'),
+      reportMemberBytesBase64: reportMemberBytes.toString('base64'),
+      registryPinUtf8,
+      registryPinSha256,
+      prospectiveTargetWeek: binding.prospectiveTargetWeek,
+      nowCeiling: binding.nowCeiling,
       zipBytesPin: {
         sha256: zipSha256,
         byteCount: binding.zipBytes.byteLength,
-        retrieval: 'binding-fixture-package:archive.zip',
+        retrieval: ML_CAL_1_BINDING_ARCHIVE_EMBEDDED_RETRIEVAL,
       },
       reportMemberBytesPin: {
         sha256: reportMemberSha256,
         byteCount: reportMemberBytes.byteLength,
-        retrieval: `binding-fixture-package:${binding.expectedReportMemberPath}`,
+        retrieval: ML_CAL_1_BINDING_REPORT_EMBEDDED_RETRIEVAL,
       },
     },
     binding: bindingSummary,
@@ -517,4 +546,60 @@ export function writeBindingFixturePackage(
     `${JSON.stringify(anchors, null, 2)}\n`,
     'utf8'
   );
+}
+
+/**
+ * Rebuild verifier inputs solely from sealed evidence bytes (copy-away replay).
+ * External approval anchors come from evidence.approvalAnchors — never from
+ * recomputing a self-hash and treating it as approved.
+ */
+export function buildBindingVerifyInputFromSealedEvidence(
+  evidence: MlCal1BindingIntegrationEvidenceV1
+): MlCal1LifecycleBindingVerifyInput {
+  const eb = evidence.evidenceBytes;
+  const { zipBytes, reportMemberBytes } = resolveEmbeddedBindingArchiveBytes(
+    eb as unknown as Record<string, any>
+  );
+  const anchors = evidence.approvalAnchors;
+  if (
+    anchors.approvedRegistryDocumentDigest == null ||
+    anchors.approvedLineageAttestationDigest == null ||
+    anchors.approvedLineageInventorySha256 == null ||
+    eb.registryDocumentUtf8 == null ||
+    eb.lineageAttestationUtf8 == null ||
+    eb.registryPinUtf8 == null
+  ) {
+    throw new Error('sealed_evidence_missing_verifier_inputs');
+  }
+  if (
+    eb.registryPinSha256 != null &&
+    sha256Utf8Bytes(eb.registryPinUtf8) !== eb.registryPinSha256
+  ) {
+    throw new Error('sealed_evidence_registry_pin_digest_mismatch');
+  }
+  let registryPin: MlCal1LifecycleBindingVerifyInput['registryPin'];
+  try {
+    registryPin = JSON.parse(eb.registryPinUtf8) as NonNullable<
+      MlCal1LifecycleBindingVerifyInput['registryPin']
+    >;
+  } catch {
+    throw new Error('sealed_evidence_registry_pin_unparseable');
+  }
+  return {
+    zipBytes,
+    reportMemberBytes,
+    sidecarBytes: eb.sidecarUtf8,
+    prospectiveTargetWeek: eb.prospectiveTargetWeek,
+    expectedZipSha256: anchors.expectedZipSha256,
+    expectedReportMemberSha256: anchors.expectedReportMemberSha256,
+    expectedLifecycleProducerSha: anchors.expectedLifecycleProducerSha,
+    expectedReportMemberPath: anchors.expectedReportMemberPath,
+    lineageAttestationBytes: eb.lineageAttestationUtf8,
+    approvedLineageAttestationDigest: anchors.approvedLineageAttestationDigest,
+    approvedLineageInventorySha256: anchors.approvedLineageInventorySha256,
+    registryPin,
+    registryDocumentBytes: eb.registryDocumentUtf8,
+    approvedRegistryDocumentDigest: anchors.approvedRegistryDocumentDigest,
+    nowCeiling: eb.nowCeiling,
+  };
 }

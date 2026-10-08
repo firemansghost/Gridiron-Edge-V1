@@ -2,17 +2,17 @@
 
 **Branch:** `feat/ml-cal-1-capture-binding-g3-fixture-v1`  
 **Worktree:** `Gridiron-Edge-V1-ml-cal-1-g3`  
-**Prior reviewed head:** `f46e457373e6e8ea4a74ec53df4689d2f42af2a5`  
+**Prior reviewed head:** `9fd804446a30cdfc11f9a7ad87d1121560688d40`  
 **PR:** https://github.com/firemansghost/Gridiron-Edge-V1/pull/248  
 **Updated:** 2026-10-08 (America/Chicago)
 
-## F1 complete (local + push)
+## F1-A / F1-B (local)
 
-- [x] Versioned manifested binding-integration evidence (success + rejection)
-- [x] Integrity/correspondence validation in terminal reader (in capture helper; source-hygiene clean)
-- [x] Fixture CLI regressions (success, reject, tamper/mismatch, parallel receipt, zero DB)
-- [x] Local: G3 13/13, capture V1 128/128, G2/lifecycle green
-- [x] Commit + push (follow-up if Capture V1 CI failed on hygiene)
+- [x] F1-A: `bindingEvidenceAccepted` from `evaluateBindingEvidenceAcceptance` (not stored ok/qualified)
+- [x] F1-A: hash-consistent package regressions (lineage/observer/fingerprint/receipt/missing/unknown schema)
+- [x] F1-B: embed exact archive/report bytes (base64) + registry pin/controls for copy-away replay
+- [x] Local G3 15/15
+- [ ] Commit + push + observe CI
 
 ## Holdings
 

@@ -8,10 +8,14 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
+  ML_CAL_1_BINDING_ARCHIVE_EMBEDDED_RETRIEVAL,
   ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER,
   ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_SCHEMA,
+  buildBindingVerifyInputFromSealedEvidence,
+  evaluateBindingEvidenceAcceptance,
   planFixtureCaptureWithBindingIntegration,
   writeBindingFixturePackage,
+  type MlCal1BindingIntegrationEvidenceV1,
 } from '../lib/ml-cal-1-capture-binding-fixture';
 import { verifyBindingThenQualifyCaptureLifecycle } from '../lib/ml-cal-1-capture-binding-integration';
 import {
@@ -26,6 +30,7 @@ import {
   type MlCal1FixtureInput,
   type MlCal1RawRatingRow,
 } from '../lib/ml-cal-1-capture';
+import { verifyLifecycleBindingSidecar } from '../lib/ml-cal-1-lifecycle-binding';
 import { runMlCal1Cli } from '../capture-ml-cal-1-2026';
 import {
   ML_CAL_1_BINDING_POLICY,
@@ -418,6 +423,11 @@ describe('G3 fixture capture/binding wiring', () => {
     expect(evidence.lineage.coversCaptureAsOf).toBe(true);
     expect(evidence.evidenceBytes.sidecarUtf8.length).toBeGreaterThan(0);
     expect(evidence.evidenceBytes.zipBytesPin.sha256).toBe(evidence.evidenceBytes.zipSha256);
+    expect(evidence.evidenceBytes.zipBytesPin.retrieval).toBe(
+      ML_CAL_1_BINDING_ARCHIVE_EMBEDDED_RETRIEVAL
+    );
+    expect(typeof evidence.evidenceBytes.zipBytesBase64).toBe('string');
+    expect(evidence.evidenceBytes.zipBytesBase64.length).toBeGreaterThan(0);
     expect(CAPTURE_EVIDENCE_MEMBER).toBe(ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER);
   });
 
@@ -885,7 +895,10 @@ describe('G3 fixture capture/binding wiring', () => {
       bindingObserverSha: OBSERVER_SHA,
       captureProducerSha: CAPTURE_SHA,
     });
-    expect(sealedEvidence.evidenceBytes.zipBytesPin.retrieval).toContain('archive.zip');
+    expect(sealedEvidence.evidenceBytes.zipBytesPin.retrieval).toBe(
+      ML_CAL_1_BINDING_ARCHIVE_EMBEDDED_RETRIEVAL
+    );
+    expect(sealedEvidence.evidenceBytes.zipBytesBase64.length).toBeGreaterThan(0);
 
     const rejectBindingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'g3-cli-rej-'));
     writeBindingFixturePackage(rejectBindingDir, {
@@ -977,5 +990,236 @@ describe('G3 fixture capture/binding wiring', () => {
     );
     expect(parallelCode).not.toBe(0);
     expect(parallelDbCalls).toBe(0);
+  });
+
+  function sealMutatedEvidence(
+    planned: ReturnType<typeof planFixtureCaptureWithBindingIntegration>,
+    mutate: (evidence: MlCal1BindingIntegrationEvidenceV1) => void,
+    captureId: string
+  ) {
+    const evidence = JSON.parse(
+      JSON.stringify(planned.bindingIntegrationEvidence)
+    ) as MlCal1BindingIntegrationEvidenceV1;
+    mutate(evidence);
+    // Keep stored ok/audit consistent so structural reader still runs acceptance eval.
+    evidence.ok = true;
+    const bundle = {
+      ...planned.bundle,
+      envelope: {
+        ...planned.bundle.envelope,
+        bindingIntegrationAudit: {
+          schemaVersion: ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_SCHEMA,
+          used: true as const,
+          evidenceMember: ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER,
+          outcome: 'accepted' as const,
+        },
+        lifecycleQualification: {
+          ...planned.bundle.envelope.lifecycleQualification,
+          qualified: true,
+        },
+      },
+      bindingIntegrationEvidence: evidence as unknown as Record<string, unknown>,
+    };
+    const written = writeCaptureArtifactsAtomic({
+      rootDir: fs.mkdtempSync(path.join(os.tmpdir(), 'g3-mut-')),
+      captureId,
+      bundle,
+      dependencyHashes: { gitByteHashes: {}, dirty: [] },
+      now: () => new Date(T_PUB),
+    });
+    const validated = readCaptureTerminalResult({
+      rootDir: path.dirname(written.captureDir),
+      captureId,
+      expectedManifestSha256: written.manifestSha256,
+      expectedTerminalSha256: written.terminalSha256,
+      expectedInvalidationSha256: written.invalidationSha256,
+      expectedPackageChecksumsSha256: written.packageChecksumsSha256,
+    });
+    return { written, validated, evidence };
+  }
+
+  it('F1-A: hash-consistent contradictions fail binding acceptance without trusting stored ok', () => {
+    const planned = planFixtureCaptureWithBindingIntegration(
+      captureInput(built.ratings, built.rows, built.fingerprint),
+      { binding: built.binding, trustedAcceptance: trust },
+      { now: () => new Date(T_PUB), publicationTime: T_PUB }
+    );
+    expect(planned.bindingIntegrationEvidence.ok).toBe(true);
+
+    // Lying stored ok/qualified must not grant acceptance when lineage proof fails.
+    const lin = sealMutatedEvidence(
+      planned,
+      (evidence) => {
+        const attestation = JSON.parse(evidence.evidenceBytes.lineageAttestationUtf8!);
+        attestation.checkedThroughTime = '2026-10-06T12:00:00.000Z';
+        const next = `${JSON.stringify(attestation)}\n`;
+        evidence.evidenceBytes.lineageAttestationUtf8 = next;
+        evidence.evidenceBytes.lineageAttestationSha256 = sha256Utf8Bytes(next);
+        evidence.approvalAnchors.approvedLineageAttestationDigest = sha256Utf8Bytes(next);
+        evidence.lineage.coversCaptureAsOf = true;
+        evidence.lineage.checkedThroughTime = attestation.checkedThroughTime;
+      },
+      'g3-contra-lineage'
+    );
+    expect(lin.validated.bindingEvidenceAccepted).toBe(false);
+    expect(lin.validated.integrityNotes.some((n) => n.includes('lineage'))).toBe(true);
+
+    const obs = sealMutatedEvidence(
+      planned,
+      (evidence) => {
+        evidence.producers.bindingObserverSha = 'cccccccccccccccccccccccccccccccccccccccc';
+      },
+      'g3-contra-observer'
+    );
+    expect(obs.validated.bindingEvidenceAccepted).toBe(false);
+
+    const fp = sealMutatedEvidence(
+      planned,
+      (evidence) => {
+        evidence.fingerprints.binding = 'd'.repeat(64);
+      },
+      'g3-contra-fingerprint'
+    );
+    expect(fp.validated.bindingEvidenceAccepted).toBe(false);
+
+    const receipt = sealMutatedEvidence(
+      planned,
+      (evidence) => {
+        evidence.approvalAnchors.approvedReceiptDigest = 'e'.repeat(64);
+      },
+      'g3-contra-receipt'
+    );
+    expect(receipt.validated.bindingEvidenceAccepted).toBe(false);
+
+    const missingAnchor = sealMutatedEvidence(
+      planned,
+      (evidence) => {
+        evidence.approvalAnchors.approvedRegistryDocumentDigest = null;
+      },
+      'g3-missing-anchor'
+    );
+    expect(missingAnchor.validated.bindingEvidenceAccepted).toBe(false);
+
+    const missingBytes = sealMutatedEvidence(
+      planned,
+      (evidence) => {
+        evidence.evidenceBytes.adaptedReceiptUtf8 = null;
+        evidence.evidenceBytes.adaptedReceiptSha256 = null;
+      },
+      'g3-missing-bytes'
+    );
+    expect(missingBytes.validated.bindingEvidenceAccepted).toBe(false);
+
+    // Unknown schema fails closed at structural validation.
+    expect(() =>
+      sealMutatedEvidence(
+        planned,
+        (evidence) => {
+          (evidence as { schemaVersion: string }).schemaVersion =
+            'ml-cal-1-binding-integration-evidence-v999';
+        },
+        'g3-unknown-schema'
+      )
+    ).toThrow(/binding_integration_evidence_schema_mismatch/);
+
+    // Direct evaluator ignores stored ok=true when proof is missing.
+    const lying = JSON.parse(
+      JSON.stringify(planned.bindingIntegrationEvidence)
+    ) as MlCal1BindingIntegrationEvidenceV1;
+    lying.ok = true;
+    lying.approvalAnchors.approvedReceiptDigest = null;
+    const evalResult = evaluateBindingEvidenceAcceptance({
+      envelope: {
+        ...planned.bundle.envelope,
+        bindingIntegrationAudit: {
+          schemaVersion: ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_SCHEMA,
+          used: true,
+          evidenceMember: ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER,
+          outcome: 'accepted',
+        },
+        lifecycleQualification: {
+          ...planned.bundle.envelope.lifecycleQualification,
+          qualified: true,
+        },
+      },
+      ratingsByTeamId: planned.bundle.inputs.ratingsByTeamId,
+      ratingFingerprint: planned.bundle.inputs.ratingFingerprint,
+      evidence: lying as unknown as Record<string, unknown>,
+    });
+    expect(evalResult.accepted).toBe(false);
+    expect(evalResult.reasons).toContain('approved_receipt_digest_missing');
+  });
+
+  it('F1-B: copy-away sealed package verifies without the original binding fixture directory', () => {
+    const bindingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'g3-bind-src-'));
+    writeBindingFixturePackage(bindingDir, {
+      binding: built.binding,
+      trustedAcceptance: trust,
+    });
+    const planned = planFixtureCaptureWithBindingIntegration(
+      captureInput(built.ratings, built.rows, built.fingerprint),
+      { binding: built.binding, trustedAcceptance: trust },
+      { now: () => new Date(T_PUB), publicationTime: T_PUB }
+    );
+    const sealRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'g3-seal-src-'));
+    const written = writeCaptureArtifactsAtomic({
+      rootDir: sealRoot,
+      captureId: 'g3-copyaway',
+      bundle: planned.bundle,
+      dependencyHashes: { gitByteHashes: {}, dirty: [] },
+      now: () => new Date(T_PUB),
+    });
+
+    const copyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'g3-seal-copy-'));
+    const copyCaptureDir = path.join(copyRoot, 'g3-copyaway');
+    fs.cpSync(written.captureDir, copyCaptureDir, { recursive: true });
+    for (const suffix of [
+      '.terminal-completion.json',
+      '.publication-invalidation.json',
+      '.package-checksums.json',
+    ]) {
+      const src = path.join(sealRoot, `g3-copyaway${suffix}`);
+      if (fs.existsSync(src)) {
+        fs.copyFileSync(src, path.join(copyRoot, `g3-copyaway${suffix}`));
+      }
+    }
+
+    // Remove original temporary binding inputs and original seal root.
+    fs.rmSync(bindingDir, { recursive: true, force: true });
+    fs.rmSync(sealRoot, { recursive: true, force: true });
+    expect(fs.existsSync(bindingDir)).toBe(false);
+
+    const validated = readCaptureTerminalResult({
+      rootDir: copyRoot,
+      captureId: 'g3-copyaway',
+      expectedManifestSha256: written.manifestSha256,
+      expectedTerminalSha256: written.terminalSha256,
+      expectedInvalidationSha256: written.invalidationSha256,
+      expectedPackageChecksumsSha256: written.packageChecksumsSha256,
+    });
+    expect(validated.bindingEvidenceAccepted).toBe(true);
+    expect(validated.independentlyVerifiedIntegrity).toBe(true);
+
+    const evidence = JSON.parse(
+      fs.readFileSync(
+        path.join(copyCaptureDir, ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER),
+        'utf8'
+      )
+    ) as MlCal1BindingIntegrationEvidenceV1;
+    // External anchors remain distinct fields that are compared to byte digests.
+    expect(evidence.approvalAnchors.approvedReceiptDigest).toBe(trust.approvedReceiptDigest);
+    expect(evidence.evidenceBytes.adaptedReceiptSha256).toBe(trust.approvedReceiptDigest);
+    expect(evidence.approvalAnchors).toHaveProperty('approvedReceiptDigest');
+    expect(evidence.approvalAnchors).toHaveProperty('approvedRegistryDocumentDigest');
+    expect(evidence.approvalAnchors.approvedRegistryDocumentDigest).toBe(
+      evidence.evidenceBytes.registryDocumentSha256
+    );
+
+    const replayInput = buildBindingVerifyInputFromSealedEvidence(evidence);
+    const replayed = verifyLifecycleBindingSidecar(replayInput);
+    expect(replayed.archiveIntegrityVerified).toBe(true);
+    expect(replayed.liveQualifying).toBe(true);
+    expect(replayed.fixtureProvenanceRetained).toBe(true);
+    expect(replayed.liveAccepted).toBe(false);
   });
 });
