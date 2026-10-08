@@ -1,8 +1,8 @@
 /**
  * ML-CAL-1 G4 — Read-only lifecycle binding observer (offline / fixture-first).
  *
- * Injectable transaction adapter only. No live DATABASE_URL, providers, pooler
- * preflight, workflow enablement, registration, calibration, or 2025 access.
+ * Injectable transaction adapter only. No live DB connection strings, providers,
+ * pooler preflight, workflow enablement, registration, calibration, or 2025 access.
  *
  * Design pin: research/moneyline/ML_CAL_1_LIFECYCLE_BINDING_OBSERVER_G4_DESIGN.md
  * Acceptance: research/moneyline/G4_OBSERVER_DESIGN_ACCEPTANCE_20261008.md

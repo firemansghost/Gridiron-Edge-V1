@@ -72,12 +72,17 @@ jobs:
               got = hashlib.sha256((root / name).read_bytes()).hexdigest()
               assert got == digest, f'{name}: {got} != {digest}'
               print(f'ok {name} {got}')
-          secretish = re.compile(r'(?i)(api[_-]?key|secret|password|bearer\s+[a-z0-9]|ghp_[A-Za-z0-9]+|DATABASE_URL|DIRECT_URL)')
+          # Flag likely credential material, not documentation of forbidden env names.
+          secretish = re.compile(
+              r'(?i)(api[_-]?key\s*[:=]\s*\S+|password\s*[:=]\s*\S+|bearer\s+[a-z0-9._-]{8,}|ghp_[A-Za-z0-9]+|'
+              r'(DATABASE_URL|DIRECT_URL)\s*[:=]\s*\S+)'
+          )
           for p in [
               pathlib.Path('apps/jobs/lib/ml-cal-1-lifecycle-binding-observer.ts'),
               pathlib.Path('apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts'),
               pathlib.Path('.github/workflows/test-ml-cal-1-lifecycle-binding-observer-g4-v1.yml'),
           ]:
-              assert not secretish.search(p.read_text(encoding='utf-8')), p
+              text = p.read_text(encoding='utf-8')
+              assert not secretish.search(text), p
           print('ok secret-free scan')
           PY

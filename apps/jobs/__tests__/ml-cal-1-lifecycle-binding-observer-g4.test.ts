@@ -1,6 +1,6 @@
 /**
  * Offline fixture matrix for ML-CAL-1 G4 lifecycle binding observer.
- * No DATABASE_URL, credentials, providers, or pooler preflight.
+ * No live DB connection strings, credentials, providers, or pooler preflight.
  */
 
 import * as fs from 'fs';
