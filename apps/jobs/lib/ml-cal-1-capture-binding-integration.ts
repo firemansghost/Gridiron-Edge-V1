@@ -105,7 +105,7 @@ export interface MlCal1CaptureBindingIntegrationResult {
       completedThroughWeek: number;
       selectedPolicy: string;
       canonicalWeight: number;
-      season: number;
+      season?: number;
       acceptedImmutable: boolean;
       ratingFingerprint: string;
       receiptDigest: string;
