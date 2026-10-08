@@ -23,6 +23,8 @@ import {
   evaluateG4ObservationTiming,
   evaluatePreAdapterChronology,
   exportRatingInput,
+  isGitCommitSha40,
+  isSafeG4ObservationId,
   ML_CAL_1_G4_ACCEPTANCE_UPLOAD_SHA256,
   ML_CAL_1_G4_DESIGN_ON_DISK_SHA256,
   ML_CAL_1_G4_TEAM_SEASON_RATING_SCALARS,
@@ -35,6 +37,7 @@ import {
   validateObservedRowTimestamps,
   verifyExactTeamSeasonRatingAllowlist,
   type MlCal1G4ArchivePins,
+  type MlCal1G4ObserverTxAdapter,
   type MlCal1G4RawRatingRow,
 } from '../lib/ml-cal-1-lifecycle-binding-observer';
 
@@ -126,6 +129,23 @@ function clockSequence(isos: string[]): () => Date {
     const v = isos[Math.min(i, isos.length - 1)];
     i += 1;
     return new Date(v);
+  };
+}
+
+/** Count actual TX adapter entries (not only an optional callback spy). */
+function countingAdapter(inner: MlCal1G4ObserverTxAdapter): {
+  adapter: MlCal1G4ObserverTxAdapter;
+  invocations: () => number;
+} {
+  let n = 0;
+  return {
+    invocations: () => n,
+    adapter: {
+      async withRepeatableReadTransaction(fn) {
+        n += 1;
+        return inner.withRepeatableReadTransaction(fn);
+      },
+    },
   };
 }
 
@@ -1117,7 +1137,12 @@ describe('ML-CAL-1 G4 observer — F1–F5 repair regressions', () => {
 
   it('F4: empty identity fields fail before adapter', async () => {
     const root = tmpRoot();
-    let enters = 0;
+    const counted = countingAdapter(
+      createMockRepeatableReadAdapter({
+        rows: w6RawRows(),
+        transactionTimestamp: T_DB,
+      })
+    );
     const result = await runG4ObserverAttempt({
       observationId: 'g4-f4-empty-identity',
       bindingObserverSha: '',
@@ -1128,23 +1153,17 @@ describe('ML-CAL-1 G4 observer — F1–F5 repair regressions', () => {
         artifactName: '',
       }),
       zipBytes: W6_ZIP,
-      txAdapter: createMockRepeatableReadAdapter({
-        rows: w6RawRows(),
-        transactionTimestamp: T_DB,
-      }),
+      txAdapter: counted.adapter,
       now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
       nowCeiling: NOW_CEILING,
       fixtureProvenanceBytes: W6_PROVENANCE,
       fixtureMode: true,
       packageRootDir: root,
-      onAdapterEnter: () => {
-        enters += 1;
-      },
     });
     expect(result.ok).toBe(false);
-    expect(enters).toBe(0);
+    expect(counted.invocations()).toBe(0);
     expect(result.reasons.join('\n')).toMatch(
-      /observer_identity_missing|archive_identity_missing/
+      /observer_identity_invalid|archive_identity_missing/
     );
   });
 
@@ -1157,6 +1176,127 @@ describe('ML-CAL-1 G4 observer — F1–F5 repair regressions', () => {
         nowCeiling: NOW_CEILING,
       }).ok
     ).toBe(true);
+  });
+
+  it('F4 remaining: malformed bindingObserverSha blocks with zero adapter invocations', async () => {
+    const root = tmpRoot();
+    const counted = countingAdapter(
+      createMockRepeatableReadAdapter({
+        rows: w6RawRows(),
+        transactionTimestamp: T_DB,
+      })
+    );
+    const result = await runG4ObserverAttempt({
+      observationId: 'g4-f4-bad-observer-sha',
+      bindingObserverSha: 'not-a-sha',
+      lifecycleProducerSha: PRODUCER_W6,
+      archivePins: w6Pins(),
+      zipBytes: W6_ZIP,
+      txAdapter: counted.adapter,
+      now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
+      nowCeiling: NOW_CEILING,
+      fixtureProvenanceBytes: W6_PROVENANCE,
+      fixtureMode: true,
+      packageRootDir: root,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.reasons).toContain(
+      'observer_identity_invalid:bindingObserverSha'
+    );
+    expect(counted.invocations()).toBe(0);
+    expect(result.packageDir).toBeNull();
+  });
+
+  it('F4 remaining: matching malformed producer/pin SHAs rejected before adapter', async () => {
+    const root = tmpRoot();
+    const bad = 'not-a-sha';
+    const counted = countingAdapter(
+      createMockRepeatableReadAdapter({
+        rows: w6RawRows(),
+        transactionTimestamp: T_DB,
+      })
+    );
+    const result = await runG4ObserverAttempt({
+      observationId: 'g4-f4-bad-producer-pin',
+      bindingObserverSha: OBSERVER_SHA,
+      lifecycleProducerSha: bad,
+      archivePins: w6Pins({ expectedLifecycleProducerSha: bad }),
+      zipBytes: W6_ZIP,
+      txAdapter: counted.adapter,
+      now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
+      nowCeiling: NOW_CEILING,
+      fixtureProvenanceBytes: W6_PROVENANCE,
+      fixtureMode: true,
+      packageRootDir: root,
+    });
+    expect(result.ok).toBe(false);
+    expect(counted.invocations()).toBe(0);
+    expect(result.reasons.join('\n')).toMatch(
+      /observer_identity_invalid:lifecycleProducerSha|archive_pin_mismatch:producer_sha_invalid/
+    );
+  });
+
+  it('F4 remaining: unsafe observationId fails structured without adapter entry', async () => {
+    const root = tmpRoot();
+    const counted = countingAdapter(
+      createMockRepeatableReadAdapter({
+        rows: w6RawRows(),
+        transactionTimestamp: T_DB,
+      })
+    );
+    const result = await runG4ObserverAttempt({
+      observationId: '../escape',
+      bindingObserverSha: OBSERVER_SHA,
+      lifecycleProducerSha: PRODUCER_W6,
+      archivePins: w6Pins(),
+      zipBytes: W6_ZIP,
+      txAdapter: counted.adapter,
+      now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
+      nowCeiling: NOW_CEILING,
+      fixtureProvenanceBytes: W6_PROVENANCE,
+      fixtureMode: true,
+      packageRootDir: root,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.reasons).toContain('unsafe_observation_id:../escape');
+    expect(counted.invocations()).toBe(0);
+    expect(result.packageDir).toBeNull();
+    expect(isSafeG4ObservationId('../escape')).toBe(false);
+  });
+
+  it('F4 remaining: equal valid 40-hex observer/lifecycle SHAs still pass (role separation)', async () => {
+    const root = tmpRoot();
+    const same = 'dddddddddddddddddddddddddddddddddddddddd';
+    expect(isGitCommitSha40(same)).toBe(true);
+    const counted = countingAdapter(
+      createMockRepeatableReadAdapter({
+        rows: w6RawRows(),
+        transactionTimestamp: T_DB,
+      })
+    );
+    const result = await runG4ObserverAttempt({
+      observationId: 'g4-f4-equal-role-shas',
+      bindingObserverSha: same,
+      lifecycleProducerSha: same,
+      archivePins: w6Pins({ expectedLifecycleProducerSha: same }),
+      zipBytes: W6_ZIP,
+      txAdapter: counted.adapter,
+      now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
+      nowCeiling: NOW_CEILING,
+      fixtureProvenanceBytes: W6_PROVENANCE,
+      fixtureMode: true,
+      packageRootDir: root,
+    });
+    expect(result.ok).toBe(true);
+    expect(counted.invocations()).toBe(1);
+    const sidecar = JSON.parse(
+      fs.readFileSync(
+        path.join(result.packageDir!, 'binding-sidecar.json'),
+        'utf8'
+      )
+    );
+    expect(sidecar.acceptedArchive.lifecycleProducerSha).toBe(same);
+    expect(sidecar.bindingObservation.bindingObserverSha).toBe(same);
   });
 
   it('F5: sealed package omits fullWeightEligible echo and replays binding verifier', async () => {

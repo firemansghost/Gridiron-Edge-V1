@@ -208,6 +208,21 @@ function isNonEmptyIdentity(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== '';
 }
 
+/** Full 40-hex lowercase Git commit identity (check typeof before any string ops). */
+const GIT_COMMIT_SHA40 = /^[0-9a-f]{40}$/;
+
+export function isGitCommitSha40(value: unknown): value is string {
+  return typeof value === 'string' && GIT_COMMIT_SHA40.test(value);
+}
+
+/** Existing safe observation-id rule (no path separators / traversal). */
+export function isSafeG4ObservationId(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(value)
+  );
+}
+
 /** Serialize timestamp consistently for sidecar extrema (UTC ISO). */
 function isoFromMs(ms: number): string {
   return new Date(ms).toISOString();
@@ -404,9 +419,12 @@ export function evaluateG4ArchivePrerequisites(input: {
     );
   }
 
-  if (input.pins.expectedLifecycleProducerSha.trim() === '') {
-    reasons.push('archive_pin_mismatch:producer_missing');
+  // Producer pin must be a valid 40-hex Git SHA (type-checked; no bare .trim()).
+  if (!isGitCommitSha40(input.pins.expectedLifecycleProducerSha)) {
+    reasons.push('archive_pin_mismatch:producer_sha_invalid');
   }
+  // Fixture-tagged archive run/artifact identifiers: non-empty strings only
+  // (do not impose numeric production IDs on synthetic fixtures).
   if (!isNonEmptyIdentity(input.pins.workflowRunId)) {
     reasons.push('archive_identity_missing:workflowRunId');
   }
@@ -755,7 +773,7 @@ export interface MlCal1G4PackageSealResult {
 }
 
 function safeObservationId(id: string): string {
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(id)) {
+  if (!isSafeG4ObservationId(id)) {
     throw new Error(`unsafe_observation_id:${id}`);
   }
   return id;
@@ -1105,14 +1123,15 @@ export async function runG4ObserverAttempt(
   }
   readMode = 'fixture_injected';
 
-  if (!isNonEmptyIdentity(input.bindingObserverSha)) {
-    return fail(['observer_identity_missing:bindingObserverSha']);
+  // F4 remaining: validate role/pin Git SHAs and observationId BEFORE adapter.
+  if (!isGitCommitSha40(input.bindingObserverSha)) {
+    return fail(['observer_identity_invalid:bindingObserverSha']);
   }
-  if (!isNonEmptyIdentity(input.lifecycleProducerSha)) {
-    return fail(['observer_identity_missing:lifecycleProducerSha']);
+  if (!isGitCommitSha40(input.lifecycleProducerSha)) {
+    return fail(['observer_identity_invalid:lifecycleProducerSha']);
   }
-  if (!isNonEmptyIdentity(input.observationId)) {
-    return fail(['observer_identity_missing:observationId']);
+  if (!isSafeG4ObservationId(input.observationId)) {
+    return fail([`unsafe_observation_id:${String(input.observationId)}`]);
   }
   if (
     !input.fixtureProvenanceBytes ||
@@ -1140,6 +1159,7 @@ export async function runG4ObserverAttempt(
     return fail([], 'archive_prerequisites_failed');
   }
 
+  // Pin SHA already validated as hex40 in archive preflight; require exact match.
   if (input.lifecycleProducerSha !== input.archivePins.expectedLifecycleProducerSha) {
     return fail(['lifecycleProducerSha_mismatch_vs_pin']);
   }

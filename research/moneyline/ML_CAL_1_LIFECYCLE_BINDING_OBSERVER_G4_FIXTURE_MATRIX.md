@@ -40,6 +40,7 @@ Dependency suites (CI): binding / G2 / G3 Jest paths.
 | F2 repair | created>updated; offset extrema; invalid ts structured | negative |
 | F3 repair | nonfixture rejected; PROVENANCE retained; copy-away | negative + positive |
 | F4 repair | pre-adapter chrono + empty identity; zero adapter enters | negative |
+| F4 remaining | malformed role/pin SHAs; unsafe `../escape` observationId; equal valid 40-hex SHAs positive; counting adapter invocations | negative + positive |
 | F5 repair | omit eligibility echo; binding verifier replay + copy-away | positive structural / live blocked |
 
 Planned tests remain distinct from executed CI: this PR’s G4 workflow runs the G4 suite plus accepted binding/G2/G3 regressions on Linux.
