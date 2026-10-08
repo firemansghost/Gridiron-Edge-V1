@@ -1,0 +1,183 @@
+{
+  "captureId": "fixture-demo-ml-cal-1-2026-w07",
+  "season": 2026,
+  "week": 7,
+  "repositorySha": "c37b5d367a364398d479c52844466aa4fd3306c2",
+  "captureStartTime": "2026-10-12T17:59:50.000Z",
+  "snapshotReferenceTime": "2026-10-12T18:00:00.000Z",
+  "captureEndTime": "2026-10-12T18:00:00.000Z",
+  "lifecycleMode": "fixture_hypothetical",
+  "games": [
+    {
+      "gameId": "2026-wk7-alabama-georgia",
+      "season": 2026,
+      "week": 7,
+      "homeTeamId": "alabama",
+      "awayTeamId": "georgia",
+      "homeTeamName": "Alabama",
+      "awayTeamName": "Georgia",
+      "kickoffAsKnown": "2026-10-12T23:00:00.000Z",
+      "neutralSite": false
+    },
+    {
+      "gameId": "2026-wk7-troy-southern-mississippi",
+      "season": 2026,
+      "week": 7,
+      "homeTeamId": "troy",
+      "awayTeamId": "southern-mississippi",
+      "homeTeamName": "Troy",
+      "awayTeamName": "Southern Miss",
+      "kickoffAsKnown": "2026-10-12T23:30:00.000Z",
+      "neutralSite": false
+    },
+    {
+      "gameId": "2026-wk7-missing-market",
+      "season": 2026,
+      "week": 7,
+      "homeTeamId": "james-madison",
+      "awayTeamId": "unlv",
+      "homeTeamName": "James Madison",
+      "awayTeamName": "UNLV",
+      "kickoffAsKnown": "2026-10-13T00:00:00.000Z",
+      "neutralSite": false
+    }
+  ],
+  "fbsTeamIds": [
+    "alabama",
+    "georgia",
+    "troy",
+    "southern-mississippi",
+    "james-madison",
+    "unlv"
+  ],
+  "ratings": [
+    {
+      "season": 2026,
+      "teamId": "alabama",
+      "modelVersion": "v1",
+      "powerRating": "12.5",
+      "rating": "12.5",
+      "games": 6,
+      "dataSource": "lifecycle",
+      "createdAt": "2026-10-10T00:00:00.000Z",
+      "updatedAt": "2026-10-10T00:00:00.000Z"
+    },
+    {
+      "season": 2026,
+      "teamId": "georgia",
+      "modelVersion": "v1",
+      "powerRating": "4.25",
+      "rating": "4.25",
+      "games": 6,
+      "dataSource": "lifecycle",
+      "createdAt": "2026-10-10T00:00:00.000Z",
+      "updatedAt": "2026-10-10T00:00:00.000Z"
+    },
+    {
+      "season": 2026,
+      "teamId": "troy",
+      "modelVersion": "v1",
+      "powerRating": "3.0",
+      "rating": "3.0",
+      "games": 6,
+      "dataSource": "lifecycle",
+      "createdAt": "2026-10-10T00:00:00.000Z",
+      "updatedAt": "2026-10-10T00:00:00.000Z"
+    },
+    {
+      "season": 2026,
+      "teamId": "southern-mississippi",
+      "modelVersion": "v1",
+      "powerRating": "1.0",
+      "rating": "1.0",
+      "games": 6,
+      "dataSource": "lifecycle",
+      "createdAt": "2026-10-10T00:00:00.000Z",
+      "updatedAt": "2026-10-10T00:00:00.000Z"
+    },
+    {
+      "season": 2026,
+      "teamId": "james-madison",
+      "modelVersion": "v1",
+      "powerRating": "8.0",
+      "rating": "8.0",
+      "games": 6,
+      "dataSource": "lifecycle",
+      "createdAt": "2026-10-10T00:00:00.000Z",
+      "updatedAt": "2026-10-10T00:00:00.000Z"
+    },
+    {
+      "season": 2026,
+      "teamId": "unlv",
+      "modelVersion": "v1",
+      "powerRating": "2.0",
+      "rating": "2.0",
+      "games": 6,
+      "dataSource": "lifecycle",
+      "createdAt": "2026-10-10T00:00:00.000Z",
+      "updatedAt": "2026-10-10T00:00:00.000Z"
+    }
+  ],
+  "marketLines": [
+    {
+      "id": "ml-ala-home",
+      "gameId": "2026-wk7-alabama-georgia",
+      "lineType": "moneyline",
+      "lineValue": -150,
+      "bookName": "BetRivers",
+      "timestamp": "2026-10-12T17:45:00.000Z",
+      "createdAt": "2026-10-12T17:45:00.000Z",
+      "updatedAt": "2026-10-12T17:45:00.000Z",
+      "teamId": "alabama",
+      "source": "oddsapi"
+    },
+    {
+      "id": "ml-ala-away",
+      "gameId": "2026-wk7-alabama-georgia",
+      "lineType": "moneyline",
+      "lineValue": 130,
+      "bookName": "BetRivers",
+      "timestamp": "2026-10-12T17:45:00.000Z",
+      "createdAt": "2026-10-12T17:45:00.000Z",
+      "updatedAt": "2026-10-12T17:45:00.000Z",
+      "teamId": "georgia",
+      "source": "oddsapi"
+    },
+    {
+      "id": "ml-troy-home",
+      "gameId": "2026-wk7-troy-southern-mississippi",
+      "lineType": "moneyline",
+      "lineValue": -110,
+      "bookName": "BetRivers",
+      "timestamp": "2026-10-12T17:45:00.000Z",
+      "createdAt": "2026-10-12T17:45:00.000Z",
+      "updatedAt": "2026-10-12T17:45:00.000Z",
+      "teamId": "troy",
+      "source": "oddsapi"
+    },
+    {
+      "id": "ml-troy-away",
+      "gameId": "2026-wk7-troy-southern-mississippi",
+      "lineType": "moneyline",
+      "lineValue": -110,
+      "bookName": "BetRivers",
+      "timestamp": "2026-10-12T17:45:00.000Z",
+      "createdAt": "2026-10-12T17:45:00.000Z",
+      "updatedAt": "2026-10-12T17:45:00.000Z",
+      "teamId": "southern-mississippi",
+      "source": "oddsapi"
+    }
+  ],
+  "receiptBytes": "{\"acceptedImmutable\":true,\"canonicalWeight\":1,\"completedThroughWeek\":6,\"ratingFingerprint\":\"3d09604ecfd013331c57e77a9541d7938cd0bf98e8e63b1e258510ac355c3f84\",\"season\":2026,\"selectedPolicy\":\"GLOBAL_BLEND_W3_W6\",\"sourceSha\":\"c37b5d367a364398d479c52844466aa4fd3306c2\"}\n",
+  "pinnedReceiptDigest": "8328bf1ad0d1dfb89e471a7aa49cc3949474977f50c304a99565827f587692ce",
+  "lifecycleReceipt": {
+    "sourceSha": "c37b5d367a364398d479c52844466aa4fd3306c2",
+    "completedThroughWeek": 6,
+    "selectedPolicy": "GLOBAL_BLEND_W3_W6",
+    "canonicalWeight": 1,
+    "season": 2026,
+    "acceptedImmutable": true,
+    "ratingFingerprint": "3d09604ecfd013331c57e77a9541d7938cd0bf98e8e63b1e258510ac355c3f84",
+    "receiptDigest": "8328bf1ad0d1dfb89e471a7aa49cc3949474977f50c304a99565827f587692ce"
+  }
+}
