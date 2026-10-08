@@ -1,0 +1,7 @@
+# ML-CAL-1 lifecycle binding fixtures must preserve exact published digests.
+apps/jobs/__tests__/fixtures/packages/ml-cal-1-lifecycle-binding-week5-commit/archive.zip binary
+apps/jobs/__tests__/fixtures/packages/ml-cal-1-lifecycle-binding-week5-commit/core-v1-lifecycle-2026-through-week-5-COMMIT.json binary
+
+# ML-CAL-1 G2 synthetic Week-6 hypothetical fixture (test-only provenance).
+apps/jobs/__tests__/fixtures/packages/ml-cal-1-capture-binding-integration-synthetic-w6/archive.zip binary
+apps/jobs/__tests__/fixtures/packages/ml-cal-1-capture-binding-integration-synthetic-w6/core-v1-lifecycle-2026-through-week-6-COMMIT.json binary
