@@ -12,6 +12,8 @@
 - A rejected integration sets `lifecycle` to null and does not call `qualifyLifecycleReceipt` as a fallback.
 - `lifecycleMode: 'live'` is rejected before any database read.
 - Outer and nested `liveAccepted` stay false.
+- Successful **and** rejected captures seal versioned `binding-integration-evidence.json` (manifested) with producer identities, provenance, as-of, lineage, fingerprints, approval anchors, rejection reasons, and exact/pinned verification bytes.
+- `readCaptureTerminalResult` validates evidence integrity and correspondence; missing/tampered/mismatched evidence fails closed and never grants `bindingEvidenceAccepted`.
 
 Market freshness and the pre-kickoff publication deadline are unchanged.
 
@@ -22,7 +24,7 @@ npx jest --runInBand --runTestsByPath \
   apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts
 ```
 
-The success case seals artifacts with `writeCaptureArtifactsAtomic` and checks them with `readCaptureTerminalResult`.
+The success case seals artifacts with `writeCaptureArtifactsAtomic` and checks them with `readCaptureTerminalResult`, including the manifested evidence member.
 
 Authentic Week 5 bytes stay at ZIP `b0177de0…316` and member `c20b789c…1e` (weight 0.75).
 

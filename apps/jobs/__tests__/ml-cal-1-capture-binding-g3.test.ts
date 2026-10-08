@@ -7,11 +7,18 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { planFixtureCaptureWithBindingIntegration } from '../lib/ml-cal-1-capture-binding-fixture';
+import {
+  ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER,
+  ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_SCHEMA,
+  planFixtureCaptureWithBindingIntegration,
+  writeBindingFixturePackage,
+} from '../lib/ml-cal-1-capture-binding-fixture';
 import { verifyBindingThenQualifyCaptureLifecycle } from '../lib/ml-cal-1-capture-binding-integration';
 import {
+  ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER as CAPTURE_EVIDENCE_MEMBER,
   buildRatingFingerprint,
   exportRatingInput,
+  parseMlCal1CliArgs,
   readCaptureTerminalResult,
   sha256Utf8Bytes,
   stableStringify,
@@ -380,13 +387,38 @@ describe('G3 fixture capture/binding wiring', () => {
     });
     expect(validated.structuralConsistencyVerified).toBe(true);
     expect(validated.independentlyVerifiedIntegrity).toBe(true);
+    expect(validated.bindingIntegrationEvidencePresent).toBe(true);
+    expect(validated.bindingEvidenceAccepted).toBe(true);
     expect(validated.sealedCounts.availableForecasts).toBe(1);
     const sealed = JSON.parse(
       fs.readFileSync(path.join(written.captureDir, 'envelope.json'), 'utf8')
     );
     expect(sealed.lifecycleQualification.liveAccepted).toBe(false);
+    expect(sealed.bindingIntegrationAudit.used).toBe(true);
+    expect(sealed.bindingIntegrationAudit.outcome).toBe('accepted');
+    expect(sealed.bindingIntegrationAudit.evidenceMember).toBe(
+      ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER
+    );
     expect(sealed.providerCalls).toBe(0);
     expect(sealed.businessDataWrites).toBe(0);
+    const evidence = JSON.parse(
+      fs.readFileSync(
+        path.join(written.captureDir, ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER),
+        'utf8'
+      )
+    );
+    expect(evidence.schemaVersion).toBe(ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_SCHEMA);
+    expect(evidence.ok).toBe(true);
+    expect(evidence.fixtureProvenanceRetained).toBe(true);
+    expect(evidence.liveAccepted).toBe(false);
+    expect(evidence.producers.lifecycleProducerSha).toBe(PRODUCER_SHA);
+    expect(evidence.producers.bindingObserverSha).toBe(OBSERVER_SHA);
+    expect(evidence.producers.captureProducerSha).toBe(CAPTURE_SHA);
+    expect(evidence.snapshotReferenceTime).toBe(T_SNAP);
+    expect(evidence.lineage.coversCaptureAsOf).toBe(true);
+    expect(evidence.evidenceBytes.sidecarUtf8.length).toBeGreaterThan(0);
+    expect(evidence.evidenceBytes.zipBytesPin.sha256).toBe(evidence.evidenceBytes.zipSha256);
+    expect(CAPTURE_EVIDENCE_MEMBER).toBe(ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER);
   });
 
   it('does not qualify when the approved receipt digest differs', () => {
@@ -396,6 +428,36 @@ describe('G3 fixture capture/binding wiring', () => {
     expect(planned.bindingIntegration?.lifecycle).toBeNull();
     expect(planned.bundle.envelope.lifecycleQualification.qualified).toBe(false);
     expect(planned.bundle.envelope.lifecycleQualification.liveAccepted).toBe(false);
+    expect(planned.bindingIntegrationEvidence.ok).toBe(false);
+    expect(planned.bundle.envelope.bindingIntegrationAudit?.outcome).toBe('rejected');
+
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'g3-reject-seal-'));
+    const written = writeCaptureArtifactsAtomic({
+      rootDir: root,
+      captureId: 'g3-fixture-capture',
+      bundle: planned.bundle,
+      dependencyHashes: { gitByteHashes: {}, dirty: [] },
+      now: () => new Date(T_PUB),
+    });
+    const validated = readCaptureTerminalResult({
+      rootDir: root,
+      captureId: 'g3-fixture-capture',
+      expectedManifestSha256: written.manifestSha256,
+      expectedTerminalSha256: written.terminalSha256,
+      expectedInvalidationSha256: written.invalidationSha256,
+      expectedPackageChecksumsSha256: written.packageChecksumsSha256,
+    });
+    expect(validated.bindingIntegrationEvidencePresent).toBe(true);
+    expect(validated.bindingEvidenceAccepted).toBe(false);
+    const evidence = JSON.parse(
+      fs.readFileSync(
+        path.join(written.captureDir, ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER),
+        'utf8'
+      )
+    );
+    expect(evidence.ok).toBe(false);
+    expect(evidence.reasons.length).toBeGreaterThan(0);
+    expect(evidence.approvalAnchors.approvedReceiptDigest).toBe('f'.repeat(64));
   });
 
   it('missing registry anchor cannot be bypassed by a qualifying receipt', () => {
@@ -672,5 +734,248 @@ describe('G3 fixture capture/binding wiring', () => {
     );
     expect(code).not.toBe(0);
     expect(dbCalls).toBe(0);
+  });
+
+  it('tampered or mismatched binding evidence blocks binding acceptance', () => {
+    const planned = planFixtureCaptureWithBindingIntegration(
+      captureInput(built.ratings, built.rows, built.fingerprint),
+      { binding: built.binding, trustedAcceptance: trust },
+      { now: () => new Date(T_PUB), publicationTime: T_PUB }
+    );
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'g3-tamper-'));
+    const written = writeCaptureArtifactsAtomic({
+      rootDir: root,
+      captureId: 'g3-fixture-capture',
+      bundle: planned.bundle,
+      dependencyHashes: { gitByteHashes: {}, dirty: [] },
+      now: () => new Date(T_PUB),
+    });
+    const evidencePath = path.join(
+      written.captureDir,
+      ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER
+    );
+    const evidence = JSON.parse(fs.readFileSync(evidencePath, 'utf8'));
+    evidence.ok = false;
+    evidence.reasons = ['tampered_ok_flip'];
+    fs.writeFileSync(evidencePath, `${JSON.stringify(evidence)}\n`, 'utf8');
+    expect(() =>
+      readCaptureTerminalResult({
+        rootDir: root,
+        captureId: 'g3-fixture-capture',
+        expectedManifestSha256: written.manifestSha256,
+        expectedTerminalSha256: written.terminalSha256,
+        expectedInvalidationSha256: written.invalidationSha256,
+        expectedPackageChecksumsSha256: written.packageChecksumsSha256,
+      })
+    ).toThrow(/sealed_member_digest_mismatch:binding-integration-evidence\.json/);
+
+    // Correspondence mismatch with manifested digests still consistent:
+    // seal audit.outcome=rejected while evidence.ok remains true.
+    const mismatched = {
+      ...planned.bundle,
+      envelope: {
+        ...planned.bundle.envelope,
+        bindingIntegrationAudit: {
+          ...planned.bundle.envelope.bindingIntegrationAudit!,
+          outcome: 'rejected' as const,
+        },
+      },
+      bindingIntegrationEvidence: {
+        ...planned.bindingIntegrationEvidence,
+        ok: true,
+      },
+    };
+    const writtenMismatch = writeCaptureArtifactsAtomic({
+      rootDir: fs.mkdtempSync(path.join(os.tmpdir(), 'g3-corr-')),
+      captureId: 'g3-fixture-capture-mismatch',
+      bundle: mismatched,
+      dependencyHashes: { gitByteHashes: {}, dirty: [] },
+      now: () => new Date(T_PUB),
+    });
+    expect(() =>
+      readCaptureTerminalResult({
+        rootDir: path.dirname(writtenMismatch.captureDir),
+        captureId: 'g3-fixture-capture-mismatch',
+        expectedManifestSha256: writtenMismatch.manifestSha256,
+        expectedTerminalSha256: writtenMismatch.terminalSha256,
+        expectedInvalidationSha256: writtenMismatch.invalidationSha256,
+        expectedPackageChecksumsSha256: writtenMismatch.packageChecksumsSha256,
+      })
+    ).toThrow(/binding_integration_audit_outcome_mismatch/);
+  });
+
+  it('fixture CLI seals inspectable binding evidence (success + reject + parallel + zero DB)', async () => {
+    // JSON fixtures cannot preserve Decimal-like { toString } objects; use raw strings.
+    const jsonSafeRatings = built.ratings.map((row) => ({
+      ...row,
+      powerRating:
+        row.powerRating == null
+          ? null
+          : typeof row.powerRating === 'object' && 'toString' in row.powerRating
+            ? row.powerRating.toString()
+            : row.powerRating,
+      rating:
+        row.rating == null
+          ? null
+          : typeof row.rating === 'object' && 'toString' in row.rating
+            ? row.rating.toString()
+            : row.rating,
+    }));
+    const captureFixture = captureInput(jsonSafeRatings, built.rows, built.fingerprint);
+    const fixturePath = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'g3-cli-fix-')),
+      'capture-fixture.json'
+    );
+    fs.writeFileSync(fixturePath, `${JSON.stringify(captureFixture, null, 2)}\n`, 'utf8');
+
+    const bindingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'g3-cli-bind-'));
+    writeBindingFixturePackage(bindingDir, {
+      binding: built.binding,
+      trustedAcceptance: trust,
+    });
+
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'g3-cli-out-'));
+    const lines: string[] = [];
+    let dbCalls = 0;
+    const code = await runMlCal1Cli(
+      [
+        '--season',
+        '2026',
+        '--week',
+        '7',
+        '--fixture',
+        fixturePath,
+        '--binding-integration-dir',
+        bindingDir,
+        '--out',
+        outDir,
+        '--capture-id',
+        'g3-cli-success',
+        '--repository-sha',
+        CAPTURE_SHA,
+      ],
+      {
+        loadLiveSnapshot: async () => {
+          dbCalls += 1;
+          throw new Error('db_should_not_open');
+        },
+        stdout: (chunk) => {
+          lines.push(String(chunk));
+        },
+        stderr: () => undefined,
+        now: () => new Date(T_PUB),
+      }
+    );
+    expect(dbCalls).toBe(0);
+    expect(code).toBe(0);
+    const report = JSON.parse(lines.join(''));
+    expect(report.bindingIntegrationEvidencePresent).toBe(true);
+    expect(report.bindingEvidenceAccepted).toBe(true);
+    expect(report.liveAccepted).toBe(false);
+    expect(report.eligibilityAccepted).toBe(true);
+    const sealedEvidence = JSON.parse(
+      fs.readFileSync(
+        path.join(outDir, 'g3-cli-success', ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER),
+        'utf8'
+      )
+    );
+    expect(sealedEvidence.ok).toBe(true);
+    expect(sealedEvidence.producers).toEqual({
+      lifecycleProducerSha: PRODUCER_SHA,
+      bindingObserverSha: OBSERVER_SHA,
+      captureProducerSha: CAPTURE_SHA,
+    });
+    expect(sealedEvidence.evidenceBytes.zipBytesPin.retrieval).toContain('archive.zip');
+
+    const rejectBindingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'g3-cli-rej-'));
+    writeBindingFixturePackage(rejectBindingDir, {
+      binding: built.binding,
+      trustedAcceptance: { ...trust, approvedReceiptDigest: 'a'.repeat(64) },
+    });
+    const rejectOut = fs.mkdtempSync(path.join(os.tmpdir(), 'g3-cli-rej-out-'));
+    const rejectLines: string[] = [];
+    const rejectCode = await runMlCal1Cli(
+      [
+        '--season',
+        '2026',
+        '--week',
+        '7',
+        '--fixture',
+        fixturePath,
+        '--binding-integration-dir',
+        rejectBindingDir,
+        '--out',
+        rejectOut,
+        '--capture-id',
+        'g3-cli-reject',
+        '--repository-sha',
+        CAPTURE_SHA,
+      ],
+      {
+        loadLiveSnapshot: async () => {
+          throw new Error('db_should_not_open');
+        },
+        stdout: (chunk) => {
+          rejectLines.push(String(chunk));
+        },
+        stderr: () => undefined,
+        now: () => new Date(T_PUB),
+      }
+    );
+    expect(rejectCode).not.toBe(0);
+    const rejectReport = JSON.parse(rejectLines.join(''));
+    expect(rejectReport.bindingIntegrationEvidencePresent).toBe(true);
+    expect(rejectReport.bindingEvidenceAccepted).toBe(false);
+    expect(rejectReport.liveAccepted).toBe(false);
+    const rejectEvidence = JSON.parse(
+      fs.readFileSync(
+        path.join(rejectOut, 'g3-cli-reject', ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER),
+        'utf8'
+      )
+    );
+    expect(rejectEvidence.ok).toBe(false);
+    expect(rejectEvidence.reasons.length).toBeGreaterThan(0);
+
+    expect(() =>
+      parseMlCal1CliArgs([
+        '--season',
+        '2026',
+        '--week',
+        '7',
+        '--fixture',
+        fixturePath,
+        '--binding-integration-dir',
+        bindingDir,
+        '--lifecycle-receipt',
+        'x.json',
+      ])
+    ).toThrow(/g3_binding_integration_rejects_parallel_receipt_path/);
+
+    let parallelDbCalls = 0;
+    const parallelCode = await runMlCal1Cli(
+      [
+        '--season',
+        '2026',
+        '--week',
+        '7',
+        '--fixture',
+        fixturePath,
+        '--binding-integration-dir',
+        bindingDir,
+        '--lifecycle-receipt',
+        'x.json',
+        '--out',
+        fs.mkdtempSync(path.join(os.tmpdir(), 'g3-cli-par-')),
+      ],
+      {
+        loadLiveSnapshot: async () => {
+          parallelDbCalls += 1;
+          throw new Error('db_should_not_open');
+        },
+        stderr: () => undefined,
+      }
+    );
+    expect(parallelCode).not.toBe(0);
+    expect(parallelDbCalls).toBe(0);
   });
 });

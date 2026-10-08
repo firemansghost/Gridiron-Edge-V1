@@ -443,6 +443,16 @@ export interface MlCal1CaptureEnvelope {
     verifiedReceiptDigest: string | null;
     expectedRatingFingerprint: string | null;
   };
+  /**
+   * Present when the capture was sealed via G3 binding-integration wiring.
+   * Points at the manifested binding-integration-evidence member.
+   */
+  bindingIntegrationAudit?: {
+    schemaVersion: string;
+    used: true;
+    evidenceMember: string;
+    outcome: 'accepted' | 'rejected';
+  } | null;
   counts: MlCal1Counts;
 }
 
@@ -476,6 +486,11 @@ export interface MlCal1ArtifactBundle {
     spread: MlCal1SpreadMarketEvidence[];
     candidateRejectionLedger: MlCal1RejectionLedgerEntry[];
   };
+  /**
+   * Optional G3 binding-integration audit payload. When present it is sealed
+   * as a manifested member and must correspond to envelope + inputs.
+   */
+  bindingIntegrationEvidence?: Record<string, unknown> | null;
 }
 
 export interface MlCal1FixtureInput {
@@ -2283,6 +2298,9 @@ export function planMlCal1Capture(
 // ---------------------------------------------------------------------------
 
 export const ML_CAL_1_BLOCKED_RECEIPT_MEMBER = 'primary-readiness-blocked.json';
+/** Manifested G3 binding-integration audit member (keep in sync with fixture helper). */
+export const ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER =
+  'binding-integration-evidence.json' as const;
 
 export function buildPrimaryReadinessBlockedReceiptBody(bundle: MlCal1ArtifactBundle): string {
   const env = bundle.envelope;
@@ -2314,6 +2332,11 @@ export function buildArtifactMembers(bundle: MlCal1ArtifactBundle): Record<strin
   };
   if (bundle.envelope.primaryReadinessBlocked) {
     members[ML_CAL_1_BLOCKED_RECEIPT_MEMBER] = buildPrimaryReadinessBlockedReceiptBody(bundle);
+  }
+  if (bundle.bindingIntegrationEvidence != null) {
+    members[ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER] = `${stableStringify(
+      bundle.bindingIntegrationEvidence
+    )}\n`;
   }
   return members;
 }
@@ -2537,6 +2560,14 @@ export interface MlCal1TerminalReadResult {
    * Unverified terminals never grant accepted eligibility.
    */
   eligibilityAccepted: boolean;
+  /** True when a manifested binding-integration-evidence member was verified. */
+  bindingIntegrationEvidencePresent: boolean;
+  /**
+   * True only when independently verified, evidence present+ok, and
+   * correspondence to the sealed capture holds. Rejected or missing evidence
+   * never grants binding acceptance.
+   */
+  bindingEvidenceAccepted: boolean;
   primaryReadinessBlockedEffective: boolean;
   integrityNotes: string[];
   publicationTime: string;
@@ -2665,6 +2696,7 @@ export function readCaptureTerminalResult(
   const universe = parseMember<MlCal1ArtifactBundle['universe']>('universe.json');
   const forecasts = parseMember<MlCal1ArtifactBundle['forecasts']>('forecasts.json');
   const markets = parseMember<MlCal1ArtifactBundle['markets']>('markets.json');
+  const inputs = parseMember<MlCal1ArtifactBundle['inputs']>('inputs.json');
 
   if (envelope.captureId !== options.captureId) {
     throw new Error('envelope_capture_id_mismatch');
@@ -2679,12 +2711,41 @@ export function readCaptureTerminalResult(
     throw new Error('sealed_blocked_receipt_member_missing');
   }
 
+  const auditUsed = envelope.bindingIntegrationAudit?.used === true;
+  const evidenceBody = verifiedBodies[ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER];
+  if (auditUsed && !evidenceBody) {
+    throw new Error('binding_integration_evidence_missing');
+  }
+  if (!auditUsed && evidenceBody) {
+    throw new Error('binding_integration_evidence_unexpected_without_audit');
+  }
+  let bindingIntegrationEvidence: Record<string, unknown> | null = null;
+  if (evidenceBody) {
+    try {
+      bindingIntegrationEvidence = JSON.parse(evidenceBody.toString('utf8')) as Record<
+        string,
+        unknown
+      >;
+    } catch {
+      throw new Error('binding_integration_evidence_unparseable');
+    }
+    // Dynamic require avoids a static cycle (fixture helper imports the planner).
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fixtureMod = require('./ml-cal-1-capture-binding-fixture') as typeof import('./ml-cal-1-capture-binding-fixture');
+    fixtureMod.assertBindingIntegrationEvidenceCorrespondence({
+      envelope,
+      ratingFingerprint: inputs.ratingFingerprint,
+      evidence: bindingIntegrationEvidence as unknown as import('./ml-cal-1-capture-binding-fixture').MlCal1BindingIntegrationEvidenceV1,
+    });
+  }
+
   const sealedBundle: MlCal1ArtifactBundle = {
     envelope,
     universe,
-    inputs: parseMember('inputs.json'),
+    inputs,
     forecasts,
     markets,
+    bindingIntegrationEvidence,
   };
   const recomputedSealedCounts = computeCounts(
     universe.rows,
@@ -2878,6 +2939,15 @@ export function readCaptureTerminalResult(
   // Unverified packages and any non-EVIDENCE_CAPTURED terminal never grant acceptance.
   const primaryReadinessBlockedEffective = !eligibilityAccepted;
 
+  const bindingIntegrationEvidencePresent = bindingIntegrationEvidence != null;
+  const bindingEvidenceAccepted =
+    independentlyVerifiedIntegrity &&
+    bindingIntegrationEvidencePresent &&
+    bindingIntegrationEvidence?.ok === true &&
+    envelope.lifecycleQualification.qualified === true &&
+    envelope.lifecycleQualification.liveAccepted === false &&
+    envelope.bindingIntegrationAudit?.outcome === 'accepted';
+
   return {
     terminalStatus: derivedStatus,
     sealedStatus: envelope.status,
@@ -2894,6 +2964,8 @@ export function readCaptureTerminalResult(
     structuralConsistencyVerified,
     independentlyVerifiedIntegrity,
     eligibilityAccepted,
+    bindingIntegrationEvidencePresent,
+    bindingEvidenceAccepted,
     primaryReadinessBlockedEffective,
     integrityNotes,
     publicationTime: terminal.publicationTime,
@@ -2949,6 +3021,16 @@ export function writeCaptureArtifactsAtomic(options: {
   // Seal-time capture id is authoritative for the package (CLI may override fixture id).
   finalized.envelope.captureId = options.captureId;
   finalized.envelope.dependencyHashes = options.dependencyHashes;
+  if (
+    finalized.bindingIntegrationEvidence != null &&
+    typeof finalized.bindingIntegrationEvidence === 'object' &&
+    !Array.isArray(finalized.bindingIntegrationEvidence)
+  ) {
+    finalized.bindingIntegrationEvidence = {
+      ...finalized.bindingIntegrationEvidence,
+      captureId: options.captureId,
+    };
+  }
 
   // 3. All members (including the blocked receipt when blocked) enter the manifest.
   const members = buildArtifactMembers(finalized);
