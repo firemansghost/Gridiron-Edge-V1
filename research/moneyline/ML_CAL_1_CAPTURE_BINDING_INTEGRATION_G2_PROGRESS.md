@@ -18,7 +18,8 @@ Clean tree at reviewed head except this note. F1–F4 had not been implemented.
 - [x] F4 exported-row hash/identity/cohort checks before fingerprint trust
 - [x] Regressions + required PACKAGE_INDEX
 - [x] Local jest: 20 passed
-- [ ] Commit, push, observe G2 CI
+- [x] Pushed repair commit `5254aa90a6de00c70bca6439fd1be439b77a941d`
+- [x] Observed G2 CI success on that SHA: run 37809014532
 
 ## Local test
 
@@ -28,8 +29,9 @@ npx jest --runInBand --runTestsByPath \
 → 20 passed
 ```
 
-## Next
+## Observed CI
 
-Commit and push to existing PR #247. Observe workflow `Test ML-CAL-1 Capture-Binding Integration G2`.
+https://github.com/firemansghost/Gridiron-Edge-V1/actions/runs/37809014532
+head `5254aa90a6de00c70bca6439fd1be439b77a941d` — success.
 
 Acceptance remains pending independent re-review.
