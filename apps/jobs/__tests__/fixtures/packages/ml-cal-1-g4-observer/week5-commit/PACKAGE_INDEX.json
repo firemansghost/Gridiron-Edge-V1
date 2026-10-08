@@ -1,0 +1,28 @@
+{
+  "packageId": "ml-cal-1-lifecycle-binding-week5-commit",
+  "kind": "fixture-archive-pin",
+  "provenance": "test-only",
+  "liveAccepted": false,
+  "note": "Real Week 5 COMMIT archive bytes for integrity-positive / full-weight-negative tests. Not live-accepted evidence.",
+  "workflowRunId": "37336589699",
+  "artifactId": "11356512878",
+  "lifecycleProducerSha": "ee436b910177bbf2120b9ab6bf2551197d739129",
+  "members": {
+    "archive.zip": {
+      "sha256": "b0177de089237876c2e258fb97d84af3803ef7d1e7402cae853670ee8a6cd316",
+      "byteCount": 7284
+    },
+    "core-v1-lifecycle-2026-through-week-5-COMMIT.json": {
+      "sha256": "c20b789ce45b58362a23b2ab2a69184fda2a39377c99d58db6268376b79a2e1e",
+      "byteCount": 32978
+    }
+  },
+  "claims": {
+    "season": 2026,
+    "completedThroughWeek": 5,
+    "selectedPolicy": "GLOBAL_BLEND_W3_W6",
+    "canonicalWeight": 0.75,
+    "modelVersion": "v1",
+    "rowCount": 138
+  }
+}
