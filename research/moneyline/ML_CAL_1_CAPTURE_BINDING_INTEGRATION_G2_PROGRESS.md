@@ -22,8 +22,8 @@
 - [x] Synthetic Week 6 fixture package + authentic Week 5 unchanged
 - [x] Focused integration tests (15 local PASS)
 - [x] Runbook + secret-free Linux CI workflow
-- [ ] Push + open separate draft PR
-- [ ] Observe CI result
+- [x] Push + open separate draft PR #247
+- [x] Observe CI: G2 workflow success (run 37783008213)
 
 ## Local test result (2026-10-08)
 
@@ -32,6 +32,12 @@ npx jest --runInBand --runTestsByPath \
   apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts
 → Test Suites: 1 passed; Tests: 15 passed
 ```
+
+## Observed CI (draft PR #247 @ fa7d629)
+
+- Test ML-CAL-1 Capture-Binding Integration G2: success
+- Binding V1 / Capture V1 / Prisma Schema Guardrails: success
+- URL: https://github.com/firemansghost/Gridiron-Edge-V1/pull/247
 
 ## Fixture digests
 
