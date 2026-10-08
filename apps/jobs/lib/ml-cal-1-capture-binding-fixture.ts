@@ -20,10 +20,12 @@ import {
   type MlCal1ProducerIdentities,
 } from './ml-cal-1-capture-binding-integration';
 import {
+  ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER,
+  ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_SCHEMA,
+  assertBindingIntegrationEvidenceCorrespondence,
   planMlCal1Capture,
   sha256Utf8Bytes,
   type MlCal1ArtifactBundle,
-  type MlCal1CaptureEnvelope,
   type MlCal1FixtureInput,
   type MlCal1PlanOptions,
   type MlCal1PlanResult,
@@ -31,10 +33,11 @@ import {
 } from './ml-cal-1-capture';
 import type { MlCal1LifecycleBindingVerifyInput } from './ml-cal-1-lifecycle-binding';
 
-export const ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_SCHEMA =
-  'ml-cal-1-binding-integration-evidence-v1' as const;
-export const ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER =
-  'binding-integration-evidence.json' as const;
+export {
+  ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER,
+  ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_SCHEMA,
+  assertBindingIntegrationEvidenceCorrespondence,
+};
 
 export interface MlCal1BindingFixtureRequest {
   binding: MlCal1LifecycleBindingVerifyInput;
@@ -395,169 +398,6 @@ export function attachBindingIntegrationEvidence(
     bindingIntegrationEvidence: evidence as unknown as Record<string, unknown>,
   };
   return next;
-}
-
-/**
- * Fail-closed correspondence + embedded-byte integrity checks.
- * Throws on missing/tampered/mismatched evidence when the capture claims
- * binding-integration audit use.
- */
-export function assertBindingIntegrationEvidenceCorrespondence(options: {
-  envelope: MlCal1CaptureEnvelope;
-  ratingFingerprint: string;
-  evidence: MlCal1BindingIntegrationEvidenceV1 | null | undefined;
-}): void {
-  const audit = options.envelope.bindingIntegrationAudit;
-  const used = audit?.used === true;
-  if (!used && options.evidence == null) return;
-  if (used && options.evidence == null) {
-    throw new Error('binding_integration_evidence_missing');
-  }
-  if (!used && options.evidence != null) {
-    throw new Error('binding_integration_evidence_unexpected_without_audit');
-  }
-  const evidence = options.evidence!;
-  if (evidence.schemaVersion !== ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_SCHEMA) {
-    throw new Error('binding_integration_evidence_schema_mismatch');
-  }
-  if (evidence.kind !== 'binding-integration-evidence') {
-    throw new Error('binding_integration_evidence_kind_invalid');
-  }
-  if (audit?.evidenceMember !== ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_MEMBER) {
-    throw new Error('binding_integration_evidence_member_name_mismatch');
-  }
-  if (audit?.schemaVersion !== ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_SCHEMA) {
-    throw new Error('binding_integration_audit_schema_mismatch');
-  }
-  if ((audit?.outcome === 'accepted') !== evidence.ok) {
-    throw new Error('binding_integration_audit_outcome_mismatch');
-  }
-  if (evidence.captureId !== options.envelope.captureId) {
-    throw new Error('binding_integration_evidence_capture_id_mismatch');
-  }
-  if (evidence.season !== options.envelope.season || evidence.week !== options.envelope.week) {
-    throw new Error('binding_integration_evidence_season_week_mismatch');
-  }
-  if (evidence.snapshotReferenceTime !== options.envelope.snapshotReferenceTime) {
-    throw new Error('binding_integration_evidence_as_of_mismatch');
-  }
-  if (evidence.producers.captureProducerSha !== options.envelope.producerRepositorySha) {
-    throw new Error('binding_integration_evidence_capture_producer_mismatch');
-  }
-  if (evidence.liveAccepted !== false || evidence.fixtureProvenanceRetained !== true) {
-    throw new Error('binding_integration_evidence_fixture_provenance_violation');
-  }
-  if (options.envelope.lifecycleQualification.liveAccepted !== false) {
-    throw new Error('binding_integration_evidence_envelope_live_accepted_violation');
-  }
-
-  // Embedded byte integrity (exact verification bytes).
-  const eb = evidence.evidenceBytes;
-  if (sha256Utf8Bytes(eb.sidecarUtf8) !== eb.sidecarSha256) {
-    throw new Error('binding_integration_evidence_sidecar_bytes_digest_mismatch');
-  }
-  if (eb.registryDocumentUtf8 != null) {
-    if (sha256Utf8Bytes(eb.registryDocumentUtf8) !== eb.registryDocumentSha256) {
-      throw new Error('binding_integration_evidence_registry_bytes_digest_mismatch');
-    }
-  } else if (eb.registryDocumentSha256 != null) {
-    throw new Error('binding_integration_evidence_registry_bytes_missing');
-  }
-  if (eb.lineageAttestationUtf8 != null) {
-    if (sha256Utf8Bytes(eb.lineageAttestationUtf8) !== eb.lineageAttestationSha256) {
-      throw new Error('binding_integration_evidence_lineage_bytes_digest_mismatch');
-    }
-  } else if (eb.lineageAttestationSha256 != null) {
-    throw new Error('binding_integration_evidence_lineage_bytes_missing');
-  }
-  if (eb.adaptedReceiptUtf8 != null) {
-    if (sha256Utf8Bytes(eb.adaptedReceiptUtf8) !== eb.adaptedReceiptSha256) {
-      throw new Error('binding_integration_evidence_adapted_receipt_bytes_digest_mismatch');
-    }
-  } else if (eb.adaptedReceiptSha256 != null) {
-    throw new Error('binding_integration_evidence_adapted_receipt_bytes_missing');
-  }
-  if (eb.zipBytesPin.sha256 !== eb.zipSha256 || eb.zipBytesPin.byteCount < 1) {
-    throw new Error('binding_integration_evidence_zip_pin_invalid');
-  }
-  if (
-    eb.reportMemberBytesPin.sha256 !== eb.reportMemberSha256 ||
-    eb.reportMemberBytesPin.byteCount < 1
-  ) {
-    throw new Error('binding_integration_evidence_report_pin_invalid');
-  }
-  if (eb.sidecarSha256 !== evidence.binding.sidecarDigest && evidence.binding.sidecarDigest != null) {
-    throw new Error('binding_integration_evidence_sidecar_digest_disagreement');
-  }
-
-  // Approval anchor pins must agree with embedded digests when present.
-  const anchors = evidence.approvalAnchors;
-  if (
-    anchors.approvedRegistryDocumentDigest != null &&
-    eb.registryDocumentSha256 != null &&
-    anchors.approvedRegistryDocumentDigest !== eb.registryDocumentSha256
-  ) {
-    throw new Error('binding_integration_evidence_registry_anchor_mismatch');
-  }
-  if (
-    anchors.approvedLineageAttestationDigest != null &&
-    eb.lineageAttestationSha256 != null &&
-    anchors.approvedLineageAttestationDigest !== eb.lineageAttestationSha256
-  ) {
-    throw new Error('binding_integration_evidence_lineage_anchor_mismatch');
-  }
-  if (anchors.expectedZipSha256 !== eb.zipSha256) {
-    throw new Error('binding_integration_evidence_zip_anchor_mismatch');
-  }
-  if (anchors.expectedReportMemberSha256 !== eb.reportMemberSha256) {
-    throw new Error('binding_integration_evidence_report_anchor_mismatch');
-  }
-
-  // Fingerprint correspondence to sealed inputs.
-  // Declared bundle inputs must always match the sealed member when recorded.
-  // Recomputed may intentionally disagree on rejected captures (retained as audit).
-  if (
-    evidence.fingerprints.declaredBundleInputs != null &&
-    evidence.fingerprints.declaredBundleInputs !== options.ratingFingerprint
-  ) {
-    throw new Error('binding_integration_evidence_fingerprint_inputs_mismatch');
-  }
-
-  // Lifecycle correspondence.
-  const lq = options.envelope.lifecycleQualification;
-  if (evidence.ok) {
-    if (!lq.qualified) {
-      throw new Error('binding_integration_evidence_ok_but_envelope_unqualified');
-    }
-    if (evidence.lifecycle == null || !evidence.lifecycle.qualified) {
-      throw new Error('binding_integration_evidence_ok_but_nested_lifecycle_unqualified');
-    }
-    if (evidence.lifecycle.liveAccepted) {
-      throw new Error('binding_integration_evidence_nested_live_accepted_violation');
-    }
-    if (
-      evidence.fingerprints.captureRecomputed != null &&
-      evidence.fingerprints.captureRecomputed !== options.ratingFingerprint
-    ) {
-      throw new Error('binding_integration_evidence_fingerprint_recomputed_mismatch');
-    }
-    if (
-      evidence.producers.lifecycleProducerSha == null ||
-      evidence.producers.bindingObserverSha == null
-    ) {
-      throw new Error('binding_integration_evidence_producer_identities_incomplete');
-    }
-    if (options.envelope.lifecycleSourceSha !== evidence.producers.lifecycleProducerSha) {
-      throw new Error('binding_integration_evidence_lifecycle_source_sha_mismatch');
-    }
-  } else {
-    if (lq.qualified) {
-      throw new Error('binding_integration_evidence_rejected_but_envelope_qualified');
-    }
-    if (evidence.lifecycle != null && evidence.lifecycle.qualified) {
-      throw new Error('binding_integration_evidence_rejected_but_nested_lifecycle_qualified');
-    }
-  }
 }
 
 export interface MlCal1BindingFixtureAnchors {

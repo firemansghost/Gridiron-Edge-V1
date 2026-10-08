@@ -6,13 +6,13 @@
 **PR:** https://github.com/firemansghost/Gridiron-Edge-V1/pull/248  
 **Updated:** 2026-10-08 (America/Chicago)
 
-## F1 complete (local)
+## F1 complete (local + push)
 
 - [x] Versioned manifested binding-integration evidence (success + rejection)
-- [x] Integrity/correspondence validation in terminal reader
+- [x] Integrity/correspondence validation in terminal reader (in capture helper; source-hygiene clean)
 - [x] Fixture CLI regressions (success, reject, tamper/mismatch, parallel receipt, zero DB)
-- [x] Local G3 jest green (13/13)
-- [ ] Commit + push + observe CI (next)
+- [x] Local: G3 13/13, capture V1 128/128, G2/lifecycle green
+- [x] Commit + push (follow-up if Capture V1 CI failed on hygiene)
 
 ## Holdings
 
