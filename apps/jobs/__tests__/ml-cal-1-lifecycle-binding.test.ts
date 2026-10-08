@@ -1274,5 +1274,150 @@ describe('ml-cal-1-lifecycle-binding (offline)', () => {
         false
       );
     });
+
+    function reapproveSyntheticSidecar(
+      bundle: ReturnType<typeof buildSyntheticFullWeightBundle>,
+      sidecar: MlCal1LifecycleBindingSidecarV1
+    ) {
+      const sidecarBytes = serializeSidecar(sidecar);
+      const registry = makeRegistryDoc({
+        note: 'test-only',
+        approvedSidecarDigest: sha256Utf8Bytes(sidecarBytes),
+        approvedZipSha256: bundle.archive.zipSha256,
+        approvedReportMemberSha256: bundle.archive.memberSha256,
+        approvedLifecycleProducerSha: PRODUCER_SHA,
+        approvedBindingObserverSha: OBSERVER_SHA,
+        approvedRatingFingerprint: fingerprintForSidecar(sidecar),
+        approvedSeason: 2026,
+        approvedCompletedThroughWeek: 6,
+        approvedSelectedPolicy: ML_CAL_1_BINDING_POLICY,
+        approvedCanonicalWeight: 1,
+        approvedProspectiveTargetWeek: 7,
+      });
+      const att = makeAttestation({
+        sidecarDigest: sha256Utf8Bytes(sidecarBytes),
+        registrySha256: registry.digest,
+      });
+      return {
+        verifyInput: {
+          ...bundle.verifyInput,
+          sidecarBytes,
+          registryPin: registry.pin,
+          registryDocumentBytes: registry.bytes,
+          approvedRegistryDocumentDigest: registry.approvedRegistryDocumentDigest,
+          lineageAttestationBytes: att.bytes,
+          approvedLineageAttestationDigest: att.approvedLineageAttestationDigest,
+          approvedLineageInventorySha256: att.approvedLineageInventorySha256,
+        },
+      };
+    }
+
+    it('F2-A: acceptedArchive.declaredSeason mismatch vetoes', () => {
+      const bundle = buildSyntheticFullWeightBundle();
+      const sidecar = JSON.parse(bundle.sidecarBytes) as MlCal1LifecycleBindingSidecarV1;
+      sidecar.acceptedArchive.declaredSeason = 2025;
+      const { verifyInput } = reapproveSyntheticSidecar(bundle, sidecar);
+      const result = verifyLifecycleBindingSidecar(verifyInput);
+      expect(result.reasons).toContain('acceptedArchive_declaredSeason_mismatch');
+      expect(result.structuralConsistencyVerified).toBe(false);
+      expect(result.fullWeightEligible).toBe(false);
+      expect(result.liveQualifying).toBe(false);
+      expect(result.liveAccepted).toBe(false);
+    });
+
+    it('F2-A: acceptedArchive.declaredCompletedThroughWeek mismatch vetoes', () => {
+      const bundle = buildSyntheticFullWeightBundle();
+      const sidecar = JSON.parse(bundle.sidecarBytes) as MlCal1LifecycleBindingSidecarV1;
+      sidecar.acceptedArchive.declaredCompletedThroughWeek = 5;
+      const { verifyInput } = reapproveSyntheticSidecar(bundle, sidecar);
+      const result = verifyLifecycleBindingSidecar(verifyInput);
+      expect(result.reasons).toContain(
+        'acceptedArchive_declaredCompletedThroughWeek_mismatch'
+      );
+      expect(result.structuralConsistencyVerified).toBe(false);
+      expect(result.liveQualifying).toBe(false);
+    });
+
+    it('F2-A: acceptedArchive.declaredSelectedPolicy mismatch vetoes', () => {
+      const bundle = buildSyntheticFullWeightBundle();
+      const sidecar = JSON.parse(bundle.sidecarBytes) as MlCal1LifecycleBindingSidecarV1;
+      sidecar.acceptedArchive.declaredSelectedPolicy = 'WRONG';
+      const { verifyInput } = reapproveSyntheticSidecar(bundle, sidecar);
+      const result = verifyLifecycleBindingSidecar(verifyInput);
+      expect(result.reasons).toContain(
+        'acceptedArchive_declaredSelectedPolicy_mismatch'
+      );
+      expect(result.structuralConsistencyVerified).toBe(false);
+      expect(result.liveQualifying).toBe(false);
+    });
+
+    it('F2-A: acceptedArchive.declaredCanonicalWeight mismatch vetoes', () => {
+      const bundle = buildSyntheticFullWeightBundle();
+      const sidecar = JSON.parse(bundle.sidecarBytes) as MlCal1LifecycleBindingSidecarV1;
+      sidecar.acceptedArchive.declaredCanonicalWeight = 0.75;
+      const { verifyInput } = reapproveSyntheticSidecar(bundle, sidecar);
+      const result = verifyLifecycleBindingSidecar(verifyInput);
+      expect(result.reasons).toContain(
+        'acceptedArchive_declaredCanonicalWeight_mismatch'
+      );
+      expect(result.structuralConsistencyVerified).toBe(false);
+      expect(result.liveQualifying).toBe(false);
+    });
+
+    it('F2-A: valid-mirror declarations remain qualifying (fixture liveAccepted=false)', () => {
+      const bundle = buildSyntheticFullWeightBundle();
+      const sidecar = JSON.parse(bundle.sidecarBytes) as MlCal1LifecycleBindingSidecarV1;
+      sidecar.acceptedArchive.declaredSeason = 2026;
+      sidecar.acceptedArchive.declaredCompletedThroughWeek = 6;
+      sidecar.acceptedArchive.declaredSelectedPolicy = ML_CAL_1_BINDING_POLICY;
+      sidecar.acceptedArchive.declaredCanonicalWeight = 1;
+      const { verifyInput } = reapproveSyntheticSidecar(bundle, sidecar);
+      const result = verifyLifecycleBindingSidecar(verifyInput);
+      expect(result.structuralConsistencyVerified).toBe(true);
+      expect(result.fullWeightEligible).toBe(true);
+      expect(result.liveQualifying).toBe(true);
+      expect(result.liveAccepted).toBe(false);
+      expect(result.fixtureProvenanceRetained).toBe(true);
+      expect(
+        result.reasons.some((r) => r.startsWith('acceptedArchive_declared'))
+      ).toBe(false);
+    });
+
+    it('F2-B: missing supersedingArtifacts fails closed', () => {
+      const bundle = buildSyntheticFullWeightBundle();
+      const attObj = JSON.parse(bundle.att.bytes) as Record<string, unknown>;
+      delete attObj.supersedingArtifacts;
+      const attBytes = canonicalReceiptBytes(attObj);
+      const result = verifyLifecycleBindingSidecar({
+        ...bundle.verifyInput,
+        lineageAttestationBytes: attBytes,
+        approvedLineageAttestationDigest: sha256Utf8Bytes(attBytes),
+      });
+      expect(result.reasons).toContain('lineage_superseding_artifacts_invalid');
+      expect(result.recomputed.lineageOk).toBe(false);
+      expect(result.liveQualifying).toBe(false);
+      expect(result.liveAccepted).toBe(false);
+    });
+
+    it('F2-B: non-array supersedingArtifacts object fails closed (evidence not ignored)', () => {
+      const bundle = buildSyntheticFullWeightBundle();
+      const attObj = JSON.parse(bundle.att.bytes) as Record<string, unknown>;
+      attObj.supersedingArtifacts = {
+        workflowRunId: '999',
+        zipSha256: 'f'.repeat(64),
+        completedThroughWeek: 7,
+        artifactCreatedAt: T_ART,
+      };
+      const attBytes = canonicalReceiptBytes(attObj);
+      const result = verifyLifecycleBindingSidecar({
+        ...bundle.verifyInput,
+        lineageAttestationBytes: attBytes,
+        approvedLineageAttestationDigest: sha256Utf8Bytes(attBytes),
+      });
+      expect(result.reasons).toContain('lineage_superseding_artifacts_invalid');
+      expect(result.recomputed.lineageOk).toBe(false);
+      expect(result.liveQualifying).toBe(false);
+      expect(result.liveAccepted).toBe(false);
+    });
   });
 });

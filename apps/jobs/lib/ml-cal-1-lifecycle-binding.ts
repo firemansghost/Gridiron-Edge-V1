@@ -1287,6 +1287,46 @@ export function verifyLifecycleBindingSidecar(
     reasons.push('report_member_path_mismatch');
   }
 
+  // F2-A: optional acceptedArchive declarations must match recomputed report when present.
+  const archiveDecls = sidecar.acceptedArchive;
+  if (archiveDecls) {
+    if ('declaredSeason' in archiveDecls) {
+      if (
+        typeof archiveDecls.declaredSeason !== 'number' ||
+        !Number.isInteger(archiveDecls.declaredSeason) ||
+        archiveDecls.declaredSeason !== report.season
+      ) {
+        reasons.push('acceptedArchive_declaredSeason_mismatch');
+      }
+    }
+    if ('declaredCompletedThroughWeek' in archiveDecls) {
+      if (
+        typeof archiveDecls.declaredCompletedThroughWeek !== 'number' ||
+        !Number.isInteger(archiveDecls.declaredCompletedThroughWeek) ||
+        archiveDecls.declaredCompletedThroughWeek !== report.completedThroughWeek
+      ) {
+        reasons.push('acceptedArchive_declaredCompletedThroughWeek_mismatch');
+      }
+    }
+    if ('declaredSelectedPolicy' in archiveDecls) {
+      if (
+        typeof archiveDecls.declaredSelectedPolicy !== 'string' ||
+        archiveDecls.declaredSelectedPolicy !== report.selectedPolicy
+      ) {
+        reasons.push('acceptedArchive_declaredSelectedPolicy_mismatch');
+      }
+    }
+    if ('declaredCanonicalWeight' in archiveDecls) {
+      if (
+        typeof archiveDecls.declaredCanonicalWeight !== 'number' ||
+        !Number.isFinite(archiveDecls.declaredCanonicalWeight) ||
+        archiveDecls.declaredCanonicalWeight !== recomputedWeight
+      ) {
+        reasons.push('acceptedArchive_declaredCanonicalWeight_mismatch');
+      }
+    }
+  }
+
   // --- O1 / O2 timing ---
   const tObs0 = parseIsoMs(obs?.observationStartTime);
   const tSnap = parseIsoMs(obs?.bindingSnapshotReferenceTime);
@@ -1438,6 +1478,10 @@ export function verifyLifecycleBindingSidecar(
     !reasons.includes('sidecar_declared_member_digest_mismatch') &&
     !reasons.includes('lifecycle_producer_sha_mismatch') &&
     !reasons.includes('report_byte_count_mismatch') &&
+    !reasons.includes('acceptedArchive_declaredSeason_mismatch') &&
+    !reasons.includes('acceptedArchive_declaredCompletedThroughWeek_mismatch') &&
+    !reasons.includes('acceptedArchive_declaredSelectedPolicy_mismatch') &&
+    !reasons.includes('acceptedArchive_declaredCanonicalWeight_mismatch') &&
     !reasons.some(
       (r) =>
         r.startsWith('row_timestamp_invalid:') ||
@@ -1831,16 +1875,43 @@ export function verifyLifecycleBindingSidecar(
         reasons.push('lineage_attestation_registry_id_mismatch');
       }
 
-      if (attestation.searchOutcome === 'superseded') {
-        reasons.push('binding_invalidated_by_later_lifecycle');
-      } else if (attestation.searchOutcome !== 'none_found') {
-        reasons.push('lineage_search_outcome_invalid');
-      }
-      if (
-        attestation.searchOutcome === 'none_found' &&
-        (attestation.supersedingArtifacts?.length ?? 0) > 0
-      ) {
-        reasons.push('binding_invalidated_by_later_lifecycle');
+      // F2-B: supersedingArtifacts must be an explicit array (missing/object/scalar fail closed).
+      const supersedingRaw = (raw as { supersedingArtifacts?: unknown })
+        .supersedingArtifacts;
+      let supersedingOk = false;
+      if (!Array.isArray(supersedingRaw)) {
+        reasons.push('lineage_superseding_artifacts_invalid');
+      } else {
+        if (attestation.searchOutcome === 'superseded') {
+          reasons.push('binding_invalidated_by_later_lifecycle');
+          if (supersedingRaw.length === 0) {
+            reasons.push('lineage_superseding_artifacts_empty_when_superseded');
+          } else {
+            for (const entry of supersedingRaw) {
+              if (entry == null || typeof entry !== 'object' || Array.isArray(entry)) {
+                reasons.push('lineage_superseding_artifact_entry_invalid');
+                break;
+              }
+              const e = entry as Record<string, unknown>;
+              if (
+                typeof e.workflowRunId !== 'string' ||
+                e.workflowRunId.trim() === '' ||
+                !isNonEmptyHex64(e.zipSha256) ||
+                !Number.isInteger(e.completedThroughWeek)
+              ) {
+                reasons.push('lineage_superseding_artifact_entry_invalid');
+                break;
+              }
+            }
+          }
+        } else if (attestation.searchOutcome !== 'none_found') {
+          reasons.push('lineage_search_outcome_invalid');
+        } else if (supersedingRaw.length !== 0) {
+          // none_found requires an explicit empty array; nonempty blocks.
+          reasons.push('binding_invalidated_by_later_lifecycle');
+        } else {
+          supersedingOk = true;
+        }
       }
 
       lineageOk =
@@ -1849,7 +1920,9 @@ export function verifyLifecycleBindingSidecar(
           ML_CAL_1_LIFECYCLE_BINDING_LINEAGE_ATTESTATION_SCHEMA &&
         attestation.kind === 'lifecycle-binding-lineage-attestation' &&
         attestation.searchOutcome === 'none_found' &&
-        (attestation.supersedingArtifacts?.length ?? 0) === 0 &&
+        supersedingOk &&
+        Array.isArray(supersedingRaw) &&
+        supersedingRaw.length === 0 &&
         attestation.approvedSidecarDigest === sidecarDigest &&
         attestation.season === report.season &&
         attestation.modelVersion === ML_CAL_1_BINDING_MODEL_VERSION &&
@@ -1878,6 +1951,9 @@ export function verifyLifecycleBindingSidecar(
         !reasons.includes('lineage_checked_through_too_early') &&
         !reasons.includes('binding_invalidated_by_later_lifecycle') &&
         !reasons.includes('lineage_search_outcome_invalid') &&
+        !reasons.includes('lineage_superseding_artifacts_invalid') &&
+        !reasons.includes('lineage_superseding_artifacts_empty_when_superseded') &&
+        !reasons.includes('lineage_superseding_artifact_entry_invalid') &&
         !reasons.includes('lineage_attestation_season_mismatch') &&
         !reasons.includes('lineage_attestation_model_mismatch');
     } catch {
