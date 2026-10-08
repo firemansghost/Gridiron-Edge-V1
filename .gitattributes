@@ -9,3 +9,13 @@ apps/jobs/__tests__/fixtures/packages/ml-cal-1-capture-binding-integration-synth
 apps/jobs/__tests__/fixtures/packages/ml-cal-1-capture-binding-integration-synthetic-w6/PACKAGE_INDEX.json binary
 apps/jobs/__tests__/fixtures/packages/ml-cal-1-demo-ontime/** binary
 apps/jobs/__tests__/fixtures/packages/ml-cal-1-demo-delayed/** binary
+
+# ML-CAL-1 G4 observer fixture packages (exact published digests).
+apps/jobs/__tests__/fixtures/packages/ml-cal-1-g4-observer/week5-commit/archive.zip binary
+apps/jobs/__tests__/fixtures/packages/ml-cal-1-g4-observer/week5-commit/core-v1-lifecycle-2026-through-week-5-COMMIT.json binary
+apps/jobs/__tests__/fixtures/packages/ml-cal-1-g4-observer/week5-commit/PACKAGE_INDEX.json binary
+apps/jobs/__tests__/fixtures/packages/ml-cal-1-g4-observer/synthetic-w6/archive.zip binary
+apps/jobs/__tests__/fixtures/packages/ml-cal-1-g4-observer/synthetic-w6/core-v1-lifecycle-2026-through-week-6-COMMIT.json binary
+apps/jobs/__tests__/fixtures/packages/ml-cal-1-g4-observer/synthetic-w6/PROVENANCE.json binary
+apps/jobs/__tests__/fixtures/packages/ml-cal-1-g4-observer/synthetic-w6/PACKAGE_INDEX.json binary
+apps/jobs/__tests__/fixtures/packages/ml-cal-1-g4-observer/synthetic-w6/generate-synthetic-w6-fixture.js binary

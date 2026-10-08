@@ -1,0 +1,83 @@
+# Validation-only CI for ML-CAL-1 G4 offline lifecycle binding observer.
+# No DB, no secrets, no providers, no production writes, no live observation.
+
+name: Test ML-CAL-1 Lifecycle Binding Observer G4
+
+on:
+  pull_request:
+    paths:
+      - 'apps/jobs/lib/ml-cal-1-lifecycle-binding-observer.ts'
+      - 'apps/jobs/lib/ml-cal-1-lifecycle-binding.ts'
+      - 'apps/jobs/lib/ml-cal-1-capture.ts'
+      - 'apps/jobs/lib/ml-cal-1-capture-binding-integration.ts'
+      - 'apps/jobs/lib/ml-cal-1-capture-binding-fixture.ts'
+      - 'apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts'
+      - 'apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts'
+      - 'apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts'
+      - 'apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts'
+      - 'apps/jobs/__tests__/fixtures/packages/ml-cal-1-g4-observer/**'
+      - 'apps/jobs/__tests__/fixtures/packages/ml-cal-1-lifecycle-binding-week5-commit/**'
+      - 'apps/jobs/__tests__/fixtures/packages/ml-cal-1-capture-binding-integration-synthetic-w6/**'
+      - 'research/moneyline/ML_CAL_1_LIFECYCLE_BINDING_OBSERVER_G4_*.md'
+      - 'research/moneyline/G4_OBSERVER_DESIGN_ACCEPTANCE_20261008.md'
+      - '.github/workflows/test-ml-cal-1-lifecycle-binding-observer-g4-v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  targeted-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run G4 observer fixture tests
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts
+
+      - name: Run accepted binding / G2 / G3 regressions
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts \
+            apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts \
+            apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts
+
+      - name: Secret-free digest + scan check
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, pathlib, re
+          root = pathlib.Path('apps/jobs/__tests__/fixtures/packages/ml-cal-1-g4-observer')
+          expected = {
+              'week5-commit/archive.zip': 'b0177de089237876c2e258fb97d84af3803ef7d1e7402cae853670ee8a6cd316',
+              'week5-commit/core-v1-lifecycle-2026-through-week-5-COMMIT.json': 'c20b789ce45b58362a23b2ab2a69184fda2a39377c99d58db6268376b79a2e1e',
+              'synthetic-w6/archive.zip': 'fc477ffdb0b3f306816988e988442f8f708304c94bbe1a6b4c336b93c8fa5d97',
+              'synthetic-w6/core-v1-lifecycle-2026-through-week-6-COMMIT.json': '2dcbfe96023bf1273ff4a385aeaa3297afb99a9b3d2da80d5f87dd8e09024dab',
+          }
+          for name, digest in expected.items():
+              got = hashlib.sha256((root / name).read_bytes()).hexdigest()
+              assert got == digest, f'{name}: {got} != {digest}'
+              print(f'ok {name} {got}')
+          secretish = re.compile(r'(?i)(api[_-]?key|secret|password|bearer\s+[a-z0-9]|ghp_[A-Za-z0-9]+|DATABASE_URL|DIRECT_URL)')
+          for p in [
+              pathlib.Path('apps/jobs/lib/ml-cal-1-lifecycle-binding-observer.ts'),
+              pathlib.Path('apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts'),
+              pathlib.Path('.github/workflows/test-ml-cal-1-lifecycle-binding-observer-g4-v1.yml'),
+          ]:
+              assert not secretish.search(p.read_text(encoding='utf-8')), p
+          print('ok secret-free scan')
+          PY

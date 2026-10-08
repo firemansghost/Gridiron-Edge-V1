@@ -9,7 +9,9 @@ import * as path from 'path';
 import {
   buildObservedRowsFromReport,
   parseLifecycleReport,
+  serializeSidecar,
   sha256Utf8Bytes,
+  verifyLifecycleBindingSidecar,
   type MlCal1LifecycleReportParsed,
 } from '../lib/ml-cal-1-lifecycle-binding';
 import {
@@ -17,7 +19,9 @@ import {
   computeProspectiveOk,
   createMockRepeatableReadAdapter,
   evaluateG4ArchivePrerequisites,
+  evaluateG4CohortAndNumeric,
   evaluateG4ObservationTiming,
+  evaluatePreAdapterChronology,
   exportRatingInput,
   ML_CAL_1_G4_ACCEPTANCE_UPLOAD_SHA256,
   ML_CAL_1_G4_DESIGN_ON_DISK_SHA256,
@@ -28,6 +32,7 @@ import {
   reconstructRawRatingRow,
   runG4ObserverAttempt,
   sealG4ObservationPackage,
+  validateObservedRowTimestamps,
   verifyExactTeamSeasonRatingAllowlist,
   type MlCal1G4ArchivePins,
   type MlCal1G4RawRatingRow,
@@ -50,6 +55,7 @@ const W6_ZIP = fs.readFileSync(path.join(W6_DIR, 'archive.zip'));
 const W6_MEMBER = fs.readFileSync(
   path.join(W6_DIR, 'core-v1-lifecycle-2026-through-week-6-COMMIT.json')
 );
+const W6_PROVENANCE = fs.readFileSync(path.join(W6_DIR, 'PROVENANCE.json'));
 
 const OBSERVER_SHA = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const PRODUCER_W6 = 'cccccccccccccccccccccccccccccccccccccccc';
@@ -392,6 +398,7 @@ describe('ML-CAL-1 G4 observer — end-to-end fixture attempts', () => {
       now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
       nowCeiling: NOW_CEILING,
       prospectiveTargetWeek: null,
+      fixtureProvenanceBytes: W6_PROVENANCE,
       fixtureMode: true,
       packageRootDir: root,
     });
@@ -423,6 +430,7 @@ describe('ML-CAL-1 G4 observer — end-to-end fixture attempts', () => {
         txAdapter: adapter,
         now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
         nowCeiling: NOW_CEILING,
+        fixtureProvenanceBytes: W6_PROVENANCE,
         fixtureMode: true,
         packageRootDir: root,
       })
@@ -444,6 +452,7 @@ describe('ML-CAL-1 G4 observer — end-to-end fixture attempts', () => {
       txAdapter: createMockRepeatableReadAdapter({ rows }),
       now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
       nowCeiling: NOW_CEILING,
+      fixtureProvenanceBytes: W6_PROVENANCE,
       fixtureMode: true,
       packageRootDir: root,
     });
@@ -472,6 +481,7 @@ describe('ML-CAL-1 G4 observer — end-to-end fixture attempts', () => {
       }),
       now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
       nowCeiling: NOW_CEILING,
+      fixtureProvenanceBytes: W6_PROVENANCE,
       fixtureMode: true,
       packageRootDir: root,
     });
@@ -494,6 +504,7 @@ describe('ML-CAL-1 G4 observer — end-to-end fixture attempts', () => {
       }),
       now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
       nowCeiling: NOW_CEILING,
+      fixtureProvenanceBytes: W6_PROVENANCE,
       fixtureMode: true,
       packageRootDir: root,
     });
@@ -516,6 +527,7 @@ describe('ML-CAL-1 G4 observer — end-to-end fixture attempts', () => {
       }),
       now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
       nowCeiling: NOW_CEILING,
+      fixtureProvenanceBytes: W6_PROVENANCE,
       fixtureMode: true,
       packageRootDir: root,
     });
@@ -539,6 +551,7 @@ describe('ML-CAL-1 G4 observer — end-to-end fixture attempts', () => {
       }),
       now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
       nowCeiling: NOW_CEILING,
+      fixtureProvenanceBytes: W6_PROVENANCE,
       fixtureMode: true,
       packageRootDir: root,
     });
@@ -565,6 +578,7 @@ describe('ML-CAL-1 G4 observer — end-to-end fixture attempts', () => {
       }),
       now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
       nowCeiling: NOW_CEILING,
+      fixtureProvenanceBytes: W6_PROVENANCE,
       fixtureMode: true,
       packageRootDir: root,
     });
@@ -587,6 +601,7 @@ describe('ML-CAL-1 G4 observer — end-to-end fixture attempts', () => {
       }),
       now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
       nowCeiling: NOW_CEILING,
+      fixtureProvenanceBytes: W6_PROVENANCE,
       fixtureMode: true,
       packageRootDir: root,
     });
@@ -617,6 +632,7 @@ describe('ML-CAL-1 G4 observer — end-to-end fixture attempts', () => {
       }),
       now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
       nowCeiling: NOW_CEILING,
+      fixtureProvenanceBytes: W6_PROVENANCE,
       fixtureMode: true,
       packageRootDir: root,
     });
@@ -643,6 +659,7 @@ describe('ML-CAL-1 G4 observer — end-to-end fixture attempts', () => {
       }),
       now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
       nowCeiling: NOW_CEILING,
+      fixtureProvenanceBytes: W6_PROVENANCE,
       fixtureMode: true,
       packageRootDir: root,
     });
@@ -664,7 +681,8 @@ describe('ML-CAL-1 G4 observer — end-to-end fixture attempts', () => {
       }),
       now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
       nowCeiling: NOW_CEILING,
-      fixtureMode: false,
+      fixtureProvenanceBytes: W6_PROVENANCE,
+      fixtureMode: true,
       packageRootDir: root,
     });
     expect(result.ok).toBe(false);
@@ -687,6 +705,7 @@ describe('ML-CAL-1 G4 observer — end-to-end fixture attempts', () => {
       }),
       now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
       nowCeiling: NOW_CEILING,
+      fixtureProvenanceBytes: W6_PROVENANCE,
       fixtureMode: true,
       packageRootDir: root,
     });
@@ -720,6 +739,7 @@ describe('ML-CAL-1 G4 observer — end-to-end fixture attempts', () => {
       now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
       nowCeiling: NOW_CEILING,
       prospectiveTargetWeek: 7,
+      fixtureProvenanceBytes: W6_PROVENANCE,
       fixtureMode: true,
       packageRootDir: root,
     });
@@ -743,6 +763,7 @@ describe('ML-CAL-1 G4 observer — end-to-end fixture attempts', () => {
       }),
       now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
       nowCeiling: NOW_CEILING,
+      fixtureProvenanceBytes: W6_PROVENANCE,
       fixtureMode: true,
       packageRootDir: root,
     });
@@ -774,6 +795,7 @@ describe('ML-CAL-1 G4 observer — end-to-end fixture attempts', () => {
       }),
       now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
       nowCeiling: NOW_CEILING,
+      fixtureProvenanceBytes: W6_PROVENANCE,
       fixtureMode: true,
       packageRootDir: root,
     });
@@ -814,6 +836,7 @@ describe('ML-CAL-1 G4 observer — end-to-end fixture attempts', () => {
       }),
       now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
       nowCeiling: NOW_CEILING,
+      fixtureProvenanceBytes: W6_PROVENANCE,
       fixtureMode: true,
       packageRootDir: root,
     });
@@ -841,6 +864,7 @@ describe('ML-CAL-1 G4 observer — end-to-end fixture attempts', () => {
       }),
       now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
       nowCeiling: NOW_CEILING,
+      fixtureProvenanceBytes: W6_PROVENANCE,
       fixtureMode: true,
       packageRootDir: root,
     });
@@ -864,6 +888,7 @@ describe('ML-CAL-1 G4 observer — end-to-end fixture attempts', () => {
       }),
       now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
       nowCeiling: NOW_CEILING,
+      fixtureProvenanceBytes: W6_PROVENANCE,
       fixtureMode: true,
       packageRootDir: root,
     });
@@ -874,7 +899,401 @@ describe('ML-CAL-1 G4 observer — end-to-end fixture attempts', () => {
       )
     );
     expect(sidecar.declaredEcho.ratingFingerprint).toBe(result.ratingFingerprint);
-    expect(sidecar.declaredEcho.fullWeightEligible).toBe(false);
+    expect(sidecar.declaredEcho.fullWeightEligible).toBeUndefined();
+  });
+});
+
+describe('ML-CAL-1 G4 observer — F1–F5 repair regressions', () => {
+  it('F1: null/blank/whitespace ratingRaw rejected even when powerRating is Decimal zero', () => {
+    const report = w6Report();
+    const base = buildObservedRowsFromReport(report, {
+      createdAt: T_ROW,
+      updatedAt: T_ROW,
+    });
+    for (const bad of [null, '', '   '] as const) {
+      const rows = base.map((r, i) =>
+        i === 0
+          ? {
+              ...r,
+              powerRatingRaw: '0',
+              ratingRaw: bad as string | null,
+              // Force planned power 0 on first team for this case by mutating report copy
+            }
+          : r
+      );
+      const reportZero = {
+        ...report,
+        rows: report.rows.map((r, i) =>
+          i === 0 ? { ...r, finalPowerRating: 0 } : r
+        ),
+      };
+      const result = evaluateG4CohortAndNumeric({
+        report: reportZero,
+        rows,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.reasons.join('\n')).toMatch(/rating_mismatch/);
+    }
+  });
+
+  it('F1: planned finalPowerRating null rejected', () => {
+    const report = w6Report();
+    const rows = buildObservedRowsFromReport(report, {
+      createdAt: T_ROW,
+      updatedAt: T_ROW,
+    });
+    const badReport = {
+      ...report,
+      rows: report.rows.map((r, i) =>
+        i === 0 ? { ...r, finalPowerRating: null as unknown as number } : r
+      ),
+    };
+    const result = evaluateG4CohortAndNumeric({
+      report: badReport,
+      rows: rows.map((r, i) =>
+        i === 0 ? { ...r, powerRatingRaw: '0', ratingRaw: '0' } : r
+      ),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.reasons.join('\n')).toMatch(
+      /planned_finalPowerRating_invalid/
+    );
+  });
+
+  it('F2: createdAt > updatedAt fails per-row validation', () => {
+    const rows = buildObservedRowsFromReport(w6Report(), {
+      createdAt: T_ROW,
+      updatedAt: T_ROW,
+    }).map((r, i) =>
+      i === 0
+        ? {
+            ...r,
+            createdAt: '2026-10-05T18:00:00.000Z',
+            updatedAt: '2026-10-05T16:00:00.000Z',
+          }
+        : r
+    );
+    const v = validateObservedRowTimestamps({
+      rows,
+      bindingSnapshotReferenceTime: T_SNAP,
+      nowCeiling: NOW_CEILING,
+    });
+    expect(v.ok).toBe(false);
+    expect(v.reasons.join('\n')).toMatch(/row_created_after_updated/);
+  });
+
+  it('F2: offset timezone extrema use epoch ms not string sort', () => {
+    const rows = buildObservedRowsFromReport(w6Report(), {
+      createdAt: '2026-10-06T11:00:00+00:00',
+      updatedAt: '2026-10-06T11:00:00+00:00',
+    }).map((r, i) =>
+      i === 0
+        ? {
+            ...r,
+            createdAt: '2026-10-06T10:00:00-05:00',
+            updatedAt: '2026-10-06T10:00:00-05:00',
+          }
+        : r
+    );
+    const v = validateObservedRowTimestamps({
+      rows,
+      bindingSnapshotReferenceTime: T_SNAP,
+      nowCeiling: NOW_CEILING,
+    });
+    // 10:00-05:00 == 15:00Z > snap 12:00:10Z → fail
+    expect(v.ok).toBe(false);
+    expect(v.reasons.join('\n')).toMatch(/row_updated_after_binding_snapshot/);
+  });
+
+  it('F2: invalid timestamp yields structured failure not throw', () => {
+    const rows = buildObservedRowsFromReport(w6Report(), {
+      createdAt: T_ROW,
+      updatedAt: T_ROW,
+    }).map((r, i) =>
+      i === 1
+        ? { ...r, createdAt: 'not-a-timestamp', updatedAt: T_ROW }
+        : r
+    );
+    const v = validateObservedRowTimestamps({
+      rows,
+      bindingSnapshotReferenceTime: T_SNAP,
+      nowCeiling: NOW_CEILING,
+    });
+    expect(v.ok).toBe(false);
+    expect(v.reasons.join('\n')).toMatch(/row_timestamp_invalid/);
+  });
+
+  it('F3: fixtureMode false/omitted cannot erase provenance', async () => {
+    const root = tmpRoot();
+    for (const mode of [false, undefined] as const) {
+      let enters = 0;
+      const result = await runG4ObserverAttempt({
+        observationId: `g4-f3-mode-${String(mode)}`,
+        bindingObserverSha: OBSERVER_SHA,
+        lifecycleProducerSha: PRODUCER_W6,
+        archivePins: w6Pins(),
+        zipBytes: W6_ZIP,
+        txAdapter: createMockRepeatableReadAdapter({
+          rows: w6RawRows(),
+          transactionTimestamp: T_DB,
+        }),
+        now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
+        nowCeiling: NOW_CEILING,
+        fixtureMode: mode as boolean | undefined,
+        fixtureProvenanceBytes: W6_PROVENANCE,
+        packageRootDir: root,
+        onAdapterEnter: () => {
+          enters += 1;
+        },
+      });
+      expect(result.ok).toBe(false);
+      expect(result.reasons).toContain('nonfixture_execution_not_authorized');
+      expect(enters).toBe(0);
+    }
+  });
+
+  it('F3: sealed package retains PROVENANCE.json bytes', async () => {
+    const root = tmpRoot();
+    const result = await runG4ObserverAttempt({
+      observationId: 'g4-f3-provenance-retain',
+      bindingObserverSha: OBSERVER_SHA,
+      lifecycleProducerSha: PRODUCER_W6,
+      archivePins: w6Pins(),
+      zipBytes: W6_ZIP,
+      txAdapter: createMockRepeatableReadAdapter({
+        rows: w6RawRows(),
+        transactionTimestamp: T_DB,
+      }),
+      now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
+      nowCeiling: NOW_CEILING,
+      fixtureProvenanceBytes: W6_PROVENANCE,
+      fixtureMode: true,
+      packageRootDir: root,
+    });
+    expect(result.ok).toBe(true);
+    const copied = fs.readFileSync(
+      path.join(result.packageDir!, 'PROVENANCE.json')
+    );
+    expect(sha256Utf8Bytes(copied)).toBe(sha256Utf8Bytes(W6_PROVENANCE));
+    const sidecar = JSON.parse(
+      fs.readFileSync(
+        path.join(result.packageDir!, 'binding-sidecar.json'),
+        'utf8'
+      )
+    );
+    expect(sidecar.mode).toBe('fixture_hypothetical');
+    expect(sidecar.bindingObservation.readMode).toBe('fixture_injected');
+  });
+
+  it('F4: archive after observation start fails with zero adapter enters', async () => {
+    const root = tmpRoot();
+    let enters = 0;
+    const result = await runG4ObserverAttempt({
+      observationId: 'g4-f4-pre-adapter-chrono',
+      bindingObserverSha: OBSERVER_SHA,
+      lifecycleProducerSha: PRODUCER_W6,
+      archivePins: w6Pins({
+        workflowRunCompletedAt: '2026-10-06T13:00:00.000Z',
+        artifactCreatedAt: '2026-10-06T13:01:00.000Z',
+      }),
+      zipBytes: W6_ZIP,
+      txAdapter: createMockRepeatableReadAdapter({
+        rows: w6RawRows(),
+        transactionTimestamp: T_DB,
+      }),
+      now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
+      nowCeiling: NOW_CEILING,
+      fixtureProvenanceBytes: W6_PROVENANCE,
+      fixtureMode: true,
+      packageRootDir: root,
+      onAdapterEnter: () => {
+        enters += 1;
+      },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.reasons).toContain('observation_predates_archive');
+    expect(enters).toBe(0);
+  });
+
+  it('F4: empty identity fields fail before adapter', async () => {
+    const root = tmpRoot();
+    let enters = 0;
+    const result = await runG4ObserverAttempt({
+      observationId: 'g4-f4-empty-identity',
+      bindingObserverSha: '',
+      lifecycleProducerSha: PRODUCER_W6,
+      archivePins: w6Pins({
+        workflowRunId: '',
+        artifactId: '',
+        artifactName: '',
+      }),
+      zipBytes: W6_ZIP,
+      txAdapter: createMockRepeatableReadAdapter({
+        rows: w6RawRows(),
+        transactionTimestamp: T_DB,
+      }),
+      now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
+      nowCeiling: NOW_CEILING,
+      fixtureProvenanceBytes: W6_PROVENANCE,
+      fixtureMode: true,
+      packageRootDir: root,
+      onAdapterEnter: () => {
+        enters += 1;
+      },
+    });
+    expect(result.ok).toBe(false);
+    expect(enters).toBe(0);
+    expect(result.reasons.join('\n')).toMatch(
+      /observer_identity_missing|archive_identity_missing/
+    );
+  });
+
+  it('F4 helper: pre-adapter chronology matches accepted bounds', () => {
+    expect(
+      evaluatePreAdapterChronology({
+        observationStartTime: T_OBS0,
+        workflowRunCompletedAt: T_RUN,
+        artifactCreatedAt: T_ART,
+        nowCeiling: NOW_CEILING,
+      }).ok
+    ).toBe(true);
+  });
+
+  it('F5: sealed package omits fullWeightEligible echo and replays binding verifier', async () => {
+    const root = tmpRoot();
+    const result = await runG4ObserverAttempt({
+      observationId: 'g4-f5-replay',
+      bindingObserverSha: OBSERVER_SHA,
+      lifecycleProducerSha: PRODUCER_W6,
+      archivePins: w6Pins(),
+      zipBytes: W6_ZIP,
+      txAdapter: createMockRepeatableReadAdapter({
+        rows: w6RawRows(),
+        transactionTimestamp: T_DB,
+      }),
+      now: clockSequence([T_OBS0, T_SNAP, T_OBS1]),
+      nowCeiling: NOW_CEILING,
+      prospectiveTargetWeek: 7,
+      fixtureProvenanceBytes: W6_PROVENANCE,
+      fixtureMode: true,
+      packageRootDir: root,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.prospectiveOk).toBe(true);
+    expect(result.fullWeightEligibleClaimed).toBe(false);
+    expect(result.liveAccepted).toBe(false);
+
+    const sidecarPath = path.join(result.packageDir!, 'binding-sidecar.json');
+    const sidecarBytes = fs.readFileSync(sidecarPath);
+    const sidecar = JSON.parse(sidecarBytes.toString('utf8'));
+    expect(sidecar.declaredEcho.fullWeightEligible).toBeUndefined();
+
+    const copyRoot = tmpRoot();
+    const copyDir = path.join(copyRoot, 'copy-away');
+    fs.cpSync(result.packageDir!, copyDir, { recursive: true });
+    const copiedSidecar = fs.readFileSync(
+      path.join(copyDir, 'binding-sidecar.json')
+    );
+    const copiedZip = fs.readFileSync(path.join(copyDir, 'archive.zip'));
+    const copiedProvenance = fs.readFileSync(
+      path.join(copyDir, 'PROVENANCE.json')
+    );
+    expect(sha256Utf8Bytes(copiedProvenance)).toBe(
+      sha256Utf8Bytes(W6_PROVENANCE)
+    );
+
+    const verify = verifyLifecycleBindingSidecar({
+      zipBytes: copiedZip,
+      sidecarBytes: copiedSidecar.toString('utf8'),
+      expectedZipSha256: sha256Utf8Bytes(copiedZip),
+      expectedReportMemberSha256: sha256Utf8Bytes(W6_MEMBER),
+      expectedLifecycleProducerSha: PRODUCER_W6,
+      expectedReportMemberPath:
+        'core-v1-lifecycle-2026-through-week-6-COMMIT.json',
+      prospectiveTargetWeek: 7,
+      nowCeiling: NOW_CEILING,
+    });
+    expect(verify.reasons).not.toContain('declared_fullWeightEligible_mismatch');
+    expect(verify.structuralConsistencyVerified).toBe(true);
+    expect(verify.liveAccepted).toBe(false);
+    // Missing registry/lineage continues to block live qualification.
+    expect(verify.liveQualifying).toBe(false);
+  });
+
+  it('F5 negative: contradictory declaredEcho fingerprint is not asserted by emitter', async () => {
+    // Emitter only writes matching echo; contradictory echo would fail binding verifier.
+    const report = w6Report();
+    const rows = buildObservedRowsFromReport(report, {
+      createdAt: T_ROW,
+      updatedAt: T_ROW,
+    });
+    const fp = buildRatingFingerprint(
+      Object.fromEntries(
+        rows.map((r) => [r.teamId, exportRatingInput(reconstructRawRatingRow(r))])
+      )
+    );
+    const sidecar = {
+      schemaVersion: 'ml-cal-1-lifecycle-binding-sidecar-v1' as const,
+      kind: 'lifecycle-binding-sidecar' as const,
+      mode: 'fixture_hypothetical' as const,
+      acceptedArchive: {
+        github: {
+          workflowRunId: 'fixture-synthetic-w6',
+          artifactId: 'fixture-artifact-w6',
+          artifactName: 'core-v1-lifecycle-2026-through-w6-COMMIT-fixture',
+          workflowRunCompletedAt: T_RUN,
+          artifactCreatedAt: T_ART,
+          zipSha256: sha256Utf8Bytes(W6_ZIP),
+          reportMemberPath: 'core-v1-lifecycle-2026-through-week-6-COMMIT.json',
+          reportMemberSha256: sha256Utf8Bytes(W6_MEMBER),
+          reportByteCount: W6_MEMBER.length,
+        },
+        lifecycleProducerSha: PRODUCER_W6,
+      },
+      bindingObservation: {
+        observationStartTime: T_OBS0,
+        observationEndTime: T_OBS1,
+        bindingSnapshotReferenceTime: T_SNAP,
+        dbTransactionTime: T_DB,
+        dbTransactionTimeUnavailableReason: null,
+        bindingObserverSha: OBSERVER_SHA,
+        readMode: 'fixture_injected' as const,
+        season: 2026 as const,
+        modelVersion: 'v1' as const,
+        rows,
+        rowCreatedAtMin: T_ROW,
+        rowCreatedAtMax: T_ROW,
+        rowUpdatedAtMin: T_ROW,
+        rowUpdatedAtMax: T_ROW,
+      },
+      declaredEcho: {
+        ratingFingerprint: '0'.repeat(64),
+        usableRowCount: 138,
+        plannedNumericAgreementOk: true,
+        archiveIntegrityVerified: true,
+      },
+      fingerprintComputedFromLaterReadback: true as const,
+      readbackWasNotExportedAtCommit: true as const,
+      sidecarSelfAccepted: false as const,
+      providerCalls: 0 as const,
+      businessDataWrites: 0 as const,
+    };
+    const verify = verifyLifecycleBindingSidecar({
+      zipBytes: W6_ZIP,
+      sidecarBytes: serializeSidecar(sidecar),
+      expectedZipSha256: sha256Utf8Bytes(W6_ZIP),
+      expectedReportMemberSha256: sha256Utf8Bytes(W6_MEMBER),
+      expectedLifecycleProducerSha: PRODUCER_W6,
+      expectedReportMemberPath:
+        'core-v1-lifecycle-2026-through-week-6-COMMIT.json',
+      prospectiveTargetWeek: 7,
+      nowCeiling: NOW_CEILING,
+    });
+    expect(verify.structuralConsistencyVerified).toBe(false);
+    expect(verify.reasons.join('\n')).toMatch(
+      /declared_ratingFingerprint_mismatch|declared_/
+    );
+    expect(fp).toMatch(/^[0-9a-f]{64}$/);
   });
 });
 
@@ -933,6 +1352,7 @@ describe('ML-CAL-1 G4 observer — package seal invariants', () => {
       reportMemberBytes: W6_MEMBER,
       reportMemberPath: 'core-v1-lifecycle-2026-through-week-6-COMMIT.json',
       sidecar,
+      fixtureProvenanceBytes: W6_PROVENANCE,
       runMetadata: { observationEndTime: T_OBS1 },
       designCorrespondence: { note: 'test' },
     });
@@ -944,6 +1364,7 @@ describe('ML-CAL-1 G4 observer — package seal invariants', () => {
         reportMemberBytes: W6_MEMBER,
         reportMemberPath: 'core-v1-lifecycle-2026-through-week-6-COMMIT.json',
         sidecar,
+        fixtureProvenanceBytes: W6_PROVENANCE,
         runMetadata: { observationEndTime: T_OBS1 },
         designCorrespondence: { note: 'test' },
       })

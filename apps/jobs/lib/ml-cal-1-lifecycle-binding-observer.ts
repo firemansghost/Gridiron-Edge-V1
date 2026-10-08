@@ -25,6 +25,7 @@ import {
   ML_CAL_1_BINDING_RATING_EPS,
   ML_CAL_1_LIFECYCLE_BINDING_SIDECAR_SCHEMA,
   ML_CAL_1_WEEK5_COMMIT_ARCHIVE_PINS,
+  parseFiniteNumber,
   parseLifecycleReport,
   reconstructRawRatingRow,
   serializeSidecar,
@@ -147,9 +148,16 @@ export interface MlCal1G4ObserverAttemptInput {
    * never invent eligibility. When supplied, computes prospectiveOk only.
    */
   prospectiveTargetWeek?: number | null;
-  /** Force fixture provenance / readMode. */
+  /**
+   * Offline G4 PR is fixture-only. Must be explicitly `true`.
+   * `false` / omitted → fail closed (`nonfixture_execution_not_authorized`).
+   */
   fixtureMode?: boolean;
+  /** Optional synthetic / test-only provenance bytes retained in the sealed package. */
+  fixtureProvenanceBytes?: Buffer | null;
   packageRootDir: string;
+  /** Optional spy: incremented each time the TX adapter is entered. */
+  onAdapterEnter?: () => void;
 }
 
 export interface MlCal1G4ObserverAttemptResult {
@@ -194,6 +202,136 @@ function parseIsoMs(value: string | null | undefined): number | null {
   }
   const ms = Date.parse(value);
   return Number.isFinite(ms) ? ms : null;
+}
+
+function isNonEmptyIdentity(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+/** Serialize timestamp consistently for sidecar extrema (UTC ISO). */
+function isoFromMs(ms: number): string {
+  return new Date(ms).toISOString();
+}
+
+/**
+ * Validate every observed row's timestamps; compute extrema by epoch ms
+ * (not lexical string sort). Fail closed on createdAt > updatedAt, unparseable,
+ * or timestamps after binding snapshot / ceiling.
+ */
+export function validateObservedRowTimestamps(input: {
+  rows: MlCal1BindingObservedRatingRow[];
+  bindingSnapshotReferenceTime: string;
+  nowCeiling: string;
+}): {
+  ok: boolean;
+  reasons: string[];
+  rowCreatedAtMin: string | null;
+  rowCreatedAtMax: string | null;
+  rowUpdatedAtMin: string | null;
+  rowUpdatedAtMax: string | null;
+} {
+  const reasons: string[] = [];
+  const tSnap = parseIsoMs(input.bindingSnapshotReferenceTime);
+  const nowCeiling = parseIsoMs(input.nowCeiling);
+  if (tSnap == null || nowCeiling == null) {
+    return {
+      ok: false,
+      reasons: ['observation_time_order_invalid'],
+      rowCreatedAtMin: null,
+      rowCreatedAtMax: null,
+      rowUpdatedAtMin: null,
+      rowUpdatedAtMax: null,
+    };
+  }
+  if (input.rows.length === 0) {
+    return {
+      ok: false,
+      reasons: ['row_timestamp_empty_set'],
+      rowCreatedAtMin: null,
+      rowCreatedAtMax: null,
+      rowUpdatedAtMin: null,
+      rowUpdatedAtMax: null,
+    };
+  }
+
+  let cMin = Number.POSITIVE_INFINITY;
+  let cMax = Number.NEGATIVE_INFINITY;
+  let uMin = Number.POSITIVE_INFINITY;
+  let uMax = Number.NEGATIVE_INFINITY;
+
+  for (const row of input.rows) {
+    const c = parseIsoMs(row.createdAt);
+    const u = parseIsoMs(row.updatedAt);
+    if (c == null || u == null) {
+      reasons.push(`row_timestamp_invalid:${row.teamId}`);
+      continue;
+    }
+    if (c > u) {
+      reasons.push(`row_created_after_updated:${row.teamId}`);
+    }
+    if (c > tSnap || u > tSnap) {
+      reasons.push(`row_updated_after_binding_snapshot:${row.teamId}`);
+    }
+    if (c > nowCeiling || u > nowCeiling) {
+      reasons.push(`row_timestamp_in_future:${row.teamId}`);
+    }
+    if (c < cMin) cMin = c;
+    if (c > cMax) cMax = c;
+    if (u < uMin) uMin = u;
+    if (u > uMax) uMax = u;
+  }
+
+  if (reasons.length > 0 || !Number.isFinite(cMin) || !Number.isFinite(uMax)) {
+    return {
+      ok: false,
+      reasons:
+        reasons.length > 0 ? reasons : ['row_timestamp_extrema_unavailable'],
+      rowCreatedAtMin: null,
+      rowCreatedAtMax: null,
+      rowUpdatedAtMin: null,
+      rowUpdatedAtMax: null,
+    };
+  }
+
+  return {
+    ok: true,
+    reasons: [],
+    rowCreatedAtMin: isoFromMs(cMin),
+    rowCreatedAtMax: isoFromMs(cMax),
+    rowUpdatedAtMin: isoFromMs(uMin),
+    rowUpdatedAtMax: isoFromMs(uMax),
+  };
+}
+
+export function evaluatePreAdapterChronology(input: {
+  observationStartTime: string;
+  workflowRunCompletedAt: string;
+  artifactCreatedAt: string;
+  nowCeiling: string;
+}): { ok: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  const tObs0 = parseIsoMs(input.observationStartTime);
+  const tRun = parseIsoMs(input.workflowRunCompletedAt);
+  const tArt = parseIsoMs(input.artifactCreatedAt);
+  const nowCeiling = parseIsoMs(input.nowCeiling);
+  if (tObs0 == null || nowCeiling == null) {
+    reasons.push('observation_time_order_invalid');
+    return { ok: false, reasons };
+  }
+  if (tRun == null || tArt == null) {
+    reasons.push('archive_chronology_missing');
+    return { ok: false, reasons };
+  }
+  if (tRun > tObs0 || tArt > tObs0) {
+    reasons.push('observation_predates_archive');
+  }
+  if (tRun > nowCeiling || tArt > nowCeiling) {
+    reasons.push('archive_time_after_ceiling');
+  }
+  if (tObs0 > nowCeiling) {
+    reasons.push('observation_time_after_ceiling');
+  }
+  return { ok: reasons.length === 0, reasons };
 }
 
 function decimalRaw(value: MlCal1G4RawRatingRow['powerRating']): string | null {
@@ -269,6 +407,18 @@ export function evaluateG4ArchivePrerequisites(input: {
   if (input.pins.expectedLifecycleProducerSha.trim() === '') {
     reasons.push('archive_pin_mismatch:producer_missing');
   }
+  if (!isNonEmptyIdentity(input.pins.workflowRunId)) {
+    reasons.push('archive_identity_missing:workflowRunId');
+  }
+  if (!isNonEmptyIdentity(input.pins.artifactId)) {
+    reasons.push('archive_identity_missing:artifactId');
+  }
+  if (!isNonEmptyIdentity(input.pins.artifactName)) {
+    reasons.push('archive_identity_missing:artifactName');
+  }
+  if (!isNonEmptyIdentity(input.pins.reportMemberPath)) {
+    reasons.push('archive_identity_missing:reportMemberPath');
+  }
 
   const tRun = parseIsoMs(input.pins.workflowRunCompletedAt);
   const tArt = parseIsoMs(input.pins.artifactCreatedAt);
@@ -326,6 +476,18 @@ export function evaluateG4ArchivePrerequisites(input: {
     }
     if (ids.length !== unique.size) {
       reasons.push('archive_planned_duplicate_teamId');
+    }
+    for (const row of report.rows) {
+      if (parseFiniteNumber(row.finalPowerRating) === null) {
+        reasons.push(`planned_finalPowerRating_invalid:${row.teamId}`);
+      }
+      if (
+        !Number.isInteger(row.games) ||
+        row.games < 0 ||
+        parseFiniteNumber(row.games) === null
+      ) {
+        reasons.push(`planned_games_invalid:${row.teamId}`);
+      }
     }
   }
 
@@ -484,32 +646,42 @@ export function evaluateG4CohortAndNumeric(input: {
       numericReasons.push(`missing_after_write:${id}`);
       continue;
     }
-    const exported = exportRatingInput(reconstructRawRatingRow(observed));
+
+    let exported: ReturnType<typeof exportRatingInput>;
+    try {
+      exported = exportRatingInput(reconstructRawRatingRow(observed));
+    } catch (e) {
+      numericReasons.push(
+        `export_rating_failed:${id}:${e instanceof Error ? e.message : 'unknown'}`
+      );
+      continue;
+    }
     exportedByTeam[id] = exported;
     if (exported.inputUsable) usableRowCount += 1;
 
-    const plannedPower = Number(planned.finalPowerRating);
-    const plannedGames = planned.games;
-    if (!Number.isFinite(plannedPower)) {
+    // Accepted strict finite parser — rejects null/blank/whitespace/nonfinite.
+    const plannedPower = parseFiniteNumber(planned.finalPowerRating);
+    const plannedGames = parseFiniteNumber(planned.games);
+    if (plannedPower === null) {
       numericReasons.push(`planned_finalPowerRating_invalid:${id}`);
       continue;
     }
-    if (!Number.isInteger(plannedGames)) {
+    if (plannedGames === null || !Number.isInteger(plannedGames)) {
       numericReasons.push(`planned_games_invalid:${id}`);
       continue;
     }
-    const power = Number(String(observed.powerRatingRaw ?? '').trim());
-    const rating = Number(String(observed.ratingRaw ?? '').trim());
-    const games = observed.games;
-    if (!Number.isFinite(power)) {
+    const power = parseFiniteNumber(observed.powerRatingRaw);
+    const rating = parseFiniteNumber(observed.ratingRaw);
+    const games = parseFiniteNumber(observed.games);
+    if (power === null) {
       numericReasons.push(`powerRating_mismatch:${id}`);
       continue;
     }
-    if (!Number.isFinite(rating)) {
+    if (rating === null) {
       numericReasons.push(`rating_mismatch:${id}`);
       continue;
     }
-    if (!Number.isInteger(games)) {
+    if (games === null || !Number.isInteger(games)) {
       numericReasons.push(`games_mismatch:${id}`);
       continue;
     }
@@ -571,6 +743,8 @@ export interface MlCal1G4PackageSealInput {
   sidecar: MlCal1LifecycleBindingSidecarV1;
   runMetadata: Record<string, unknown>;
   designCorrespondence: Record<string, unknown>;
+  /** Explicit test-only / synthetic provenance bytes (required for fixture packages). */
+  fixtureProvenanceBytes?: Buffer | null;
 }
 
 export interface MlCal1G4PackageSealResult {
@@ -616,6 +790,9 @@ export function sealG4ObservationPackage(
     'observer-run-metadata.json': runMetaBytes,
     'design-correspondence.json': corrBytes,
   };
+  if (input.fixtureProvenanceBytes && input.fixtureProvenanceBytes.length > 0) {
+    members['PROVENANCE.json'] = Buffer.from(input.fixtureProvenanceBytes);
+  }
 
   const memberDigests: Record<string, { sha256: string; byteCount: number }> =
     {};
@@ -919,16 +1096,43 @@ export async function runG4ObserverAttempt(
     };
   };
 
-  // §9 step 4: record observationStartTime BEFORE opening the transaction.
+  // F3: this offline PR is fixture-only. Caller boolean cannot manufacture live evidence.
+  if (input.fixtureMode !== true) {
+    return fail(
+      ['nonfixture_execution_not_authorized'],
+      'fixture_only_orchestration'
+    );
+  }
+  readMode = 'fixture_injected';
+
+  if (!isNonEmptyIdentity(input.bindingObserverSha)) {
+    return fail(['observer_identity_missing:bindingObserverSha']);
+  }
+  if (!isNonEmptyIdentity(input.lifecycleProducerSha)) {
+    return fail(['observer_identity_missing:lifecycleProducerSha']);
+  }
+  if (!isNonEmptyIdentity(input.observationId)) {
+    return fail(['observer_identity_missing:observationId']);
+  }
+  if (
+    !input.fixtureProvenanceBytes ||
+    input.fixtureProvenanceBytes.length === 0
+  ) {
+    return fail(['fixture_provenance_bytes_required']);
+  }
+
+  // §9: record observationStartTime BEFORE opening the transaction.
   observationStartTime = toIso(input.now());
 
+  // F4: archive + identity + chronology vs observation start BEFORE adapter.
   const archive = evaluateG4ArchivePrerequisites({
     zipBytes: input.zipBytes,
     pins: input.archivePins,
   });
   fullWeightByPolicy = archive.fullWeightByPolicy;
-  reasons.push(...archive.reasons.filter((r) => r !== 'fullWeightByPolicy_false'));
-  // fullWeightByPolicy_false is informational for Week5 negative; still blocks success.
+  reasons.push(
+    ...archive.reasons.filter((r) => r !== 'fullWeightByPolicy_false')
+  );
   if (archive.reasons.includes('fullWeightByPolicy_false')) {
     reasons.push('fullWeightByPolicy_false');
   }
@@ -940,31 +1144,46 @@ export async function runG4ObserverAttempt(
     return fail(['lifecycleProducerSha_mismatch_vs_pin']);
   }
 
+  const preChronology = evaluatePreAdapterChronology({
+    observationStartTime,
+    workflowRunCompletedAt: input.archivePins.workflowRunCompletedAt,
+    artifactCreatedAt: input.archivePins.artifactCreatedAt,
+    nowCeiling: input.nowCeiling,
+  });
+  if (!preChronology.ok) {
+    return fail(preChronology.reasons, 'pre_adapter_chronology_failed');
+  }
+
+  // Fixture-only prospective target (never invents production registration).
   prospectiveOk = computeProspectiveOk({
     completedThroughWeek: archive.report.completedThroughWeek,
     prospectiveTargetWeek: input.prospectiveTargetWeek,
   });
   if (prospectiveOk === null) {
     notes.push('prospective_target_absent_no_eligibility_claim');
+  } else {
+    notes.push('prospectiveOk_fixture_target_only');
   }
-
-  const fixtureMode = input.fixtureMode === true;
-  readMode = fixtureMode ? 'fixture_injected' : 'repeatable_read_readonly';
 
   let rawRows: MlCal1G4RawRatingRow[] = [];
   let metadata: MlCal1G4TxMetadata | null = null;
 
   try {
+    input.onAdapterEnter?.();
     await input.txAdapter.withRepeatableReadTransaction(async (client) => {
       await client.setTransactionReadOnly();
       metadata = await client.queryTransactionMetadata();
       const iso = (metadata.transactionIsolation || '').toLowerCase();
       const ro = (metadata.transactionReadOnly || '').toLowerCase();
       if (iso !== 'repeatable read') {
-        throw new Error(`transaction_isolation_invalid:${metadata.transactionIsolation}`);
+        throw new Error(
+          `transaction_isolation_invalid:${metadata.transactionIsolation}`
+        );
       }
       if (ro !== 'on') {
-        throw new Error(`transaction_read_only_invalid:${metadata.transactionReadOnly}`);
+        throw new Error(
+          `transaction_read_only_invalid:${metadata.transactionReadOnly}`
+        );
       }
       dbTransactionTime = metadata.transactionTimestamp;
       rawRows = await client.selectTeamSeasonRatings({
@@ -981,25 +1200,41 @@ export async function runG4ObserverAttempt(
   }
 
   bindingSnapshotReferenceTime = toIso(input.now());
-  const observed = observedRowsFromRaw(rawRows);
-  const createdAts = observed.map((r) => r.createdAt);
-  const updatedAts = observed.map((r) => r.updatedAt);
-  const rowCreatedAtMin = createdAts.slice().sort()[0] ?? observationStartTime;
-  const rowCreatedAtMax =
-    createdAts.slice().sort()[createdAts.length - 1] ?? observationStartTime;
-  const rowUpdatedAtMin = updatedAts.slice().sort()[0] ?? observationStartTime;
-  const rowUpdatedAtMax =
-    updatedAts.slice().sort()[updatedAts.length - 1] ?? observationStartTime;
 
-  // End attempt clock after SELECT + buffering (before seal).
+  let observed: MlCal1BindingObservedRatingRow[];
+  try {
+    observed = observedRowsFromRaw(rawRows);
+  } catch (e) {
+    return fail(
+      [
+        `row_conversion_failed:${e instanceof Error ? e.message : 'unknown'}`,
+      ],
+      'row_conversion_failed'
+    );
+  }
+
+  const rowTimes = validateObservedRowTimestamps({
+    rows: observed,
+    bindingSnapshotReferenceTime,
+    nowCeiling: input.nowCeiling,
+  });
+  if (!rowTimes.ok) {
+    return fail(rowTimes.reasons, 'row_timestamp_validation_failed');
+  }
+  const rowCreatedAtMin = rowTimes.rowCreatedAtMin!;
+  const rowCreatedAtMax = rowTimes.rowCreatedAtMax!;
+  const rowUpdatedAtMin = rowTimes.rowUpdatedAtMin!;
+  const rowUpdatedAtMax = rowTimes.rowUpdatedAtMax!;
+
   observationEndTime = toIso(input.now());
 
+  // Post-read timing (still required). Fixture path: db time optional if present must bound.
   const timing = evaluateG4ObservationTiming({
     observationStartTime,
     observationEndTime,
     bindingSnapshotReferenceTime,
     dbTransactionTime,
-    dbTransactionTimeRequired: !fixtureMode,
+    dbTransactionTimeRequired: false,
     workflowRunCompletedAt: input.archivePins.workflowRunCompletedAt,
     artifactCreatedAt: input.archivePins.artifactCreatedAt,
     nowCeiling: input.nowCeiling,
@@ -1025,10 +1260,11 @@ export async function runG4ObserverAttempt(
     return fail(cohortNumeric.reasons, 'cohort_or_numeric_failed');
   }
 
+  // F5: omit eligibility echoes the G4 emitter is not authorized to assert.
   const sidecar: MlCal1LifecycleBindingSidecarV1 = {
     schemaVersion: ML_CAL_1_LIFECYCLE_BINDING_SIDECAR_SCHEMA,
     kind: 'lifecycle-binding-sidecar',
-    mode: fixtureMode ? 'fixture_hypothetical' : 'binding_observation',
+    mode: 'fixture_hypothetical',
     acceptedArchive: {
       github: {
         workflowRunId: input.archivePins.workflowRunId,
@@ -1052,13 +1288,11 @@ export async function runG4ObserverAttempt(
       observationEndTime,
       bindingSnapshotReferenceTime,
       dbTransactionTime,
-      dbTransactionTimeUnavailableReason: fixtureMode
-        ? dbTransactionTime
-          ? null
-          : 'fixture_injected'
-        : null,
+      dbTransactionTimeUnavailableReason: dbTransactionTime
+        ? null
+        : 'fixture_injected',
       bindingObserverSha: input.bindingObserverSha,
-      readMode: readMode!,
+      readMode: 'fixture_injected',
       season: 2026,
       modelVersion: 'v1',
       rows: observed,
@@ -1071,8 +1305,8 @@ export async function runG4ObserverAttempt(
       ratingFingerprint: ratingFingerprint!,
       usableRowCount: usableRowCount!,
       plannedNumericAgreementOk: numericOk,
-      fullWeightEligible: false,
       archiveIntegrityVerified: true,
+      // fullWeightEligible intentionally omitted (F5)
     },
     fingerprintComputedFromLaterReadback: true,
     readbackWasNotExportedAtCommit: true,
@@ -1089,6 +1323,7 @@ export async function runG4ObserverAttempt(
       reportMemberBytes: archive.memberBytes,
       reportMemberPath: input.archivePins.reportMemberPath,
       sidecar,
+      fixtureProvenanceBytes: input.fixtureProvenanceBytes,
       runMetadata: {
         observationId: input.observationId,
         bindingObserverSha: input.bindingObserverSha,
@@ -1097,7 +1332,8 @@ export async function runG4ObserverAttempt(
         observationEndTime,
         bindingSnapshotReferenceTime,
         dbTransactionTime,
-        readMode,
+        readMode: 'fixture_injected',
+        mode: 'fixture_hypothetical',
         fullWeightByPolicy,
         prospectiveOk,
         fullWeightEligibleClaimed: false,
@@ -1105,6 +1341,7 @@ export async function runG4ObserverAttempt(
         approved: false,
         providerCalls: 0,
         businessDataWrites: 0,
+        fixtureProvenanceRetained: true,
         txMetadata: metadata,
         allowlist: ML_CAL_1_G4_TEAM_SEASON_RATING_SCALARS,
         ratingFingerprint,
