@@ -14,4 +14,5 @@
 | F6 CI + matrix + gitattributes | **DONE** | workflow + matrix doc + binary pins |
 
 Local G4 suite: **53/53 PASS** (post-repair).  
-No merge / live / DB / providers. Design acceptance intact.
+CI tip `d48760a3f1cd9538dd21832da5ecaa8500bf8d51`: G4 workflow **targeted-tests PASS** (run 37851710820), including G4 + binding/G2/G3 regressions + digest scan.  
+No merge / live / DB / providers. Design acceptance intact. Stopped for independent re-review.
