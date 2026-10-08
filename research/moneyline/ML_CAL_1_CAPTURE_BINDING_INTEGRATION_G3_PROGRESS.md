@@ -2,19 +2,20 @@
 
 **Branch:** `feat/ml-cal-1-capture-binding-g3-fixture-v1`  
 **Worktree:** `Gridiron-Edge-V1-ml-cal-1-g3`  
-**Head:** `ed22c42975b13f87551c089ba3be13566273ac60`  
-**Prior reviewed head:** `9fd804446a30cdfc11f9a7ad87d1121560688d40`  
+**Prior reviewed head:** `62b73d795ea467a46d0c8baf87841587bd88501f`  
 **PR:** https://github.com/firemansghost/Gridiron-Edge-V1/pull/248  
 **Updated:** 2026-10-08 (America/Chicago)
 
-## F1-A / F1-B delivered
+## F1-A full G2 replay (local)
 
-- [x] F1-A: `bindingEvidenceAccepted` from `evaluateBindingEvidenceAcceptance` (not stored ok/qualified)
-- [x] F1-A: hash-consistent package regressions (lineage/observer/fingerprint/receipt/missing/unknown schema)
-- [x] F1-B: embed exact archive/report bytes + registry pin/controls; copy-away replay proven
-- [x] Local: G3 15/15; Capture V1 128; G2+lifecycle 63
-- [x] Pushed `ed22c42` for independent re-review
+- [x] Removed partial capture-helper checklist evaluator
+- [x] `evaluateBindingEvidenceAcceptance` now calls `verifyBindingThenQualifyCaptureLifecycle` on retained evidence + sealed inputs
+- [x] Complete trust record retained in evidence.replay
+- [x] Reader fails closed when full-replay evaluator unavailable
+- [x] Regressions: invalid ZIP, empty pin, wrong week, superseding lineage, stale rating hash, unknown integration schema
+- [x] Local G3 15/15
+- [ ] Push + observe CI
 
 ## Holdings
 
-No merge, live observer/dispatch, registration, calibration, or 2025 reopening.
+F1-B remains closed for offline fixture scope. No merge/live/registration/calibration/2025.

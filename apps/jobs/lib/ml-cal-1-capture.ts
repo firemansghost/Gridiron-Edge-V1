@@ -2309,12 +2309,6 @@ export const ML_CAL_1_BINDING_ARCHIVE_EMBEDDED_RETRIEVAL =
 export const ML_CAL_1_BINDING_REPORT_EMBEDDED_RETRIEVAL =
   'embedded-base64:evidenceBytes.reportMemberBytesBase64' as const;
 
-function parseEvidenceIsoMs(value: unknown): number | null {
-  if (typeof value !== 'string' || value.trim() === '') return null;
-  const ms = Date.parse(value);
-  return Number.isFinite(ms) ? ms : null;
-}
-
 /** Decode embedded archive/report bytes and verify declared digests. */
 export function resolveEmbeddedBindingArchiveBytes(evidenceBytes: Record<string, any>): {
   zipBytes: Buffer;
@@ -2476,326 +2470,15 @@ export function assertBindingIntegrationEvidenceCorrespondence(options: {
 }
 
 /**
- * Independently evaluate binding acceptance from retained proof + sealed ratings.
- * Never treats stored evidence.ok / envelope.lifecycleQualification.qualified as proof.
- * Missing required proof fails closed (accepted=false).
+ * Optional full binding/G2 replay evaluator supplied by the G3 fixture wiring
+ * module. Byte integrity alone never grants bindingEvidenceAccepted.
  */
-export function evaluateBindingEvidenceAcceptance(options: {
+export type MlCal1BindingEvidenceEvaluator = (options: {
   envelope: MlCal1CaptureEnvelope;
   ratingsByTeamId: Record<string, MlCal1ExportedRatingInput>;
   ratingFingerprint: string;
   evidence: Record<string, unknown> | null | undefined;
-}): { accepted: boolean; reasons: string[] } {
-  const reasons: string[] = [];
-  if (options.evidence == null) {
-    return { accepted: false, reasons: ['binding_integration_evidence_missing'] };
-  }
-  if (options.envelope.bindingIntegrationAudit?.used !== true) {
-    return { accepted: false, reasons: ['binding_integration_audit_not_used'] };
-  }
-  const evidence = options.evidence as Record<string, any>;
-  if (evidence.schemaVersion !== ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_SCHEMA) {
-    return { accepted: false, reasons: ['binding_integration_evidence_unknown_schema'] };
-  }
-  if (evidence.kind !== 'binding-integration-evidence') {
-    return { accepted: false, reasons: ['binding_integration_evidence_kind_invalid'] };
-  }
-  if (evidence.liveAccepted !== false || evidence.fixtureProvenanceRetained !== true) {
-    reasons.push('binding_integration_evidence_fixture_provenance_violation');
-  }
-  if (options.envelope.lifecycleQualification.liveAccepted !== false) {
-    reasons.push('envelope_live_accepted_violation');
-  }
-
-  // Scope
-  if (evidence.captureId !== options.envelope.captureId) {
-    reasons.push('scope_capture_id_mismatch');
-  }
-  if (evidence.season !== options.envelope.season || evidence.week !== options.envelope.week) {
-    reasons.push('scope_season_week_mismatch');
-  }
-  if (evidence.snapshotReferenceTime !== options.envelope.snapshotReferenceTime) {
-    reasons.push('scope_as_of_mismatch');
-  }
-
-  const eb = evidence.evidenceBytes;
-  if (!eb || typeof eb !== 'object') {
-    return { accepted: false, reasons: [...reasons, 'binding_integration_evidence_bytes_missing'] };
-  }
-
-  let zipBytes: Buffer;
-  let reportMemberBytes: Buffer;
-  try {
-    ({ zipBytes, reportMemberBytes } = resolveEmbeddedBindingArchiveBytes(eb));
-  } catch (err) {
-    reasons.push(err instanceof Error ? err.message : String(err));
-    return { accepted: false, reasons };
-  }
-  void zipBytes;
-  void reportMemberBytes;
-
-  if (typeof eb.sidecarUtf8 !== 'string' || eb.sidecarUtf8 === '') {
-    reasons.push('sidecar_bytes_missing');
-  } else if (sha256Utf8Bytes(eb.sidecarUtf8) !== eb.sidecarSha256) {
-    reasons.push('sidecar_bytes_digest_mismatch');
-  }
-
-  const anchors = evidence.approvalAnchors ?? {};
-  // Required external approval anchors (distinct from self-hashes of retained bytes).
-  if (
-    typeof anchors.approvedRegistryDocumentDigest !== 'string' ||
-    !HEX64.test(anchors.approvedRegistryDocumentDigest)
-  ) {
-    reasons.push('approved_registry_document_digest_missing');
-  }
-  if (
-    typeof anchors.approvedLineageAttestationDigest !== 'string' ||
-    !HEX64.test(anchors.approvedLineageAttestationDigest)
-  ) {
-    reasons.push('approved_lineage_attestation_digest_missing');
-  }
-  if (
-    typeof anchors.approvedLineageInventorySha256 !== 'string' ||
-    !HEX64.test(anchors.approvedLineageInventorySha256)
-  ) {
-    reasons.push('approved_lineage_inventory_digest_missing');
-  }
-  if (
-    typeof anchors.approvedReceiptDigest !== 'string' ||
-    !HEX64.test(anchors.approvedReceiptDigest)
-  ) {
-    reasons.push('approved_receipt_digest_missing');
-  }
-  if (
-    typeof anchors.expectedZipSha256 !== 'string' ||
-    anchors.expectedZipSha256 !== eb.zipSha256
-  ) {
-    reasons.push('expected_zip_sha_anchor_mismatch');
-  }
-  if (
-    typeof anchors.expectedReportMemberSha256 !== 'string' ||
-    anchors.expectedReportMemberSha256 !== eb.reportMemberSha256
-  ) {
-    reasons.push('expected_report_sha_anchor_mismatch');
-  }
-
-  if (typeof eb.registryDocumentUtf8 !== 'string' || eb.registryDocumentUtf8 === '') {
-    reasons.push('registry_document_bytes_missing');
-  } else {
-    const regSha = sha256Utf8Bytes(eb.registryDocumentUtf8);
-    if (regSha !== eb.registryDocumentSha256) {
-      reasons.push('registry_document_bytes_digest_mismatch');
-    }
-    if (
-      typeof anchors.approvedRegistryDocumentDigest === 'string' &&
-      anchors.approvedRegistryDocumentDigest !== regSha
-    ) {
-      reasons.push('approved_registry_digest_does_not_match_bytes');
-    }
-  }
-  if (typeof eb.registryPinUtf8 !== 'string' || eb.registryPinUtf8 === '') {
-    reasons.push('registry_pin_bytes_missing');
-  } else if (
-    eb.registryPinSha256 != null &&
-    sha256Utf8Bytes(eb.registryPinUtf8) !== eb.registryPinSha256
-  ) {
-    reasons.push('registry_pin_bytes_digest_mismatch');
-  }
-  if (typeof eb.prospectiveTargetWeek !== 'number' || typeof eb.nowCeiling !== 'string') {
-    reasons.push('verifier_controls_missing');
-  }
-
-  if (typeof eb.lineageAttestationUtf8 !== 'string' || eb.lineageAttestationUtf8 === '') {
-    reasons.push('lineage_attestation_bytes_missing');
-  } else {
-    const linSha = sha256Utf8Bytes(eb.lineageAttestationUtf8);
-    if (linSha !== eb.lineageAttestationSha256) {
-      reasons.push('lineage_attestation_bytes_digest_mismatch');
-    }
-    if (
-      typeof anchors.approvedLineageAttestationDigest === 'string' &&
-      anchors.approvedLineageAttestationDigest !== linSha
-    ) {
-      reasons.push('approved_lineage_digest_does_not_match_bytes');
-    }
-  }
-
-  if (typeof eb.adaptedReceiptUtf8 !== 'string' || eb.adaptedReceiptUtf8 === '') {
-    reasons.push('adapted_receipt_bytes_missing');
-  } else {
-    const adaptedSha = sha256Utf8Bytes(eb.adaptedReceiptUtf8);
-    if (adaptedSha !== eb.adaptedReceiptSha256) {
-      reasons.push('adapted_receipt_bytes_digest_mismatch');
-    }
-    if (
-      typeof anchors.approvedReceiptDigest === 'string' &&
-      anchors.approvedReceiptDigest !== adaptedSha
-    ) {
-      reasons.push('approved_receipt_digest_mismatch');
-    }
-    if (
-      evidence.adapted?.pinnedReceiptDigest != null &&
-      evidence.adapted.pinnedReceiptDigest !== adaptedSha
-    ) {
-      reasons.push('adapted_pinned_receipt_digest_mismatch');
-    }
-  }
-
-  // Producer identities from retained sidecar bytes + envelope (not stored ok flags).
-  let sidecarObserver: string | null = null;
-  let sidecarLifecycleProducer: string | null = null;
-  if (typeof eb.sidecarUtf8 === 'string' && eb.sidecarUtf8 !== '') {
-    try {
-      const sidecar = JSON.parse(eb.sidecarUtf8) as any;
-      sidecarObserver =
-        typeof sidecar?.bindingObservation?.bindingObserverSha === 'string'
-          ? sidecar.bindingObservation.bindingObserverSha
-          : null;
-      sidecarLifecycleProducer =
-        typeof sidecar?.acceptedArchive?.lifecycleProducerSha === 'string'
-          ? sidecar.acceptedArchive.lifecycleProducerSha
-          : null;
-    } catch {
-      reasons.push('sidecar_unparseable');
-    }
-  }
-  const producers = evidence.producers ?? {};
-  if (
-    typeof producers.lifecycleProducerSha !== 'string' ||
-    !HEX40.test(producers.lifecycleProducerSha)
-  ) {
-    reasons.push('lifecycle_producer_missing');
-  }
-  if (
-    typeof producers.bindingObserverSha !== 'string' ||
-    !HEX40.test(producers.bindingObserverSha)
-  ) {
-    reasons.push('binding_observer_missing');
-  }
-  if (
-    typeof producers.captureProducerSha !== 'string' ||
-    producers.captureProducerSha !== options.envelope.producerRepositorySha
-  ) {
-    reasons.push('capture_producer_mismatch');
-  }
-  if (
-    typeof producers.lifecycleProducerSha === 'string' &&
-    options.envelope.lifecycleSourceSha != null &&
-    producers.lifecycleProducerSha !== options.envelope.lifecycleSourceSha
-  ) {
-    reasons.push('lifecycle_producer_envelope_mismatch');
-  }
-  if (
-    typeof producers.lifecycleProducerSha === 'string' &&
-    typeof anchors.expectedLifecycleProducerSha === 'string' &&
-    producers.lifecycleProducerSha !== anchors.expectedLifecycleProducerSha
-  ) {
-    reasons.push('lifecycle_producer_anchor_mismatch');
-  }
-  if (
-    typeof producers.bindingObserverSha === 'string' &&
-    sidecarObserver != null &&
-    producers.bindingObserverSha !== sidecarObserver
-  ) {
-    reasons.push('binding_observer_sidecar_mismatch');
-  }
-  if (
-    typeof producers.lifecycleProducerSha === 'string' &&
-    sidecarLifecycleProducer != null &&
-    producers.lifecycleProducerSha !== sidecarLifecycleProducer
-  ) {
-    reasons.push('lifecycle_producer_sidecar_mismatch');
-  }
-
-  // Fingerprints vs actual sealed ratings (recomputed; ignore stored ok).
-  let recomputedFp: string | null = null;
-  try {
-    recomputedFp = buildRatingFingerprint(options.ratingsByTeamId);
-  } catch {
-    reasons.push('sealed_ratings_fingerprint_recompute_failed');
-  }
-  if (recomputedFp != null && recomputedFp !== options.ratingFingerprint) {
-    reasons.push('sealed_inputs_fingerprint_disagreement');
-  }
-  const fingerprints = evidence.fingerprints ?? {};
-  const fpKeys = [
-    'captureRecomputed',
-    'declaredBundleInputs',
-    'binding',
-    'registryPin',
-    'adaptedClaim',
-    'qualifierExpectation',
-  ] as const;
-  for (const key of fpKeys) {
-    const value = fingerprints[key];
-    if (value == null) {
-      reasons.push(`fingerprint_${key}_missing`);
-      continue;
-    }
-    if (recomputedFp != null && value !== recomputedFp) {
-      reasons.push(`fingerprint_${key}_mismatch`);
-    }
-    if (value !== options.ratingFingerprint) {
-      reasons.push(`fingerprint_${key}_sealed_inputs_mismatch`);
-    }
-  }
-  if (
-    evidence.adapted?.claims?.ratingFingerprint != null &&
-    recomputedFp != null &&
-    evidence.adapted.claims.ratingFingerprint !== recomputedFp
-  ) {
-    reasons.push('adapted_claim_fingerprint_mismatch');
-  }
-
-  // Recompute lineage coverage from retained attestation bytes vs sealed as-of.
-  let coversCaptureAsOf = false;
-  if (typeof eb.lineageAttestationUtf8 === 'string' && eb.lineageAttestationUtf8 !== '') {
-    try {
-      const attestation = JSON.parse(eb.lineageAttestationUtf8) as {
-        checkedThroughTime?: unknown;
-        lineageEvidenceInventorySha256?: unknown;
-      };
-      const checkedMs = parseEvidenceIsoMs(attestation.checkedThroughTime);
-      const asOfMs = parseEvidenceIsoMs(options.envelope.snapshotReferenceTime);
-      if (checkedMs == null || asOfMs == null) {
-        reasons.push('lineage_as_of_unparseable');
-      } else {
-        coversCaptureAsOf = checkedMs >= asOfMs;
-        if (!coversCaptureAsOf) {
-          reasons.push('lineage_does_not_cover_capture');
-        }
-      }
-      if (
-        typeof anchors.approvedLineageInventorySha256 === 'string' &&
-        attestation.lineageEvidenceInventorySha256 !== anchors.approvedLineageInventorySha256
-      ) {
-        reasons.push('lineage_inventory_anchor_mismatch');
-      }
-      if (
-        evidence.lineage?.coversCaptureAsOf === true &&
-        coversCaptureAsOf !== true
-      ) {
-        reasons.push('lineage_stored_coverage_contradiction');
-      }
-      if (
-        typeof evidence.lineage?.checkedThroughTime === 'string' &&
-        typeof attestation.checkedThroughTime === 'string' &&
-        evidence.lineage.checkedThroughTime !== attestation.checkedThroughTime
-      ) {
-        reasons.push('lineage_checked_through_disagreement');
-      }
-    } catch {
-      reasons.push('lineage_attestation_unparseable');
-    }
-  }
-
-  if (options.envelope.lifecycleQualification.liveAccepted === true) {
-    reasons.push('envelope_claims_live_accepted');
-  }
-
-  const unique = Array.from(new Set(reasons));
-  return { accepted: unique.length === 0, reasons: unique };
-}
+}) => { accepted: boolean; reasons: string[] };
 
 export function buildPrimaryReadinessBlockedReceiptBody(bundle: MlCal1ArtifactBundle): string {
   const env = bundle.envelope;
@@ -3028,6 +2711,11 @@ export interface MlCal1TerminalReadOptions {
   expectedInvalidationSha256?: string | null;
   expectedManifestSha256?: string | null;
   expectedPackageChecksumsSha256?: string | null;
+  /**
+   * Full accepted binding/G2 replay evaluator. Required for bindingEvidenceAccepted.
+   * When binding evidence is present and this is omitted, acceptance fails closed.
+   */
+  evaluateBindingEvidence?: MlCal1BindingEvidenceEvaluator;
 }
 
 export interface MlCal1TerminalReadResult {
@@ -3058,9 +2746,9 @@ export interface MlCal1TerminalReadResult {
   /** True when a manifested binding-integration-evidence member was verified. */
   bindingIntegrationEvidencePresent: boolean;
   /**
-   * True only when independently verified, evidence present+ok, and
-   * correspondence to the sealed capture holds. Rejected or missing evidence
-   * never grants binding acceptance.
+   * True only when independently verified AND full binding/G2 replay against
+   * retained evidence + sealed capture inputs succeeds. Byte integrity alone,
+   * stored ok/qualified flags, or a missing evaluator never grant acceptance.
    */
   bindingEvidenceAccepted: boolean;
   primaryReadinessBlockedEffective: boolean;
@@ -3432,21 +3120,28 @@ export function readCaptureTerminalResult(
   const primaryReadinessBlockedEffective = !eligibilityAccepted;
 
   const bindingIntegrationEvidencePresent = bindingIntegrationEvidence != null;
-  const bindingEval = evaluateBindingEvidenceAcceptance({
-    envelope,
-    ratingsByTeamId: inputs.ratingsByTeamId,
-    ratingFingerprint: inputs.ratingFingerprint,
-    evidence: bindingIntegrationEvidence,
-  });
-  if (bindingIntegrationEvidencePresent && bindingEval.reasons.length > 0) {
-    integrityNotes.push(
-      ...bindingEval.reasons.map((r) => `binding_evidence:${r}`)
-    );
+  let bindingEvidenceAccepted = false;
+  if (bindingIntegrationEvidencePresent) {
+    if (!options.evaluateBindingEvidence) {
+      integrityNotes.push('binding_evidence_full_replay_unavailable');
+      bindingEvidenceAccepted = false;
+    } else {
+      const bindingEval = options.evaluateBindingEvidence({
+        envelope,
+        ratingsByTeamId: inputs.ratingsByTeamId,
+        ratingFingerprint: inputs.ratingFingerprint,
+        evidence: bindingIntegrationEvidence,
+      });
+      if (bindingEval.reasons.length > 0) {
+        integrityNotes.push(
+          ...bindingEval.reasons.map((r) => `binding_evidence:${r}`)
+        );
+      }
+      // Full G2 replay result only — never stored evidence.ok / qualified flags.
+      bindingEvidenceAccepted =
+        independentlyVerifiedIntegrity && bindingEval.accepted;
+    }
   }
-  // Acceptance is recomputed from retained proof + sealed ratings — never from
-  // stored evidence.ok / lifecycleQualification.qualified flags.
-  const bindingEvidenceAccepted =
-    independentlyVerifiedIntegrity && bindingEval.accepted;
 
   return {
     terminalStatus: derivedStatus,

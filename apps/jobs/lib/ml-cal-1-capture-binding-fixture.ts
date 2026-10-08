@@ -25,14 +25,18 @@ import {
   ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_SCHEMA,
   ML_CAL_1_BINDING_REPORT_EMBEDDED_RETRIEVAL,
   assertBindingIntegrationEvidenceCorrespondence,
-  evaluateBindingEvidenceAcceptance,
   planMlCal1Capture,
+  readCaptureTerminalResult,
   resolveEmbeddedBindingArchiveBytes,
   sha256Utf8Bytes,
   type MlCal1ArtifactBundle,
+  type MlCal1ExportedRatingInput,
+  type MlCal1CaptureEnvelope,
   type MlCal1FixtureInput,
   type MlCal1PlanOptions,
   type MlCal1PlanResult,
+  type MlCal1TerminalReadOptions,
+  type MlCal1TerminalReadResult,
   type MlCal1TrustedAcceptanceRecord,
 } from './ml-cal-1-capture';
 import type { MlCal1LifecycleBindingVerifyInput } from './ml-cal-1-lifecycle-binding';
@@ -43,7 +47,6 @@ export {
   ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_SCHEMA,
   ML_CAL_1_BINDING_REPORT_EMBEDDED_RETRIEVAL,
   assertBindingIntegrationEvidenceCorrespondence,
-  evaluateBindingEvidenceAcceptance,
   resolveEmbeddedBindingArchiveBytes,
 };
 
@@ -142,6 +145,19 @@ export interface MlCal1BindingIntegrationEvidenceV1 {
     verifiedReceiptDigest: string | null;
     lifecycleSourceSha: string | null;
   } | null;
+  /**
+   * Complete separately supplied trust / orchestration context required to
+   * replay accepted G2 verification. Approval digests are retained as supplied
+   * — never generated from computed receipt bytes.
+   */
+  replay: {
+    trustedAcceptance: MlCal1TrustedAcceptanceRecord | null;
+    approvedDerivedCoreDigest: string | null;
+    captureProducerSha: string;
+    lifecycleMode: 'fixture_hypothetical';
+    expectedSeason: number;
+    prospectiveWeek: number;
+  };
 }
 
 export interface MlCal1BindingFixturePlanResult extends MlCal1PlanResult {
@@ -405,6 +421,24 @@ export function buildBindingIntegrationEvidence(options: {
     binding: bindingSummary,
     adapted: integration?.adapted ?? null,
     lifecycle,
+    replay: {
+      trustedAcceptance: trustedAcceptance
+        ? {
+            approvedReceiptDigest: trustedAcceptance.approvedReceiptDigest,
+            season: trustedAcceptance.season,
+            selectedPolicy: trustedAcceptance.selectedPolicy,
+            completedThroughWeek: trustedAcceptance.completedThroughWeek,
+            canonicalWeight: trustedAcceptance.canonicalWeight,
+            ratingFingerprint: trustedAcceptance.ratingFingerprint,
+            lifecycleSourceSha: trustedAcceptance.lifecycleSourceSha,
+          }
+        : null,
+      approvedDerivedCoreDigest: approvedDerivedCoreDigest ?? null,
+      captureProducerSha: options.captureProducerSha,
+      lifecycleMode: 'fixture_hypothetical',
+      expectedSeason: options.season,
+      prospectiveWeek: options.week,
+    },
   };
 }
 
@@ -546,6 +580,201 @@ export function writeBindingFixturePackage(
     `${JSON.stringify(anchors, null, 2)}\n`,
     'utf8'
   );
+}
+
+/**
+ * Full accepted binding/G2 replay against retained evidence + sealed capture
+ * inputs. Reuses verifyBindingThenQualifyCaptureLifecycle — not a partial
+ * checklist. Stored evidence.ok / envelope.qualified are never treated as proof.
+ */
+export function evaluateBindingEvidenceAcceptance(options: {
+  envelope: MlCal1CaptureEnvelope;
+  ratingsByTeamId: Record<string, MlCal1ExportedRatingInput>;
+  ratingFingerprint: string;
+  evidence: Record<string, unknown> | null | undefined;
+}): {
+  accepted: boolean;
+  reasons: string[];
+  replay: MlCal1CaptureBindingIntegrationResult | null;
+} {
+  if (options.evidence == null) {
+    return {
+      accepted: false,
+      reasons: ['binding_integration_evidence_missing'],
+      replay: null,
+    };
+  }
+  if (options.envelope.bindingIntegrationAudit?.used !== true) {
+    return {
+      accepted: false,
+      reasons: ['binding_integration_audit_not_used'],
+      replay: null,
+    };
+  }
+  const evidence = options.evidence as unknown as MlCal1BindingIntegrationEvidenceV1;
+  if (evidence.schemaVersion !== ML_CAL_1_BINDING_INTEGRATION_EVIDENCE_SCHEMA) {
+    return {
+      accepted: false,
+      reasons: ['binding_integration_evidence_unknown_schema'],
+      replay: null,
+    };
+  }
+  if (evidence.kind !== 'binding-integration-evidence') {
+    return {
+      accepted: false,
+      reasons: ['binding_integration_evidence_kind_invalid'],
+      replay: null,
+    };
+  }
+  if (evidence.integrationSchemaVersion !== ML_CAL_1_CAPTURE_BINDING_INTEGRATION_SCHEMA) {
+    return {
+      accepted: false,
+      reasons: ['binding_integration_unknown_integration_schema'],
+      replay: null,
+    };
+  }
+  if (evidence.liveAccepted !== false || evidence.fixtureProvenanceRetained !== true) {
+    return {
+      accepted: false,
+      reasons: ['binding_integration_evidence_fixture_provenance_violation'],
+      replay: null,
+    };
+  }
+  if (options.envelope.lifecycleQualification.liveAccepted !== false) {
+    return {
+      accepted: false,
+      reasons: ['envelope_live_accepted_violation'],
+      replay: null,
+    };
+  }
+  if (
+    evidence.captureId !== options.envelope.captureId ||
+    evidence.season !== options.envelope.season ||
+    evidence.week !== options.envelope.week ||
+    evidence.snapshotReferenceTime !== options.envelope.snapshotReferenceTime
+  ) {
+    return {
+      accepted: false,
+      reasons: ['binding_integration_evidence_scope_mismatch'],
+      replay: null,
+    };
+  }
+
+  const replayCtx = evidence.replay;
+  if (
+    replayCtx == null ||
+    typeof replayCtx !== 'object' ||
+    replayCtx.lifecycleMode !== 'fixture_hypothetical' ||
+    typeof replayCtx.captureProducerSha !== 'string' ||
+    typeof replayCtx.expectedSeason !== 'number' ||
+    typeof replayCtx.prospectiveWeek !== 'number'
+  ) {
+    return {
+      accepted: false,
+      reasons: ['binding_integration_replay_context_missing'],
+      replay: null,
+    };
+  }
+  if (replayCtx.captureProducerSha !== options.envelope.producerRepositorySha) {
+    return {
+      accepted: false,
+      reasons: ['binding_integration_replay_capture_producer_mismatch'],
+      replay: null,
+    };
+  }
+  if (replayCtx.trustedAcceptance == null) {
+    return {
+      accepted: false,
+      reasons: ['binding_integration_trusted_acceptance_missing'],
+      replay: null,
+    };
+  }
+  // Approval digest must remain the separately retained anchor — compared, not minted.
+  if (
+    evidence.approvalAnchors?.approvedReceiptDigest == null ||
+    replayCtx.trustedAcceptance.approvedReceiptDigest !==
+      evidence.approvalAnchors.approvedReceiptDigest
+  ) {
+    return {
+      accepted: false,
+      reasons: ['binding_integration_trusted_acceptance_anchor_mismatch'],
+      replay: null,
+    };
+  }
+
+  let bindingInput: MlCal1LifecycleBindingVerifyInput;
+  try {
+    bindingInput = buildBindingVerifyInputFromSealedEvidence(evidence);
+  } catch (err) {
+    return {
+      accepted: false,
+      reasons: [
+        err instanceof Error
+          ? err.message
+          : 'binding_integration_verifier_input_rebuild_failed',
+      ],
+      replay: null,
+    };
+  }
+
+  const integrationInput: MlCal1CaptureBindingIntegrationInput = {
+    binding: bindingInput,
+    captureInputs: {
+      ratingFingerprint: options.ratingFingerprint,
+      ratingsByTeamId: options.ratingsByTeamId,
+    },
+    captureSnapshotReferenceTime: options.envelope.snapshotReferenceTime,
+    trustedAcceptance: replayCtx.trustedAcceptance,
+    captureProducerSha: replayCtx.captureProducerSha,
+    lifecycleMode: 'fixture_hypothetical',
+    expectedSeason: replayCtx.expectedSeason,
+    prospectiveWeek: replayCtx.prospectiveWeek,
+    approvedDerivedCoreDigest: replayCtx.approvedDerivedCoreDigest ?? null,
+  };
+
+  let result: MlCal1CaptureBindingIntegrationResult;
+  try {
+    result = verifyBindingThenQualifyCaptureLifecycle(integrationInput);
+  } catch (err) {
+    return {
+      accepted: false,
+      reasons: [
+        err instanceof Error ? err.message : 'binding_integration_replay_threw',
+      ],
+      replay: null,
+    };
+  }
+
+  const accepted =
+    result.ok === true &&
+    result.lifecycle != null &&
+    result.lifecycle.qualified === true &&
+    result.liveAccepted === false &&
+    result.lifecycle.liveAccepted === false &&
+    result.fixtureProvenanceRetained === true &&
+    options.envelope.lifecycleQualification.liveAccepted === false;
+
+  const reasons = accepted
+    ? []
+    : Array.from(
+        new Set([
+          ...result.reasons,
+          ...(result.lifecycle == null ? ['binding_integration_lifecycle_null'] : []),
+          ...(result.ok ? [] : ['binding_integration_replay_not_ok']),
+        ])
+      );
+
+  return { accepted, reasons, replay: result };
+}
+
+/** Reader entry that always supplies the authoritative G2 replay evaluator. */
+export function readCaptureTerminalResultWithBindingReplay(
+  options: Omit<MlCal1TerminalReadOptions, 'evaluateBindingEvidence'>
+): MlCal1TerminalReadResult {
+  return readCaptureTerminalResult({
+    ...options,
+    evaluateBindingEvidence: evaluateBindingEvidenceAcceptance,
+  });
 }
 
 /**

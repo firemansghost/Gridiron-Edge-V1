@@ -341,13 +341,16 @@ export async function runMlCal1Cli(
       fixtureInput.lifecycleMode = 'live';
     }
 
-    const planned = args.bindingIntegrationDir
-      ? await import('./lib/ml-cal-1-capture-binding-fixture').then((mod) =>
-          mod.planFixtureCaptureWithBindingIntegration(
-            fixtureInput,
-            mod.loadBindingFixturePackage(args.bindingIntegrationDir as string),
-            { now }
-          )
+    const bindingFixtureMod = args.bindingIntegrationDir
+      ? await import('./lib/ml-cal-1-capture-binding-fixture')
+      : null;
+    const planned = bindingFixtureMod
+      ? bindingFixtureMod.planFixtureCaptureWithBindingIntegration(
+          fixtureInput,
+          bindingFixtureMod.loadBindingFixturePackage(
+            args.bindingIntegrationDir as string
+          ),
+          { now }
         )
       : planMlCal1Capture(fixtureInput, { now });
 
@@ -363,6 +366,7 @@ export async function runMlCal1Cli(
 
     // CLI reporting uses the same validated reader as offline consumers. Write-time
     // digests are the external pin for this process (not a self-hash inside the file).
+    // Binding acceptance requires the authoritative G2 replay evaluator.
     const validated = readCaptureTerminalResult({
       rootDir: outRoot,
       captureId: fixtureInput.captureId,
@@ -370,6 +374,9 @@ export async function runMlCal1Cli(
       expectedTerminalSha256: written.terminalSha256,
       expectedInvalidationSha256: written.invalidationSha256,
       expectedPackageChecksumsSha256: written.packageChecksumsSha256,
+      evaluateBindingEvidence: bindingFixtureMod
+        ? bindingFixtureMod.evaluateBindingEvidenceAcceptance
+        : undefined,
     });
 
     const finalEnvelope = written.bundle.envelope;

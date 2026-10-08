@@ -14,6 +14,7 @@ import {
   buildBindingVerifyInputFromSealedEvidence,
   evaluateBindingEvidenceAcceptance,
   planFixtureCaptureWithBindingIntegration,
+  readCaptureTerminalResultWithBindingReplay,
   writeBindingFixturePackage,
   type MlCal1BindingIntegrationEvidenceV1,
 } from '../lib/ml-cal-1-capture-binding-fixture';
@@ -30,6 +31,9 @@ import {
   type MlCal1FixtureInput,
   type MlCal1RawRatingRow,
 } from '../lib/ml-cal-1-capture';
+import {
+  ML_CAL_1_CAPTURE_BINDING_INTEGRATION_SCHEMA,
+} from '../lib/ml-cal-1-capture-binding-integration';
 import { verifyLifecycleBindingSidecar } from '../lib/ml-cal-1-lifecycle-binding';
 import { runMlCal1Cli } from '../capture-ml-cal-1-2026';
 import {
@@ -382,7 +386,7 @@ describe('G3 fixture capture/binding wiring', () => {
       dependencyHashes: { gitByteHashes: {}, dirty: [] },
       now: () => new Date(T_PUB),
     });
-    const validated = readCaptureTerminalResult({
+    const validated = readCaptureTerminalResultWithBindingReplay({
       rootDir: root,
       captureId: 'g3-fixture-capture',
       expectedManifestSha256: written.manifestSha256,
@@ -449,7 +453,7 @@ describe('G3 fixture capture/binding wiring', () => {
       dependencyHashes: { gitByteHashes: {}, dirty: [] },
       now: () => new Date(T_PUB),
     });
-    const validated = readCaptureTerminalResult({
+    const validated = readCaptureTerminalResultWithBindingReplay({
       rootDir: root,
       captureId: 'g3-fixture-capture',
       expectedManifestSha256: written.manifestSha256,
@@ -713,7 +717,7 @@ describe('G3 fixture capture/binding wiring', () => {
       dependencyHashes: { gitByteHashes: {}, dirty: [] },
       now: () => new Date('2026-10-07T22:40:00.000Z'),
     });
-    const validated = readCaptureTerminalResult({
+    const validated = readCaptureTerminalResultWithBindingReplay({
       rootDir: root,
       captureId: 'g3-fixture-capture',
       expectedManifestSha256: written.manifestSha256,
@@ -769,7 +773,7 @@ describe('G3 fixture capture/binding wiring', () => {
     evidence.reasons = ['tampered_ok_flip'];
     fs.writeFileSync(evidencePath, `${JSON.stringify(evidence)}\n`, 'utf8');
     expect(() =>
-      readCaptureTerminalResult({
+      readCaptureTerminalResultWithBindingReplay({
         rootDir: root,
         captureId: 'g3-fixture-capture',
         expectedManifestSha256: written.manifestSha256,
@@ -803,7 +807,7 @@ describe('G3 fixture capture/binding wiring', () => {
       now: () => new Date(T_PUB),
     });
     expect(() =>
-      readCaptureTerminalResult({
+      readCaptureTerminalResultWithBindingReplay({
         rootDir: path.dirname(writtenMismatch.captureDir),
         captureId: 'g3-fixture-capture-mismatch',
         expectedManifestSha256: writtenMismatch.manifestSha256,
@@ -992,19 +996,24 @@ describe('G3 fixture capture/binding wiring', () => {
     expect(parallelDbCalls).toBe(0);
   });
 
-  function sealMutatedEvidence(
+  function sealMutatedPackage(
     planned: ReturnType<typeof planFixtureCaptureWithBindingIntegration>,
-    mutate: (evidence: MlCal1BindingIntegrationEvidenceV1) => void,
+    mutate: (ctx: {
+      evidence: MlCal1BindingIntegrationEvidenceV1;
+      inputs: typeof planned.bundle.inputs;
+    }) => void,
     captureId: string
   ) {
     const evidence = JSON.parse(
       JSON.stringify(planned.bindingIntegrationEvidence)
     ) as MlCal1BindingIntegrationEvidenceV1;
-    mutate(evidence);
-    // Keep stored ok/audit consistent so structural reader still runs acceptance eval.
+    const inputs = JSON.parse(JSON.stringify(planned.bundle.inputs)) as typeof planned.bundle.inputs;
+    mutate({ evidence, inputs });
+    // Stored ok/qualified remain true so acceptance must come from full G2 replay.
     evidence.ok = true;
     const bundle = {
       ...planned.bundle,
+      inputs,
       envelope: {
         ...planned.bundle.envelope,
         bindingIntegrationAudit: {
@@ -1027,7 +1036,7 @@ describe('G3 fixture capture/binding wiring', () => {
       dependencyHashes: { gitByteHashes: {}, dirty: [] },
       now: () => new Date(T_PUB),
     });
-    const validated = readCaptureTerminalResult({
+    const validated = readCaptureTerminalResultWithBindingReplay({
       rootDir: path.dirname(written.captureDir),
       captureId,
       expectedManifestSha256: written.manifestSha256,
@@ -1038,7 +1047,7 @@ describe('G3 fixture capture/binding wiring', () => {
     return { written, validated, evidence };
   }
 
-  it('F1-A: hash-consistent contradictions fail binding acceptance without trusting stored ok', () => {
+  it('F1-A: full G2 replay rejects invalid ZIP, empty pin, wrong week, superseding lineage, stale rating, unknown integration schema', () => {
     const planned = planFixtureCaptureWithBindingIntegration(
       captureInput(built.ratings, built.rows, built.fingerprint),
       { binding: built.binding, trustedAcceptance: trust },
@@ -1046,75 +1055,145 @@ describe('G3 fixture capture/binding wiring', () => {
     );
     expect(planned.bindingIntegrationEvidence.ok).toBe(true);
 
-    // Lying stored ok/qualified must not grant acceptance when lineage proof fails.
-    const lin = sealMutatedEvidence(
+    // Reader without evaluator fails closed even for a valid package.
+    const noEvalRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'g3-noeval-'));
+    const noEvalWritten = writeCaptureArtifactsAtomic({
+      rootDir: noEvalRoot,
+      captureId: 'g3-no-eval',
+      bundle: planned.bundle,
+      dependencyHashes: { gitByteHashes: {}, dirty: [] },
+      now: () => new Date(T_PUB),
+    });
+    const noEval = readCaptureTerminalResult({
+      rootDir: noEvalRoot,
+      captureId: 'g3-no-eval',
+      expectedManifestSha256: noEvalWritten.manifestSha256,
+      expectedTerminalSha256: noEvalWritten.terminalSha256,
+      expectedInvalidationSha256: noEvalWritten.invalidationSha256,
+      expectedPackageChecksumsSha256: noEvalWritten.packageChecksumsSha256,
+    });
+    expect(noEval.bindingIntegrationEvidencePresent).toBe(true);
+    expect(noEval.bindingEvidenceAccepted).toBe(false);
+    expect(noEval.integrityNotes).toContain('binding_evidence_full_replay_unavailable');
+
+    const badZip = sealMutatedPackage(
       planned,
-      (evidence) => {
+      ({ evidence }) => {
+        const zipBytes = Buffer.from('NOT A ZIP', 'utf8');
+        const zipSha = sha256Utf8Bytes(zipBytes);
+        evidence.evidenceBytes.zipBytesBase64 = zipBytes.toString('base64');
+        evidence.evidenceBytes.zipSha256 = zipSha;
+        evidence.evidenceBytes.zipBytesPin = {
+          sha256: zipSha,
+          byteCount: zipBytes.byteLength,
+          retrieval: ML_CAL_1_BINDING_ARCHIVE_EMBEDDED_RETRIEVAL,
+        };
+        evidence.approvalAnchors.expectedZipSha256 = zipSha;
+      },
+      'g3-invalid-zip'
+    );
+    expect(badZip.validated.bindingEvidenceAccepted).toBe(false);
+    expect(
+      badZip.validated.integrityNotes.some((n) =>
+        /zip_extract_failed|invalid_zip/i.test(n)
+      )
+    ).toBe(true);
+
+    const emptyPin = sealMutatedPackage(
+      planned,
+      ({ evidence }) => {
+        const pinUtf8 = '{}\n';
+        evidence.evidenceBytes.registryPinUtf8 = pinUtf8;
+        evidence.evidenceBytes.registryPinSha256 = sha256Utf8Bytes(pinUtf8);
+      },
+      'g3-empty-pin'
+    );
+    expect(emptyPin.validated.bindingEvidenceAccepted).toBe(false);
+    expect(
+      emptyPin.validated.integrityNotes.some((n) =>
+        n.includes('registry_pin_provenance_missing')
+      )
+    ).toBe(true);
+
+    const wrongWeek = sealMutatedPackage(
+      planned,
+      ({ evidence }) => {
+        evidence.evidenceBytes.prospectiveTargetWeek = 999;
+      },
+      'g3-wrong-week'
+    );
+    expect(wrongWeek.validated.bindingEvidenceAccepted).toBe(false);
+    expect(
+      wrongWeek.validated.integrityNotes.some((n) =>
+        /archive_claims_mismatch_vs_registry|prospective_week_mismatch/i.test(n)
+      )
+    ).toBe(true);
+
+    const superseding = sealMutatedPackage(
+      planned,
+      ({ evidence }) => {
         const attestation = JSON.parse(evidence.evidenceBytes.lineageAttestationUtf8!);
-        attestation.checkedThroughTime = '2026-10-06T12:00:00.000Z';
+        attestation.searchOutcome = 'superseding_found';
+        attestation.supersedingArtifacts = [
+          {
+            workflowRunId: '1',
+            zipSha256: 'a'.repeat(64),
+            completedThroughWeek: 7,
+          },
+        ];
         const next = `${JSON.stringify(attestation)}\n`;
         evidence.evidenceBytes.lineageAttestationUtf8 = next;
         evidence.evidenceBytes.lineageAttestationSha256 = sha256Utf8Bytes(next);
         evidence.approvalAnchors.approvedLineageAttestationDigest = sha256Utf8Bytes(next);
-        evidence.lineage.coversCaptureAsOf = true;
-        evidence.lineage.checkedThroughTime = attestation.checkedThroughTime;
       },
-      'g3-contra-lineage'
+      'g3-superseding'
     );
-    expect(lin.validated.bindingEvidenceAccepted).toBe(false);
-    expect(lin.validated.integrityNotes.some((n) => n.includes('lineage'))).toBe(true);
+    expect(superseding.validated.bindingEvidenceAccepted).toBe(false);
+    expect(
+      superseding.validated.integrityNotes.some((n) =>
+        /lineage_search_outcome_invalid|binding_invalidated_by_later_lifecycle/i.test(n)
+      )
+    ).toBe(true);
 
-    const obs = sealMutatedEvidence(
+    const staleRating = sealMutatedPackage(
       planned,
-      (evidence) => {
-        evidence.producers.bindingObserverSha = 'cccccccccccccccccccccccccccccccccccccccc';
+      ({ inputs }) => {
+        const teamId = Object.keys(inputs.ratingsByTeamId)[0];
+        inputs.ratingsByTeamId[teamId] = {
+          ...inputs.ratingsByTeamId[teamId],
+          powerRatingRaw: '999',
+          // Intentionally leave rowContentHash / valueUsed / fingerprint stale.
+        };
       },
-      'g3-contra-observer'
+      'g3-stale-rating'
     );
-    expect(obs.validated.bindingEvidenceAccepted).toBe(false);
+    expect(staleRating.validated.bindingEvidenceAccepted).toBe(false);
+    expect(
+      staleRating.validated.integrityNotes.some((n) =>
+        n.includes('exported_row_content_hash_mismatch')
+      )
+    ).toBe(true);
 
-    const fp = sealMutatedEvidence(
+    const unknownIntegration = sealMutatedPackage(
       planned,
-      (evidence) => {
-        evidence.fingerprints.binding = 'd'.repeat(64);
+      ({ evidence }) => {
+        (evidence as { integrationSchemaVersion: string }).integrationSchemaVersion =
+          'ml-cal-1-capture-binding-integration-g2-v999';
       },
-      'g3-contra-fingerprint'
+      'g3-unknown-integration-schema'
     );
-    expect(fp.validated.bindingEvidenceAccepted).toBe(false);
+    expect(unknownIntegration.validated.bindingEvidenceAccepted).toBe(false);
+    expect(
+      unknownIntegration.validated.integrityNotes.some((n) =>
+        n.includes('binding_integration_unknown_integration_schema')
+      )
+    ).toBe(true);
 
-    const receipt = sealMutatedEvidence(
-      planned,
-      (evidence) => {
-        evidence.approvalAnchors.approvedReceiptDigest = 'e'.repeat(64);
-      },
-      'g3-contra-receipt'
-    );
-    expect(receipt.validated.bindingEvidenceAccepted).toBe(false);
-
-    const missingAnchor = sealMutatedEvidence(
-      planned,
-      (evidence) => {
-        evidence.approvalAnchors.approvedRegistryDocumentDigest = null;
-      },
-      'g3-missing-anchor'
-    );
-    expect(missingAnchor.validated.bindingEvidenceAccepted).toBe(false);
-
-    const missingBytes = sealMutatedEvidence(
-      planned,
-      (evidence) => {
-        evidence.evidenceBytes.adaptedReceiptUtf8 = null;
-        evidence.evidenceBytes.adaptedReceiptSha256 = null;
-      },
-      'g3-missing-bytes'
-    );
-    expect(missingBytes.validated.bindingEvidenceAccepted).toBe(false);
-
-    // Unknown schema fails closed at structural validation.
+    // Primary evidence schema still fails closed structurally.
     expect(() =>
-      sealMutatedEvidence(
+      sealMutatedPackage(
         planned,
-        (evidence) => {
+        ({ evidence }) => {
           (evidence as { schemaVersion: string }).schemaVersion =
             'ml-cal-1-binding-integration-evidence-v999';
         },
@@ -1122,12 +1201,12 @@ describe('G3 fixture capture/binding wiring', () => {
       )
     ).toThrow(/binding_integration_evidence_schema_mismatch/);
 
-    // Direct evaluator ignores stored ok=true when proof is missing.
+    // Direct full-replay evaluator rejects missing trust without treating ok as proof.
     const lying = JSON.parse(
       JSON.stringify(planned.bindingIntegrationEvidence)
     ) as MlCal1BindingIntegrationEvidenceV1;
     lying.ok = true;
-    lying.approvalAnchors.approvedReceiptDigest = null;
+    lying.replay.trustedAcceptance = null;
     const evalResult = evaluateBindingEvidenceAcceptance({
       envelope: {
         ...planned.bundle.envelope,
@@ -1147,7 +1226,10 @@ describe('G3 fixture capture/binding wiring', () => {
       evidence: lying as unknown as Record<string, unknown>,
     });
     expect(evalResult.accepted).toBe(false);
-    expect(evalResult.reasons).toContain('approved_receipt_digest_missing');
+    expect(evalResult.reasons).toContain('binding_integration_trusted_acceptance_missing');
+    expect(ML_CAL_1_CAPTURE_BINDING_INTEGRATION_SCHEMA).toBe(
+      planned.bindingIntegrationEvidence.integrationSchemaVersion
+    );
   });
 
   it('F1-B: copy-away sealed package verifies without the original binding fixture directory', () => {
@@ -1189,7 +1271,7 @@ describe('G3 fixture capture/binding wiring', () => {
     fs.rmSync(sealRoot, { recursive: true, force: true });
     expect(fs.existsSync(bindingDir)).toBe(false);
 
-    const validated = readCaptureTerminalResult({
+    const validated = readCaptureTerminalResultWithBindingReplay({
       rootDir: copyRoot,
       captureId: 'g3-copyaway',
       expectedManifestSha256: written.manifestSha256,
