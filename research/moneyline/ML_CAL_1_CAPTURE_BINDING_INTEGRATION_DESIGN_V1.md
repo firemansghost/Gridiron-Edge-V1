@@ -53,7 +53,8 @@ Each gate requires independent review before the next is authorized.
 
 1. **Prospective registration (G6) precedes capture enablement (G7).**  
 2. **Capture-specific lineage and final eligibility (G8) follow capture existence** — they cannot be “pre-approved” at G5 for a capture that has not run.  
-3. G5 may approve *how* lineage attestations and registry anchors are retrieved and bound; G8 *applies* that mechanism to the concrete capture as-of.
+3. G5 may approve *how* lineage attestations and registry anchors are retrieved and bound; G8 *applies* that mechanism to the concrete capture as-of.  
+4. **Market freshness and publication deadlines are unchanged** from accepted PR #244 capture semantics: `snapshotReferenceTime` remains the sole as-of for market age / known-at; available forecasts still require `publicationTime <= kickoff - 30 minutes` and `publicationTime < kickoff`; later timestamps never salvage a stale market. Binding / lineage integration must not weaken or bypass those rules.
 
 **Merge of PR #245 or #244 is not implied by G1–G2.** Merge remains a separately authorized action.
 
@@ -121,8 +122,9 @@ The capture rating identity compared here is **only**:
 
 | Object | Exact field / computation | Role |
 |--------|---------------------------|------|
-| Capture planner output | `bundle.inputs.ratingFingerprint` | Result of `buildRatingFingerprint(ratingsByTeamId)` after `exportRatingInput` per team |
-| Sealed member | Value of `ratingFingerprint` **inside** the JSON object written as `inputs.json` | Same string as `bundle.inputs.ratingFingerprint` when sealed without mutation |
+| Capture planner output | `bundle.inputs.ratingFingerprint` | Exact field on the capture inputs object (PR #244 `planMlCal1Capture` → `bundle.inputs`) |
+| Recomputation path | `exportRatingInput(row)` for each season/`v1` rating row placed in `ratingsByTeamId`, then `buildRatingFingerprint(ratingsByTeamId)` | Same `ratingsByTeamId` map the planner uses for forecast margins — **not** a parallel re-read or a hash of sealed member bytes |
+| Sealed member field | `ratingFingerprint` **property inside** the JSON object written as `inputs.json` | Same string as `bundle.inputs.ratingFingerprint` when sealed without mutation |
 | Capture qualifier input | `qualifyLifecycleReceipt` → `expectedRatingFingerprint` | Must equal that same string |
 | Binding / pin / adapted claim | Binding recomputed fingerprint; `pin.approvedRatingFingerprint`; `adapted.claims.ratingFingerprint` | Must equal that same string |
 
@@ -140,8 +142,8 @@ A registry pin **cannot** substitute for recomputing / reading `inputs.ratingFin
 
 For live (and for offline integration fixtures that claim capture parity):
 
-1. Binding verifier recomputes fingerprint via unchanged `exportRatingInput` / `buildRatingFingerprint` on observed rows.
-2. Capture path independently obtains `captureRatingFingerprint = bundle.inputs.ratingFingerprint` (or the pre-seal variable of the same name from `buildRatingFingerprint`).
+1. Binding verifier recomputes fingerprint via unchanged `exportRatingInput` / `buildRatingFingerprint` on the binding observation rows.
+2. Capture path independently recomputes (or reads pre-seal) `bundle.inputs.ratingFingerprint` from the **same** `ratingsByTeamId` used to build forecasts in that capture plan — via `exportRatingInput` → `buildRatingFingerprint` as in accepted PR #244.
 3. All of the following must be **identical hex strings** (same object class — rating fingerprint only):
    - binding recomputed fingerprint  
    - `pin.approvedRatingFingerprint`  
@@ -149,7 +151,7 @@ For live (and for offline integration fixtures that claim capture parity):
    - `expectedRatingFingerprint` passed into `qualifyLifecycleReceipt`  
    - `bundle.inputs.ratingFingerprint` (and the `ratingFingerprint` field inside sealed `inputs.json` when present)
 
-Mismatch → `fingerprint_mismatch_vs_capture_export` (or existing capture reason) and **no** liveAccepted.
+Registry approval of a fingerprint string **does not** replace steps 1–2. Mismatch → `fingerprint_mismatch_vs_capture_export` (or existing capture reason) and **no** liveAccepted.
 
 ### 5.3 Decimal / zero semantics
 
@@ -274,18 +276,21 @@ if binding_path_enabled:
 
 CLI / planner remain fail-closed when anchors or genuine full-weight evidence are absent.
 
+**Unchanged capture timing (must not be relaxed by binding integration):** market freshness (`maxMarketAgeSeconds` vs `snapshotReferenceTime`) and publication deadlines (`publicationTime <= kickoff - 30 minutes` AND `publicationTime < kickoff`) remain exactly as in accepted PR #244. Binding lineage / receipt trust does not salvage stale markets or late publication.
+
 ---
 
 ## 10. Review checklist for G1 acceptance of this design
 
 - [ ] Approval retrieval is digest-anchored; no self-bootstrap  
 - [ ] `trustedAcceptance.approvedReceiptDigest` comes from independent evidence and is **compared** to `adapted.pinnedReceiptDigest` (never copied from it in §9)  
-- [ ] Exact fingerprint field is `inputs.ratingFingerprint` / `bundle.inputs.ratingFingerprint`; not `sha256(inputs.json)`  
-- [ ] Capture-export fingerprint compared; pin alone insufficient  
+- [ ] Exact fingerprint field is `bundle.inputs.ratingFingerprint` from `buildRatingFingerprint(ratingsByTeamId)` on forecast-used v1 rows; not `sha256(inputs.json)`  
+- [ ] Capture-export fingerprint recomputed; registry pin alone insufficient  
 - [ ] Three producer identities preserved  
 - [ ] Fixture provenance retained; no portable liveAccepted from synthetics  
 - [ ] Binding-window lineage (G5) separated from capture-as-of lineage (G8 runtime)  
 - [ ] Prospective registration (G6) precedes capture enablement (G7); capture-specific lineage precedes final eligibility/publication (G8)  
+- [ ] Market freshness and publication deadlines from PR #244 remain in force  
 - [ ] Dependency sequence keeps merge / live / prospective / calibration as later gates  
 - [ ] Week 5 authentic pins remain full-weight-negative  
 
