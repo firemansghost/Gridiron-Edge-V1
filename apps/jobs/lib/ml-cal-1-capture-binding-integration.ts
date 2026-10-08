@@ -195,11 +195,97 @@ function parseAttestationCheckedThrough(
 /**
  * Recompute ratingFingerprint from the capture planner's ratingsByTeamId map
  * using the accepted capture buildRatingFingerprint. Does not hash inputs.json.
+ * Caller must already have validated exported-row consistency (F4).
  */
 export function recomputeCaptureRatingFingerprintFromPlannerMap(
   ratingsByTeamId: Record<string, MlCal1ExportedRatingInput>
 ): string {
   return captureBuildRatingFingerprint(ratingsByTeamId);
+}
+
+function decimalLikeFromRaw(raw: string | null): { toString(): string } | null {
+  if (raw == null) return null;
+  return { toString: () => raw };
+}
+
+/**
+ * F4: re-export each planner row with accepted capture exportRatingInput and
+ * require cached rowContentHash / chosen / value / usability to match.
+ * Map keys must equal teamId. Cohort must match expected season and, when
+ * supplied, the binding observation team set.
+ */
+export function validateCapturePlannerRatingMap(options: {
+  ratingsByTeamId: Record<string, MlCal1ExportedRatingInput>;
+  expectedSeason: number;
+  bindingTeamIds?: string[];
+}): {
+  ok: boolean;
+  reasons: string[];
+  recomputedFingerprint: string | null;
+} {
+  const reasons: string[] = [];
+  const keys = Object.keys(options.ratingsByTeamId);
+  if (keys.length === 0) {
+    reasons.push('capture_planner_ratings_empty');
+  }
+  const rebuilt: Record<string, MlCal1ExportedRatingInput> = {};
+  const seen = new Set<string>();
+  for (const key of keys) {
+    const row = options.ratingsByTeamId[key];
+    if (!row || typeof row.teamId !== 'string' || row.teamId !== key) {
+      reasons.push('fingerprint_map_key_mismatch');
+      continue;
+    }
+    if (seen.has(row.teamId)) {
+      reasons.push('fingerprint_team_id_duplicate');
+    }
+    seen.add(row.teamId);
+    if (row.season !== options.expectedSeason || row.modelVersion !== 'v1') {
+      reasons.push('exported_row_cohort_invalid');
+    }
+    const raw: CaptureRawRatingRow = {
+      season: row.season,
+      teamId: row.teamId,
+      modelVersion: row.modelVersion,
+      powerRating: decimalLikeFromRaw(row.powerRatingRaw),
+      rating: decimalLikeFromRaw(row.ratingRaw),
+      games: row.games,
+      dataSource: row.dataSource,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+    const recomputed = captureExportRatingInput(raw);
+    if (recomputed.rowContentHash !== row.rowContentHash) {
+      reasons.push('exported_row_content_hash_mismatch');
+    }
+    if (
+      recomputed.chosenField !== row.chosenField ||
+      recomputed.valueUsed !== row.valueUsed ||
+      recomputed.inputUsable !== row.inputUsable
+    ) {
+      reasons.push('exported_row_identity_mismatch');
+    }
+    rebuilt[row.teamId] = recomputed;
+  }
+  if (options.bindingTeamIds) {
+    const expected = Array.from(new Set(options.bindingTeamIds)).sort();
+    const actual = Array.from(seen).sort();
+    if (
+      expected.length !== actual.length ||
+      expected.some((id, i) => id !== actual[i])
+    ) {
+      reasons.push('fingerprint_cohort_mismatch');
+    }
+  }
+  const uniqueReasons = uniq(reasons);
+  return {
+    ok: uniqueReasons.length === 0,
+    reasons: uniqueReasons,
+    recomputedFingerprint:
+      uniqueReasons.length === 0
+        ? captureBuildRatingFingerprint(rebuilt)
+        : null,
+  };
 }
 
 /**
@@ -308,6 +394,12 @@ export function verifyBindingThenQualifyCaptureLifecycle(
   const reasons: string[] = [];
   const notes: string[] = [];
 
+  // F2: G2 is fixture-only. Live mode is rejected; do not call the qualifier in live mode.
+  if (input.lifecycleMode !== 'fixture_hypothetical') {
+    reasons.push('g2_live_mode_rejected');
+    notes.push('g2_fixture_only_rejects_live_qualification');
+  }
+
   const finish = (partial: {
     binding: MlCal1LifecycleBindingVerifyResult;
     adapted: MlCal1CaptureBindingIntegrationResult['adapted'];
@@ -395,21 +487,43 @@ export function verifyBindingThenQualifyCaptureLifecycle(
   const checkedThrough = parseAttestationCheckedThrough(
     input.binding.lineageAttestationBytes
   );
-  const tCapture = input.captureSnapshotReferenceTime ?? null;
+  const tCaptureRaw = input.captureSnapshotReferenceTime ?? null;
 
   let fixtureProvenanceRetained =
     bindingResult.fixtureProvenanceRetained ||
     input.lifecycleMode === 'fixture_hypothetical';
 
-  if (tCapture == null || String(tCapture).trim() === '') {
+  // F1: validate capture time itself before any max() with binding timestamps.
+  const nowCeilingMs = parseIsoMs(input.binding.nowCeiling);
+  let captureTimeValid = false;
+  let tCapture: string | null = null;
+  if (tCaptureRaw == null || String(tCaptureRaw).trim() === '') {
     fixtureProvenanceRetained = true;
     reasons.push('capture_snapshot_reference_time_missing');
     notes.push('missing_capture_time_retains_fixture_provenance');
+  } else {
+    const captureMs = parseIsoMs(String(tCaptureRaw));
+    if (captureMs == null) {
+      fixtureProvenanceRetained = true;
+      reasons.push('capture_snapshot_reference_time_unparseable');
+      notes.push('unparseable_capture_time_retains_fixture_provenance');
+    } else if (nowCeilingMs != null && captureMs > nowCeilingMs) {
+      fixtureProvenanceRetained = true;
+      reasons.push('capture_snapshot_reference_time_after_ceiling');
+    } else {
+      captureTimeValid = true;
+      tCapture = String(tCaptureRaw);
+    }
   }
 
-  const requiredThrough = maxIso(bindingSnap, obsEnd, tCapture);
-  let coversCaptureAsOf: boolean | null = null;
-  if (tCapture != null && String(tCapture).trim() !== '') {
+  // Do not treat binding/observation times as coverage when capture time is invalid.
+  const requiredThrough = captureTimeValid
+    ? maxIso(bindingSnap, obsEnd, tCapture)
+    : null;
+  let coversCaptureAsOf: boolean | null = false;
+  if (!captureTimeValid) {
+    coversCaptureAsOf = false;
+  } else {
     const checkedMs = parseIsoMs(checkedThrough);
     const requiredMs = parseIsoMs(requiredThrough);
     if (checkedMs == null || requiredMs == null) {
@@ -481,15 +595,16 @@ export function verifyBindingThenQualifyCaptureLifecycle(
     reasons.push('binding_rating_fingerprint_missing');
   }
 
-  // §5: recompute from planner-used ratingsByTeamId (capture path).
-  let captureRecomputed: string | null = null;
-  try {
-    captureRecomputed = recomputeCaptureRatingFingerprintFromPlannerMap(
-      input.captureInputs.ratingsByTeamId
-    );
-  } catch {
-    reasons.push('capture_fingerprint_recompute_failed');
+  // F4: validate exported rows, then fingerprint the re-exported map.
+  const plannerCheck = validateCapturePlannerRatingMap({
+    ratingsByTeamId: input.captureInputs.ratingsByTeamId,
+    expectedSeason: input.expectedSeason,
+    bindingTeamIds: sidecar.bindingObservation.rows.map((r) => r.teamId),
+  });
+  if (!plannerCheck.ok) {
+    reasons.push(...plannerCheck.reasons);
   }
+  const captureRecomputed = plannerCheck.recomputedFingerprint;
 
   const declared = input.captureInputs.ratingFingerprint;
   if (typeof declared !== 'string' || !HEX64.test(declared)) {
@@ -598,7 +713,42 @@ export function verifyBindingThenQualifyCaptureLifecycle(
       ) {
         reasons.push('trusted_acceptance_fingerprint_vs_capture_export');
       }
+      // F3: fixture mode does not validate trust scope; orchestration must.
+      if (trust.season !== input.expectedSeason || trust.season !== report.season) {
+        reasons.push('trusted_acceptance_season_mismatch');
+      }
+      if (
+        adapted.claims.season != null &&
+        trust.season !== adapted.claims.season
+      ) {
+        reasons.push('trusted_acceptance_season_mismatch');
+      }
+      if (trust.selectedPolicy !== report.selectedPolicy) {
+        reasons.push('trusted_acceptance_policy_mismatch');
+      }
+      if (trust.completedThroughWeek !== report.completedThroughWeek) {
+        reasons.push('trusted_acceptance_week_mismatch');
+      }
+      if (trust.canonicalWeight !== report.canonicalWeight) {
+        reasons.push('trusted_acceptance_weight_mismatch');
+      }
+      if (
+        typeof trust.lifecycleSourceSha !== 'string' ||
+        trust.lifecycleSourceSha !== sidecar.acceptedArchive.lifecycleProducerSha
+      ) {
+        reasons.push('trusted_acceptance_lifecycle_source_mismatch');
+      }
     }
+  }
+
+  const approvedTargetWeek =
+    input.binding.registryPin?.approvedProspectiveTargetWeek;
+  if (
+    input.prospectiveWeek !== input.binding.prospectiveTargetWeek ||
+    approvedTargetWeek == null ||
+    input.prospectiveWeek !== approvedTargetWeek
+  ) {
+    reasons.push('prospective_week_mismatch');
   }
 
   const fingerprints = {
@@ -610,23 +760,23 @@ export function verifyBindingThenQualifyCaptureLifecycle(
     qualifierExpectation: captureRecomputed,
   };
 
-  if (!adapted || !trust) {
-    return finish({
-      binding: bindingResult,
-      adapted,
-      derivedEnvelope,
-      fingerprints,
-      lineage,
-      producers,
-      fixtureProvenanceRetained,
-      lifecycle: null,
-      liveAccepted: false,
-      ok: false,
-    });
-  }
+  // F2: every orchestration gate must pass before the capture qualifier runs.
+  // Failed gates export no nested lifecycle result (qualified must not leak).
+  const integrationGatesOpen =
+    input.lifecycleMode === 'fixture_hypothetical' &&
+    anchorGaps.length === 0 &&
+    bindingResult.liveQualifying === true &&
+    bindingResult.structuralConsistencyVerified === true &&
+    bindingResult.archiveIntegrityVerified === true &&
+    bindingResult.plannedNumericAgreementOk === true &&
+    captureTimeValid === true &&
+    coversCaptureAsOf === true &&
+    plannerCheck.ok === true &&
+    adapted != null &&
+    trust != null &&
+    reasons.length === 0;
 
-  // Capture-specific lineage must pass before final qualification when T_capture set.
-  if (coversCaptureAsOf === false) {
+  if (!integrationGatesOpen || !adapted || !trust || captureRecomputed == null) {
     return finish({
       binding: bindingResult,
       adapted,
@@ -642,18 +792,33 @@ export function verifyBindingThenQualifyCaptureLifecycle(
   }
 
   const lifecycle = qualifyLifecycleReceipt({
-    mode: input.lifecycleMode,
+    mode: 'fixture_hypothetical',
     receiptBytes: adapted.receiptBytes,
     pinnedReceiptDigest: adapted.pinnedReceiptDigest,
     claims: adapted.claims,
-    expectedRatingFingerprint:
-      captureRecomputed ?? input.captureInputs.ratingFingerprint,
+    expectedRatingFingerprint: captureRecomputed,
     captureProducerSha: input.captureProducerSha,
     expectedSeason: input.expectedSeason,
     prospectiveWeek: input.prospectiveWeek,
-    // Pass through the independently supplied record — do not mutate approvedReceiptDigest.
+    // Independently supplied record — never copy adapted.pinnedReceiptDigest into it.
     trustedAcceptance: trust,
   });
+
+  if (lifecycle.liveAccepted || lifecycle.mode !== 'fixture_hypothetical') {
+    reasons.push('g2_nested_live_acceptance_forbidden');
+    return finish({
+      binding: bindingResult,
+      adapted,
+      derivedEnvelope,
+      fingerprints,
+      lineage,
+      producers,
+      fixtureProvenanceRetained,
+      lifecycle: null,
+      liveAccepted: false,
+      ok: false,
+    });
+  }
 
   if (!lifecycle.qualified) {
     reasons.push(...lifecycle.reasons.map((r) => `lifecycle:${r}`));

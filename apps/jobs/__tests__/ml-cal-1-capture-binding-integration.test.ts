@@ -612,6 +612,7 @@ describe('ml-cal-1-capture-binding-integration G2 (offline)', () => {
           'lineage_attestation_approval_anchor_missing',
         ])
       );
+      expect(result.lifecycle).toBeNull();
     });
 
     it('fails closed when registry evidence is tampered', () => {
@@ -643,6 +644,7 @@ describe('ml-cal-1-capture-binding-integration G2 (offline)', () => {
       expect(result.ok).toBe(false);
       expect(result.reasons).toContain('receipt_approval_digest_mismatch');
       expect(result.liveAccepted).toBe(false);
+      expect(result.lifecycle).toBeNull();
       // Helper must not have rewritten trust to match adapted.
       expect(result.adapted).not.toBeNull();
       expect(result.adapted!.pinnedReceiptDigest).not.toBe('f'.repeat(64));
@@ -659,6 +661,7 @@ describe('ml-cal-1-capture-binding-integration G2 (offline)', () => {
       expect(result.ok).toBe(false);
       expect(result.reasons).toContain('fingerprint_mismatch_vs_capture_export');
       expect(result.liveAccepted).toBe(false);
+      expect(result.lifecycle).toBeNull();
       expect(result.fingerprints.captureRecomputed).toBe(bundle.captureFp);
       expect(result.fingerprints.declaredBundleInputs).toBe(forged);
     });
@@ -688,6 +691,8 @@ describe('ml-cal-1-capture-binding-integration G2 (offline)', () => {
       expect(result.fixtureProvenanceRetained).toBe(true);
       expect(result.reasons).toContain('capture_snapshot_reference_time_missing');
       expect(result.ok).toBe(false);
+      expect(result.lifecycle).toBeNull();
+      expect(result.lineage.coversCaptureAsOf).toBe(false);
     });
   });
 
@@ -757,21 +762,110 @@ describe('ml-cal-1-capture-binding-integration G2 (offline)', () => {
     });
   });
 
+  describe('F1–F4 whole-orchestrator regressions', () => {
+    it('F1: unparseable capture time fails and does not inherit binding coverage', () => {
+      const bundle = buildSyntheticFullWeightBundle();
+      const result = verifyBindingThenQualifyCaptureLifecycle(
+        integrationInput(bundle, {
+          captureSnapshotReferenceTime: 'not-a-timestamp',
+        })
+      );
+      expect(result.ok).toBe(false);
+      expect(result.liveAccepted).toBe(false);
+      expect(result.fixtureProvenanceRetained).toBe(true);
+      expect(result.lineage.coversCaptureAsOf).toBe(false);
+      expect(result.lineage.requiredThroughTime).toBeNull();
+      expect(result.reasons).toContain(
+        'capture_snapshot_reference_time_unparseable'
+      );
+      expect(result.lifecycle).toBeNull();
+    });
+
+    it('F2: fixture evidence with lifecycleMode=live does not export nested liveAccepted', () => {
+      const bundle = buildSyntheticFullWeightBundle();
+      const input = integrationInput(bundle);
+      input.lifecycleMode = 'live';
+      const result = verifyBindingThenQualifyCaptureLifecycle(input);
+      expect(result.ok).toBe(false);
+      expect(result.fixtureProvenanceRetained).toBe(true);
+      expect(result.liveAccepted).toBe(false);
+      expect(result.reasons).toContain('g2_live_mode_rejected');
+      expect(result.lifecycle).toBeNull();
+    });
+
+    it('F3: wrong trusted season and lifecycle source fail in fixture mode', () => {
+      const bundle = buildSyntheticFullWeightBundle();
+      const result = verifyBindingThenQualifyCaptureLifecycle(
+        integrationInput(bundle, {
+          trustOverrides: {
+            season: 2025,
+            lifecycleSourceSha: 'cccccccccccccccccccccccccccccccccccccccc',
+          },
+        })
+      );
+      expect(result.ok).toBe(false);
+      expect(result.lifecycle).toBeNull();
+      expect(result.liveAccepted).toBe(false);
+      expect(result.reasons).toContain('trusted_acceptance_season_mismatch');
+      expect(result.reasons).toContain(
+        'trusted_acceptance_lifecycle_source_mismatch'
+      );
+      expect(result.producers.lifecycleProducerSha).not.toBe(
+        result.producers.captureProducerSha
+      );
+      expect(result.producers.bindingObserverSha).not.toBe(
+        result.producers.lifecycleProducerSha
+      );
+    });
+
+    it('F3: prospective week must match binding target and registry target', () => {
+      const bundle = buildSyntheticFullWeightBundle();
+      const input = integrationInput(bundle);
+      input.prospectiveWeek = 8;
+      const result = verifyBindingThenQualifyCaptureLifecycle(input);
+      expect(result.ok).toBe(false);
+      expect(result.lifecycle).toBeNull();
+      expect(result.reasons).toContain('prospective_week_mismatch');
+      expect(result.liveAccepted).toBe(false);
+    });
+
+    it('F4: stale rowContentHash after raw rating change is rejected', () => {
+      const bundle = buildSyntheticFullWeightBundle();
+      const input = integrationInput(bundle);
+      const teamId = Object.keys(input.captureInputs.ratingsByTeamId)[0];
+      const row = input.captureInputs.ratingsByTeamId[teamId];
+      input.captureInputs = {
+        ratingFingerprint: bundle.captureFp,
+        ratingsByTeamId: {
+          ...input.captureInputs.ratingsByTeamId,
+          [teamId]: { ...row, ratingRaw: '999' },
+        },
+      };
+      const result = verifyBindingThenQualifyCaptureLifecycle(input);
+      expect(result.ok).toBe(false);
+      expect(result.lifecycle).toBeNull();
+      expect(result.liveAccepted).toBe(false);
+      expect(result.reasons).toContain('exported_row_content_hash_mismatch');
+      expect(result.fingerprints.captureRecomputed).toBeNull();
+    });
+  });
+
   describe('synthetic package on disk', () => {
-    it('PACKAGE_INDEX digests match committed synthetic bytes when present', () => {
+    it('PACKAGE_INDEX is present and digests match committed synthetic bytes', () => {
       const indexPath = path.join(SYNTHETIC_ROOT, 'PACKAGE_INDEX.json');
-      if (!fs.existsSync(indexPath)) {
-        // Generator commit may land after tests; skip soft if absent.
-        expect(fs.existsSync(WEEK5_ROOT)).toBe(true);
-        return;
-      }
+      expect(fs.existsSync(indexPath)).toBe(true);
       const index = JSON.parse(fs.readFileSync(indexPath, 'utf8')) as {
         provenance: string;
+        liveAccepted: boolean;
         files: Record<string, string>;
       };
       expect(index.provenance).toBe('test-only');
+      expect(index.liveAccepted).toBe(false);
+      expect(Object.keys(index.files).length).toBeGreaterThan(0);
       for (const [name, digest] of Object.entries(index.files)) {
-        const bytes = fs.readFileSync(path.join(SYNTHETIC_ROOT, name));
+        const filePath = path.join(SYNTHETIC_ROOT, name);
+        expect(fs.existsSync(filePath)).toBe(true);
+        const bytes = fs.readFileSync(filePath);
         expect(sha256Utf8Bytes(bytes)).toBe(digest);
       }
     });
