@@ -6,8 +6,10 @@ on:
       - 'apps/jobs/src/betting-ticket-odds-refresh-v1.ts'
       - 'apps/jobs/plan-betting-ticket-odds-refresh-v1.ts'
       - 'apps/jobs/__tests__/betting-ticket-odds-refresh-v1.test.ts'
+      - 'apps/jobs/__tests__/generic-shadow-t30-active-week-2026.test.ts'
       - '.github/workflows/run-betting-ticket-odds-refresh-v1-2026.yml'
       - '.github/workflows/test-betting-ticket-odds-refresh-v1.yml'
+      - 'research/generic-shadow/GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json'
 
 permissions:
   contents: read
@@ -31,4 +33,7 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Run Betting Ticket odds-refresh tests
-        run: npx jest apps/jobs/__tests__/betting-ticket-odds-refresh-v1.test.ts --runInBand
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/betting-ticket-odds-refresh-v1.test.ts \
+            apps/jobs/__tests__/generic-shadow-t30-active-week-2026.test.ts

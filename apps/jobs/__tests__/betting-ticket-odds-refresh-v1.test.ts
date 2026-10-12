@@ -145,8 +145,31 @@ describe('Betting Ticket Odds Refresh V1 workflow boundary', () => {
   it('loads the version-controlled active week and refuses non-main execution', () => {
     const load = stepBlock(wf, 'Load version-controlled active week');
     const guard = stepBlock(wf, 'Source/ref guard');
-    expect(load).toContain('GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json');
-    expect(load).toContain('INPUT_WEEK');
+    const activeWeekConfig = JSON.parse(
+      fs.readFileSync(
+        path.join(
+          ROOT,
+          'research/generic-shadow/GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json'
+        ),
+        'utf8'
+      )
+    );
+    expect(activeWeekConfig).toMatchObject({
+      capability: 'generic_shadow_t30_active_week_2026',
+      season: 2026,
+      week: 7,
+      authority: 'version_controlled_active_week',
+    });
+    expect(load).toContain(
+      'research/generic-shadow/GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json'
+    );
+    expect(load).toContain('Active-week config is missing');
+    expect(load).toContain('Active-week config week must be a positive integer');
+    expect(load).toContain('^[1-9][0-9]*$');
+    expect(load).toContain('echo "INPUT_WEEK=$ACTIVE_WEEK" >> "$GITHUB_ENV"');
+    expect(load).toContain('echo "week=$ACTIVE_WEEK" >> "$GITHUB_OUTPUT"');
+    expect(wf).toContain('--week "$INPUT_WEEK"');
+    expect(wf).toContain('WRITE_2026_WEEK_${INPUT_WEEK}_ODDS');
     expect(guard).toContain('refs/heads/main');
     expect(guard).toContain('git rev-parse HEAD');
   });
