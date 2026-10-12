@@ -36,15 +36,23 @@ describe('Generic Shadow T-30 Automation V1 external-clock coordinator', () => {
     expect(runbook).toContain('Supabase remains the sole recurring scheduler');
   });
 
-  it('loads the active week from version-controlled Week 5 config', () => {
+  it('loads the active week from version-controlled config with schema + positive integer week', () => {
     const load = stepBlock(wf, 'Load version-controlled active week');
     expect(activeWeekConfig).toMatchObject({
       capability: 'generic_shadow_t30_active_week_2026',
       season: 2026,
-      week: 5,
       authority: 'version_controlled_active_week',
     });
+    expect(typeof activeWeekConfig.updatedDate).toBe('string');
+    expect(activeWeekConfig.updatedDate.length).toBeGreaterThan(0);
+    expect(Number.isInteger(activeWeekConfig.week)).toBe(true);
+    expect(activeWeekConfig.week).toBeGreaterThanOrEqual(1);
+    // Current authorized rollover fixture (see generic-shadow-t30-active-week-2026.test.ts).
+    expect(activeWeekConfig.week).toBe(7);
     expect(load).toContain('GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json');
+    expect(load).toContain('Active-week config is missing');
+    expect(load).toContain('Active-week config week must be a positive integer');
+    expect(load).toContain('^[1-9][0-9]*$');
     expect(load).toContain('echo "INPUT_WEEK=$ACTIVE_WEEK" >> "$GITHUB_ENV"');
     expect(load).toContain('echo "week=$ACTIVE_WEEK" >> "$GITHUB_OUTPUT"');
     expect(load).toContain('active_week_source=version_controlled_config');
