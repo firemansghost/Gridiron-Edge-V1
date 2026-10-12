@@ -11,6 +11,7 @@ import {
   LIVE_ODDS_REGION,
   LIVE_ODDS_SEASON,
   LIVE_ODDS_SOURCE,
+  LIVE_ODDS_TRANSACTION_TIMEOUT_MS,
   MAX_EXPECTED_REQUEST_CREDITS,
   MAX_ABS_SPREAD,
   WEEK1_GAME_COUNT,
@@ -18,6 +19,7 @@ import {
   buildCommittedVerificationFailureExecution,
   buildCoverage,
   buildFailedCommitExecution,
+  buildLiveOddsCommitFingerprintRereadWhere,
   buildLiveOddsPlan,
   buildPreviewExecution,
   buildSuccessfulCommitExecution,
@@ -1328,6 +1330,94 @@ print('true' if mod.has_direct_inputs_in_run(text) else 'false')
     expect(cli).not.toMatch(/prisma\.bet\./i);
     expect(cli).not.toMatch(/teamSeasonRating/i);
     expect(cli).not.toMatch(/teamUnitGrade/i);
+  });
+
+  it('transaction timeout constant is exactly 30000; CLI wires timeout and narrowed re-read', () => {
+    expect(LIVE_ODDS_TRANSACTION_TIMEOUT_MS).toBe(30_000);
+
+    const cli = fs.readFileSync(
+      path.join(ROOT, 'apps/jobs/write-live-odds-2026.ts'),
+      'utf8'
+    );
+    expect(cli).toContain('LIVE_ODDS_TRANSACTION_TIMEOUT_MS');
+    expect(cli).toContain('timeout: LIVE_ODDS_TRANSACTION_TIMEOUT_MS');
+    expect(cli).toContain('buildLiveOddsCommitFingerprintRereadWhere');
+    // Single interactive transaction; no retry loop / chunked commits.
+    expect(cli.split('$transaction(').length - 1).toBe(1);
+    expect(cli).not.toMatch(/\bretry\b|\bretries\b|withRetry/i);
+    expect(cli).not.toMatch(/chunk(ed|Size)|batchSize/i);
+
+    const lib = fs.readFileSync(
+      path.join(ROOT, 'apps/jobs/src/odds/live-odds-2026.ts'),
+      'utf8'
+    );
+    expect(lib).toContain(
+      'export const LIVE_ODDS_TRANSACTION_TIMEOUT_MS = 30_000'
+    );
+  });
+
+  it('fingerprint re-read where is scoped and timestamp-narrowed (collision-safe)', () => {
+    const t1 = new Date('2026-10-12T19:11:58.000Z');
+    const t2 = new Date('2026-10-12T19:17:31.000Z');
+    const where = buildLiveOddsCommitFingerprintRereadWhere({
+      season: LIVE_ODDS_SEASON,
+      week: 7,
+      source: LIVE_ODDS_SOURCE,
+      gameIds: ['2026-wk7-a', '2026-wk7-b'],
+      proposedInsert: [
+        { timestamp: t1 },
+        { timestamp: t2 },
+        { timestamp: t1.toISOString() }, // dedupe
+      ],
+    });
+
+    expect(where.season).toBe(2026);
+    expect(where.week).toBe(7);
+    expect(where.source).toBe('oddsapi');
+    expect(where.gameId).toEqual({ in: ['2026-wk7-a', '2026-wk7-b'] });
+    expect(where.timestamp.in).toHaveLength(2);
+    expect(where.timestamp.in.map((d) => d.toISOString()).sort()).toEqual([
+      t1.toISOString(),
+      t2.toISOString(),
+    ]);
+
+    // Fingerprint identity still keys on timestamp — narrowing cannot miss
+    // same-batch collisions.
+    const fpA = fingerprintKey({
+      gameId: '2026-wk7-a',
+      lineType: 'spread',
+      bookName: 'DraftKings',
+      timestamp: t1,
+      teamId: 'home',
+    });
+    const fpB = fingerprintKey({
+      gameId: '2026-wk7-a',
+      lineType: 'spread',
+      bookName: 'DraftKings',
+      timestamp: t1.toISOString(),
+      teamId: 'home',
+    });
+    expect(fpA).toBe(fpB);
+
+    expect(() =>
+      buildLiveOddsCommitFingerprintRereadWhere({
+        season: LIVE_ODDS_SEASON,
+        week: 7,
+        source: LIVE_ODDS_SOURCE,
+        gameIds: ['g'],
+        proposedInsert: [],
+      })
+    ).toThrow(/at least one proposed timestamp/i);
+
+    expect(() =>
+      buildLiveOddsCommitFingerprintRereadWhere({
+        season: LIVE_ODDS_SEASON,
+        week: 7,
+        source: LIVE_ODDS_SOURCE,
+        gameIds: ['g'],
+        proposedInsert: [{ timestamp: 'not-a-date' }],
+      })
+    ).toThrow(/non-finite timestamp/i);
   });
 
   it('live snapshot forces markets/region; no historical URL in snapshot method', () => {

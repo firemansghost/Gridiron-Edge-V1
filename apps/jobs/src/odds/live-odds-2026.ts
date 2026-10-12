@@ -20,6 +20,13 @@ export const WEEK1_GAME_COUNT = 51;
 /** Bounded kickoff/date drift for schedule↔provider temporal matching (36h). */
 export const KICKOFF_MATCH_TOLERANCE_MS = 36 * 60 * 60 * 1000;
 
+/**
+ * Explicit interactive-transaction timeout for Live Odds COMMIT.
+ * Prisma default is 5000ms (P2028). Matches other guarded 2026 writers (e.g. TeamGameStat).
+ * No automatic retries; single transaction; append-only semantics unchanged.
+ */
+export const LIVE_ODDS_TRANSACTION_TIMEOUT_MS = 30_000;
+
 /** Max |spread| points accepted from a sportsbook observation (production: 50.5–51 seen). */
 export const MAX_ABS_SPREAD = 100;
 
@@ -171,6 +178,59 @@ export function fingerprintKey(row: {
       : new Date(row.timestamp).toISOString();
   const team = row.teamId == null ? 'NULL' : row.teamId;
   return `${row.gameId}|${row.lineType}|${row.bookName}|${ts}|${team}`;
+}
+
+/**
+ * COMMIT in-transaction fingerprint re-read filter.
+ *
+ * Fingerprints include observation timestamp, so collisions for this insert batch
+ * can only exist among rows sharing a proposed timestamp. Narrowing the re-read
+ * avoids scanning an entire week's historical MarketLine board inside the
+ * interactive transaction (P2028 risk under the 5s default).
+ *
+ * Preserves season/week/source/gameId scoping. Does not widen matching.
+ */
+export function buildLiveOddsCommitFingerprintRereadWhere(options: {
+  season: number;
+  week: number;
+  source: string;
+  gameIds: string[];
+  proposedInsert: Array<{ timestamp: Date | string }>;
+}): {
+  season: number;
+  week: number;
+  source: string;
+  gameId: { in: string[] };
+  timestamp: { in: Date[] };
+} {
+  const byIso = new Map<string, Date>();
+  for (const row of options.proposedInsert) {
+    const d =
+      row.timestamp instanceof Date
+        ? row.timestamp
+        : new Date(row.timestamp);
+    if (Number.isNaN(d.getTime())) {
+      throw new Error(
+        'COMMIT abort: proposedInsert contains non-finite timestamp'
+      );
+    }
+    byIso.set(d.toISOString(), d);
+  }
+  const timestamps = [...byIso.values()].sort(
+    (a, b) => a.getTime() - b.getTime()
+  );
+  if (timestamps.length === 0) {
+    throw new Error(
+      'COMMIT abort: fingerprint re-read requires at least one proposed timestamp'
+    );
+  }
+  return {
+    season: options.season,
+    week: options.week,
+    source: options.source,
+    gameId: { in: options.gameIds },
+    timestamp: { in: timestamps },
+  };
 }
 
 export function validateLiveOddsInputs(options: {

@@ -21,10 +21,12 @@ import {
   LIVE_ODDS_REGION,
   LIVE_ODDS_SEASON,
   LIVE_ODDS_SOURCE,
+  LIVE_ODDS_TRANSACTION_TIMEOUT_MS,
   MAX_EXPECTED_REQUEST_CREDITS,
   assertCreateManyCountMatches,
   buildCommittedVerificationFailureExecution,
   buildFailedCommitExecution,
+  buildLiveOddsCommitFingerprintRereadWhere,
   buildLiveOddsPlan,
   buildPreviewExecution,
   buildSuccessfulCommitExecution,
@@ -291,84 +293,92 @@ async function main(): Promise<void> {
     let transactionPersisted = false;
 
     try {
-      const txResult = await prisma.$transaction(async (tx) => {
-        const freshExisting = await tx.marketLine.findMany({
-          where: {
-            season: LIVE_ODDS_SEASON,
-            week: args.week,
-            source: LIVE_ODDS_SOURCE,
-            gameId: { in: gameIds },
-          },
-          select: {
-            gameId: true,
-            lineType: true,
-            bookName: true,
-            timestamp: true,
-            teamId: true,
-            lineValue: true,
-            closingLine: true,
-          },
-        });
-        const freshMap = new Map(
-          freshExisting.map((r) => [
-            fingerprintKey({
-              gameId: r.gameId,
-              lineType: r.lineType,
-              bookName: r.bookName,
-              timestamp: r.timestamp,
-              teamId: r.teamId,
+      const txResult = await prisma.$transaction(
+        async (tx) => {
+          const freshExisting = await tx.marketLine.findMany({
+            where: buildLiveOddsCommitFingerprintRereadWhere({
+              season: LIVE_ODDS_SEASON,
+              week: args.week,
+              source: LIVE_ODDS_SOURCE,
+              gameIds,
+              proposedInsert: plan!.proposedInsert,
             }),
-            r,
-          ])
-        );
+            select: {
+              gameId: true,
+              lineType: true,
+              bookName: true,
+              timestamp: true,
+              teamId: true,
+              lineValue: true,
+              closingLine: true,
+            },
+          });
+          const freshMap = new Map(
+            freshExisting.map((r) => [
+              fingerprintKey({
+                gameId: r.gameId,
+                lineType: r.lineType,
+                bookName: r.bookName,
+                timestamp: r.timestamp,
+                teamId: r.teamId,
+              }),
+              r,
+            ])
+          );
 
-        const toInsert: CandidateMarketLine[] = [];
-        for (const c of plan!.proposedInsert) {
-          const fp = fingerprintKey(c);
-          const ex = freshMap.get(fp);
-          if (!ex) {
-            toInsert.push(c);
-            continue;
+          const toInsert: CandidateMarketLine[] = [];
+          for (const c of plan!.proposedInsert) {
+            const fp = fingerprintKey(c);
+            const ex = freshMap.get(fp);
+            if (!ex) {
+              toInsert.push(c);
+              continue;
+            }
+            if (
+              Number(ex.lineValue) !== c.lineValue ||
+              Number(ex.closingLine) !== c.closingLine
+            ) {
+              throw new Error(
+                `COMMIT abort: fingerprint collision appeared for ${fp}`
+              );
+            }
           }
-          if (
-            Number(ex.lineValue) !== c.lineValue ||
-            Number(ex.closingLine) !== c.closingLine
-          ) {
+
+          if (toInsert.length === 0) {
             throw new Error(
-              `COMMIT abort: fingerprint collision appeared for ${fp}`
+              'COMMIT abort: no new rows after transaction re-read'
             );
           }
+
+          // Append-only — no deleteMany, no update, no upsert of historical rows.
+          const createResult = await tx.marketLine.createMany({
+            data: toInsert.map((c) => ({
+              gameId: c.gameId,
+              season: c.season,
+              week: c.week,
+              lineType: c.lineType,
+              lineValue: c.lineValue,
+              closingLine: c.closingLine,
+              bookName: c.bookName,
+              timestamp: c.timestamp,
+              source: c.source,
+              teamId: c.teamId,
+            })),
+            skipDuplicates: true,
+          });
+
+          // Count mismatch must abort INSIDE the transaction (rollback).
+          assertCreateManyCountMatches(toInsert.length, createResult.count);
+
+          return {
+            toInsert,
+            createManyCount: createResult.count,
+          };
+        },
+        {
+          timeout: LIVE_ODDS_TRANSACTION_TIMEOUT_MS,
         }
-
-        if (toInsert.length === 0) {
-          throw new Error('COMMIT abort: no new rows after transaction re-read');
-        }
-
-        // Append-only — no deleteMany, no update, no upsert of historical rows.
-        const createResult = await tx.marketLine.createMany({
-          data: toInsert.map((c) => ({
-            gameId: c.gameId,
-            season: c.season,
-            week: c.week,
-            lineType: c.lineType,
-            lineValue: c.lineValue,
-            closingLine: c.closingLine,
-            bookName: c.bookName,
-            timestamp: c.timestamp,
-            source: c.source,
-            teamId: c.teamId,
-          })),
-          skipDuplicates: true,
-        });
-
-        // Count mismatch must abort INSIDE the transaction (rollback).
-        assertCreateManyCountMatches(toInsert.length, createResult.count);
-
-        return {
-          toInsert,
-          createManyCount: createResult.count,
-        };
-      });
+      );
 
       stillNewAtTransaction = txResult.toInsert;
       createManyCount = txResult.createManyCount;
