@@ -18,6 +18,8 @@ import {
   sealG4ObservationPackage,
 } from '../../lib/ml-cal-1-lifecycle-binding-observer';
 import {
+  ML_CAL_1_G5_ANCHORED_CONTENTS_SCHEMA,
+  ML_CAL_1_G5_ANCHORED_OBSERVATION_SCHEMA,
   ML_CAL_1_G5_CANDIDATE_CONTENTS_SCHEMA,
   ML_CAL_1_G5_EFFECT_EVIDENCE_SCHEMA,
   ML_CAL_1_G5_REQUIRED_SOURCE_CATALOG,
@@ -195,21 +197,23 @@ export function listingPage(
   };
 }
 
-/** Retained anchored observation bytes for R2 effect binding. */
+/** Retained anchored observation bytes for R2-A effect binding. */
 export function retainEffectAnchor(
   retainDir: string,
-  candidateKey: string
+  candidateKey: string,
+  opts?: { affectsBoundRatings?: boolean }
 ): string {
   return retainBytesByDigest(
     retainDir,
     Buffer.from(
-      JSON.stringify({
+      `${stableStringify({
+        schemaVersion: ML_CAL_1_G5_ANCHORED_OBSERVATION_SCHEMA,
         kind: 'anchored-bound-rating-observation',
         candidateKey,
         season: 2026,
         modelVersion: 'v1',
-        note: 'fixture anchored effect observation identifying candidate and bound ratings',
-      }),
+        affectsBoundRatings: opts?.affectsBoundRatings ?? false,
+      })}\n`,
       'utf8'
     )
   );
@@ -245,19 +249,48 @@ export function retainEffectEvidence(
   candidateKey: string,
   opts?: { affectsBoundRatings?: boolean; provesNonEffect?: boolean }
 ): string {
-  const anchoredObservationDigest = retainEffectAnchor(retainDir, candidateKey);
+  const affects = opts?.affectsBoundRatings ?? false;
+  const anchoredObservationDigest = retainEffectAnchor(retainDir, candidateKey, {
+    affectsBoundRatings: affects,
+  });
   return retainBytesByDigest(
     retainDir,
     effectEvidenceBytes(candidateKey, {
       ...opts,
+      affectsBoundRatings: affects,
       anchoredObservationDigest,
     })
   );
 }
 
-export function contentsEvidenceBytes(
+/** Retained underlying contents bytes for R2-A contents binding. */
+export function retainContentsAnchor(
+  retainDir: string,
   candidateKey: string,
   opts?: { affectsBoundRatings?: boolean }
+): string {
+  return retainBytesByDigest(
+    retainDir,
+    Buffer.from(
+      `${stableStringify({
+        schemaVersion: ML_CAL_1_G5_ANCHORED_CONTENTS_SCHEMA,
+        kind: 'anchored-candidate-contents',
+        candidateKey,
+        season: 2026,
+        modelVersion: 'v1',
+        affectsBoundRatings: opts?.affectsBoundRatings ?? false,
+      })}\n`,
+      'utf8'
+    )
+  );
+}
+
+export function contentsEvidenceBytes(
+  candidateKey: string,
+  opts: {
+    affectsBoundRatings?: boolean;
+    anchoredContentsDigest: string;
+  }
 ): Buffer {
   return Buffer.from(
     `${stableStringify({
@@ -267,10 +300,58 @@ export function contentsEvidenceBytes(
       season: 2026,
       modelVersion: 'v1',
       evaluable: true,
-      affectsBoundRatings: opts?.affectsBoundRatings ?? false,
+      affectsBoundRatings: opts.affectsBoundRatings ?? false,
+      anchoredContentsDigest: opts.anchoredContentsDigest,
       note: 'fixture retained contents',
     })}\n`,
     'utf8'
+  );
+}
+
+/** Retain contents evidence with independently anchored underlying bytes. */
+export function retainContentsEvidence(
+  retainDir: string,
+  candidateKey: string,
+  opts?: { affectsBoundRatings?: boolean }
+): string {
+  const affects = opts?.affectsBoundRatings ?? false;
+  const anchoredContentsDigest = retainContentsAnchor(retainDir, candidateKey, {
+    affectsBoundRatings: affects,
+  });
+  return retainBytesByDigest(
+    retainDir,
+    contentsEvidenceBytes(candidateKey, {
+      affectsBoundRatings: affects,
+      anchoredContentsDigest,
+    })
+  );
+}
+
+/**
+ * Rewrite a package member and refresh manifest digests so failures test
+ * semantics rather than broken hashes (R2-A / R5-A regressions).
+ */
+export function rewritePackageMemberHashConsistent(
+  packageDir: string,
+  memberName: string,
+  bytes: Buffer
+): void {
+  fs.writeFileSync(path.join(packageDir, memberName), bytes);
+  const manPath = path.join(packageDir, 'PACKAGE_MANIFEST.json');
+  const man = JSON.parse(fs.readFileSync(manPath, 'utf8')) as {
+    memberDigests: Record<string, { sha256: string; byteCount: number }>;
+    sidecarDigest: string;
+  };
+  const digest = sha256Utf8Bytes(bytes);
+  man.memberDigests[memberName] = { sha256: digest, byteCount: bytes.length };
+  if (memberName === 'binding-sidecar.json') {
+    man.sidecarDigest = digest;
+  }
+  const manBytes = Buffer.from(`${stableStringify(man)}\n`, 'utf8');
+  fs.writeFileSync(manPath, manBytes);
+  fs.writeFileSync(
+    path.join(packageDir, 'PACKAGE_MANIFEST.sha256'),
+    `${sha256Utf8Bytes(manBytes)}\n`
   );
 }
 
@@ -411,10 +492,7 @@ export function buildG5Scenario(opts: G5ScenarioOptions = {}): G5Scenario {
   );
   // Placeholder digests filled after githubCandidates known (shared only when empty).
   let effectDigest = retainEffectEvidence(retainDir, '__none__');
-  let contentsDigest = retainBytesByDigest(
-    retainDir,
-    contentsEvidenceBytes('__none__')
-  );
+  let contentsDigest = retainContentsEvidence(retainDir, '__none__');
 
   const githubCandidates = opts.githubCandidates ?? [];
   const pageDigests: Record<string, string> = {};
@@ -437,10 +515,9 @@ export function buildG5Scenario(opts: G5ScenarioOptions = {}): G5Scenario {
         affectsBoundRatings: false,
         provesNonEffect: true,
       });
-      contentsDigest = retainBytesByDigest(
-        retainDir,
-        contentsEvidenceBytes(c.candidateKey, { affectsBoundRatings: false })
-      );
+      contentsDigest = retainContentsEvidence(retainDir, c.candidateKey, {
+        affectsBoundRatings: false,
+      });
     }
   }
   let dispositions: MlCal1G5InventoryCandidate[] =
@@ -473,10 +550,7 @@ export function buildG5Scenario(opts: G5ScenarioOptions = {}): G5Scenario {
       dispositions[0]?.independentEffectEvidenceDigest ?? effectDigest;
     contentsDigest =
       dispositions[0]?.candidateContentsDigest ??
-      retainBytesByDigest(
-        retainDir,
-        contentsEvidenceBytes(githubCandidates[0].candidateKey)
-      );
+      retainContentsEvidence(retainDir, githubCandidates[0].candidateKey);
   }
 
   const sourcesSearched = ML_CAL_1_G5_REQUIRED_SOURCE_CATALOG.filter(

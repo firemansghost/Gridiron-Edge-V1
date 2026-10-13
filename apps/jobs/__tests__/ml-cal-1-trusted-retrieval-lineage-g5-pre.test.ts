@@ -36,8 +36,10 @@ import {
   contentsEvidenceBytes,
   effectEvidenceBytes,
   inWindowCandidate,
+  retainContentsEvidence,
+  retainEffectAnchor,
   retainEffectEvidence,
-  retainUtf8,
+  rewritePackageMemberHashConsistent,
   searchWindowStartInclusive,
 } from './helpers/ml-cal-1-g5-pre-fixture-harness';
 
@@ -1064,8 +1066,6 @@ describe('ML-CAL-1 G5-PRE — F1–F6 review repair regressions', () => {
     });
     expect(r.ok).toBe(false);
     expect(r.reasons).toContain('candidate_contents_schema_mismatch');
-    void contentsEvidenceBytes;
-    void retainUtf8;
   });
 });
 
@@ -1142,10 +1142,9 @@ describe('ML-CAL-1 G5-PRE — R1–R5 review repair regressions', () => {
   it('R2: contradictory contents vs effect evidence remains unresolved', () => {
     const c = inWindowCandidate('contradict-effect');
     const s = buildG5Scenario({ githubCandidates: [c] });
-    const contents = retainBytesByDigest(
-      s.retainDir,
-      contentsEvidenceBytes('contradict-effect', { affectsBoundRatings: true })
-    );
+    const contents = retainContentsEvidence(s.retainDir, 'contradict-effect', {
+      affectsBoundRatings: true,
+    });
     const effect = retainEffectEvidence(s.retainDir, 'contradict-effect', {
       affectsBoundRatings: false,
       provesNonEffect: true,
@@ -1306,6 +1305,226 @@ describe('ML-CAL-1 G5-PRE — R1–R5 review repair regressions', () => {
         'package_design_identity_mismatch',
       ])
     );
-    void effectEvidenceBytes;
+  });
+});
+
+describe('ML-CAL-1 G5-PRE — R2-A / R5-A review repair regressions', () => {
+  it('R2-A: garbage retained anchor text remains unresolved and blocks none_found', () => {
+    const c = inWindowCandidate('garbage-anchor');
+    const s = buildG5Scenario({ githubCandidates: [c] });
+    const garbageDigest = retainBytesByDigest(
+      s.retainDir,
+      Buffer.from('not-json-anchor-bytes\n', 'utf8')
+    );
+    const envelope = retainBytesByDigest(
+      s.retainDir,
+      effectEvidenceBytes('garbage-anchor', {
+        affectsBoundRatings: false,
+        provesNonEffect: true,
+        anchoredObservationDigest: garbageDigest,
+      })
+    );
+    const inv = JSON.parse(s.inventoryBytes.toString('utf8'));
+    inv.invalidatingCandidateArtifacts[0].independentEffectEvidenceDigest =
+      envelope;
+    inv.noneFoundPermitted = true;
+    inv.searchComplete = true;
+    const inventoryBytes = Buffer.from(`${stableStringify(inv)}\n`, 'utf8');
+    const r = runG5Pre({
+      ...s.preInput,
+      inventoryBytes,
+      externalAnchors: {
+        approvedLineageInventorySha256: sha256Utf8Bytes(inventoryBytes),
+        approvedSidecarDigest: s.sidecarDigest,
+      },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.recomputedNoneFoundPermitted).toBe(false);
+    expect(r.reasons).toEqual(
+      expect.arrayContaining([
+        'effect_evidence_anchor_unparseable',
+        'lineage_candidate_unresolved',
+      ])
+    );
+  });
+
+  it('R2-A: another candidate’s anchored observation remains unresolved', () => {
+    const c = inWindowCandidate('own-key');
+    const s = buildG5Scenario({ githubCandidates: [c] });
+    const otherAnchor = retainEffectAnchor(s.retainDir, 'other-key', {
+      affectsBoundRatings: false,
+    });
+    const envelope = retainBytesByDigest(
+      s.retainDir,
+      effectEvidenceBytes('own-key', {
+        affectsBoundRatings: false,
+        provesNonEffect: true,
+        anchoredObservationDigest: otherAnchor,
+      })
+    );
+    const inv = JSON.parse(s.inventoryBytes.toString('utf8'));
+    inv.invalidatingCandidateArtifacts[0].independentEffectEvidenceDigest =
+      envelope;
+    inv.noneFoundPermitted = true;
+    const inventoryBytes = Buffer.from(`${stableStringify(inv)}\n`, 'utf8');
+    const r = runG5Pre({
+      ...s.preInput,
+      inventoryBytes,
+      externalAnchors: {
+        approvedLineageInventorySha256: sha256Utf8Bytes(inventoryBytes),
+        approvedSidecarDigest: s.sidecarDigest,
+      },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.recomputedNoneFoundPermitted).toBe(false);
+    expect(r.reasons).toContain('effect_evidence_anchor_candidate_mismatch');
+  });
+
+  it('R2-A: contradictory underlying effect anchor vs envelope blocks none_found', () => {
+    const c = inWindowCandidate('anchor-contradict');
+    const s = buildG5Scenario({ githubCandidates: [c] });
+    const contradictAnchor = retainEffectAnchor(s.retainDir, 'anchor-contradict', {
+      affectsBoundRatings: true, // contradicts envelope false / provesNonEffect
+    });
+    const envelope = retainBytesByDigest(
+      s.retainDir,
+      effectEvidenceBytes('anchor-contradict', {
+        affectsBoundRatings: false,
+        provesNonEffect: true,
+        anchoredObservationDigest: contradictAnchor,
+      })
+    );
+    const inv = JSON.parse(s.inventoryBytes.toString('utf8'));
+    inv.invalidatingCandidateArtifacts[0].independentEffectEvidenceDigest =
+      envelope;
+    inv.noneFoundPermitted = true;
+    const inventoryBytes = Buffer.from(`${stableStringify(inv)}\n`, 'utf8');
+    const r = runG5Pre({
+      ...s.preInput,
+      inventoryBytes,
+      externalAnchors: {
+        approvedLineageInventorySha256: sha256Utf8Bytes(inventoryBytes),
+        approvedSidecarDigest: s.sidecarDigest,
+      },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.recomputedNoneFoundPermitted).toBe(false);
+    expect(r.reasons).toContain('effect_evidence_anchor_conclusion_mismatch');
+  });
+
+  it('R2-A: contents path requires bound underlying bytes (garbage/wrong candidate)', () => {
+    const c = inWindowCandidate('contents-anchor');
+    const s = buildG5Scenario({ githubCandidates: [c] });
+    const garbage = retainBytesByDigest(
+      s.retainDir,
+      Buffer.from('arbitrary-contents-anchor\n', 'utf8')
+    );
+    const envelope = retainBytesByDigest(
+      s.retainDir,
+      contentsEvidenceBytes('contents-anchor', {
+        affectsBoundRatings: false,
+        anchoredContentsDigest: garbage,
+      })
+    );
+    const inv = JSON.parse(s.inventoryBytes.toString('utf8'));
+    inv.invalidatingCandidateArtifacts[0].candidateContentsDigest = envelope;
+    inv.invalidatingCandidateArtifacts[0].independentEffectEvidenceDigest = null;
+    inv.invalidatingCandidateArtifacts[0].resolvedDisposition = 'not_invalidating';
+    inv.noneFoundPermitted = true;
+    const inventoryBytes = Buffer.from(`${stableStringify(inv)}\n`, 'utf8');
+    const r = runG5Pre({
+      ...s.preInput,
+      inventoryBytes,
+      externalAnchors: {
+        approvedLineageInventorySha256: sha256Utf8Bytes(inventoryBytes),
+        approvedSidecarDigest: s.sidecarDigest,
+      },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.recomputedNoneFoundPermitted).toBe(false);
+    expect(r.reasons).toEqual(
+      expect.arrayContaining([
+        'candidate_contents_anchor_unparseable',
+        'lineage_candidate_unresolved',
+      ])
+    );
+  });
+
+  it('R5-A: empty observer metadata rejects (hash-consistent package)', () => {
+    const s = buildG5Scenario();
+    rewritePackageMemberHashConsistent(
+      s.packageDir,
+      'observer-run-metadata.json',
+      Buffer.from('{}\n', 'utf8')
+    );
+    const r = runG5Pre(s.preInput);
+    expect(r.ok).toBe(false);
+    expect(r.reasons).toContain('package_observer_metadata_empty');
+    expect(r.reasons).not.toContain('package_member_digest_mismatch');
+  });
+
+  it('R5-A: contradictory metadata observationEndTime vs sidecar rejects', () => {
+    const s = buildG5Scenario();
+    rewritePackageMemberHashConsistent(
+      s.packageDir,
+      'observer-run-metadata.json',
+      Buffer.from(
+        `${stableStringify({
+          observationEndTime: '2026-10-06T12:00:21.000Z',
+          fixture: true,
+        })}\n`,
+        'utf8'
+      )
+    );
+    const r = runG5Pre(s.preInput);
+    expect(r.ok).toBe(false);
+    expect(r.reasons).toContain('package_observer_metadata_sidecar_mismatch');
+    expect(r.reasons).not.toContain('package_member_digest_mismatch');
+  });
+
+  it('R5-A: correspondence with only a base SHA (no design pin) rejects', () => {
+    const s = buildG5Scenario();
+    rewritePackageMemberHashConsistent(
+      s.packageDir,
+      'design-correspondence.json',
+      Buffer.from(
+        `${stableStringify({
+          baseG4Tip: '6c2b31069b8805c7f2d171da1e04bf47885f237d',
+          note: 'base only — missing design pin',
+        })}\n`,
+        'utf8'
+      )
+    );
+    const r = runG5Pre(s.preInput);
+    expect(r.ok).toBe(false);
+    expect(r.reasons).toContain('package_design_correspondence_incomplete');
+    expect(r.reasons).not.toContain('package_member_digest_mismatch');
+  });
+
+  it('R5-A: accepted G4 correspondence format (onDiskDesign + baseG3) remains valid', () => {
+    const s = buildG5Scenario();
+    const man = JSON.parse(
+      fs.readFileSync(path.join(s.packageDir, 'PACKAGE_MANIFEST.json'), 'utf8')
+    ) as {
+      designOnDiskSha256: string;
+      acceptanceUploadSha256: string;
+      baseG3Tip: string;
+    };
+    rewritePackageMemberHashConsistent(
+      s.packageDir,
+      'design-correspondence.json',
+      Buffer.from(
+        `${stableStringify({
+          onDiskDesignSha256: man.designOnDiskSha256,
+          acceptanceUploadSha256: man.acceptanceUploadSha256,
+          baseG3Tip: man.baseG3Tip,
+          note: 'accepted G4 correspondence format',
+        })}\n`,
+        'utf8'
+      )
+    );
+    const r = runG5Pre(s.preInput);
+    expect(r.ok).toBe(true);
+    expect(r.packageStructuralOk).toBe(true);
   });
 });

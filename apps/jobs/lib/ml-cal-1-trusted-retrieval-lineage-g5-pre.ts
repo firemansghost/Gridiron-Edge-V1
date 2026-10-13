@@ -43,6 +43,14 @@ export const ML_CAL_1_G5_EFFECT_EVIDENCE_SCHEMA =
 export const ML_CAL_1_G5_CANDIDATE_CONTENTS_SCHEMA =
   'ml-cal-1-g5-candidate-contents-v1' as const;
 
+/** Retained anchored observation/log bytes bound to an effect conclusion (R2-A). */
+export const ML_CAL_1_G5_ANCHORED_OBSERVATION_SCHEMA =
+  'ml-cal-1-g5-anchored-bound-rating-observation-v1' as const;
+
+/** Retained underlying contents bytes bound to a contents conclusion (R2-A). */
+export const ML_CAL_1_G5_ANCHORED_CONTENTS_SCHEMA =
+  'ml-cal-1-g5-anchored-candidate-contents-v1' as const;
+
 export const ML_CAL_1_G5_DESIGN_ON_DISK_SHA256 =
   'bc292e06ce78531b7290833922abe4add9be3af854fe15c599d9bcd1dc1c7a8b' as const;
 
@@ -130,6 +138,24 @@ export interface MlCal1G5IndependentEffectEvidence {
   note?: string;
 }
 
+export interface MlCal1G5AnchoredBoundRatingObservation {
+  schemaVersion: typeof ML_CAL_1_G5_ANCHORED_OBSERVATION_SCHEMA;
+  kind: 'anchored-bound-rating-observation';
+  candidateKey: string;
+  season: 2026;
+  modelVersion: 'v1';
+  affectsBoundRatings: boolean;
+}
+
+export interface MlCal1G5AnchoredCandidateContents {
+  schemaVersion: typeof ML_CAL_1_G5_ANCHORED_CONTENTS_SCHEMA;
+  kind: 'anchored-candidate-contents';
+  candidateKey: string;
+  season: 2026;
+  modelVersion: 'v1';
+  affectsBoundRatings: boolean;
+}
+
 export interface MlCal1G5CandidateContentsEvidence {
   schemaVersion: typeof ML_CAL_1_G5_CANDIDATE_CONTENTS_SCHEMA;
   kind: 'candidate-contents';
@@ -138,6 +164,11 @@ export interface MlCal1G5CandidateContentsEvidence {
   modelVersion: 'v1';
   evaluable: true;
   affectsBoundRatings: boolean;
+  /**
+   * Digest of retained underlying contents bytes. Envelope booleans alone are
+   * not proof (R2-A); this digest must resolve and bind to the conclusion.
+   */
+  anchoredContentsDigest: string;
   note?: string;
 }
 
@@ -757,6 +788,94 @@ export function parseIndependentEffectEvidence(
   };
 }
 
+export function parseAnchoredBoundRatingObservation(
+  bytes: Buffer,
+  expectedCandidateKey: string
+):
+  | { ok: true; observation: MlCal1G5AnchoredBoundRatingObservation }
+  | { ok: false; reason: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bytes.toString('utf8'));
+  } catch {
+    return { ok: false, reason: 'effect_evidence_anchor_unparseable' };
+  }
+  if (parsed == null || typeof parsed !== 'object') {
+    return { ok: false, reason: 'effect_evidence_anchor_unparseable' };
+  }
+  const o = parsed as Record<string, unknown>;
+  if (o.schemaVersion !== ML_CAL_1_G5_ANCHORED_OBSERVATION_SCHEMA) {
+    return { ok: false, reason: 'effect_evidence_anchor_schema_mismatch' };
+  }
+  if (o.kind !== 'anchored-bound-rating-observation') {
+    return { ok: false, reason: 'effect_evidence_anchor_kind_mismatch' };
+  }
+  if (o.candidateKey !== expectedCandidateKey) {
+    return { ok: false, reason: 'effect_evidence_anchor_candidate_mismatch' };
+  }
+  if (o.season !== 2026 || o.modelVersion !== 'v1') {
+    return { ok: false, reason: 'effect_evidence_anchor_scope_mismatch' };
+  }
+  if (typeof o.affectsBoundRatings !== 'boolean') {
+    return { ok: false, reason: 'effect_evidence_anchor_affects_missing' };
+  }
+  return {
+    ok: true,
+    observation: {
+      schemaVersion: ML_CAL_1_G5_ANCHORED_OBSERVATION_SCHEMA,
+      kind: 'anchored-bound-rating-observation',
+      candidateKey: expectedCandidateKey,
+      season: 2026,
+      modelVersion: 'v1',
+      affectsBoundRatings: o.affectsBoundRatings,
+    },
+  };
+}
+
+export function parseAnchoredCandidateContents(
+  bytes: Buffer,
+  expectedCandidateKey: string
+):
+  | { ok: true; contents: MlCal1G5AnchoredCandidateContents }
+  | { ok: false; reason: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bytes.toString('utf8'));
+  } catch {
+    return { ok: false, reason: 'candidate_contents_anchor_unparseable' };
+  }
+  if (parsed == null || typeof parsed !== 'object') {
+    return { ok: false, reason: 'candidate_contents_anchor_unparseable' };
+  }
+  const o = parsed as Record<string, unknown>;
+  if (o.schemaVersion !== ML_CAL_1_G5_ANCHORED_CONTENTS_SCHEMA) {
+    return { ok: false, reason: 'candidate_contents_anchor_schema_mismatch' };
+  }
+  if (o.kind !== 'anchored-candidate-contents') {
+    return { ok: false, reason: 'candidate_contents_anchor_kind_mismatch' };
+  }
+  if (o.candidateKey !== expectedCandidateKey) {
+    return { ok: false, reason: 'candidate_contents_anchor_candidate_mismatch' };
+  }
+  if (o.season !== 2026 || o.modelVersion !== 'v1') {
+    return { ok: false, reason: 'candidate_contents_anchor_scope_mismatch' };
+  }
+  if (typeof o.affectsBoundRatings !== 'boolean') {
+    return { ok: false, reason: 'candidate_contents_anchor_affects_missing' };
+  }
+  return {
+    ok: true,
+    contents: {
+      schemaVersion: ML_CAL_1_G5_ANCHORED_CONTENTS_SCHEMA,
+      kind: 'anchored-candidate-contents',
+      candidateKey: expectedCandidateKey,
+      season: 2026,
+      modelVersion: 'v1',
+      affectsBoundRatings: o.affectsBoundRatings,
+    },
+  };
+}
+
 export function parseCandidateContentsEvidence(
   bytes: Buffer,
   expectedCandidateKey: string
@@ -791,6 +910,12 @@ export function parseCandidateContentsEvidence(
   if (typeof o.affectsBoundRatings !== 'boolean') {
     return { ok: false, reason: 'candidate_contents_affects_missing' };
   }
+  if (
+    typeof o.anchoredContentsDigest !== 'string' ||
+    !HEX64.test(o.anchoredContentsDigest)
+  ) {
+    return { ok: false, reason: 'candidate_contents_anchor_missing' };
+  }
   return {
     ok: true,
     evidence: {
@@ -801,6 +926,7 @@ export function parseCandidateContentsEvidence(
       modelVersion: 'v1',
       evaluable: true,
       affectsBoundRatings: o.affectsBoundRatings,
+      anchoredContentsDigest: o.anchoredContentsDigest,
       note: typeof o.note === 'string' ? o.note : undefined,
     },
   };
@@ -839,8 +965,33 @@ export function evaluateDispositionEvidence(input: {
         reasons.push(parsed.reason);
         reasons.push('lineage_candidate_unresolved');
       } else {
-        contentsOk = true;
-        contentsAffects = parsed.evidence.affectsBoundRatings;
+        // R2-A: underlying contents bytes must parse and bind to conclusion.
+        const anchorBytes = loadRetainedBytesByDigest({
+          retainDir: input.retainDir,
+          digest: parsed.evidence.anchoredContentsDigest,
+        });
+        if (!anchorBytes) {
+          reasons.push('candidate_contents_anchor_bytes_missing');
+          reasons.push('lineage_candidate_unresolved');
+        } else {
+          const anchored = parseAnchoredCandidateContents(
+            anchorBytes,
+            input.candidateKey
+          );
+          if (anchored.ok === false) {
+            reasons.push(anchored.reason);
+            reasons.push('lineage_candidate_unresolved');
+          } else if (
+            anchored.contents.affectsBoundRatings !==
+            parsed.evidence.affectsBoundRatings
+          ) {
+            reasons.push('candidate_contents_anchor_conclusion_mismatch');
+            reasons.push('lineage_candidate_unresolved');
+          } else {
+            contentsOk = true;
+            contentsAffects = parsed.evidence.affectsBoundRatings;
+          }
+        }
       }
     }
   }
@@ -863,7 +1014,7 @@ export function evaluateDispositionEvidence(input: {
         reasons.push(parsed.reason);
         reasons.push('lineage_candidate_unresolved');
       } else {
-        // R2: anchored observation bytes must exist; booleans alone are insufficient.
+        // R2-A: parse/bind anchored observation — digest presence alone insufficient.
         const anchorBytes = loadRetainedBytesByDigest({
           retainDir: input.retainDir,
           digest: parsed.evidence.anchoredObservationDigest,
@@ -872,8 +1023,23 @@ export function evaluateDispositionEvidence(input: {
           reasons.push('effect_evidence_anchor_bytes_missing');
           reasons.push('lineage_candidate_unresolved');
         } else {
-          effectOk = true;
-          effect = parsed.evidence;
+          const anchored = parseAnchoredBoundRatingObservation(
+            anchorBytes,
+            input.candidateKey
+          );
+          if (anchored.ok === false) {
+            reasons.push(anchored.reason);
+            reasons.push('lineage_candidate_unresolved');
+          } else if (
+            anchored.observation.affectsBoundRatings !==
+            parsed.evidence.affectsBoundRatings
+          ) {
+            reasons.push('effect_evidence_anchor_conclusion_mismatch');
+            reasons.push('lineage_candidate_unresolved');
+          } else {
+            effectOk = true;
+            effect = parsed.evidence;
+          }
         }
       }
     }
@@ -1276,7 +1442,7 @@ export function validateG5PackageStructural(input: {
         }
       }
 
-      // Observer-run-metadata + design-correspondence must parse with identities.
+      // R5-A: observer-run-metadata + design-correspondence required identities.
       const metaPath = path.join(dir, 'observer-run-metadata.json');
       const corrPath = path.join(dir, 'design-correspondence.json');
       if (!fs.existsSync(metaPath) || !fs.existsSync(corrPath)) {
@@ -1291,32 +1457,114 @@ export function validateG5PackageStructural(input: {
             string,
             unknown
           >;
-          if (meta == null || typeof meta !== 'object') {
+          if (meta == null || typeof meta !== 'object' || Array.isArray(meta)) {
             reasons.push('package_required_field_missing');
-          }
-          // R5: present identity fields must correspond; missing required pin rejects.
-          if (corr == null || typeof corr !== 'object') {
-            reasons.push('package_required_field_missing');
+          } else if (Object.keys(meta).length === 0) {
+            reasons.push('package_observer_metadata_empty');
           } else {
-            if (corr.baseG4Tip != null && corr.baseG4Tip !== ML_CAL_1_G5_BASE_G4_TIP) {
-              reasons.push('package_design_identity_mismatch');
-            }
-            if (corr.baseG3Tip != null && corr.baseG3Tip !== ML_CAL_1_G4_BASE_G3_TIP) {
-              reasons.push('package_design_identity_mismatch');
-            }
+            // Required correspondence with retained sidecar — missing rejects.
             if (
-              corr.designSha256 != null &&
-              corr.designSha256 !== ML_CAL_1_G5_DESIGN_ON_DISK_SHA256 &&
-              corr.designSha256 !== ML_CAL_1_G4_DESIGN_ON_DISK_SHA256
-            ) {
-              reasons.push('package_design_identity_mismatch');
-            }
-            if (
-              corr.baseG4Tip == null &&
-              corr.baseG3Tip == null &&
-              corr.designSha256 == null
+              typeof meta.observationEndTime !== 'string' ||
+              meta.observationEndTime.length === 0
             ) {
               reasons.push('package_required_field_missing');
+            } else if (
+              obs?.observationEndTime != null &&
+              meta.observationEndTime !== obs.observationEndTime
+            ) {
+              reasons.push('package_observer_metadata_sidecar_mismatch');
+            }
+            if (
+              typeof meta.bindingSnapshotReferenceTime === 'string' &&
+              obs?.bindingSnapshotReferenceTime != null &&
+              meta.bindingSnapshotReferenceTime !==
+                obs.bindingSnapshotReferenceTime
+            ) {
+              reasons.push('package_observer_metadata_sidecar_mismatch');
+            }
+            if (
+              typeof meta.bindingObserverSha === 'string' &&
+              obs?.bindingObserverSha != null &&
+              meta.bindingObserverSha !== obs.bindingObserverSha
+            ) {
+              reasons.push('package_observer_metadata_sidecar_mismatch');
+            }
+            if (
+              typeof meta.lifecycleProducerSha === 'string' &&
+              archive?.lifecycleProducerSha != null &&
+              meta.lifecycleProducerSha !== archive.lifecycleProducerSha
+            ) {
+              reasons.push('package_observer_metadata_sidecar_mismatch');
+            }
+            if (
+              typeof meta.observationId === 'string' &&
+              meta.observationId !== input.observationId
+            ) {
+              reasons.push('package_observer_metadata_sidecar_mismatch');
+            }
+            if (
+              typeof meta.season === 'number' &&
+              obs?.season != null &&
+              meta.season !== obs.season
+            ) {
+              reasons.push('package_observer_metadata_sidecar_mismatch');
+            }
+            if (
+              typeof meta.modelVersion === 'string' &&
+              obs?.modelVersion != null &&
+              meta.modelVersion !== obs.modelVersion
+            ) {
+              reasons.push('package_observer_metadata_sidecar_mismatch');
+            }
+          }
+
+          // Supported correspondence formats (G5 or accepted G4): require design
+          // pin AND base tip together — base-only or design-only is incomplete.
+          if (corr == null || typeof corr !== 'object' || Array.isArray(corr)) {
+            reasons.push('package_required_field_missing');
+          } else {
+            const designPin =
+              typeof corr.designSha256 === 'string' && corr.designSha256.length > 0
+                ? corr.designSha256
+                : typeof corr.onDiskDesignSha256 === 'string' &&
+                    corr.onDiskDesignSha256.length > 0
+                  ? corr.onDiskDesignSha256
+                  : null;
+            const baseTip =
+              typeof corr.baseG4Tip === 'string' && corr.baseG4Tip.length > 0
+                ? { kind: 'g4' as const, value: corr.baseG4Tip }
+                : typeof corr.baseG3Tip === 'string' && corr.baseG3Tip.length > 0
+                  ? { kind: 'g3' as const, value: corr.baseG3Tip }
+                  : null;
+
+            if (designPin == null || baseTip == null) {
+              reasons.push('package_design_correspondence_incomplete');
+            } else {
+              if (
+                designPin !== ML_CAL_1_G5_DESIGN_ON_DISK_SHA256 &&
+                designPin !== ML_CAL_1_G4_DESIGN_ON_DISK_SHA256
+              ) {
+                reasons.push('package_design_identity_mismatch');
+              }
+              if (
+                baseTip.kind === 'g4' &&
+                baseTip.value !== ML_CAL_1_G5_BASE_G4_TIP
+              ) {
+                reasons.push('package_design_identity_mismatch');
+              }
+              if (
+                baseTip.kind === 'g3' &&
+                baseTip.value !== ML_CAL_1_G4_BASE_G3_TIP
+              ) {
+                reasons.push('package_design_identity_mismatch');
+              }
+            }
+            if (
+              typeof corr.acceptanceUploadSha256 === 'string' &&
+              corr.acceptanceUploadSha256 !==
+                ML_CAL_1_G4_ACCEPTANCE_UPLOAD_SHA256
+            ) {
+              reasons.push('package_design_identity_mismatch');
             }
           }
         } catch {
