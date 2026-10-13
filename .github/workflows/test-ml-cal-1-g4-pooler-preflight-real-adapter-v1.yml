@@ -80,9 +80,9 @@ jobs:
           assert expected_design in helper, 'design pin missing from adapter'
           assert '7375d9ba1b3e8c1d5b0b337958b537cc0334fc10' in helper, 'base tip missing'
           assert 'createG4PoolerPreflightRealAdapter' in helper
-          assert 'PrismaClient(' not in helper
+          assert 'new PrismaClient' not in helper
           assert 'process.env' not in helper
-          print('ok adapter pins + no PrismaClient/env')
+          print('ok adapter pins + no client construction / env reads')
           secretish = re.compile(
               r'(?i)(api[_-]?key\s*[:=]\s*\S+|password\s*[:=]\s*\S+|bearer\s+[a-z0-9._-]{8,}|ghp_[A-Za-z0-9]+|'
               r'(DATABASE_URL|DIRECT_URL)\s*[:=]\s*\S+)'

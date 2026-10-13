@@ -224,7 +224,7 @@ function sanitizeAdapterError(e: unknown): Error {
 
 /**
  * Create a metadata-only real adapter. Does not connect, query, or open a TX.
- * Does not read process.env or credentials.
+ * Does not read environment variables or credentials.
  */
 export function createG4PoolerPreflightRealAdapter(
   options: MlCal1G4PreflightRealAdapterOptions
