@@ -1,5 +1,5 @@
 /**
- * Fixture-only G4 pooler preflight runner tests (PF-P1–P3, PF-N1–N11 + extras).
+ * Fixture-only G4 pooler preflight runner tests (PF-P1–P3, PF-N1–N11 + F1–F5).
  * No DB, credentials, providers, or operator retain root.
  */
 
@@ -7,11 +7,13 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
+  assertFixtureRetainRoot,
   copyPreflightPackageAway,
   createMockPreflightTxAdapter,
   ensureRLocalFsLayout,
   ML_CAL_1_G4_PREFLIGHT_DESIGN_SHA256,
   ML_CAL_1_G4_PREFLIGHT_PACKAGE_SCHEMA,
+  redactError,
   runG4FixturePreflight,
   sealPreflightPackage,
   sealPreflightPackageAsync,
@@ -28,7 +30,6 @@ function clockAround(dbIso: string): () => Date {
   const dbMs = Date.parse(dbIso);
   let n = 0;
   return () => {
-    // Call 0 → preflightStartTime (before db); call 1 → preflightEndTime (after db).
     const offsets = [-2000, 2000, 3000, 4000];
     const off = offsets[Math.min(n, offsets.length - 1)];
     n += 1;
@@ -37,6 +38,59 @@ function clockAround(dbIso: string): () => Date {
 }
 
 const DB_TS = '2026-10-13T18:00:05.000Z';
+
+function mkValidSealMembers(preflightId: string): Record<string, Buffer> {
+  return {
+    'preflight-run-metadata.json': Buffer.from(
+      `${stableStringify({
+        kind: 'g4-pooler-preflight-run-metadata',
+        preflightId,
+        terminalSuccess: true,
+        liveAccepted: false,
+        approved: false,
+        fixtureProvenance: true,
+        businessDataWrites: 0,
+        providerCalls: 0,
+        transactionIsolation: 'repeatable read',
+        transactionReadOnly: 'on',
+        dbTransactionTime: DB_TS,
+        preflightStartTime: '2026-10-13T18:00:00.000Z',
+        preflightEndTime: '2026-10-13T18:00:10.000Z',
+      })}\n`
+    ),
+    'preflight-tx-evidence.json': Buffer.from(
+      `${stableStringify({
+        kind: 'g4-pooler-preflight-tx-evidence',
+        preflightId,
+        transactionIsolation: 'repeatable read',
+        transactionReadOnly: 'on',
+        transactionTimestamp: DB_TS,
+        connectionStringPresent: false,
+      })}\n`
+    ),
+    'design-correspondence.json': Buffer.from(
+      `${stableStringify({
+        kind: 'g4-pooler-preflight-design-correspondence',
+        preflightId,
+        designSha256: ML_CAL_1_G4_PREFLIGHT_DESIGN_SHA256,
+        baseG5PreTip: '1683ce36fbb5a981a2b3ba3d8a9b90ea8da37f25',
+        retentionProfile: 'R-LOCAL-FS',
+      })}\n`
+    ),
+    'PROVENANCE.json': Buffer.from(
+      `${stableStringify({
+        schemaVersion:
+          'ml-cal-1-g4-pooler-preflight-provenance-fixture-v1',
+        kind: 'g4-pooler-preflight-fixture-provenance',
+        preflightId,
+        fixtureProvenance: true,
+        liveAccepted: false,
+        approved: false,
+        deployedPoolerProof: false,
+      })}\n`
+    ),
+  };
+}
 
 describe('ML-CAL-1 G4 pooler preflight fixture — positives', () => {
   it('PF-P1: mock RepeatableRead → SET RO → metadata → success seal under R-LOCAL-FS layout', async () => {
@@ -81,7 +135,7 @@ describe('ML-CAL-1 G4 pooler preflight fixture — positives', () => {
     });
     expect(r.ok).toBe(true);
     const away = path.join(root, 'review-handoff', 'copy-p2');
-    const copy = copyPreflightPackageAway(r.packageDir!, away);
+    const copy = copyPreflightPackageAway(r.packageDir!, away, root);
     expect(copy.ok).toBe(true);
     const v = validateG4PreflightPackage(away);
     expect(v.ok).toBe(true);
@@ -179,9 +233,9 @@ describe('ML-CAL-1 G4 pooler preflight fixture — negatives', () => {
       preflightId: 'preflight-oob',
       retainRoot: root,
       txAdapter: createMockPreflightTxAdapter({
-        transactionTimestamp: '2026-10-13T20:00:00.000Z', // after host window
+        transactionTimestamp: '2026-10-13T20:00:00.000Z',
       }),
-      now: clockAround(DB_TS), // host around 18:00
+      now: clockAround(DB_TS),
     });
     expect(r.ok).toBe(false);
     expect(r.reasons).toContain('db_transaction_time_out_of_bounds');
@@ -204,9 +258,7 @@ describe('ML-CAL-1 G4 pooler preflight fixture — negatives', () => {
             throw new Error('business_select_forbidden');
           },
         };
-        // Runner must not call select — if it did, this would throw.
         await fn(client);
-        // Prove select exists but was unused by calling it ourselves for the assertion surface.
         await expect(client.selectTeamSeasonRatings()).rejects.toThrow(
           'business_select_forbidden'
         );
@@ -226,7 +278,6 @@ describe('ML-CAL-1 G4 pooler preflight fixture — negatives', () => {
   it('PF-N6: secretish string in members fail closed', async () => {
     const root = tempRoot('n6');
     ensureRLocalFsLayout(root);
-    // Build payload without embedding a literal credential assignment in source.
     const envKey = ['DATABASE', 'URL'].join('_');
     const envVal = ['postgres', '://x:y@h/db'].join('');
     const sealed = sealPreflightPackage({
@@ -289,19 +340,13 @@ describe('ML-CAL-1 G4 pooler preflight fixture — negatives', () => {
     });
     expect(r.ok).toBe(false);
     expect(r.reasons).toContain('unsafe_preflight_id');
-    expect(fs.existsSync(path.join(root, 'preflight', '..'))).toBe(true); // parent exists
-    // No package written under escaped path outside root
-    const outside = path.join(root, '..', 'escape');
-    // ensure we didn't create a package named escape beside root via traversal in retain tree
     expect(fs.existsSync(path.join(root, 'preflight', '..', 'escape'))).toBe(
       false
     );
-    void outside;
   });
 
   it('PF-N9: usability gate fail refuses before TX', async () => {
     const root = tempRoot('n9');
-    // Make staging a file so layout cannot create staging dir properly
     fs.writeFileSync(path.join(root, 'staging'), 'not-a-dir');
     const r = await runG4FixturePreflight({
       mode: 'fixture',
@@ -324,14 +369,7 @@ describe('ML-CAL-1 G4 pooler preflight fixture — negatives', () => {
       preflightId: 'preflight-wrong-tree',
       sealedAt: DB_TS,
       subtree: 'observations',
-      members: {
-        'preflight-run-metadata.json': Buffer.from('{}\n'),
-        'preflight-tx-evidence.json': Buffer.from('{}\n'),
-        'design-correspondence.json': Buffer.from('{}\n'),
-        'PROVENANCE.json': Buffer.from(
-          `${stableStringify({ fixtureProvenance: true })}\n`
-        ),
-      },
+      members: mkValidSealMembers('preflight-wrong-tree'),
     });
     expect(sealed.ok).toBe(false);
     if (sealed.ok) throw new Error('expected seal failure');
@@ -354,18 +392,396 @@ describe('ML-CAL-1 G4 pooler preflight fixture — negatives', () => {
     });
     expect(r.ok).toBe(true);
     const away = path.join(root, 'review-handoff', 'bad-copy');
-    const copy = copyPreflightPackageAway(r.packageDir!, away);
+    const copy = copyPreflightPackageAway(r.packageDir!, away, root);
     expect(copy.ok).toBe(true);
-    // Tamper handoff copy
-    fs.appendFileSync(
-      path.join(away, 'preflight-run-metadata.json'),
-      ' '
-    );
+    fs.appendFileSync(path.join(away, 'preflight-run-metadata.json'), ' ');
     const v = validateG4PreflightPackage(away);
     expect(v.ok).toBe(false);
     expect(v.reasons.some((x) => x.includes('digest_mismatch'))).toBe(true);
-    // Original sealed package still validates
     expect(validateG4PreflightPackage(r.packageDir!).ok).toBe(true);
+  });
+});
+
+describe('ML-CAL-1 G4 pooler preflight fixture — F1 validator', () => {
+  it('parses every required member and cross-checks tx evidence vs run metadata', async () => {
+    const root = tempRoot('f1-ok');
+    const r = await runG4FixturePreflight({
+      mode: 'fixture',
+      preflightId: 'preflight-f1-ok',
+      retainRoot: root,
+      txAdapter: createMockPreflightTxAdapter({
+        transactionTimestamp: DB_TS,
+      }),
+      now: clockAround(DB_TS),
+    });
+    expect(r.ok).toBe(true);
+    const v = validateG4PreflightPackage(r.packageDir!);
+    expect(v.ok).toBe(true);
+    const tx = JSON.parse(
+      fs.readFileSync(
+        path.join(r.packageDir!, 'preflight-tx-evidence.json'),
+        'utf8'
+      )
+    );
+    const run = JSON.parse(
+      fs.readFileSync(
+        path.join(r.packageDir!, 'preflight-run-metadata.json'),
+        'utf8'
+      )
+    );
+    expect(tx.transactionTimestamp).toBe(run.dbTransactionTime);
+    expect(tx.transactionIsolation).toBe(run.transactionIsolation);
+  });
+
+  it('malformed JSON shapes return structured rejection', async () => {
+    const root = tempRoot('f1-shape');
+    const r = await runG4FixturePreflight({
+      mode: 'fixture',
+      preflightId: 'preflight-f1-shape',
+      retainRoot: root,
+      txAdapter: createMockPreflightTxAdapter({
+        transactionTimestamp: DB_TS,
+      }),
+      now: clockAround(DB_TS),
+    });
+    expect(r.ok).toBe(true);
+    const pkg = r.packageDir!;
+    // Replace tx evidence with a JSON array (malformed shape)
+    const bad = Buffer.from('["not","an","object"]\n', 'utf8');
+    fs.writeFileSync(path.join(pkg, 'preflight-tx-evidence.json'), bad);
+    const manifestPath = path.join(pkg, 'PACKAGE_MANIFEST.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    manifest.memberDigests['preflight-tx-evidence.json'] = {
+      sha256: sha256HexBytes(bad),
+      byteCount: bad.length,
+    };
+    const manifestBytes = Buffer.from(`${stableStringify(manifest)}\n`, 'utf8');
+    fs.writeFileSync(manifestPath, manifestBytes);
+    fs.writeFileSync(
+      path.join(pkg, 'PACKAGE_MANIFEST.sha256'),
+      `${sha256HexBytes(manifestBytes)}\n`
+    );
+    const v = validateG4PreflightPackage(pkg);
+    expect(v.ok).toBe(false);
+    expect(v.reasons).toContain('tx_evidence_not_object');
+  });
+
+  it('hash-consistent semantic tampering fails closed', async () => {
+    const root = tempRoot('f1-sem');
+    const r = await runG4FixturePreflight({
+      mode: 'fixture',
+      preflightId: 'preflight-f1-sem',
+      retainRoot: root,
+      txAdapter: createMockPreflightTxAdapter({
+        transactionTimestamp: DB_TS,
+      }),
+      now: clockAround(DB_TS),
+    });
+    expect(r.ok).toBe(true);
+    const pkg = r.packageDir!;
+    const txPath = path.join(pkg, 'preflight-tx-evidence.json');
+    const tx = JSON.parse(fs.readFileSync(txPath, 'utf8'));
+    tx.transactionTimestamp = '2026-10-13T18:00:06.000Z'; // diverge from run meta
+    const newTx = Buffer.from(`${stableStringify(tx)}\n`, 'utf8');
+    fs.writeFileSync(txPath, newTx);
+    const runPath = path.join(pkg, 'preflight-run-metadata.json');
+    const run = JSON.parse(fs.readFileSync(runPath, 'utf8'));
+    run.approved = true;
+    const newRun = Buffer.from(`${stableStringify(run)}\n`, 'utf8');
+    fs.writeFileSync(runPath, newRun);
+    const manifestPath = path.join(pkg, 'PACKAGE_MANIFEST.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    manifest.memberDigests['preflight-tx-evidence.json'] = {
+      sha256: sha256HexBytes(newTx),
+      byteCount: newTx.length,
+    };
+    manifest.memberDigests['preflight-run-metadata.json'] = {
+      sha256: sha256HexBytes(newRun),
+      byteCount: newRun.length,
+    };
+    const manifestBytes = Buffer.from(`${stableStringify(manifest)}\n`, 'utf8');
+    fs.writeFileSync(manifestPath, manifestBytes);
+    fs.writeFileSync(
+      path.join(pkg, 'PACKAGE_MANIFEST.sha256'),
+      `${sha256HexBytes(manifestBytes)}\n`
+    );
+    const v = validateG4PreflightPackage(pkg);
+    expect(v.ok).toBe(false);
+    expect(
+      v.reasons.some(
+        (x) =>
+          x.includes('tx_run_timestamp_mismatch') ||
+          x.includes('run_metadata_approved')
+      )
+    ).toBe(true);
+  });
+});
+
+describe('ML-CAL-1 G4 pooler preflight fixture — F2 atomic publish', () => {
+  it('final path is absent until atomic rename; incomplete package never visible', async () => {
+    const root = tempRoot('f2-vis');
+    ensureRLocalFsLayout(root);
+    const id = 'preflight-f2-vis';
+    const finalDir = path.join(root, 'preflight', id);
+    let sawFinalDuringStaging = false;
+    let sawFinalDuringClaim = false;
+    const sealed = await sealPreflightPackageAsync({
+      retainRoot: root,
+      preflightId: id,
+      sealedAt: DB_TS,
+      members: mkValidSealMembers(id),
+      hooks: {
+        onStagingReady: ({ finalDir: fd }) => {
+          sawFinalDuringStaging = fs.existsSync(fd);
+        },
+        onClaimAcquired: ({ finalDir: fd }) => {
+          sawFinalDuringClaim = fs.existsSync(fd);
+        },
+      },
+    });
+    expect(sealed.ok).toBe(true);
+    expect(sawFinalDuringStaging).toBe(false);
+    expect(sawFinalDuringClaim).toBe(false);
+    expect(fs.existsSync(finalDir)).toBe(true);
+    expect(validateG4PreflightPackage(finalDir).ok).toBe(true);
+  });
+
+  it('failure after staging / after claim leaves no successful final package', () => {
+    const root = tempRoot('f2-fail');
+    ensureRLocalFsLayout(root);
+    for (const stage of ['after_staging', 'after_claim'] as const) {
+      const id = `preflight-f2-${stage.replace('_', '-')}`;
+      const sealed = sealPreflightPackage({
+        retainRoot: root,
+        preflightId: id,
+        sealedAt: DB_TS,
+        members: mkValidSealMembers(id),
+        hooks: { injectFailure: stage },
+      });
+      expect(sealed.ok).toBe(false);
+      expect(fs.existsSync(path.join(root, 'preflight', id))).toBe(false);
+      const staging = fs.readdirSync(path.join(root, 'staging'));
+      expect(staging.every((k) => !k.includes(id) || k.startsWith('.'))).toBe(
+        true
+      );
+    }
+  });
+
+  it('concurrent publication of same ID: exactly one winner', async () => {
+    const root = tempRoot('race');
+    ensureRLocalFsLayout(root);
+    const results = await Promise.all(
+      [0, 1, 2, 3, 4].map(() =>
+        sealPreflightPackageAsync({
+          retainRoot: root,
+          preflightId: 'preflight-race',
+          sealedAt: DB_TS,
+          members: mkValidSealMembers('preflight-race'),
+        })
+      )
+    );
+    const wins = results.filter((x) => x.ok);
+    const losses = results.filter(
+      (x): x is { ok: false; reasons: string[] } => !x.ok
+    );
+    expect(wins.length).toBe(1);
+    expect(losses.length).toBe(4);
+    expect(
+      losses.every((l) => l.reasons.includes('preflight_package_exists'))
+    ).toBe(true);
+  });
+});
+
+describe('ML-CAL-1 G4 pooler preflight fixture — F3 containment', () => {
+  it('rejects operator-style retain roots before mutation', () => {
+    const outside = path.join(
+      os.tmpdir(),
+      'not-operator',
+      'ml-cal-1',
+      'g4',
+      'probe'
+    );
+    const gate = assertFixtureRetainRoot(outside);
+    expect(gate.ok).toBe(false);
+    expect(gate.reasons).toContain('operator_retain_root_forbidden');
+    expect(fs.existsSync(outside)).toBe(false);
+  });
+
+  it('rejects retain roots outside tmpdir before writes', () => {
+    const outside = path.join(
+      path.parse(os.tmpdir()).root,
+      'g4-preflight-outside-tmp-forbidden'
+    );
+    const gate = assertFixtureRetainRoot(outside);
+    expect(gate.ok).toBe(false);
+    expect(gate.reasons).toContain('retain_root_outside_tmpdir');
+  });
+
+  it('rejects path-escape components and handoff destination escapes', async () => {
+    const root = tempRoot('f3-esc');
+    const r = await runG4FixturePreflight({
+      mode: 'fixture',
+      preflightId: 'preflight-f3',
+      retainRoot: root,
+      txAdapter: createMockPreflightTxAdapter({
+        transactionTimestamp: DB_TS,
+      }),
+      now: clockAround(DB_TS),
+    });
+    expect(r.ok).toBe(true);
+    const outside = tempRoot('f3-outside');
+    const copy = copyPreflightPackageAway(
+      r.packageDir!,
+      path.join(outside, 'escape'),
+      root
+    );
+    expect(copy.ok).toBe(false);
+    expect(copy.reasons).toContain('path_escape');
+    expect(fs.existsSync(path.join(outside, 'escape'))).toBe(false);
+  });
+
+  it('symlink/junction path escape: no writes outside test root', async () => {
+    const root = tempRoot('symlink');
+    ensureRLocalFsLayout(root);
+    const outside = tempRoot('outside-target');
+    const linkPath = path.join(root, 'preflight', 'escape-link');
+    let linked = false;
+    try {
+      fs.symlinkSync(outside, linkPath, 'junction');
+      linked = true;
+    } catch {
+      linked = false;
+    }
+    if (!linked) {
+      const r = await runG4FixturePreflight({
+        mode: 'fixture',
+        preflightId: 'preflight..evil',
+        retainRoot: root,
+        txAdapter: createMockPreflightTxAdapter({
+          transactionTimestamp: DB_TS,
+        }),
+        now: clockAround(DB_TS),
+      });
+      expect(r.ok).toBe(false);
+      expect(r.reasons).toContain('unsafe_preflight_id');
+      return;
+    }
+    const sealed = sealPreflightPackage({
+      retainRoot: root,
+      preflightId: 'escape-link',
+      sealedAt: DB_TS,
+      members: mkValidSealMembers('escape-link'),
+    });
+    expect(sealed.ok).toBe(false);
+    expect(fs.readdirSync(outside)).toEqual([]);
+  });
+});
+
+describe('ML-CAL-1 G4 pooler preflight fixture — F4 adapter/clock', () => {
+  it('transaction-loss after metadata rejects with no success package', async () => {
+    const root = tempRoot('f4-loss');
+    const r = await runG4FixturePreflight({
+      mode: 'fixture',
+      preflightId: 'preflight-tx-loss',
+      retainRoot: root,
+      txAdapter: createMockPreflightTxAdapter({
+        transactionTimestamp: DB_TS,
+        loseTransactionAfterMetadata: true,
+      }),
+      now: clockAround(DB_TS),
+    });
+    expect(r.ok).toBe(false);
+    expect(r.reasons.some((x) => x.includes('adapter_failed'))).toBe(true);
+    expect(r.reasons.some((x) => x.includes('transaction_lost'))).toBe(true);
+    expect(
+      fs.existsSync(path.join(root, 'preflight', 'preflight-tx-loss'))
+    ).toBe(false);
+  });
+
+  it('malformed metadata types and invalid injected clock fail structured', async () => {
+    const root = tempRoot('f4-types');
+    const badShape = await runG4FixturePreflight({
+      mode: 'fixture',
+      preflightId: 'preflight-bad-shape',
+      retainRoot: root,
+      txAdapter: createMockPreflightTxAdapter({
+        invalidMetadataShape: 'non_string_fields',
+      }),
+      now: clockAround(DB_TS),
+    });
+    expect(badShape.ok).toBe(false);
+    expect(
+      badShape.reasons.some((x) => x.includes('type_invalid'))
+    ).toBe(true);
+
+    const badClock = await runG4FixturePreflight({
+      mode: 'fixture',
+      preflightId: 'preflight-bad-clock',
+      retainRoot: root,
+      txAdapter: createMockPreflightTxAdapter({
+        transactionTimestamp: DB_TS,
+      }),
+      now: (() => 'not-a-date') as unknown as () => Date,
+    });
+    expect(badClock.ok).toBe(false);
+    expect(badClock.reasons).toContain('injected_clock_invalid');
+    expect(
+      fs.existsSync(path.join(root, 'preflight', 'preflight-bad-clock'))
+    ).toBe(false);
+  });
+
+  it('adapter failure/timeout fail closed', async () => {
+    const root = tempRoot('adapter');
+    const timeout = await runG4FixturePreflight({
+      mode: 'fixture',
+      preflightId: 'preflight-timeout',
+      retainRoot: root,
+      txAdapter: createMockPreflightTxAdapter({
+        timeoutBeforeMetadata: true,
+        transactionTimestamp: DB_TS,
+      }),
+      now: clockAround(DB_TS),
+    });
+    expect(timeout.ok).toBe(false);
+    expect(timeout.reasons.some((x) => x.includes('adapter_failed'))).toBe(
+      true
+    );
+  });
+});
+
+describe('ML-CAL-1 G4 pooler preflight fixture — F5 redaction', () => {
+  it('redacts Authorization/Bearer and connection forms from errors', () => {
+    // Synthetic tokens only — not real credentials.
+    const syntheticBearer = ['Bearer', 'syn.token.value.ABCDEFGH'].join(' ');
+    const syntheticAuth = ['Authorization:', syntheticBearer].join(' ');
+    const msg = new Error(
+      `upstream ${syntheticAuth} and ${['DATABASE', 'URL'].join('_')}=postgres://u:p@h/db`
+    );
+    const red = redactError(msg);
+    expect(red).not.toMatch(/syn\.token\.value/i);
+    expect(red).not.toMatch(/postgres:\/\//i);
+    expect(red).toMatch(/\[redacted\]/i);
+  });
+
+  it('adapter errors carrying synthetic bearer are redacted in run reasons', async () => {
+    const root = tempRoot('f5');
+    const synthetic = ['Bearer', 'fixtureOnlyTokenValue99'].join(' ');
+    const adapter = {
+      async withRepeatableReadTransaction() {
+        throw new Error(`denied ${synthetic}`);
+      },
+    };
+    const r = await runG4FixturePreflight({
+      mode: 'fixture',
+      preflightId: 'preflight-f5',
+      retainRoot: root,
+      txAdapter: adapter as never,
+      now: clockAround(DB_TS),
+    });
+    expect(r.ok).toBe(false);
+    const joined = r.reasons.join(' ');
+    expect(joined).not.toContain('fixtureOnlyTokenValue99');
+    expect(joined).toMatch(/\[redacted\]/i);
   });
 });
 
@@ -383,134 +799,6 @@ describe('ML-CAL-1 G4 pooler preflight fixture — extras', () => {
     });
     expect(r.ok).toBe(false);
     expect(r.reasons).toContain('live_mode_refused');
-  });
-
-  it('concurrent publication of same ID: exactly one winner', async () => {
-    const root = tempRoot('race');
-    ensureRLocalFsLayout(root);
-    const mkMembers = () => ({
-      'preflight-run-metadata.json': Buffer.from(
-        `${stableStringify({
-          terminalSuccess: true,
-          liveAccepted: false,
-          businessDataWrites: 0,
-          providerCalls: 0,
-          transactionIsolation: 'repeatable read',
-          transactionReadOnly: 'on',
-          dbTransactionTime: DB_TS,
-          preflightStartTime: '2026-10-13T18:00:00.000Z',
-          preflightEndTime: '2026-10-13T18:00:10.000Z',
-        })}\n`
-      ),
-      'preflight-tx-evidence.json': Buffer.from('{}\n'),
-      'design-correspondence.json': Buffer.from(
-        `${stableStringify({ designSha256: ML_CAL_1_G4_PREFLIGHT_DESIGN_SHA256 })}\n`
-      ),
-      'PROVENANCE.json': Buffer.from(
-        `${stableStringify({
-          fixtureProvenance: true,
-          liveAccepted: false,
-          deployedPoolerProof: false,
-        })}\n`
-      ),
-    });
-    const results = await Promise.all(
-      [0, 1, 2, 3, 4].map(() =>
-        sealPreflightPackageAsync({
-          retainRoot: root,
-          preflightId: 'preflight-race',
-          sealedAt: DB_TS,
-          members: mkMembers(),
-        })
-      )
-    );
-    const wins = results.filter((x) => x.ok);
-    const losses = results.filter(
-      (x): x is { ok: false; reasons: string[] } => !x.ok
-    );
-    expect(wins.length).toBe(1);
-    expect(losses.length).toBe(4);
-    expect(
-      losses.every((l) => l.reasons.includes('preflight_package_exists'))
-    ).toBe(true);
-  });
-
-  it('symlink/junction path escape: no writes outside test root', async () => {
-    const root = tempRoot('symlink');
-    ensureRLocalFsLayout(root);
-    const outside = tempRoot('outside-target');
-    const linkPath = path.join(root, 'preflight', 'escape-link');
-    let linked = false;
-    try {
-      fs.symlinkSync(outside, linkPath, 'junction');
-      linked = true;
-    } catch {
-      // Platform may block junctions — skip soft
-      linked = false;
-    }
-    if (!linked) {
-      // Still prove unsafe id / path escape refusal
-      const r = await runG4FixturePreflight({
-        mode: 'fixture',
-        preflightId: 'preflight..evil',
-        retainRoot: root,
-        txAdapter: createMockPreflightTxAdapter({
-          transactionTimestamp: DB_TS,
-        }),
-        now: clockAround(DB_TS),
-      });
-      expect(r.ok).toBe(false);
-      expect(r.reasons).toContain('unsafe_preflight_id');
-      return;
-    }
-    // Attempt to treat symlink as package destination by sealing id that resolves via link
-    // Our seal uses mkdir under preflight/<id> — use id that is the link name
-    const sealed = sealPreflightPackage({
-      retainRoot: root,
-      preflightId: 'escape-link',
-      sealedAt: DB_TS,
-      members: {
-        'preflight-run-metadata.json': Buffer.from('{}\n'),
-        'preflight-tx-evidence.json': Buffer.from('{}\n'),
-        'design-correspondence.json': Buffer.from('{}\n'),
-        'PROVENANCE.json': Buffer.from(
-          `${stableStringify({ fixtureProvenance: true })}\n`
-        ),
-      },
-    });
-    // Must fail closed (exists as symlink or path escape / exists)
-    expect(sealed.ok).toBe(false);
-    // Outside target must remain empty of package members
-    expect(fs.readdirSync(outside)).toEqual([]);
-  });
-
-  it('adapter failure/timeout and malformed metadata fail closed', async () => {
-    const root = tempRoot('adapter');
-    const timeout = await runG4FixturePreflight({
-      mode: 'fixture',
-      preflightId: 'preflight-timeout',
-      retainRoot: root,
-      txAdapter: createMockPreflightTxAdapter({
-        timeoutBeforeMetadata: true,
-        transactionTimestamp: DB_TS,
-      }),
-      now: clockAround(DB_TS),
-    });
-    expect(timeout.ok).toBe(false);
-    expect(timeout.reasons.some((x) => x.includes('adapter_failed'))).toBe(
-      true
-    );
-
-    const openFail = await runG4FixturePreflight({
-      mode: 'fixture',
-      preflightId: 'preflight-openfail',
-      retainRoot: root,
-      txAdapter: createMockPreflightTxAdapter({
-        failOnTransactionOpen: true,
-      }),
-      now: clockAround(DB_TS),
-    });
-    expect(openFail.ok).toBe(false);
   });
 
   it('tampered sealed metadata with regenerated self-hashes still fails validation', async () => {
@@ -532,7 +820,6 @@ describe('ML-CAL-1 G4 pooler preflight fixture — extras', () => {
     meta.deployedPoolerProof = true;
     const newBytes = Buffer.from(`${stableStringify(meta)}\n`, 'utf8');
     fs.writeFileSync(metaPath, newBytes);
-    // Regenerate consistent self-hashes in manifest
     const manifestPath = path.join(pkg, 'PACKAGE_MANIFEST.json');
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
     manifest.memberDigests['preflight-run-metadata.json'] = {
@@ -619,9 +906,7 @@ describe('ML-CAL-1 G4 pooler preflight fixture — extras', () => {
     );
     const v = validateG4PreflightPackage(pkg);
     expect(v.ok).toBe(false);
-    expect(
-      v.reasons.some((x) => x.includes('terminal_success'))
-    ).toBe(true);
+    expect(v.reasons.some((x) => x.includes('terminal_success'))).toBe(true);
   });
 
   it('failOnSetReadOnly aborts without success package', async () => {

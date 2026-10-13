@@ -1,23 +1,25 @@
 # ML-CAL-1 G4 Nonfixture + Pooler-Preflight Procedure Design — Recovery
 
 **Date:** October 13, 2026 (America/Chicago)  
-**Status:** Offline procedure design — F1–F3 accepted at design scope; **`R-LOCAL-FS` retention decision proposal appended** — stop for independent review  
+**Status:** Fixture-only preflight runner implemented on draft PR #253; F1–F5 repair applied — stop for independent re-review  
 **Companion:** `research/moneyline/ML_CAL_1_G4_NONFIXTURE_OBSERVER_POOLER_PREFLIGHT_PROCEDURE_DESIGN_20261013.md`
 
 ---
 
-## Worktree / HEAD
+## Worktree / HEAD (implementation)
 
 | Item | Value |
 |------|-------|
-| Path | `C:\Users\Bobby\gridiron-edge-v1\Gridiron-Edge-V1-ml-cal-1-g5-pre` |
-| Branch | `feat/ml-cal-1-trusted-retrieval-lineage-g5-pre-fixture-v1` |
-| Local HEAD | `1683ce36fbb5a981a2b3ba3d8a9b90ea8da37f25` |
-| Accepted G5-PRE tip | `1683ce36fbb5a981a2b3ba3d8a9b90ea8da37f25` |
-| Match | **HEAD_OK** — history not amended |
-| Commit/push this design | **Forbidden** — local untracked markdown only |
+| Path | `C:\Users\Bobby\gridiron-edge-v1\Gridiron-Edge-V1-ml-cal-1-g4-preflight` |
+| Branch | `feat/ml-cal-1-g4-pooler-preflight-fixture-v1` |
+| Draft PR | https://github.com/firemansghost/Gridiron-Edge-V1/pull/253 |
+| PR base | `feat/ml-cal-1-trusted-retrieval-lineage-g5-pre-fixture-v1` (#252) |
+| Accepted G5-PRE tip (merge-base) | `1683ce36fbb5a981a2b3ba3d8a9b90ea8da37f25` |
+| Pre-repair head | `d51fe0a3f511e9969f3e79d18ee496f5815f5e91` |
+| Post-repair head | reported in session closeout after commit |
+| History | Not amended; repair commits on same draft branch |
 
-Prior local assessment (still uncommitted, preserved):
+Prior local assessment (still uncommitted in g5-pre worktree, preserved):
 
 - `ML_CAL_1_G5_LIVE_PREREQUISITE_REVIEW_20261013.md`
 - `ML_CAL_1_G5_LIVE_PREREQUISITE_RECOVERY_20261013.md`
@@ -28,61 +30,47 @@ Prior local assessment (still uncommitted, preserved):
 
 | Path | Role |
 |------|------|
-| `research/moneyline/ML_CAL_1_G4_NONFIXTURE_OBSERVER_POOLER_PREFLIGHT_PROCEDURE_DESIGN_20261013.md` | Procedure design + §5.5 retention proposal |
+| `research/moneyline/ML_CAL_1_G4_NONFIXTURE_OBSERVER_POOLER_PREFLIGHT_PROCEDURE_DESIGN_20261013.md` | Accepted procedure design (unchanged content) |
 | `research/moneyline/ML_CAL_1_G4_NONFIXTURE_OBSERVER_POOLER_PREFLIGHT_PROCEDURE_RECOVERY_20261013.md` | This recovery note |
+| `apps/jobs/lib/ml-cal-1-g4-pooler-preflight-fixture.ts` | Fixture runner + seal + validator |
+| `apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts` | PF-P/N + F1–F5 tests |
+| `.github/workflows/test-ml-cal-1-g4-pooler-preflight-fixture-v1.yml` | Secret-free CI |
 
-### Digests (closeout)
+### Digests (git/LF canonical)
 
 | File | SHA-256 |
 |------|---------|
-| Design note | `d4d75759a1c347f81f84082f8963bb110760a32e24c0e832e70f5cceb692ca67` |
-| Recovery note | reported in session closeout after finalize |
+| Design note | `55d4a3d72877abcf154461a6504bb702791339b41721729116472187fab7c95f` |
+| Prior CRLF working-tree report (same bytes, CRLF) | `d4d75759a1c347f81f84082f8963bb110760a32e24c0e832e70f5cceb692ca67` |
 
 ---
 
-## Append summary — retention-profile decision proposal
+## F1–F5 repair summary (draft #253)
+
+| ID | Repair |
+|----|--------|
+| F1 | Validator parses every required evidence member; cross-checks tx evidence vs run metadata; enforces schema/kind/identity/pins/provenance/false flags/timing/terminal success; malformed JSON shapes → structured rejection; hash-consistent semantic-tamper regressions |
+| F2 | Complete verified staging directory published via atomic rename; exclusive claim lock under `staging/.claim-<id>` separate from final `preflight/<id>`; race-safe no-overwrite; mid-stage failure hooks leave final path absent |
+| F3 | Fixture retain roots must resolve under `os.tmpdir()`; reject operator-root hints, symlink/junction roots, and escapes before mutation; containment applied to seal + copy/handoff |
+| F4 | `loseTransactionAfterMetadata` rejects after metadata return; runtime metadata types + injected clock validated; structured failure, no success package |
+| F5 | `redactError` covers Authorization/Bearer and related forms; synthetic-token tests only |
+
+---
+
+## Retention / chronology (unchanged)
 
 | Item | Content |
 |------|---------|
 | Recommended initial profile | **`R-LOCAL-FS`** |
-| Proposed root | `<OPERATOR_RESEARCH_RETAIN_ROOT>/ml-cal-1/g4/…` — **outside** git repos and **outside** AgentStores |
-| Subtrees | Separate `preflight/`, `observations/`, plus `staging/`, `review-handoff/` |
-| Seal rules | Safe ids; staging → atomic publish; no overwrite; digest verify pre/post publish |
-| Handoff | Digest-verified copies + `HANDOFF.json` only after seal |
-| Credentials | Excluded from retain tree and package members |
-| Usability | §5.5.7 checks required before execution |
-| Directories created this task | **No** |
-| Usability/durability checks run | **No** — destination remains **PROPOSED / UNVERIFIED** |
+| Operator destination | **UNVERIFIED** — never created/probed by fixture runner |
 | W6 chronology | Still **UNRESOLVED** |
 | Derived timestamp mapping | **Not approved** |
-
----
-
-## Prior F1–F3 (still in force)
-
-Hard P-PREFLIGHT gate; destination gate; chronology provenance classes; lifecycle report required by G5-PRE validation and observation seal; mandatory live `dbTransactionTime`; MVCC caveat; G8 before publication.
-
----
-
-## Key unresolved prerequisites
-
-- Acceptance of §5.5 `R-LOCAL-FS` proposal.  
-- Operator root config + **actual** usability verification (not done).  
-- Offline preflight-runner implementation (§11) not started.  
-- Live P-PREFLIGHT / P-OBSERVE not authorized.  
-- W6 `workflowRunCompletedAt` **UNRESOLVED**.  
-- G5 trust / G6–G8 closed.
-
----
-
-## Smallest subsequent offline task (not implemented now)
-
-**Preflight-runner implementation (fixture-only):** mock RepeatableRead metadata-only path; seal to test temp root under `R-LOCAL-FS` layout rules; pass §10.1 fixture tests PF-P1–P3 and PF-N1–N11. No real DB/pooler, no operator retain-root creation, no observation, no chronology resolution.
+| Fixture success | **Not** deployed pooler acceptance |
 
 ---
 
 ## Holds
 
-No implementation/tests, commit/push, merge, retrieval, DB/pooler, observation, approvals, registration, calibration, operational changes, evidence-directory creation, or claimed durability checks.
+No merge, live DB/pooler, operator-root setup, observation, retrieval, approvals, registration, calibration, G6–G8, or production model/schema changes.
 
-**Stop for independent review.**
+**Stop for independent re-review.**
