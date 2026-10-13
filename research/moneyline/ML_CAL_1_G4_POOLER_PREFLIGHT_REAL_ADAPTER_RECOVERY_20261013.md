@@ -14,7 +14,7 @@
 | Branch | `feat/ml-cal-1-g4-pooler-preflight-real-adapter-v1` |
 | Exact base (#253 tip) | `7375d9ba1b3e8c1d5b0b337958b537cc0334fc10` |
 | Pre-repair head | `47b985b1a7480248f859499af5b71492947ae95a` |
-| Post-repair head | reported in closeout after commit |
+| Post-repair head | `65a1f5fd8b5c79d899ec7d80e5fac2c3ffdfe323` |
 | PR base branch | `feat/ml-cal-1-g4-pooler-preflight-fixture-v1` |
 | G5-PRE parent | `1683ce36fbb5a981a2b3ba3d8a9b90ea8da37f25` |
 | Draft PR | https://github.com/firemansghost/Gridiron-Edge-V1/pull/254 |
