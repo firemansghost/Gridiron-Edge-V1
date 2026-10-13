@@ -1,0 +1,16 @@
+{
+  "provenance": "test-only",
+  "packageId": "ml-cal-1-capture-binding-integration-synthetic-w6",
+  "liveAccepted": false,
+  "files": {
+    "archive.zip": "fc477ffdb0b3f306816988e988442f8f708304c94bbe1a6b4c336b93c8fa5d97",
+    "core-v1-lifecycle-2026-through-week-6-COMMIT.json": "2dcbfe96023bf1273ff4a385aeaa3297afb99a9b3d2da80d5f87dd8e09024dab",
+    "PROVENANCE.json": "20498aab6b41def6eb0b13aee9a60ecb84883df4aca86ae4657f0fe9f0f5bb50"
+  },
+  "authenticWeek5Reference": {
+    "package": "ml-cal-1-lifecycle-binding-week5-commit",
+    "zipSha256": "b0177de089237876c2e258fb97d84af3803ef7d1e7402cae853670ee8a6cd316",
+    "reportMemberSha256": "c20b789ce45b58362a23b2ab2a69184fda2a39377c99d58db6268376b79a2e1e",
+    "note": "Authentic Week 5 bytes live in sibling package; unchanged by G2."
+  }
+}

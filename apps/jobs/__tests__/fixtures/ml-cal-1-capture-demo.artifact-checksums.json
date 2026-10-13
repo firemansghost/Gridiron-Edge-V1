@@ -1,0 +1,20 @@
+{
+  "note": "Actual package bytes live under packages/. This file is an index, not the artifact.",
+  "packages": {
+    "ontime": {
+      "path": "apps/jobs/__tests__/fixtures/packages/ml-cal-1-demo-ontime",
+      "packageChecksumsSha256": "59479ab25925ffe5a95a5537c06d599fd065ec6e3654886ab7e79b7bf96d791a",
+      "terminalSha256": "57a109e96ea8c0eebe21a3d088bc96c87764362c2789d7bc21c377dd12ac207d",
+      "manifestSha256": "760d98612495bcc424aeab8ca440b5cdf3e02a9758255dd328b4e7c77bf7062e",
+      "terminalStatus": "EVIDENCE_CAPTURED"
+    },
+    "delayed": {
+      "path": "apps/jobs/__tests__/fixtures/packages/ml-cal-1-demo-delayed",
+      "packageChecksumsSha256": "db441103b70a57682af30f5b37b09484291aabfaacc900be26b494207842d49b",
+      "terminalSha256": "e1b2bf90781837fda5f21ac1614a1c9220e5b2ebe3873026987bed3fbf25a5c0",
+      "invalidationSha256": "f660a8ac852af7b13034e6559eb36b81e321fa417cb19f6011adcc7735cf76f2",
+      "manifestSha256": "a403130a005469e55c55bd5f9a1a4995056d8aecdd4e66958ba0dfff8c5481cb",
+      "terminalStatus": "PUBLICATION_INVALIDATED"
+    }
+  }
+}
