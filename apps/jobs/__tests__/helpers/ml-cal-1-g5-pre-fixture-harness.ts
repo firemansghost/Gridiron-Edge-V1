@@ -18,11 +18,11 @@ import {
   sealG4ObservationPackage,
 } from '../../lib/ml-cal-1-lifecycle-binding-observer';
 import {
-  ML_CAL_1_G5_ANCHORED_CONTENTS_SCHEMA,
-  ML_CAL_1_G5_ANCHORED_OBSERVATION_SCHEMA,
   ML_CAL_1_G5_CANDIDATE_CONTENTS_SCHEMA,
   ML_CAL_1_G5_EFFECT_EVIDENCE_SCHEMA,
   ML_CAL_1_G5_REQUIRED_SOURCE_CATALOG,
+  ML_CAL_1_G5_WRITE_EFFECT_ARTIFACT_SCHEMA,
+  computeSidecarRatingFingerprint,
   retainBytesByDigest,
   serializeG5Inventory,
   serializeG5ListingPage,
@@ -197,25 +197,10 @@ export function listingPage(
   };
 }
 
-/** Retained anchored observation bytes for R2-A effect binding. */
-export function retainEffectAnchor(
-  retainDir: string,
-  candidateKey: string,
-  opts?: { affectsBoundRatings?: boolean }
-): string {
-  return retainBytesByDigest(
-    retainDir,
-    Buffer.from(
-      `${stableStringify({
-        schemaVersion: ML_CAL_1_G5_ANCHORED_OBSERVATION_SCHEMA,
-        kind: 'anchored-bound-rating-observation',
-        candidateKey,
-        season: 2026,
-        modelVersion: 'v1',
-        affectsBoundRatings: opts?.affectsBoundRatings ?? false,
-      })}\n`,
-      'utf8'
-    )
+/** Test-only synthetic approval digest — must not equal evidence self-hash. */
+export function fixtureEffectApprovalDigest(evidenceSha256: string): string {
+  return sha256Utf8Bytes(
+    `g5-pre-fixture-only-effect-approval:${evidenceSha256.toLowerCase()}`
   );
 }
 
@@ -224,7 +209,10 @@ export function effectEvidenceBytes(
   opts: {
     affectsBoundRatings?: boolean;
     provesNonEffect?: boolean;
-    anchoredObservationDigest: string;
+    boundSidecarDigest: string;
+    boundRatingFingerprint: string;
+    intervalStartInclusive: string;
+    intervalEndInclusive: string;
   }
 ): Buffer {
   return Buffer.from(
@@ -236,61 +224,38 @@ export function effectEvidenceBytes(
       modelVersion: 'v1',
       affectsBoundRatings: opts.affectsBoundRatings ?? false,
       provesNonEffect: opts.provesNonEffect ?? true,
-      anchoredObservationDigest: opts.anchoredObservationDigest,
-      note: 'fixture non-effect on bound ratings',
+      boundSidecarDigest: opts.boundSidecarDigest,
+      boundRatingFingerprint: opts.boundRatingFingerprint,
+      intervalStartInclusive: opts.intervalStartInclusive,
+      intervalEndInclusive: opts.intervalEndInclusive,
+      note: 'fixture reviewed non-effect (requires external approval)',
     })}\n`,
     'utf8'
   );
 }
 
-/** Retain effect evidence with an independently anchored observation digest. */
+/** Retain reviewed effect evidence; caller must register fixture approval digest. */
 export function retainEffectEvidence(
   retainDir: string,
   candidateKey: string,
-  opts?: { affectsBoundRatings?: boolean; provesNonEffect?: boolean }
-): string {
-  const affects = opts?.affectsBoundRatings ?? false;
-  const anchoredObservationDigest = retainEffectAnchor(retainDir, candidateKey, {
-    affectsBoundRatings: affects,
-  });
-  return retainBytesByDigest(
-    retainDir,
-    effectEvidenceBytes(candidateKey, {
-      ...opts,
-      affectsBoundRatings: affects,
-      anchoredObservationDigest,
-    })
-  );
-}
-
-/** Retained underlying contents bytes for R2-A contents binding. */
-export function retainContentsAnchor(
-  retainDir: string,
-  candidateKey: string,
-  opts?: { affectsBoundRatings?: boolean }
-): string {
-  return retainBytesByDigest(
-    retainDir,
-    Buffer.from(
-      `${stableStringify({
-        schemaVersion: ML_CAL_1_G5_ANCHORED_CONTENTS_SCHEMA,
-        kind: 'anchored-candidate-contents',
-        candidateKey,
-        season: 2026,
-        modelVersion: 'v1',
-        affectsBoundRatings: opts?.affectsBoundRatings ?? false,
-      })}\n`,
-      'utf8'
-    )
-  );
-}
-
-export function contentsEvidenceBytes(
-  candidateKey: string,
   opts: {
     affectsBoundRatings?: boolean;
-    anchoredContentsDigest: string;
+    provesNonEffect?: boolean;
+    boundSidecarDigest: string;
+    boundRatingFingerprint: string;
+    intervalStartInclusive: string;
+    intervalEndInclusive: string;
   }
+): { digest: string; approvalDigest: string } {
+  const bytes = effectEvidenceBytes(candidateKey, opts);
+  const digest = retainBytesByDigest(retainDir, bytes);
+  return { digest, approvalDigest: fixtureEffectApprovalDigest(digest) };
+}
+
+/** Legacy boolean-only contents envelope — used only in R2-A negative regressions. */
+export function booleanOnlyContentsEvidenceBytes(
+  candidateKey: string,
+  opts?: { affectsBoundRatings?: boolean }
 ): Buffer {
   return Buffer.from(
     `${stableStringify({
@@ -300,31 +265,87 @@ export function contentsEvidenceBytes(
       season: 2026,
       modelVersion: 'v1',
       evaluable: true,
-      affectsBoundRatings: opts.affectsBoundRatings ?? false,
-      anchoredContentsDigest: opts.anchoredContentsDigest,
-      note: 'fixture retained contents',
+      affectsBoundRatings: opts?.affectsBoundRatings ?? false,
+      anchoredContentsDigest: 'a'.repeat(64),
+      note: 'legacy boolean-only — not proof',
     })}\n`,
     'utf8'
   );
 }
 
-/** Retain contents evidence with independently anchored underlying bytes. */
-export function retainContentsEvidence(
+/** Supported write-effect artifact bytes for derivation. */
+export function writeEffectArtifactBytes(
+  candidate: MlCal1G5RetainedListingCandidate,
+  opts?: {
+    writesTeamSeasonRatings?: boolean;
+    writtenSeason?: number | null;
+    writtenModelVersion?: string | null;
+    writtenRatingFingerprint?: string | null;
+  }
+): Buffer {
+  const writes = opts?.writesTeamSeasonRatings ?? false;
+  return Buffer.from(
+    `${stableStringify({
+      schemaVersion: ML_CAL_1_G5_WRITE_EFFECT_ARTIFACT_SCHEMA,
+      kind: 'candidate-artifact-write-effect',
+      candidateKey: candidate.candidateKey,
+      season: 2026,
+      modelVersion: 'v1',
+      workflowRunId: candidate.workflowRunId ?? null,
+      zipSha256: candidate.zipSha256 ?? null,
+      commitOrWriteTime: candidate.commitOrWriteTime ?? null,
+      artifactAvailableAt: candidate.artifactAvailableAt ?? null,
+      writesTeamSeasonRatings: writes,
+      writtenSeason: writes ? (opts?.writtenSeason ?? 2026) : null,
+      writtenModelVersion: writes
+        ? (opts?.writtenModelVersion ?? 'v1')
+        : null,
+      writtenRatingFingerprint: writes
+        ? (opts?.writtenRatingFingerprint ?? null)
+        : null,
+      completedThroughWeek: candidate.completedThroughWeek ?? null,
+    })}\n`,
+    'utf8'
+  );
+}
+
+/** Retain derivable write-effect artifact (default: no rating write ⇒ non-effect). */
+export function retainWriteEffectArtifact(
   retainDir: string,
-  candidateKey: string,
-  opts?: { affectsBoundRatings?: boolean }
+  candidate: MlCal1G5RetainedListingCandidate,
+  opts?: {
+    writesTeamSeasonRatings?: boolean;
+    writtenSeason?: number | null;
+    writtenModelVersion?: string | null;
+    writtenRatingFingerprint?: string | null;
+  }
 ): string {
-  const affects = opts?.affectsBoundRatings ?? false;
-  const anchoredContentsDigest = retainContentsAnchor(retainDir, candidateKey, {
-    affectsBoundRatings: affects,
-  });
   return retainBytesByDigest(
     retainDir,
-    contentsEvidenceBytes(candidateKey, {
-      affectsBoundRatings: affects,
-      anchoredContentsDigest,
-    })
+    writeEffectArtifactBytes(candidate, opts)
   );
+}
+
+/** @deprecated alias — prefer retainWriteEffectArtifact */
+export function retainContentsEvidence(
+  retainDir: string,
+  candidate: MlCal1G5RetainedListingCandidate | string,
+  opts?: { affectsBoundRatings?: boolean; writtenRatingFingerprint?: string }
+): string {
+  if (typeof candidate === 'string') {
+    return retainWriteEffectArtifact(
+      retainDir,
+      { candidateKey: candidate },
+      {
+        writesTeamSeasonRatings: opts?.affectsBoundRatings === true,
+        writtenRatingFingerprint: opts?.writtenRatingFingerprint ?? null,
+      }
+    );
+  }
+  return retainWriteEffectArtifact(retainDir, candidate, {
+    writesTeamSeasonRatings: opts?.affectsBoundRatings === true,
+    writtenRatingFingerprint: opts?.writtenRatingFingerprint ?? null,
+  });
 }
 
 /**
@@ -370,8 +391,13 @@ export interface G5ScenarioOptions {
   observationId?: string;
   /** Extra candidates listed on github-actions source (default none). */
   githubCandidates?: MlCal1G5RetainedListingCandidate[];
-  /** Inventory dispositions; default reconciles to derived keys with not_invalidating + effect evidence. */
+  /** Inventory dispositions; default reconciles via derived write-effect artifacts. */
   dispositions?: MlCal1G5InventoryCandidate[];
+  /**
+   * When true (and dispositions omitted), prove not_invalidating via externally
+   * approved reviewed effect evidence instead of contents derivation.
+   */
+  useApprovedEffectEvidence?: boolean;
   /** Override inventory fields after build. */
   mutateInventory?: (inv: MlCal1G5LineageInventory) => MlCal1G5LineageInventory;
   /** Omit a required source from pages. */
@@ -402,6 +428,9 @@ export interface G5Scenario {
   retainDir: string;
   observationId: string;
   sidecarDigest: string;
+  boundRatingFingerprint: string;
+  searchWindowStartInclusive: string;
+  searchWindowEndInclusive: string;
   inventoryBytes: Buffer;
   inventorySha256: string;
   pageDigests: Record<string, string>;
@@ -490,9 +519,14 @@ export function buildG5Scenario(opts: G5ScenarioOptions = {}): G5Scenario {
     retainDir,
     JSON.stringify({ kind: 'deletion-notice', note: 'artifact expired' })
   );
+  const boundRatingFingerprint =
+    computeSidecarRatingFingerprint(sealed.packageDir) ?? '0'.repeat(64);
+  const effectApprovals: Record<string, string> = {};
   // Placeholder digests filled after githubCandidates known (shared only when empty).
-  let effectDigest = retainEffectEvidence(retainDir, '__none__');
-  let contentsDigest = retainContentsEvidence(retainDir, '__none__');
+  let effectDigest = '0'.repeat(64);
+  let contentsDigest = retainWriteEffectArtifact(retainDir, {
+    candidateKey: '__none__',
+  });
 
   const githubCandidates = opts.githubCandidates ?? [];
   const pageDigests: Record<string, string> = {};
@@ -508,25 +542,44 @@ export function buildG5Scenario(opts: G5ScenarioOptions = {}): G5Scenario {
     pageDigests[sourceId] = retainPage(retainDir, page);
   }
 
-  // Default dispositions: reconcile every github candidate as not_invalidating via typed effect evidence.
-  if (opts.dispositions == null) {
-    for (const c of githubCandidates) {
-      effectDigest = retainEffectEvidence(retainDir, c.candidateKey, {
-        affectsBoundRatings: false,
-        provesNonEffect: true,
-      });
-      contentsDigest = retainContentsEvidence(retainDir, c.candidateKey, {
-        affectsBoundRatings: false,
-      });
-    }
-  }
+  // Default: not_invalidating via derived write-effect artifact (no rating write),
+  // or via separately approved reviewed effect evidence when requested.
   let dispositions: MlCal1G5InventoryCandidate[] =
     opts.dispositions ??
     githubCandidates.map((c) => {
-      const ed = retainEffectEvidence(retainDir, c.candidateKey, {
-        affectsBoundRatings: false,
-        provesNonEffect: true,
+      if (opts.useApprovedEffectEvidence === true) {
+        const retained = retainEffectEvidence(retainDir, c.candidateKey, {
+          affectsBoundRatings: false,
+          provesNonEffect: true,
+          boundSidecarDigest: sealed.sidecarDigest,
+          boundRatingFingerprint,
+          intervalStartInclusive: winStart,
+          intervalEndInclusive: checked,
+        });
+        effectApprovals[retained.digest] = retained.approvalDigest;
+        effectDigest = retained.digest;
+        return {
+          candidateKey: c.candidateKey,
+          workflowRunId: c.workflowRunId ?? null,
+          zipSha256: c.zipSha256 ?? null,
+          completedThroughWeek: c.completedThroughWeek ?? null,
+          commitOrWriteTime: c.commitOrWriteTime ?? null,
+          artifactAvailableAt: c.artifactAvailableAt ?? null,
+          runStartedAt: c.runStartedAt ?? null,
+          runEndedAt: c.runEndedAt ?? null,
+          eventKind: c.eventKind ?? 'same_week_rerun_commit',
+          sourceId: 'github-actions-lifecycle-artifacts',
+          listingPageDigest: pageDigests['github-actions-lifecycle-artifacts'],
+          candidateContentsDigest: null,
+          independentEffectEvidenceDigest: retained.digest,
+          deletionNoticeDigest: c.deletedOrExpired ? noticeDigest : null,
+          resolvedDisposition: 'not_invalidating' as const,
+        };
+      }
+      const cd = retainWriteEffectArtifact(retainDir, c, {
+        writesTeamSeasonRatings: false,
       });
+      contentsDigest = cd;
       return {
         candidateKey: c.candidateKey,
         workflowRunId: c.workflowRunId ?? null,
@@ -539,18 +592,17 @@ export function buildG5Scenario(opts: G5ScenarioOptions = {}): G5Scenario {
         eventKind: c.eventKind ?? 'same_week_rerun_commit',
         sourceId: 'github-actions-lifecycle-artifacts',
         listingPageDigest: pageDigests['github-actions-lifecycle-artifacts'],
-        candidateContentsDigest: null,
-        independentEffectEvidenceDigest: ed,
+        candidateContentsDigest: cd,
+        independentEffectEvidenceDigest: null,
         deletionNoticeDigest: c.deletedOrExpired ? noticeDigest : null,
         resolvedDisposition: 'not_invalidating' as const,
       };
     });
   if (githubCandidates.length === 1) {
+    contentsDigest =
+      dispositions[0]?.candidateContentsDigest ?? contentsDigest;
     effectDigest =
       dispositions[0]?.independentEffectEvidenceDigest ?? effectDigest;
-    contentsDigest =
-      dispositions[0]?.candidateContentsDigest ??
-      retainContentsEvidence(retainDir, githubCandidates[0].candidateKey);
   }
 
   const sourcesSearched = ML_CAL_1_G5_REQUIRED_SOURCE_CATALOG.filter(
@@ -645,6 +697,8 @@ export function buildG5Scenario(opts: G5ScenarioOptions = {}): G5Scenario {
         ? null
         : inventorySha256,
       approvedSidecarDigest: sealed.sidecarDigest,
+      approvedIndependentEffectEvidenceDigests:
+        Object.keys(effectApprovals).length > 0 ? effectApprovals : null,
     },
     claimedApprovedObservationPackageDigest: opts.claimPackageApprovalWithoutPin
       ? inventorySha256
@@ -669,6 +723,9 @@ export function buildG5Scenario(opts: G5ScenarioOptions = {}): G5Scenario {
     retainDir,
     observationId,
     sidecarDigest: sealed.sidecarDigest,
+    boundRatingFingerprint,
+    searchWindowStartInclusive: winStart,
+    searchWindowEndInclusive: checked,
     inventoryBytes,
     inventorySha256,
     pageDigests,

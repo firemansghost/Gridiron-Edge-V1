@@ -13,9 +13,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+  buildRatingFingerprint,
+  exportRatingInput,
+  reconstructRawRatingRow,
   sha256Utf8Bytes,
   stableStringify,
   verifyLifecycleBindingSidecar,
+  type MlCal1BindingObservedRatingRow,
   type MlCal1LifecycleBindingVerifyInput,
   type MlCal1LifecycleBindingVerifyResult,
 } from './ml-cal-1-lifecycle-binding';
@@ -40,16 +44,16 @@ export const ML_CAL_1_G5_LISTING_PAGE_SCHEMA =
 export const ML_CAL_1_G5_EFFECT_EVIDENCE_SCHEMA =
   'ml-cal-1-g5-independent-effect-evidence-v1' as const;
 
+/** Legacy boolean-declaration envelope — not proof (R2-A regressions). */
 export const ML_CAL_1_G5_CANDIDATE_CONTENTS_SCHEMA =
   'ml-cal-1-g5-candidate-contents-v1' as const;
 
-/** Retained anchored observation/log bytes bound to an effect conclusion (R2-A). */
-export const ML_CAL_1_G5_ANCHORED_OBSERVATION_SCHEMA =
-  'ml-cal-1-g5-anchored-bound-rating-observation-v1' as const;
-
-/** Retained underlying contents bytes bound to a contents conclusion (R2-A). */
-export const ML_CAL_1_G5_ANCHORED_CONTENTS_SCHEMA =
-  'ml-cal-1-g5-anchored-candidate-contents-v1' as const;
+/**
+ * Supported retained candidate artifact / write-effect bytes for derivation (R2-A).
+ * Affect is derived against the bound sidecar cohort/snapshot — not declared.
+ */
+export const ML_CAL_1_G5_WRITE_EFFECT_ARTIFACT_SCHEMA =
+  'ml-cal-1-g5-candidate-artifact-write-effect-v1' as const;
 
 export const ML_CAL_1_G5_DESIGN_ON_DISK_SHA256 =
   'bc292e06ce78531b7290833922abe4add9be3af854fe15c599d9bcd1dc1c7a8b' as const;
@@ -120,56 +124,69 @@ export interface MlCal1G5RetainedListingPage {
   candidates: MlCal1G5RetainedListingCandidate[];
 }
 
+/**
+ * Reviewed independent-effect conclusion. Matching booleans are not proof —
+ * a separately supplied external approval digest for these exact bytes is
+ * required (R2-A). Self-hash / envelope-copied digests cannot approve.
+ */
 export interface MlCal1G5IndependentEffectEvidence {
   schemaVersion: typeof ML_CAL_1_G5_EFFECT_EVIDENCE_SCHEMA;
   kind: 'independent-effect-evidence';
   candidateKey: string;
   season: 2026;
   modelVersion: 'v1';
-  /** Whether the candidate affected the bound 2026/v1 ratings. */
+  /** Reviewed conclusion — accepted only with external approval + bindings. */
   affectsBoundRatings: boolean;
   /** Required true when used to support not_invalidating. */
   provesNonEffect: boolean;
-  /**
-   * Digest of retained anchored observation/log bytes. Booleans alone are not
-   * proof (R2); this digest must resolve in the retain store.
-   */
-  anchoredObservationDigest: string;
+  /** Must equal the PRE-bound sidecar digest. */
+  boundSidecarDigest: string;
+  /** Must equal the rating fingerprint derived from the bound sidecar rows. */
+  boundRatingFingerprint: string;
+  /** Reviewed evidence interval (must cover the search / observation window). */
+  intervalStartInclusive: string;
+  intervalEndInclusive: string;
   note?: string;
 }
 
-export interface MlCal1G5AnchoredBoundRatingObservation {
-  schemaVersion: typeof ML_CAL_1_G5_ANCHORED_OBSERVATION_SCHEMA;
-  kind: 'anchored-bound-rating-observation';
+/** Supported artifact bytes; affect is derived, not declared as disposition proof. */
+export interface MlCal1G5WriteEffectArtifact {
+  schemaVersion: typeof ML_CAL_1_G5_WRITE_EFFECT_ARTIFACT_SCHEMA;
+  kind: 'candidate-artifact-write-effect';
   candidateKey: string;
   season: 2026;
   modelVersion: 'v1';
-  affectsBoundRatings: boolean;
+  workflowRunId: string | null;
+  zipSha256: string | null;
+  commitOrWriteTime: string | null;
+  artifactAvailableAt: string | null;
+  /** Factual: whether this artifact wrote team-season ratings. */
+  writesTeamSeasonRatings: boolean;
+  writtenSeason: number | null;
+  writtenModelVersion: string | null;
+  /** Required when writesTeamSeasonRatings — fingerprint of written ratings. */
+  writtenRatingFingerprint: string | null;
+  completedThroughWeek: number | null;
 }
 
-export interface MlCal1G5AnchoredCandidateContents {
-  schemaVersion: typeof ML_CAL_1_G5_ANCHORED_CONTENTS_SCHEMA;
-  kind: 'anchored-candidate-contents';
-  candidateKey: string;
-  season: 2026;
-  modelVersion: 'v1';
-  affectsBoundRatings: boolean;
-}
-
-export interface MlCal1G5CandidateContentsEvidence {
-  schemaVersion: typeof ML_CAL_1_G5_CANDIDATE_CONTENTS_SCHEMA;
-  kind: 'candidate-contents';
-  candidateKey: string;
-  season: 2026;
-  modelVersion: 'v1';
-  evaluable: true;
-  affectsBoundRatings: boolean;
-  /**
-   * Digest of retained underlying contents bytes. Envelope booleans alone are
-   * not proof (R2-A); this digest must resolve and bind to the conclusion.
-   */
-  anchoredContentsDigest: string;
-  note?: string;
+/** Bound context used to derive / bind disposition proof (R2-A). */
+export interface MlCal1G5BoundEffectContext {
+  sidecarDigest: string;
+  ratingFingerprint: string;
+  season: number;
+  modelVersion: string;
+  observationStartTime: string | null;
+  observationEndTime: string;
+  bindingSnapshotReferenceTime: string;
+  searchWindowStartInclusive: string;
+  searchWindowEndInclusive: string;
+  candidate: {
+    workflowRunId?: string | null;
+    zipSha256?: string | null;
+    commitOrWriteTime: string | null;
+    artifactAvailableAt: string | null;
+    completedThroughWeek?: number | null;
+  };
 }
 
 export interface MlCal1G5InventorySourceSearched {
@@ -263,6 +280,12 @@ export interface MlCal1G5ExternalAnchors {
   approvedRegistryDocumentDigest?: string | null;
   approvedObservationPackageDigest?: string | null;
   approvedSidecarDigest?: string | null;
+  /**
+   * Map: sha256(independent-effect-evidence bytes) → separately supplied
+   * approval digest. Value must not equal the evidence digest (no self-hash).
+   * Fixture-only synthetic approvals are test-scoped.
+   */
+  approvedIndependentEffectEvidenceDigests?: Record<string, string> | null;
 }
 
 export interface MlCal1G5PreInput {
@@ -762,15 +785,22 @@ export function parseIndependentEffectEvidence(
   if (typeof o.provesNonEffect !== 'boolean') {
     return { ok: false, reason: 'effect_evidence_proves_non_effect_missing' };
   }
-  if (
-    typeof o.anchoredObservationDigest !== 'string' ||
-    !HEX64.test(o.anchoredObservationDigest)
-  ) {
-    return { ok: false, reason: 'effect_evidence_anchor_missing' };
-  }
-  // Internal boolean contradiction: cannot prove non-effect while affecting.
   if (o.provesNonEffect === true && o.affectsBoundRatings === true) {
     return { ok: false, reason: 'effect_evidence_boolean_contradiction' };
+  }
+  // Reviewed conclusions without sidecar/fingerprint/interval bindings are
+  // boolean-only declaration layers — not proof (R2-A).
+  if (
+    typeof o.boundSidecarDigest !== 'string' ||
+    !HEX64.test(o.boundSidecarDigest) ||
+    typeof o.boundRatingFingerprint !== 'string' ||
+    !HEX64.test(o.boundRatingFingerprint) ||
+    typeof o.intervalStartInclusive !== 'string' ||
+    parseIsoMs(o.intervalStartInclusive) == null ||
+    typeof o.intervalEndInclusive !== 'string' ||
+    parseIsoMs(o.intervalEndInclusive) == null
+  ) {
+    return { ok: false, reason: 'effect_evidence_boolean_only' };
   }
   return {
     ok: true,
@@ -782,154 +812,223 @@ export function parseIndependentEffectEvidence(
       modelVersion: 'v1',
       affectsBoundRatings: o.affectsBoundRatings,
       provesNonEffect: o.provesNonEffect,
-      anchoredObservationDigest: o.anchoredObservationDigest,
+      boundSidecarDigest: o.boundSidecarDigest.toLowerCase(),
+      boundRatingFingerprint: o.boundRatingFingerprint.toLowerCase(),
+      intervalStartInclusive: o.intervalStartInclusive,
+      intervalEndInclusive: o.intervalEndInclusive,
       note: typeof o.note === 'string' ? o.note : undefined,
     },
   };
 }
 
-export function parseAnchoredBoundRatingObservation(
+export function parseWriteEffectArtifact(
   bytes: Buffer,
   expectedCandidateKey: string
 ):
-  | { ok: true; observation: MlCal1G5AnchoredBoundRatingObservation }
+  | { ok: true; artifact: MlCal1G5WriteEffectArtifact }
   | { ok: false; reason: string } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(bytes.toString('utf8'));
   } catch {
-    return { ok: false, reason: 'effect_evidence_anchor_unparseable' };
+    return { ok: false, reason: 'candidate_contents_unparseable' };
   }
   if (parsed == null || typeof parsed !== 'object') {
-    return { ok: false, reason: 'effect_evidence_anchor_unparseable' };
+    return { ok: false, reason: 'candidate_contents_unparseable' };
   }
   const o = parsed as Record<string, unknown>;
-  if (o.schemaVersion !== ML_CAL_1_G5_ANCHORED_OBSERVATION_SCHEMA) {
-    return { ok: false, reason: 'effect_evidence_anchor_schema_mismatch' };
+  // Legacy boolean-only contents envelopes are not proof.
+  if (
+    o.schemaVersion === ML_CAL_1_G5_CANDIDATE_CONTENTS_SCHEMA ||
+    o.kind === 'candidate-contents' ||
+    o.kind === 'anchored-candidate-contents'
+  ) {
+    return { ok: false, reason: 'candidate_contents_boolean_only' };
   }
-  if (o.kind !== 'anchored-bound-rating-observation') {
-    return { ok: false, reason: 'effect_evidence_anchor_kind_mismatch' };
+  if (o.schemaVersion !== ML_CAL_1_G5_WRITE_EFFECT_ARTIFACT_SCHEMA) {
+    return { ok: false, reason: 'candidate_contents_unsupported' };
   }
-  if (o.candidateKey !== expectedCandidateKey) {
-    return { ok: false, reason: 'effect_evidence_anchor_candidate_mismatch' };
-  }
-  if (o.season !== 2026 || o.modelVersion !== 'v1') {
-    return { ok: false, reason: 'effect_evidence_anchor_scope_mismatch' };
-  }
-  if (typeof o.affectsBoundRatings !== 'boolean') {
-    return { ok: false, reason: 'effect_evidence_anchor_affects_missing' };
-  }
-  return {
-    ok: true,
-    observation: {
-      schemaVersion: ML_CAL_1_G5_ANCHORED_OBSERVATION_SCHEMA,
-      kind: 'anchored-bound-rating-observation',
-      candidateKey: expectedCandidateKey,
-      season: 2026,
-      modelVersion: 'v1',
-      affectsBoundRatings: o.affectsBoundRatings,
-    },
-  };
-}
-
-export function parseAnchoredCandidateContents(
-  bytes: Buffer,
-  expectedCandidateKey: string
-):
-  | { ok: true; contents: MlCal1G5AnchoredCandidateContents }
-  | { ok: false; reason: string } {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(bytes.toString('utf8'));
-  } catch {
-    return { ok: false, reason: 'candidate_contents_anchor_unparseable' };
-  }
-  if (parsed == null || typeof parsed !== 'object') {
-    return { ok: false, reason: 'candidate_contents_anchor_unparseable' };
-  }
-  const o = parsed as Record<string, unknown>;
-  if (o.schemaVersion !== ML_CAL_1_G5_ANCHORED_CONTENTS_SCHEMA) {
-    return { ok: false, reason: 'candidate_contents_anchor_schema_mismatch' };
-  }
-  if (o.kind !== 'anchored-candidate-contents') {
-    return { ok: false, reason: 'candidate_contents_anchor_kind_mismatch' };
-  }
-  if (o.candidateKey !== expectedCandidateKey) {
-    return { ok: false, reason: 'candidate_contents_anchor_candidate_mismatch' };
-  }
-  if (o.season !== 2026 || o.modelVersion !== 'v1') {
-    return { ok: false, reason: 'candidate_contents_anchor_scope_mismatch' };
-  }
-  if (typeof o.affectsBoundRatings !== 'boolean') {
-    return { ok: false, reason: 'candidate_contents_anchor_affects_missing' };
-  }
-  return {
-    ok: true,
-    contents: {
-      schemaVersion: ML_CAL_1_G5_ANCHORED_CONTENTS_SCHEMA,
-      kind: 'anchored-candidate-contents',
-      candidateKey: expectedCandidateKey,
-      season: 2026,
-      modelVersion: 'v1',
-      affectsBoundRatings: o.affectsBoundRatings,
-    },
-  };
-}
-
-export function parseCandidateContentsEvidence(
-  bytes: Buffer,
-  expectedCandidateKey: string
-):
-  | { ok: true; evidence: MlCal1G5CandidateContentsEvidence }
-  | { ok: false; reason: string } {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(bytes.toString('utf8'));
-  } catch {
-    return { ok: false, reason: 'candidate_contents_json_invalid' };
-  }
-  if (parsed == null || typeof parsed !== 'object') {
-    return { ok: false, reason: 'candidate_contents_not_object' };
-  }
-  const o = parsed as Record<string, unknown>;
-  if (o.schemaVersion !== ML_CAL_1_G5_CANDIDATE_CONTENTS_SCHEMA) {
-    return { ok: false, reason: 'candidate_contents_schema_mismatch' };
-  }
-  if (o.kind !== 'candidate-contents') {
-    return { ok: false, reason: 'candidate_contents_kind_mismatch' };
+  if (o.kind !== 'candidate-artifact-write-effect') {
+    return { ok: false, reason: 'candidate_contents_unsupported' };
   }
   if (o.candidateKey !== expectedCandidateKey) {
     return { ok: false, reason: 'candidate_contents_candidate_mismatch' };
   }
   if (o.season !== 2026 || o.modelVersion !== 'v1') {
-    return { ok: false, reason: 'candidate_contents_binding_mismatch' };
+    return { ok: false, reason: 'candidate_contents_scope_mismatch' };
   }
-  if (o.evaluable !== true) {
-    return { ok: false, reason: 'candidate_contents_not_evaluable' };
+  if (typeof o.writesTeamSeasonRatings !== 'boolean') {
+    return { ok: false, reason: 'candidate_contents_write_flag_missing' };
   }
-  if (typeof o.affectsBoundRatings !== 'boolean') {
-    return { ok: false, reason: 'candidate_contents_affects_missing' };
-  }
-  if (
-    typeof o.anchoredContentsDigest !== 'string' ||
-    !HEX64.test(o.anchoredContentsDigest)
-  ) {
-    return { ok: false, reason: 'candidate_contents_anchor_missing' };
+  if (o.writesTeamSeasonRatings === true) {
+    if (typeof o.writtenSeason !== 'number' || typeof o.writtenModelVersion !== 'string') {
+      return { ok: false, reason: 'candidate_contents_written_scope_missing' };
+    }
+    if (
+      typeof o.writtenRatingFingerprint !== 'string' ||
+      !HEX64.test(o.writtenRatingFingerprint)
+    ) {
+      return { ok: false, reason: 'candidate_contents_fingerprint_missing' };
+    }
   }
   return {
     ok: true,
-    evidence: {
-      schemaVersion: ML_CAL_1_G5_CANDIDATE_CONTENTS_SCHEMA,
-      kind: 'candidate-contents',
+    artifact: {
+      schemaVersion: ML_CAL_1_G5_WRITE_EFFECT_ARTIFACT_SCHEMA,
+      kind: 'candidate-artifact-write-effect',
       candidateKey: expectedCandidateKey,
       season: 2026,
       modelVersion: 'v1',
-      evaluable: true,
-      affectsBoundRatings: o.affectsBoundRatings,
-      anchoredContentsDigest: o.anchoredContentsDigest,
-      note: typeof o.note === 'string' ? o.note : undefined,
+      workflowRunId:
+        typeof o.workflowRunId === 'string' ? o.workflowRunId : null,
+      zipSha256: typeof o.zipSha256 === 'string' ? o.zipSha256 : null,
+      commitOrWriteTime:
+        typeof o.commitOrWriteTime === 'string' ? o.commitOrWriteTime : null,
+      artifactAvailableAt:
+        typeof o.artifactAvailableAt === 'string' ? o.artifactAvailableAt : null,
+      writesTeamSeasonRatings: o.writesTeamSeasonRatings,
+      writtenSeason: typeof o.writtenSeason === 'number' ? o.writtenSeason : null,
+      writtenModelVersion:
+        typeof o.writtenModelVersion === 'string' ? o.writtenModelVersion : null,
+      writtenRatingFingerprint:
+        typeof o.writtenRatingFingerprint === 'string'
+          ? o.writtenRatingFingerprint.toLowerCase()
+          : null,
+      completedThroughWeek:
+        typeof o.completedThroughWeek === 'number'
+          ? o.completedThroughWeek
+          : null,
     },
   };
+}
+
+/** Derive whether artifact affects the bound rating cohort/snapshot. */
+export function deriveAffectsBoundRatingsFromArtifact(
+  artifact: MlCal1G5WriteEffectArtifact,
+  bound: MlCal1G5BoundEffectContext
+): { ok: true; affects: boolean } | { ok: false; reason: string } {
+  // Bind artifact identity to listed candidate (key alone insufficient).
+  const c = bound.candidate;
+  if (
+    c.workflowRunId != null &&
+    artifact.workflowRunId != null &&
+    c.workflowRunId !== artifact.workflowRunId
+  ) {
+    return { ok: false, reason: 'candidate_contents_identity_mismatch' };
+  }
+  if (
+    c.zipSha256 != null &&
+    artifact.zipSha256 != null &&
+    c.zipSha256.toLowerCase() !== artifact.zipSha256.toLowerCase()
+  ) {
+    return { ok: false, reason: 'candidate_contents_identity_mismatch' };
+  }
+  if (
+    c.commitOrWriteTime != null &&
+    artifact.commitOrWriteTime != null &&
+    c.commitOrWriteTime !== artifact.commitOrWriteTime
+  ) {
+    return { ok: false, reason: 'candidate_contents_timing_mismatch' };
+  }
+  if (
+    c.artifactAvailableAt != null &&
+    artifact.artifactAvailableAt != null &&
+    c.artifactAvailableAt !== artifact.artifactAvailableAt
+  ) {
+    return { ok: false, reason: 'candidate_contents_timing_mismatch' };
+  }
+  // Listing identity present → artifact must carry matching facts.
+  if (c.workflowRunId != null && artifact.workflowRunId !== c.workflowRunId) {
+    return { ok: false, reason: 'candidate_contents_identity_mismatch' };
+  }
+  if (
+    c.zipSha256 != null &&
+    (artifact.zipSha256 == null ||
+      artifact.zipSha256.toLowerCase() !== c.zipSha256.toLowerCase())
+  ) {
+    return { ok: false, reason: 'candidate_contents_identity_mismatch' };
+  }
+
+  if (!artifact.writesTeamSeasonRatings) {
+    return { ok: true, affects: false };
+  }
+  if (
+    artifact.writtenSeason !== bound.season ||
+    artifact.writtenModelVersion !== bound.modelVersion
+  ) {
+    // Writes a different cohort — does not affect the bound snapshot.
+    return { ok: true, affects: false };
+  }
+  if (
+    artifact.writtenRatingFingerprint == null ||
+    !HEX64.test(artifact.writtenRatingFingerprint)
+  ) {
+    return { ok: false, reason: 'candidate_contents_fingerprint_missing' };
+  }
+  // Same fingerprint ⇒ same bound snapshot (non-effect). Different ⇒ affects.
+  return {
+    ok: true,
+    affects:
+      artifact.writtenRatingFingerprint.toLowerCase() !==
+      bound.ratingFingerprint.toLowerCase(),
+  };
+}
+
+function validateExternalEffectApproval(input: {
+  evidenceDigest: string;
+  evidenceBytes: Buffer;
+  evidence: MlCal1G5IndependentEffectEvidence;
+  approvedDigests: Record<string, string> | null | undefined;
+}): { ok: true } | { ok: false; reason: string } {
+  const map = input.approvedDigests ?? null;
+  if (map == null || typeof map !== 'object') {
+    return { ok: false, reason: 'effect_evidence_approval_missing' };
+  }
+  const approval = map[input.evidenceDigest] ?? map[input.evidenceDigest.toLowerCase()];
+  if (typeof approval !== 'string' || !HEX64.test(approval)) {
+    return { ok: false, reason: 'effect_evidence_approval_missing' };
+  }
+  const approvalLc = approval.toLowerCase();
+  // Self-hash cannot approve.
+  if (approvalLc === input.evidenceDigest.toLowerCase()) {
+    return { ok: false, reason: 'effect_evidence_approval_self_hash' };
+  }
+  // Digest copied from the evidence envelope cannot approve.
+  const envelopeText = input.evidenceBytes.toString('utf8');
+  if (envelopeText.toLowerCase().includes(approvalLc)) {
+    return { ok: false, reason: 'effect_evidence_approval_from_envelope' };
+  }
+  void input.evidence;
+  return { ok: true };
+}
+
+function bindReviewedEffectEvidence(
+  evidence: MlCal1G5IndependentEffectEvidence,
+  bound: MlCal1G5BoundEffectContext
+): { ok: true } | { ok: false; reason: string } {
+  if (evidence.boundSidecarDigest !== bound.sidecarDigest.toLowerCase()) {
+    return { ok: false, reason: 'effect_evidence_sidecar_mismatch' };
+  }
+  if (
+    evidence.boundRatingFingerprint !== bound.ratingFingerprint.toLowerCase()
+  ) {
+    return { ok: false, reason: 'effect_evidence_fingerprint_mismatch' };
+  }
+  const evStart = parseIsoMs(evidence.intervalStartInclusive);
+  const evEnd = parseIsoMs(evidence.intervalEndInclusive);
+  const winStart = parseIsoMs(bound.searchWindowStartInclusive);
+  const winEnd = parseIsoMs(bound.searchWindowEndInclusive);
+  if (evStart == null || evEnd == null || winStart == null || winEnd == null) {
+    return { ok: false, reason: 'effect_evidence_interval_missing' };
+  }
+  if (evStart > evEnd) {
+    return { ok: false, reason: 'effect_evidence_interval_reversed' };
+  }
+  // Reviewed interval must cover the inventory search window.
+  if (evStart > winStart || evEnd < winEnd) {
+    return { ok: false, reason: 'effect_evidence_interval_mismatch' };
+  }
+  return { ok: true };
 }
 
 export function evaluateDispositionEvidence(input: {
@@ -940,6 +1039,8 @@ export function evaluateDispositionEvidence(input: {
   deletionNoticeDigest: string | null;
   commitOrWriteTime: string | null;
   retainDir: string;
+  bound: MlCal1G5BoundEffectContext;
+  approvedIndependentEffectEvidenceDigests?: Record<string, string> | null;
 }): { ok: boolean; reasons: string[] } {
   const reasons: string[] = [];
   if (!isValidG5Disposition(input.disposition)) {
@@ -960,37 +1061,21 @@ export function evaluateDispositionEvidence(input: {
     if (!bytes) {
       reasons.push('lineage_candidate_unresolved');
     } else {
-      const parsed = parseCandidateContentsEvidence(bytes, input.candidateKey);
+      const parsed = parseWriteEffectArtifact(bytes, input.candidateKey);
       if (parsed.ok === false) {
         reasons.push(parsed.reason);
         reasons.push('lineage_candidate_unresolved');
       } else {
-        // R2-A: underlying contents bytes must parse and bind to conclusion.
-        const anchorBytes = loadRetainedBytesByDigest({
-          retainDir: input.retainDir,
-          digest: parsed.evidence.anchoredContentsDigest,
-        });
-        if (!anchorBytes) {
-          reasons.push('candidate_contents_anchor_bytes_missing');
+        const derived = deriveAffectsBoundRatingsFromArtifact(
+          parsed.artifact,
+          input.bound
+        );
+        if (derived.ok === false) {
+          reasons.push(derived.reason);
           reasons.push('lineage_candidate_unresolved');
         } else {
-          const anchored = parseAnchoredCandidateContents(
-            anchorBytes,
-            input.candidateKey
-          );
-          if (anchored.ok === false) {
-            reasons.push(anchored.reason);
-            reasons.push('lineage_candidate_unresolved');
-          } else if (
-            anchored.contents.affectsBoundRatings !==
-            parsed.evidence.affectsBoundRatings
-          ) {
-            reasons.push('candidate_contents_anchor_conclusion_mismatch');
-            reasons.push('lineage_candidate_unresolved');
-          } else {
-            contentsOk = true;
-            contentsAffects = parsed.evidence.affectsBoundRatings;
-          }
+          contentsOk = true;
+          contentsAffects = derived.affects;
         }
       }
     }
@@ -1009,32 +1094,28 @@ export function evaluateDispositionEvidence(input: {
     if (!bytes) {
       reasons.push('lineage_candidate_unresolved');
     } else {
+      const evidenceDigest = sha256Hex(bytes);
       const parsed = parseIndependentEffectEvidence(bytes, input.candidateKey);
       if (parsed.ok === false) {
         reasons.push(parsed.reason);
         reasons.push('lineage_candidate_unresolved');
       } else {
-        // R2-A: parse/bind anchored observation — digest presence alone insufficient.
-        const anchorBytes = loadRetainedBytesByDigest({
-          retainDir: input.retainDir,
-          digest: parsed.evidence.anchoredObservationDigest,
+        const approval = validateExternalEffectApproval({
+          evidenceDigest,
+          evidenceBytes: bytes,
+          evidence: parsed.evidence,
+          approvedDigests: input.approvedIndependentEffectEvidenceDigests,
         });
-        if (!anchorBytes) {
-          reasons.push('effect_evidence_anchor_bytes_missing');
+        if (approval.ok === false) {
+          reasons.push(approval.reason);
           reasons.push('lineage_candidate_unresolved');
         } else {
-          const anchored = parseAnchoredBoundRatingObservation(
-            anchorBytes,
-            input.candidateKey
+          const boundCheck = bindReviewedEffectEvidence(
+            parsed.evidence,
+            input.bound
           );
-          if (anchored.ok === false) {
-            reasons.push(anchored.reason);
-            reasons.push('lineage_candidate_unresolved');
-          } else if (
-            anchored.observation.affectsBoundRatings !==
-            parsed.evidence.affectsBoundRatings
-          ) {
-            reasons.push('effect_evidence_anchor_conclusion_mismatch');
+          if (boundCheck.ok === false) {
+            reasons.push(boundCheck.reason);
             reasons.push('lineage_candidate_unresolved');
           } else {
             effectOk = true;
@@ -1045,7 +1126,7 @@ export function evaluateDispositionEvidence(input: {
     }
   }
 
-  // R2: contradictory contents vs effect → unresolved (do not pick a boolean winner).
+  // Contradictory derived contents vs reviewed effect → unresolved.
   if (
     contentsOk &&
     effectOk &&
@@ -1072,7 +1153,6 @@ export function evaluateDispositionEvidence(input: {
       effect != null &&
       effect.provesNonEffect === true &&
       effect.affectsBoundRatings === false;
-    // Disposition claiming non-effect while evidence says affects → unresolved.
     if (
       (contentsOk && contentsAffects === true) ||
       (effectOk && effect != null && effect.affectsBoundRatings === true)
@@ -1110,7 +1190,6 @@ export function evaluateDispositionEvidence(input: {
     );
   }
 
-  // Ambiguous write time without proved non-effect → unresolved for not_invalidating.
   if (
     disposition === 'not_invalidating' &&
     (input.commitOrWriteTime == null ||
@@ -1127,6 +1206,32 @@ export function evaluateDispositionEvidence(input: {
   }
 
   return { ok: reasons.length === 0, reasons: [...new Set(reasons)] };
+}
+
+/** Compute bound rating fingerprint from sidecar observed rows. */
+export function computeSidecarRatingFingerprint(
+  packageDir: string
+): string | null {
+  const sidecarPath = path.join(packageDir, 'binding-sidecar.json');
+  if (!fs.existsSync(sidecarPath)) return null;
+  try {
+    const sc = JSON.parse(fs.readFileSync(sidecarPath, 'utf8')) as {
+      bindingObservation?: { rows?: MlCal1BindingObservedRatingRow[] };
+    };
+    const rows = sc.bindingObservation?.rows;
+    if (!Array.isArray(rows) || rows.length === 0) return null;
+    const exportedByTeam: Record<
+      string,
+      ReturnType<typeof exportRatingInput>
+    > = {};
+    for (const row of rows) {
+      const exported = exportRatingInput(reconstructRawRatingRow(row));
+      exportedByTeam[row.teamId] = exported;
+    }
+    return buildRatingFingerprint(exportedByTeam);
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1763,9 +1868,14 @@ export function recomputeInventoryCompleteness(input: {
   attestationCheckedThroughTime?: string | null;
   bindingSnapshotReferenceTime?: string | null;
   observationEndTime?: string | null;
+  observationStartTime?: string | null;
   nowCeiling: string;
   workflowRunCompletedAt: string;
   artifactCreatedAt: string;
+  /** Required for R2-A derivation / reviewed-effect binding. */
+  boundSidecarDigest: string | null;
+  boundRatingFingerprint: string | null;
+  approvedIndependentEffectEvidenceDigests?: Record<string, string> | null;
 }): {
   recomputedSearchComplete: boolean;
   recomputedNoneFoundPermitted: boolean;
@@ -2001,6 +2111,16 @@ export function recomputeInventoryCompleteness(input: {
       }
     }
 
+    if (
+      input.boundSidecarDigest == null ||
+      input.boundRatingFingerprint == null ||
+      input.observationEndTime == null ||
+      input.bindingSnapshotReferenceTime == null
+    ) {
+      reasons.push('lineage_bound_effect_context_missing');
+      unresolvedCandidateKeys.push(c.candidateKey);
+      continue;
+    }
     const ev = evaluateDispositionEvidence({
       disposition: c.resolvedDisposition,
       candidateKey: c.candidateKey,
@@ -2009,6 +2129,26 @@ export function recomputeInventoryCompleteness(input: {
       deletionNoticeDigest: c.deletionNoticeDigest,
       commitOrWriteTime: c.commitOrWriteTime,
       retainDir: input.retainDir,
+      bound: {
+        sidecarDigest: input.boundSidecarDigest,
+        ratingFingerprint: input.boundRatingFingerprint,
+        season: inv.season,
+        modelVersion: inv.modelVersion,
+        observationStartTime: input.observationStartTime ?? null,
+        observationEndTime: input.observationEndTime,
+        bindingSnapshotReferenceTime: input.bindingSnapshotReferenceTime,
+        searchWindowStartInclusive: inv.searchWindowStartInclusive,
+        searchWindowEndInclusive: inv.searchWindowEndInclusive,
+        candidate: {
+          workflowRunId: c.workflowRunId,
+          zipSha256: c.zipSha256,
+          commitOrWriteTime: c.commitOrWriteTime,
+          artifactAvailableAt: c.artifactAvailableAt,
+          completedThroughWeek: c.completedThroughWeek,
+        },
+      },
+      approvedIndependentEffectEvidenceDigests:
+        input.approvedIndependentEffectEvidenceDigests,
     });
     if (c.resolvedDisposition === 'invalidating' && ev.ok) {
       hasInvalidating = true;
@@ -2410,15 +2550,45 @@ export function runG5Pre(input: MlCal1G5PreInput): MlCal1G5PreResult {
       reasons.push('producer_sha_invalid');
     }
 
+    const boundRatingFingerprint = computeSidecarRatingFingerprint(
+      input.packageDir
+    );
+    if (
+      packageCheck.sidecarDigest == null ||
+      boundRatingFingerprint == null ||
+      effectiveObsEnd == null ||
+      effectiveSnap == null
+    ) {
+      reasons.push('lineage_bound_effect_context_missing');
+    }
+    // Prefer sidecar observationStartTime when present on bound evidence package.
+    let observationStartTime: string | null = null;
+    try {
+      const scPath = path.join(input.packageDir, 'binding-sidecar.json');
+      if (fs.existsSync(scPath)) {
+        const sc = JSON.parse(fs.readFileSync(scPath, 'utf8')) as {
+          bindingObservation?: { observationStartTime?: string };
+        };
+        observationStartTime =
+          sc.bindingObservation?.observationStartTime ?? null;
+      }
+    } catch {
+      observationStartTime = null;
+    }
     const complete = recomputeInventoryCompleteness({
       inventory: parsed.inventory,
       retainDir: input.searchEvidenceRetainDir,
       attestationCheckedThroughTime: effectiveChecked,
       bindingSnapshotReferenceTime: effectiveSnap,
       observationEndTime: effectiveObsEnd,
+      observationStartTime,
       nowCeiling: input.nowCeiling,
       workflowRunCompletedAt: input.workflowRunCompletedAt,
       artifactCreatedAt: input.artifactCreatedAt,
+      boundSidecarDigest: packageCheck.sidecarDigest,
+      boundRatingFingerprint,
+      approvedIndependentEffectEvidenceDigests:
+        input.externalAnchors.approvedIndependentEffectEvidenceDigests ?? null,
     });
     recomputedSearchComplete = complete.recomputedSearchComplete;
     recomputedNoneFoundPermitted = complete.recomputedNoneFoundPermitted;
