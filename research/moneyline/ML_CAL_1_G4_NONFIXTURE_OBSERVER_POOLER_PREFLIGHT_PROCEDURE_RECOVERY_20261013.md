@@ -16,7 +16,7 @@
 | PR base | `feat/ml-cal-1-trusted-retrieval-lineage-g5-pre-fixture-v1` (#252) |
 | Accepted G5-PRE tip (merge-base) | `1683ce36fbb5a981a2b3ba3d8a9b90ea8da37f25` |
 | Pre-repair head | `d51fe0a3f511e9969f3e79d18ee496f5815f5e91` |
-| Post-repair head | reported in session closeout after commit |
+| Post-repair head | `4ec214b24f62894701dbcef1be7de86f831c7ba4` |
 | History | Not amended; repair commits on same draft branch |
 
 Prior local assessment (still uncommitted in g5-pre worktree, preserved):
