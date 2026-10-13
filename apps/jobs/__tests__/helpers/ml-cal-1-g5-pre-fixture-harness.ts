@@ -195,9 +195,33 @@ export function listingPage(
   };
 }
 
+/** Retained anchored observation bytes for R2 effect binding. */
+export function retainEffectAnchor(
+  retainDir: string,
+  candidateKey: string
+): string {
+  return retainBytesByDigest(
+    retainDir,
+    Buffer.from(
+      JSON.stringify({
+        kind: 'anchored-bound-rating-observation',
+        candidateKey,
+        season: 2026,
+        modelVersion: 'v1',
+        note: 'fixture anchored effect observation identifying candidate and bound ratings',
+      }),
+      'utf8'
+    )
+  );
+}
+
 export function effectEvidenceBytes(
   candidateKey: string,
-  opts?: { affectsBoundRatings?: boolean; provesNonEffect?: boolean }
+  opts: {
+    affectsBoundRatings?: boolean;
+    provesNonEffect?: boolean;
+    anchoredObservationDigest: string;
+  }
 ): Buffer {
   return Buffer.from(
     `${stableStringify({
@@ -206,11 +230,28 @@ export function effectEvidenceBytes(
       candidateKey,
       season: 2026,
       modelVersion: 'v1',
-      affectsBoundRatings: opts?.affectsBoundRatings ?? false,
-      provesNonEffect: opts?.provesNonEffect ?? true,
+      affectsBoundRatings: opts.affectsBoundRatings ?? false,
+      provesNonEffect: opts.provesNonEffect ?? true,
+      anchoredObservationDigest: opts.anchoredObservationDigest,
       note: 'fixture non-effect on bound ratings',
     })}\n`,
     'utf8'
+  );
+}
+
+/** Retain effect evidence with an independently anchored observation digest. */
+export function retainEffectEvidence(
+  retainDir: string,
+  candidateKey: string,
+  opts?: { affectsBoundRatings?: boolean; provesNonEffect?: boolean }
+): string {
+  const anchoredObservationDigest = retainEffectAnchor(retainDir, candidateKey);
+  return retainBytesByDigest(
+    retainDir,
+    effectEvidenceBytes(candidateKey, {
+      ...opts,
+      anchoredObservationDigest,
+    })
   );
 }
 
@@ -369,10 +410,7 @@ export function buildG5Scenario(opts: G5ScenarioOptions = {}): G5Scenario {
     JSON.stringify({ kind: 'deletion-notice', note: 'artifact expired' })
   );
   // Placeholder digests filled after githubCandidates known (shared only when empty).
-  let effectDigest = retainBytesByDigest(
-    retainDir,
-    effectEvidenceBytes('__none__')
-  );
+  let effectDigest = retainEffectEvidence(retainDir, '__none__');
   let contentsDigest = retainBytesByDigest(
     retainDir,
     contentsEvidenceBytes('__none__')
@@ -395,13 +433,10 @@ export function buildG5Scenario(opts: G5ScenarioOptions = {}): G5Scenario {
   // Default dispositions: reconcile every github candidate as not_invalidating via typed effect evidence.
   if (opts.dispositions == null) {
     for (const c of githubCandidates) {
-      effectDigest = retainBytesByDigest(
-        retainDir,
-        effectEvidenceBytes(c.candidateKey, {
-          affectsBoundRatings: false,
-          provesNonEffect: true,
-        })
-      );
+      effectDigest = retainEffectEvidence(retainDir, c.candidateKey, {
+        affectsBoundRatings: false,
+        provesNonEffect: true,
+      });
       contentsDigest = retainBytesByDigest(
         retainDir,
         contentsEvidenceBytes(c.candidateKey, { affectsBoundRatings: false })
@@ -411,13 +446,10 @@ export function buildG5Scenario(opts: G5ScenarioOptions = {}): G5Scenario {
   let dispositions: MlCal1G5InventoryCandidate[] =
     opts.dispositions ??
     githubCandidates.map((c) => {
-      const ed = retainBytesByDigest(
-        retainDir,
-        effectEvidenceBytes(c.candidateKey, {
-          affectsBoundRatings: false,
-          provesNonEffect: true,
-        })
-      );
+      const ed = retainEffectEvidence(retainDir, c.candidateKey, {
+        affectsBoundRatings: false,
+        provesNonEffect: true,
+      });
       return {
         candidateKey: c.candidateKey,
         workflowRunId: c.workflowRunId ?? null,

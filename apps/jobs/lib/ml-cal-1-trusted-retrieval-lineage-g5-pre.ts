@@ -19,7 +19,13 @@ import {
   type MlCal1LifecycleBindingVerifyInput,
   type MlCal1LifecycleBindingVerifyResult,
 } from './ml-cal-1-lifecycle-binding';
-import { isSafeG4ObservationId } from './ml-cal-1-lifecycle-binding-observer';
+import {
+  isSafeG4ObservationId,
+  ML_CAL_1_G4_ACCEPTANCE_UPLOAD_SHA256,
+  ML_CAL_1_G4_BASE_G3_TIP,
+  ML_CAL_1_G4_DESIGN_ON_DISK_SHA256,
+  ML_CAL_1_G4_OBSERVER_PACKAGE_SCHEMA,
+} from './ml-cal-1-lifecycle-binding-observer';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -116,6 +122,11 @@ export interface MlCal1G5IndependentEffectEvidence {
   affectsBoundRatings: boolean;
   /** Required true when used to support not_invalidating. */
   provesNonEffect: boolean;
+  /**
+   * Digest of retained anchored observation/log bytes. Booleans alone are not
+   * proof (R2); this digest must resolve in the retain store.
+   */
+  anchoredObservationDigest: string;
   note?: string;
 }
 
@@ -271,6 +282,7 @@ export interface MlCal1G5BoundPackageEvidence {
   packageDir: string;
   zipSha256: string | null;
   reportMemberSha256: string | null;
+  reportMemberName: string | null;
   sidecarDigest: string | null;
   sidecarObservationEndTime: string | null;
   sidecarBindingSnapshotReferenceTime: string | null;
@@ -280,6 +292,18 @@ export interface MlCal1G5BoundPackageEvidence {
   sidecarBindingObserverSha: string | null;
   sidecarSeason: number | null;
   sidecarModelVersion: string | null;
+  sidecarReportMemberPath: string | null;
+  sidecarZipSha256: string | null;
+  sidecarReportMemberSha256: string | null;
+  sidecarReportByteCount: number | null;
+}
+
+/** Anchors validated during G5-PRE for R4 verify binding. */
+export interface MlCal1G5ValidatedAnchors {
+  inventorySha256: string;
+  approvedLineageInventorySha256: string | null;
+  approvedLineageAttestationDigest: string | null;
+  approvedRegistryDocumentDigest: string | null;
 }
 
 export interface MlCal1G5PreResult {
@@ -295,6 +319,8 @@ export interface MlCal1G5PreResult {
   sidecarDigest: string | null;
   /** Bound retained package identities for G5-VERIFY cross-check (F6). */
   boundEvidence: MlCal1G5BoundPackageEvidence;
+  /** Inventory/attestation/registry anchors validated by PRE (R4). */
+  validatedAnchors: MlCal1G5ValidatedAnchors;
   /** Eligibility claims are always false on G5-PRE path. */
   prospectiveOk: false;
   fullWeightEligible: false;
@@ -705,6 +731,16 @@ export function parseIndependentEffectEvidence(
   if (typeof o.provesNonEffect !== 'boolean') {
     return { ok: false, reason: 'effect_evidence_proves_non_effect_missing' };
   }
+  if (
+    typeof o.anchoredObservationDigest !== 'string' ||
+    !HEX64.test(o.anchoredObservationDigest)
+  ) {
+    return { ok: false, reason: 'effect_evidence_anchor_missing' };
+  }
+  // Internal boolean contradiction: cannot prove non-effect while affecting.
+  if (o.provesNonEffect === true && o.affectsBoundRatings === true) {
+    return { ok: false, reason: 'effect_evidence_boolean_contradiction' };
+  }
   return {
     ok: true,
     evidence: {
@@ -715,6 +751,7 @@ export function parseIndependentEffectEvidence(
       modelVersion: 'v1',
       affectsBoundRatings: o.affectsBoundRatings,
       provesNonEffect: o.provesNonEffect,
+      anchoredObservationDigest: o.anchoredObservationDigest,
       note: typeof o.note === 'string' ? o.note : undefined,
     },
   };
@@ -826,10 +863,33 @@ export function evaluateDispositionEvidence(input: {
         reasons.push(parsed.reason);
         reasons.push('lineage_candidate_unresolved');
       } else {
-        effectOk = true;
-        effect = parsed.evidence;
+        // R2: anchored observation bytes must exist; booleans alone are insufficient.
+        const anchorBytes = loadRetainedBytesByDigest({
+          retainDir: input.retainDir,
+          digest: parsed.evidence.anchoredObservationDigest,
+        });
+        if (!anchorBytes) {
+          reasons.push('effect_evidence_anchor_bytes_missing');
+          reasons.push('lineage_candidate_unresolved');
+        } else {
+          effectOk = true;
+          effect = parsed.evidence;
+        }
       }
     }
+  }
+
+  // R2: contradictory contents vs effect → unresolved (do not pick a boolean winner).
+  if (
+    contentsOk &&
+    effectOk &&
+    contentsAffects != null &&
+    effect != null &&
+    contentsAffects !== effect.affectsBoundRatings
+  ) {
+    reasons.push('lineage_disposition_evidence_contradiction');
+    reasons.push('lineage_candidate_unresolved');
+    return { ok: false, reasons: [...new Set(reasons)] };
   }
 
   const noticeOnly =
@@ -846,7 +906,14 @@ export function evaluateDispositionEvidence(input: {
       effect != null &&
       effect.provesNonEffect === true &&
       effect.affectsBoundRatings === false;
-    if (!provedNonEffectByContents && !provedNonEffectByEffect) {
+    // Disposition claiming non-effect while evidence says affects → unresolved.
+    if (
+      (contentsOk && contentsAffects === true) ||
+      (effectOk && effect != null && effect.affectsBoundRatings === true)
+    ) {
+      reasons.push('lineage_disposition_evidence_contradiction');
+      reasons.push('lineage_candidate_unresolved');
+    } else if (!provedNonEffectByContents && !provedNonEffectByEffect) {
       reasons.push(
         noticeOnly
           ? 'lineage_deleted_candidate_unresolved'
@@ -857,9 +924,16 @@ export function evaluateDispositionEvidence(input: {
     const provedAffect =
       (contentsOk && contentsAffects === true) ||
       (effectOk && effect != null && effect.affectsBoundRatings === true);
-    // invalidating may also be asserted from event kind with contents/effect;
-    // without proven affect and without contents/effect → unresolved.
-    if (!provedAffect && !contentsOk && !effectOk) {
+    if (
+      (contentsOk && contentsAffects === false) ||
+      (effectOk &&
+        effect != null &&
+        effect.affectsBoundRatings === false &&
+        effect.provesNonEffect === true)
+    ) {
+      reasons.push('lineage_disposition_evidence_contradiction');
+      reasons.push('lineage_candidate_unresolved');
+    } else if (!provedAffect) {
       reasons.push('lineage_candidate_unresolved');
     }
   } else if (disposition === 'unresolved') {
@@ -1063,7 +1137,7 @@ export function validateG5PackageStructural(input: {
     }
   }
 
-  // Required members (report basename is dynamic — require at least one non-listed member or known report).
+  // Required members (report basename resolved from sidecar — R5).
   for (const req of [
     'archive.zip',
     'binding-sidecar.json',
@@ -1075,10 +1149,41 @@ export function validateG5PackageStructural(input: {
     }
   }
 
+  // R5: package schema + design/acceptance/base identity correspondence.
+  if (manifest.schemaVersion !== ML_CAL_1_G4_OBSERVER_PACKAGE_SCHEMA) {
+    reasons.push('package_schema_mismatch');
+  }
+  if (manifest.kind !== 'lifecycle-binding-observer-package') {
+    reasons.push('package_schema_mismatch');
+  }
+  if (manifest.designOnDiskSha256 !== ML_CAL_1_G4_DESIGN_ON_DISK_SHA256) {
+    reasons.push('package_design_identity_mismatch');
+  }
+  if (manifest.acceptanceUploadSha256 !== ML_CAL_1_G4_ACCEPTANCE_UPLOAD_SHA256) {
+    reasons.push('package_design_identity_mismatch');
+  }
+  if (manifest.baseG3Tip !== ML_CAL_1_G4_BASE_G3_TIP) {
+    reasons.push('package_design_identity_mismatch');
+  }
+  // Missing required identity fields must reject (not skip).
+  for (const field of [
+    'schemaVersion',
+    'kind',
+    'designOnDiskSha256',
+    'acceptanceUploadSha256',
+    'baseG3Tip',
+    'sidecarDigest',
+  ]) {
+    if (manifest[field] == null || manifest[field] === '') {
+      reasons.push('package_required_field_missing');
+    }
+  }
+
   const sidecarPath = path.join(dir, 'binding-sidecar.json');
   let sidecarDigest: string | null = null;
   if (fs.existsSync(sidecarPath)) {
-    sidecarDigest = sha256Hex(fs.readFileSync(sidecarPath));
+    const sidecarBytes = fs.readFileSync(sidecarPath);
+    sidecarDigest = sha256Hex(sidecarBytes);
     if (
       typeof manifest.sidecarDigest === 'string' &&
       manifest.sidecarDigest.toLowerCase() !== sidecarDigest
@@ -1090,24 +1195,149 @@ export function validateG5PackageStructural(input: {
       reasons.push('package_member_digest_mismatch');
     }
 
-    // Fixture mode detection from sidecar when PROVENANCE absent.
     try {
-      const sc = JSON.parse(fs.readFileSync(sidecarPath, 'utf8')) as Record<
+      const sc = JSON.parse(sidecarBytes.toString('utf8')) as Record<
         string,
         unknown
       >;
+      const archive = sc.acceptedArchive as
+        | {
+            github?: {
+              reportMemberPath?: string;
+              zipSha256?: string;
+              reportMemberSha256?: string;
+              reportByteCount?: number;
+              workflowRunCompletedAt?: string | null;
+              artifactCreatedAt?: string | null;
+            };
+            lifecycleProducerSha?: string;
+          }
+        | undefined;
+      const obs = sc.bindingObservation as
+        | {
+            observationEndTime?: string;
+            bindingSnapshotReferenceTime?: string;
+            bindingObserverSha?: string;
+            season?: number;
+            modelVersion?: string;
+            readMode?: string;
+          }
+        | undefined;
+
+      // R5: required sidecar fields — missing rejects.
+      if (
+        !archive?.github?.reportMemberPath ||
+        !archive.github.zipSha256 ||
+        !archive.github.reportMemberSha256 ||
+        typeof archive.github.reportByteCount !== 'number' ||
+        !archive.github.workflowRunCompletedAt ||
+        !archive.github.artifactCreatedAt ||
+        !archive.lifecycleProducerSha ||
+        !obs?.observationEndTime ||
+        !obs.bindingSnapshotReferenceTime ||
+        !obs.bindingObserverSha ||
+        obs.season == null ||
+        !obs.modelVersion
+      ) {
+        reasons.push('package_required_field_missing');
+      } else {
+        const reportName = path.basename(archive.github.reportMemberPath);
+        if (!(reportName in memberDigests)) {
+          reasons.push('package_member_missing');
+        } else {
+          const reportPath = path.join(dir, reportName);
+          if (!fs.existsSync(reportPath)) {
+            reasons.push('package_member_missing');
+          } else {
+            const reportBytes = fs.readFileSync(reportPath);
+            const reportSha = sha256Hex(reportBytes);
+            if (reportSha !== archive.github.reportMemberSha256.toLowerCase()) {
+              reasons.push('package_archive_sidecar_identity_mismatch');
+            }
+            if (reportBytes.length !== archive.github.reportByteCount) {
+              reasons.push('package_archive_sidecar_identity_mismatch');
+            }
+            const declared = memberDigests[reportName];
+            if (
+              declared &&
+              (declared.sha256?.toLowerCase() !== reportSha ||
+                declared.byteCount !== reportBytes.length)
+            ) {
+              reasons.push('package_member_digest_mismatch');
+            }
+          }
+        }
+        const zipPath = path.join(dir, 'archive.zip');
+        if (fs.existsSync(zipPath)) {
+          const zipSha = sha256Hex(fs.readFileSync(zipPath));
+          if (zipSha !== archive.github.zipSha256.toLowerCase()) {
+            reasons.push('package_archive_sidecar_identity_mismatch');
+          }
+        }
+      }
+
+      // Observer-run-metadata + design-correspondence must parse with identities.
+      const metaPath = path.join(dir, 'observer-run-metadata.json');
+      const corrPath = path.join(dir, 'design-correspondence.json');
+      if (!fs.existsSync(metaPath) || !fs.existsSync(corrPath)) {
+        reasons.push('package_member_missing');
+      } else {
+        try {
+          const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8')) as Record<
+            string,
+            unknown
+          >;
+          const corr = JSON.parse(fs.readFileSync(corrPath, 'utf8')) as Record<
+            string,
+            unknown
+          >;
+          if (meta == null || typeof meta !== 'object') {
+            reasons.push('package_required_field_missing');
+          }
+          // R5: present identity fields must correspond; missing required pin rejects.
+          if (corr == null || typeof corr !== 'object') {
+            reasons.push('package_required_field_missing');
+          } else {
+            if (corr.baseG4Tip != null && corr.baseG4Tip !== ML_CAL_1_G5_BASE_G4_TIP) {
+              reasons.push('package_design_identity_mismatch');
+            }
+            if (corr.baseG3Tip != null && corr.baseG3Tip !== ML_CAL_1_G4_BASE_G3_TIP) {
+              reasons.push('package_design_identity_mismatch');
+            }
+            if (
+              corr.designSha256 != null &&
+              corr.designSha256 !== ML_CAL_1_G5_DESIGN_ON_DISK_SHA256 &&
+              corr.designSha256 !== ML_CAL_1_G4_DESIGN_ON_DISK_SHA256
+            ) {
+              reasons.push('package_design_identity_mismatch');
+            }
+            if (
+              corr.baseG4Tip == null &&
+              corr.baseG3Tip == null &&
+              corr.designSha256 == null
+            ) {
+              reasons.push('package_required_field_missing');
+            }
+          }
+        } catch {
+          reasons.push('package_required_field_missing');
+        }
+      }
+
       if (
         sc.mode === 'fixture_hypothetical' ||
-        sc.readMode === 'fixture_injected'
+        obs?.readMode === 'fixture_injected'
       ) {
         fixtureProvenanceRetained = true;
         if (!hasProvenance) {
-          reasons.push('package_member_missing'); // PROVENANCE required for fixture-mode
+          reasons.push('package_member_missing');
         }
       }
     } catch {
       reasons.push('package_member_digest_mismatch');
     }
+  } else {
+    reasons.push('package_member_missing');
   }
 
   // Structural package identity (for compare only — not approval).
@@ -1350,8 +1580,38 @@ export function recomputeInventoryCompleteness(input: {
 
   const assembled = parseIsoMs(inv.inventoryAssembledAt);
   const ceiling = parseIsoMs(input.nowCeiling);
-  if (assembled == null || ceiling == null || assembled > ceiling) {
+  if (assembled == null || ceiling == null) {
+    reasons.push('lineage_coverage_time_missing');
+  }
+  if (assembled != null && ceiling != null && assembled > ceiling) {
     reasons.push('lineage_inventory_assembled_after_ceiling');
+  }
+
+  // R1: chronology through coverage end and nowCeiling; no future coverage /
+  // reversed chronology beyond retained assembly evidence.
+  if (declaredStart != null && endMs != null && declaredStart > endMs) {
+    reasons.push('lineage_chronology_reversed');
+  }
+  if (endMs != null && ceiling != null && endMs > ceiling) {
+    reasons.push('lineage_coverage_after_ceiling');
+  }
+  if (
+    input.attestationCheckedThroughTime != null &&
+    parseIsoMs(input.attestationCheckedThroughTime) != null &&
+    ceiling != null &&
+    parseIsoMs(input.attestationCheckedThroughTime)! > ceiling
+  ) {
+    reasons.push('lineage_coverage_after_ceiling');
+  }
+  if (endMs != null && assembled != null && endMs > assembled) {
+    reasons.push('lineage_coverage_beyond_inventory_evidence');
+  }
+  if (declaredStart != null && assembled != null && declaredStart > assembled) {
+    reasons.push('lineage_chronology_reversed');
+  }
+  if (snap != null && obsEnd != null && snap > obsEnd) {
+    // Snapshot after observation end is reversed coverage chronology.
+    reasons.push('lineage_chronology_reversed');
   }
 
   if (!catalogEquals(inv.requiredSourceCatalog)) {
@@ -1447,6 +1707,52 @@ export function recomputeInventoryCompleteness(input: {
       reasons.push('lineage_candidate_omitted_from_inventory');
     }
 
+    // R3: reconcile inventory facts against authoritative retained listing
+    // (source/page, run ID, ZIP, timing) — candidateKey alone is insufficient.
+    const listed = derived.byKey.get(c.candidateKey);
+    if (listed) {
+      if (c.listingPageDigest !== listed.listingPageDigest) {
+        reasons.push('lineage_candidate_listing_provenance_mismatch');
+      }
+      if (c.sourceId) {
+        const pageBytes = loadRetainedBytesByDigest({
+          retainDir: input.retainDir,
+          digest: listed.listingPageDigest,
+        });
+        if (pageBytes) {
+          const pageParsed = parseRetainedListingPage(pageBytes);
+          if (
+            pageParsed.ok &&
+            pageParsed.page.sourceId !== c.sourceId
+          ) {
+            reasons.push('lineage_candidate_listing_provenance_mismatch');
+          }
+        }
+      }
+      const lc = listed.candidate;
+      // Listing is authoritative: inventory must carry matching facts (key alone insufficient).
+      const fieldMismatch =
+        (lc.workflowRunId != null && c.workflowRunId !== lc.workflowRunId) ||
+        (lc.zipSha256 != null && c.zipSha256 !== lc.zipSha256) ||
+        (lc.completedThroughWeek != null &&
+          c.completedThroughWeek !== lc.completedThroughWeek) ||
+        (lc.commitOrWriteTime != null &&
+          c.commitOrWriteTime !== lc.commitOrWriteTime) ||
+        (lc.artifactAvailableAt != null &&
+          c.artifactAvailableAt !== lc.artifactAvailableAt) ||
+        (lc.runStartedAt != null && c.runStartedAt !== lc.runStartedAt) ||
+        (lc.runEndedAt != null && c.runEndedAt !== lc.runEndedAt) ||
+        (c.workflowRunId != null &&
+          lc.workflowRunId != null &&
+          c.workflowRunId !== lc.workflowRunId) ||
+        (c.zipSha256 != null &&
+          lc.zipSha256 != null &&
+          c.zipSha256 !== lc.zipSha256);
+      if (fieldMismatch) {
+        reasons.push('lineage_candidate_listing_fact_mismatch');
+      }
+    }
+
     const ev = evaluateDispositionEvidence({
       disposition: c.resolvedDisposition,
       candidateKey: c.candidateKey,
@@ -1509,6 +1815,12 @@ export function recomputeInventoryCompleteness(input: {
           'archive_chronology_missing',
           'lineage_coverage_time_missing',
           'lineage_candidate_contradictory_duplicate',
+          'lineage_candidate_listing_fact_mismatch',
+          'lineage_candidate_listing_provenance_mismatch',
+          'lineage_chronology_reversed',
+          'lineage_coverage_after_ceiling',
+          'lineage_coverage_beyond_inventory_evidence',
+          'lineage_inventory_assembled_after_ceiling',
           'lineage_pagination_sequence_gap',
           'lineage_pagination_chain_broken',
           'lineage_pagination_declared_token_mismatch',
@@ -1525,8 +1837,14 @@ export function recomputeInventoryCompleteness(input: {
     !hasInvalidating &&
     !uniqueReasons.includes('lineage_deleted_candidate_unresolved') &&
     !uniqueReasons.includes('lineage_candidate_unresolved') &&
+    !uniqueReasons.includes('lineage_disposition_evidence_contradiction') &&
     !uniqueReasons.includes('lineage_week_alone_supersession_forbidden') &&
-    !uniqueReasons.includes('lineage_checked_through_too_early');
+    !uniqueReasons.includes('lineage_checked_through_too_early') &&
+    !uniqueReasons.includes('lineage_chronology_reversed') &&
+    !uniqueReasons.includes('lineage_coverage_after_ceiling') &&
+    !uniqueReasons.includes('lineage_coverage_beyond_inventory_evidence') &&
+    !uniqueReasons.includes('lineage_candidate_listing_fact_mismatch') &&
+    !uniqueReasons.includes('lineage_candidate_listing_provenance_mismatch');
 
   if (inv.searchComplete !== structuralComplete) {
     uniqueReasons.push('lineage_inventory_declaration_mismatch');
@@ -1559,6 +1877,7 @@ function extractBoundPackageEvidence(input: {
     packageDir: path.resolve(input.packageDir),
     zipSha256: null,
     reportMemberSha256: null,
+    reportMemberName: null,
     sidecarDigest: input.sidecarDigest,
     sidecarObservationEndTime: null,
     sidecarBindingSnapshotReferenceTime: null,
@@ -1568,6 +1887,10 @@ function extractBoundPackageEvidence(input: {
     sidecarBindingObserverSha: null,
     sidecarSeason: null,
     sidecarModelVersion: null,
+    sidecarReportMemberPath: null,
+    sidecarZipSha256: null,
+    sidecarReportMemberSha256: null,
+    sidecarReportByteCount: null,
   };
   for (const m of input.memberRecords) {
     const base = path.basename(m.locator);
@@ -1575,6 +1898,7 @@ function extractBoundPackageEvidence(input: {
     if (base === 'binding-sidecar.json') bound.sidecarDigest = m.sha256;
     if (base.endsWith('.json') && base.startsWith('core-v1-lifecycle-')) {
       bound.reportMemberSha256 = m.sha256;
+      bound.reportMemberName = base;
     }
   }
   const sidecarPath = path.join(input.packageDir, 'binding-sidecar.json');
@@ -1585,6 +1909,10 @@ function extractBoundPackageEvidence(input: {
           github?: {
             workflowRunCompletedAt?: string | null;
             artifactCreatedAt?: string | null;
+            reportMemberPath?: string;
+            zipSha256?: string;
+            reportMemberSha256?: string;
+            reportByteCount?: number;
           };
           lifecycleProducerSha?: string;
         };
@@ -1612,6 +1940,22 @@ function extractBoundPackageEvidence(input: {
         sc.bindingObservation?.bindingObserverSha ?? null;
       bound.sidecarSeason = sc.bindingObservation?.season ?? null;
       bound.sidecarModelVersion = sc.bindingObservation?.modelVersion ?? null;
+      bound.sidecarReportMemberPath =
+        sc.acceptedArchive?.github?.reportMemberPath ?? null;
+      bound.sidecarZipSha256 = sc.acceptedArchive?.github?.zipSha256 ?? null;
+      bound.sidecarReportMemberSha256 =
+        sc.acceptedArchive?.github?.reportMemberSha256 ?? null;
+      bound.sidecarReportByteCount =
+        sc.acceptedArchive?.github?.reportByteCount ?? null;
+      if (bound.sidecarReportMemberPath) {
+        const reportName = path.basename(bound.sidecarReportMemberPath);
+        bound.reportMemberName = reportName;
+        for (const m of input.memberRecords) {
+          if (path.basename(m.locator) === reportName) {
+            bound.reportMemberSha256 = m.sha256;
+          }
+        }
+      }
     } catch {
       // leave nulls; F1 cross-bind will fail closed
     }
@@ -1865,6 +2209,26 @@ export function runG5Pre(input: MlCal1G5PreInput): MlCal1G5PreResult {
     notes.push('fixture_provenance_retained');
   }
 
+  const validatedAnchors: MlCal1G5ValidatedAnchors = {
+    inventorySha256,
+    approvedLineageInventorySha256:
+      typeof input.externalAnchors.approvedLineageInventorySha256 === 'string' &&
+      HEX64.test(input.externalAnchors.approvedLineageInventorySha256)
+        ? input.externalAnchors.approvedLineageInventorySha256.toLowerCase()
+        : null,
+    approvedLineageAttestationDigest:
+      typeof input.externalAnchors.approvedLineageAttestationDigest ===
+        'string' &&
+      HEX64.test(input.externalAnchors.approvedLineageAttestationDigest)
+        ? input.externalAnchors.approvedLineageAttestationDigest.toLowerCase()
+        : null,
+    approvedRegistryDocumentDigest:
+      typeof input.externalAnchors.approvedRegistryDocumentDigest === 'string' &&
+      HEX64.test(input.externalAnchors.approvedRegistryDocumentDigest)
+        ? input.externalAnchors.approvedRegistryDocumentDigest.toLowerCase()
+        : null,
+  };
+
   return {
     ok,
     reasons: uniqueReasons,
@@ -1877,6 +2241,7 @@ export function runG5Pre(input: MlCal1G5PreInput): MlCal1G5PreResult {
     inventorySha256,
     sidecarDigest: packageCheck.sidecarDigest,
     boundEvidence,
+    validatedAnchors,
     prospectiveOk: false,
     fullWeightEligible: false,
     liveQualifying: false,
@@ -1992,6 +2357,108 @@ export function runG5Verify(input: MlCal1G5VerifyInput): MlCal1G5VerifyResult {
       verifyResult: null,
       liveAccepted: false,
       reasons: ['g5_verify_zip_evidence_mismatch'],
+      ok: false,
+    };
+  }
+
+  // R4: before accepted verifier, bind inventory/attestation/registry evidence
+  // to PRE-validated anchors — reject substituted evidence.
+  const va = input.g5Pre.validatedAnchors;
+  const verifyInv = input.verifyInput.approvedLineageInventorySha256;
+  if (typeof verifyInv === 'string' && verifyInv.length > 0) {
+    const expectedInv =
+      va.approvedLineageInventorySha256 ?? va.inventorySha256;
+    if (verifyInv.toLowerCase() !== expectedInv.toLowerCase()) {
+      return {
+        invokedVerifier: false,
+        verifyResult: null,
+        liveAccepted: false,
+        reasons: ['g5_verify_inventory_anchor_mismatch'],
+        ok: false,
+      };
+    }
+  } else if (va.approvedLineageInventorySha256 != null) {
+    return {
+      invokedVerifier: false,
+      verifyResult: null,
+      liveAccepted: false,
+      reasons: ['g5_verify_inventory_anchor_mismatch'],
+      ok: false,
+    };
+  }
+
+  const verifyAtt = input.verifyInput.approvedLineageAttestationDigest;
+  if (typeof verifyAtt === 'string' && verifyAtt.length > 0) {
+    if (
+      va.approvedLineageAttestationDigest == null ||
+      verifyAtt.toLowerCase() !== va.approvedLineageAttestationDigest
+    ) {
+      return {
+        invokedVerifier: false,
+        verifyResult: null,
+        liveAccepted: false,
+        reasons: ['g5_verify_attestation_anchor_mismatch'],
+        ok: false,
+      };
+    }
+    if (typeof input.verifyInput.lineageAttestationBytes === 'string') {
+      const attDigest = sha256Hex(
+        Buffer.from(input.verifyInput.lineageAttestationBytes, 'utf8')
+      );
+      if (attDigest !== va.approvedLineageAttestationDigest) {
+        return {
+          invokedVerifier: false,
+          verifyResult: null,
+          liveAccepted: false,
+          reasons: ['g5_verify_attestation_evidence_mismatch'],
+          ok: false,
+        };
+      }
+    }
+  } else if (va.approvedLineageAttestationDigest != null) {
+    return {
+      invokedVerifier: false,
+      verifyResult: null,
+      liveAccepted: false,
+      reasons: ['g5_verify_attestation_anchor_mismatch'],
+      ok: false,
+    };
+  }
+
+  const verifyReg = input.verifyInput.approvedRegistryDocumentDigest;
+  if (typeof verifyReg === 'string' && verifyReg.length > 0) {
+    if (
+      va.approvedRegistryDocumentDigest == null ||
+      verifyReg.toLowerCase() !== va.approvedRegistryDocumentDigest
+    ) {
+      return {
+        invokedVerifier: false,
+        verifyResult: null,
+        liveAccepted: false,
+        reasons: ['g5_verify_registry_anchor_mismatch'],
+        ok: false,
+      };
+    }
+    if (typeof input.verifyInput.registryDocumentBytes === 'string') {
+      const regDigest = sha256Hex(
+        Buffer.from(input.verifyInput.registryDocumentBytes, 'utf8')
+      );
+      if (regDigest !== va.approvedRegistryDocumentDigest) {
+        return {
+          invokedVerifier: false,
+          verifyResult: null,
+          liveAccepted: false,
+          reasons: ['g5_verify_registry_evidence_mismatch'],
+          ok: false,
+        };
+      }
+    }
+  } else if (va.approvedRegistryDocumentDigest != null) {
+    return {
+      invokedVerifier: false,
+      verifyResult: null,
+      liveAccepted: false,
+      reasons: ['g5_verify_registry_anchor_mismatch'],
       ok: false,
     };
   }
