@@ -15,7 +15,7 @@
 | Exact base (#253 tip) | `7375d9ba1b3e8c1d5b0b337958b537cc0334fc10` |
 | Pre-repair head | `47b985b1a7480248f859499af5b71492947ae95a` |
 | F1–F2 repair commit | `65a1f5fd8b5c79d899ec7d80e5fac2c3ffdfe323` |
-| Tip (recovery pin) | `0ba5819028713908ebd588dd7c3dba9da8336f1b` |
+| Tip (recovery pin) | `1204caa7ff2518acd06c7162af0cff2f311fcd4a` |
 | PR base branch | `feat/ml-cal-1-g4-pooler-preflight-fixture-v1` |
 | G5-PRE parent | `1683ce36fbb5a981a2b3ba3d8a9b90ea8da37f25` |
 | Draft PR | https://github.com/firemansghost/Gridiron-Edge-V1/pull/254 |
@@ -64,7 +64,7 @@ Exact-head CI (`pull_request` on #254):
 - checkout: `refs/remotes/pull/254/merge` → `d237586` (“Merge dea8e9413deee3cf2a7269e5004f70d2b700860d into 7375d9ba1b3e8c1d5b0b337958b537cc0334fc10”)
 - job `targeted-tests` success (`38473048187` / `115556757870`)
 - Prior F1–F2 code tip CI also green: headSha `07279ce…`, checkout `6d23a09…` into same #253 base
-- Branch tip after recovery pin: `0ba5819028713908ebd588dd7c3dba9da8336f1b` (docs-only; no code change vs F1–F2 repair `65a1f5f`)
+- Branch tip after recovery pin: `1204caa7ff2518acd06c7162af0cff2f311fcd4a` (docs-only; no code change vs F1–F2 repair `65a1f5f`)
 
 ---
 
