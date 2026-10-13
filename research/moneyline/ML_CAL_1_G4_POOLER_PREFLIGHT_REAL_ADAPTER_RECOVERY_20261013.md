@@ -15,7 +15,7 @@
 | Exact base (#253 tip) | `7375d9ba1b3e8c1d5b0b337958b537cc0334fc10` |
 | PR base branch | `feat/ml-cal-1-g4-pooler-preflight-fixture-v1` |
 | G5-PRE parent | `1683ce36fbb5a981a2b3ba3d8a9b90ea8da37f25` |
-| Head | reported in session closeout after commit |
+| Head | `f7086773b7caed5d5e49445c8b826a4769f016be` |
 
 Sibling fixture worktree (do not reset): `Gridiron-Edge-V1-ml-cal-1-g4-preflight` @ `7375d9b`.  
 Untracked G5 assessment/recovery remain in `Gridiron-Edge-V1-ml-cal-1-g5-pre`.
