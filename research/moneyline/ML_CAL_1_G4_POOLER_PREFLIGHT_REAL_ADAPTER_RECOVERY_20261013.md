@@ -15,13 +15,13 @@
 | Exact base (#253 tip) | `7375d9ba1b3e8c1d5b0b337958b537cc0334fc10` |
 | Pre-repair head | `47b985b1a7480248f859499af5b71492947ae95a` |
 | F1–F2 repair commit | `65a1f5fd8b5c79d899ec7d80e5fac2c3ffdfe323` |
-| Tip (recovery pin) | `b373e33f0d8fdfd95133b9f1595b9f58b31d801a` |
+| Tip (recovery pin) | `ee939345e83e05fd699348d3e5b9ce968a67fa99` |
 | PR base branch | `feat/ml-cal-1-g4-pooler-preflight-fixture-v1` |
 | G5-PRE parent | `1683ce36fbb5a981a2b3ba3d8a9b90ea8da37f25` |
 | Draft PR | https://github.com/firemansghost/Gridiron-Edge-V1/pull/254 |
 | Observed CI (F1–F2 code tip `07279ce`) | run `38472717606`, job `115555633038` — success; checkout `6d23a09…` = Merge `07279ce…` into `7375d9b…` |
-| Observed CI (current tip) | run `38473048187`, job `115556757870` — success |
-| CI checkout (current tip) | synthetic merge `d237586` = Merge `b373e33f0d8fdfd95133b9f1595b9f58b31d801a` into `7375d9ba1b3e8c1d5b0b337958b537cc0334fc10` (PR base #253 tip; not main) |
+| Observed CI (post-repair docs tip `dea8e94`) | run `38473048187`, job `115556757870` — success |
+| CI checkout (`dea8e94`) | synthetic merge `d237586` = Merge `dea8e9413deee3cf2a7269e5004f70d2b700860d` into `7375d9ba1b3e8c1d5b0b337958b537cc0334fc10` (PR base #253 tip; not main) |
 
 Sibling fixture worktree (do not reset): `Gridiron-Edge-V1-ml-cal-1-g4-preflight` @ `7375d9b`.  
 Untracked G5 assessment/recovery remain in `Gridiron-Edge-V1-ml-cal-1-g5-pre`.
@@ -60,10 +60,11 @@ Local (pre-push of F1–F2 repair):
 
 Exact-head CI (`pull_request` on #254):
 
-- headSha `b373e33f0d8fdfd95133b9f1595b9f58b31d801a` (tip)
-- checkout: `refs/remotes/pull/254/merge` → `d237586` (“Merge dea8e94… into 7375d9b…”)
+- Observed green headSha `dea8e9413deee3cf2a7269e5004f70d2b700860d`
+- checkout: `refs/remotes/pull/254/merge` → `d237586` (“Merge dea8e9413deee3cf2a7269e5004f70d2b700860d into 7375d9ba1b3e8c1d5b0b337958b537cc0334fc10”)
 - job `targeted-tests` success (`38473048187` / `115556757870`)
 - Prior F1–F2 code tip CI also green: headSha `07279ce…`, checkout `6d23a09…` into same #253 base
+- Branch tip after recovery pin: `ee939345e83e05fd699348d3e5b9ce968a67fa99` (docs-only; no code change vs F1–F2 repair `65a1f5f`)
 
 ---
 
