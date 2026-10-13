@@ -1,0 +1,98 @@
+# Validation-only CI for ML-CAL-1 G4 pooler preflight real metadata adapter.
+# No DB, no secrets, no providers, no live pooler, no production writes.
+
+name: Test ML-CAL-1 G4 Pooler Preflight Real Adapter
+
+on:
+  pull_request:
+    paths:
+      - 'apps/jobs/lib/ml-cal-1-g4-pooler-preflight-real-adapter.ts'
+      - 'apps/jobs/lib/ml-cal-1-g4-pooler-preflight-fixture.ts'
+      - 'apps/jobs/lib/ml-cal-1-lifecycle-binding-observer.ts'
+      - 'apps/jobs/lib/ml-cal-1-lifecycle-binding.ts'
+      - 'apps/jobs/lib/ml-cal-1-capture.ts'
+      - 'apps/jobs/lib/ml-cal-1-capture-binding-integration.ts'
+      - 'apps/jobs/lib/ml-cal-1-capture-binding-fixture.ts'
+      - 'apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts'
+      - 'apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts'
+      - 'apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts'
+      - 'apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts'
+      - 'apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts'
+      - 'apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts'
+      - 'research/moneyline/ML_CAL_1_G4_NONFIXTURE_OBSERVER_POOLER_PREFLIGHT_*.md'
+      - '.github/workflows/test-ml-cal-1-g4-pooler-preflight-real-adapter-v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  targeted-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run G4 pooler preflight real-adapter tests
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts
+
+      - name: Run accepted fixture-preflight suite
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts
+
+      - name: Run accepted binding / G2 / G3 / G4 regressions
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts \
+            apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts \
+            apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts \
+            apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts
+
+      - name: Secret-free pin + scan check
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, pathlib, re
+          design = pathlib.Path(
+              'research/moneyline/ML_CAL_1_G4_NONFIXTURE_OBSERVER_POOLER_PREFLIGHT_PROCEDURE_DESIGN_20261013.md'
+          )
+          design_sha = hashlib.sha256(design.read_bytes()).hexdigest()
+          expected_design = '55d4a3d72877abcf154461a6504bb702791339b41721729116472187fab7c95f'
+          assert design_sha == expected_design, f'design {design_sha} != {expected_design}'
+          print(f'ok design_sha {design_sha}')
+          helper = pathlib.Path(
+              'apps/jobs/lib/ml-cal-1-g4-pooler-preflight-real-adapter.ts'
+          ).read_text(encoding='utf-8')
+          assert expected_design in helper, 'design pin missing from adapter'
+          assert '7375d9ba1b3e8c1d5b0b337958b537cc0334fc10' in helper, 'base tip missing'
+          assert 'createG4PoolerPreflightRealAdapter' in helper
+          assert 'PrismaClient(' not in helper
+          assert 'process.env' not in helper
+          print('ok adapter pins + no PrismaClient/env')
+          secretish = re.compile(
+              r'(?i)(api[_-]?key\s*[:=]\s*\S+|password\s*[:=]\s*\S+|bearer\s+[a-z0-9._-]{8,}|ghp_[A-Za-z0-9]+|'
+              r'(DATABASE_URL|DIRECT_URL)\s*[:=]\s*\S+)'
+          )
+          for p in [
+              pathlib.Path('apps/jobs/lib/ml-cal-1-g4-pooler-preflight-real-adapter.ts'),
+              pathlib.Path('apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts'),
+              pathlib.Path('.github/workflows/test-ml-cal-1-g4-pooler-preflight-real-adapter-v1.yml'),
+          ]:
+              text = p.read_text(encoding='utf-8')
+              assert not secretish.search(text), p
+          print('ok secret-free scan')
+          PY
