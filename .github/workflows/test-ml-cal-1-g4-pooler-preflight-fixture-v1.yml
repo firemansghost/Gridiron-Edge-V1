@@ -65,7 +65,7 @@ jobs:
               'research/moneyline/ML_CAL_1_G4_NONFIXTURE_OBSERVER_POOLER_PREFLIGHT_PROCEDURE_DESIGN_20261013.md'
           )
           design_sha = hashlib.sha256(design.read_bytes()).hexdigest()
-          expected_design = 'd4d75759a1c347f81f84082f8963bb110760a32e24c0e832e70f5cceb692ca67'
+          expected_design = '55d4a3d72877abcf154461a6504bb702791339b41721729116472187fab7c95f'
           assert design_sha == expected_design, f'design {design_sha} != {expected_design}'
           print(f'ok design_sha {design_sha}')
           helper = pathlib.Path('apps/jobs/lib/ml-cal-1-g4-pooler-preflight-fixture.ts').read_text(

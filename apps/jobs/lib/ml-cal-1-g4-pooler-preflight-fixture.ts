@@ -6,7 +6,8 @@
  * Seals R-LOCAL-FS layout under a caller-supplied test root only.
  *
  * Design: research/moneyline/ML_CAL_1_G4_NONFIXTURE_OBSERVER_POOLER_PREFLIGHT_PROCEDURE_DESIGN_20261013.md
- * Design SHA-256: d4d75759a1c347f81f84082f8963bb110760a32e24c0e832e70f5cceb692ca67
+ * Design SHA-256 (git/LF canonical): 55d4a3d72877abcf154461a6504bb702791339b41721729116472187fab7c95f
+ * Prior CRLF working-tree report: d4d75759a1c347f81f84082f8963bb110760a32e24c0e832e70f5cceb692ca67
  * Base G5-PRE tip: 1683ce36fbb5a981a2b3ba3d8a9b90ea8da37f25
  */
 
@@ -30,7 +31,7 @@ export const ML_CAL_1_G4_PREFLIGHT_PROVENANCE_SCHEMA =
   'ml-cal-1-g4-pooler-preflight-provenance-fixture-v1' as const;
 
 export const ML_CAL_1_G4_PREFLIGHT_DESIGN_SHA256 =
-  'd4d75759a1c347f81f84082f8963bb110760a32e24c0e832e70f5cceb692ca67' as const;
+  '55d4a3d72877abcf154461a6504bb702791339b41721729116472187fab7c95f' as const;
 
 export const ML_CAL_1_G4_PREFLIGHT_BASE_G5_PRE_TIP =
   '1683ce36fbb5a981a2b3ba3d8a9b90ea8da37f25' as const;
