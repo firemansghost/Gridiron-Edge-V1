@@ -1,8 +1,8 @@
-# ML-CAL-1 G5-PRE Offline Implementation — Progress
+# ML-CAL-1 G5-PRE Offline Implementation — Progress / Recovery
 
-**Date:** October 12, 2026 (America/Chicago)  
-**Status:** Offline fixture-first implementation draft — stop for independent review  
-**Commit/push:** Per draft PR only; no merge authorized
+**Date:** October 13, 2026 (America/Chicago)  
+**Status:** Offline F1–F6 review repair on draft PR #252 — stop for independent re-review  
+**Commit/push:** Draft PR only; no merge authorized
 
 ## Worktree
 
@@ -10,28 +10,30 @@
 |------|--------|
 | Path | `C:\Users\Bobby\gridiron-edge-v1\Gridiron-Edge-V1-ml-cal-1-g5-pre` |
 | Branch | `feat/ml-cal-1-trusted-retrieval-lineage-g5-pre-fixture-v1` |
-| Base / HEAD ancestry | Exact accepted G4 `6c2b31069b8805c7f2d171da1e04bf47885f237d` |
+| Prior reviewed head | `c36256d4f0cc9bb79cb313cbd1d56f19e1f28d5e` |
+| Base / ancestry | Exact accepted G4 `6c2b31069b8805c7f2d171da1e04bf47885f237d` |
+| Draft PR | #252 (base G4 branch) |
 | Ops main (record only) | `1f5b6324767f8a5832726d5828247ad022961b2b` — not rebased onto |
 
-## Authority
+## F1–F6 repair (this tip)
 
-- Local design: `ML_CAL_1_TRUSTED_RETRIEVAL_LINEAGE_G5_DESIGN.md` SHA `bc292e06…`
-- Local recovery: SHA `8d7c8fb9…`
-- Design acceptance (pack, not committed here): combined upload `5648e870…` = Pasted-text review object
-- Pack files under `GRIDIRON_REPLACEMENT_PACK_20261012` were read only; not committed into this PR
+| Finding | Repair |
+|---------|--------|
+| **F1** | Require valid coverage times; cross-bind caller/inventory/attestation times and producer/observer/season/model/sidecar digest to retained package sidecar; reject disagreements |
+| **F2** | Recompute pagination from retained pages: pageToken chain, contiguous pageIndex, declared counts, emptyResult consistency |
+| **F3** | Disposition enum validation; typed effect-evidence + candidate-contents schemas bound to candidateKey and 2026/v1; arbitrary bytes / unproved non-effect → unresolved |
+| **F4** | Uncertain relevant candidates retained (not silently dropped); contradictory duplicate listings fail closed |
+| **F5** | Whole-package approval hard-disabled; P9 is rejection regression even when self-hash/pin match |
+| **F6** | G5-VERIFY binds zip/sidecar/report digests and prospectiveTargetWeek to PRE `boundEvidence`; mismatch → ok=false, verifier not invoked |
 
-## New files (this tip)
+## Local results (pre-push)
 
-- `apps/jobs/lib/ml-cal-1-trusted-retrieval-lineage-g5-pre.ts`
-- `apps/jobs/__tests__/helpers/ml-cal-1-g5-pre-fixture-harness.ts`
-- `apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts`
-- `apps/jobs/__tests__/fixtures/packages/ml-cal-1-g5-pre/FIXTURE_ANCHORS.json`
-- `.github/workflows/test-ml-cal-1-trusted-retrieval-lineage-g5-pre-v1.yml`
-- This progress note
+- G5-PRE suite: 53/53 pass
+- Inherited binding/G2/G3/G4: 136/136 pass
 
 ## Inherited (unchanged)
 
-Accepted binding/capture/G2/G3/G4 helpers and G4 observer fixtures (week5 + synthetic-w6). PRs #243–#249 not amended.
+Accepted binding/capture/G2/G3/G4 helpers and G4 observer fixture bytes (week5 + synthetic-w6). PRs #243–#249 not amended.
 
 ## Holds
 

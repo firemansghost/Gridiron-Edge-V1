@@ -16,6 +16,7 @@ import {
   computePackageIdentityDigest,
   isSafeG5PackageMemberName,
   parseRetainedListingPage,
+  retainBytesByDigest,
   runG5Pre,
   runG5Verify,
   serializeG5ListingPage,
@@ -32,6 +33,8 @@ import {
   G5_W6_MEMBER,
   G5_W6_ZIP,
   buildG5Scenario,
+  contentsEvidenceBytes,
+  effectEvidenceBytes,
   inWindowCandidate,
   retainUtf8,
   searchWindowStartInclusive,
@@ -65,6 +68,7 @@ describe('ML-CAL-1 G5-PRE — retained listing adapter', () => {
       kind: 'g5-retained-listing-page' as const,
       sourceId: 'github-actions-lifecycle-artifacts',
       pageIndex: 0,
+      pageToken: 'github-actions-lifecycle-artifacts:page:0',
       nextPageToken: null,
       emptyResult: true,
       candidates: [],
@@ -196,8 +200,8 @@ describe('ML-CAL-1 G5-PRE — positives P1–P13', () => {
     expect(r.derivedCandidateCount).toBe(1);
   });
 
-  it('G5-P9: external package digest matches pin-defined identity when claimed + enabled', () => {
-    const s = buildG5Scenario({ wholePackageApprovalEnabled: true });
+  it('G5-P9 / F5: whole-package approval remains disabled — matching self-hash claim rejected', () => {
+    const s = buildG5Scenario();
     const man = JSON.parse(
       fs.readFileSync(path.join(s.packageDir, 'PACKAGE_MANIFEST.json'), 'utf8')
     ) as {
@@ -219,45 +223,18 @@ describe('ML-CAL-1 G5-PRE — positives P1–P13', () => {
       pinDefinedPackageIdentityDigest: identity,
       wholePackageApprovalEnabled: true,
     });
-    expect(r.ok).toBe(true);
+    expect(r.ok).toBe(false);
+    expect(r.reasons).toContain('observation_package_approval_disabled');
   });
 
   it('G5-P10: deleted candidate not_invalidating via retained contents → none_found ok', () => {
     const c = inWindowCandidate('deleted-with-contents', {
       deletedOrExpired: true,
     });
-    const base = buildG5Scenario({
-      githubCandidates: [c],
-      dispositions: [],
-    });
-    const s = buildG5Scenario({
-      githubCandidates: [c],
-      dispositions: [
-        {
-          candidateKey: c.candidateKey,
-          workflowRunId: c.workflowRunId,
-          zipSha256: c.zipSha256,
-          completedThroughWeek: 6,
-          commitOrWriteTime: c.commitOrWriteTime!,
-          artifactAvailableAt: c.artifactAvailableAt!,
-          runStartedAt: c.runStartedAt!,
-          runEndedAt: c.runEndedAt!,
-          eventKind: 'same_week_rerun_commit',
-          sourceId: 'github-actions-lifecycle-artifacts',
-          listingPageDigest: base.pageDigests['github-actions-lifecycle-artifacts'],
-          candidateContentsDigest: base.contentsDigest,
-          independentEffectEvidenceDigest: null,
-          deletionNoticeDigest: base.noticeDigest,
-          resolvedDisposition: 'not_invalidating',
-        },
-      ],
-    });
-    // Rebuild with correct listing digest from same scenario
     const s2 = buildG5Scenario({
       githubCandidates: [c],
       dispositions: undefined,
     });
-    // Override disposition to use contents not effect
     const inv = JSON.parse(s2.inventoryBytes.toString('utf8'));
     inv.invalidatingCandidateArtifacts[0].candidateContentsDigest =
       s2.contentsDigest;
@@ -275,7 +252,6 @@ describe('ML-CAL-1 G5-PRE — positives P1–P13', () => {
     });
     expect(r.ok).toBe(true);
     expect(r.recomputedNoneFoundPermitted).toBe(true);
-    void s;
   });
 
   it('G5-P11: deleted candidate not_invalidating via independent effect evidence', () => {
@@ -849,5 +825,246 @@ describe('ML-CAL-1 G5-PRE — inherited fixture digests', () => {
       new Date(Math.min(Date.parse(G5_T_RUN), Date.parse(G5_T_ART))).toISOString()
     );
     expect(G5_OBSERVER).toMatch(/^[0-9a-f]{40}$/);
+  });
+});
+
+describe('ML-CAL-1 G5-PRE — F1–F6 review repair regressions', () => {
+  it('F1: coverage/identity disagreement with retained sidecar fails closed', () => {
+    const s = buildG5Scenario();
+    const r = runG5Pre({
+      ...s.preInput,
+      observationEndTime: '2026-10-06T12:00:21.000Z', // disagree with sidecar
+    });
+    expect(r.ok).toBe(false);
+    expect(r.reasons).toContain('lineage_coverage_time_package_mismatch');
+  });
+
+  it('F2: broken pagination chain / sequence fails completeness', () => {
+    const s = buildG5Scenario({
+      unresolvedPaginationSourceId: 'github-actions-lifecycle-artifacts',
+    });
+    const r = runG5Pre(s.preInput);
+    expect(r.ok).toBe(false);
+    expect(r.reasons).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/lineage_search_incomplete|lineage_pagination_/),
+      ])
+    );
+  });
+
+  it('F3: arbitrary effect bytes / wrong candidate binding remain unresolved', () => {
+    const c = inWindowCandidate('bad-effect');
+    const s = buildG5Scenario({ githubCandidates: [c] });
+    const bogus = retainBytesByDigest(
+      s.retainDir,
+      Buffer.from('{"kind":"not-a-schema","ok":true}\n', 'utf8')
+    );
+    const inv = JSON.parse(s.inventoryBytes.toString('utf8'));
+    inv.invalidatingCandidateArtifacts[0].independentEffectEvidenceDigest = bogus;
+    inv.invalidatingCandidateArtifacts[0].resolvedDisposition = 'not_invalidating';
+    inv.noneFoundPermitted = true;
+    const inventoryBytes = Buffer.from(`${stableStringify(inv)}\n`, 'utf8');
+    const r = runG5Pre({
+      ...s.preInput,
+      inventoryBytes,
+      externalAnchors: {
+        approvedLineageInventorySha256: sha256Utf8Bytes(inventoryBytes),
+        approvedSidecarDigest: s.sidecarDigest,
+      },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.reasons).toEqual(
+      expect.arrayContaining([
+        'effect_evidence_schema_mismatch',
+        'lineage_candidate_unresolved',
+      ])
+    );
+  });
+
+  it('F3: effect evidence for wrong candidateKey fails', () => {
+    const c = inWindowCandidate('bound-key');
+    const s = buildG5Scenario({ githubCandidates: [c] });
+    const wrong = retainBytesByDigest(
+      s.retainDir,
+      effectEvidenceBytes('other-key', {
+        affectsBoundRatings: false,
+        provesNonEffect: true,
+      })
+    );
+    const inv = JSON.parse(s.inventoryBytes.toString('utf8'));
+    inv.invalidatingCandidateArtifacts[0].independentEffectEvidenceDigest = wrong;
+    const inventoryBytes = Buffer.from(`${stableStringify(inv)}\n`, 'utf8');
+    const r = runG5Pre({
+      ...s.preInput,
+      inventoryBytes,
+      externalAnchors: {
+        approvedLineageInventorySha256: sha256Utf8Bytes(inventoryBytes),
+        approvedSidecarDigest: s.sidecarDigest,
+      },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.reasons).toContain('effect_evidence_candidate_mismatch');
+  });
+
+  it('F4: uncertain timing candidate is retained (not silently dropped)', () => {
+    const c = inWindowCandidate('uncertain-timing', {
+      commitOrWriteTime: null,
+      runStartedAt: null,
+      runEndedAt: null,
+      artifactAvailableAt: '2026-10-06T11:00:00.000Z',
+    });
+    const s = buildG5Scenario({
+      githubCandidates: [c],
+      dispositions: [],
+      mutateInventory: (inv) => ({
+        ...inv,
+        invalidatingCandidateArtifacts: [],
+        searchComplete: true,
+        noneFoundPermitted: true,
+      }),
+    });
+    const r = runG5Pre(s.preInput);
+    expect(r.ok).toBe(false);
+    expect(r.derivedCandidateCount).toBe(1);
+    expect(r.reasons).toContain('lineage_candidate_omitted_from_inventory');
+  });
+
+  it('F4: contradictory duplicate listing evidence fails', () => {
+    const c1 = inWindowCandidate('dupe-key', { zipSha256: 'a'.repeat(64) });
+    const c2 = inWindowCandidate('dupe-key', { zipSha256: 'b'.repeat(64) });
+    // Two pages same source with contradictory candidate — build custom retain.
+    const s = buildG5Scenario({ githubCandidates: [c1] });
+    const page0 = {
+      schemaVersion: 'ml-cal-1-g5-retained-listing-page-v1' as const,
+      kind: 'g5-retained-listing-page' as const,
+      sourceId: 'github-actions-lifecycle-artifacts',
+      pageIndex: 0,
+      pageToken: 'github-actions-lifecycle-artifacts:page:0',
+      nextPageToken: 'github-actions-lifecycle-artifacts:page:1',
+      emptyResult: false,
+      candidates: [c1],
+    };
+    const page1 = {
+      ...page0,
+      pageIndex: 1,
+      pageToken: 'github-actions-lifecycle-artifacts:page:1',
+      nextPageToken: null,
+      candidates: [c2],
+    };
+    const d0 = retainBytesByDigest(s.retainDir, serializeG5ListingPage(page0));
+    const d1 = retainBytesByDigest(s.retainDir, serializeG5ListingPage(page1));
+    const inv = JSON.parse(s.inventoryBytes.toString('utf8'));
+    const src = inv.sourcesSearched.find(
+      (x: { sourceId: string }) =>
+        x.sourceId === 'github-actions-lifecycle-artifacts'
+    );
+    src.pagination.pagesRetrieved = 2;
+    src.pagination.pageDigests = [d0, d1];
+    src.pagination.nextPageToken = null;
+    src.pagination.complete = true;
+    src.resultCount = 2;
+    src.retainedEvidenceDigests = [d0, d1];
+    inv.invalidatingCandidateArtifacts = [
+      {
+        ...inv.invalidatingCandidateArtifacts[0],
+        candidateKey: 'dupe-key',
+        listingPageDigest: d0,
+        independentEffectEvidenceDigest: retainBytesByDigest(
+          s.retainDir,
+          effectEvidenceBytes('dupe-key')
+        ),
+      },
+    ];
+    inv.searchComplete = true;
+    inv.noneFoundPermitted = true;
+    const inventoryBytes = Buffer.from(`${stableStringify(inv)}\n`, 'utf8');
+    const r = runG5Pre({
+      ...s.preInput,
+      inventoryBytes,
+      externalAnchors: {
+        approvedLineageInventorySha256: sha256Utf8Bytes(inventoryBytes),
+        approvedSidecarDigest: s.sidecarDigest,
+      },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.reasons).toContain('lineage_candidate_contradictory_duplicate');
+  });
+
+  it('F6: verify zip/sidecar mismatch vs PRE bound evidence stops qualification', () => {
+    const s = buildG5Scenario();
+    const pre = runG5Pre(s.preInput);
+    expect(pre.ok).toBe(true);
+    const v = runG5Verify({
+      g5Pre: pre,
+      prospectiveTargetWeek: 7,
+      fixtureOnlyTarget: true,
+      verifyInput: {
+        zipBytes: Buffer.from('not-the-bound-zip'),
+        sidecarBytes: fs.readFileSync(
+          path.join(s.packageDir, 'binding-sidecar.json'),
+          'utf8'
+        ),
+        expectedZipSha256: sha256Utf8Bytes(G5_W6_ZIP),
+        expectedReportMemberSha256: sha256Utf8Bytes(G5_W6_MEMBER),
+        expectedLifecycleProducerSha: G5_PRODUCER,
+        prospectiveTargetWeek: 7,
+        nowCeiling: G5_NOW_CEILING,
+      },
+    });
+    expect(v.invokedVerifier).toBe(false);
+    expect(v.ok).toBe(false);
+    expect(v.reasons).toContain('g5_verify_zip_evidence_mismatch');
+  });
+
+  it('F6: prospectiveTargetWeek mismatch stops before verifier', () => {
+    const s = buildG5Scenario();
+    const pre = runG5Pre(s.preInput);
+    const v = runG5Verify({
+      g5Pre: pre,
+      prospectiveTargetWeek: 7,
+      fixtureOnlyTarget: true,
+      verifyInput: {
+        zipBytes: G5_W6_ZIP,
+        reportMemberBytes: G5_W6_MEMBER,
+        sidecarBytes: fs.readFileSync(
+          path.join(s.packageDir, 'binding-sidecar.json'),
+          'utf8'
+        ),
+        expectedZipSha256: sha256Utf8Bytes(G5_W6_ZIP),
+        expectedReportMemberSha256: sha256Utf8Bytes(G5_W6_MEMBER),
+        expectedLifecycleProducerSha: G5_PRODUCER,
+        prospectiveTargetWeek: 8,
+        nowCeiling: G5_NOW_CEILING,
+      },
+    });
+    expect(v.invokedVerifier).toBe(false);
+    expect(v.ok).toBe(false);
+    expect(v.reasons).toContain('prospective_target_week_mismatch');
+  });
+
+  it('F3 contents schema: wrong contents bytes cannot prove not_invalidating', () => {
+    const c = inWindowCandidate('bad-contents');
+    const s = buildG5Scenario({ githubCandidates: [c] });
+    const bad = retainBytesByDigest(
+      s.retainDir,
+      Buffer.from('{"zipSha256":"aa"}\n', 'utf8')
+    );
+    const inv = JSON.parse(s.inventoryBytes.toString('utf8'));
+    inv.invalidatingCandidateArtifacts[0].candidateContentsDigest = bad;
+    inv.invalidatingCandidateArtifacts[0].independentEffectEvidenceDigest = null;
+    inv.invalidatingCandidateArtifacts[0].resolvedDisposition = 'not_invalidating';
+    const inventoryBytes = Buffer.from(`${stableStringify(inv)}\n`, 'utf8');
+    const r = runG5Pre({
+      ...s.preInput,
+      inventoryBytes,
+      externalAnchors: {
+        approvedLineageInventorySha256: sha256Utf8Bytes(inventoryBytes),
+        approvedSidecarDigest: s.sidecarDigest,
+      },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.reasons).toContain('candidate_contents_schema_mismatch');
+    void contentsEvidenceBytes;
+    void retainUtf8;
   });
 });

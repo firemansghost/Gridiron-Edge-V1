@@ -18,6 +18,8 @@ import {
   sealG4ObservationPackage,
 } from '../../lib/ml-cal-1-lifecycle-binding-observer';
 import {
+  ML_CAL_1_G5_CANDIDATE_CONTENTS_SCHEMA,
+  ML_CAL_1_G5_EFFECT_EVIDENCE_SCHEMA,
   ML_CAL_1_G5_REQUIRED_SOURCE_CATALOG,
   retainBytesByDigest,
   serializeG5Inventory,
@@ -164,6 +166,7 @@ export function emptyListingPage(
     kind: 'g5-retained-listing-page',
     sourceId,
     pageIndex,
+    pageToken: `${sourceId}:page:${pageIndex}`,
     nextPageToken: null,
     emptyResult: true,
     candidates: [],
@@ -173,17 +176,61 @@ export function emptyListingPage(
 export function listingPage(
   sourceId: string,
   candidates: MlCal1G5RetainedListingCandidate[],
-  opts?: { pageIndex?: number; nextPageToken?: string | null }
+  opts?: {
+    pageIndex?: number;
+    pageToken?: string;
+    nextPageToken?: string | null;
+  }
 ): MlCal1G5RetainedListingPage {
+  const pageIndex = opts?.pageIndex ?? 0;
   return {
     schemaVersion: 'ml-cal-1-g5-retained-listing-page-v1',
     kind: 'g5-retained-listing-page',
     sourceId,
-    pageIndex: opts?.pageIndex ?? 0,
+    pageIndex,
+    pageToken: opts?.pageToken ?? `${sourceId}:page:${pageIndex}`,
     nextPageToken: opts?.nextPageToken ?? null,
     emptyResult: candidates.length === 0,
     candidates,
   };
+}
+
+export function effectEvidenceBytes(
+  candidateKey: string,
+  opts?: { affectsBoundRatings?: boolean; provesNonEffect?: boolean }
+): Buffer {
+  return Buffer.from(
+    `${stableStringify({
+      schemaVersion: ML_CAL_1_G5_EFFECT_EVIDENCE_SCHEMA,
+      kind: 'independent-effect-evidence',
+      candidateKey,
+      season: 2026,
+      modelVersion: 'v1',
+      affectsBoundRatings: opts?.affectsBoundRatings ?? false,
+      provesNonEffect: opts?.provesNonEffect ?? true,
+      note: 'fixture non-effect on bound ratings',
+    })}\n`,
+    'utf8'
+  );
+}
+
+export function contentsEvidenceBytes(
+  candidateKey: string,
+  opts?: { affectsBoundRatings?: boolean }
+): Buffer {
+  return Buffer.from(
+    `${stableStringify({
+      schemaVersion: ML_CAL_1_G5_CANDIDATE_CONTENTS_SCHEMA,
+      kind: 'candidate-contents',
+      candidateKey,
+      season: 2026,
+      modelVersion: 'v1',
+      evaluable: true,
+      affectsBoundRatings: opts?.affectsBoundRatings ?? false,
+      note: 'fixture retained contents',
+    })}\n`,
+    'utf8'
+  );
 }
 
 export function retainPage(
@@ -316,26 +363,19 @@ export function buildG5Scenario(opts: G5ScenarioOptions = {}): G5Scenario {
     );
   }
 
-  const effectDigest = retainUtf8(
-    retainDir,
-    JSON.stringify({
-      kind: 'independent-effect-evidence',
-      proves: 'non_effect_on_bound_ratings',
-      season: 2026,
-      modelVersion: 'v1',
-    })
-  );
-  const contentsDigest = retainUtf8(
-    retainDir,
-    JSON.stringify({
-      kind: 'candidate-contents',
-      zipSha256: 'a'.repeat(64),
-      note: 'retained body sufficient to evaluate non-effect',
-    })
-  );
+  // Per-candidate effect/contents digests are retained after candidates known.
   const noticeDigest = retainUtf8(
     retainDir,
     JSON.stringify({ kind: 'deletion-notice', note: 'artifact expired' })
+  );
+  // Placeholder digests filled after githubCandidates known (shared only when empty).
+  let effectDigest = retainBytesByDigest(
+    retainDir,
+    effectEvidenceBytes('__none__')
+  );
+  let contentsDigest = retainBytesByDigest(
+    retainDir,
+    contentsEvidenceBytes('__none__')
   );
 
   const githubCandidates = opts.githubCandidates ?? [];
@@ -352,26 +392,60 @@ export function buildG5Scenario(opts: G5ScenarioOptions = {}): G5Scenario {
     pageDigests[sourceId] = retainPage(retainDir, page);
   }
 
-  // Default dispositions: reconcile every github candidate as not_invalidating via effect evidence.
+  // Default dispositions: reconcile every github candidate as not_invalidating via typed effect evidence.
+  if (opts.dispositions == null) {
+    for (const c of githubCandidates) {
+      effectDigest = retainBytesByDigest(
+        retainDir,
+        effectEvidenceBytes(c.candidateKey, {
+          affectsBoundRatings: false,
+          provesNonEffect: true,
+        })
+      );
+      contentsDigest = retainBytesByDigest(
+        retainDir,
+        contentsEvidenceBytes(c.candidateKey, { affectsBoundRatings: false })
+      );
+    }
+  }
   let dispositions: MlCal1G5InventoryCandidate[] =
     opts.dispositions ??
-    githubCandidates.map((c) => ({
-      candidateKey: c.candidateKey,
-      workflowRunId: c.workflowRunId ?? null,
-      zipSha256: c.zipSha256 ?? null,
-      completedThroughWeek: c.completedThroughWeek ?? null,
-      commitOrWriteTime: c.commitOrWriteTime ?? null,
-      artifactAvailableAt: c.artifactAvailableAt ?? null,
-      runStartedAt: c.runStartedAt ?? null,
-      runEndedAt: c.runEndedAt ?? null,
-      eventKind: c.eventKind ?? 'same_week_rerun_commit',
-      sourceId: 'github-actions-lifecycle-artifacts',
-      listingPageDigest: pageDigests['github-actions-lifecycle-artifacts'],
-      candidateContentsDigest: null,
-      independentEffectEvidenceDigest: effectDigest,
-      deletionNoticeDigest: c.deletedOrExpired ? noticeDigest : null,
-      resolvedDisposition: 'not_invalidating',
-    }));
+    githubCandidates.map((c) => {
+      const ed = retainBytesByDigest(
+        retainDir,
+        effectEvidenceBytes(c.candidateKey, {
+          affectsBoundRatings: false,
+          provesNonEffect: true,
+        })
+      );
+      return {
+        candidateKey: c.candidateKey,
+        workflowRunId: c.workflowRunId ?? null,
+        zipSha256: c.zipSha256 ?? null,
+        completedThroughWeek: c.completedThroughWeek ?? null,
+        commitOrWriteTime: c.commitOrWriteTime ?? null,
+        artifactAvailableAt: c.artifactAvailableAt ?? null,
+        runStartedAt: c.runStartedAt ?? null,
+        runEndedAt: c.runEndedAt ?? null,
+        eventKind: c.eventKind ?? 'same_week_rerun_commit',
+        sourceId: 'github-actions-lifecycle-artifacts',
+        listingPageDigest: pageDigests['github-actions-lifecycle-artifacts'],
+        candidateContentsDigest: null,
+        independentEffectEvidenceDigest: ed,
+        deletionNoticeDigest: c.deletedOrExpired ? noticeDigest : null,
+        resolvedDisposition: 'not_invalidating' as const,
+      };
+    });
+  if (githubCandidates.length === 1) {
+    effectDigest =
+      dispositions[0]?.independentEffectEvidenceDigest ?? effectDigest;
+    contentsDigest =
+      dispositions[0]?.candidateContentsDigest ??
+      retainBytesByDigest(
+        retainDir,
+        contentsEvidenceBytes(githubCandidates[0].candidateKey)
+      );
+  }
 
   const sourcesSearched = ML_CAL_1_G5_REQUIRED_SOURCE_CATALOG.filter(
     (id) => opts.omitSourceId !== id

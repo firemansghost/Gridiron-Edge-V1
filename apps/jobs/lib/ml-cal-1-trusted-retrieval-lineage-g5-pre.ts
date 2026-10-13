@@ -31,11 +31,23 @@ export const ML_CAL_1_G5_INVENTORY_SCHEMA =
 export const ML_CAL_1_G5_LISTING_PAGE_SCHEMA =
   'ml-cal-1-g5-retained-listing-page-v1' as const;
 
+export const ML_CAL_1_G5_EFFECT_EVIDENCE_SCHEMA =
+  'ml-cal-1-g5-independent-effect-evidence-v1' as const;
+
+export const ML_CAL_1_G5_CANDIDATE_CONTENTS_SCHEMA =
+  'ml-cal-1-g5-candidate-contents-v1' as const;
+
 export const ML_CAL_1_G5_DESIGN_ON_DISK_SHA256 =
   'bc292e06ce78531b7290833922abe4add9be3af854fe15c599d9bcd1dc1c7a8b' as const;
 
 export const ML_CAL_1_G5_BASE_G4_TIP =
   '6c2b31069b8805c7f2d171da1e04bf47885f237d' as const;
+
+export const ML_CAL_1_G5_DISPOSITIONS = [
+  'not_invalidating',
+  'invalidating',
+  'unresolved',
+] as const;
 
 /** Required source catalog (§5.2). Extension only by design revision. */
 export const ML_CAL_1_G5_REQUIRED_SOURCE_CATALOG = [
@@ -87,9 +99,35 @@ export interface MlCal1G5RetainedListingPage {
   kind: 'g5-retained-listing-page';
   sourceId: string;
   pageIndex: number;
+  /** Stable token for this page; prior page nextPageToken must equal this when chained. */
+  pageToken: string;
   nextPageToken: string | null;
   emptyResult?: boolean;
   candidates: MlCal1G5RetainedListingCandidate[];
+}
+
+export interface MlCal1G5IndependentEffectEvidence {
+  schemaVersion: typeof ML_CAL_1_G5_EFFECT_EVIDENCE_SCHEMA;
+  kind: 'independent-effect-evidence';
+  candidateKey: string;
+  season: 2026;
+  modelVersion: 'v1';
+  /** Whether the candidate affected the bound 2026/v1 ratings. */
+  affectsBoundRatings: boolean;
+  /** Required true when used to support not_invalidating. */
+  provesNonEffect: boolean;
+  note?: string;
+}
+
+export interface MlCal1G5CandidateContentsEvidence {
+  schemaVersion: typeof ML_CAL_1_G5_CANDIDATE_CONTENTS_SCHEMA;
+  kind: 'candidate-contents';
+  candidateKey: string;
+  season: 2026;
+  modelVersion: 'v1';
+  evaluable: true;
+  affectsBoundRatings: boolean;
+  note?: string;
 }
 
 export interface MlCal1G5InventorySourceSearched {
@@ -217,8 +255,8 @@ export interface MlCal1G5PreInput {
   workflowRunCompletedAt: string;
   artifactCreatedAt: string;
   /**
-   * Whole-package approval remains disabled until independently reviewed.
-   * Default false — claiming approval without external pin fails closed.
+   * Whole-package approval remains disabled until its digest profile is
+   * independently reviewed. Any claim is rejected regardless of this flag.
    */
   wholePackageApprovalEnabled?: boolean;
   /**
@@ -226,6 +264,22 @@ export interface MlCal1G5PreInput {
    * anchors (qualification path). Default false for retrieval/inventory-only.
    */
   requireQualificationAnchors?: boolean;
+}
+
+export interface MlCal1G5BoundPackageEvidence {
+  observationId: string;
+  packageDir: string;
+  zipSha256: string | null;
+  reportMemberSha256: string | null;
+  sidecarDigest: string | null;
+  sidecarObservationEndTime: string | null;
+  sidecarBindingSnapshotReferenceTime: string | null;
+  sidecarWorkflowRunCompletedAt: string | null;
+  sidecarArtifactCreatedAt: string | null;
+  sidecarLifecycleProducerSha: string | null;
+  sidecarBindingObserverSha: string | null;
+  sidecarSeason: number | null;
+  sidecarModelVersion: string | null;
 }
 
 export interface MlCal1G5PreResult {
@@ -239,6 +293,8 @@ export interface MlCal1G5PreResult {
   packageStructuralOk: boolean;
   inventorySha256: string;
   sidecarDigest: string | null;
+  /** Bound retained package identities for G5-VERIFY cross-check (F6). */
+  boundEvidence: MlCal1G5BoundPackageEvidence;
   /** Eligibility claims are always false on G5-PRE path. */
   prospectiveOk: false;
   fullWeightEligible: false;
@@ -347,6 +403,9 @@ export function parseRetainedListingPage(
   if (typeof o.pageIndex !== 'number' || !Number.isInteger(o.pageIndex) || o.pageIndex < 0) {
     return { ok: false, reason: 'listing_page_index_invalid' };
   }
+  if (typeof o.pageToken !== 'string' || o.pageToken.trim() === '') {
+    return { ok: false, reason: 'listing_page_token_missing' };
+  }
   if (!(o.nextPageToken === null || typeof o.nextPageToken === 'string')) {
     return { ok: false, reason: 'listing_page_next_token_invalid' };
   }
@@ -394,6 +453,7 @@ export function parseRetainedListingPage(
       kind: 'g5-retained-listing-page',
       sourceId: o.sourceId,
       pageIndex: o.pageIndex,
+      pageToken: o.pageToken as string,
       nextPageToken: o.nextPageToken as string | null,
       emptyResult: o.emptyResult === true,
       candidates,
@@ -402,37 +462,68 @@ export function parseRetainedListingPage(
 }
 
 /**
- * Inclusive window + overlap membership (§6.2.1).
- * A listed lifecycle candidate enters the derived set when it overlaps the window.
+ * Derivation membership (F4):
+ * - in_window: known overlap with inclusive search window
+ * - uncertain: season/model-relevant but write/run timing unknown/ambiguous — RETAIN
+ * - out: proven outside window or irrelevant season/model
  */
+export function candidateDerivationMembership(input: {
+  candidate: MlCal1G5RetainedListingCandidate;
+  searchWindowStartInclusiveMs: number;
+  checkedThroughTimeMs: number;
+}): 'in_window' | 'uncertain' | 'out' {
+  const { candidate: c, searchWindowStartInclusiveMs: start, checkedThroughTimeMs: end } =
+    input;
+  if (!isSeasonModelRelevant(c)) return 'out';
+
+  const writeMs = parseIsoMs(c.commitOrWriteTime);
+  if (writeMs != null) {
+    if (writeMs >= start && writeMs <= end) return 'in_window';
+    // Known write outside window — still check run overlap before excluding.
+  } else if (c.commitOrWriteTime != null && c.commitOrWriteTime !== '') {
+    // Present but unparseable → uncertain (retain).
+    return 'uncertain';
+  }
+
+  const runStart = parseIsoMs(c.runStartedAt);
+  const runEnd = parseIsoMs(c.runEndedAt);
+  if (c.runStartedAt != null && c.runStartedAt !== '' && runStart == null) {
+    return 'uncertain';
+  }
+  if (c.runEndedAt != null && c.runEndedAt !== '' && runEnd == null) {
+    return 'uncertain';
+  }
+  if (runStart != null && runStart <= end) {
+    if (c.runEndedAt == null || c.runEndedAt === '') return 'in_window';
+    if (runEnd != null && runEnd >= start) return 'in_window';
+  }
+
+  if (c.deletedOrExpired === true) return 'in_window';
+
+  // Availability-only is not write-time proof; retain as uncertain when listed.
+  if (
+    writeMs == null &&
+    runStart == null &&
+    (c.artifactAvailableAt != null || c.workflowRunId != null || c.zipSha256 != null)
+  ) {
+    return 'uncertain';
+  }
+
+  if (writeMs != null && (writeMs < start || writeMs > end)) {
+    // No overlapping run → out.
+    return 'out';
+  }
+  // No usable timing at all but still listed under relevant season/model → retain.
+  return 'uncertain';
+}
+
+/** @deprecated Prefer candidateDerivationMembership; true only for in_window. */
 export function candidateOverlapsSearchWindow(input: {
   candidate: MlCal1G5RetainedListingCandidate;
   searchWindowStartInclusiveMs: number;
   checkedThroughTimeMs: number;
 }): boolean {
-  const { candidate: c, searchWindowStartInclusiveMs: start, checkedThroughTimeMs: end } =
-    input;
-  const writeMs = parseIsoMs(c.commitOrWriteTime);
-  if (writeMs != null && writeMs >= start && writeMs <= end) {
-    return true;
-  }
-  const runStart = parseIsoMs(c.runStartedAt);
-  const runEnd = parseIsoMs(c.runEndedAt);
-  if (runStart != null && runStart <= end) {
-    if (c.runEndedAt == null || c.runEndedAt === '') {
-      // Still active at inventory time — overlapping if started by checkedThrough.
-      return true;
-    }
-    if (runEnd != null && runEnd >= start) {
-      return true;
-    }
-  }
-  // Availability-only does not establish window membership for derivation of writes,
-  // but deleted markers still surface as candidates when listed with keys.
-  if (c.deletedOrExpired === true) {
-    return true;
-  }
-  return false;
+  return candidateDerivationMembership(input) === 'in_window';
 }
 
 export function isSeasonModelRelevant(
@@ -465,6 +556,23 @@ export function loadRetainedBytesByDigest(input: {
   return null;
 }
 
+function candidateFingerprint(c: MlCal1G5RetainedListingCandidate): string {
+  return stableStringify({
+    candidateKey: c.candidateKey,
+    workflowRunId: c.workflowRunId ?? null,
+    zipSha256: c.zipSha256 ?? null,
+    completedThroughWeek: c.completedThroughWeek ?? null,
+    season: c.season ?? null,
+    modelVersion: c.modelVersion ?? null,
+    commitOrWriteTime: c.commitOrWriteTime ?? null,
+    artifactAvailableAt: c.artifactAvailableAt ?? null,
+    runStartedAt: c.runStartedAt ?? null,
+    runEndedAt: c.runEndedAt ?? null,
+    eventKind: c.eventKind ?? null,
+    deletedOrExpired: c.deletedOrExpired === true,
+  });
+}
+
 export function deriveCandidatesFromRetainedPages(input: {
   pageDigests: string[];
   retainDir: string;
@@ -474,7 +582,14 @@ export function deriveCandidatesFromRetainedPages(input: {
   ok: boolean;
   reasons: string[];
   derivedKeys: string[];
-  byKey: Map<string, { candidate: MlCal1G5RetainedListingCandidate; listingPageDigest: string }>;
+  byKey: Map<
+    string,
+    {
+      candidate: MlCal1G5RetainedListingCandidate;
+      listingPageDigest: string;
+      membership: 'in_window' | 'uncertain';
+    }
+  >;
 } {
   const reasons: string[] = [];
   const start = parseIsoMs(input.searchWindowStartInclusive);
@@ -489,7 +604,11 @@ export function deriveCandidatesFromRetainedPages(input: {
   }
   const byKey = new Map<
     string,
-    { candidate: MlCal1G5RetainedListingCandidate; listingPageDigest: string }
+    {
+      candidate: MlCal1G5RetainedListingCandidate;
+      listingPageDigest: string;
+      membership: 'in_window' | 'uncertain';
+    }
   >();
   for (const digest of input.pageDigests) {
     const bytes = loadRetainedBytesByDigest({
@@ -506,21 +625,28 @@ export function deriveCandidatesFromRetainedPages(input: {
       continue;
     }
     const page = parsed.page;
-    // Pagination chain completeness is checked at source level; here extract.
     for (const c of page.candidates) {
-      if (!isSeasonModelRelevant(c)) continue;
-      if (
-        !candidateOverlapsSearchWindow({
-          candidate: c,
-          searchWindowStartInclusiveMs: start,
-          checkedThroughTimeMs: end,
-        })
-      ) {
+      const membership = candidateDerivationMembership({
+        candidate: c,
+        searchWindowStartInclusiveMs: start,
+        checkedThroughTimeMs: end,
+      });
+      if (membership === 'out') continue;
+      const existing = byKey.get(c.candidateKey);
+      if (existing) {
+        if (candidateFingerprint(existing.candidate) !== candidateFingerprint(c)) {
+          reasons.push('lineage_candidate_contradictory_duplicate');
+        }
+        if (membership === 'in_window') {
+          existing.membership = 'in_window';
+        }
         continue;
       }
-      if (!byKey.has(c.candidateKey)) {
-        byKey.set(c.candidateKey, { candidate: c, listingPageDigest: digest });
-      }
+      byKey.set(c.candidateKey, {
+        candidate: c,
+        listingPageDigest: digest,
+        membership,
+      });
     }
   }
   const derivedKeys = [...byKey.keys()].sort();
@@ -533,11 +659,119 @@ export function deriveCandidatesFromRetainedPages(input: {
 }
 
 // ---------------------------------------------------------------------------
-// Disposition evidence gates (§5.4.1)
+// Disposition evidence gates (§5.4.1) — typed schemas (F3)
 // ---------------------------------------------------------------------------
 
+export function isValidG5Disposition(
+  value: unknown
+): value is MlCal1G5ResolvedDisposition {
+  return (
+    typeof value === 'string' &&
+    (ML_CAL_1_G5_DISPOSITIONS as readonly string[]).includes(value)
+  );
+}
+
+export function parseIndependentEffectEvidence(
+  bytes: Buffer,
+  expectedCandidateKey: string
+):
+  | { ok: true; evidence: MlCal1G5IndependentEffectEvidence }
+  | { ok: false; reason: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bytes.toString('utf8'));
+  } catch {
+    return { ok: false, reason: 'effect_evidence_json_invalid' };
+  }
+  if (parsed == null || typeof parsed !== 'object') {
+    return { ok: false, reason: 'effect_evidence_not_object' };
+  }
+  const o = parsed as Record<string, unknown>;
+  if (o.schemaVersion !== ML_CAL_1_G5_EFFECT_EVIDENCE_SCHEMA) {
+    return { ok: false, reason: 'effect_evidence_schema_mismatch' };
+  }
+  if (o.kind !== 'independent-effect-evidence') {
+    return { ok: false, reason: 'effect_evidence_kind_mismatch' };
+  }
+  if (o.candidateKey !== expectedCandidateKey) {
+    return { ok: false, reason: 'effect_evidence_candidate_mismatch' };
+  }
+  if (o.season !== 2026 || o.modelVersion !== 'v1') {
+    return { ok: false, reason: 'effect_evidence_binding_mismatch' };
+  }
+  if (typeof o.affectsBoundRatings !== 'boolean') {
+    return { ok: false, reason: 'effect_evidence_affects_missing' };
+  }
+  if (typeof o.provesNonEffect !== 'boolean') {
+    return { ok: false, reason: 'effect_evidence_proves_non_effect_missing' };
+  }
+  return {
+    ok: true,
+    evidence: {
+      schemaVersion: ML_CAL_1_G5_EFFECT_EVIDENCE_SCHEMA,
+      kind: 'independent-effect-evidence',
+      candidateKey: expectedCandidateKey,
+      season: 2026,
+      modelVersion: 'v1',
+      affectsBoundRatings: o.affectsBoundRatings,
+      provesNonEffect: o.provesNonEffect,
+      note: typeof o.note === 'string' ? o.note : undefined,
+    },
+  };
+}
+
+export function parseCandidateContentsEvidence(
+  bytes: Buffer,
+  expectedCandidateKey: string
+):
+  | { ok: true; evidence: MlCal1G5CandidateContentsEvidence }
+  | { ok: false; reason: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bytes.toString('utf8'));
+  } catch {
+    return { ok: false, reason: 'candidate_contents_json_invalid' };
+  }
+  if (parsed == null || typeof parsed !== 'object') {
+    return { ok: false, reason: 'candidate_contents_not_object' };
+  }
+  const o = parsed as Record<string, unknown>;
+  if (o.schemaVersion !== ML_CAL_1_G5_CANDIDATE_CONTENTS_SCHEMA) {
+    return { ok: false, reason: 'candidate_contents_schema_mismatch' };
+  }
+  if (o.kind !== 'candidate-contents') {
+    return { ok: false, reason: 'candidate_contents_kind_mismatch' };
+  }
+  if (o.candidateKey !== expectedCandidateKey) {
+    return { ok: false, reason: 'candidate_contents_candidate_mismatch' };
+  }
+  if (o.season !== 2026 || o.modelVersion !== 'v1') {
+    return { ok: false, reason: 'candidate_contents_binding_mismatch' };
+  }
+  if (o.evaluable !== true) {
+    return { ok: false, reason: 'candidate_contents_not_evaluable' };
+  }
+  if (typeof o.affectsBoundRatings !== 'boolean') {
+    return { ok: false, reason: 'candidate_contents_affects_missing' };
+  }
+  return {
+    ok: true,
+    evidence: {
+      schemaVersion: ML_CAL_1_G5_CANDIDATE_CONTENTS_SCHEMA,
+      kind: 'candidate-contents',
+      candidateKey: expectedCandidateKey,
+      season: 2026,
+      modelVersion: 'v1',
+      evaluable: true,
+      affectsBoundRatings: o.affectsBoundRatings,
+      note: typeof o.note === 'string' ? o.note : undefined,
+    },
+  };
+}
+
 export function evaluateDispositionEvidence(input: {
-  disposition: MlCal1G5ResolvedDisposition;
+  disposition: unknown;
+  candidateKey: string;
   candidateContentsDigest: string | null;
   independentEffectEvidenceDigest: string | null;
   deletionNoticeDigest: string | null;
@@ -545,54 +779,113 @@ export function evaluateDispositionEvidence(input: {
   retainDir: string;
 }): { ok: boolean; reasons: string[] } {
   const reasons: string[] = [];
-  const hasContents =
+  if (!isValidG5Disposition(input.disposition)) {
+    return { ok: false, reasons: ['lineage_disposition_enum_invalid'] };
+  }
+  const disposition = input.disposition;
+
+  let contentsOk = false;
+  let contentsAffects: boolean | null = null;
+  if (
     typeof input.candidateContentsDigest === 'string' &&
-    HEX64.test(input.candidateContentsDigest) &&
-    loadRetainedBytesByDigest({
+    HEX64.test(input.candidateContentsDigest)
+  ) {
+    const bytes = loadRetainedBytesByDigest({
       retainDir: input.retainDir,
       digest: input.candidateContentsDigest,
-    }) != null;
-  const hasEffect =
+    });
+    if (!bytes) {
+      reasons.push('lineage_candidate_unresolved');
+    } else {
+      const parsed = parseCandidateContentsEvidence(bytes, input.candidateKey);
+      if (parsed.ok === false) {
+        reasons.push(parsed.reason);
+        reasons.push('lineage_candidate_unresolved');
+      } else {
+        contentsOk = true;
+        contentsAffects = parsed.evidence.affectsBoundRatings;
+      }
+    }
+  }
+
+  let effectOk = false;
+  let effect: MlCal1G5IndependentEffectEvidence | null = null;
+  if (
     typeof input.independentEffectEvidenceDigest === 'string' &&
-    HEX64.test(input.independentEffectEvidenceDigest) &&
-    loadRetainedBytesByDigest({
+    HEX64.test(input.independentEffectEvidenceDigest)
+  ) {
+    const bytes = loadRetainedBytesByDigest({
       retainDir: input.retainDir,
       digest: input.independentEffectEvidenceDigest,
-    }) != null;
+    });
+    if (!bytes) {
+      reasons.push('lineage_candidate_unresolved');
+    } else {
+      const parsed = parseIndependentEffectEvidence(bytes, input.candidateKey);
+      if (parsed.ok === false) {
+        reasons.push(parsed.reason);
+        reasons.push('lineage_candidate_unresolved');
+      } else {
+        effectOk = true;
+        effect = parsed.evidence;
+      }
+    }
+  }
+
   const noticeOnly =
     typeof input.deletionNoticeDigest === 'string' &&
     HEX64.test(input.deletionNoticeDigest) &&
-    !hasContents &&
-    !hasEffect;
+    !contentsOk &&
+    !effectOk;
 
-  if (input.disposition === 'not_invalidating') {
-    if (!hasContents && !hasEffect) {
+  if (disposition === 'not_invalidating') {
+    const provedNonEffectByContents =
+      contentsOk && contentsAffects === false;
+    const provedNonEffectByEffect =
+      effectOk &&
+      effect != null &&
+      effect.provesNonEffect === true &&
+      effect.affectsBoundRatings === false;
+    if (!provedNonEffectByContents && !provedNonEffectByEffect) {
       reasons.push(
         noticeOnly
           ? 'lineage_deleted_candidate_unresolved'
           : 'lineage_candidate_unresolved'
       );
     }
-  }
-  if (input.disposition === 'unresolved') {
+  } else if (disposition === 'invalidating') {
+    const provedAffect =
+      (contentsOk && contentsAffects === true) ||
+      (effectOk && effect != null && effect.affectsBoundRatings === true);
+    // invalidating may also be asserted from event kind with contents/effect;
+    // without proven affect and without contents/effect → unresolved.
+    if (!provedAffect && !contentsOk && !effectOk) {
+      reasons.push('lineage_candidate_unresolved');
+    }
+  } else if (disposition === 'unresolved') {
     reasons.push(
       noticeOnly
         ? 'lineage_deleted_candidate_unresolved'
         : 'lineage_candidate_unresolved'
     );
   }
-  // Ambiguous write time without non-effect proof → unresolved for none_found.
+
+  // Ambiguous write time without proved non-effect → unresolved for not_invalidating.
   if (
-    input.disposition !== 'invalidating' &&
+    disposition === 'not_invalidating' &&
     (input.commitOrWriteTime == null ||
       parseIsoMs(input.commitOrWriteTime) == null) &&
-    !hasEffect
+    !(
+      effectOk &&
+      effect != null &&
+      effect.provesNonEffect === true &&
+      effect.affectsBoundRatings === false
+    ) &&
+    !(contentsOk && contentsAffects === false)
   ) {
-    // Only force when disposition claims not_invalidating or when write is required.
-    if (input.disposition === 'not_invalidating') {
-      reasons.push('lineage_candidate_unresolved');
-    }
+    reasons.push('lineage_candidate_unresolved');
   }
+
   return { ok: reasons.length === 0, reasons: [...new Set(reasons)] };
 }
 
@@ -829,23 +1122,18 @@ export function validateG5PackageStructural(input: {
   );
   const packageIdentityDigest = sha256Hex(identityPayload);
 
+  // F5: whole-package approval remains unavailable until independently reviewed.
+  // Any claim (including matching self-hash / pin) is rejected.
   const approvalClaimed =
     typeof input.claimedApprovedObservationPackageDigest === 'string' &&
     input.claimedApprovedObservationPackageDigest.length > 0;
-  if (approvalClaimed) {
-    if (input.wholePackageApprovalEnabled !== true) {
-      reasons.push('observation_package_approval_disabled');
-    }
-    const pin = input.pinDefinedPackageIdentityDigest;
-    const claimed = input.claimedApprovedObservationPackageDigest!.toLowerCase();
-    if (typeof pin !== 'string' || !HEX64.test(pin)) {
-      reasons.push('observation_package_approval_anchor_missing');
-    } else if (pin.toLowerCase() !== claimed) {
-      reasons.push('observation_package_digest_mismatch_vs_approval_anchor');
-    } else if (packageIdentityDigest !== claimed) {
-      reasons.push('observation_package_digest_mismatch_vs_approval_anchor');
+  if (approvalClaimed || input.wholePackageApprovalEnabled === true) {
+    reasons.push('observation_package_approval_disabled');
+    if (approvalClaimed && input.pinDefinedPackageIdentityDigest == null) {
+      reasons.push('observation_package_approval_self_hash_rejected');
     }
   }
+  void packageIdentityDigest;
 
   return {
     ok: reasons.length === 0,
@@ -904,12 +1192,11 @@ function recomputePaginationComplete(input: {
   if (!Array.isArray(p.pageDigests) || p.pageDigests.length !== p.pagesRetrieved) {
     reasons.push('lineage_search_incomplete');
   }
-  if (p.pagesRetrieved < 1) {
+  if (p.pagesRetrieved < 1 || (p.pageDigests?.length ?? 0) < 1) {
     reasons.push('lineage_search_incomplete');
   }
-  if (p.nextPageToken != null) {
-    reasons.push('lineage_search_incomplete');
-  }
+
+  const pages: Array<{ digest: string; page: MlCal1G5RetainedListingPage }> = [];
   for (const d of p.pageDigests ?? []) {
     const bytes = loadRetainedBytesByDigest({
       retainDir: input.retainDir,
@@ -927,17 +1214,69 @@ function recomputePaginationComplete(input: {
     if (parsed.page.sourceId !== input.source.sourceId) {
       reasons.push('lineage_search_incomplete');
     }
+    // Declared emptyResult must match candidate count (F2).
+    if (parsed.page.emptyResult === true && parsed.page.candidates.length > 0) {
+      reasons.push('lineage_pagination_empty_result_mismatch');
+    }
+    if (
+      parsed.page.emptyResult !== true &&
+      parsed.page.candidates.length === 0 &&
+      p.pagesRetrieved === 1
+    ) {
+      // Single empty page must declare emptyResult.
+      reasons.push('lineage_pagination_empty_result_mismatch');
+    }
+    pages.push({ digest: d, page: parsed.page });
   }
-  // Declaration mirror must match recompute.
+
+  // Sequence + continuation chain from retained page content (F2).
+  pages.sort((a, b) => a.page.pageIndex - b.page.pageIndex);
+  if (pages.length > 0) {
+    for (let i = 0; i < pages.length; i++) {
+      if (pages[i].page.pageIndex !== i) {
+        reasons.push('lineage_pagination_sequence_gap');
+      }
+    }
+    for (let i = 0; i < pages.length - 1; i++) {
+      const cur = pages[i].page;
+      const next = pages[i + 1].page;
+      if (cur.nextPageToken == null || cur.nextPageToken !== next.pageToken) {
+        reasons.push('lineage_pagination_chain_broken');
+      }
+    }
+    const last = pages[pages.length - 1].page;
+    if (last.nextPageToken != null) {
+      reasons.push('lineage_search_incomplete');
+    }
+    // Declared source-level nextPageToken must agree with last retained page.
+    if (p.nextPageToken !== last.nextPageToken) {
+      reasons.push('lineage_pagination_declared_token_mismatch');
+    }
+  } else if (p.nextPageToken != null) {
+    reasons.push('lineage_search_incomplete');
+  }
+
+  // Declared resultCount must equal sum of retained page candidates when complete.
+  if (pages.length === p.pagesRetrieved && pages.length > 0) {
+    const sum = pages.reduce((n, x) => n + x.page.candidates.length, 0);
+    if (input.source.resultCount !== sum) {
+      reasons.push('lineage_pagination_result_count_mismatch');
+    }
+  }
+
   const recomputed =
     reasons.length === 0 &&
     p.nextPageToken == null &&
     p.pagesRetrieved >= 1 &&
-    p.pageDigests.length === p.pagesRetrieved;
+    p.pageDigests.length === p.pagesRetrieved &&
+    pages.length === p.pagesRetrieved;
   if (p.complete !== recomputed) {
     reasons.push('lineage_inventory_declaration_mismatch');
   }
-  return { complete: reasons.length === 0 && recomputed, reasons: [...new Set(reasons)] };
+  return {
+    complete: reasons.length === 0 && recomputed,
+    reasons: [...new Set(reasons)],
+  };
 }
 
 export function recomputeInventoryCompleteness(input: {
@@ -987,8 +1326,21 @@ export function recomputeInventoryCompleteness(input: {
     reasons.push('lineage_search_window_end_mismatch');
   }
 
+  // F1: coverage times are required (not optional skips).
   const snap = parseIsoMs(input.bindingSnapshotReferenceTime ?? null);
   const obsEnd = parseIsoMs(input.observationEndTime ?? null);
+  if (input.bindingSnapshotReferenceTime == null || snap == null) {
+    reasons.push('lineage_coverage_time_missing');
+  }
+  if (input.observationEndTime == null || obsEnd == null) {
+    reasons.push('lineage_coverage_time_missing');
+  }
+  if (
+    input.attestationCheckedThroughTime == null ||
+    parseIsoMs(input.attestationCheckedThroughTime) == null
+  ) {
+    reasons.push('lineage_coverage_time_missing');
+  }
   if (endMs != null && snap != null && endMs < snap) {
     reasons.push('lineage_checked_through_too_early');
   }
@@ -1097,16 +1449,21 @@ export function recomputeInventoryCompleteness(input: {
 
     const ev = evaluateDispositionEvidence({
       disposition: c.resolvedDisposition,
+      candidateKey: c.candidateKey,
       candidateContentsDigest: c.candidateContentsDigest,
       independentEffectEvidenceDigest: c.independentEffectEvidenceDigest,
       deletionNoticeDigest: c.deletionNoticeDigest,
       commitOrWriteTime: c.commitOrWriteTime,
       retainDir: input.retainDir,
     });
-    if (c.resolvedDisposition === 'invalidating') {
+    if (c.resolvedDisposition === 'invalidating' && ev.ok) {
       hasInvalidating = true;
     }
-    if (c.resolvedDisposition === 'unresolved' || !ev.ok) {
+    if (
+      !isValidG5Disposition(c.resolvedDisposition) ||
+      c.resolvedDisposition === 'unresolved' ||
+      !ev.ok
+    ) {
       unresolvedCandidateKeys.push(c.candidateKey);
       reasons.push(...ev.reasons);
     }
@@ -1140,16 +1497,26 @@ export function recomputeInventoryCompleteness(input: {
 
   // Completeness for none_found also requires no unresolved and no invalidating.
   const structuralComplete =
-    uniqueReasons.filter((r) =>
-      [
-        'lineage_search_incomplete',
-        'lineage_candidate_omitted_from_inventory',
-        'lineage_candidate_not_in_retained_listings',
-        'lineage_inventory_declaration_mismatch',
-        'lineage_search_window_end_mismatch',
-        'lineage_search_window_start_mismatch',
-        'archive_chronology_missing',
-      ].includes(r) || r.startsWith('listing_')
+    uniqueReasons.filter(
+      (r) =>
+        [
+          'lineage_search_incomplete',
+          'lineage_candidate_omitted_from_inventory',
+          'lineage_candidate_not_in_retained_listings',
+          'lineage_inventory_declaration_mismatch',
+          'lineage_search_window_end_mismatch',
+          'lineage_search_window_start_mismatch',
+          'archive_chronology_missing',
+          'lineage_coverage_time_missing',
+          'lineage_candidate_contradictory_duplicate',
+          'lineage_pagination_sequence_gap',
+          'lineage_pagination_chain_broken',
+          'lineage_pagination_declared_token_mismatch',
+          'lineage_pagination_result_count_mismatch',
+          'lineage_pagination_empty_result_mismatch',
+        ].includes(r) ||
+        r.startsWith('listing_') ||
+        r.startsWith('lineage_pagination_')
     ).length === 0;
 
   const recomputedNoneFoundPermitted =
@@ -1181,6 +1548,158 @@ export function recomputeInventoryCompleteness(input: {
 // G5-PRE entry
 // ---------------------------------------------------------------------------
 
+function extractBoundPackageEvidence(input: {
+  observationId: string;
+  packageDir: string;
+  sidecarDigest: string | null;
+  memberRecords: Array<Omit<MlCal1G5RetrievedObject, 'bytes'>>;
+}): MlCal1G5BoundPackageEvidence {
+  const bound: MlCal1G5BoundPackageEvidence = {
+    observationId: input.observationId,
+    packageDir: path.resolve(input.packageDir),
+    zipSha256: null,
+    reportMemberSha256: null,
+    sidecarDigest: input.sidecarDigest,
+    sidecarObservationEndTime: null,
+    sidecarBindingSnapshotReferenceTime: null,
+    sidecarWorkflowRunCompletedAt: null,
+    sidecarArtifactCreatedAt: null,
+    sidecarLifecycleProducerSha: null,
+    sidecarBindingObserverSha: null,
+    sidecarSeason: null,
+    sidecarModelVersion: null,
+  };
+  for (const m of input.memberRecords) {
+    const base = path.basename(m.locator);
+    if (base === 'archive.zip') bound.zipSha256 = m.sha256;
+    if (base === 'binding-sidecar.json') bound.sidecarDigest = m.sha256;
+    if (base.endsWith('.json') && base.startsWith('core-v1-lifecycle-')) {
+      bound.reportMemberSha256 = m.sha256;
+    }
+  }
+  const sidecarPath = path.join(input.packageDir, 'binding-sidecar.json');
+  if (fs.existsSync(sidecarPath)) {
+    try {
+      const sc = JSON.parse(fs.readFileSync(sidecarPath, 'utf8')) as {
+        acceptedArchive?: {
+          github?: {
+            workflowRunCompletedAt?: string | null;
+            artifactCreatedAt?: string | null;
+          };
+          lifecycleProducerSha?: string;
+        };
+        bindingObservation?: {
+          observationEndTime?: string;
+          bindingSnapshotReferenceTime?: string;
+          bindingObserverSha?: string;
+          season?: number;
+          modelVersion?: string;
+          readMode?: string;
+        };
+        mode?: string;
+      };
+      bound.sidecarObservationEndTime =
+        sc.bindingObservation?.observationEndTime ?? null;
+      bound.sidecarBindingSnapshotReferenceTime =
+        sc.bindingObservation?.bindingSnapshotReferenceTime ?? null;
+      bound.sidecarWorkflowRunCompletedAt =
+        sc.acceptedArchive?.github?.workflowRunCompletedAt ?? null;
+      bound.sidecarArtifactCreatedAt =
+        sc.acceptedArchive?.github?.artifactCreatedAt ?? null;
+      bound.sidecarLifecycleProducerSha =
+        sc.acceptedArchive?.lifecycleProducerSha ?? null;
+      bound.sidecarBindingObserverSha =
+        sc.bindingObservation?.bindingObserverSha ?? null;
+      bound.sidecarSeason = sc.bindingObservation?.season ?? null;
+      bound.sidecarModelVersion = sc.bindingObservation?.modelVersion ?? null;
+    } catch {
+      // leave nulls; F1 cross-bind will fail closed
+    }
+  }
+  return bound;
+}
+
+function crossBindCoverageAndIdentities(input: {
+  bound: MlCal1G5BoundPackageEvidence;
+  inventory: MlCal1G5LineageInventory | null;
+  workflowRunCompletedAt: string;
+  artifactCreatedAt: string;
+  bindingSnapshotReferenceTime?: string | null;
+  observationEndTime?: string | null;
+  attestationCheckedThroughTime?: string | null;
+}): string[] {
+  const reasons: string[] = [];
+  const b = input.bound;
+  if (
+    b.sidecarObservationEndTime == null ||
+    parseIsoMs(b.sidecarObservationEndTime) == null ||
+    b.sidecarBindingSnapshotReferenceTime == null ||
+    parseIsoMs(b.sidecarBindingSnapshotReferenceTime) == null
+  ) {
+    reasons.push('lineage_coverage_time_missing');
+  }
+  if (
+    input.observationEndTime != null &&
+    b.sidecarObservationEndTime != null &&
+    input.observationEndTime !== b.sidecarObservationEndTime
+  ) {
+    reasons.push('lineage_coverage_time_package_mismatch');
+  }
+  if (
+    input.bindingSnapshotReferenceTime != null &&
+    b.sidecarBindingSnapshotReferenceTime != null &&
+    input.bindingSnapshotReferenceTime !== b.sidecarBindingSnapshotReferenceTime
+  ) {
+    reasons.push('lineage_coverage_time_package_mismatch');
+  }
+  if (
+    b.sidecarWorkflowRunCompletedAt != null &&
+    input.workflowRunCompletedAt !== b.sidecarWorkflowRunCompletedAt
+  ) {
+    reasons.push('lineage_archive_chronology_package_mismatch');
+  }
+  if (
+    b.sidecarArtifactCreatedAt != null &&
+    input.artifactCreatedAt !== b.sidecarArtifactCreatedAt
+  ) {
+    reasons.push('lineage_archive_chronology_package_mismatch');
+  }
+  if (input.inventory) {
+    const inv = input.inventory;
+    if (
+      b.sidecarDigest != null &&
+      inv.approvedSidecarDigest.toLowerCase() !== b.sidecarDigest
+    ) {
+      reasons.push('lineage_identity_package_mismatch');
+    }
+    if (
+      b.sidecarLifecycleProducerSha != null &&
+      inv.lifecycleProducerSha !== b.sidecarLifecycleProducerSha
+    ) {
+      reasons.push('lineage_identity_package_mismatch');
+    }
+    if (
+      b.sidecarBindingObserverSha != null &&
+      inv.bindingObserverSha !== b.sidecarBindingObserverSha
+    ) {
+      reasons.push('lineage_identity_package_mismatch');
+    }
+    if (b.sidecarSeason != null && inv.season !== b.sidecarSeason) {
+      reasons.push('lineage_identity_package_mismatch');
+    }
+    if (
+      b.sidecarModelVersion != null &&
+      inv.modelVersion !== b.sidecarModelVersion
+    ) {
+      reasons.push('lineage_identity_package_mismatch');
+    }
+    if (inv.observationId !== b.observationId) {
+      reasons.push('observation_id_inventory_mismatch');
+    }
+  }
+  return reasons;
+}
+
 export function runG5Pre(input: MlCal1G5PreInput): MlCal1G5PreResult {
   const notes: string[] = [
     'g5_pre_retrieval_inventory_only',
@@ -1196,6 +1715,13 @@ export function runG5Pre(input: MlCal1G5PreInput): MlCal1G5PreResult {
       input.claimedApprovedObservationPackageDigest,
     pinDefinedPackageIdentityDigest: input.pinDefinedPackageIdentityDigest,
     wholePackageApprovalEnabled: input.wholePackageApprovalEnabled === true,
+  });
+
+  const boundEvidence = extractBoundPackageEvidence({
+    observationId: input.observationId,
+    packageDir: input.packageDir,
+    sidecarDigest: packageCheck.sidecarDigest,
+    memberRecords: packageCheck.memberRecords,
   });
 
   const reasons = [...packageCheck.reasons];
@@ -1244,21 +1770,32 @@ export function runG5Pre(input: MlCal1G5PreInput): MlCal1G5PreResult {
     reasons.push('sidecar_digest_mismatch_vs_approval_anchor');
   }
 
-  // Reject self-assignment pattern: claiming approved* equal to just-computed without
-  // presenting it as an external anchor object class. Structural self-hash alone ≠ approval.
-  if (
-    input.claimedApprovedObservationPackageDigest != null &&
-    input.wholePackageApprovalEnabled !== true &&
-    input.pinDefinedPackageIdentityDigest == null
-  ) {
-    reasons.push('observation_package_approval_self_hash_rejected');
-  }
+  // Prefer package-bound coverage times when caller omits them (still cross-checked).
+  const effectiveObsEnd =
+    input.observationEndTime ?? boundEvidence.sidecarObservationEndTime;
+  const effectiveSnap =
+    input.bindingSnapshotReferenceTime ??
+    boundEvidence.sidecarBindingSnapshotReferenceTime;
+  const effectiveChecked =
+    input.attestationCheckedThroughTime ?? effectiveObsEnd;
 
   const parsed = parseLineageInventory(input.inventoryBytes);
   let recomputedSearchComplete = false;
   let recomputedNoneFoundPermitted = false;
   let derivedCandidateCount = 0;
   let unresolvedCandidateKeys: string[] = [];
+
+  reasons.push(
+    ...crossBindCoverageAndIdentities({
+      bound: boundEvidence,
+      inventory: parsed.ok ? parsed.inventory : null,
+      workflowRunCompletedAt: input.workflowRunCompletedAt,
+      artifactCreatedAt: input.artifactCreatedAt,
+      bindingSnapshotReferenceTime: effectiveSnap,
+      observationEndTime: effectiveObsEnd,
+      attestationCheckedThroughTime: effectiveChecked,
+    })
+  );
 
   if (parsed.ok === false) {
     reasons.push(parsed.reason);
@@ -1284,9 +1821,9 @@ export function runG5Pre(input: MlCal1G5PreInput): MlCal1G5PreResult {
     const complete = recomputeInventoryCompleteness({
       inventory: parsed.inventory,
       retainDir: input.searchEvidenceRetainDir,
-      attestationCheckedThroughTime: input.attestationCheckedThroughTime,
-      bindingSnapshotReferenceTime: input.bindingSnapshotReferenceTime,
-      observationEndTime: input.observationEndTime,
+      attestationCheckedThroughTime: effectiveChecked,
+      bindingSnapshotReferenceTime: effectiveSnap,
+      observationEndTime: effectiveObsEnd,
       nowCeiling: input.nowCeiling,
       workflowRunCompletedAt: input.workflowRunCompletedAt,
       artifactCreatedAt: input.artifactCreatedAt,
@@ -1339,6 +1876,7 @@ export function runG5Pre(input: MlCal1G5PreInput): MlCal1G5PreResult {
     packageStructuralOk: packageCheck.ok,
     inventorySha256,
     sidecarDigest: packageCheck.sidecarDigest,
+    boundEvidence,
     prospectiveOk: false,
     fullWeightEligible: false,
     liveQualifying: false,
@@ -1361,6 +1899,8 @@ export function runG5Pre(input: MlCal1G5PreInput): MlCal1G5PreResult {
  * Optional G5-VERIFY: calls accepted verifier only when prospectiveTargetWeek is
  * supplied as approved or explicit fixture-only. Never invents a production week.
  * G5-PRE without target must not call this.
+ * F6: verification inputs must bind to validated PRE retained evidence; any
+ * target/evidence mismatch stops qualification (ok=false, verifier not invoked).
  */
 export function runG5Verify(input: MlCal1G5VerifyInput): MlCal1G5VerifyResult {
   const reasons: string[] = [];
@@ -1383,8 +1923,6 @@ export function runG5Verify(input: MlCal1G5VerifyInput): MlCal1G5VerifyResult {
     };
   }
   if (!input.fixtureOnlyTarget) {
-    // Production target path is out of scope for this offline PR — refuse silently
-    // inventing production eligibility.
     return {
       invokedVerifier: false,
       verifyResult: null,
@@ -1394,14 +1932,74 @@ export function runG5Verify(input: MlCal1G5VerifyInput): MlCal1G5VerifyResult {
     };
   }
   if (input.verifyInput.prospectiveTargetWeek !== input.prospectiveTargetWeek) {
-    reasons.push('prospective_target_week_mismatch');
+    return {
+      invokedVerifier: false,
+      verifyResult: null,
+      liveAccepted: false,
+      reasons: ['prospective_target_week_mismatch'],
+      ok: false,
+    };
+  }
+
+  const bound = input.g5Pre.boundEvidence;
+  const zipSha = sha256Hex(input.verifyInput.zipBytes);
+  if (bound.zipSha256 == null || zipSha !== bound.zipSha256) {
+    return {
+      invokedVerifier: false,
+      verifyResult: null,
+      liveAccepted: false,
+      reasons: ['g5_verify_zip_evidence_mismatch'],
+      ok: false,
+    };
+  }
+  const sidecarDigest = sha256Hex(
+    Buffer.from(input.verifyInput.sidecarBytes, 'utf8')
+  );
+  if (
+    bound.sidecarDigest == null ||
+    sidecarDigest !== bound.sidecarDigest ||
+    input.g5Pre.sidecarDigest !== bound.sidecarDigest
+  ) {
+    return {
+      invokedVerifier: false,
+      verifyResult: null,
+      liveAccepted: false,
+      reasons: ['g5_verify_sidecar_evidence_mismatch'],
+      ok: false,
+    };
+  }
+  if (input.verifyInput.reportMemberBytes) {
+    const reportSha = sha256Hex(input.verifyInput.reportMemberBytes);
+    if (
+      bound.reportMemberSha256 == null ||
+      reportSha !== bound.reportMemberSha256
+    ) {
+      return {
+        invokedVerifier: false,
+        verifyResult: null,
+        liveAccepted: false,
+        reasons: ['g5_verify_report_evidence_mismatch'],
+        ok: false,
+      };
+    }
+  }
+  if (
+    typeof input.verifyInput.expectedZipSha256 === 'string' &&
+    input.verifyInput.expectedZipSha256.toLowerCase() !== zipSha
+  ) {
+    return {
+      invokedVerifier: false,
+      verifyResult: null,
+      liveAccepted: false,
+      reasons: ['g5_verify_zip_evidence_mismatch'],
+      ok: false,
+    };
   }
 
   const verifyResult = verifyLifecycleBindingSidecar(input.verifyInput);
   if (input.g5Pre.fixtureProvenanceRetained) {
     reasons.push('fixture_provenance_blocks_portable_live_acceptance');
   }
-  // Detect self-assigned trustedAcceptance receipt (caller must not mint).
   const ta = (
     input.verifyInput as MlCal1LifecycleBindingVerifyInput & {
       trustedAcceptance?: { approvedReceiptDigest?: string };
@@ -1421,9 +2019,16 @@ export function runG5Verify(input: MlCal1G5VerifyInput): MlCal1G5VerifyResult {
     reasons.push('receipt_approval_self_assigned');
   }
 
+  const blocking = reasons.filter(
+    (r) =>
+      r === 'receipt_approval_self_assigned' ||
+      r === 'g5_verify_zip_evidence_mismatch' ||
+      r === 'g5_verify_sidecar_evidence_mismatch' ||
+      r === 'g5_verify_report_evidence_mismatch' ||
+      r === 'prospective_target_week_mismatch'
+  );
   const ok =
-    verifyResult.structuralConsistencyVerified &&
-    reasons.filter((r) => r === 'receipt_approval_self_assigned').length === 0;
+    verifyResult.structuralConsistencyVerified && blocking.length === 0;
 
   return {
     invokedVerifier: true,
