@@ -281,11 +281,12 @@ export interface MlCal1G5ExternalAnchors {
   approvedObservationPackageDigest?: string | null;
   approvedSidecarDigest?: string | null;
   /**
-   * Map: sha256(independent-effect-evidence bytes) → separately supplied
-   * approval digest. Value must not equal the evidence digest (no self-hash).
-   * Fixture-only synthetic approvals are test-scoped.
+   * Independently supplied pins: candidateKey → expected sha256 of the exact
+   * retained independent-effect-evidence bytes for that candidate.
+   * Constructed outside the verifier — never from the bytes under verification.
+   * Fixture-only synthetic pins are test-scoped.
    */
-  approvedIndependentEffectEvidenceDigests?: Record<string, string> | null;
+  approvedIndependentEffectEvidenceByCandidate?: Record<string, string> | null;
 }
 
 export interface MlCal1G5PreInput {
@@ -974,31 +975,27 @@ export function deriveAffectsBoundRatingsFromArtifact(
   };
 }
 
+/**
+ * Independently supplied expected evidence digest for a candidate must equal
+ * sha256(exact retained evidence bytes). The pin is looked up by candidate
+ * identity — never constructed here from the bytes under verification.
+ */
 function validateExternalEffectApproval(input: {
+  candidateKey: string;
   evidenceDigest: string;
-  evidenceBytes: Buffer;
-  evidence: MlCal1G5IndependentEffectEvidence;
-  approvedDigests: Record<string, string> | null | undefined;
+  approvedByCandidate: Record<string, string> | null | undefined;
 }): { ok: true } | { ok: false; reason: string } {
-  const map = input.approvedDigests ?? null;
+  const map = input.approvedByCandidate ?? null;
   if (map == null || typeof map !== 'object') {
     return { ok: false, reason: 'effect_evidence_approval_missing' };
   }
-  const approval = map[input.evidenceDigest] ?? map[input.evidenceDigest.toLowerCase()];
-  if (typeof approval !== 'string' || !HEX64.test(approval)) {
+  const expected = map[input.candidateKey];
+  if (typeof expected !== 'string' || !HEX64.test(expected)) {
     return { ok: false, reason: 'effect_evidence_approval_missing' };
   }
-  const approvalLc = approval.toLowerCase();
-  // Self-hash cannot approve.
-  if (approvalLc === input.evidenceDigest.toLowerCase()) {
-    return { ok: false, reason: 'effect_evidence_approval_self_hash' };
+  if (expected.toLowerCase() !== input.evidenceDigest.toLowerCase()) {
+    return { ok: false, reason: 'effect_evidence_approval_digest_mismatch' };
   }
-  // Digest copied from the evidence envelope cannot approve.
-  const envelopeText = input.evidenceBytes.toString('utf8');
-  if (envelopeText.toLowerCase().includes(approvalLc)) {
-    return { ok: false, reason: 'effect_evidence_approval_from_envelope' };
-  }
-  void input.evidence;
   return { ok: true };
 }
 
@@ -1040,7 +1037,7 @@ export function evaluateDispositionEvidence(input: {
   commitOrWriteTime: string | null;
   retainDir: string;
   bound: MlCal1G5BoundEffectContext;
-  approvedIndependentEffectEvidenceDigests?: Record<string, string> | null;
+  approvedIndependentEffectEvidenceByCandidate?: Record<string, string> | null;
 }): { ok: boolean; reasons: string[] } {
   const reasons: string[] = [];
   if (!isValidG5Disposition(input.disposition)) {
@@ -1066,17 +1063,12 @@ export function evaluateDispositionEvidence(input: {
         reasons.push(parsed.reason);
         reasons.push('lineage_candidate_unresolved');
       } else {
-        const derived = deriveAffectsBoundRatingsFromArtifact(
-          parsed.artifact,
-          input.bound
-        );
-        if (derived.ok === false) {
-          reasons.push(derived.reason);
-          reasons.push('lineage_candidate_unresolved');
-        } else {
-          contentsOk = true;
-          contentsAffects = derived.affects;
-        }
+        // Quarantine: custom write-effect summaries are not raw producer
+        // evidence. writesTeamSeasonRatings / writtenRatingFingerprint alone
+        // cannot prove non-effect until a producer-artifact adapter exists.
+        void deriveAffectsBoundRatingsFromArtifact;
+        reasons.push('candidate_contents_unsupported_summary');
+        reasons.push('lineage_candidate_unresolved');
       }
     }
   }
@@ -1101,10 +1093,10 @@ export function evaluateDispositionEvidence(input: {
         reasons.push('lineage_candidate_unresolved');
       } else {
         const approval = validateExternalEffectApproval({
+          candidateKey: input.candidateKey,
           evidenceDigest,
-          evidenceBytes: bytes,
-          evidence: parsed.evidence,
-          approvedDigests: input.approvedIndependentEffectEvidenceDigests,
+          approvedByCandidate:
+            input.approvedIndependentEffectEvidenceByCandidate,
         });
         if (approval.ok === false) {
           reasons.push(approval.reason);
@@ -1126,7 +1118,8 @@ export function evaluateDispositionEvidence(input: {
     }
   }
 
-  // Contradictory derived contents vs reviewed effect → unresolved.
+  // Contradictory contents vs reviewed effect → unresolved (when contents
+  // proof path is later enabled by a producer-artifact adapter).
   if (
     contentsOk &&
     effectOk &&
@@ -1875,7 +1868,7 @@ export function recomputeInventoryCompleteness(input: {
   /** Required for R2-A derivation / reviewed-effect binding. */
   boundSidecarDigest: string | null;
   boundRatingFingerprint: string | null;
-  approvedIndependentEffectEvidenceDigests?: Record<string, string> | null;
+  approvedIndependentEffectEvidenceByCandidate?: Record<string, string> | null;
 }): {
   recomputedSearchComplete: boolean;
   recomputedNoneFoundPermitted: boolean;
@@ -2147,8 +2140,8 @@ export function recomputeInventoryCompleteness(input: {
           completedThroughWeek: c.completedThroughWeek,
         },
       },
-      approvedIndependentEffectEvidenceDigests:
-        input.approvedIndependentEffectEvidenceDigests,
+      approvedIndependentEffectEvidenceByCandidate:
+        input.approvedIndependentEffectEvidenceByCandidate,
     });
     if (c.resolvedDisposition === 'invalidating' && ev.ok) {
       hasInvalidating = true;
@@ -2587,8 +2580,9 @@ export function runG5Pre(input: MlCal1G5PreInput): MlCal1G5PreResult {
       artifactCreatedAt: input.artifactCreatedAt,
       boundSidecarDigest: packageCheck.sidecarDigest,
       boundRatingFingerprint,
-      approvedIndependentEffectEvidenceDigests:
-        input.externalAnchors.approvedIndependentEffectEvidenceDigests ?? null,
+      approvedIndependentEffectEvidenceByCandidate:
+        input.externalAnchors.approvedIndependentEffectEvidenceByCandidate ??
+        null,
     });
     recomputedSearchComplete = complete.recomputedSearchComplete;
     recomputedNoneFoundPermitted = complete.recomputedNoneFoundPermitted;

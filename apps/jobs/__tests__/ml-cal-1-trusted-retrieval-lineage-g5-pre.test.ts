@@ -35,7 +35,6 @@ import {
   buildG5Scenario,
   booleanOnlyContentsEvidenceBytes,
   effectEvidenceBytes,
-  fixtureEffectApprovalDigest,
   inWindowCandidate,
   retainEffectEvidence,
   retainWriteEffectArtifact,
@@ -230,29 +229,14 @@ describe('ML-CAL-1 G5-PRE — positives P1–P13', () => {
     expect(r.reasons).toContain('observation_package_approval_disabled');
   });
 
-  it('G5-P10: deleted candidate not_invalidating via retained contents → none_found ok', () => {
-    const c = inWindowCandidate('deleted-with-contents', {
+  it('G5-P10: deleted candidate not_invalidating via pinned reviewed effect → none_found ok', () => {
+    // Write-effect summaries are quarantined; positives use independently
+    // pinned reviewed-effect evidence (deletion notice alone is insufficient).
+    const c = inWindowCandidate('deleted-with-effect-p10', {
       deletedOrExpired: true,
     });
-    const s2 = buildG5Scenario({
-      githubCandidates: [c],
-      dispositions: undefined,
-    });
-    const inv = JSON.parse(s2.inventoryBytes.toString('utf8'));
-    inv.invalidatingCandidateArtifacts[0].candidateContentsDigest =
-      s2.contentsDigest;
-    inv.invalidatingCandidateArtifacts[0].independentEffectEvidenceDigest = null;
-    inv.invalidatingCandidateArtifacts[0].deletionNoticeDigest = s2.noticeDigest;
-    const inventoryBytes = Buffer.from(`${stableStringify(inv)}\n`, 'utf8');
-    const inventorySha256 = sha256Utf8Bytes(inventoryBytes);
-    const r = runG5Pre({
-      ...s2.preInput,
-      inventoryBytes,
-      externalAnchors: {
-        ...s2.preInput.externalAnchors,
-        approvedLineageInventorySha256: inventorySha256,
-      },
-    });
+    const s2 = buildG5Scenario({ githubCandidates: [c] });
+    const r = runG5Pre(s2.preInput);
     expect(r.ok).toBe(true);
     expect(r.recomputedNoneFoundPermitted).toBe(true);
   });
@@ -280,7 +264,7 @@ describe('ML-CAL-1 G5-PRE — positives P1–P13', () => {
     expect(r.derivedCandidateCount).toBe(1);
   });
 
-  it('G5-P13: run started before window, still active, aborted with derived non-effect contents', () => {
+  it('G5-P13: run started before window, still active, aborted with pinned reviewed non-effect', () => {
     const c = inWindowCandidate('overlap-active', {
       runStartedAt: '2026-10-05T14:00:00.000Z', // before window start
       runEndedAt: null,
@@ -291,7 +275,7 @@ describe('ML-CAL-1 G5-PRE — positives P1–P13', () => {
     const s = buildG5Scenario({
       githubCandidates: [c],
     });
-    // Write time null is allowed when derived contents prove non-effect.
+    // Write time null is allowed when independently pinned reviewed effect proves non-effect.
     const inv = JSON.parse(s.inventoryBytes.toString('utf8'));
     inv.invalidatingCandidateArtifacts[0].commitOrWriteTime = null;
     const inventoryBytes = Buffer.from(`${stableStringify(inv)}\n`, 'utf8');
@@ -908,8 +892,9 @@ describe('ML-CAL-1 G5-PRE — F1–F6 review repair regressions', () => {
       externalAnchors: {
         approvedLineageInventorySha256: sha256Utf8Bytes(inventoryBytes),
         approvedSidecarDigest: s.sidecarDigest,
-        approvedIndependentEffectEvidenceDigests: {
-          [wrong.digest]: wrong.approvalDigest,
+        // Pin under inventory candidate key; evidence bytes claim other-key.
+        approvedIndependentEffectEvidenceByCandidate: {
+          'bound-key': wrong.digest,
         },
       },
     });
@@ -1152,12 +1137,12 @@ describe('ML-CAL-1 G5-PRE — R1–R5 review repair regressions', () => {
     );
   });
 
-  it('R2: contradictory derived contents vs approved effect remains unresolved', () => {
+  it('R2: write-effect summary plus reviewed effect still fails closed on contents quarantine', () => {
     const c = inWindowCandidate('contradict-effect');
     const s = buildG5Scenario({ githubCandidates: [c] });
     const contents = retainWriteEffectArtifact(s.retainDir, c, {
       writesTeamSeasonRatings: true,
-      writtenRatingFingerprint: 'f'.repeat(64), // differs from bound ⇒ affects
+      writtenRatingFingerprint: 'f'.repeat(64),
     });
     const effect = retainEffectEvidence(s.retainDir, 'contradict-effect', {
       affectsBoundRatings: false,
@@ -1180,13 +1165,13 @@ describe('ML-CAL-1 G5-PRE — R1–R5 review repair regressions', () => {
       externalAnchors: {
         approvedLineageInventorySha256: sha256Utf8Bytes(inventoryBytes),
         approvedSidecarDigest: s.sidecarDigest,
-        approvedIndependentEffectEvidenceDigests: {
-          [effect.digest]: effect.approvalDigest,
+        approvedIndependentEffectEvidenceByCandidate: {
+          'contradict-effect': effect.digest,
         },
       },
     });
     expect(r.ok).toBe(false);
-    expect(r.reasons).toContain('lineage_disposition_evidence_contradiction');
+    expect(r.reasons).toContain('candidate_contents_unsupported_summary');
   });
 
   it('R3: inventory facts that disagree with retained listing reject', () => {
@@ -1330,7 +1315,19 @@ describe('ML-CAL-1 G5-PRE — R1–R5 review repair regressions', () => {
 });
 
 describe('ML-CAL-1 G5-PRE — R2-A / R5-A review repair regressions', () => {
-  it('R2-A negative: boolean-only contents envelope blocks none_found', () => {
+  it('R2-A: no-write write-effect declaration without producer proof rejects', () => {
+    const c = inWindowCandidate('no-write-summary');
+    const s = buildG5Scenario({
+      githubCandidates: [c],
+      useApprovedEffectEvidence: false,
+    });
+    const r = runG5Pre(s.preInput);
+    expect(r.ok).toBe(false);
+    expect(r.recomputedNoneFoundPermitted).toBe(false);
+    expect(r.reasons).toContain('candidate_contents_unsupported_summary');
+  });
+
+  it('R2-A: boolean-only contents envelope still rejects', () => {
     const c = inWindowCandidate('bool-contents');
     const s = buildG5Scenario({ githubCandidates: [c] });
     const bare = retainBytesByDigest(
@@ -1350,56 +1347,14 @@ describe('ML-CAL-1 G5-PRE — R2-A / R5-A review repair regressions', () => {
       externalAnchors: {
         approvedLineageInventorySha256: sha256Utf8Bytes(inventoryBytes),
         approvedSidecarDigest: s.sidecarDigest,
+        approvedIndependentEffectEvidenceByCandidate: null,
       },
     });
     expect(r.ok).toBe(false);
-    expect(r.recomputedNoneFoundPermitted).toBe(false);
     expect(r.reasons).toContain('candidate_contents_boolean_only');
   });
 
-  it('R2-A negative: boolean-only effect (legacy anchor layer) blocks none_found', () => {
-    const c = inWindowCandidate('bool-effect');
-    const s = buildG5Scenario({ githubCandidates: [c] });
-    const bare = retainBytesByDigest(
-      s.retainDir,
-      Buffer.from(
-        `${stableStringify({
-          schemaVersion: 'ml-cal-1-g5-independent-effect-evidence-v1',
-          kind: 'independent-effect-evidence',
-          candidateKey: 'bool-effect',
-          season: 2026,
-          modelVersion: 'v1',
-          affectsBoundRatings: false,
-          provesNonEffect: true,
-          anchoredObservationDigest: 'a'.repeat(64),
-          note: 'legacy boolean-anchor layer — not proof',
-        })}\n`,
-        'utf8'
-      )
-    );
-    const inv = JSON.parse(s.inventoryBytes.toString('utf8'));
-    inv.invalidatingCandidateArtifacts[0].candidateContentsDigest = null;
-    inv.invalidatingCandidateArtifacts[0].independentEffectEvidenceDigest = bare;
-    inv.noneFoundPermitted = true;
-    const inventoryBytes = Buffer.from(`${stableStringify(inv)}\n`, 'utf8');
-    const r = runG5Pre({
-      ...s.preInput,
-      inventoryBytes,
-      externalAnchors: {
-        approvedLineageInventorySha256: sha256Utf8Bytes(inventoryBytes),
-        approvedSidecarDigest: s.sidecarDigest,
-        // Even a map entry cannot rescue boolean-only schema.
-        approvedIndependentEffectEvidenceDigests: {
-          [bare]: fixtureEffectApprovalDigest(bare),
-        },
-      },
-    });
-    expect(r.ok).toBe(false);
-    expect(r.recomputedNoneFoundPermitted).toBe(false);
-    expect(r.reasons).toContain('effect_evidence_boolean_only');
-  });
-
-  it('R2-A negative: reviewed effect without separate approval blocks none_found', () => {
+  it('R2-A: missing approval remains unresolved', () => {
     const c = inWindowCandidate('unapproved-effect');
     const s = buildG5Scenario({ githubCandidates: [c] });
     const retained = retainEffectEvidence(s.retainDir, 'unapproved-effect', {
@@ -1422,7 +1377,7 @@ describe('ML-CAL-1 G5-PRE — R2-A / R5-A review repair regressions', () => {
       externalAnchors: {
         approvedLineageInventorySha256: sha256Utf8Bytes(inventoryBytes),
         approvedSidecarDigest: s.sidecarDigest,
-        approvedIndependentEffectEvidenceDigests: null,
+        approvedIndependentEffectEvidenceByCandidate: null,
       },
     });
     expect(r.ok).toBe(false);
@@ -1430,10 +1385,10 @@ describe('ML-CAL-1 G5-PRE — R2-A / R5-A review repair regressions', () => {
     expect(r.reasons).toContain('effect_evidence_approval_missing');
   });
 
-  it('R2-A negative: self-hash approval of effect evidence rejected', () => {
-    const c = inWindowCandidate('self-hash-effect');
+  it('R2-A: arbitrary unrelated approval digest rejects', () => {
+    const c = inWindowCandidate('wrong-pin');
     const s = buildG5Scenario({ githubCandidates: [c] });
-    const retained = retainEffectEvidence(s.retainDir, 'self-hash-effect', {
+    const retained = retainEffectEvidence(s.retainDir, 'wrong-pin', {
       affectsBoundRatings: false,
       provesNonEffect: true,
       boundSidecarDigest: s.sidecarDigest,
@@ -1453,33 +1408,105 @@ describe('ML-CAL-1 G5-PRE — R2-A / R5-A review repair regressions', () => {
       externalAnchors: {
         approvedLineageInventorySha256: sha256Utf8Bytes(inventoryBytes),
         approvedSidecarDigest: s.sidecarDigest,
-        approvedIndependentEffectEvidenceDigests: {
-          [retained.digest]: retained.digest, // self-hash
+        approvedIndependentEffectEvidenceByCandidate: {
+          'wrong-pin': 'f'.repeat(64), // unrelated digest
         },
       },
     });
     expect(r.ok).toBe(false);
-    expect(r.reasons).toContain('effect_evidence_approval_self_hash');
+    expect(r.reasons).toContain('effect_evidence_approval_digest_mismatch');
   });
 
-  it('R2-A positive: derived write-effect artifact proves non-effect', () => {
-    const c = inWindowCandidate('derive-ok');
+  it('R2-A: correct externally supplied evidence digest passes', () => {
+    const c = inWindowCandidate('approved-effect-ok');
     const s = buildG5Scenario({ githubCandidates: [c] });
     const r = runG5Pre(s.preInput);
     expect(r.ok).toBe(true);
     expect(r.recomputedNoneFoundPermitted).toBe(true);
   });
 
-  it('R2-A positive: separately approved reviewed effect evidence proves non-effect', () => {
-    const c = inWindowCandidate('approved-effect-ok');
-    const s = buildG5Scenario({
-      githubCandidates: [c],
-      useApprovedEffectEvidence: true,
+  it('R2-A: sidecar / fingerprint / interval mismatches still reject', () => {
+    const c = inWindowCandidate('bind-mismatch');
+    const s = buildG5Scenario({ githubCandidates: [c] });
+    const badSidecar = retainEffectEvidence(s.retainDir, 'bind-mismatch', {
+      affectsBoundRatings: false,
+      provesNonEffect: true,
+      boundSidecarDigest: 'a'.repeat(64),
+      boundRatingFingerprint: s.boundRatingFingerprint,
+      intervalStartInclusive: s.searchWindowStartInclusive,
+      intervalEndInclusive: s.searchWindowEndInclusive,
     });
-    const r = runG5Pre(s.preInput);
-    expect(r.ok).toBe(true);
-    expect(r.recomputedNoneFoundPermitted).toBe(true);
+    const inv = JSON.parse(s.inventoryBytes.toString('utf8'));
+    inv.invalidatingCandidateArtifacts[0].candidateContentsDigest = null;
+    inv.invalidatingCandidateArtifacts[0].independentEffectEvidenceDigest =
+      badSidecar.digest;
+    inv.noneFoundPermitted = true;
+    const inventoryBytes = Buffer.from(`${stableStringify(inv)}\n`, 'utf8');
+    const rSidecar = runG5Pre({
+      ...s.preInput,
+      inventoryBytes,
+      externalAnchors: {
+        approvedLineageInventorySha256: sha256Utf8Bytes(inventoryBytes),
+        approvedSidecarDigest: s.sidecarDigest,
+        approvedIndependentEffectEvidenceByCandidate: {
+          'bind-mismatch': badSidecar.digest,
+        },
+      },
+    });
+    expect(rSidecar.ok).toBe(false);
+    expect(rSidecar.reasons).toContain('effect_evidence_sidecar_mismatch');
+
+    const badFp = retainEffectEvidence(s.retainDir, 'bind-mismatch', {
+      affectsBoundRatings: false,
+      provesNonEffect: true,
+      boundSidecarDigest: s.sidecarDigest,
+      boundRatingFingerprint: 'b'.repeat(64),
+      intervalStartInclusive: s.searchWindowStartInclusive,
+      intervalEndInclusive: s.searchWindowEndInclusive,
+    });
+    inv.invalidatingCandidateArtifacts[0].independentEffectEvidenceDigest =
+      badFp.digest;
+    const invFp = Buffer.from(`${stableStringify(inv)}\n`, 'utf8');
+    const rFp = runG5Pre({
+      ...s.preInput,
+      inventoryBytes: invFp,
+      externalAnchors: {
+        approvedLineageInventorySha256: sha256Utf8Bytes(invFp),
+        approvedSidecarDigest: s.sidecarDigest,
+        approvedIndependentEffectEvidenceByCandidate: {
+          'bind-mismatch': badFp.digest,
+        },
+      },
+    });
+    expect(rFp.ok).toBe(false);
+    expect(rFp.reasons).toContain('effect_evidence_fingerprint_mismatch');
+
+    const badInterval = retainEffectEvidence(s.retainDir, 'bind-mismatch', {
+      affectsBoundRatings: false,
+      provesNonEffect: true,
+      boundSidecarDigest: s.sidecarDigest,
+      boundRatingFingerprint: s.boundRatingFingerprint,
+      intervalStartInclusive: '2026-10-06T18:00:00.000Z', // after window end
+      intervalEndInclusive: '2026-10-06T19:00:00.000Z',
+    });
+    inv.invalidatingCandidateArtifacts[0].independentEffectEvidenceDigest =
+      badInterval.digest;
+    const invIv = Buffer.from(`${stableStringify(inv)}\n`, 'utf8');
+    const rIv = runG5Pre({
+      ...s.preInput,
+      inventoryBytes: invIv,
+      externalAnchors: {
+        approvedLineageInventorySha256: sha256Utf8Bytes(invIv),
+        approvedSidecarDigest: s.sidecarDigest,
+        approvedIndependentEffectEvidenceByCandidate: {
+          'bind-mismatch': badInterval.digest,
+        },
+      },
+    });
+    expect(rIv.ok).toBe(false);
+    expect(rIv.reasons).toContain('effect_evidence_interval_mismatch');
     void effectEvidenceBytes;
+    void retainWriteEffectArtifact;
   });
 
   it('R5-A: empty observer metadata rejects (hash-consistent package)', () => {

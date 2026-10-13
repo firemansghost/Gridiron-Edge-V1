@@ -197,13 +197,6 @@ export function listingPage(
   };
 }
 
-/** Test-only synthetic approval digest — must not equal evidence self-hash. */
-export function fixtureEffectApprovalDigest(evidenceSha256: string): string {
-  return sha256Utf8Bytes(
-    `g5-pre-fixture-only-effect-approval:${evidenceSha256.toLowerCase()}`
-  );
-}
-
 export function effectEvidenceBytes(
   candidateKey: string,
   opts: {
@@ -234,7 +227,10 @@ export function effectEvidenceBytes(
   );
 }
 
-/** Retain reviewed effect evidence; caller must register fixture approval digest. */
+/**
+ * Retain reviewed effect evidence bytes. Caller must independently pin
+ * candidateKey → digest outside the verifier (test-only fixture pins).
+ */
 export function retainEffectEvidence(
   retainDir: string,
   candidateKey: string,
@@ -246,10 +242,10 @@ export function retainEffectEvidence(
     intervalStartInclusive: string;
     intervalEndInclusive: string;
   }
-): { digest: string; approvalDigest: string } {
+): { digest: string } {
   const bytes = effectEvidenceBytes(candidateKey, opts);
   const digest = retainBytesByDigest(retainDir, bytes);
-  return { digest, approvalDigest: fixtureEffectApprovalDigest(digest) };
+  return { digest };
 }
 
 /** Legacy boolean-only contents envelope — used only in R2-A negative regressions. */
@@ -394,8 +390,8 @@ export interface G5ScenarioOptions {
   /** Inventory dispositions; default reconciles via derived write-effect artifacts. */
   dispositions?: MlCal1G5InventoryCandidate[];
   /**
-   * When true (and dispositions omitted), prove not_invalidating via externally
-   * approved reviewed effect evidence instead of contents derivation.
+   * When false, omit default reviewed-effect pins (negatives / custom
+   * dispositions). Default positives use independently pinned reviewed effect.
    */
   useApprovedEffectEvidence?: boolean;
   /** Override inventory fields after build. */
@@ -542,12 +538,13 @@ export function buildG5Scenario(opts: G5ScenarioOptions = {}): G5Scenario {
     pageDigests[sourceId] = retainPage(retainDir, page);
   }
 
-  // Default: not_invalidating via derived write-effect artifact (no rating write),
-  // or via separately approved reviewed effect evidence when requested.
+  // Default positives: independently pinned reviewed-effect evidence
+  // (write-effect summaries are quarantined as unsupported).
+  const pinReviewedEffect = opts.useApprovedEffectEvidence !== false;
   let dispositions: MlCal1G5InventoryCandidate[] =
     opts.dispositions ??
     githubCandidates.map((c) => {
-      if (opts.useApprovedEffectEvidence === true) {
+      if (pinReviewedEffect) {
         const retained = retainEffectEvidence(retainDir, c.candidateKey, {
           affectsBoundRatings: false,
           provesNonEffect: true,
@@ -556,7 +553,8 @@ export function buildG5Scenario(opts: G5ScenarioOptions = {}): G5Scenario {
           intervalStartInclusive: winStart,
           intervalEndInclusive: checked,
         });
-        effectApprovals[retained.digest] = retained.approvalDigest;
+        // Independently record expected evidence digest by candidate identity.
+        effectApprovals[c.candidateKey] = retained.digest;
         effectDigest = retained.digest;
         return {
           candidateKey: c.candidateKey,
@@ -576,6 +574,7 @@ export function buildG5Scenario(opts: G5ScenarioOptions = {}): G5Scenario {
           resolvedDisposition: 'not_invalidating' as const,
         };
       }
+      // No pin path — leave unresolved contents for quarantine negatives.
       const cd = retainWriteEffectArtifact(retainDir, c, {
         writesTeamSeasonRatings: false,
       });
@@ -697,7 +696,7 @@ export function buildG5Scenario(opts: G5ScenarioOptions = {}): G5Scenario {
         ? null
         : inventorySha256,
       approvedSidecarDigest: sealed.sidecarDigest,
-      approvedIndependentEffectEvidenceDigests:
+      approvedIndependentEffectEvidenceByCandidate:
         Object.keys(effectApprovals).length > 0 ? effectApprovals : null,
     },
     claimedApprovedObservationPackageDigest: opts.claimPackageApprovalWithoutPin
