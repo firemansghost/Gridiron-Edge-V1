@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "ml-cal-1-g5-pre-fixture-anchors-v1",
+  "kind": "independently-supplied-fixture-anchors",
+  "provenance": "test-only",
+  "notes": [
+    "These anchors identify retained fixture identities used by G5-PRE offline tests.",
+    "They are not live approval pins and do not authorize portable liveAccepted.",
+    "Combined G5 design upload SHA 5648e870… is the Pasted-text review object, not DESIGN||RECOVERY."
+  ],
+  "acceptedDesignStandaloneSha256": "bc292e06ce78531b7290833922abe4add9be3af854fe15c599d9bcd1dc1c7a8b",
+  "acceptedDesignCombinedUploadSha256": "5648e8708ed90188d34ba3ede327fc0650c4b72afaaf237312150321d1ff27a3",
+  "acceptedG4Tip": "6c2b31069b8805c7f2d171da1e04bf47885f237d",
+  "inheritedSyntheticW6": {
+    "archiveZipSha256": "fc477ffdb0b3f306816988e988442f8f708304c94bbe1a6b4c336b93c8fa5d97",
+    "reportMemberSha256": "2dcbfe96023bf1273ff4a385aeaa3297afb99a9b3d2da80d5f87dd8e09024dab"
+  },
+  "inheritedWeek5Commit": {
+    "archiveZipSha256": "b0177de089237876c2e258fb97d84af3803ef7d1e7402cae853670ee8a6cd316",
+    "reportMemberSha256": "c20b789ce45b58362a23b2ab2a69184fda2a39377c99d58db6268376b79a2e1e",
+    "fullWeightEligible": false
+  },
+  "requiredSourceCatalog": [
+    "github-actions-lifecycle-artifacts",
+    "local-evidence-retain-store",
+    "lifecycle-report-index",
+    "rating-revision-probe"
+  ],
+  "wholePackageApprovalEnabled": false
+}
