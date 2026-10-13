@@ -409,6 +409,161 @@ describe('ML-CAL-1 G4 pooler preflight real adapter — failures', () => {
   });
 });
 
+describe('ML-CAL-1 G4 pooler preflight real adapter — F1 sequence latches', () => {
+  it('rejects metadata query before successful READ ONLY', async () => {
+    const { prisma, trace } = createMockParent({});
+    const adapter = createG4PoolerPreflightRealAdapter({
+      prisma,
+      enabled: true,
+    });
+    await expect(
+      adapter.withRepeatableReadTransaction(async (c) =>
+        c.queryTransactionMetadata()
+      )
+    ).rejects.toThrow(/read_only_not_set_before_metadata/);
+    expect(trace.map((t) => t.kind)).toEqual(['transaction_open']);
+    expect(trace.some((t) => t.kind === 'query')).toBe(false);
+  });
+
+  it('rejects when callback omits metadata query', async () => {
+    const { prisma } = createMockParent({});
+    const adapter = createG4PoolerPreflightRealAdapter({
+      prisma,
+      enabled: true,
+    });
+    await expect(
+      adapter.withRepeatableReadTransaction(async (c) => {
+        await c.setTransactionReadOnly();
+        return { skipped: true };
+      })
+    ).rejects.toThrow(/metadata_not_obtained/);
+  });
+
+  it('swallowed SET READ ONLY failure cannot yield successful TX output', async () => {
+    const { prisma } = createMockParent({ failSetRo: true });
+    const adapter = createG4PoolerPreflightRealAdapter({
+      prisma,
+      enabled: true,
+    });
+    await expect(
+      adapter.withRepeatableReadTransaction(async (c) => {
+        try {
+          await c.setTransactionReadOnly();
+        } catch {
+          /* swallow */
+        }
+        return { ok: true };
+      })
+    ).rejects.toThrow(/set_ro_failed/);
+  });
+
+  it('swallowed metadata failure cannot yield successful TX output', async () => {
+    const { prisma } = createMockParent({ failMetadata: true });
+    const adapter = createG4PoolerPreflightRealAdapter({
+      prisma,
+      enabled: true,
+    });
+    await expect(
+      adapter.withRepeatableReadTransaction(async (c) => {
+        await c.setTransactionReadOnly();
+        try {
+          await c.queryTransactionMetadata();
+        } catch {
+          /* swallow */
+        }
+        return { ok: true };
+      })
+    ).rejects.toThrow(/metadata_query_failed/);
+  });
+
+  it('transaction rejection after callback still fails closed', async () => {
+    const { prisma } = createMockParent({ rejectAfterCallback: true });
+    const adapter = createG4PoolerPreflightRealAdapter({
+      prisma,
+      enabled: true,
+    });
+    await expect(
+      adapter.withRepeatableReadTransaction(async (c) => {
+        await c.setTransactionReadOnly();
+        return c.queryTransactionMetadata();
+      })
+    ).rejects.toThrow(/transaction_lost_after_metadata/);
+  });
+});
+
+describe('ML-CAL-1 G4 pooler preflight real adapter — F2 immutable gate/options', () => {
+  it('mutating caller options after construction cannot re-enable a disabled adapter', async () => {
+    const { prisma } = createMockParent({});
+    const options = { prisma, enabled: false as unknown };
+    const adapter = createG4PoolerPreflightRealAdapter(options);
+    expect(adapter.enabled).toBe(false);
+    options.enabled = true;
+    expect(adapter.enabled).toBe(false);
+    await expect(
+      adapter.withRepeatableReadTransaction(async () => null)
+    ).rejects.toThrow(/preflight_adapter_disabled/);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('mutating caller options after construction cannot disable an enabled adapter', async () => {
+    const { prisma } = createMockParent({});
+    const options = { prisma, enabled: true as unknown };
+    const adapter = createG4PoolerPreflightRealAdapter(options);
+    expect(adapter.enabled).toBe(true);
+    options.enabled = false;
+    expect(adapter.enabled).toBe(true);
+    const meta = await adapter.withRepeatableReadTransaction(async (c) => {
+      await c.setTransactionReadOnly();
+      return c.queryTransactionMetadata();
+    });
+    expect(meta.transactionTimestamp).toBe(DB_TS);
+  });
+
+  it('pinned transaction options resist runtime mutation', async () => {
+    const { prisma, trace } = createMockParent({});
+    const adapter = createG4PoolerPreflightRealAdapter({
+      prisma,
+      enabled: true,
+    });
+    const opts = adapter.transactionOptions as {
+      maxWait: number;
+      timeout: number;
+      isolationLevel: Prisma.TransactionIsolationLevel;
+    };
+    expect(() => {
+      opts.maxWait = 1;
+    }).toThrow();
+    expect(() => {
+      opts.timeout = 1;
+    }).toThrow();
+    expect(adapter.transactionOptions.maxWait).toBe(
+      ML_CAL_1_G4_PREFLIGHT_TX_MAX_WAIT_MS
+    );
+    expect(adapter.transactionOptions.timeout).toBe(
+      ML_CAL_1_G4_PREFLIGHT_TX_TIMEOUT_MS
+    );
+
+    // Module-level freeze also resists mutation.
+    const shared = ML_CAL_1_G4_PREFLIGHT_TX_OPTIONS as {
+      maxWait: number;
+    };
+    expect(() => {
+      shared.maxWait = 999;
+    }).toThrow();
+
+    await adapter.withRepeatableReadTransaction(async (c) => {
+      await c.setTransactionReadOnly();
+      return c.queryTransactionMetadata();
+    });
+    const open = trace[0] as Extract<TraceEntry, { kind: 'transaction_open' }>;
+    expect(open.options).toEqual({
+      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+      maxWait: 10_000,
+      timeout: 15_000,
+    });
+  });
+});
+
 describe('ML-CAL-1 G4 pooler preflight real adapter — fixture compatibility', () => {
   it('existing fixture mock path unchanged; mock success is not deployed acceptance', async () => {
     const root = fs.mkdtempSync(

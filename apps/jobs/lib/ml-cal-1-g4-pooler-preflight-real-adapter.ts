@@ -48,11 +48,16 @@ export const ML_CAL_1_G4_PREFLIGHT_BASE_253_TIP =
 export const ML_CAL_1_G4_PREFLIGHT_TX_MAX_WAIT_MS = 10_000 as const;
 export const ML_CAL_1_G4_PREFLIGHT_TX_TIMEOUT_MS = 15_000 as const;
 
-export const ML_CAL_1_G4_PREFLIGHT_TX_OPTIONS = {
+/** Frozen pinned TX options — runtime mutation must not alter adapter behavior. */
+export const ML_CAL_1_G4_PREFLIGHT_TX_OPTIONS: Readonly<{
+  isolationLevel: Prisma.TransactionIsolationLevel;
+  maxWait: number;
+  timeout: number;
+}> = Object.freeze({
   isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
   maxWait: ML_CAL_1_G4_PREFLIGHT_TX_MAX_WAIT_MS,
   timeout: ML_CAL_1_G4_PREFLIGHT_TX_TIMEOUT_MS,
-} as const;
+});
 
 /** Exact allowlisted SET — no interpolation. */
 export const ML_CAL_1_G4_PREFLIGHT_SET_READ_ONLY_SQL =
@@ -111,9 +116,14 @@ export interface MlCal1G4PreflightRealAdapterOptions {
 
 export interface MlCal1G4PreflightRealAdapter extends MlCal1G4PreflightTxAdapter {
   readonly kind: typeof ML_CAL_1_G4_PREFLIGHT_REAL_ADAPTER_KIND;
+  /** Immutable construction-time enable latch (not live options.enabled). */
   readonly enabled: boolean;
-  /** Pinned options object identity for tests. */
-  readonly transactionOptions: typeof ML_CAL_1_G4_PREFLIGHT_TX_OPTIONS;
+  /** Frozen pinned TX options copy. */
+  readonly transactionOptions: Readonly<{
+    isolationLevel: Prisma.TransactionIsolationLevel;
+    maxWait: number;
+    timeout: number;
+  }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -225,6 +235,9 @@ function sanitizeAdapterError(e: unknown): Error {
 /**
  * Create a metadata-only real adapter. Does not connect, query, or open a TX.
  * Does not read environment variables or credentials.
+ *
+ * Enablement is latched once at construction (`enabled === true` only). Mutating
+ * the caller's options object afterward cannot re-enable or disable execution.
  */
 export function createG4PoolerPreflightRealAdapter(
   options: MlCal1G4PreflightRealAdapterOptions
@@ -239,21 +252,27 @@ export function createG4PoolerPreflightRealAdapter(
     throw new Error('preflight_adapter_prisma_invalid');
   }
 
-  const enabled = options.enabled === true;
+  // F2: single immutable construction-time boolean — not live options.enabled.
+  const enabledAtConstruction = options.enabled === true;
   const prisma = options.prisma;
+  const frozenTxOptions = Object.freeze({
+    isolationLevel: ML_CAL_1_G4_PREFLIGHT_TX_OPTIONS.isolationLevel,
+    maxWait: ML_CAL_1_G4_PREFLIGHT_TX_OPTIONS.maxWait,
+    timeout: ML_CAL_1_G4_PREFLIGHT_TX_OPTIONS.timeout,
+  });
 
   const adapter: MlCal1G4PreflightRealAdapter = {
     kind: ML_CAL_1_G4_PREFLIGHT_REAL_ADAPTER_KIND,
-    enabled,
-    transactionOptions: ML_CAL_1_G4_PREFLIGHT_TX_OPTIONS,
+    enabled: enabledAtConstruction,
+    transactionOptions: frozenTxOptions,
 
     async withRepeatableReadTransaction<T>(
       fn: (client: MlCal1G4PreflightTxClient) => Promise<T>
     ): Promise<T> {
       try {
-        assertEnabled(options.enabled);
+        assertEnabled(enabledAtConstruction);
 
-        return await prisma.$transaction(async (tx) => {
+        const txResult = await prisma.$transaction(async (tx) => {
           if (tx == null || typeof tx !== 'object') {
             throw new Error('transaction_client_missing');
           }
@@ -264,31 +283,81 @@ export function createG4PoolerPreflightRealAdapter(
             throw new Error('transaction_client_query_missing');
           }
 
+          // F1: latches — SET/metadata/validation failures cannot be swallowed
+          // by the callback into a successful TX return.
+          let readOnlyCompleted = false;
+          let metadataValidated = false;
+          let latchedFailure: unknown = null;
+
+          const latchFailure = (e: unknown): never => {
+            latchedFailure = e;
+            throw e;
+          };
+
           const client: MlCal1G4PreflightTxClient = {
             async setTransactionReadOnly() {
-              await tx.$executeRaw(ML_CAL_1_G4_PREFLIGHT_SET_READ_ONLY_PRISMA_SQL);
+              try {
+                await tx.$executeRaw(
+                  ML_CAL_1_G4_PREFLIGHT_SET_READ_ONLY_PRISMA_SQL
+                );
+                readOnlyCompleted = true;
+              } catch (e) {
+                latchFailure(e);
+              }
             },
             async queryTransactionMetadata() {
-              const rows = await tx.$queryRaw(
-                ML_CAL_1_G4_PREFLIGHT_METADATA_PRISMA_SQL
-              );
-              return validatePreflightMetadataRows(rows);
+              if (!readOnlyCompleted) {
+                latchFailure(new Error('read_only_not_set_before_metadata'));
+              }
+              try {
+                const rows = await tx.$queryRaw(
+                  ML_CAL_1_G4_PREFLIGHT_METADATA_PRISMA_SQL
+                );
+                const meta = validatePreflightMetadataRows(rows);
+                metadataValidated = true;
+                return meta;
+              } catch (e) {
+                latchFailure(e);
+              }
             },
           };
 
-          return await fn(client);
+          let callbackResult: T;
+          try {
+            callbackResult = await fn(client);
+          } catch (e) {
+            if (latchedFailure != null) {
+              throw latchedFailure;
+            }
+            throw e;
+          }
+
+          if (latchedFailure != null) {
+            throw latchedFailure;
+          }
+          if (!readOnlyCompleted) {
+            throw new Error('read_only_not_completed');
+          }
+          if (!metadataValidated) {
+            throw new Error('metadata_not_obtained');
+          }
+
+          return callbackResult;
         }, {
-          isolationLevel: ML_CAL_1_G4_PREFLIGHT_TX_OPTIONS.isolationLevel,
-          maxWait: ML_CAL_1_G4_PREFLIGHT_TX_OPTIONS.maxWait,
-          timeout: ML_CAL_1_G4_PREFLIGHT_TX_OPTIONS.timeout,
+          isolationLevel: frozenTxOptions.isolationLevel,
+          maxWait: frozenTxOptions.maxWait,
+          timeout: frozenTxOptions.timeout,
         });
+
+        // Successful $transaction completion awaited above before return.
+        return txResult;
       } catch (e) {
         throw sanitizeAdapterError(e);
       }
     },
   };
 
-  return adapter;
+  return Object.freeze(adapter);
 }
 
 /** SQL text allowlist for strict mock assertions (no dynamic SQL). */
