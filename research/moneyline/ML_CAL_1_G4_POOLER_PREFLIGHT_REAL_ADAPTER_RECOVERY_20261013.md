@@ -14,10 +14,13 @@
 | Branch | `feat/ml-cal-1-g4-pooler-preflight-real-adapter-v1` |
 | Exact base (#253 tip) | `7375d9ba1b3e8c1d5b0b337958b537cc0334fc10` |
 | Pre-repair head | `47b985b1a7480248f859499af5b71492947ae95a` |
-| Post-repair head | `65a1f5fd8b5c79d899ec7d80e5fac2c3ffdfe323` |
+| F1–F2 repair commit | `65a1f5fd8b5c79d899ec7d80e5fac2c3ffdfe323` |
+| Tip (recovery pin) | `07279ceaebf1aa4e75bb219874790771c582a2da` |
 | PR base branch | `feat/ml-cal-1-g4-pooler-preflight-fixture-v1` |
 | G5-PRE parent | `1683ce36fbb5a981a2b3ba3d8a9b90ea8da37f25` |
 | Draft PR | https://github.com/firemansghost/Gridiron-Edge-V1/pull/254 |
+| Observed CI (tip) | run `38472717606`, job `115555633038` — success |
+| CI checkout | synthetic merge `6d23a09ad5ff3087969b7dda2a3b5301cdfff441` = Merge `07279ce…` into `7375d9b…` (not main) |
 
 Sibling fixture worktree (do not reset): `Gridiron-Edge-V1-ml-cal-1-g4-preflight` @ `7375d9b`.  
 Untracked G5 assessment/recovery remain in `Gridiron-Edge-V1-ml-cal-1-g5-pre`.
