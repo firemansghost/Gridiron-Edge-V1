@@ -15,12 +15,13 @@
 | Exact base (#253 tip) | `7375d9ba1b3e8c1d5b0b337958b537cc0334fc10` |
 | Pre-repair head | `47b985b1a7480248f859499af5b71492947ae95a` |
 | F1–F2 repair commit | `65a1f5fd8b5c79d899ec7d80e5fac2c3ffdfe323` |
-| Tip (recovery pin) | `07279ceaebf1aa4e75bb219874790771c582a2da` |
+| Tip (recovery pin) | `dea8e9413deee3cf2a7269e5004f70d2b700860d` |
 | PR base branch | `feat/ml-cal-1-g4-pooler-preflight-fixture-v1` |
 | G5-PRE parent | `1683ce36fbb5a981a2b3ba3d8a9b90ea8da37f25` |
 | Draft PR | https://github.com/firemansghost/Gridiron-Edge-V1/pull/254 |
-| Observed CI (tip) | run `38472717606`, job `115555633038` — success |
-| CI checkout | synthetic merge `6d23a09ad5ff3087969b7dda2a3b5301cdfff441` = Merge `07279ce…` into `7375d9b…` (not main) |
+| Observed CI (F1–F2 code tip `07279ce`) | run `38472717606`, job `115555633038` — success; checkout `6d23a09…` = Merge `07279ce…` into `7375d9b…` |
+| Observed CI (current tip) | run `38473048187`, job `115556757870` — success |
+| CI checkout (current tip) | synthetic merge `d237586` = Merge `dea8e9413deee3cf2a7269e5004f70d2b700860d` into `7375d9ba1b3e8c1d5b0b337958b537cc0334fc10` (PR base #253 tip; not main) |
 
 Sibling fixture worktree (do not reset): `Gridiron-Edge-V1-ml-cal-1-g4-preflight` @ `7375d9b`.  
 Untracked G5 assessment/recovery remain in `Gridiron-Edge-V1-ml-cal-1-g5-pre`.
@@ -49,11 +50,20 @@ Untracked G5 assessment/recovery remain in `Gridiron-Edge-V1-ml-cal-1-g5-pre`.
 | F1 | Transaction-local sequence: READ ONLY must complete before metadata; validated metadata required before callback completion; SET/metadata/validation failures latched so callbacks cannot swallow them into successful TX output; await `$transaction` completion before return; fixed SQL + same TX client preserved |
 | F2 | `adapter.enabled` and execution gate use one immutable construction-time boolean (`enabledAtConstruction`); frozen per-adapter TX options copy + frozen module-level `ML_CAL_1_G4_PREFLIGHT_TX_OPTIONS`; mutating caller `options` after construction cannot re-enable/disable |
 
-### Validation summary (local, pre-push)
+### Validation summary
 
-- Real-adapter suite including F1/F2 regressions
-- Accepted fixture-preflight suite
-- Binding / G2 / G3 / G4 inherited regressions
+Local (pre-push of F1–F2 repair):
+
+- Real-adapter suite including F1/F2 regressions — pass
+- Accepted fixture-preflight suite — pass
+- Binding / G2 / G3 / G4 inherited regressions — pass
+
+Exact-head CI (`pull_request` on #254):
+
+- headSha `dea8e9413deee3cf2a7269e5004f70d2b700860d` (tip)
+- checkout: `refs/remotes/pull/254/merge` → `d237586` (“Merge dea8e94… into 7375d9b…”)
+- job `targeted-tests` success (`38473048187` / `115556757870`)
+- Prior F1–F2 code tip CI also green: headSha `07279ce…`, checkout `6d23a09…` into same #253 base
 
 ---
 
