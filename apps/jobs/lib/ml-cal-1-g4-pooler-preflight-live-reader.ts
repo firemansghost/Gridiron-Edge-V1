@@ -30,6 +30,7 @@ import {
   ML_CAL_1_G4_PREFLIGHT_PACKAGE_SCHEMA_LIVE,
   ML_CAL_1_G4_PREFLIGHT_PACKAGE_SCHEMA_MOCK,
   ML_CAL_1_G4_PREFLIGHT_PACKAGE_SCHEMA_PROBE,
+  ML_CAL_1_G4_PREFLIGHT_INVALIDATION_MEMBER,
   ML_CAL_1_G4_PREFLIGHT_REQUIRED_MEMBERS,
   normalizeNonsecretConnectionDescriptor,
   type MlCal1G4NonsecretConnectionDescriptor,
@@ -210,6 +211,9 @@ export function readG4NonfixturePreflightPackage(
       }
       return fail([`unexpected_directory_member:${name}`]);
     }
+    if (name === ML_CAL_1_G4_PREFLIGHT_INVALIDATION_MEMBER) {
+      return fail(['package_invalidated']);
+    }
     if (!allow.has(name)) {
       if (name === 'HANDOFF.json' || name.toLowerCase() === 'handoff.json') {
         // Discovered handoff is never a trust anchor; ignore for anchoring but reject as unexpected member
@@ -343,7 +347,11 @@ export function readG4NonfixturePreflightPackage(
 
   // R2: every member exact byte count/digest; no reserialize for digests
   for (const name of ML_CAL_1_G4_PREFLIGHT_REQUIRED_MEMBERS) {
-    if (name === 'PACKAGE_MANIFEST.json' || name === 'PACKAGE_MANIFEST.sha256') {
+    if (
+      name === 'PACKAGE_MANIFEST.json' ||
+      name === 'PACKAGE_MANIFEST.sha256' ||
+      name === 'PUBLICATION_COMPLETION.json'
+    ) {
       continue;
     }
     const meta = memberDigests[name];
@@ -456,11 +464,50 @@ export function readG4NonfixturePreflightPackage(
   if (runMeta.terminalSuccess !== true) {
     reasons.push('run_metadata_terminal_success_missing');
   }
+  // F3: completion/failure contradictions even when hashes recompute
+  if (txEvidence.terminalSuccess === false) {
+    reasons.push('tx_evidence_terminal_success_false');
+  }
+  if (
+    txEvidence.terminalSuccess != null &&
+    txEvidence.terminalSuccess !== true &&
+    txEvidence.terminalSuccess !== false
+  ) {
+    reasons.push('tx_evidence_terminal_success_invalid');
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(txEvidence, 'failureReason') &&
+    txEvidence.failureReason != null &&
+    txEvidence.failureReason !== ''
+  ) {
+    reasons.push('tx_evidence_failure_reason_present');
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(runMeta, 'failureReason') &&
+    runMeta.failureReason != null &&
+    runMeta.failureReason !== ''
+  ) {
+    reasons.push('run_metadata_failure_reason_present');
+  }
+  if (
+    runMeta.terminalSuccess === true &&
+    (txEvidence.terminalSuccess === false ||
+      (typeof txEvidence.failureReason === 'string' &&
+        txEvidence.failureReason.length > 0))
+  ) {
+    reasons.push('run_tx_success_failure_contradiction');
+  }
   if (runMeta.transactionCompleted !== true) {
     reasons.push('run_metadata_transaction_incomplete');
   }
   if (txEvidence.transactionCompleted !== true) {
     reasons.push('tx_evidence_transaction_incomplete');
+  }
+  if (
+    runMeta.transactionCompleted === true &&
+    txEvidence.transactionCompleted === false
+  ) {
+    reasons.push('run_tx_completion_contradiction');
   }
   for (const [label, obj] of [
     ['run_metadata', runMeta],
@@ -588,6 +635,88 @@ export function readG4NonfixturePreflightPackage(
   }
   if (tStart != null && tEnd != null && tStart > tEnd) {
     reasons.push('preflight_clock_reversed');
+  }
+
+  // F3: server clock diagnostics must be finite valid instants (cross-member)
+  const validateDiagnostics = (
+    diags: unknown,
+    label: string
+  ): void => {
+    if (diags == null) return;
+    if (!isPlainObject(diags)) {
+      reasons.push(`${label}_diagnostics_not_object`);
+      return;
+    }
+    for (const [k, v] of Object.entries(diags)) {
+      const ms = parseIsoMs(v);
+      if (ms == null) {
+        reasons.push(`${label}_diagnostic_invalid:${k}`);
+        continue;
+      }
+      if (
+        tStart != null &&
+        tEnd != null &&
+        !(tStart <= ms && ms <= tEnd)
+      ) {
+        reasons.push(`${label}_diagnostic_out_of_bounds:${k}`);
+      }
+    }
+  };
+  validateDiagnostics(runMeta.serverClockDiagnostics, 'run');
+  validateDiagnostics(txEvidence.serverClockDiagnostics, 'tx');
+  if (
+    isPlainObject(runMeta.serverClockDiagnostics) &&
+    isPlainObject(txEvidence.serverClockDiagnostics)
+  ) {
+    const runKeys = Object.keys(runMeta.serverClockDiagnostics).sort();
+    const txKeys = Object.keys(txEvidence.serverClockDiagnostics).sort();
+    if (runKeys.join(',') !== txKeys.join(',')) {
+      reasons.push('run_tx_diagnostics_keys_mismatch');
+    } else {
+      for (const k of runKeys) {
+        if (
+          runMeta.serverClockDiagnostics[k] !==
+          txEvidence.serverClockDiagnostics[k]
+        ) {
+          reasons.push(`run_tx_diagnostic_mismatch:${k}`);
+        }
+      }
+    }
+  }
+
+  // F5: publication completion evidence required for accepted success
+  const completionParsed = parseJsonObject(
+    fs.readFileSync(path.join(packageDir, 'PUBLICATION_COMPLETION.json')),
+    'publication_completion'
+  );
+  if (completionParsed.ok === false) {
+    reasons.push(completionParsed.reason);
+  } else {
+    const completion = completionParsed.value;
+    if (completion.kind !== 'g4-pooler-preflight-publication-completion') {
+      reasons.push('publication_completion_kind_mismatch');
+    }
+    if (completion.preflightId !== preflightId) {
+      reasons.push('publication_completion_preflight_id_mismatch');
+    }
+    if (completion.publicationComplete !== true) {
+      reasons.push('publication_incomplete');
+    }
+    if (completion.terminalSuccess !== true) {
+      reasons.push('publication_completion_terminal_success_missing');
+    }
+    if (completion.manifestSha256 !== recomputedManifestSha) {
+      reasons.push('publication_completion_manifest_mismatch');
+    }
+    if (completion.liveAccepted !== false) {
+      reasons.push('publication_completion_live_accepted');
+    }
+    if (completion.approved !== false) {
+      reasons.push('publication_completion_approved_forbidden');
+    }
+    if (asProvenanceClass(completion.provenanceClass) !== provenanceClass) {
+      reasons.push('publication_completion_provenance_mismatch');
+    }
   }
 
   // Target binding — expected must be independently supplied

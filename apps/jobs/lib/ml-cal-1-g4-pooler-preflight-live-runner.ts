@@ -62,7 +62,11 @@ export const ML_CAL_1_G4_PREFLIGHT_REQUIRED_MEMBERS = [
   'PROVENANCE.json',
   'PACKAGE_MANIFEST.json',
   'PACKAGE_MANIFEST.sha256',
+  'PUBLICATION_COMPLETION.json',
 ] as const;
+
+export const ML_CAL_1_G4_PREFLIGHT_INVALIDATION_MEMBER =
+  'PACKAGE_INVALIDATED.json' as const;
 
 const SECRETISH =
   /(api[_-]?key\s*[:=]\s*\S+|password\s*[:=]\s*\S+|authorization\s*[:=]\s*\S+|bearer\s+[a-z0-9._\-+\/=]{8,}|ghp_[A-Za-z0-9]+|(DATABASE_URL|DIRECT_URL|SHADOW_DATABASE_URL)\s*[:=]\s*\S+|postgres(ql)?:\/\/\S+)/i;
@@ -222,17 +226,42 @@ function isSymlinkOrJunction(p: string): boolean {
   }
 }
 
-function assertWithinRoot(root: string, candidate: string): string {
+/**
+ * Lexical + physical containment. Rejects symlink/junction components and
+ * realpath escapes before any mutation toward candidate.
+ */
+function assertPhysicalContainment(root: string, candidate: string): string {
   const rootReal = fs.realpathSync(root);
   const candAbs = path.resolve(candidate);
-  if (candAbs.includes('..')) {
-    // normalize check
-  }
   const rel = path.relative(rootReal, candAbs);
   if (rel.startsWith('..') || path.isAbsolute(rel)) {
     throw new Error('path_escape');
   }
+  let walk = rootReal;
+  for (const part of rel.split(path.sep).filter(Boolean)) {
+    walk = path.join(walk, part);
+    if (fs.existsSync(walk) && isSymlinkOrJunction(walk)) {
+      throw new Error('path_symlink_component');
+    }
+  }
+  const parent = path.dirname(candAbs);
+  if (fs.existsSync(parent)) {
+    if (isSymlinkOrJunction(parent)) {
+      throw new Error('path_symlink_component');
+    }
+    const parentReal = fs.realpathSync(parent);
+    if (
+      parentReal !== rootReal &&
+      !parentReal.startsWith(rootReal + path.sep)
+    ) {
+      throw new Error('path_escape');
+    }
+  }
   return candAbs;
+}
+
+function assertWithinRoot(root: string, candidate: string): string {
+  return assertPhysicalContainment(root, candidate);
 }
 
 export function assertMockRetainRoot(retainRoot: string): {
@@ -299,9 +328,24 @@ export function ensureOperatorLayout(retainRoot: string): {
   for (const sub of ML_CAL_1_G4_PREFLIGHT_SUBTREES) {
     try {
       const p = path.join(root, sub);
-      assertWithinRoot(root, p);
-      fs.mkdirSync(p, { recursive: true });
-      if (isSymlinkOrJunction(p)) reasons.push(`symlink_in_layout:${sub}`);
+      if (fs.existsSync(p) && isSymlinkOrJunction(p)) {
+        reasons.push(`symlink_in_layout:${sub}`);
+        continue;
+      }
+      assertPhysicalContainment(root, p);
+      if (!fs.existsSync(p)) {
+        fs.mkdirSync(p, { recursive: true });
+      }
+      if (isSymlinkOrJunction(p)) {
+        reasons.push(`symlink_in_layout:${sub}`);
+        continue;
+      }
+      const rootReal = fs.realpathSync(root);
+      const subReal = fs.realpathSync(p);
+      const relSub = path.relative(rootReal, subReal);
+      if (relSub !== sub || relSub.startsWith('..') || path.isAbsolute(relSub)) {
+        reasons.push(`layout_escape:${sub}`);
+      }
     } catch (e) {
       reasons.push(`layout_${sub}:${redactError(e)}`);
     }
@@ -527,16 +571,68 @@ export function sealNonfixturePreflightPackage(input: {
     }
     const published = verifyMembersAgainstDigests(finalDir, allDigests);
     if (published.length > 0) {
-      if (input.hooks?.injectFailure === 'after_publish_hash') {
-        return { ok: false, reasons: ['inject_failure_after_publish_hash'] };
-      }
-      return {
-        ok: false,
-        reasons: published.map((r) => `published_${r}`),
-      };
+      const reasons = published.map((r) => `published_${r}`);
+      invalidatePublishedPackage({
+        retainRoot: root,
+        packageDir: finalDir,
+        preflightId: input.preflightId,
+        reasons,
+        provenanceClass: input.provenanceClass,
+      });
+      return { ok: false, reasons };
     }
     if (input.hooks?.injectFailure === 'after_publish_hash') {
+      invalidatePublishedPackage({
+        retainRoot: root,
+        packageDir: finalDir,
+        preflightId: input.preflightId,
+        reasons: ['inject_failure_after_publish_hash'],
+        provenanceClass: input.provenanceClass,
+      });
       return { ok: false, reasons: ['inject_failure_after_publish_hash'] };
+    }
+    // F5: completion evidence only after post-publish verify succeeds
+    const completion = {
+      kind: 'g4-pooler-preflight-publication-completion',
+      preflightId: input.preflightId,
+      provenanceClass: input.provenanceClass,
+      publicationComplete: true as const,
+      terminalSuccess: true as const,
+      manifestSha256,
+      liveAccepted: false as const,
+      approved: false as const,
+      deployedPoolerProof: false as const,
+    };
+    const completionPath = path.join(finalDir, 'PUBLICATION_COMPLETION.json');
+    try {
+      assertPhysicalContainment(root, completionPath);
+      if (isSymlinkOrJunction(finalDir)) {
+        invalidatePublishedPackage({
+          retainRoot: root,
+          packageDir: finalDir,
+          preflightId: input.preflightId,
+          reasons: ['final_dir_symlink'],
+          provenanceClass: input.provenanceClass,
+        });
+        return { ok: false, reasons: ['final_dir_symlink'] };
+      }
+      fs.writeFileSync(
+        completionPath,
+        `${stableStringify(completion)}\n`,
+        'utf8'
+      );
+    } catch (e) {
+      invalidatePublishedPackage({
+        retainRoot: root,
+        packageDir: finalDir,
+        preflightId: input.preflightId,
+        reasons: [`completion_write_failed:${redactError(e)}`],
+        provenanceClass: input.provenanceClass,
+      });
+      return {
+        ok: false,
+        reasons: [`completion_write_failed:${redactError(e)}`],
+      };
     }
     return {
       ok: true,
@@ -560,6 +656,59 @@ export function sealNonfixturePreflightPackage(input: {
   }
 }
 
+/**
+ * Invalidate a published package so it cannot remain reader-accepted success.
+ * Writes invalidation marker then removes the package directory when possible.
+ */
+export function invalidatePublishedPackage(input: {
+  retainRoot: string;
+  packageDir: string;
+  preflightId: string;
+  reasons: string[];
+  provenanceClass: MlCal1G4PreflightProvenanceClass;
+}): { ok: boolean; reasons: string[] } {
+  const extras: string[] = [];
+  try {
+    if (fs.existsSync(input.packageDir)) {
+      try {
+        assertPhysicalContainment(input.retainRoot, input.packageDir);
+      } catch (e) {
+        extras.push(`invalidate_containment:${redactError(e)}`);
+      }
+      const marker = path.join(
+        input.packageDir,
+        ML_CAL_1_G4_PREFLIGHT_INVALIDATION_MEMBER
+      );
+      try {
+        const body = {
+          kind: 'g4-pooler-preflight-package-invalidated',
+          preflightId: input.preflightId,
+          provenanceClass: input.provenanceClass,
+          terminalSuccess: false as const,
+          publicationComplete: false as const,
+          liveAccepted: false as const,
+          approved: false as const,
+          deployedPoolerProof: false as const,
+          reasons: input.reasons.map((r) =>
+            scanSecretish(r) ? '[redacted_reason]' : r
+          ),
+        };
+        fs.writeFileSync(marker, `${stableStringify(body)}\n`, 'utf8');
+      } catch (e) {
+        extras.push(`invalidate_marker:${redactError(e)}`);
+      }
+      try {
+        fs.rmSync(input.packageDir, { recursive: true, force: true });
+      } catch (e) {
+        extras.push(`invalidate_rm:${redactError(e)}`);
+      }
+    }
+  } catch (e) {
+    extras.push(`invalidate_failed:${redactError(e)}`);
+  }
+  return { ok: extras.length === 0, reasons: extras };
+}
+
 export function writeFailureReceipt(input: {
   retainRoot: string;
   preflightId: string;
@@ -572,14 +721,17 @@ export function writeFailureReceipt(input: {
   }
   const gate = assertMockRetainRoot(input.retainRoot);
   if (!gate.ok) return { ok: false, path: null, reasons: gate.reasons };
-  ensureOperatorLayout(gate.root);
-  const p = path.join(
-    gate.root,
-    'preflight',
-    `${input.preflightId}.failure.json`
-  );
+  const layout = ensureOperatorLayout(gate.root);
+  if (!layout.ok) {
+    return { ok: false, path: null, reasons: layout.reasons };
+  }
+  const preflightDir = path.join(layout.root, 'preflight');
+  if (isSymlinkOrJunction(preflightDir)) {
+    return { ok: false, path: null, reasons: ['symlink_in_layout:preflight'] };
+  }
+  const p = path.join(preflightDir, `${input.preflightId}.failure.json`);
   try {
-    assertWithinRoot(gate.root, p);
+    assertPhysicalContainment(layout.root, p);
     if (fs.existsSync(p)) {
       return { ok: false, path: null, reasons: ['failure_receipt_exists'] };
     }
@@ -623,14 +775,15 @@ export function copyPreflightPackageAway(input: {
   }
   const destGate = assertMockRetainRoot(input.destinationRoot);
   if (!destGate.ok) return { ok: false, reasons: destGate.reasons };
-  ensureOperatorLayout(destGate.root);
+  const destLayout = ensureOperatorLayout(destGate.root);
+  if (!destLayout.ok) return { ok: false, reasons: destLayout.reasons };
   const dest = path.join(
-    destGate.root,
+    destLayout.root,
     'review-handoff',
     input.preflightId
   );
   try {
-    assertWithinRoot(destGate.root, dest);
+    assertPhysicalContainment(destLayout.root, dest);
     if (fs.existsSync(dest)) {
       return { ok: false, reasons: ['handoff_exists'] };
     }
@@ -678,8 +831,6 @@ export interface MlCal1G4NonfixturePreflightRunInput {
   authorityId?: string;
   poolerProfileLabel?: string;
   expectedRetainRootLabel?: string;
-  /** When true, allow live provenance class in offline harness for adversarial seal tests only — blocked on CLI. */
-  allowAdversarialLiveSealForTests?: boolean;
   sealHooks?: MlCal1G4PreflightSealHooks;
 }
 
@@ -757,16 +908,43 @@ export async function runG4NonfixturePreflight(
     transactionCompleted: false,
   };
 
+  const refuseWithoutFs = (
+    reasons: string[]
+  ): MlCal1G4NonfixturePreflightRunResult => ({
+    ok: false,
+    reasons,
+    notes: [],
+    preflightId:
+      typeof input.preflightId === 'string' ? input.preflightId : '',
+    provenanceClass:
+      input.provenanceClass === 'mock' ||
+      input.provenanceClass === 'live' ||
+      input.provenanceClass === 'probe'
+        ? input.provenanceClass
+        : 'mock',
+    ...base,
+  });
+
+  // F2: disabled/malformed opt-in — zero clock or filesystem activity
+  if (input.enabled !== true) {
+    return refuseWithoutFs(['preflight_runner_disabled']);
+  }
+
   const fail = async (
     reasons: string[],
-    partial: Partial<MlCal1G4NonfixturePreflightRunResult> = {}
+    partial: Partial<MlCal1G4NonfixturePreflightRunResult> = {},
+    opts: { writeReceipt?: boolean; readClock?: boolean } = {}
   ): Promise<MlCal1G4NonfixturePreflightRunResult> => {
-    const endClock = readInjectedClock(input.now);
-    const observedAt = endClock.ok
-      ? endClock.iso
-      : new Date(0).toISOString();
+    const writeReceipt = opts.writeReceipt !== false;
+    const readClock = opts.readClock !== false;
+    let observedAt = new Date(0).toISOString();
+    if (readClock) {
+      const endClock = readInjectedClock(input.now);
+      observedAt = endClock.ok ? endClock.iso : observedAt;
+    }
     let failureReceiptPath: string | null = null;
     if (
+      writeReceipt &&
       isSafeG4PreflightId(input.preflightId) &&
       typeof input.retainRoot === 'string'
     ) {
@@ -775,11 +953,7 @@ export async function runG4NonfixturePreflight(
         preflightId: input.preflightId,
         reasons,
         observedAt,
-        provenanceClass:
-          input.provenanceClass === 'live' &&
-          !input.allowAdversarialLiveSealForTests
-            ? 'mock'
-            : input.provenanceClass,
+        provenanceClass: 'mock',
       });
       if (fr.ok) failureReceiptPath = fr.path;
     }
@@ -801,27 +975,25 @@ export async function runG4NonfixturePreflight(
     };
   };
 
-  if (input.enabled !== true) {
-    return fail(['preflight_runner_disabled']);
-  }
   if (!isSafeG4PreflightId(input.preflightId)) {
-    return fail(['unsafe_preflight_id']);
+    return fail(['unsafe_preflight_id'], {}, { writeReceipt: false });
   }
   if (
     input.provenanceClass !== 'mock' &&
     input.provenanceClass !== 'live' &&
     input.provenanceClass !== 'probe'
   ) {
-    return fail(['provenance_class_invalid']);
+    return refuseWithoutFs(['provenance_class_invalid']);
   }
   if (input.provenanceClass === 'probe') {
-    return fail(['probe_provenance_not_for_tx_runner']);
+    return refuseWithoutFs(['probe_provenance_not_for_tx_runner']);
   }
-  if (
-    input.provenanceClass === 'live' &&
-    !input.allowAdversarialLiveSealForTests
-  ) {
-    return fail(['live_execution_not_authorized_in_this_build']);
+  // F1: exported runner never seals live-labeled packages from injected mocks
+  if (input.provenanceClass === 'live') {
+    return refuseWithoutFs(['live_execution_not_authorized_in_this_build']);
+  }
+  if (input.provenanceClass !== 'mock') {
+    return refuseWithoutFs(['provenance_class_invalid']);
   }
   if (
     typeof input.runnerCommitSha !== 'string' ||

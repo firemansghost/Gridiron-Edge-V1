@@ -105,8 +105,9 @@ describe('passive import / opt-in gates', () => {
     expect(src).toContain(ML_CAL_1_G4_PREFLIGHT_BASE_254_TIP);
   });
 
-  it('disabled / missing / malformed opt-in: zero TX', async () => {
+  it('disabled / missing / malformed opt-in: zero TX and zero FS', async () => {
     let tx = 0;
+    let clockReads = 0;
     const adapter = {
       async withRepeatableReadTransaction(fn: (c: never) => Promise<unknown>) {
         tx += 1;
@@ -114,12 +115,34 @@ describe('passive import / opt-in gates', () => {
       },
     };
     for (const enabled of [false, undefined, 'true', 1, 'yes', null] as unknown[]) {
-      const input = baseInput({ enabled, txAdapter: adapter });
-      const r = await runG4NonfixturePreflight(input);
+      const retainRoot = tmpRoot('g4-nf-disabled-');
+      const before = fs.existsSync(retainRoot)
+        ? fs.readdirSync(retainRoot)
+        : [];
+      const r = await runG4NonfixturePreflight(
+        baseInput({
+          enabled,
+          txAdapter: adapter,
+          retainRoot,
+          now: () => {
+            clockReads += 1;
+            return new Date(START);
+          },
+        })
+      );
       expect(r.ok).toBe(false);
       expect(r.reasons).toContain('preflight_runner_disabled');
       expect(tx).toBe(0);
+      expect(clockReads).toBe(0);
       expect(r.packageDir).toBeNull();
+      expect(r.failureReceiptPath).toBeNull();
+      const after = fs.existsSync(retainRoot)
+        ? fs.readdirSync(retainRoot)
+        : [];
+      expect(after).toEqual(before);
+      expect(
+        fs.existsSync(path.join(retainRoot, 'preflight'))
+      ).toBe(false);
     }
   });
 
@@ -678,5 +701,189 @@ describe('descriptor equality helper', () => {
         })
       )
     ).toBe(true);
+  });
+});
+
+describe('F1–F5 reviewer reproduction repairs', () => {
+  function rehashPackage(dir: string) {
+    const { createHash } = require('crypto') as typeof import('crypto');
+    const sha = (buf: Buffer) =>
+      createHash('sha256').update(buf).digest('hex');
+    const manifestPath = path.join(dir, 'PACKAGE_MANIFEST.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    for (const name of [
+      'preflight-run-metadata.json',
+      'preflight-tx-evidence.json',
+      'design-correspondence.json',
+      'PROVENANCE.json',
+    ]) {
+      const bytes = fs.readFileSync(path.join(dir, name));
+      manifest.memberDigests[name] = {
+        sha256: sha(bytes),
+        byteCount: bytes.length,
+      };
+    }
+    const manBytes = Buffer.from(`${JSON.stringify(manifest)}\n`);
+    fs.writeFileSync(manifestPath, manBytes);
+    const manSha = sha(manBytes);
+    fs.writeFileSync(path.join(dir, 'PACKAGE_MANIFEST.sha256'), `${manSha}\n`);
+    const completionPath = path.join(dir, 'PUBLICATION_COMPLETION.json');
+    if (fs.existsSync(completionPath)) {
+      const completion = JSON.parse(fs.readFileSync(completionPath, 'utf8'));
+      completion.manifestSha256 = manSha;
+      fs.writeFileSync(
+        completionPath,
+        `${JSON.stringify(completion)}\n`
+      );
+    }
+    return manSha;
+  }
+
+  it('F1: runner refuses live provenance; injected mock cannot seal live label', async () => {
+    const r = await runG4NonfixturePreflight(
+      baseInput({
+        provenanceClass: 'live',
+        preflightId: 'pf-f1-live',
+      })
+    );
+    expect(r.ok).toBe(false);
+    expect(r.reasons).toContain('live_execution_not_authorized_in_this_build');
+    expect(r.packageDir).toBeNull();
+    expect(r.failureReceiptPath).toBeNull();
+    const src = fs.readFileSync(
+      path.join(
+        __dirname,
+        '../lib/ml-cal-1-g4-pooler-preflight-live-runner.ts'
+      ),
+      'utf8'
+    );
+    expect(src).not.toMatch(/allowAdversarialLiveSealForTests/);
+  });
+
+  it('F3: recomputed-hash TX failure/diagnostic contradictions rejected', async () => {
+    const sealed = await runG4NonfixturePreflight(
+      baseInput({ preflightId: 'pf-f3-contra' })
+    );
+    expect(sealed.ok).toBe(true);
+    const dir = sealed.packageDir!;
+    const txPath = path.join(dir, 'preflight-tx-evidence.json');
+    const tx = JSON.parse(fs.readFileSync(txPath, 'utf8'));
+    tx.terminalSuccess = false;
+    tx.failureReason = 'transaction_lost';
+    tx.transactionCompleted = true;
+    tx.serverClockDiagnostics = {
+      clock_timestamp: 'not-a-valid-instant',
+    };
+    fs.writeFileSync(txPath, `${JSON.stringify(tx)}\n`);
+    rehashPackage(dir);
+    const read = readG4NonfixturePreflightPackage(dir, {
+      expectedPreflightId: 'pf-f3-contra',
+      expectedConnection: EXPECTED,
+      expectedManifestSha256: rehashPackage(dir),
+    });
+    expect(read.ok).toBe(false);
+    expect(read.reasons).toEqual(
+      expect.arrayContaining([
+        'tx_evidence_terminal_success_false',
+        'tx_evidence_failure_reason_present',
+        'run_tx_success_failure_contradiction',
+      ])
+    );
+    expect(
+      read.reasons.some((x) => x.startsWith('tx_diagnostic_invalid:'))
+    ).toBe(true);
+    expect(read.terminalSuccess).toBe(false);
+  });
+
+  it('F4: symlinked preflight/ refuses failure write outside retain root', async () => {
+    const root = tmpRoot('g4-nf-f4-');
+    const outside = tmpRoot('g4-nf-f4-out-');
+    fs.mkdirSync(path.join(root, 'staging'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'observations'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'review-handoff'), { recursive: true });
+    const preflightLink = path.join(root, 'preflight');
+    let linked = false;
+    try {
+      fs.symlinkSync(outside, preflightLink, 'junction');
+      linked = true;
+    } catch {
+      linked = false;
+    }
+    if (!linked) {
+      // Linux CI uses dir symlink; Windows may need junction
+      try {
+        fs.symlinkSync(outside, preflightLink, 'dir');
+        linked = true;
+      } catch {
+        linked = false;
+      }
+    }
+    if (!linked) {
+      expect(true).toBe(true);
+      return;
+    }
+    const { writeFailureReceipt } = await import(
+      '../lib/ml-cal-1-g4-pooler-preflight-live-runner'
+    );
+    const fr = writeFailureReceipt({
+      retainRoot: root,
+      preflightId: 'pf-f4-escape',
+      reasons: ['synthetic_failure'],
+      observedAt: END,
+      provenanceClass: 'mock',
+    });
+    expect(fr.ok).toBe(false);
+    expect(
+      fr.reasons.some(
+        (x) =>
+          x === 'symlink_in_layout:preflight' || x.startsWith('layout_escape:')
+      )
+    ).toBe(true);
+    expect(fs.readdirSync(outside)).toEqual([]);
+    const enabledFail = await runG4NonfixturePreflight(
+      baseInput({
+        retainRoot: root,
+        preflightId: 'pf-f4-run',
+        txAdapter: {
+          async withRepeatableReadTransaction() {
+            throw new Error('boom');
+          },
+        },
+      })
+    );
+    expect(enabledFail.ok).toBe(false);
+    expect(fs.readdirSync(outside)).toEqual([]);
+  });
+
+  it('F5: post-publication failure invalidates; reader rejects leftover success', async () => {
+    const root = tmpRoot('g4-nf-f5-');
+    const r = await runG4NonfixturePreflight(
+      baseInput({
+        retainRoot: root,
+        preflightId: 'pf-f5-pub',
+        sealHooks: { injectFailure: 'after_publish_hash' },
+      })
+    );
+    expect(r.ok).toBe(false);
+    expect(r.reasons).toContain('inject_failure_after_publish_hash');
+    const finalDir = path.join(root, 'preflight', 'pf-f5-pub');
+    if (fs.existsSync(finalDir)) {
+      const read = readG4NonfixturePreflightPackage(finalDir, {
+        expectedPreflightId: 'pf-f5-pub',
+        expectedConnection: EXPECTED,
+      });
+      expect(read.ok).toBe(false);
+      expect(read.terminalSuccess).toBe(false);
+      expect(
+        read.reasons.some(
+          (x) =>
+            x === 'package_invalidated' ||
+            x === 'member_missing:PUBLICATION_COMPLETION.json' ||
+            x === 'publication_incomplete'
+        )
+      ).toBe(true);
+    } else {
+      expect(fs.existsSync(finalDir)).toBe(false);
+    }
   });
 });
