@@ -264,6 +264,51 @@ function assertWithinRoot(root: string, candidate: string): string {
   return assertPhysicalContainment(root, candidate);
 }
 
+/** Exact permitted final package path: <retainRoot>/preflight/<safeId>. */
+export function permittedPreflightPackageDir(
+  retainRoot: string,
+  preflightId: string
+): string {
+  return path.resolve(path.join(retainRoot, 'preflight', preflightId));
+}
+
+/**
+ * Remove only a path that remains physically contained under root and is not
+ * the retain root itself. Containment failure → no mutation.
+ */
+function safeRemoveContained(root: string, target: string): {
+  ok: boolean;
+  reason?: string;
+} {
+  try {
+    const rootResolved = path.resolve(root);
+    const targetAbs = path.resolve(target);
+    if (targetAbs === rootResolved) {
+      return { ok: false, reason: 'remove_retain_root_forbidden' };
+    }
+    assertPhysicalContainment(root, targetAbs);
+    if (!fs.existsSync(targetAbs)) {
+      return { ok: true };
+    }
+    if (isSymlinkOrJunction(targetAbs)) {
+      return { ok: false, reason: 'remove_symlink_forbidden' };
+    }
+    const rootReal = fs.realpathSync(root);
+    const targetReal = fs.realpathSync(targetAbs);
+    if (targetReal === rootReal) {
+      return { ok: false, reason: 'remove_retain_root_forbidden' };
+    }
+    const rel = path.relative(rootReal, targetReal);
+    if (rel.startsWith('..') || path.isAbsolute(rel) || rel === '') {
+      return { ok: false, reason: 'remove_escape_forbidden' };
+    }
+    fs.rmSync(targetAbs, { recursive: true, force: true });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: `remove_containment:${redactError(e)}` };
+  }
+}
+
 export function assertMockRetainRoot(retainRoot: string): {
   ok: boolean;
   reasons: string[];
@@ -506,24 +551,41 @@ export function sealNonfixturePreflightPackage(input: {
     }
     const staged = verifyMembersAgainstDigests(stagingDir, allDigests);
     if (staged.length > 0) {
-      fs.rmSync(stagingDir, { recursive: true, force: true });
+      safeRemoveContained(root, stagingDir);
       return { ok: false, reasons: staged.map((r) => `staged_${r}`) };
     }
     if (input.hooks?.onStagingReady) {
       void input.hooks.onStagingReady({ stagingDir, finalDir, claimDir });
     }
+    // Revalidate containment after test hooks before further mutations
+    try {
+      assertPhysicalContainment(root, stagingDir);
+      assertPhysicalContainment(root, finalDir);
+      assertPhysicalContainment(root, claimDir);
+      if (isSymlinkOrJunction(path.join(root, 'preflight'))) {
+        safeRemoveContained(root, stagingDir);
+        return { ok: false, reasons: ['symlink_in_layout:preflight'] };
+      }
+    } catch (e) {
+      safeRemoveContained(root, stagingDir);
+      return {
+        ok: false,
+        reasons: [`post_hook_containment:${redactError(e)}`],
+      };
+    }
     if (input.hooks?.injectFailure === 'after_staging') {
-      fs.rmSync(stagingDir, { recursive: true, force: true });
+      safeRemoveContained(root, stagingDir);
       return { ok: false, reasons: ['inject_failure_after_staging'] };
     }
     try {
+      assertPhysicalContainment(root, claimDir);
       fs.mkdirSync(claimDir);
     } catch (e: unknown) {
       const code =
         e && typeof e === 'object' && 'code' in e
           ? String((e as { code: unknown }).code)
           : '';
-      fs.rmSync(stagingDir, { recursive: true, force: true });
+      safeRemoveContained(root, stagingDir);
       if (code === 'EEXIST') {
         return { ok: false, reasons: ['preflight_package_exists'] };
       }
@@ -533,6 +595,9 @@ export function sealNonfixturePreflightPackage(input: {
       };
     }
     try {
+      // Revalidate again after claim creation / before rename
+      assertPhysicalContainment(root, stagingDir);
+      assertPhysicalContainment(root, finalDir);
       if (input.hooks?.injectFailure === 'after_claim') {
         return { ok: false, reasons: ['inject_failure_after_claim'] };
       }
@@ -553,21 +618,22 @@ export function sealNonfixturePreflightPackage(input: {
         reasons: [`atomic_publish_failed:${redactError(e)}`],
       };
     } finally {
-      try {
-        fs.rmSync(claimDir, { recursive: true, force: true });
-      } catch {
-        /* ignore */
-      }
-      try {
-        if (fs.existsSync(stagingDir)) {
-          fs.rmSync(stagingDir, { recursive: true, force: true });
-        }
-      } catch {
-        /* ignore */
-      }
+      safeRemoveContained(root, claimDir);
+      safeRemoveContained(root, stagingDir);
     }
     if (!fs.existsSync(finalDir)) {
       return { ok: false, reasons: ['atomic_publish_missing_final'] };
+    }
+    try {
+      assertPhysicalContainment(root, finalDir);
+      if (path.resolve(finalDir) !== permittedPreflightPackageDir(root, input.preflightId)) {
+        return { ok: false, reasons: ['final_dir_not_permitted'] };
+      }
+    } catch (e) {
+      return {
+        ok: false,
+        reasons: [`final_containment:${redactError(e)}`],
+      };
     }
     const published = verifyMembersAgainstDigests(finalDir, allDigests);
     if (published.length > 0) {
@@ -642,23 +708,16 @@ export function sealNonfixturePreflightPackage(input: {
       reasons: [],
     };
   } catch (e) {
-    try {
-      fs.rmSync(stagingDir, { recursive: true, force: true });
-    } catch {
-      /* ignore */
-    }
-    try {
-      fs.rmSync(claimDir, { recursive: true, force: true });
-    } catch {
-      /* ignore */
-    }
+    safeRemoveContained(root, stagingDir);
+    safeRemoveContained(root, claimDir);
     return { ok: false, reasons: [`seal_failed:${redactError(e)}`] };
   }
 }
 
 /**
  * Invalidate a published package so it cannot remain reader-accepted success.
- * Writes invalidation marker then removes the package directory when possible.
+ * Containment / path-permission failure returns immediately with zero writes
+ * or removals. Never deletes the retain root or unrelated directories.
  */
 export function invalidatePublishedPackage(input: {
   retainRoot: string;
@@ -667,46 +726,87 @@ export function invalidatePublishedPackage(input: {
   reasons: string[];
   provenanceClass: MlCal1G4PreflightProvenanceClass;
 }): { ok: boolean; reasons: string[] } {
-  const extras: string[] = [];
+  if (!isSafeG4PreflightId(input.preflightId)) {
+    return { ok: false, reasons: ['unsafe_preflight_id'] };
+  }
+  const gate = assertMockRetainRoot(input.retainRoot);
+  if (!gate.ok) {
+    return { ok: false, reasons: gate.reasons };
+  }
+  const root = gate.root;
+  const permitted = permittedPreflightPackageDir(root, input.preflightId);
+  const packageAbs = path.resolve(input.packageDir);
+  if (packageAbs !== permitted) {
+    return { ok: false, reasons: ['invalidate_package_path_not_permitted'] };
+  }
+  if (packageAbs === path.resolve(root)) {
+    return { ok: false, reasons: ['invalidate_retain_root_forbidden'] };
+  }
+
+  // Fail closed BEFORE any write or removal
   try {
-    if (fs.existsSync(input.packageDir)) {
-      try {
-        assertPhysicalContainment(input.retainRoot, input.packageDir);
-      } catch (e) {
-        extras.push(`invalidate_containment:${redactError(e)}`);
-      }
-      const marker = path.join(
-        input.packageDir,
-        ML_CAL_1_G4_PREFLIGHT_INVALIDATION_MEMBER
-      );
-      try {
-        const body = {
-          kind: 'g4-pooler-preflight-package-invalidated',
-          preflightId: input.preflightId,
-          provenanceClass: input.provenanceClass,
-          terminalSuccess: false as const,
-          publicationComplete: false as const,
-          liveAccepted: false as const,
-          approved: false as const,
-          deployedPoolerProof: false as const,
-          reasons: input.reasons.map((r) =>
-            scanSecretish(r) ? '[redacted_reason]' : r
-          ),
-        };
-        fs.writeFileSync(marker, `${stableStringify(body)}\n`, 'utf8');
-      } catch (e) {
-        extras.push(`invalidate_marker:${redactError(e)}`);
-      }
-      try {
-        fs.rmSync(input.packageDir, { recursive: true, force: true });
-      } catch (e) {
-        extras.push(`invalidate_rm:${redactError(e)}`);
-      }
+    const preflightDir = path.join(root, 'preflight');
+    if (fs.existsSync(preflightDir) && isSymlinkOrJunction(preflightDir)) {
+      return { ok: false, reasons: ['symlink_in_layout:preflight'] };
+    }
+    assertPhysicalContainment(root, packageAbs);
+    if (fs.existsSync(packageAbs) && isSymlinkOrJunction(packageAbs)) {
+      return { ok: false, reasons: ['invalidate_package_symlink'] };
     }
   } catch (e) {
-    extras.push(`invalidate_failed:${redactError(e)}`);
+    return {
+      ok: false,
+      reasons: [`invalidate_containment:${redactError(e)}`],
+    };
   }
-  return { ok: extras.length === 0, reasons: extras };
+
+  if (!fs.existsSync(packageAbs)) {
+    return { ok: true, reasons: [] };
+  }
+
+  const marker = path.join(
+    packageAbs,
+    ML_CAL_1_G4_PREFLIGHT_INVALIDATION_MEMBER
+  );
+  try {
+    assertPhysicalContainment(root, marker);
+  } catch (e) {
+    return {
+      ok: false,
+      reasons: [`invalidate_marker_containment:${redactError(e)}`],
+    };
+  }
+
+  try {
+    const body = {
+      kind: 'g4-pooler-preflight-package-invalidated',
+      preflightId: input.preflightId,
+      provenanceClass: input.provenanceClass,
+      terminalSuccess: false as const,
+      publicationComplete: false as const,
+      liveAccepted: false as const,
+      approved: false as const,
+      deployedPoolerProof: false as const,
+      reasons: input.reasons.map((r) =>
+        scanSecretish(r) ? '[redacted_reason]' : r
+      ),
+    };
+    fs.writeFileSync(marker, `${stableStringify(body)}\n`, 'utf8');
+  } catch (e) {
+    return {
+      ok: false,
+      reasons: [`invalidate_marker:${redactError(e)}`],
+    };
+  }
+
+  const removed = safeRemoveContained(root, packageAbs);
+  if (!removed.ok) {
+    return {
+      ok: false,
+      reasons: [removed.reason ?? 'invalidate_rm_failed'],
+    };
+  }
+  return { ok: true, reasons: [] };
 }
 
 export function writeFailureReceipt(input: {

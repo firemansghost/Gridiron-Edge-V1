@@ -22,10 +22,13 @@ import {
   connectionDescriptorsEqual,
   copyPreflightPackageAway,
   deriveNonsecretConnectionDescriptor,
+  invalidatePublishedPackage,
   ML_CAL_1_G4_PREFLIGHT_BASE_254_TIP,
+  ML_CAL_1_G4_PREFLIGHT_INVALIDATION_MEMBER,
   ML_CAL_1_G4_PREFLIGHT_PACKAGE_SCHEMA_LIVE,
   ML_CAL_1_G4_PREFLIGHT_PACKAGE_SCHEMA_MOCK,
   normalizeNonsecretConnectionDescriptor,
+  permittedPreflightPackageDir,
   runG4NonfixturePreflight,
   sealNonfixturePreflightPackage,
   type MlCal1G4NonsecretConnectionDescriptor,
@@ -885,5 +888,176 @@ describe('F1–F5 reviewer reproduction repairs', () => {
     } else {
       expect(fs.existsSync(finalDir)).toBe(false);
     }
+  });
+
+  function listTree(dir: string): string[] {
+    const out: string[] = [];
+    const walk = (d: string, prefix: string) => {
+      for (const name of fs.readdirSync(d).sort()) {
+        const full = path.join(d, name);
+        const rel = prefix ? `${prefix}/${name}` : name;
+        const st = fs.lstatSync(full);
+        if (st.isDirectory() && !st.isSymbolicLink()) {
+          out.push(`${rel}/`);
+          walk(full, rel);
+        } else {
+          out.push(rel);
+        }
+      }
+    };
+    walk(dir, '');
+    return out;
+  }
+
+  it('F4b: symlink target gets no invalidation marker; outside sentinel untouched', () => {
+    const root = tmpRoot('g4-nf-f4b-');
+    const outside = tmpRoot('g4-nf-f4b-out-');
+    const sentinel = path.join(outside, 'SENTINEL.txt');
+    fs.writeFileSync(sentinel, 'do-not-touch\n', 'utf8');
+    fs.mkdirSync(path.join(root, 'staging'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'observations'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'review-handoff'), { recursive: true });
+    const preflightLink = path.join(root, 'preflight');
+    let linked = false;
+    try {
+      fs.symlinkSync(outside, preflightLink, 'junction');
+      linked = true;
+    } catch {
+      try {
+        fs.symlinkSync(outside, preflightLink, 'dir');
+        linked = true;
+      } catch {
+        linked = false;
+      }
+    }
+    if (!linked) {
+      expect(true).toBe(true);
+      return;
+    }
+    const packageDir = path.join(preflightLink, 'pf-f4b');
+    fs.mkdirSync(packageDir, { recursive: true });
+    fs.writeFileSync(path.join(packageDir, 'keep.txt'), 'x\n');
+    const beforeOutside = listTree(outside);
+
+    const result = invalidatePublishedPackage({
+      retainRoot: root,
+      packageDir,
+      preflightId: 'pf-f4b',
+      reasons: ['forced_invalidate'],
+      provenanceClass: 'mock',
+    });
+    expect(result.ok).toBe(false);
+    expect(
+      result.reasons.some(
+        (x) =>
+          x === 'symlink_in_layout:preflight' ||
+          x.startsWith('invalidate_containment:')
+      )
+    ).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(outside, 'pf-f4b', ML_CAL_1_G4_PREFLIGHT_INVALIDATION_MEMBER)
+      )
+    ).toBe(false);
+    expect(fs.readFileSync(sentinel, 'utf8')).toBe('do-not-touch\n');
+    expect(listTree(outside)).toEqual(beforeOutside);
+    expect(fs.existsSync(path.join(outside, 'pf-f4b', 'keep.txt'))).toBe(true);
+  });
+
+  it('F4b: invalid paths trigger zero write/remove; retain root untouched', () => {
+    const root = tmpRoot('g4-nf-f4b-inv-');
+    fs.mkdirSync(path.join(root, 'preflight'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'staging'), { recursive: true });
+    const sentinel = path.join(root, 'KEEP.txt');
+    fs.writeFileSync(sentinel, 'root-sentinel\n');
+    const beforeRoot = listTree(root);
+
+    const outside = tmpRoot('g4-nf-f4b-ext-');
+    fs.writeFileSync(path.join(outside, 'OUT.txt'), 'out\n');
+    const beforeOutside = listTree(outside);
+
+    const badId = invalidatePublishedPackage({
+      retainRoot: root,
+      packageDir: path.join(root, 'preflight', '../escape'),
+      preflightId: '../escape',
+      reasons: ['x'],
+      provenanceClass: 'mock',
+    });
+    expect(badId.ok).toBe(false);
+    expect(badId.reasons).toContain('unsafe_preflight_id');
+
+    const wrongDest = invalidatePublishedPackage({
+      retainRoot: root,
+      packageDir: path.join(root, 'staging', 'pf-wrong'),
+      preflightId: 'pf-wrong',
+      reasons: ['x'],
+      provenanceClass: 'mock',
+    });
+    expect(wrongDest.ok).toBe(false);
+    expect(wrongDest.reasons).toContain(
+      'invalidate_package_path_not_permitted'
+    );
+
+    const retainAsPkg = invalidatePublishedPackage({
+      retainRoot: root,
+      packageDir: root,
+      preflightId: 'pf-root',
+      reasons: ['x'],
+      provenanceClass: 'mock',
+    });
+    expect(retainAsPkg.ok).toBe(false);
+    expect(
+      retainAsPkg.reasons.some(
+        (x) =>
+          x === 'invalidate_package_path_not_permitted' ||
+          x === 'invalidate_retain_root_forbidden'
+      )
+    ).toBe(true);
+
+    const outsidePkg = invalidatePublishedPackage({
+      retainRoot: root,
+      packageDir: path.join(outside, 'preflight', 'pf-ext'),
+      preflightId: 'pf-ext',
+      reasons: ['x'],
+      provenanceClass: 'mock',
+    });
+    expect(outsidePkg.ok).toBe(false);
+    expect(outsidePkg.reasons).toContain(
+      'invalidate_package_path_not_permitted'
+    );
+
+    // Zero filesystem mutations from invalidate on invalid paths
+    expect(listTree(root)).toEqual(beforeRoot);
+    expect(listTree(outside)).toEqual(beforeOutside);
+    expect(fs.readFileSync(sentinel, 'utf8')).toBe('root-sentinel\n');
+    expect(fs.existsSync(root)).toBe(true);
+    expect(permittedPreflightPackageDir(root, 'pf-ok')).toBe(
+      path.resolve(path.join(root, 'preflight', 'pf-ok'))
+    );
+  });
+
+  it('F4b/F5: ordinary failed publication still cannot read as success', async () => {
+    const root = tmpRoot('g4-nf-f4b-f5-');
+    const r = await runG4NonfixturePreflight(
+      baseInput({
+        retainRoot: root,
+        preflightId: 'pf-f4b-f5',
+        sealHooks: { injectFailure: 'after_publish_hash' },
+      })
+    );
+    expect(r.ok).toBe(false);
+    const finalDir = permittedPreflightPackageDir(root, 'pf-f4b-f5');
+    expect(r.packageDir).toBeNull();
+    if (fs.existsSync(finalDir)) {
+      const read = readG4NonfixturePreflightPackage(finalDir, {
+        expectedPreflightId: 'pf-f4b-f5',
+        expectedConnection: EXPECTED,
+      });
+      expect(read.ok).toBe(false);
+      expect(read.terminalSuccess).toBe(false);
+    }
+    // retain root and siblings preserved
+    expect(fs.existsSync(root)).toBe(true);
+    expect(fs.existsSync(path.join(root, 'staging'))).toBe(true);
   });
 });
