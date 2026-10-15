@@ -14,6 +14,9 @@
  *     must not leave independently interpretable success (even if cleanup cannot run);
  *     containment reject → zero unsafe writes/removals.
  * F5: exclusive claims; injected write/copy/rename failures fail closed.
+ * W4: pre-mutation conflict scan of the five deterministic ID destinations
+ *     after opt-in/path/ID/ancestor validation and BEFORE start clock / first
+ *     user-root mutation. Mid/post exclusive protections remain; W4 is not a lock.
  *
  * Design pin (git/LF): 55d4a3d72877abcf154461a6504bb702791339b41721729116472187fab7c95f
  * Base #255 head: af28c337adb18b38a5a77a71d4f452ca74a1c994
@@ -159,6 +162,20 @@ export function validateExistingAncestors(targetAbs: string): {
   return { ok: reasons.length === 0, reasons };
 }
 
+/**
+ * Test-only mutation recording active during runG4PhaseARetentionSetup after W4.
+ * Helpers (safeRemoveContained / invalidateRetainedProbe) consult this so cleanup
+ * removals and invalidation writes are visible across call-boundary gaps.
+ */
+type PhaseAMutationRecorder = (op: string, absTarget: string) => void;
+let activePhaseAMutationRecorder: PhaseAMutationRecorder | undefined;
+
+function phaseARecordMutation(op: string, target: string): void {
+  if (typeof activePhaseAMutationRecorder === 'function') {
+    activePhaseAMutationRecorder(op, path.resolve(String(target)));
+  }
+}
+
 function assertPhysicalContainment(root: string, candidate: string): string {
   const rootReal = fs.realpathSync(root);
   const candAbs = path.resolve(candidate);
@@ -213,6 +230,7 @@ function safeRemoveContained(
     if (rel.startsWith('..') || path.isAbsolute(rel) || rel === '') {
       return { ok: false, reason: 'remove_escape_forbidden' };
     }
+    phaseARecordMutation('remove', targetAbs);
     fs.rmSync(targetAbs, { recursive: true, force: true });
     return { ok: true };
   } catch (e) {
@@ -345,6 +363,7 @@ export function invalidateRetainedProbe(input: {
         scanSecretish(r) ? '[redacted_reason]' : r
       ),
     };
+    phaseARecordMutation('write', marker);
     fs.writeFileSync(marker, `${stableStringify(body)}\n`, 'utf8');
     return { ok: true, reasons: [], wroteMarker: true };
   } catch (e) {
@@ -445,6 +464,347 @@ export function phaseASetupReceiptPath(
     'review-handoff',
     `PHASE_A_SETUP_RECEIPT-${probeId}.json`
   );
+}
+
+/** Deterministic W4 destinations (same naming as mid-flight exclusive checks). */
+export function phaseAPreflightPackagePath(
+  g4EvidenceBase: string,
+  probeId: string
+): string {
+  return path.join(g4EvidenceBase, 'preflight', probeId);
+}
+
+export function phaseAClaimDirPath(
+  g4EvidenceBase: string,
+  probeId: string
+): string {
+  return path.join(g4EvidenceBase, 'staging', `.claim-${probeId}`);
+}
+
+export function phaseAHandoffPackagePath(
+  g4EvidenceBase: string,
+  handoffId: string
+): string {
+  return path.join(g4EvidenceBase, 'review-handoff', handoffId);
+}
+
+export type MlCal1G4PhaseAW4ConflictCategory =
+  | 'preflight_package_exists'
+  | 'publish_claim_exists'
+  | 'handoff_exists'
+  | 'setup_receipt_exists'
+  | 'setup_final_evidence_exists';
+
+export type MlCal1G4PhaseAW4LstatKind =
+  | 'file'
+  | 'directory'
+  | 'symlink'
+  | 'other';
+
+export type MlCal1G4PhaseAW4LstatSync = (path: fs.PathLike) => fs.Stats;
+
+/**
+ * lstat-style presence: distinguishes confirmed absence from present objects
+ * (including dangling symlinks) and unreadable/I/O/identity errors.
+ * Does not follow symlink targets. Creates nothing.
+ * Optional lstatSync is test-only injection for permission/I/O regressions.
+ */
+export function lstatPathPresence(
+  absPath: string,
+  deps?: { lstatSync?: MlCal1G4PhaseAW4LstatSync }
+):
+  | { status: 'absent' }
+  | { status: 'present'; kind: MlCal1G4PhaseAW4LstatKind }
+  | { status: 'error'; reason: string } {
+  const lstat = deps?.lstatSync ?? fs.lstatSync;
+  try {
+    const st = lstat(absPath);
+    if (st.isSymbolicLink()) return { status: 'present', kind: 'symlink' };
+    if (st.isDirectory()) return { status: 'present', kind: 'directory' };
+    if (st.isFile()) return { status: 'present', kind: 'file' };
+    return { status: 'present', kind: 'other' };
+  } catch (e: unknown) {
+    const code =
+      e && typeof e === 'object' && 'code' in e
+        ? String((e as { code: unknown }).code)
+        : '';
+    if (code === 'ENOENT') return { status: 'absent' };
+    if (code === 'ENOTDIR') {
+      return { status: 'error', reason: `w4_lstat_enotdir:${absPath}` };
+    }
+    if (code === 'EACCES' || code === 'EPERM') {
+      return {
+        status: 'error',
+        reason: `w4_lstat_permission:${code}:${redactError(e)}`,
+      };
+    }
+    if (code === 'EIO') {
+      return { status: 'error', reason: `w4_lstat_eio:${redactError(e)}` };
+    }
+    return {
+      status: 'error',
+      reason: `w4_lstat_failed:${code || 'unknown'}:${redactError(e)}`,
+    };
+  }
+}
+
+/**
+ * W4 parent-chain inspection using lstat only (never existsSync).
+ * Inspects each parent component of targetAbs, not the leaf.
+ * Confirmed absence of a parent stops the walk (leaf will be absent).
+ * Symlink/junction parents — including dangling — are unresolved ancestors.
+ * Does not follow symlink targets. Creates nothing.
+ */
+export function validateW4DestinationParents(
+  targetAbs: string,
+  deps?: { lstatSync?: MlCal1G4PhaseAW4LstatSync }
+):
+  | { ok: true }
+  | {
+      ok: false;
+      reasons: string[];
+      notes: string[];
+      unresolvedPath: string | null;
+    } {
+  const abs = path.resolve(targetAbs);
+  const root = path.parse(abs).root;
+  const rel = path.relative(root, abs);
+  const parts = rel.split(path.sep).filter(Boolean);
+  if (parts.length === 0) {
+    return {
+      ok: false,
+      reasons: ['w4_pre_mutation_conflict', 'w4_destination_is_fs_root'],
+      notes: ['layout_probe_usability_not_run'],
+      unresolvedPath: abs,
+    };
+  }
+
+  let walk = root;
+  const rootPresence = lstatPathPresence(walk, deps);
+  if (rootPresence.status === 'error') {
+    return {
+      ok: false,
+      reasons: ['w4_pre_mutation_conflict', rootPresence.reason],
+      notes: [
+        'w4_ancestor_lstat_error',
+        'layout_probe_usability_not_run',
+        `w4_conflict_path:${walk}`,
+      ],
+      unresolvedPath: walk,
+    };
+  }
+  if (rootPresence.status === 'present' && rootPresence.kind === 'symlink') {
+    return {
+      ok: false,
+      reasons: [
+        'w4_pre_mutation_conflict',
+        'w4_unresolved_ancestor_symlink:root',
+      ],
+      notes: [
+        'w4_ancestor_symlink_or_dangling',
+        'w4_conflict_before_user_root_mutation',
+        'layout_probe_usability_not_run',
+        `w4_conflict_path:${walk}`,
+        'w4_conflict_kind:symlink',
+      ],
+      unresolvedPath: walk,
+    };
+  }
+
+  const parentParts = parts.slice(0, -1);
+  for (const part of parentParts) {
+    walk = path.join(walk, part);
+    const presence = lstatPathPresence(walk, deps);
+    if (presence.status === 'absent') {
+      // Confirmed missing parent: stop; leaf cannot be a durable object here.
+      break;
+    }
+    if (presence.status === 'error') {
+      return {
+        ok: false,
+        reasons: ['w4_pre_mutation_conflict', presence.reason],
+        notes: [
+          'w4_ancestor_lstat_error',
+          'layout_probe_usability_not_run',
+          `w4_conflict_path:${walk}`,
+        ],
+        unresolvedPath: walk,
+      };
+    }
+    if (presence.kind === 'symlink') {
+      return {
+        ok: false,
+        reasons: [
+          'w4_pre_mutation_conflict',
+          `w4_unresolved_ancestor_symlink:${part}`,
+        ],
+        notes: [
+          'w4_ancestor_symlink_or_dangling',
+          'w4_conflict_before_user_root_mutation',
+          'layout_probe_usability_not_run',
+          `w4_conflict_path:${walk}`,
+          'w4_conflict_kind:symlink',
+        ],
+        unresolvedPath: walk,
+      };
+    }
+    if (presence.kind !== 'directory') {
+      return {
+        ok: false,
+        reasons: [
+          'w4_pre_mutation_conflict',
+          `w4_ancestor_not_directory:${part}`,
+        ],
+        notes: [
+          'w4_ancestor_not_directory',
+          'w4_conflict_before_user_root_mutation',
+          'layout_probe_usability_not_run',
+          `w4_conflict_path:${walk}`,
+          `w4_conflict_kind:${presence.kind}`,
+        ],
+        unresolvedPath: walk,
+      };
+    }
+  }
+  return { ok: true };
+}
+
+function assertLogicalContainmentUnderRoot(
+  rootAbs: string,
+  candidateAbs: string
+): { ok: true } | { ok: false; reason: string } {
+  const root = path.resolve(rootAbs);
+  const cand = path.resolve(candidateAbs);
+  const rel = path.relative(root, cand);
+  if (rel === '') {
+    return { ok: false, reason: 'w4_path_is_operator_root' };
+  }
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    return { ok: false, reason: 'w4_path_escape' };
+  }
+  return { ok: true };
+}
+
+/**
+ * W4 read-only pre-mutation conflict scan for the five claimed destinations.
+ * Missing user root / missing layout is allowed (absence). Creates nothing.
+ * Fail-closed on ancestor/lstat errors. Does not traverse symlink targets.
+ */
+export function scanPhaseAW4PreMutationConflicts(input: {
+  operatorUserRoot: string;
+  g4EvidenceBase: string;
+  probeId: string;
+  handoffId: string;
+  /** Test-only lstat injection for permission/I/O regressions. */
+  lstatSync?: MlCal1G4PhaseAW4LstatSync;
+}):
+  | { ok: true }
+  | {
+      ok: false;
+      reasons: string[];
+      notes: string[];
+      conflictPath: string | null;
+      conflictKind: MlCal1G4PhaseAW4LstatKind | null;
+    } {
+  const operatorUserRoot = path.resolve(input.operatorUserRoot);
+  const g4Base = path.resolve(input.g4EvidenceBase);
+  const lstatDeps = input.lstatSync ? { lstatSync: input.lstatSync } : undefined;
+  const underRoot = assertLogicalContainmentUnderRoot(operatorUserRoot, g4Base);
+  if (underRoot.ok === false) {
+    return {
+      ok: false,
+      reasons: ['w4_pre_mutation_conflict', underRoot.reason],
+      notes: ['w4_g4_base_containment_failed'],
+      conflictPath: null,
+      conflictKind: null,
+    };
+  }
+
+  const targets: Array<{
+    category: MlCal1G4PhaseAW4ConflictCategory;
+    abs: string;
+  }> = [
+    {
+      category: 'preflight_package_exists',
+      abs: phaseAPreflightPackagePath(g4Base, input.probeId),
+    },
+    {
+      category: 'publish_claim_exists',
+      abs: phaseAClaimDirPath(g4Base, input.probeId),
+    },
+    {
+      category: 'handoff_exists',
+      abs: phaseAHandoffPackagePath(g4Base, input.handoffId),
+    },
+    {
+      category: 'setup_receipt_exists',
+      abs: phaseASetupReceiptPath(g4Base, input.probeId),
+    },
+    {
+      category: 'setup_final_evidence_exists',
+      abs: phaseASetupReceiptFinalEvidencePath(g4Base, input.probeId),
+    },
+  ];
+
+  for (const t of targets) {
+    const contained = assertLogicalContainmentUnderRoot(
+      operatorUserRoot,
+      t.abs
+    );
+    if (contained.ok === false) {
+      return {
+        ok: false,
+        reasons: ['w4_pre_mutation_conflict', contained.reason, t.category],
+        notes: [`w4_target_escape:${t.category}`],
+        conflictPath: t.abs,
+        conflictKind: null,
+      };
+    }
+    // Parents first (lstat): dangling/symlink ancestors refuse before leaf lstat.
+    const parents = validateW4DestinationParents(t.abs, lstatDeps);
+    if (parents.ok === false) {
+      return {
+        ok: false,
+        reasons: [...parents.reasons, t.category],
+        notes: parents.notes,
+        conflictPath: parents.unresolvedPath ?? t.abs,
+        conflictKind: parents.notes.includes('w4_conflict_kind:symlink')
+          ? 'symlink'
+          : null,
+      };
+    }
+    // Leaf: terminal symlink/file/dir is a category conflict (do not follow).
+    const presence = lstatPathPresence(t.abs, lstatDeps);
+    if (presence.status === 'error') {
+      return {
+        ok: false,
+        reasons: ['w4_pre_mutation_conflict', presence.reason, t.category],
+        notes: [
+          'w4_lstat_error_fail_closed',
+          'layout_probe_usability_not_run',
+          `w4_conflict_path:${t.abs}`,
+        ],
+        conflictPath: t.abs,
+        conflictKind: null,
+      };
+    }
+    if (presence.status === 'present') {
+      return {
+        ok: false,
+        reasons: ['w4_pre_mutation_conflict', t.category],
+        notes: [
+          'w4_conflict_before_user_root_mutation',
+          'layout_probe_usability_not_run',
+          `w4_conflict_path:${t.abs}`,
+          `w4_conflict_kind:${presence.kind}`,
+          'pre_existing_object_not_owned_leftover',
+        ],
+        conflictPath: t.abs,
+        conflictKind: presence.kind,
+      };
+    }
+  }
+  return { ok: true };
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -1087,6 +1447,19 @@ export interface MlCal1G4PhaseASetupInput {
     | 'receipt_verify_read'
     | 'receipt_verify_hash'
     | 'receipt_verify_read_remove_fail';
+  /**
+   * Test-only: invoked after W4 pre-mutation scan passes and before the start
+   * clock / first user-root mutation. Production callers must omit this.
+   * Used to plant a post-scan race conflict without a production bypass flag.
+   */
+  testOnlyAfterW4PreMutationScan?: () => void;
+  /**
+   * Test-only: records each user-root mutating FS call after W4 passes.
+   * Detects transient mkdir/write/rename/remove that byte snapshots miss.
+   */
+  testOnlyRecordUserRootMutation?: (op: string, absTarget: string) => void;
+  /** Test-only lstat injection forwarded into the W4 scan. */
+  testOnlyW4LstatSync?: MlCal1G4PhaseAW4LstatSync;
 }
 
 export interface MlCal1G4PhaseAReceiptPostWriteVerification {
@@ -1284,6 +1657,45 @@ export function runG4PhaseARetentionSetup(
     }
   }
 
+  // W4: refuse claimed ID destinations before start clock and before any
+  // user-root mutation. Missing layout/root is allowed (confirmed absence).
+  const w4 = scanPhaseAW4PreMutationConflicts({
+    operatorUserRoot,
+    g4EvidenceBase: g4Base,
+    probeId: input.probeId,
+    handoffId: input.handoffId,
+    lstatSync: input.testOnlyW4LstatSync,
+  });
+  if (w4.ok === false) {
+    return refuse(w4.reasons, input.mode, {
+      operatorUserRoot,
+      g4EvidenceBase: g4Base,
+      runnerRetainRoot: g4Base,
+      leftovers: [],
+      notes: w4.notes,
+      usabilityChecks: {},
+    });
+  }
+
+  if (typeof input.testOnlyAfterW4PreMutationScan === 'function') {
+    try {
+      input.testOnlyAfterW4PreMutationScan();
+    } catch (e) {
+      return refuse(
+        [`w4_test_hook_threw:${redactError(e)}`],
+        input.mode,
+        {
+          operatorUserRoot,
+          g4EvidenceBase: g4Base,
+          runnerRetainRoot: g4Base,
+          leftovers: [],
+          notes: ['test_only_after_w4_hook_failed_before_mutation'],
+          usabilityChecks: {},
+        }
+      );
+    }
+  }
+
   const startClock = readClock(input.now, 'start');
   if (startClock.ok === false) {
     return refuse([startClock.reason], input.mode);
@@ -1313,10 +1725,55 @@ export function runG4PhaseARetentionSetup(
   const leftovers: string[] = [];
   const notes: string[] = [];
 
-  // Mutations begin only after ancestor validation
+  // Activate cross-helper mutation recording for the remainder of this invocation.
+  const prevMutationRecorder = activePhaseAMutationRecorder;
+  activePhaseAMutationRecorder =
+    typeof input.testOnlyRecordUserRootMutation === 'function'
+      ? input.testOnlyRecordUserRootMutation
+      : undefined;
+
+  const mkdirSyncTracked = (
+    p: fs.PathLike,
+    o?: fs.MakeDirectoryOptions | fs.Mode | null
+  ) => {
+    phaseARecordMutation('mkdir', String(p));
+    return fs.mkdirSync(p, o as never);
+  };
+  const writeFileSyncTracked = (
+    p: fs.PathOrFileDescriptor,
+    data: string | NodeJS.ArrayBufferView,
+    o?: fs.WriteFileOptions
+  ) => {
+    phaseARecordMutation('write', String(p));
+    return fs.writeFileSync(p, data, o as never);
+  };
+  const copyFileSyncTracked = (
+    src: fs.PathLike,
+    dest: fs.PathLike,
+    mode?: number
+  ) => {
+    phaseARecordMutation('copy', String(dest));
+    return fs.copyFileSync(src, dest, mode);
+  };
+  const renameSyncTracked = (src: fs.PathLike, dest: fs.PathLike) => {
+    phaseARecordMutation('rename', String(src));
+    phaseARecordMutation('rename', String(dest));
+    return fs.renameSync(src, dest);
+  };
+  const unlinkSyncTracked = (p: fs.PathLike) => {
+    phaseARecordMutation('remove', String(p));
+    return fs.unlinkSync(p);
+  };
+  const rmSyncTracked = (p: fs.PathLike, o?: fs.RmOptions) => {
+    phaseARecordMutation('remove', String(p));
+    return fs.rmSync(p, o);
+  };
+
+  try {
+  // Mutations begin only after ancestor validation + W4 conflict scan
   try {
     if (!fs.existsSync(operatorUserRoot)) {
-      fs.mkdirSync(operatorUserRoot, { recursive: true });
+      mkdirSyncTracked(operatorUserRoot, { recursive: true });
     }
     if (isSymlinkOrJunction(operatorUserRoot)) {
       return refuse(['operator_root_symlink'], input.mode);
@@ -1340,7 +1797,7 @@ export function runG4PhaseARetentionSetup(
           return refuse([`path_not_directory:${path.basename(p)}`], input.mode);
         }
       } else {
-        fs.mkdirSync(p, { recursive: true });
+        mkdirSyncTracked(p, { recursive: true });
       }
     }
     for (const sub of ML_CAL_1_G4_PREFLIGHT_SUBTREES) {
@@ -1354,7 +1811,7 @@ export function runG4PhaseARetentionSetup(
           return refuse([`layout_conflict_not_dir:${sub}`], input.mode);
         }
       } else {
-        fs.mkdirSync(p, { recursive: true });
+        mkdirSyncTracked(p, { recursive: true });
       }
     }
     usability.layoutCreateOrIdempotent = true;
@@ -1393,7 +1850,7 @@ export function runG4PhaseARetentionSetup(
       `phase-a-probe:${input.probeId}:${startIso}\n`,
       'utf8'
     );
-    fs.writeFileSync(probeFile, payload);
+    writeFileSyncTracked(probeFile, payload);
     const readBack = fs.readFileSync(probeFile);
     if (!readBack.equals(payload)) {
       safeRemoveContained(operatorUserRoot, probeFile);
@@ -1500,13 +1957,13 @@ export function runG4PhaseARetentionSetup(
 
   try {
     assertPhysicalContainment(operatorUserRoot, stagingDir);
-    fs.mkdirSync(stagingDir, { recursive: true });
-    fs.writeFileSync(path.join(stagingDir, 'PROBE_MEMBER.json'), memberBytes);
-    fs.writeFileSync(
+    mkdirSyncTracked(stagingDir, { recursive: true });
+    writeFileSyncTracked(path.join(stagingDir, 'PROBE_MEMBER.json'), memberBytes);
+    writeFileSyncTracked(
       path.join(stagingDir, 'PACKAGE_MANIFEST.json'),
       manifestBytes
     );
-    fs.writeFileSync(
+    writeFileSyncTracked(
       path.join(stagingDir, 'PACKAGE_MANIFEST.sha256'),
       `${manifestSha256}\n`
     );
@@ -1527,7 +1984,7 @@ export function runG4PhaseARetentionSetup(
 
   try {
     assertPhysicalContainment(operatorUserRoot, claimDir);
-    fs.mkdirSync(claimDir);
+    mkdirSyncTracked(claimDir);
     usability.exclusiveClaim = true;
   } catch (e: unknown) {
     safeRemoveContained(operatorUserRoot, stagingDir);
@@ -1585,7 +2042,7 @@ export function runG4PhaseARetentionSetup(
         durabilityClaims,
       });
     }
-    fs.renameSync(stagingDir, finalDir);
+    renameSyncTracked(stagingDir, finalDir);
     usability.sameVolumeAtomicRename = true;
   } catch (e) {
     safeRemoveContained(operatorUserRoot, claimDir);
@@ -1663,10 +2120,10 @@ export function runG4PhaseARetentionSetup(
         durabilityClaims,
       });
     }
-    fs.mkdirSync(handoffDir, { recursive: true });
+    mkdirSyncTracked(handoffDir, { recursive: true });
     for (const name of ML_CAL_1_G4_PHASE_A_REQUIRED_PROBE_MEMBERS) {
       const src = path.join(finalDir, name);
-      fs.copyFileSync(src, path.join(handoffDir, name));
+      copyFileSyncTracked(src, path.join(handoffDir, name));
     }
     if (input.injectFailure === 'after_copy') {
       leftovers.push(finalDir, handoffDir);
@@ -1724,7 +2181,7 @@ export function runG4PhaseARetentionSetup(
       deployedPoolerProof: false,
       note: 'HANDOFF.json is untrusted as external anchor until digest separately retained by reviewer',
     };
-    fs.writeFileSync(
+    writeFileSyncTracked(
       path.join(handoffDir, 'HANDOFF.json'),
       `${stableStringify(handoffMeta)}\n`,
       'utf8'
@@ -1834,7 +2291,7 @@ export function runG4PhaseARetentionSetup(
   );
   try {
     assertPhysicalContainment(operatorUserRoot, completionPath);
-    fs.writeFileSync(
+    writeFileSyncTracked(
       completionPath,
       `${stableStringify(completion)}\n`,
       'utf8'
@@ -2008,8 +2465,8 @@ export function runG4PhaseARetentionSetup(
 
   try {
     assertPhysicalContainment(operatorUserRoot, receiptPath);
-    fs.mkdirSync(path.dirname(receiptPath), { recursive: true });
-    fs.writeFileSync(receiptPath, receiptBytes, { flag: 'wx' });
+    mkdirSyncTracked(path.dirname(receiptPath), { recursive: true });
+    writeFileSyncTracked(receiptPath, receiptBytes, { flag: 'wx' });
   } catch (e: unknown) {
     const code =
       e && typeof e === 'object' && 'code' in e
@@ -2112,7 +2569,7 @@ export function runG4PhaseARetentionSetup(
   // F2: post-write verify — separate evidence; do not rewrite sealed receipt.
   if (input.injectFailure === 'receipt_verify_read') {
     try {
-      fs.unlinkSync(receiptPath);
+      unlinkSyncTracked(receiptPath);
     } catch {
       /* inject best-effort */
     }
@@ -2123,7 +2580,7 @@ export function runG4PhaseARetentionSetup(
       const cur = fs.readFileSync(receiptPath);
       if (cur.length > 0) {
         cur[0] = cur[0] ^ 0xff;
-        fs.writeFileSync(receiptPath, cur);
+        writeFileSyncTracked(receiptPath, cur);
       }
     } catch {
       /* inject best-effort */
@@ -2214,7 +2671,7 @@ export function runG4PhaseARetentionSetup(
 
   try {
     assertPhysicalContainment(operatorUserRoot, finalEvidencePath);
-    fs.writeFileSync(finalEvidencePath, finalEvidenceBytes, { flag: 'wx' });
+    writeFileSyncTracked(finalEvidencePath, finalEvidenceBytes, { flag: 'wx' });
   } catch (e: unknown) {
     const code =
       e && typeof e === 'object' && 'code' in e
@@ -2334,4 +2791,7 @@ export function runG4PhaseARetentionSetup(
     durabilityClaims,
     leftovers: [],
   };
+  } finally {
+    activePhaseAMutationRecorder = prevMutationRecorder;
+  }
 }
