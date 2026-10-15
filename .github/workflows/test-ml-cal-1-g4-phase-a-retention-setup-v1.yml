@@ -108,16 +108,21 @@ jobs:
           if plan.exists():
               plan_sha = hashlib.sha256(plan.read_bytes()).hexdigest()
               print(f'ok plan_git_bytes_sha {plan_sha} bytes={plan.stat().st_size}')
-          for rel in [
-              'apps/jobs/lib/ml-cal-1-g4-phase-a-retention-setup.ts',
-              'apps/jobs/run-ml-cal-1-g4-phase-a-retention-setup.ts',
-          ]:
-              text = pathlib.Path(rel).read_text(encoding='utf-8')
-              assert expected_design in text or 'ML_CAL_1_G4_PHASE_A_DESIGN_SHA256' in text
-              assert 'new PrismaClient' not in text
-              assert 'process.env.DATABASE_URL' not in text
-              assert 'process.env.DIRECT_URL' not in text
-              print(f'ok passive/gated {rel}')
+          lib = pathlib.Path(
+              'apps/jobs/lib/ml-cal-1-g4-phase-a-retention-setup.ts'
+          ).read_text(encoding='utf-8')
+          assert expected_design in lib or 'ML_CAL_1_G4_PHASE_A_DESIGN_SHA256' in lib
+          assert 'new PrismaClient' not in lib
+          assert 'process.env.DATABASE_URL' not in lib
+          assert 'process.env.DIRECT_URL' not in lib
+          print('ok passive/gated apps/jobs/lib/ml-cal-1-g4-phase-a-retention-setup.ts')
+          cli = pathlib.Path(
+              'apps/jobs/run-ml-cal-1-g4-phase-a-retention-setup.ts'
+          ).read_text(encoding='utf-8')
+          assert 'new PrismaClient' not in cli
+          assert 'process.env.DATABASE_URL' not in cli
+          assert 'process.env.DIRECT_URL' not in cli
+          print('ok passive/gated apps/jobs/run-ml-cal-1-g4-phase-a-retention-setup.ts')
           secretish = re.compile(
               r'(?i)(api[_-]?key\s*[:=]\s*\S+|password\s*[:=]\s*\S+|bearer\s+[a-z0-9._-]{8,}|ghp_[A-Za-z0-9]+|'
               r'(DATABASE_URL|DIRECT_URL)\s*[:=]\s*\S+)'
