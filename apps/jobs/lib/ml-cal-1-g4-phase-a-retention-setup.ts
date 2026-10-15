@@ -1227,6 +1227,19 @@ export function runG4PhaseARetentionSetup(
     return refuse(['injected_clock_not_function']);
   }
 
+  // Temp mode: forbid the proposed Windows operator label before absolute-path
+  // gating so Linux CI rejects the same sentinel string (path.isAbsolute is
+  // platform-specific for Windows drive paths).
+  if (
+    input.mode === 'temp' &&
+    (input.actualOperatorUserRoot ===
+      ML_CAL_1_G4_PROPOSED_OPERATOR_USER_ROOT_LABEL ||
+      input.expectedOperatorUserRoot ===
+        ML_CAL_1_G4_PROPOSED_OPERATOR_USER_ROOT_LABEL)
+  ) {
+    return refuse(['proposed_operator_root_forbidden_in_temp_mode'], 'temp');
+  }
+
   const expectedAbs = requireAbsoluteDestination(
     input.expectedOperatorUserRoot
   );

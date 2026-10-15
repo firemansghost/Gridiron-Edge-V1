@@ -10,6 +10,7 @@ Status: Draft PR packaging (setup NOT EXECUTED)
 - CI failure: preserve run evidence; repair only new-file test/workflow packaging within this task.
 - Do not amend #255, merge, operator-probe, or rewrite accepted dependency libraries.
 - Source worktree originals under `…-g4-preflight-runner` remain untouched after copy.
+- Linux CI portability: temp mode forbids the exact proposed Windows operator-root label string before `path.isAbsolute` (platform-specific for drive paths).
 
 ## Evaluator rejection classes
 

@@ -17,6 +17,8 @@ Integrity: F1–F5; provisional receipt; digest-bound final evidence; hardened t
 
 Implementation/test bytes for lib/CLI/tests retain the independently matched Windows identities from local acceptance unless a disclosed CI portability repair is required. Documentation may add this packaging/recovery checkpoint only.
 
+**Disclosed CI portability repair (2026-10-15):** Linux `path.isAbsolute` rejects the Windows proposed-root label before the temp-mode forbid check. Library now refuses that exact sentinel string in temp mode **before** absolute-path gating, so Linux and Windows report `proposed_operator_root_forbidden_in_temp_mode`. CLI bytes unchanged; lib hash changes; re-run Phase A suite locally and on Linux CI.
+
 ## Pins
 
 | Item | Value |
