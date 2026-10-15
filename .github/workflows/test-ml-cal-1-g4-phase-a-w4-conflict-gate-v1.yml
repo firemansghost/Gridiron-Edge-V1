@@ -153,8 +153,11 @@ jobs:
                   ['git', 'rev-parse', f'{rev}:{path}'], text=True
               ).strip()
 
-          def git_show_bytes(rev_path: str) -> bytes:
-              return subprocess.check_output(['git', 'show', rev_path])
+          def git_blob_bytes(path: str, rev: str) -> bytes:
+              # Raw blob bytes (no working-tree EOL filters). Prefer over `git show`.
+              return subprocess.check_output(
+                  ['git', 'cat-file', 'blob', f'{rev}:{path}']
+              )
 
           design = pathlib.Path(
               'research/moneyline/ML_CAL_1_G4_NONFIXTURE_OBSERVER_POOLER_PREFLIGHT_PROCEDURE_DESIGN_20261013.md'
@@ -182,11 +185,12 @@ jobs:
           assert hist_blob_actual == hist_blob_expected, (
               f'HISTORICAL baseline blob {hist_blob_actual} != {hist_blob_expected}'
           )
-          hist_data = git_show_bytes(f'{HISTORICAL_COMMIT}:{hist_path}')
+          hist_data = git_blob_bytes(hist_path, HISTORICAL_COMMIT)
           hist_bytes, hist_sha = sha256_bytes(hist_data)
           # Content digest of that same historical Git blob (distinct from Git object id).
-          hist_sha_expected = '1a1a9c2ab6a4c05a0375d9cd7e8c5c0a29a94fdb52fd9ea2f5aa315a535c4524'
-          assert hist_bytes == 77781, f'HISTORICAL bytes {hist_bytes} != 77781'
+          # Derived from blob 37edc14f… via `git cat-file blob` (not a Windows text pipe).
+          hist_sha_expected = '11134072792752f1034c1e8f4bd1217e803b231d689e427f18b0e7284d0f97ff'
+          assert hist_bytes == 75444, f'HISTORICAL bytes {hist_bytes} != 75444'
           assert hist_sha == hist_sha_expected, f'HISTORICAL sha {hist_sha} != {hist_sha_expected}'
           print(
               f'ok HISTORICAL_BASELINE library blob={hist_blob_actual} '
