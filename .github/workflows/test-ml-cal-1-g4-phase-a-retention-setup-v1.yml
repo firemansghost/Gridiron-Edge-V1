@@ -1,0 +1,135 @@
+# Validation-only CI for ML-CAL-1 G4 Phase A retention setup (probe provenance).
+# No DB, no secrets, no providers, no operator mode, no operator-root probes,
+# no live pooler, no production writes. Temp directories only.
+
+name: Test ML-CAL-1 G4 Phase A Retention Setup
+
+on:
+  pull_request:
+    # Includes stacked research target (#255 branch) and its base lineage.
+    branches:
+      - 'feat/ml-cal-1-g4-preflight-nonfixture-runner-v1'
+      - 'feat/ml-cal-1-g4-pooler-preflight-real-adapter-v1'
+      - 'main'
+    paths:
+      - 'apps/jobs/lib/ml-cal-1-g4-phase-a-retention-setup.ts'
+      - 'apps/jobs/run-ml-cal-1-g4-phase-a-retention-setup.ts'
+      - 'apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts'
+      - 'apps/jobs/lib/ml-cal-1-g4-pooler-preflight-live-runner.ts'
+      - 'apps/jobs/lib/ml-cal-1-g4-pooler-preflight-live-reader.ts'
+      - 'apps/jobs/run-ml-cal-1-g4-pooler-preflight-live.ts'
+      - 'apps/jobs/lib/ml-cal-1-g4-pooler-preflight-real-adapter.ts'
+      - 'apps/jobs/lib/ml-cal-1-g4-pooler-preflight-fixture.ts'
+      - 'apps/jobs/lib/ml-cal-1-lifecycle-binding-observer.ts'
+      - 'apps/jobs/lib/ml-cal-1-lifecycle-binding.ts'
+      - 'apps/jobs/lib/ml-cal-1-capture.ts'
+      - 'apps/jobs/lib/ml-cal-1-capture-binding-integration.ts'
+      - 'apps/jobs/lib/ml-cal-1-capture-binding-fixture.ts'
+      - 'apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts'
+      - 'apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts'
+      - 'apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts'
+      - 'apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts'
+      - 'apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts'
+      - 'apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts'
+      - 'apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts'
+      - 'research/moneyline/ML_CAL_1_G4_PHASE_A_RETENTION_SETUP_*.md'
+      - 'research/moneyline/ML_CAL_1_G4_NONFIXTURE_OBSERVER_POOLER_PREFLIGHT_*.md'
+      - 'research/moneyline/ML_CAL_1_G4_RETENTION_PREFLIGHT_EXECUTION_PLAN_20261013.md'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'jest.config.*'
+      - '.github/workflows/test-ml-cal-1-g4-phase-a-retention-setup-v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  targeted-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Phase A retention setup suite
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts
+
+      - name: Run accepted #255 nonfixture runner suite
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts
+
+      - name: Run accepted real-adapter suite
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts
+
+      - name: Run accepted fixture-preflight suite
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts
+
+      - name: Run accepted binding / G2 / G3 / G4 regressions
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts \
+            apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts \
+            apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts \
+            apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts
+
+      - name: Secret-free pin + scan check
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, pathlib, re
+          design = pathlib.Path(
+              'research/moneyline/ML_CAL_1_G4_NONFIXTURE_OBSERVER_POOLER_PREFLIGHT_PROCEDURE_DESIGN_20261013.md'
+          )
+          design_sha = hashlib.sha256(design.read_bytes()).hexdigest()
+          expected_design = '55d4a3d72877abcf154461a6504bb702791339b41721729116472187fab7c95f'
+          assert design_sha == expected_design, f'design {design_sha} != {expected_design}'
+          print(f'ok design_sha {design_sha}')
+          plan = pathlib.Path(
+              'research/moneyline/ML_CAL_1_G4_RETENTION_PREFLIGHT_EXECUTION_PLAN_20261013.md'
+          )
+          if plan.exists():
+              plan_sha = hashlib.sha256(plan.read_bytes()).hexdigest()
+              print(f'ok plan_git_bytes_sha {plan_sha} bytes={plan.stat().st_size}')
+          for rel in [
+              'apps/jobs/lib/ml-cal-1-g4-phase-a-retention-setup.ts',
+              'apps/jobs/run-ml-cal-1-g4-phase-a-retention-setup.ts',
+          ]:
+              text = pathlib.Path(rel).read_text(encoding='utf-8')
+              assert expected_design in text or 'ML_CAL_1_G4_PHASE_A_DESIGN_SHA256' in text
+              assert 'new PrismaClient' not in text
+              assert 'process.env.DATABASE_URL' not in text
+              assert 'process.env.DIRECT_URL' not in text
+              print(f'ok passive/gated {rel}')
+          secretish = re.compile(
+              r'(?i)(api[_-]?key\s*[:=]\s*\S+|password\s*[:=]\s*\S+|bearer\s+[a-z0-9._-]{8,}|ghp_[A-Za-z0-9]+|'
+              r'(DATABASE_URL|DIRECT_URL)\s*[:=]\s*\S+)'
+          )
+          for p in [
+              pathlib.Path('apps/jobs/lib/ml-cal-1-g4-phase-a-retention-setup.ts'),
+              pathlib.Path('apps/jobs/run-ml-cal-1-g4-phase-a-retention-setup.ts'),
+              pathlib.Path('apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts'),
+              pathlib.Path('.github/workflows/test-ml-cal-1-g4-phase-a-retention-setup-v1.yml'),
+          ]:
+              text = p.read_text(encoding='utf-8')
+              assert not secretish.search(text), p
+          print('ok secret-free scan')
+          print('ok temp-only CI; operator setup command not executed')
+          PY
