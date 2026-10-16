@@ -1,0 +1,439 @@
+# Validation-only CI for ML-CAL-1 G4 Windows W5-1 path identity.
+# No DB, no secrets, no providers, no operator-root probes, no live pooler,
+# no production writes, no pull_request_target, no privileged jobs.
+# Temp directories only. Linux lane is mocks, regressions, and inherited tests.
+#
+# Targets stacked PR base: feat/ml-cal-1-g4-phase-a-w4-conflict-gate-ci-v1 (#258).
+# pull_request checkout is GitHub's synthetic merge of PR head into that base.
+# Direct workflow_dispatch checkout is the branch tip, not main and not a merge.
+#
+# Successor pin policy: W5 intentionally replaces the Phase A library blob.
+# Historical #258 library bytes are verified from immutable commit 9ce55f11…
+# (Git blob bytes + content SHA-256), not relabeled as the W5 successor.
+
+name: Test ML-CAL-1 G4 W5 Path Identity
+
+on:
+  pull_request:
+    branches:
+      - 'feat/ml-cal-1-g4-phase-a-w4-conflict-gate-ci-v1'
+    paths:
+      - 'apps/jobs/lib/ml-cal-1-g4-windows-path-identity.ts'
+      - 'apps/jobs/lib/ml-cal-1-g4-phase-a-retention-setup.ts'
+      - 'apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts'
+      - 'tools/windows-g4-fs-inspect/Program.cs'
+      - 'tools/windows-g4-fs-inspect/WindowsG4FsInspect.csproj'
+      - 'tools/windows-g4-fs-inspect/.gitignore'
+      - 'research/moneyline/ML_CAL_1_G4_WINDOWS_W5_1_USAGE_20261015.md'
+      - 'research/moneyline/ML_CAL_1_G4_WINDOWS_W5_1_RECOVERY_20261015.md'
+      - 'research/moneyline/ML_CAL_1_G4_WINDOWS_W5_1_CHECKPOINT_20261015.md'
+      - '.github/workflows/test-ml-cal-1-g4-w5-path-identity-v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  targeted-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Report checkout identity
+        run: |
+          set -euo pipefail
+          echo "event_name=${GITHUB_EVENT_NAME}"
+          echo "runner_os=${RUNNER_OS}"
+          echo "uname=$(uname -a)"
+          echo "checkout_HEAD=$(git rev-parse HEAD)"
+          echo "checkout_parents=$(git rev-list --parents -n 1 HEAD)"
+          echo "github_sha=${GITHUB_SHA}"
+          echo "github_ref=${GITHUB_REF}"
+          echo "github_head_ref=${GITHUB_HEAD_REF:-}"
+          echo "github_base_ref=${GITHUB_BASE_REF:-}"
+          echo "node_pending=setup_node_not_yet"
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            echo "checkout_kind=synthetic_pr_merge_of_source_head_into_base"
+            echo "not_direct_source_checkout=true"
+            echo "not_main=true"
+          else
+            echo "checkout_kind=direct_branch_checkout"
+            echo "not_synthetic_pr_merge=true"
+            echo "not_main=true"
+          fi
+          if [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "${GITHUB_EVENT_PATH}" ]; then
+            python3 - <<'PY'
+          import json, os
+          ev = json.load(open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8"))
+          pr = ev.get("pull_request") or {}
+          head = pr.get("head") or {}
+          base = pr.get("base") or {}
+          print(f"pr_source_head={head.get('sha')}")
+          print(f"pr_source_ref={head.get('ref')}")
+          print(f"pr_base_sha={base.get('sha')}")
+          print(f"pr_base_ref={base.get('ref')}")
+          print(f"pr_number={pr.get('number')}")
+          print("note=pull_request_checkout_HEAD_is_synthetic_merge_bind_pins_to_pr_source_head")
+          PY
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Record Node toolchain
+        run: |
+          set -euo pipefail
+          echo "node=$(node -v)"
+          echo "npm=$(npm -v)"
+          echo "no_env_dump=true"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Secret-free pin check (historical #258 library + W5 successor + reviewed files)
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, re, subprocess
+
+          ACCEPTED_BASE = "9ce55f11f43156ba1ceb08dc57b88c48d9f9043a"
+          HISTORICAL_LIB = "apps/jobs/lib/ml-cal-1-g4-phase-a-retention-setup.ts"
+
+          def sha256_bytes(data: bytes) -> tuple[int, str]:
+              return len(data), hashlib.sha256(data).hexdigest()
+
+          def git_bytes(rev_path: str) -> bytes:
+              return subprocess.check_output(["git", "cat-file", "blob", rev_path])
+
+          def git_blob(rev_path: str) -> str:
+              return subprocess.check_output(
+                  ["git", "rev-parse", rev_path], text=True
+              ).strip()
+
+          event = os.environ.get("GITHUB_EVENT_NAME", "")
+          source_sha = subprocess.check_output(
+              ["git", "rev-parse", "HEAD"], text=True
+          ).strip()
+          base_sha = ""
+          if event == "pull_request":
+              ev = json.load(open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8"))
+              pr = ev["pull_request"]
+              source_sha = pr["head"]["sha"]
+              base_sha = pr["base"]["sha"]
+              print("checkout_kind=synthetic_pr_merge")
+              print(f"pr_source_head={source_sha}")
+              print(f"pr_base_sha={base_sha}")
+              assert base_sha == ACCEPTED_BASE, (
+                  f"PR base {base_sha} != accepted #258 {ACCEPTED_BASE}"
+              )
+          else:
+              print("checkout_kind=direct_branch_checkout")
+              print(f"source_head={source_sha}")
+              print("not_synthetic_merge=true")
+              print("not_main=true")
+          print(f"pin_source_head={source_sha}")
+          print(f"accepted_base={ACCEPTED_BASE}")
+          ancestor = subprocess.call(
+              ["git", "merge-base", "--is-ancestor", ACCEPTED_BASE, "HEAD"]
+          )
+          assert ancestor == 0, "accepted #258 base is not an ancestor of checkout HEAD"
+
+          reviewed = {
+              "tools/windows-g4-fs-inspect/Program.cs": (
+                  38655,
+                  "02fe0670408dcc375a62d025dfeeb1480fba2279cac6dadc5a2c8a4ba04e517b",
+              ),
+              "tools/windows-g4-fs-inspect/WindowsG4FsInspect.csproj": (
+                  696,
+                  "d692a968b994d710890375344aae0cb5ac85436c9ab91696376d15ecade756ca",
+              ),
+              "tools/windows-g4-fs-inspect/.gitignore": (
+                  28,
+                  "1535b8cac593b5401cf2ed8f6e366cc6f1038a0b90004bbc6ea6690165b38fc1",
+              ),
+              "apps/jobs/lib/ml-cal-1-g4-windows-path-identity.ts": (
+                  32738,
+                  "7b60952a47e958b5091bd8e511390ce8fe0db255dc45c4639b1dcc916f08cd4f",
+              ),
+              "apps/jobs/lib/ml-cal-1-g4-phase-a-retention-setup.ts": (
+                  91345,
+                  "40bdf5702607f912143136ddc950f3fe17c376c839521736dc23dbc96659542e",
+              ),
+              "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts": (
+                  45269,
+                  "18926d8851099e8189277bf3c6cc5484d60a75e21890665a2ac27de177349e99",
+              ),
+              "research/moneyline/ML_CAL_1_G4_WINDOWS_W5_1_USAGE_20261015.md": (
+                  2636,
+                  "639bb14ad8c7098506cb50af6023e01fb2d75c64a5f0ca5f5a4b1db3350d6b3a",
+              ),
+              "research/moneyline/ML_CAL_1_G4_WINDOWS_W5_1_RECOVERY_20261015.md": (
+                  1124,
+                  "900f7822b39fceba5cfa889cbeb6359223e1de244f3ffb631476d047de9172e5",
+              ),
+              "research/moneyline/ML_CAL_1_G4_WINDOWS_W5_1_CHECKPOINT_20261015.md": (
+                  1008,
+                  "3abe6ad01e0c1fd4a3415830a73b6162d35951e47602d40d586e9fead4794a6b",
+              ),
+          }
+          for path, (exp_len, exp_sha) in reviewed.items():
+              executed = pathlib.Path(path).read_bytes()
+              source_blob = git_bytes(f"{source_sha}:{path}")
+              ex_len, ex_sha = sha256_bytes(executed)
+              src_len, src_sha = sha256_bytes(source_blob)
+              assert executed == source_blob, f"{path} executed bytes != source head blob"
+              assert ex_len == exp_len and ex_sha == exp_sha, (
+                  f"{path} executed {ex_len} {ex_sha} != {exp_len} {exp_sha}"
+              )
+              assert src_len == exp_len and src_sha == exp_sha
+              print(
+                  f"ok REVIEWED_EXECUTED {path} blob={git_blob(f'{source_sha}:{path}')} "
+                  f"bytes={ex_len} sha256={ex_sha} source_head={source_sha}"
+              )
+
+          hist = git_bytes(f"{ACCEPTED_BASE}:{HISTORICAL_LIB}")
+          hist_len, hist_sha = sha256_bytes(hist)
+          hist_blob = git_blob(f"{ACCEPTED_BASE}:{HISTORICAL_LIB}")
+          assert hist_blob == "a82ce78206236343d59bbeacc9db3e0b2041af90"
+          assert hist_len == 89980, f"HISTORICAL bytes {hist_len} != 89980"
+          assert hist_sha == "8c7b3fc99263d2f37332002ba0e46cd5f13fd24afb1693383ad427c552762d86"
+          print(
+              f"ok HISTORICAL_258_LIBRARY blob={hist_blob} bytes={hist_len} "
+              f"sha256={hist_sha} at {ACCEPTED_BASE}"
+          )
+
+          succ = pathlib.Path(HISTORICAL_LIB).read_bytes()
+          succ_len, succ_sha = sha256_bytes(succ)
+          succ_blob = git_blob(f"{source_sha}:{HISTORICAL_LIB}")
+          assert succ_len == 91345
+          assert succ_sha == "40bdf5702607f912143136ddc950f3fe17c376c839521736dc23dbc96659542e"
+          assert succ_blob != hist_blob
+          print(
+              f"ok W5_SUCCESSOR_LIBRARY blob={succ_blob} bytes={succ_len} "
+              f"sha256={succ_sha} (intentionally != historical {hist_blob})"
+          )
+
+          design = pathlib.Path(
+              "research/moneyline/ML_CAL_1_G4_NONFIXTURE_OBSERVER_POOLER_PREFLIGHT_PROCEDURE_DESIGN_20261013.md"
+          ).read_bytes()
+          plan = pathlib.Path(
+              "research/moneyline/ML_CAL_1_G4_RETENTION_PREFLIGHT_EXECUTION_PLAN_20261013.md"
+          ).read_bytes()
+          design_len, design_sha = sha256_bytes(design)
+          plan_len, plan_sha = sha256_bytes(plan)
+          assert design_sha == "55d4a3d72877abcf154461a6504bb702791339b41721729116472187fab7c95f"
+          assert plan_len == 36740
+          assert plan_sha == "22230e3946bc0fdc7753842c6dea362619f96b9b552c5a622571479fdc6d0926"
+          print(f"ok design bytes={design_len} sha256={design_sha}")
+          print(f"ok execution_plan bytes={plan_len} sha256={plan_sha}")
+
+          inherited = {
+              "apps/jobs/lib/ml-cal-1-g4-phase-a-json-command.ts":
+                  "8b9aac3ec3fb618a2f67aced4c3025f73fe5eadb",
+              "apps/jobs/run-ml-cal-1-g4-phase-a-json-command.ts":
+                  "6bea4c4fec4e4c77e3c02501ce431ac876267fef",
+              "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts":
+                  "64b435c5d9a8af7695d6800dba0fe6ba89b2405a",
+              "apps/jobs/run-ml-cal-1-g4-phase-a-retention-setup.ts":
+                  "b6d84ac5fc72b3e5a4d7a129d68f953446a6fb56",
+              "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts":
+                  "ed9ffad9c45bf714ffc9199ff8a16c7057b44fad",
+              "apps/jobs/lib/ml-cal-1-g4-pooler-preflight-live-runner.ts":
+                  "ea201d6e401d298f604cc06bb022e43c75782df6",
+              "apps/jobs/lib/ml-cal-1-g4-pooler-preflight-live-reader.ts":
+                  "94b2aac959840cbbd8178ea0f6bd5cd354295e37",
+              "apps/jobs/run-ml-cal-1-g4-pooler-preflight-live.ts":
+                  "25f495fc5d154be1a6faa8300b2462fc33dc95cb",
+              "apps/jobs/lib/ml-cal-1-g4-pooler-preflight-real-adapter.ts":
+                  "a61a046a8128012c58046062d20b514ea2fad85a",
+              "apps/jobs/lib/ml-cal-1-g4-pooler-preflight-fixture.ts":
+                  "14f726efd60e8c4b0b14924f4a19470c2b8cd1cf",
+              "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts":
+                  "39ff24dcec7d39c1fb5fc8b79a38d999979a4d84",
+              "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts":
+                  "08c07a3cf1f0d855a03af88a73965bcb81536fb3",
+              "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts":
+                  "a5d049808299d2cab651d3543c9a03632994bf7a",
+              "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts":
+                  "225dc3188f84065dd0c5b5fb4aeee8ebd7d4c75f",
+              "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts":
+                  "7aeee68eb90b5a2b052d11cd7a38f2da05fbed6d",
+              "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts":
+                  "129b349a6e09c1cea6bcf440622a966d75512a11",
+              "apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts":
+                  "472fe71eeb471ef1e4e52a57862a71ed5a1d3037",
+              "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts":
+                  "70e2d40f13742c8095e920ac01acb78d6f986eca",
+              "package.json": "9dd5f3e9c136c4c0df0f7f46cf03c3a548052e73",
+              "package-lock.json": "8c19ca0d028900a235d57b69f6802d2423b22af6",
+          }
+          for path, expected in inherited.items():
+              base_blob = git_blob(f"{ACCEPTED_BASE}:{path}")
+              head_blob = git_blob(f"HEAD:{path}")
+              source_blob = git_blob(f"{source_sha}:{path}")
+              assert base_blob == expected, f"{path} base {base_blob} != {expected}"
+              assert head_blob == expected, f"{path} HEAD {head_blob} != {expected}"
+              assert source_blob == expected, f"{path} source {source_blob} != {expected}"
+              print(f"ok inherited_unchanged {path} blob={head_blob}")
+
+          for rel in [
+              HISTORICAL_LIB,
+              "apps/jobs/lib/ml-cal-1-g4-windows-path-identity.ts",
+              "apps/jobs/run-ml-cal-1-g4-phase-a-retention-setup.ts",
+              "apps/jobs/lib/ml-cal-1-g4-phase-a-json-command.ts",
+              "apps/jobs/run-ml-cal-1-g4-phase-a-json-command.ts",
+          ]:
+              text = pathlib.Path(rel).read_text(encoding="utf-8")
+              assert "new PrismaClient" not in text, rel
+              assert "process.env.DATABASE_URL" not in text, rel
+              assert "process.env.DIRECT_URL" not in text, rel
+              print(f"ok passive/gated {rel}")
+
+          lib = pathlib.Path(HISTORICAL_LIB).read_text(encoding="utf-8")
+          assert "ML_CAL_1_G4_PHASE_A_DESIGN_SHA256" in lib
+          print("ok design_pin_present_in_w5_successor_library")
+
+          secretish = re.compile(
+              r"(?i)(api[_-]?key\s*[:=]\s*\S+|password\s*[:=]\s*\S+|bearer\s+[a-z0-9._-]{8,}|"
+              r"ghp_[A-Za-z0-9]+|(DATABASE_URL|DIRECT_URL)\s*[:=]\s*\S+)"
+          )
+          for rel in list(reviewed) + [
+              ".github/workflows/test-ml-cal-1-g4-w5-path-identity-v1.yml"
+          ]:
+              text = pathlib.Path(rel).read_text(encoding="utf-8")
+              assert not secretish.search(text), rel
+          print("ok secret-free scan (scoped W5 files + workflow)")
+          print("ok dependencies_unchanged package.json package-lock.json")
+          print("ok windows_native_helper_not_in_git")
+          print("ok no_env_dump no_secret_exfiltration")
+          print("ok HISTORICAL_258_vs_W5_SUCCESSOR pins labeled and distinct")
+          PY
+
+      - name: Run inherited W4 conflict-gate suite
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts \
+            --json --outputFile=jest-w4.json
+
+      - name: Run inherited Phase A JSON command suite
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts \
+            --json --outputFile=jest-json.json
+
+      - name: Run inherited Phase A retention setup suite
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts \
+            --json --outputFile=jest-phase-a.json
+
+      - name: Run inherited nonfixture runner suite
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts \
+            --json --outputFile=jest-runner.json
+
+      - name: Run inherited real-adapter suite
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts \
+            --json --outputFile=jest-adapter.json
+
+      - name: Run inherited fixture-preflight suite
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts \
+            --json --outputFile=jest-fixture.json
+
+      - name: Run inherited binding / G2 / G3 / G4 regressions
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts \
+            apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts \
+            apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts \
+            apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts \
+            --json --outputFile=jest-binding.json
+
+      - name: Run W5 focused suite
+        run: |
+          set -euo pipefail
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts \
+            --json --outputFile=jest-w5.json | tee w5-focused.log
+
+      - name: Classify Jest counts and W5 coverage
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, re
+          suites = [
+              ("w4", "jest-w4.json"),
+              ("json", "jest-json.json"),
+              ("phase_a", "jest-phase-a.json"),
+              ("runner", "jest-runner.json"),
+              ("adapter", "jest-adapter.json"),
+              ("fixture", "jest-fixture.json"),
+              ("binding_g2_g3_g4", "jest-binding.json"),
+              ("w5_focused", "jest-w5.json"),
+          ]
+          print("coverage_classification_begin")
+          print("lane=linux")
+          print("windows_native_ci=NOT_RUN")
+          print("windows_native_execution=CURSOR_REPORTED_ONLY_NOT_REPOSITORY_CI")
+          print("reason=reviewed_unsigned_helper_exe_is_not_committed")
+          print("helper_pin_bytes=20480")
+          print("helper_pin_sha256=9fc710026f177525994126673f084274e94d17615ec136a72b60d3e7a558c9b5")
+          print("self_contained_win_x64_publish=BLOCKED_sdk_absent_on_author_machine")
+          print("production_signing=UNRESOLVED")
+          print("testOnlySkipPinCheck_not_used_to_green_native_ci=true")
+          print("jest_green_is_not_native_body_execution=true")
+          inherited_passed = 0
+          for name, filename in suites:
+              path = pathlib.Path(filename)
+              if not path.exists():
+                  print(f"jest_suite {name}=MISSING")
+                  continue
+              data = json.loads(path.read_text(encoding="utf-8"))
+              passed = data.get("numPassedTests", 0)
+              failed = data.get("numFailedTests", 0)
+              pending = data.get("numPendingTests", 0)
+              todo = data.get("numTodoTests", 0)
+              total = data.get("numTotalTests", 0)
+              print(
+                  f"jest_suite {name} total={total} passed={passed} failed={failed} "
+                  f"skipped_pending={pending} todo={todo} success={data.get('success')}"
+              )
+              if name != "w5_focused":
+                  inherited_passed += passed
+          print(f"jest_inherited_passed_sum={inherited_passed}")
+          log = pathlib.Path("w5-focused.log")
+          text = log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
+          cov = re.findall(r"\[W5 coverage\][^\n]*", text)
+          warns = re.findall(r"\[W5\] SKIPPED/UNVERIFIED:[^\n]*", text)
+          print(f"w5_custom_coverage_lines={len(cov)}")
+          for line in cov:
+              print(f"w5_custom {line}")
+          print(f"w5_skip_warning_count={len(warns)}")
+          for line in warns:
+              print(f"w5_warning {line}")
+          print("linux_acceptance_scope=mocked_regressions_and_inherited_tests")
+          print("not_a_claim_of_344_fully_exercised_native_assertions=true")
+          print("not_win32_certification=true")
+          print("coverage_classification_end")
+          PY
+
+      - name: Windows native lane not provisioned
+        if: always()
+        run: |
+          echo "windows_native_lane=NOT_RUN"
+          echo "linux_lane=completed_or_failed_separately_above"
+          echo "native_windows_remains_cursor_reported_until_a_later_build_provisioning_review"
+          echo "do_not_replace_helper_pin_from_ci_build=true"
