@@ -40,6 +40,7 @@ import { runPhaseAJsonCommand } from '../lib/ml-cal-1-g4-phase-a-json-command';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 const HELPER_EXE = resolveDefaultW5HelperExePath(REPO_ROOT);
+const HOST_PLATFORM = process.platform;
 
 const coverage = {
   nativeExercised: 0,
@@ -71,6 +72,48 @@ function skipUnverified(
 
 function disposableRoot(label: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), `g4-w5-${label}-`));
+}
+
+/** Windows drive path for evidence/binding strings. Not a host filesystem path. */
+function windowsEvidencePath(...segments: string[]): string {
+  return ['C:', 'g4-w5-evidence', ...segments].join('\\');
+}
+
+/**
+ * Mocked transport tests isolate Windows platform and absolute-path semantics.
+ * Host fixture files stay on os.tmpdir(). Each install has one restore.
+ */
+let restoreWindowsTransport: (() => void) | null = null;
+
+function installWindowsTransportIsolation(): void {
+  restoreWindowsTransportIsolation();
+  const previous = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', {
+    configurable: true,
+    enumerable: true,
+    get: () => 'win32',
+  });
+  // Assign the CJS export. Jest's namespace binding is not configurable, so spyOn cannot replace it.
+  const nodePath = require('path') as typeof path;
+  const originalIsAbsolute = nodePath.isAbsolute.bind(nodePath);
+  nodePath.isAbsolute = (candidate: string) => {
+    // path.win32 is the same object on Windows, so do not call it from this replacement.
+    if (/^[A-Za-z]:[\\/]/.test(candidate) || candidate.startsWith('\\\\')) {
+      return true;
+    }
+    return originalIsAbsolute(candidate);
+  };
+  restoreWindowsTransport = () => {
+    nodePath.isAbsolute = originalIsAbsolute;
+    if (previous) {
+      Object.defineProperty(process, 'platform', previous);
+    }
+    restoreWindowsTransport = null;
+  };
+}
+
+function restoreWindowsTransportIsolation(): void {
+  if (restoreWindowsTransport) restoreWindowsTransport();
 }
 
 function listTree(dir: string): string[] {
@@ -188,7 +231,7 @@ function completePassHelper(boundPath: string): MlCal1G4W5HelperResponse {
 }
 
 function w5PassStub(): MlCal1G4W5InspectResult {
-  const helper = completePassHelper(path.join(os.tmpdir(), 'stub'));
+  const helper = completePassHelper(windowsEvidencePath('stub'));
   return {
     ok: true,
     outcome: 'PASS',
@@ -248,9 +291,16 @@ describe('W5 helper pin + frozen caps', () => {
 });
 
 describe('PASS evidence gate', () => {
+  beforeEach(() => {
+    installWindowsTransportIsolation();
+  });
+  afterEach(() => {
+    restoreWindowsTransportIsolation();
+  });
+
   it('rejects PASS with reasons / missing identity / malformed segments', () => {
     coverage.mocked += 1;
-    const bound = path.join(os.tmpdir(), 'pass-ev');
+    const bound = windowsEvidencePath('pass-ev');
     const base = completePassHelper(bound);
     expect(validatePassEvidence(base, bound).ok).toBe(true);
     expect(validatePassEvidence({ ...base, reasons: ['x'] }, bound).ok).toBe(
@@ -276,7 +326,7 @@ describe('PASS evidence gate', () => {
 
   it('rejects impossible all-"x" PASS and REFUSE_ALIAS segment PASS', () => {
     coverage.mocked += 1;
-    const bound = path.join(os.tmpdir(), 'pass-impossible');
+    const bound = windowsEvidencePath('pass-impossible');
     const allX: MlCal1G4W5HelperResponse = {
       schemaVersion: 1,
       mode: 'inspect-w5',
@@ -315,7 +365,7 @@ describe('PASS evidence gate', () => {
 
   it('async+sync launchers refuse independently reproduced impossible PASS payloads', async () => {
     coverage.mocked += 1;
-    const absBound = path.join(os.tmpdir(), 'g4-w5-impossible-pass');
+    const absBound = windowsEvidencePath('g4-w5-impossible-pass');
     const allX = {
       schemaVersion: 1,
       mode: 'inspect-w5',
@@ -360,6 +410,7 @@ describe('PASS evidence gate', () => {
         testOnlySpawn: spawnMock,
       });
       expect(asyncR.ok).toBe(false);
+      expect(asyncR.reasons).not.toContain('windows_helper_platform_unsupported');
 
       const syncR = runW5PathIdentityInspectSync({
         boundPath: absBound,
@@ -381,12 +432,13 @@ describe('PASS evidence gate', () => {
           }) as ReturnType<typeof spawnSync>) as typeof spawnSync,
       });
       expect(syncR.ok).toBe(false);
+      expect(syncR.reasons).not.toContain('windows_helper_platform_unsupported');
     }
   });
 
   it('async launcher refuses incomplete PASS JSON', async () => {
     coverage.mocked += 1;
-    const absBound = path.join(os.tmpdir(), 'g4-w5-incomplete-pass');
+    const absBound = windowsEvidencePath('g4-w5-incomplete-pass');
     const body = {
       schemaVersion: 1,
       mode: 'inspect-w5',
@@ -496,7 +548,7 @@ describe('PASS evidence gate', () => {
 
   it('async+sync launchers strip casing variants from spawn env', async () => {
     coverage.mocked += 1;
-    const absBound = path.join(os.tmpdir(), 'g4-w5-case-env');
+    const absBound = windowsEvidencePath('g4-w5-case-env');
     const body = completePassHelper(absBound);
     const payload = Buffer.from(JSON.stringify(body), 'utf8');
     const ambientKeys = [
@@ -651,7 +703,14 @@ function mockChild(opts: {
 }
 
 describe('W5 async launcher refusal surfaces (mocked spawn)', () => {
-  const absBound = path.join(os.tmpdir(), 'g4-w5-mock-bound');
+  const absBound = windowsEvidencePath('g4-w5-mock-bound');
+
+  beforeEach(() => {
+    installWindowsTransportIsolation();
+  });
+  afterEach(() => {
+    restoreWindowsTransportIsolation();
+  });
 
   it('does not pass maxBuffer into spawn options', async () => {
     coverage.mocked += 1;
@@ -792,7 +851,14 @@ describe('W5 async launcher refusal surfaces (mocked spawn)', () => {
 });
 
 describe('W5 sync launcher path (actual sync contract)', () => {
-  const absBound = path.join(os.tmpdir(), 'g4-w5-sync-bound');
+  const absBound = windowsEvidencePath('g4-w5-sync-bound');
+
+  beforeEach(() => {
+    installWindowsTransportIsolation();
+  });
+  afterEach(() => {
+    restoreWindowsTransportIsolation();
+  });
 
   function mockSpawnSync(result: {
     status?: number | null;
@@ -963,6 +1029,8 @@ describe('W5 sync launcher path (actual sync contract)', () => {
 describe('Operator W5-only always BLOCKED (library/CLI/JSON)', () => {
   it('W5 PASS stub still leaves operator setup BLOCKED with zero mutation', () => {
     coverage.mocked += 1;
+    installWindowsTransportIsolation();
+    try {
     const root = disposableRoot('op-pass');
     fs.writeFileSync(path.join(root, 'KEEP.txt'), 'keep\n');
     const before = captureBaseline(root);
@@ -983,10 +1051,15 @@ describe('Operator W5-only always BLOCKED (library/CLI/JSON)', () => {
     expect(clockCalls).toBe(0);
     expect(mut.calls).toEqual([]);
     assertUnchanged(root, before);
+    } finally {
+      restoreWindowsTransportIsolation();
+    }
   });
 
   it('W5 non-PASS: no clock, no user-root mutation', () => {
     coverage.mocked += 1;
+    installWindowsTransportIsolation();
+    try {
     const root = disposableRoot('op-refuse');
     const before = captureBaseline(root);
     const mut = mutationRecorder();
@@ -1006,6 +1079,9 @@ describe('Operator W5-only always BLOCKED (library/CLI/JSON)', () => {
     expect(clockCalls).toBe(0);
     expect(mut.calls).toEqual([]);
     assertUnchanged(root, before);
+    } finally {
+      restoreWindowsTransportIsolation();
+    }
   });
 
   it('disabled: zero W5, clock, mutation', () => {
@@ -1086,6 +1162,8 @@ describe('Operator W5-only always BLOCKED (library/CLI/JSON)', () => {
 
     const captureParent = disposableRoot('json-cap');
     const captureFile = path.join(captureParent, 'w5-op-capture.json');
+    installWindowsTransportIsolation();
+    try {
     const result = runPhaseAJsonCommand(
       {
         command: 'setup',
@@ -1112,6 +1190,52 @@ describe('Operator W5-only always BLOCKED (library/CLI/JSON)', () => {
       reasons: string[];
     };
     expect(durable.reasons).toContain('windows_gates_incomplete');
+    } finally {
+      restoreWindowsTransportIsolation();
+    }
+  });
+});
+
+describe('unmocked non-Windows platform refusal', () => {
+  it('refuses before spawn when the host platform is not win32', async () => {
+    expect(process.platform).toBe(HOST_PLATFORM);
+    if (process.platform === 'win32') {
+      skipUnverified(
+        'non-Windows platform refusal is not observable while process.platform is win32'
+      );
+      return;
+    }
+    coverage.mocked += 1;
+    const hostBound = path.join(os.tmpdir(), 'g4-w5-unmocked-non-windows');
+    const fakeExe = path.join(disposableRoot('unmocked'), 'h.exe');
+    fs.writeFileSync(fakeExe, Buffer.alloc(8));
+    let asyncSpawned = false;
+    const asyncR = await runW5PathIdentityInspectAsync({
+      boundPath: hostBound,
+      helperExePath: fakeExe,
+      testOnlySkipPinCheck: true,
+      testOnlySpawn: (() => {
+        asyncSpawned = true;
+        throw new Error('spawned');
+      }) as typeof spawn,
+    });
+    expect(asyncSpawned).toBe(false);
+    expect(asyncR.spawned).toBe(false);
+    expect(asyncR.reasons).toEqual(['windows_helper_platform_unsupported']);
+
+    let syncSpawned = false;
+    const syncR = runW5PathIdentityInspectSync({
+      boundPath: hostBound,
+      helperExePath: fakeExe,
+      testOnlySkipPinCheck: true,
+      testOnlySpawnSync: (() => {
+        syncSpawned = true;
+        throw new Error('spawned');
+      }) as typeof spawnSync,
+    });
+    expect(syncSpawned).toBe(false);
+    expect(syncR.spawned).toBe(false);
+    expect(syncR.reasons).toEqual(['windows_helper_platform_unsupported']);
   });
 });
 
