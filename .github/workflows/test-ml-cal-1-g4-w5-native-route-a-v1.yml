@@ -509,12 +509,23 @@ jobs:
 
       - name: Run W5 focused suite
         run: |
-          set -euo pipefail
-          # Redirect merges stdout and stderr. No pipe, so pipefail is retained
-          # for this step and Jest's own status is the step status.
+          # set +e is required so displaying the log cannot replace Jest's status.
+          set +e
+          set -u
           npx jest --runInBand --runTestsByPath \
             apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts \
             --json --outputFile=jest-w5.json > w5-focused.log 2>&1
+          jest_status=$?
+          printf '%s\n' "${jest_status}" > w5-jest-status.txt || echo "w5_jest_status_record_failed status=$?"
+          echo "w5_jest_status=${jest_status}"
+          echo "===== W5_FOCUSED_LOG_BEGIN ====="
+          if [ -f w5-focused.log ]; then
+            cat w5-focused.log || echo "w5_focused_log_display_failed status=$?"
+          else
+            echo "w5_focused_log_missing"
+          fi
+          echo "===== W5_FOCUSED_LOG_END ====="
+          exit "${jest_status}"
 
       - name: Classify Jest counts and W5 coverage
         if: always()
@@ -1012,6 +1023,348 @@ jobs:
           main()
           PY
 
+      - name: Summarize W5 diagnostic evidence
+        if: always()
+        run: |
+          set +e
+          mkdir -p w5-diagnostic-staging
+          checkout_sha="$(git rev-parse HEAD 2>/dev/null)"
+          if [ -z "${checkout_sha}" ]; then
+            checkout_sha="UNAVAILABLE"
+          fi
+          export DIAG_CHECKOUT_SHA="${checkout_sha}"
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import re
+          import shutil
+          import traceback
+
+          MESSAGE_CHARS = 4000
+          STAGING = pathlib.Path("w5-diagnostic-staging")
+          ALLOWLIST = (
+              "w5-focused.log",
+              "w5-jest-status.txt",
+              "jest-w5.json",
+              "jest-w4.json",
+              "jest-json.json",
+              "jest-phase-a.json",
+              "jest-runner.json",
+              "jest-adapter.json",
+              "jest-fixture.json",
+              "jest-binding.json",
+          )
+          COV_LINE = re.compile(
+              r"^\s*\[W5 coverage\] native=(\d+) mocked=(\d+) skipped=(\d+) unverified=(\d+)\s*$"
+          )
+          WARN_LINE = re.compile(r"^\s*\[W5\] SKIPPED/UNVERIFIED:\s*(.*?)\s*$")
+
+
+          def sha256_bytes(data):
+              return len(data), hashlib.sha256(data).hexdigest()
+
+
+          def source_head():
+              event = os.environ.get("GITHUB_EVENT_NAME", "")
+              event_path = os.environ.get("GITHUB_EVENT_PATH", "")
+              if event == "pull_request":
+                  if not event_path or not pathlib.Path(event_path).is_file():
+                      return "UNAVAILABLE"
+                  try:
+                      payload = json.loads(pathlib.Path(event_path).read_text(encoding="utf-8"))
+                      return payload["pull_request"]["head"]["sha"]
+                  except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+                      return f"UNAVAILABLE {type(exc).__name__}"
+              value = os.environ.get("GITHUB_SHA", "")
+              return value if value else "UNAVAILABLE"
+
+
+          def bounded(text):
+              if len(text) <= MESSAGE_CHARS:
+                  return [text], False
+              return [
+                  text[:MESSAGE_CHARS],
+                  (
+                      f"failure_message_truncated shown={MESSAGE_CHARS} total={len(text)} "
+                      "full_file=jest-w5.json"
+                  ),
+              ], True
+
+
+          def load_jest(problems):
+              path = pathlib.Path("jest-w5.json")
+              if not path.is_file():
+                  problems.append("diagnostic_unavailable jest-w5.json missing")
+                  return None
+              try:
+                  data = json.loads(path.read_text(encoding="utf-8"))
+              except json.JSONDecodeError as exc:
+                  problems.append(f"diagnostic_unavailable jest-w5.json malformed {exc}")
+                  return None
+              if not isinstance(data, dict):
+                  problems.append("diagnostic_unavailable jest-w5.json not_an_object")
+                  return None
+              return data
+
+
+          def summarize_jest(data, lines, problems):
+              if data is None:
+                  lines.append("jest_w5_counts=UNAVAILABLE")
+                  return
+              for key in (
+                  "success",
+                  "numFailedTests",
+                  "numPassedTests",
+                  "numPendingTests",
+                  "numTodoTests",
+                  "numTotalTests",
+                  "testResults",
+              ):
+                  if key not in data:
+                      problems.append(f"diagnostic_incomplete jest-w5.json field={key}")
+              lines.append(
+                  "jest_w5_counts "
+                  f"success={data.get('success', 'UNAVAILABLE')} "
+                  f"failed={data.get('numFailedTests', 'UNAVAILABLE')} "
+                  f"passed={data.get('numPassedTests', 'UNAVAILABLE')} "
+                  f"pending={data.get('numPendingTests', 'UNAVAILABLE')} "
+                  f"todo={data.get('numTodoTests', 'UNAVAILABLE')} "
+                  f"total={data.get('numTotalTests', 'UNAVAILABLE')}"
+              )
+              results = data.get("testResults", None)
+              if not isinstance(results, list):
+                  problems.append("diagnostic_unavailable jest-w5.json testResults_not_a_list")
+                  return
+              failed_rows = 0
+              for result in results:
+                  if not isinstance(result, dict):
+                      problems.append("diagnostic_incomplete testResult_not_an_object")
+                      continue
+                  suite = result.get("name", "UNAVAILABLE")
+                  suite_status = result.get("status", "UNAVAILABLE")
+                  suite_message = result.get("message")
+                  if suite_message is None:
+                      suite_message = result.get("failureMessage") or ""
+                  if not isinstance(suite_message, str):
+                      problems.append("diagnostic_incomplete suite_message_not_a_string")
+                      suite_message = str(suite_message)
+                  assertions = result.get("assertionResults", None)
+                  if assertions is None:
+                      problems.append(f"diagnostic_incomplete assertionResults missing suite={suite}")
+                      assertions = []
+                  elif not isinstance(assertions, list):
+                      problems.append(f"diagnostic_incomplete assertionResults_not_a_list suite={suite}")
+                      assertions = []
+                  if suite_status == "failed" and len(assertions) == 0:
+                      lines.append(
+                          f"suite_failure suite={suite} status={suite_status} assertions=0"
+                      )
+                      if suite_message == "":
+                          problems.append(f"diagnostic_incomplete suite_failure_message_empty suite={suite}")
+                      else:
+                          shown, _truncated = bounded(suite_message)
+                          lines.extend(shown)
+                  elif suite_message and suite_status != "passed":
+                      lines.append(f"suite_message suite={suite} status={suite_status}")
+                      shown, _truncated = bounded(suite_message)
+                      lines.extend(shown)
+                  for row in assertions:
+                      if not isinstance(row, dict):
+                          problems.append(f"diagnostic_incomplete assertion_not_an_object suite={suite}")
+                          continue
+                      status = row.get("status", "UNAVAILABLE")
+                      if status != "failed":
+                          continue
+                      failed_rows += 1
+                      title = row.get("title", "UNAVAILABLE")
+                      if "title" not in row or "status" not in row:
+                          problems.append(
+                              f"diagnostic_incomplete assertion_identity suite={suite} title={title}"
+                          )
+                      ancestors = row.get("ancestorTitles", "UNAVAILABLE")
+                      lines.append(
+                          f"failed_assertion suite={suite} ancestors={ancestors!r} "
+                          f"title={title} status={status}"
+                      )
+                      messages = row.get("failureMessages", None)
+                      if messages is None:
+                          problems.append(f"diagnostic_incomplete failureMessages missing title={title}")
+                          continue
+                      if not isinstance(messages, list):
+                          problems.append(f"diagnostic_incomplete failureMessages_not_a_list title={title}")
+                          continue
+                      if len(messages) == 0:
+                          problems.append(f"diagnostic_incomplete failureMessages_empty title={title}")
+                      for message in messages:
+                          if not isinstance(message, str):
+                              problems.append(f"diagnostic_incomplete failureMessage_not_a_string title={title}")
+                              message = str(message)
+                          shown, _truncated = bounded(message)
+                          lines.extend(shown)
+              declared = data.get("numFailedTests", None)
+              if isinstance(declared, int) and declared != failed_rows:
+                  problems.append(
+                      f"diagnostic_incomplete failed_count_mismatch declared={declared} displayed={failed_rows}"
+                  )
+              lines.append(f"failed_assertions_displayed={failed_rows}")
+
+
+          def summarize_log(lines, problems):
+              path = pathlib.Path("w5-focused.log")
+              if not path.is_file():
+                  problems.append("diagnostic_unavailable w5-focused.log missing")
+                  lines.append("coverage_lines=0")
+                  lines.append("unavailable_reasons=0")
+                  return
+              try:
+                  text = path.read_text(encoding="utf-8", errors="replace")
+              except OSError as exc:
+                  problems.append(f"diagnostic_unavailable w5-focused.log unreadable {exc}")
+                  return
+              coverage = []
+              reasons = []
+              for line in text.splitlines():
+                  if line.lstrip().startswith("[W5 coverage]"):
+                      match = COV_LINE.fullmatch(line)
+                      if match is None:
+                          problems.append(f"diagnostic_incomplete coverage_line_malformed {line.strip()}")
+                      else:
+                          coverage.append(line.strip())
+                  if line.lstrip().startswith("[W5] SKIPPED/UNVERIFIED:"):
+                      match = WARN_LINE.fullmatch(line)
+                      if match is None:
+                          problems.append(f"diagnostic_incomplete unavailable_reason_malformed {line.strip()}")
+                      else:
+                          reasons.append(match.group(1))
+              if not coverage:
+                  problems.append("diagnostic_unavailable coverage_line missing")
+              for item in coverage:
+                  lines.append(f"coverage_line {item}")
+              lines.append(f"coverage_lines={len(coverage)}")
+              for reason in reasons:
+                  lines.append(f"unavailable_reason {reason}")
+              lines.append(f"unavailable_reasons={len(reasons)}")
+
+
+          def valid_exit_status(text):
+              if not re.fullmatch(r"0|[1-9][0-9]{0,2}", text):
+                  return False
+              return int(text) <= 255
+
+
+          def jest_status_text(problems):
+              path = pathlib.Path("w5-jest-status.txt")
+              if not path.is_file():
+                  problems.append("diagnostic_unavailable w5-jest-status.txt missing")
+                  return "UNAVAILABLE"
+              try:
+                  raw = path.read_bytes()
+              except OSError as exc:
+                  problems.append(
+                      f"diagnostic_unavailable w5-jest-status.txt unreadable {type(exc).__name__}"
+                  )
+                  return f"UNAVAILABLE {type(exc).__name__}"
+              try:
+                  text = raw.decode("utf-8").strip()
+              except UnicodeDecodeError:
+                  problems.append("diagnostic_unavailable w5-jest-status.txt malformed")
+                  return "UNAVAILABLE malformed utf-8"
+              if text == "":
+                  problems.append("diagnostic_unavailable w5-jest-status.txt empty")
+                  return "UNAVAILABLE"
+              if valid_exit_status(text):
+                  return text
+              problems.append("diagnostic_unavailable w5-jest-status.txt malformed")
+              return f"UNAVAILABLE malformed {text!r}"
+
+
+          def stage_files(lines, problems):
+              if STAGING.exists():
+                  shutil.rmtree(STAGING)
+              STAGING.mkdir()
+              unreadable = False
+              for name in ALLOWLIST:
+                  source = pathlib.Path(name)
+                  if not source.is_file():
+                      lines.append(f"receipt_file {name} MISSING")
+                      continue
+                  try:
+                      data = source.read_bytes()
+                  except OSError as exc:
+                      unreadable = True
+                      problems.append(
+                          f"diagnostic_unavailable {name} unreadable {type(exc).__name__}"
+                      )
+                      lines.append(f"receipt_file {name} UNAVAILABLE {type(exc).__name__}")
+                      continue
+                  size, digest = sha256_bytes(data)
+                  # A destination write error stays fail-closed.
+                  (STAGING / name).write_bytes(data)
+                  lines.append(f"receipt_file {name} EXISTS bytes={size} sha256={digest}")
+              lines.append("receipt_self_hash_is_not_approval=true")
+              if unreadable:
+                  lines.append("unreadable_allowlisted_files_not_staged=true")
+              else:
+                  lines.append("full_raw_files_retained_when_listed_exists=true")
+
+
+          def write_receipt(lines):
+              receipt = STAGING / "w5-diagnostic-receipt.txt"
+              body = "\n".join(lines) + "\n"
+              receipt.write_bytes(body.encode("utf-8"))
+
+
+          def main():
+              problems = []
+              lines = [
+                  "diagnostic_summary_begin",
+                  f"source_sha={source_head()}",
+                  f"checkout_sha={os.environ.get('DIAG_CHECKOUT_SHA', 'UNAVAILABLE') or 'UNAVAILABLE'}",
+                  f"github_run_id={os.environ.get('GITHUB_RUN_ID', 'UNAVAILABLE') or 'UNAVAILABLE'}",
+                  f"github_run_attempt={os.environ.get('GITHUB_RUN_ATTEMPT', 'UNAVAILABLE') or 'UNAVAILABLE'}",
+                  f"w5_jest_status={jest_status_text(problems)}",
+                  "diagnostic_does_not_replace_jest_or_classifier_status=true",
+                  "artifact_upload=NOT_RUN_BY_THIS_STEP",
+              ]
+              code = 0
+              try:
+                  summarize_jest(load_jest(problems), lines, problems)
+                  summarize_log(lines, problems)
+              except Exception:
+                  code = 1
+                  problems.append("diagnostic_display_failed")
+                  lines.append(traceback.format_exc())
+              try:
+                  stage_files(lines, problems)
+                  lines.extend(problems)
+                  if code == 0:
+                      lines.append(
+                          "diagnostic_evidence=INCOMPLETE" if problems else "diagnostic_evidence=FILES_READ"
+                      )
+                      lines.append("diagnostic_conclusion=REPORTED")
+                  else:
+                      lines.append("diagnostic_evidence=DISPLAY_FAILED")
+                      lines.append("diagnostic_conclusion=DISPLAY_FAILED")
+                  lines.append("diagnostic_summary_end")
+                  write_receipt(lines)
+              except Exception:
+                  print("diagnostic_display_failed receipt_or_stage")
+                  print(traceback.format_exc())
+                  raise SystemExit(1)
+              for line in lines:
+                  print(line)
+              raise SystemExit(code)
+
+
+          if __name__ == "__main__":
+              main()
+          PY
+          summary_status=$?
+          echo "diagnostic_summary_process_status=${summary_status}"
+          exit "${summary_status}"
+
       - name: Route A acceptance scope
         if: always()
         run: |
@@ -1023,3 +1376,13 @@ jobs:
           echo "route_b_sdk_publish=NOT_THIS_JOB"
           echo "historical_run_38940275351_remains_linux_acceptance=true"
           echo "historical_failed_run_38935173033_unchanged=true"
+
+      - name: Upload W5 diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: w5-route-a-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: w5-diagnostic-staging
+          if-no-files-found: warn
+          retention-days: 14
+          overwrite: false
