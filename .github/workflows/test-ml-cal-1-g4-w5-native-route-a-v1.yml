@@ -507,6 +507,313 @@ jobs:
             apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts \
             --json --outputFile=jest-binding.json
 
+      - name: Probe runner short-path identity
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          export PYTHONUTF8=1
+          export PYTHONIOENCODING=utf-8
+          python - <<'PY'
+          import ctypes
+          import json
+          import os
+          import sys
+          from ctypes import wintypes
+
+          TARGET = "C:\\Users\\RUNNER~1"
+          TARGET_COMPONENT = "RUNNER~1"
+          NAME_CAP = 260
+          PATH_CAP = 1024
+          FIND_EX_INFO_STANDARD = 0
+          FIND_EX_SEARCH_NAME_MATCH = 0
+          INVALID_FILE_ATTRIBUTES = 0xFFFFFFFF
+
+          class FILETIME(ctypes.Structure):
+              _fields_ = [
+                  ("dwLowDateTime", wintypes.DWORD),
+                  ("dwHighDateTime", wintypes.DWORD),
+              ]
+
+          class WIN32_FIND_DATAW(ctypes.Structure):
+              _fields_ = [
+                  ("dwFileAttributes", wintypes.DWORD),
+                  ("ftCreationTime", FILETIME),
+                  ("ftLastAccessTime", FILETIME),
+                  ("ftLastWriteTime", FILETIME),
+                  ("nFileSizeHigh", wintypes.DWORD),
+                  ("nFileSizeLow", wintypes.DWORD),
+                  ("dwReserved0", wintypes.DWORD),
+                  ("dwReserved1", wintypes.DWORD),
+                  ("cFileName", wintypes.WCHAR * 260),
+                  ("cAlternateFileName", wintypes.WCHAR * 14),
+              ]
+
+          def layout_report():
+              size = ctypes.sizeof(WIN32_FIND_DATAW)
+              name_offset = WIN32_FIND_DATAW.cFileName.offset
+              alternate_offset = WIN32_FIND_DATAW.cAlternateFileName.offset
+              ok = size == 592 and name_offset == 44 and alternate_offset == 564
+              return {
+                  "layout_bytes": size,
+                  "layout_cFileName_offset": name_offset,
+                  "layout_cAlternateFileName_offset": alternate_offset,
+                  "layout_ok": ok,
+              }
+
+          def bound_text(value):
+              if value is None:
+                  return None, False
+              text = "".join(ch for ch in value if ch >= " " or ch == "\t")
+              if len(text) <= NAME_CAP:
+                  return text, False
+              return text[:NAME_CAP], True
+
+          def final_component(path):
+              if not path:
+                  return None
+              trimmed = path.rstrip("\\/")
+              if not trimmed:
+                  return None
+              return trimmed.split("\\")[-1].split("/")[-1]
+
+          def ordinal_ignore_equal(left, right):
+              if left is None or right is None:
+                  return None
+              return left.upper() == right.upper()
+
+          def conclude(record):
+              if not record["layout_ok"] or record["text_truncated"]:
+                  return "PROBE_UNAVAILABLE"
+              long_final = record["long_final_component"]
+              c_file = record["cFileName"]
+              c_alt = record["cAlternateFileName"]
+              if record["long_path_state"] != "present" or record["find_state"] != "present":
+                  return "PROBE_UNAVAILABLE"
+              if not long_final or c_file is None or c_alt is None:
+                  return "PROBE_UNAVAILABLE"
+              confirmed = (
+                  c_file == long_final
+                  and not ordinal_ignore_equal(long_final, TARGET_COMPONENT)
+                  and c_alt == TARGET_COMPONENT
+              )
+              return "PAIRING_CONFIRMED" if confirmed else "PAIRING_NOT_ESTABLISHED"
+
+          def emit(record):
+              record["status"] = conclude(record)
+              try:
+                  sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+              except (AttributeError, OSError):
+                  pass
+              print("[W5 short-path-probe] " + json.dumps(record, ensure_ascii=True, sort_keys=True))
+
+          def invalid_handle(handle):
+              if not handle:
+                  return True
+              value = handle if isinstance(handle, int) else ctypes.cast(handle, ctypes.c_void_p).value
+              if value in (None, 0, -1):
+                  return True
+              return value in (0xFFFFFFFF, 0xFFFFFFFFFFFFFFFF)
+
+          def conversion(fn, target):
+              buffer = ctypes.create_unicode_buffer(NAME_CAP)
+              returned = fn(target, buffer, len(buffer))
+              error = ctypes.get_last_error()
+              if returned == 0:
+                  return {"state": "unavailable", "value": None, "win32": int(error), "reason": "api_failed"}
+              if returned > len(buffer):
+                  if returned > PATH_CAP:
+                      return {
+                          "state": "unavailable",
+                          "value": None,
+                          "win32": int(error),
+                          "reason": "insufficient_buffer",
+                      }
+                  buffer = ctypes.create_unicode_buffer(returned)
+                  returned = fn(target, buffer, len(buffer))
+                  error = ctypes.get_last_error()
+                  if returned == 0 or returned > len(buffer):
+                      return {
+                          "state": "unavailable",
+                          "value": None,
+                          "win32": int(error),
+                          "reason": "insufficient_buffer" if returned else "api_failed",
+                      }
+              text, truncated = bound_text(buffer.value)
+              return {"state": "present", "value": text, "win32": 0, "reason": None, "truncated": truncated}
+
+          def probe():
+              record = {
+                  "target": TARGET,
+                  "exists": None,
+                  "exists_win32": None,
+                  "long_path_state": "unavailable",
+                  "long_path": None,
+                  "long_path_win32": None,
+                  "long_path_reason": None,
+                  "short_path_state": "unavailable",
+                  "short_path": None,
+                  "short_path_win32": None,
+                  "short_path_reason": None,
+                  "find_state": "unavailable",
+                  "find_win32": None,
+                  "find_reason": None,
+                  "cFileName": None,
+                  "cAlternateFileName": None,
+                  "runner_tilde_equals_alternate": None,
+                  "long_final_component": None,
+                  "long_final_equals_cfilename": None,
+                  "text_truncated": False,
+                  "probe_exception": None,
+              }
+              record.update(layout_report())
+              kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+              kernel32.GetFileAttributesW.argtypes = [wintypes.LPCWSTR]
+              kernel32.GetFileAttributesW.restype = wintypes.DWORD
+              kernel32.GetLongPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+              kernel32.GetLongPathNameW.restype = wintypes.DWORD
+              kernel32.GetShortPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+              kernel32.GetShortPathNameW.restype = wintypes.DWORD
+              kernel32.FindFirstFileExW.argtypes = [
+                  wintypes.LPCWSTR,
+                  ctypes.c_int,
+                  ctypes.POINTER(WIN32_FIND_DATAW),
+                  ctypes.c_int,
+                  ctypes.c_void_p,
+                  wintypes.DWORD,
+              ]
+              kernel32.FindFirstFileExW.restype = ctypes.c_void_p
+              kernel32.FindClose.argtypes = [ctypes.c_void_p]
+              kernel32.FindClose.restype = wintypes.BOOL
+
+              attributes = kernel32.GetFileAttributesW(TARGET)
+              exists_error = ctypes.get_last_error()
+              exists = int(attributes) != INVALID_FILE_ATTRIBUTES
+              record["exists"] = exists
+              record["exists_win32"] = 0 if exists else int(exists_error)
+
+              long_result = conversion(kernel32.GetLongPathNameW, TARGET)
+              short_result = conversion(kernel32.GetShortPathNameW, TARGET)
+              record["long_path_state"] = long_result["state"]
+              record["long_path"] = long_result["value"]
+              record["long_path_win32"] = long_result["win32"]
+              record["long_path_reason"] = long_result["reason"]
+              record["short_path_state"] = short_result["state"]
+              record["short_path"] = short_result["value"]
+              record["short_path_win32"] = short_result["win32"]
+              record["short_path_reason"] = short_result["reason"]
+              record["text_truncated"] = bool(long_result.get("truncated") or short_result.get("truncated"))
+              record["long_final_component"] = final_component(long_result["value"])
+
+              if not record["layout_ok"]:
+                  record["find_reason"] = "layout_mismatch"
+                  emit(record)
+                  return
+
+              data = WIN32_FIND_DATAW()
+              handle = kernel32.FindFirstFileExW(
+                  TARGET,
+                  FIND_EX_INFO_STANDARD,
+                  ctypes.byref(data),
+                  FIND_EX_SEARCH_NAME_MATCH,
+                  None,
+                  0,
+              )
+              find_error = ctypes.get_last_error()
+              try:
+                  if invalid_handle(handle):
+                      record["find_win32"] = int(find_error)
+                      record["find_reason"] = "api_failed"
+                      emit(record)
+                      return
+                  c_file, file_truncated = bound_text(data.cFileName)
+                  c_alt, alt_truncated = bound_text(data.cAlternateFileName)
+                  record["find_state"] = "present"
+                  record["find_win32"] = 0
+                  record["cFileName"] = c_file
+                  record["cAlternateFileName"] = c_alt
+                  record["text_truncated"] = record["text_truncated"] or file_truncated or alt_truncated
+                  record["runner_tilde_equals_alternate"] = c_alt == TARGET_COMPONENT
+                  record["long_final_equals_cfilename"] = (
+                      None if record["long_final_component"] is None else c_file == record["long_final_component"]
+                  )
+              finally:
+                  if not invalid_handle(handle):
+                      kernel32.FindClose(handle)
+              emit(record)
+
+          def selftest():
+              layout = layout_report()
+              if not layout["layout_ok"]:
+                  raise SystemExit("layout " + json.dumps(layout))
+              samples = []
+
+              def sample(**overrides):
+                  record = {
+                      "layout_ok": True,
+                      "text_truncated": False,
+                      "long_path_state": "present",
+                      "find_state": "present",
+                      "long_final_component": "runneradmin",
+                      "cFileName": "runneradmin",
+                      "cAlternateFileName": "RUNNER~1",
+                  }
+                  record.update(overrides)
+                  samples.append(conclude(record))
+
+              sample()
+              sample(cAlternateFileName="NOPE")
+              sample(long_final_component="RUNNER~1", cFileName="RUNNER~1")
+              sample(cFileName=None)
+              sample(layout_ok=False)
+              sample(long_path_state="unavailable")
+              sample(text_truncated=True)
+              expected = [
+                  "PAIRING_CONFIRMED",
+                  "PAIRING_NOT_ESTABLISHED",
+                  "PAIRING_NOT_ESTABLISHED",
+                  "PROBE_UNAVAILABLE",
+                  "PROBE_UNAVAILABLE",
+                  "PROBE_UNAVAILABLE",
+                  "PROBE_UNAVAILABLE",
+              ]
+              if samples != expected:
+                  raise SystemExit("samples " + json.dumps(samples))
+              return 0
+
+          if os.environ.get("W5_SHORT_PATH_PROBE_SELFTEST") == "1":
+              raise SystemExit(selftest())
+          try:
+              probe()
+          except Exception as exc:
+              emit({
+                  "target": TARGET,
+                  "exists": None,
+                  "exists_win32": None,
+                  "long_path_state": "unavailable",
+                  "long_path": None,
+                  "long_path_win32": None,
+                  "long_path_reason": "probe_exception",
+                  "short_path_state": "unavailable",
+                  "short_path": None,
+                  "short_path_win32": None,
+                  "short_path_reason": "probe_exception",
+                  "find_state": "unavailable",
+                  "find_win32": None,
+                  "find_reason": "probe_exception",
+                  "cFileName": None,
+                  "cAlternateFileName": None,
+                  "runner_tilde_equals_alternate": None,
+                  "long_final_component": None,
+                  "long_final_equals_cfilename": None,
+                  "text_truncated": False,
+                  "probe_exception": type(exc).__name__,
+                  "layout_bytes": None,
+                  "layout_cFileName_offset": None,
+                  "layout_cAlternateFileName_offset": None,
+                  "layout_ok": False,
+              })
+          PY
+
       - name: Run W5 focused suite
         run: |
           # set +e is required so displaying the log cannot replace Jest's status.
