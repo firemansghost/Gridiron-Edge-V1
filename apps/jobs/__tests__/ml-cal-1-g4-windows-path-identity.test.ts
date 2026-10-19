@@ -265,6 +265,128 @@ async function waitForFile(p: string, timeoutMs: number): Promise<boolean> {
   return false;
 }
 
+const NATIVE_EVIDENCE_TEXT_CAP = 4000;
+const NATIVE_EVIDENCE_LIST_CAP = 80;
+
+function boundEvidenceStrings(
+  values: readonly string[] | undefined
+): { values: string[]; truncated: boolean } | null {
+  if (!values) return null;
+  let truncated = values.length > NATIVE_EVIDENCE_LIST_CAP;
+  const bounded = values.slice(0, NATIVE_EVIDENCE_LIST_CAP).map((item) => {
+    if (item.length <= NATIVE_EVIDENCE_TEXT_CAP) return item;
+    truncated = true;
+    return item.slice(0, NATIVE_EVIDENCE_TEXT_CAP);
+  });
+  return { values: bounded, truncated };
+}
+
+function nativeEvidenceFromResult(result: MlCal1G4W5InspectResult): Record<string, unknown> {
+  return {
+    outcome: result.outcome,
+    ok: result.ok,
+    reasons: boundEvidenceStrings(result.reasons),
+    notes: boundEvidenceStrings(result.notes),
+    spawned: result.spawned,
+    helper_present: result.helper != null,
+    helper_outcome: result.helper?.outcome ?? null,
+    helper_reasons: result.helper ? boundEvidenceStrings(result.helper.reasons) : null,
+    helper_notes: result.helper ? boundEvidenceStrings(result.helper.notes ?? []) : null,
+    stderr: 'UNAVAILABLE',
+    stderr_collection: 'not_exposed_by_launcher',
+  };
+}
+
+function unobservedInspect(): Record<string, unknown> {
+  return {
+    outcome: 'UNOBSERVED',
+    ok: 'UNOBSERVED',
+    reasons: 'UNOBSERVED',
+    notes: 'UNOBSERVED',
+    spawned: 'UNOBSERVED',
+    helper_present: 'UNOBSERVED',
+    helper_outcome: 'UNOBSERVED',
+    helper_reasons: 'UNOBSERVED',
+    helper_notes: 'UNOBSERVED',
+    stderr: 'UNAVAILABLE',
+    stderr_collection: 'not_exposed_by_launcher',
+  };
+}
+
+function recordNativeEvidence(title: string, detail: Record<string, unknown>): void {
+  // eslint-disable-next-line no-console
+  console.log(`[W5 native-evidence] ${JSON.stringify({ test: title, ...detail })}`);
+}
+
+function handshakeDirNames(dir: string): string[] | 'UNREADABLE' {
+  try {
+    return fs.readdirSync(dir).sort();
+  } catch {
+    return 'UNREADABLE';
+  }
+}
+
+function textFileContains(
+  filePath: string,
+  needle: string
+): boolean | 'ABSENT' | 'UNREADABLE' {
+  if (!fs.existsSync(filePath)) return 'ABSENT';
+  try {
+    return fs.readFileSync(filePath, 'utf8').includes(needle);
+  } catch {
+    return 'UNREADABLE';
+  }
+}
+
+function trackInspect(pending: Promise<MlCal1G4W5InspectResult>): {
+  promise: Promise<MlCal1G4W5InspectResult>;
+  settled: () => boolean;
+  rejected: () => boolean;
+  result: () => MlCal1G4W5InspectResult | undefined;
+} {
+  let done = false;
+  let failed = false;
+  let value: MlCal1G4W5InspectResult | undefined;
+  const promise = pending.then(
+    (result) => {
+      done = true;
+      value = result;
+      return result;
+    },
+    (error: unknown) => {
+      done = true;
+      failed = true;
+      throw error;
+    }
+  );
+  return {
+    promise,
+    settled: () => done,
+    rejected: () => failed,
+    result: () => value,
+  };
+}
+
+function handshakeObservation(
+  tracked: ReturnType<typeof trackInspect>,
+  ready: string,
+  proceed: string,
+  handshakeDir: string,
+  readySeen: boolean
+): Record<string, unknown> {
+  const settled = tracked.result();
+  return {
+    ready_wait_returned: readySeen,
+    ready_exists: fs.existsSync(ready),
+    proceed_exists: fs.existsSync(proceed),
+    ready_contains_segment_mid: textFileContains(ready, 'segment=mid'),
+    handshake_dir_names: handshakeDirNames(handshakeDir),
+    inspect_settled: tracked.settled(),
+    inspect_rejected: tracked.rejected(),
+    ...(settled ? nativeEvidenceFromResult(settled) : unobservedInspect()),
+  };
+}
+
 describe('W5 helper pin + frozen caps', () => {
   it('records frozen caps and pin constants', () => {
     expect(ML_CAL_1_G4_W5_STDOUT_BYTE_CAP).toBe(1_048_576);
@@ -1253,6 +1375,10 @@ describe('Native W5 disposable Windows readback', () => {
       boundPath: root,
       repoRoot: REPO_ROOT,
     });
+    recordNativeEvidence('ordinary existing path PASS', {
+      phase: 'before_assertions',
+      ...nativeEvidenceFromResult(r),
+    });
     expect(r.outcome).toBe('PASS');
     expect(r.ok).toBe(true);
     expect(r.helper?.expectedFinalGuidPath).toBeTruthy();
@@ -1287,6 +1413,10 @@ describe('Native W5 disposable Windows readback', () => {
       boundPath: uni,
       repoRoot: REPO_ROOT,
     });
+    recordNativeEvidence('long / Unicode names', {
+      phase: 'before_assertions',
+      ...nativeEvidenceFromResult(r),
+    });
     expect(r.outcome).toBe('PASS');
   });
 
@@ -1311,6 +1441,10 @@ describe('Native W5 disposable Windows readback', () => {
     const r = runW5PathIdentityInspectSync({
       boundPath: link,
       repoRoot: REPO_ROOT,
+    });
+    recordNativeEvidence('junction alias segment REFUSE (pre-existing)', {
+      phase: 'before_assertions',
+      ...nativeEvidenceFromResult(r),
     });
     expect(r.outcome).toBe('REFUSE');
     expect(r.reasons.some((x) => /alias|reparse/i.test(x))).toBe(true);
@@ -1362,14 +1496,25 @@ describe('Native W5 disposable Windows readback', () => {
       const ready = path.join(hs, 'ready.txt');
       const proceed = path.join(hs, 'proceed.txt');
 
-      const inspectP = runW5PathIdentityInspectAsync({
-        boundPath: leaf,
-        repoRoot: REPO_ROOT,
-        timeoutMs: 30_000,
-        testOnlyHandshake: { dir: hs, afterSegment: 'mid' },
-      });
+      const tracked = trackInspect(
+        runW5PathIdentityInspectAsync({
+          boundPath: leaf,
+          repoRoot: REPO_ROOT,
+          timeoutMs: 30_000,
+          testOnlyHandshake: { dir: hs, afterSegment: 'mid' },
+        })
+      );
+      const inspectP = tracked.promise;
 
-      expect(await waitForFile(ready, 15_000)).toBe(true);
+      const readySeen = await waitForFile(ready, 15_000);
+      recordNativeEvidence(
+        'controlled normal-directory parent swap via explicit handshake',
+        {
+          phase: 'after_ready_wait',
+          ...handshakeObservation(tracked, ready, proceed, hs, readySeen),
+        }
+      );
+      expect(readySeen).toBe(true);
       const readyBody = fs.readFileSync(ready, 'utf8');
       expect(readyBody).toContain('segment=mid');
       fs.renameSync(mid, path.join(root, 'mid_old'));
@@ -1378,6 +1523,16 @@ describe('Native W5 disposable Windows readback', () => {
       fs.writeFileSync(proceed, 'swapped\n');
 
       const r = await inspectP;
+      recordNativeEvidence(
+        'controlled normal-directory parent swap via explicit handshake',
+        {
+          phase: 'after_inspect',
+          ready_exists: fs.existsSync(ready),
+          proceed_exists: fs.existsSync(proceed),
+          proceed_contains_swapped: textFileContains(proceed, 'swapped'),
+          ...nativeEvidenceFromResult(r),
+        }
+      );
       expect(fs.existsSync(ready)).toBe(true);
       expect(fs.existsSync(proceed)).toBe(true);
       expect(r.outcome).not.toBe('PASS');
@@ -1411,14 +1566,25 @@ describe('Native W5 disposable Windows readback', () => {
       const ready = path.join(hs, 'ready.txt');
       const proceed = path.join(hs, 'proceed.txt');
 
-      const inspectP = runW5PathIdentityInspectAsync({
-        boundPath: leaf,
-        repoRoot: REPO_ROOT,
-        timeoutMs: 30_000,
-        testOnlyHandshake: { dir: hs, afterSegment: 'mid' },
-      });
+      const tracked = trackInspect(
+        runW5PathIdentityInspectAsync({
+          boundPath: leaf,
+          repoRoot: REPO_ROOT,
+          timeoutMs: 30_000,
+          testOnlyHandshake: { dir: hs, afterSegment: 'mid' },
+        })
+      );
+      const inspectP = tracked.promise;
 
-      if (!(await waitForFile(ready, 15_000))) {
+      const readySeen = await waitForFile(ready, 15_000);
+      recordNativeEvidence(
+        'controlled junction replacement during inspection via explicit handshake',
+        {
+          phase: 'after_ready_wait',
+          ...handshakeObservation(tracked, ready, proceed, hs, readySeen),
+        }
+      );
+      if (!readySeen) {
         skipUnverified('handshake ready not observed', this);
         return;
       }
@@ -1433,6 +1599,16 @@ describe('Native W5 disposable Windows readback', () => {
       fs.writeFileSync(proceed, 'junction-swapped\n');
 
       const r = await inspectP;
+      recordNativeEvidence(
+        'controlled junction replacement during inspection via explicit handshake',
+        {
+          phase: 'after_inspect',
+          ready_exists: fs.existsSync(ready),
+          proceed_exists: fs.existsSync(proceed),
+          proceed_contains_junction_swapped: textFileContains(proceed, 'junction-swapped'),
+          ...nativeEvidenceFromResult(r),
+        }
+      );
       expect(fs.existsSync(ready)).toBe(true);
       expect(fs.readFileSync(proceed, 'utf8')).toContain('junction-swapped');
       expect(r.outcome).not.toBe('PASS');
@@ -1474,6 +1650,15 @@ describe('Native W5 disposable Windows readback', () => {
         repoRoot: REPO_ROOT,
         // deliberate: no testOnlyHandshake
       });
+      recordNativeEvidence(
+        'ordinary inspection with ambient casing-variant G4_W5_TEST_* writes no handshake files',
+        {
+          phase: 'before_assertions',
+          ready_exists: fs.existsSync(ready),
+          handshake_dir_names: handshakeDirNames(hs),
+          ...nativeEvidenceFromResult(r),
+        }
+      );
       expect(r.outcome).toBe('PASS');
       expect(fs.existsSync(ready)).toBe(false);
       expect(fs.readdirSync(hs)).toEqual([]);
