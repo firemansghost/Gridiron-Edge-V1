@@ -281,7 +281,130 @@ function boundEvidenceStrings(
   return { values: bounded, truncated };
 }
 
+function boundEvidenceText(value: string): { value: string; truncated: boolean } {
+  if (value.length <= NATIVE_EVIDENCE_TEXT_CAP) return { value, truncated: false };
+  return { value: value.slice(0, NATIVE_EVIDENCE_TEXT_CAP), truncated: true };
+}
+
+function isDisposableFixtureBoundPath(value: string): boolean {
+  const tmp = os.tmpdir().replace(/[\\/]+$/, '');
+  let rest: string | null = null;
+  if (value.startsWith(`${tmp}\\`)) rest = value.slice(tmp.length + 1);
+  else if (value.startsWith(`${tmp}/`)) rest = value.slice(tmp.length + 1);
+  if (rest == null || rest.length === 0) return false;
+  const parts = rest.split(/[\\/]/).filter((part) => part.length > 0);
+  if (parts.length === 0 || parts.some((part) => part === '.' || part === '..')) return false;
+  return parts[0].startsWith('g4-w5-');
+}
+
+function helperBoundPathEvidence(
+  helper: { boundPath?: string } | null | undefined
+): Record<string, unknown> {
+  if (!helper || typeof helper.boundPath !== 'string') {
+    return { state: 'absent', truncated: false };
+  }
+  if (!isDisposableFixtureBoundPath(helper.boundPath)) {
+    return { state: 'withheld_not_disposable_fixture', truncated: false };
+  }
+  const bounded = boundEvidenceText(helper.boundPath);
+  return { state: 'present', value: bounded.value, truncated: bounded.truncated };
+}
+
+function boundSegmentField(
+  value: string
+): { value: string; truncated: boolean } {
+  return boundEvidenceText(value);
+}
+
+function boundSegmentEvidence(item: unknown): Record<string, unknown> {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    return { retained: false };
+  }
+  const src = item as Record<string, unknown>;
+  const out: Record<string, unknown> = { retained: true };
+  for (const key of ['boundName', 'onDiskName', 'status', 'objectId'] as const) {
+    if (!Object.prototype.hasOwnProperty.call(src, key)) continue;
+    const raw = src[key];
+    if (typeof raw !== 'string') {
+      out[key] = null;
+      continue;
+    }
+    const bounded = boundSegmentField(raw);
+    out[key] = bounded.value;
+    if (bounded.truncated) out[`${key}_truncated`] = true;
+  }
+  if (Object.prototype.hasOwnProperty.call(src, 'reparseTag')) {
+    const tag = src.reparseTag;
+    out.reparseTag = typeof tag === 'number' && Number.isFinite(tag) ? tag : null;
+  }
+  return out;
+}
+
+function absentSegmentEvidence(): Record<string, unknown> {
+  return {
+    state: 'absent',
+    count: null,
+    truncated: false,
+    last_recorded_index: null,
+    last_recorded: null,
+    values: null,
+  };
+}
+
+function withheldSegmentEvidence(): Record<string, unknown> {
+  return {
+    state: 'withheld_not_disposable_fixture',
+    count: null,
+    truncated: false,
+    last_recorded_index: null,
+    last_recorded: null,
+    values: null,
+  };
+}
+
+function helperSegmentsEvidence(
+  helper: { segments?: unknown[] } | null | undefined
+): Record<string, unknown> {
+  if (!helper || !Array.isArray(helper.segments)) {
+    return absentSegmentEvidence();
+  }
+  const count = helper.segments.length;
+  if (count === 0) {
+    return {
+      state: 'empty',
+      count: 0,
+      truncated: false,
+      last_recorded_index: null,
+      last_recorded: null,
+      values: [],
+    };
+  }
+  let truncated = count > NATIVE_EVIDENCE_LIST_CAP;
+  const values = helper.segments.slice(0, NATIVE_EVIDENCE_LIST_CAP).map((item) => {
+    const bounded = boundSegmentEvidence(item);
+    if (Object.keys(bounded).some((key) => key.endsWith('_truncated'))) truncated = true;
+    return bounded;
+  });
+  const last = boundSegmentEvidence(helper.segments[count - 1]);
+  if (Object.keys(last).some((key) => key.endsWith('_truncated'))) truncated = true;
+  return {
+    state: truncated ? 'truncated' : 'present',
+    count,
+    truncated,
+    last_recorded_index: count - 1,
+    last_recorded: last,
+    values,
+  };
+}
+
 function nativeEvidenceFromResult(result: MlCal1G4W5InspectResult): Record<string, unknown> {
+  const helperBoundPath = helperBoundPathEvidence(result.helper);
+  const helperSegments =
+    helperBoundPath.state === 'present'
+      ? helperSegmentsEvidence(result.helper)
+      : helperBoundPath.state === 'withheld_not_disposable_fixture'
+        ? withheldSegmentEvidence()
+        : absentSegmentEvidence();
   return {
     outcome: result.outcome,
     ok: result.ok,
@@ -292,6 +415,8 @@ function nativeEvidenceFromResult(result: MlCal1G4W5InspectResult): Record<strin
     helper_outcome: result.helper?.outcome ?? null,
     helper_reasons: result.helper ? boundEvidenceStrings(result.helper.reasons) : null,
     helper_notes: result.helper ? boundEvidenceStrings(result.helper.notes ?? []) : null,
+    helper_bound_path: helperBoundPath,
+    helper_segments: helperSegments,
     stderr: 'UNAVAILABLE',
     stderr_collection: 'not_exposed_by_launcher',
   };
@@ -308,6 +433,8 @@ function unobservedInspect(): Record<string, unknown> {
     helper_outcome: 'UNOBSERVED',
     helper_reasons: 'UNOBSERVED',
     helper_notes: 'UNOBSERVED',
+    helper_bound_path: 'UNOBSERVED',
+    helper_segments: 'UNOBSERVED',
     stderr: 'UNAVAILABLE',
     stderr_collection: 'not_exposed_by_launcher',
   };
