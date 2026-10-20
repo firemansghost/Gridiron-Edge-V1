@@ -196,6 +196,10 @@ function resolveWindowsLongTempRoot(): string {
     WINDIR: process.env.WINDIR,
     G4_W5_FIXTURE_TEMP_INPUT: input,
   };
+  for (const key of ['TEMP', 'TMP', 'PATH'] as const) {
+    const value = process.env[key];
+    if (typeof value === 'string' && value.length > 0) env[key] = value;
+  }
   const empty = Buffer.alloc(0);
   try {
     assertExistingAbsoluteDirectory(input);
