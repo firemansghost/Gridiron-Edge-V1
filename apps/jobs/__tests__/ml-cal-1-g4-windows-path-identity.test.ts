@@ -41,6 +41,128 @@ import { runPhaseAJsonCommand } from '../lib/ml-cal-1-g4-phase-a-json-command';
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 const HELPER_EXE = resolveDefaultW5HelperExePath(REPO_ROOT);
 const HOST_PLATFORM = process.platform;
+const WINDOWS_LONG_PATH_TIMEOUT_MS = 20_000;
+const WINDOWS_LONG_PATH_MAX_OUTPUT_BYTES = 65_536;
+const WINDOWS_LONG_PATH_SCRIPT = [
+  "$ErrorActionPreference = 'Stop'",
+  "$inputPath = [Environment]::GetEnvironmentVariable('G4_W5_FIXTURE_TEMP_INPUT')",
+  'if ([string]::IsNullOrWhiteSpace($inputPath)) { exit 2 }',
+  "Add-Type -TypeDefinition @'",
+  'using System;',
+  'using System.Runtime.InteropServices;',
+  'using System.Text;',
+  'public static class G4W5LongPath {',
+  '  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]',
+  '  public static extern uint GetLongPathNameW(string lpszShortPath, StringBuilder lpszLongPath, uint cchBuffer);',
+  '}',
+  "'@",
+  '$buffer = New-Object System.Text.StringBuilder 32768',
+  '$needed = [G4W5LongPath]::GetLongPathNameW($inputPath, $buffer, 32768)',
+  'if ($needed -eq 0 -or $needed -ge 32768) { exit 3 }',
+  '[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($buffer.ToString()))',
+].join('\n');
+
+let fixtureTempRootCache: string | undefined;
+let fixtureTempRootError: Error | undefined;
+
+function windowsPowerShellExe(): string {
+  const root = process.env.SystemRoot || process.env.WINDIR;
+  if (!root || !path.win32.isAbsolute(root)) {
+    throw new Error('Windows fixture temp normalization could not locate PowerShell');
+  }
+  return path.win32.join(
+    root,
+    'System32',
+    'WindowsPowerShell',
+    'v1.0',
+    'powershell.exe'
+  );
+}
+
+function assertExistingAbsoluteDirectory(candidate: string): void {
+  if (!path.win32.isAbsolute(candidate)) {
+    throw new Error('Windows fixture temp root must be an absolute directory');
+  }
+  let st: fs.Stats;
+  try {
+    st = fs.statSync(candidate);
+  } catch {
+    throw new Error('Windows fixture temp root must be an existing directory');
+  }
+  if (!st.isDirectory()) {
+    throw new Error('Windows fixture temp root must be an existing directory');
+  }
+}
+
+function hasWindowsShortNameSegment(candidate: string): boolean {
+  return candidate.split(/[\\/]/).some((part) => /~[0-9]/.test(part));
+}
+
+/**
+ * Test-only long form of the existing Windows temporary directory.
+ * The path is passed as child environment data, never interpolated into the script.
+ * Operator and user-root paths are not normalized.
+ */
+function resolveWindowsLongTempRoot(): string {
+  const input = os.tmpdir();
+  assertExistingAbsoluteDirectory(input);
+  const powershell = windowsPowerShellExe();
+  if (!fs.existsSync(powershell)) {
+    throw new Error('Windows fixture temp normalization could not locate PowerShell');
+  }
+  const encodedCommand = Buffer.from(WINDOWS_LONG_PATH_SCRIPT, 'utf16le').toString('base64');
+  const child = spawnSync(
+    powershell,
+    ['-NoProfile', '-NonInteractive', '-EncodedCommand', encodedCommand],
+    {
+      timeout: WINDOWS_LONG_PATH_TIMEOUT_MS,
+      windowsHide: true,
+      maxBuffer: WINDOWS_LONG_PATH_MAX_OUTPUT_BYTES,
+      env: {
+        SystemRoot: process.env.SystemRoot,
+        WINDIR: process.env.WINDIR,
+        G4_W5_FIXTURE_TEMP_INPUT: input,
+      },
+    }
+  );
+  if (child.error || child.status !== 0) {
+    throw new Error('Windows fixture temp normalization failed');
+  }
+  const stdout = child.stdout ?? Buffer.alloc(0);
+  if (stdout.length === 0 || stdout.length > WINDOWS_LONG_PATH_MAX_OUTPUT_BYTES) {
+    throw new Error('Windows fixture temp normalization failed');
+  }
+  const encodedPath = (stdout.includes(0) ? stdout.toString('utf16le') : stdout.toString('utf8'))
+    .replace(/^\uFEFF/, '')
+    .trim();
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encodedPath)) {
+    throw new Error('Windows fixture temp normalization failed');
+  }
+  const longPath = Buffer.from(encodedPath, 'base64').toString('utf8').replace(/[\\/]+$/, '');
+  if (longPath.length === 0 || /[\r\n]/.test(longPath)) {
+    throw new Error('Windows fixture temp normalization failed');
+  }
+  assertExistingAbsoluteDirectory(longPath);
+  if (hasWindowsShortNameSegment(longPath)) {
+    throw new Error('Windows fixture temp root still contains an 8.3 short-name segment');
+  }
+  return longPath;
+}
+
+/** Genuine host platform only. Mocked process.platform must not select this root. */
+function fixtureTempRoot(): string {
+  if (fixtureTempRootCache) return fixtureTempRootCache;
+  if (fixtureTempRootError) throw fixtureTempRootError;
+  try {
+    const resolved = HOST_PLATFORM === 'win32' ? resolveWindowsLongTempRoot() : os.tmpdir();
+    fixtureTempRootCache = resolved;
+    return resolved;
+  } catch (err) {
+    fixtureTempRootError =
+      err instanceof Error ? err : new Error('Windows fixture temp normalization failed');
+    throw fixtureTempRootError;
+  }
+}
 
 const coverage = {
   nativeExercised: 0,
@@ -71,7 +193,7 @@ function skipUnverified(
 }
 
 function disposableRoot(label: string): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), `g4-w5-${label}-`));
+  return fs.mkdtempSync(path.join(fixtureTempRoot(), `g4-w5-${label}-`));
 }
 
 /** Windows drive path for evidence/binding strings. Not a host filesystem path. */
@@ -81,7 +203,7 @@ function windowsEvidencePath(...segments: string[]): string {
 
 /**
  * Mocked transport tests isolate Windows platform and absolute-path semantics.
- * Host fixture files stay on os.tmpdir(). Each install has one restore.
+ * Host fixture files stay under the resolved temporary root. Each install has one restore.
  */
 let restoreWindowsTransport: (() => void) | null = null;
 
@@ -287,7 +409,7 @@ function boundEvidenceText(value: string): { value: string; truncated: boolean }
 }
 
 function isDisposableFixtureBoundPath(value: string): boolean {
-  const tmp = os.tmpdir().replace(/[\\/]+$/, '');
+  const tmp = fixtureTempRoot().replace(/[\\/]+$/, '');
   let rest: string | null = null;
   if (value.startsWith(`${tmp}\\`)) rest = value.slice(tmp.length + 1);
   else if (value.startsWith(`${tmp}/`)) rest = value.slice(tmp.length + 1);
