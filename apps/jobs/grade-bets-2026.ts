@@ -34,6 +34,8 @@ import {
   type NonTargetBetSnapshot,
 } from './lib/grade-bets-2026';
 
+const GRADING_TRANSACTION_TIMEOUT_MS = 30_000;
+
 function defaultReportPath(season: number, week: number, mode: string): string {
   return path.join(
     process.cwd(),
@@ -295,7 +297,10 @@ async function main(): Promise<void> {
             },
           });
         },
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+        {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+          timeout: GRADING_TRANSACTION_TIMEOUT_MS,
+        }
       );
       updateCount = txResult.updateCount;
       plan = txResult.rePlan;

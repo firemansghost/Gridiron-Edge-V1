@@ -100,6 +100,12 @@ describe('2C-2J-6C-2 canonical official grading workflow', () => {
     expect(wf).toContain('if-no-files-found: warn');
   });
 
+  it('CLI sets a 30-second Serializable grading transaction timeout', () => {
+    expect(cli).toContain('GRADING_TRANSACTION_TIMEOUT_MS = 30_000');
+    expect(cli).toContain('timeout: GRADING_TRANSACTION_TIMEOUT_MS');
+    expect(cli).toContain('TransactionIsolationLevel.Serializable');
+  });
+
   it('CLI is Serializable, official_flat_100 only, no closePrice mutation, no --force', () => {
     expect(cli).toContain('TransactionIsolationLevel.Serializable');
     expect(cli).toContain('executeAtomicOfficialGradeCommit');
