@@ -64,6 +64,90 @@ const WINDOWS_LONG_PATH_SCRIPT = [
 
 let fixtureTempRootCache: string | undefined;
 let fixtureTempRootError: Error | undefined;
+let fixtureNormalizationDiagnosticEmitted = false;
+
+const FIXTURE_NORMALIZATION_NODE_ERROR_CODES = new Set([
+  'ENOENT',
+  'EPERM',
+  'EACCES',
+  'EINVAL',
+  'ETIMEDOUT',
+  'EAGAIN',
+  'EPIPE',
+  'ERR_CHILD_PROCESS_STDIO_MAXBUFFER',
+]);
+const FIXTURE_NORMALIZATION_ENV_KEYS = [
+  'SystemRoot',
+  'WINDIR',
+  'TEMP',
+  'TMP',
+  'PATH',
+  'PSModulePath',
+  'G4_W5_FIXTURE_TEMP_INPUT',
+] as const;
+
+function allowlistedNodeErrorCode(code: unknown): string | null {
+  return typeof code === 'string' && FIXTURE_NORMALIZATION_NODE_ERROR_CODES.has(code)
+    ? code
+    : null;
+}
+
+function allowlistedSignal(signal: unknown): string | null {
+  return typeof signal === 'string' && /^SIG[A-Z0-9]+$/.test(signal) ? signal : null;
+}
+
+function childEnvPresence(env: NodeJS.ProcessEnv): Record<string, boolean> {
+  const presence: Record<string, boolean> = {};
+  for (const key of FIXTURE_NORMALIZATION_ENV_KEYS) {
+    presence[key] = typeof env[key] === 'string' && env[key]!.length > 0;
+  }
+  return presence;
+}
+
+function emitFixtureNormalizationDiagnostic(record: Record<string, unknown>): void {
+  if (fixtureNormalizationDiagnosticEmitted) return;
+  fixtureNormalizationDiagnosticEmitted = true;
+  // eslint-disable-next-line no-console
+  console.warn(`[W5 fixture-normalization] ${JSON.stringify(record)}`);
+}
+
+function failFixtureNormalization(
+  stage:
+    | 'spawn'
+    | 'exit'
+    | 'empty_output'
+    | 'output_decode'
+    | 'invalid_root'
+    | 'remaining_short_segment',
+  details: {
+    powershellExists: boolean;
+    env: NodeJS.ProcessEnv;
+    status: number | null;
+    signal: NodeJS.Signals | null;
+    nodeErrorCode: unknown;
+    stdout: Buffer;
+    stderrByteCount: number;
+    stdoutBase64: boolean;
+  }
+): never {
+  const status =
+    typeof details.status === 'number' && details.status >= 0 && details.status <= 255
+      ? details.status
+      : null;
+  emitFixtureNormalizationDiagnostic({
+    stage,
+    exit_status: status,
+    signal: allowlistedSignal(details.signal),
+    node_error_code: allowlistedNodeErrorCode(details.nodeErrorCode),
+    powershell_exists: details.powershellExists,
+    stdout_bytes: details.stdout.length,
+    stderr_bytes: details.stderrByteCount,
+    stdout_contains_nul: details.stdout.includes(0),
+    stdout_base64: details.stdoutBase64,
+    env_present: childEnvPresence(details.env),
+  });
+  throw new Error('Windows fixture temp normalization failed');
+}
 
 function windowsPowerShellExe(): string {
   const root = process.env.SystemRoot || process.env.WINDIR;
@@ -105,10 +189,39 @@ function hasWindowsShortNameSegment(candidate: string): boolean {
  */
 function resolveWindowsLongTempRoot(): string {
   const input = os.tmpdir();
-  assertExistingAbsoluteDirectory(input);
   const powershell = windowsPowerShellExe();
-  if (!fs.existsSync(powershell)) {
-    throw new Error('Windows fixture temp normalization could not locate PowerShell');
+  const powershellExists = fs.existsSync(powershell);
+  const env: NodeJS.ProcessEnv = {
+    SystemRoot: process.env.SystemRoot,
+    WINDIR: process.env.WINDIR,
+    G4_W5_FIXTURE_TEMP_INPUT: input,
+  };
+  const empty = Buffer.alloc(0);
+  try {
+    assertExistingAbsoluteDirectory(input);
+  } catch {
+    return failFixtureNormalization('invalid_root', {
+      powershellExists,
+      env,
+      status: null,
+      signal: null,
+      nodeErrorCode: null,
+      stdout: empty,
+      stderrByteCount: 0,
+      stdoutBase64: false,
+    });
+  }
+  if (!powershellExists) {
+    return failFixtureNormalization('spawn', {
+      powershellExists: false,
+      env,
+      status: null,
+      signal: null,
+      nodeErrorCode: null,
+      stdout: empty,
+      stderrByteCount: 0,
+      stdoutBase64: false,
+    });
   }
   const encodedCommand = Buffer.from(WINDOWS_LONG_PATH_SCRIPT, 'utf16le').toString('base64');
   const child = spawnSync(
@@ -118,33 +231,47 @@ function resolveWindowsLongTempRoot(): string {
       timeout: WINDOWS_LONG_PATH_TIMEOUT_MS,
       windowsHide: true,
       maxBuffer: WINDOWS_LONG_PATH_MAX_OUTPUT_BYTES,
-      env: {
-        SystemRoot: process.env.SystemRoot,
-        WINDIR: process.env.WINDIR,
-        G4_W5_FIXTURE_TEMP_INPUT: input,
-      },
+      env,
     }
   );
-  if (child.error || child.status !== 0) {
-    throw new Error('Windows fixture temp normalization failed');
+  const stdout = child.stdout ?? empty;
+  const stderr = child.stderr ?? empty;
+  const base = {
+    powershellExists: true,
+    env,
+    status: child.status,
+    signal: child.signal,
+    nodeErrorCode: child.error && 'code' in child.error ? child.error.code : null,
+    stdout,
+    stderrByteCount: stderr.length,
+  };
+  if (child.error) {
+    return failFixtureNormalization('spawn', { ...base, stdoutBase64: false });
   }
-  const stdout = child.stdout ?? Buffer.alloc(0);
+  if (child.status !== 0) {
+    return failFixtureNormalization('exit', { ...base, stdoutBase64: false });
+  }
   if (stdout.length === 0 || stdout.length > WINDOWS_LONG_PATH_MAX_OUTPUT_BYTES) {
-    throw new Error('Windows fixture temp normalization failed');
+    return failFixtureNormalization('empty_output', { ...base, stdoutBase64: false });
   }
   const encodedPath = (stdout.includes(0) ? stdout.toString('utf16le') : stdout.toString('utf8'))
     .replace(/^\uFEFF/, '')
     .trim();
-  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encodedPath)) {
-    throw new Error('Windows fixture temp normalization failed');
+  const stdoutBase64 = /^[A-Za-z0-9+/]+={0,2}$/.test(encodedPath);
+  if (!stdoutBase64) {
+    return failFixtureNormalization('output_decode', { ...base, stdoutBase64: false });
   }
   const longPath = Buffer.from(encodedPath, 'base64').toString('utf8').replace(/[\\/]+$/, '');
   if (longPath.length === 0 || /[\r\n]/.test(longPath)) {
-    throw new Error('Windows fixture temp normalization failed');
+    return failFixtureNormalization('output_decode', { ...base, stdoutBase64: true });
   }
-  assertExistingAbsoluteDirectory(longPath);
+  try {
+    assertExistingAbsoluteDirectory(longPath);
+  } catch {
+    return failFixtureNormalization('invalid_root', { ...base, stdoutBase64: true });
+  }
   if (hasWindowsShortNameSegment(longPath)) {
-    throw new Error('Windows fixture temp root still contains an 8.3 short-name segment');
+    return failFixtureNormalization('remaining_short_segment', { ...base, stdoutBase64: true });
   }
   return longPath;
 }
