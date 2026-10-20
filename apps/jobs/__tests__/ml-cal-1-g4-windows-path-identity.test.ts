@@ -319,6 +319,18 @@ function disposableRoot(label: string): string {
   return fs.mkdtempSync(path.join(fixtureTempRoot(), `g4-w5-${label}-`));
 }
 
+/**
+ * Temp-mode positive controls must use os.tmpdir()'s own spelling.
+ * assertTempOperatorDoubleRoot() accepts a directory only when its
+ * realpath is under fs.realpathSync(os.tmpdir()) by string prefix.
+ * On Windows that realpath keeps an 8.3 segment, so the long-form
+ * fixture root is a different spelling. Native W5 fixtures stay on
+ * fixtureTempRoot().
+ */
+function tempModeDisposableRoot(label: string): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), `g4-w5-${label}-`));
+}
+
 /** Windows drive path for evidence/binding strings. Not a host filesystem path. */
 function windowsEvidencePath(...segments: string[]): string {
   return ['C:', 'g4-w5-evidence', ...segments].join('\\');
@@ -1623,7 +1635,7 @@ describe('Operator W5-only always BLOCKED (library/CLI/JSON)', () => {
 
   it('temp mode skips W5 and can succeed', () => {
     coverage.mocked += 1;
-    const root = disposableRoot('temp-ok');
+    const root = tempModeDisposableRoot('temp-ok');
     let w5Calls = 0;
     const r = runG4PhaseARetentionSetup(
       baseTempInput(root, {
@@ -1635,6 +1647,7 @@ describe('Operator W5-only always BLOCKED (library/CLI/JSON)', () => {
     );
     expect(w5Calls).toBe(0);
     expect(r.ok).toBe(true);
+    expect(r.reasons).not.toContain('operator_root_not_under_tmpdir');
   });
 
   it('CLI/JSON operator BLOCKED', () => {
@@ -2057,7 +2070,7 @@ describe('Native W5 disposable Windows readback', () => {
 describe('Positive mutation recorder control', () => {
   it('temp success records mutations', () => {
     coverage.mocked += 1;
-    const root = disposableRoot('mut-pos');
+    const root = tempModeDisposableRoot('mut-pos');
     const mut = mutationRecorder();
     const r = runG4PhaseARetentionSetup(
       baseTempInput(root, {
@@ -2065,6 +2078,7 @@ describe('Positive mutation recorder control', () => {
       })
     );
     expect(r.ok).toBe(true);
+    expect(r.reasons).not.toContain('operator_root_not_under_tmpdir');
     expect(mut.calls.length).toBeGreaterThan(0);
   });
 });
