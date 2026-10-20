@@ -43,23 +43,38 @@ const HELPER_EXE = resolveDefaultW5HelperExePath(REPO_ROOT);
 const HOST_PLATFORM = process.platform;
 const WINDOWS_LONG_PATH_TIMEOUT_MS = 20_000;
 const WINDOWS_LONG_PATH_MAX_OUTPUT_BYTES = 65_536;
+const WINDOWS_LONG_PATH_BUFFER_CHARS = 32_768;
 const WINDOWS_LONG_PATH_SCRIPT = [
-  "$ErrorActionPreference = 'Stop'",
-  "$inputPath = [Environment]::GetEnvironmentVariable('G4_W5_FIXTURE_TEMP_INPUT')",
-  'if ([string]::IsNullOrWhiteSpace($inputPath)) { exit 2 }',
-  "Add-Type -TypeDefinition @'",
-  'using System;',
-  'using System.Runtime.InteropServices;',
-  'using System.Text;',
-  'public static class G4W5LongPath {',
-  '  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]',
-  '  public static extern uint GetLongPathNameW(string lpszShortPath, StringBuilder lpszLongPath, uint cchBuffer);',
-  '}',
-  "'@",
-  '$buffer = New-Object System.Text.StringBuilder 32768',
-  '$needed = [G4W5LongPath]::GetLongPathNameW($inputPath, $buffer, 32768)',
-  'if ($needed -eq 0 -or $needed -ge 32768) { exit 3 }',
-  '[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($buffer.ToString()))',
+  'import base64',
+  'import os',
+  'import sys',
+  'import ctypes',
+  'from ctypes import wintypes',
+  '',
+  'def main():',
+  '    raw = os.environ.get("G4_W5_FIXTURE_TEMP_INPUT")',
+  '    if raw is None or raw.strip() == "":',
+  '        return 2',
+  '    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)',
+  '    kernel32.GetLongPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]',
+  '    kernel32.GetLongPathNameW.restype = wintypes.DWORD',
+  `    capacity = ${WINDOWS_LONG_PATH_BUFFER_CHARS}`,
+  '    buffer = ctypes.create_unicode_buffer(capacity)',
+  '    returned = int(kernel32.GetLongPathNameW(raw, buffer, capacity))',
+  '    if returned <= 0 or returned >= capacity:',
+  '        return 3',
+  '    text = buffer.value',
+  '    if not text or any(ch in text for ch in "\\r\\n\\x00"):',
+  '        return 4',
+  '    sys.stdout.buffer.write(base64.b64encode(text.encode("utf-8")))',
+  '    return 0',
+  '',
+  'try:',
+  '    raise SystemExit(main())',
+  'except SystemExit:',
+  '    raise',
+  'except Exception:',
+  '    raise SystemExit(5)',
 ].join('\n');
 
 let fixtureTempRootCache: string | undefined;
@@ -76,16 +91,6 @@ const FIXTURE_NORMALIZATION_NODE_ERROR_CODES = new Set([
   'EPIPE',
   'ERR_CHILD_PROCESS_STDIO_MAXBUFFER',
 ]);
-const FIXTURE_NORMALIZATION_ENV_KEYS = [
-  'SystemRoot',
-  'WINDIR',
-  'TEMP',
-  'TMP',
-  'PATH',
-  'PSModulePath',
-  'G4_W5_FIXTURE_TEMP_INPUT',
-] as const;
-
 function allowlistedNodeErrorCode(code: unknown): string | null {
   return typeof code === 'string' && FIXTURE_NORMALIZATION_NODE_ERROR_CODES.has(code)
     ? code
@@ -94,14 +99,6 @@ function allowlistedNodeErrorCode(code: unknown): string | null {
 
 function allowlistedSignal(signal: unknown): string | null {
   return typeof signal === 'string' && /^SIG[A-Z0-9]+$/.test(signal) ? signal : null;
-}
-
-function childEnvPresence(env: NodeJS.ProcessEnv): Record<string, boolean> {
-  const presence: Record<string, boolean> = {};
-  for (const key of FIXTURE_NORMALIZATION_ENV_KEYS) {
-    presence[key] = typeof env[key] === 'string' && env[key]!.length > 0;
-  }
-  return presence;
 }
 
 function emitFixtureNormalizationDiagnostic(record: Record<string, unknown>): void {
@@ -120,8 +117,7 @@ function failFixtureNormalization(
     | 'invalid_root'
     | 'remaining_short_segment',
   details: {
-    powershellExists: boolean;
-    env: NodeJS.ProcessEnv;
+    pythonAvailable: boolean;
     status: number | null;
     signal: NodeJS.Signals | null;
     nodeErrorCode: unknown;
@@ -139,28 +135,33 @@ function failFixtureNormalization(
     exit_status: status,
     signal: allowlistedSignal(details.signal),
     node_error_code: allowlistedNodeErrorCode(details.nodeErrorCode),
-    powershell_exists: details.powershellExists,
+    python_available: details.pythonAvailable,
     stdout_bytes: details.stdout.length,
     stderr_bytes: details.stderrByteCount,
     stdout_contains_nul: details.stdout.includes(0),
     stdout_base64: details.stdoutBase64,
-    env_present: childEnvPresence(details.env),
   });
   throw new Error('Windows fixture temp normalization failed');
 }
 
-function windowsPowerShellExe(): string {
-  const root = process.env.SystemRoot || process.env.WINDIR;
-  if (!root || !path.win32.isAbsolute(root)) {
-    throw new Error('Windows fixture temp normalization could not locate PowerShell');
+function resolveWindowsPython3(): string | null {
+  const probe = [
+    'import sys',
+    'if sys.version_info[0] != 3:',
+    '    raise SystemExit(1)',
+    'sys.stdout.buffer.write(sys.executable.encode("utf-8"))',
+  ].join('\n');
+  for (const command of ['python', 'python3']) {
+    const child = spawnSync(command, ['-I', '-B', '-c', probe], {
+      timeout: WINDOWS_LONG_PATH_TIMEOUT_MS,
+      windowsHide: true,
+      maxBuffer: 4096,
+    });
+    if (child.error || child.status !== 0) continue;
+    const executable = (child.stdout ?? Buffer.alloc(0)).toString('utf8').trim();
+    if (executable && !/[\r\n]/.test(executable) && fs.existsSync(executable)) return executable;
   }
-  return path.win32.join(
-    root,
-    'System32',
-    'WindowsPowerShell',
-    'v1.0',
-    'powershell.exe'
-  );
+  return null;
 }
 
 function assertExistingAbsoluteDirectory(candidate: string): void {
@@ -189,24 +190,22 @@ function hasWindowsShortNameSegment(candidate: string): boolean {
  */
 function resolveWindowsLongTempRoot(): string {
   const input = os.tmpdir();
-  const powershell = windowsPowerShellExe();
-  const powershellExists = fs.existsSync(powershell);
+  const python = resolveWindowsPython3();
+  const pythonAvailable = python !== null;
   const env: NodeJS.ProcessEnv = {
     SystemRoot: process.env.SystemRoot,
     WINDIR: process.env.WINDIR,
     G4_W5_FIXTURE_TEMP_INPUT: input,
   };
-  for (const key of ['TEMP', 'TMP', 'PATH'] as const) {
-    const value = process.env[key];
-    if (typeof value === 'string' && value.length > 0) env[key] = value;
+  if (typeof process.env.PATH === 'string' && process.env.PATH.length > 0) {
+    env.PATH = process.env.PATH;
   }
   const empty = Buffer.alloc(0);
   try {
     assertExistingAbsoluteDirectory(input);
   } catch {
     return failFixtureNormalization('invalid_root', {
-      powershellExists,
-      env,
+      pythonAvailable,
       status: null,
       signal: null,
       nodeErrorCode: null,
@@ -215,10 +214,9 @@ function resolveWindowsLongTempRoot(): string {
       stdoutBase64: false,
     });
   }
-  if (!powershellExists) {
+  if (!python) {
     return failFixtureNormalization('spawn', {
-      powershellExists: false,
-      env,
+      pythonAvailable: false,
       status: null,
       signal: null,
       nodeErrorCode: null,
@@ -227,22 +225,16 @@ function resolveWindowsLongTempRoot(): string {
       stdoutBase64: false,
     });
   }
-  const encodedCommand = Buffer.from(WINDOWS_LONG_PATH_SCRIPT, 'utf16le').toString('base64');
-  const child = spawnSync(
-    powershell,
-    ['-NoProfile', '-NonInteractive', '-EncodedCommand', encodedCommand],
-    {
-      timeout: WINDOWS_LONG_PATH_TIMEOUT_MS,
-      windowsHide: true,
-      maxBuffer: WINDOWS_LONG_PATH_MAX_OUTPUT_BYTES,
-      env,
-    }
-  );
+  const child = spawnSync(python, ['-I', '-B', '-c', WINDOWS_LONG_PATH_SCRIPT], {
+    timeout: WINDOWS_LONG_PATH_TIMEOUT_MS,
+    windowsHide: true,
+    maxBuffer: WINDOWS_LONG_PATH_MAX_OUTPUT_BYTES,
+    env,
+  });
   const stdout = child.stdout ?? empty;
   const stderr = child.stderr ?? empty;
   const base = {
-    powershellExists: true,
-    env,
+    pythonAvailable: true,
     status: child.status,
     signal: child.signal,
     nodeErrorCode: child.error && 'code' in child.error ? child.error.code : null,
