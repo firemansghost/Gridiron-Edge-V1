@@ -1,0 +1,90 @@
+# Validation-only CI for ML-CAL-1 Capture↔Binding Integration G2 (offline).
+# No DB, no secrets, no providers, no production writes, no live capture.
+
+name: Test ML-CAL-1 Capture-Binding Integration G2
+
+on:
+  pull_request:
+    paths:
+      - 'apps/jobs/lib/ml-cal-1-capture-binding-integration.ts'
+      - 'apps/jobs/lib/ml-cal-1-lifecycle-binding.ts'
+      - 'apps/jobs/lib/ml-cal-1-capture.ts'
+      - 'apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts'
+      - 'apps/jobs/__tests__/fixtures/packages/ml-cal-1-capture-binding-integration-synthetic-w6/**'
+      - 'apps/jobs/__tests__/fixtures/packages/ml-cal-1-lifecycle-binding-week5-commit/**'
+      - 'research/moneyline/ML_CAL_1_CAPTURE_BINDING_INTEGRATION_DESIGN_V1.md'
+      - 'research/moneyline/ML_CAL_1_CAPTURE_BINDING_INTEGRATION_G2_RUNBOOK.md'
+      - '.github/workflows/test-ml-cal-1-capture-binding-integration-g2-v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  targeted-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ML-CAL-1 capture-binding integration G2 tests
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts
+
+      - name: Secret-free fixture digest check
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, pathlib, re
+
+          week5 = pathlib.Path('apps/jobs/__tests__/fixtures/packages/ml-cal-1-lifecycle-binding-week5-commit')
+          week5_expected = {
+              'archive.zip': 'b0177de089237876c2e258fb97d84af3803ef7d1e7402cae853670ee8a6cd316',
+              'core-v1-lifecycle-2026-through-week-5-COMMIT.json': 'c20b789ce45b58362a23b2ab2a69184fda2a39377c99d58db6268376b79a2e1e',
+          }
+          for name, digest in week5_expected.items():
+              data = (week5 / name).read_bytes()
+              got = hashlib.sha256(data).hexdigest()
+              assert got == digest, f'week5 {name}: {got} != {digest}'
+              print(f'ok week5 {name} {got}')
+
+          synth = pathlib.Path('apps/jobs/__tests__/fixtures/packages/ml-cal-1-capture-binding-integration-synthetic-w6')
+          index = json.loads((synth / 'PACKAGE_INDEX.json').read_text(encoding='utf-8'))
+          assert index['provenance'] == 'test-only'
+          assert index['liveAccepted'] is False
+          for name, digest in index['files'].items():
+              data = (synth / name).read_bytes()
+              got = hashlib.sha256(data).hexdigest()
+              assert got == digest, f'synth {name}: {got} != {digest}'
+              print(f'ok synth {name} {got}')
+
+          # Secret-shaped scan of G2 fixture + helper surfaces (no tokens/keys).
+          secretish = re.compile(r'(?i)(api[_-]?key|secret|password|bearer\s+[a-z0-9]|ghp_[a-zA-Z0-9]+|xox[baprs]-)')
+          roots = [
+              pathlib.Path('apps/jobs/lib/ml-cal-1-capture-binding-integration.ts'),
+              pathlib.Path('apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts'),
+              synth,
+          ]
+          for root in roots:
+              paths = [root] if root.is_file() else list(root.rglob('*'))
+              for p in paths:
+                  if not p.is_file():
+                      continue
+                  if p.suffix == '.zip' or p.name == 'archive.zip':
+                      continue
+                  text = p.read_text(encoding='utf-8', errors='ignore')
+                  assert not secretish.search(text), f'secret-shaped text in {p}'
+          print('ok secret-free scan')
+          PY
