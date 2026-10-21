@@ -1,0 +1,40 @@
+# Validation-only CI for ML-CAL-1 Capture V1.1.
+# No DB, no secrets, no providers, no production writes, no live capture.
+
+name: Test ML-CAL-1 Capture V1
+
+on:
+  pull_request:
+    paths:
+      - 'apps/jobs/lib/ml-cal-1-capture.ts'
+      - 'apps/jobs/capture-ml-cal-1-2026.ts'
+      - 'apps/jobs/__tests__/ml-cal-1-capture.test.ts'
+      - 'apps/jobs/__tests__/fixtures/ml-cal-1-capture-demo.json'
+      - 'research/moneyline/ML_CAL_1_CAPTURE_V1_RUNBOOK.md'
+      - '.github/workflows/test-ml-cal-1-capture-v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  targeted-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ML-CAL-1 capture tests
+        run: |
+          npx jest --runInBand --runTestsByPath apps/jobs/__tests__/ml-cal-1-capture.test.ts
