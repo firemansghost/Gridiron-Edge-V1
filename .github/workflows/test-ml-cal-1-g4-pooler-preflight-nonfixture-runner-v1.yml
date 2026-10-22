@@ -87,9 +87,17 @@ jobs:
           plan = pathlib.Path(
               'research/moneyline/ML_CAL_1_G4_RETENTION_PREFLIGHT_EXECUTION_PLAN_20261013.md'
           )
-          if plan.exists():
-              plan_sha = hashlib.sha256(plan.read_bytes()).hexdigest()
-              print(f'ok plan_git_bytes_sha {plan_sha} bytes={plan.stat().st_size}')
+          plan_bytes = plan.read_bytes()
+          expected_plan = '22230e3946bc0fdc7753842c6dea362619f96b9b552c5a622571479fdc6d0926'
+          expected_plan_bytes = 36740
+          if len(plan_bytes) != expected_plan_bytes:
+              raise AssertionError(
+                  f'plan bytes {len(plan_bytes)} != {expected_plan_bytes}'
+              )
+          plan_sha = hashlib.sha256(plan_bytes).hexdigest()
+          if plan_sha != expected_plan:
+              raise AssertionError(f'plan {plan_sha} != {expected_plan}')
+          print(f'ok plan_git_bytes_sha {plan_sha} bytes={len(plan_bytes)}')
           for rel in [
               'apps/jobs/lib/ml-cal-1-g4-pooler-preflight-live-runner.ts',
               'apps/jobs/lib/ml-cal-1-g4-pooler-preflight-live-reader.ts',

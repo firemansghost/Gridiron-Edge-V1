@@ -1,10 +1,11 @@
 /**
  * ML-CAL-1 G4 nonfixture P-PREFLIGHT runner + sealer (offline-capable).
  *
- * Orchestrates metadata-only preflight against an injected adapter/parent client.
+ * Orchestrates metadata-only preflight through a module-owned mock adapter.
  * Import is passive: no env reads, PrismaClient construction, FS mutation, or connect.
  *
- * Offline tests MUST use provenanceClass "mock" and disposable temp roots.
+ * Offline tests MUST use provenanceClass "mock", createNonfixtureMockTxAdapter,
+ * and disposable temp roots. A caller-supplied adapter is not executed.
  * Live orchestration remains gated; this module never self-approves deployed proof.
  *
  * Design pin (git/LF): 55d4a3d72877abcf154461a6504bb702791339b41721729116472187fab7c95f
@@ -17,21 +18,20 @@ import * as os from 'os';
 import * as path from 'path';
 import { stableStringify } from './ml-cal-1-lifecycle-binding';
 import {
-  createG4PoolerPreflightRealAdapter,
   ML_CAL_1_G4_PREFLIGHT_BASE_253_TIP,
   ML_CAL_1_G4_PREFLIGHT_DESIGN_SHA256_PIN,
   ML_CAL_1_G4_PREFLIGHT_REAL_ADAPTER_KIND,
   ML_CAL_1_G4_PREFLIGHT_TX_MAX_WAIT_MS,
   ML_CAL_1_G4_PREFLIGHT_TX_OPTIONS,
   ML_CAL_1_G4_PREFLIGHT_TX_TIMEOUT_MS,
-  type MlCal1G4PreflightParentPrismaClient,
-  type MlCal1G4PreflightRealAdapter,
 } from './ml-cal-1-g4-pooler-preflight-real-adapter';
 import {
+  createMockPreflightTxAdapter,
   isSafeG4PreflightId,
   ML_CAL_1_G4_PREFLIGHT_RETENTION_PROFILE,
   ML_CAL_1_G4_PREFLIGHT_SUBTREES,
   redactError,
+  type MlCal1G4PreflightMockConfig,
   type MlCal1G4PreflightTxAdapter,
   type MlCal1G4PreflightTxMetadata,
 } from './ml-cal-1-g4-pooler-preflight-fixture';
@@ -904,6 +904,57 @@ export function copyPreflightPackageAway(input: {
 }
 
 // ---------------------------------------------------------------------------
+// Module-owned mock boundary
+// ---------------------------------------------------------------------------
+
+/**
+ * Identity registry for mock adapters this module created.
+ * The value is the trusted inner implementation. The runner calls that value,
+ * never the method on the caller-visible object. Not exported.
+ */
+const nonfixtureMockRegistry = new WeakMap<object, MlCal1G4PreflightTxAdapter>();
+
+/** Descriptive brand only. Authorization is WeakMap identity, not this symbol. */
+const NONFIXTURE_MOCK_BRAND = Symbol('ml-cal-1-g4-nonfixture-mock-tx');
+
+/**
+ * Build the only transaction adapter the mock runner will execute.
+ * Accepts the fixture mock configuration. It does not accept a Prisma parent,
+ * a connected client, or a caller-supplied transaction implementation.
+ */
+export function createNonfixtureMockTxAdapter(
+  config: MlCal1G4PreflightMockConfig = {}
+): MlCal1G4PreflightTxAdapter {
+  const inner = createMockPreflightTxAdapter(config);
+  const visible: MlCal1G4PreflightTxAdapter = {
+    async withRepeatableReadTransaction(): Promise<never> {
+      throw new Error('caller_visible_mock_adapter_method_is_not_executable');
+    },
+  };
+  Object.defineProperty(visible, NONFIXTURE_MOCK_BRAND, {
+    value: true,
+    enumerable: false,
+    writable: false,
+    configurable: false,
+  });
+  Object.freeze(visible);
+  nonfixtureMockRegistry.set(visible, inner);
+  return visible;
+}
+
+function registeredNonfixtureMock(
+  adapter: unknown
+): MlCal1G4PreflightTxAdapter | null {
+  if (
+    adapter === null ||
+    (typeof adapter !== 'object' && typeof adapter !== 'function')
+  ) {
+    return null;
+  }
+  return nonfixtureMockRegistry.get(adapter) ?? null;
+}
+
+// ---------------------------------------------------------------------------
 // Runner
 // ---------------------------------------------------------------------------
 
@@ -924,7 +975,11 @@ export interface MlCal1G4NonfixturePreflightRunInput {
    * For injected mock adapters, still required so F3 binding is testable.
    */
   clientConstructionConfig: MlCal1G4ClientConstructionConfig;
-  /** Injected adapter — typically createG4PoolerPreflightRealAdapter({ prisma, enabled: true }). */
+  /**
+   * Mock adapter returned by createNonfixtureMockTxAdapter.
+   * Any other object, including a real Prisma adapter, is refused.
+   * adapterKind in sealed JSON names the metadata contract, not a Prisma execution.
+   */
   txAdapter: MlCal1G4PreflightTxAdapter;
   now: () => Date;
   runnerCommitSha: string;
@@ -1095,6 +1150,10 @@ export async function runG4NonfixturePreflight(
   if (input.provenanceClass !== 'mock') {
     return refuseWithoutFs(['provenance_class_invalid']);
   }
+  const trustedMock = registeredNonfixtureMock(input.txAdapter);
+  if (!trustedMock) {
+    return refuseWithoutFs(['mock_runner_rejects_unbranded_tx_adapter']);
+  }
   if (
     typeof input.runnerCommitSha !== 'string' ||
     !/^[0-9a-f]{40}$/i.test(input.runnerCommitSha)
@@ -1145,7 +1204,7 @@ export async function runG4NonfixturePreflight(
   let meta: MlCal1G4PreflightTxMetadata | null = null;
   let transactionCompleted = false;
   try {
-    await input.txAdapter.withRepeatableReadTransaction(async (client) => {
+    await trustedMock.withRepeatableReadTransaction(async (client) => {
       await client.setTransactionReadOnly();
       meta = await client.queryTransactionMetadata();
     });
@@ -1407,15 +1466,4 @@ export async function runG4NonfixturePreflight(
     targetBound: true,
     transactionCompleted: true,
   };
-}
-
-/** Build real adapter from injected parent — still passive regarding env. */
-export function buildInjectedRealAdapter(input: {
-  prisma: MlCal1G4PreflightParentPrismaClient;
-  enabled: unknown;
-}): MlCal1G4PreflightRealAdapter {
-  return createG4PoolerPreflightRealAdapter({
-    prisma: input.prisma,
-    enabled: input.enabled,
-  });
 }

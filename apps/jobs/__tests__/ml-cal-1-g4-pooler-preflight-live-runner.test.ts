@@ -7,20 +7,16 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
-  createMockPreflightTxAdapter,
-} from '../lib/ml-cal-1-g4-pooler-preflight-fixture';
-import {
   createG4PoolerPreflightRealAdapter,
   ML_CAL_1_G4_PREFLIGHT_DESIGN_SHA256_PIN,
-  ML_CAL_1_G4_PREFLIGHT_TX_OPTIONS,
   type MlCal1G4PreflightParentPrismaClient,
-  type MlCal1G4PreflightTxPrismaClient,
-  isAllowlistedPreflightSql,
+  type MlCal1G4PreflightRealAdapter,
 } from '../lib/ml-cal-1-g4-pooler-preflight-real-adapter';
 import {
   assertMockRetainRoot,
   connectionDescriptorsEqual,
   copyPreflightPackageAway,
+  createNonfixtureMockTxAdapter,
   deriveNonsecretConnectionDescriptor,
   invalidatePublishedPackage,
   ML_CAL_1_G4_PREFLIGHT_BASE_254_TIP,
@@ -31,6 +27,7 @@ import {
   permittedPreflightPackageDir,
   runG4NonfixturePreflight,
   sealNonfixturePreflightPackage,
+  writeFailureReceipt,
   type MlCal1G4NonsecretConnectionDescriptor,
 } from '../lib/ml-cal-1-g4-pooler-preflight-live-runner';
 import { readG4NonfixturePreflightPackage } from '../lib/ml-cal-1-g4-pooler-preflight-live-reader';
@@ -84,7 +81,7 @@ function baseInput(overrides: Record<string, unknown> = {}) {
     retainRoot,
     expectedConnection: EXPECTED,
     clientConstructionConfig: { connectionUrl: synthUrl() },
-    txAdapter: createMockPreflightTxAdapter({
+    txAdapter: createNonfixtureMockTxAdapter({
       transactionTimestamp: DB_TS,
     }),
     now: clockSequence([START, END, END]),
@@ -193,22 +190,21 @@ describe('connection descriptor F3', () => {
   });
 
   it('mismatch refuses before TX; profile label alone insufficient', async () => {
-    let tx = 0;
-    const adapter = {
-      async withRepeatableReadTransaction() {
-        tx += 1;
-      },
-    };
     const r = await runG4NonfixturePreflight(
       baseInput({
         expectedConnection: { ...EXPECTED, host: 'other.example.test' },
-        txAdapter: adapter,
+        txAdapter: createNonfixtureMockTxAdapter({
+          failOnTransactionOpen: true,
+        }),
         poolerProfileLabel: 'same-label-as-prod-but-irrelevant',
       })
     );
     expect(r.ok).toBe(false);
     expect(r.reasons).toContain('target_connection_mismatch');
-    expect(tx).toBe(0);
+    expect(
+      r.reasons.some((reason) => reason.startsWith('transaction_failed'))
+    ).toBe(false);
+    expect(r.transactionCompleted).toBe(false);
   });
 
   it('parse failures sanitize without echoing URL', async () => {
@@ -278,43 +274,176 @@ describe('happy mock path + reader', () => {
     expect(manifest.mockProvenance).toBe(true);
   });
 
-  it('works with injected real adapter + mock parent', async () => {
-    const parent: MlCal1G4PreflightParentPrismaClient = {
-      $transaction: async (fn, options) => {
-        expect(options).toEqual({ ...ML_CAL_1_G4_PREFLIGHT_TX_OPTIONS });
-        const tx: MlCal1G4PreflightTxPrismaClient = {
-          $executeRaw: async (sql) => {
-            expect(isAllowlistedPreflightSql(sql)).toBe(true);
-            return 0;
-          },
-          $queryRaw: async (sql) => {
-            expect(isAllowlistedPreflightSql(sql)).toBe(true);
-            return [
-              {
-                transaction_isolation: 'repeatable read',
-                transaction_read_only: 'on',
-                transaction_timestamp: new Date(DB_TS),
-                clock_timestamp: new Date(DB_TS),
-                statement_timestamp: new Date(DB_TS),
-              },
-            ];
-          },
-        };
-        return fn(tx);
+});
+
+describe('F-PROVENANCE mock adapter boundary', () => {
+  function spyParent(): {
+    parent: MlCal1G4PreflightParentPrismaClient;
+    calls: () => number;
+  } {
+    let calls = 0;
+    return {
+      calls: () => calls,
+      parent: {
+        async $transaction() {
+          calls += 1;
+          throw new Error('connected_parent_must_not_run');
+        },
       },
     };
-    const adapter = createG4PoolerPreflightRealAdapter({
-      prisma: parent,
-      enabled: true,
-    });
+  }
+
+  async function expectUnbrandedRefusal(
+    txAdapter: unknown,
+    calls: () => number
+  ): Promise<void> {
     const r = await runG4NonfixturePreflight(
       baseInput({
-        preflightId: 'pf-mock-adapter-001',
-        txAdapter: adapter,
+        preflightId: 'pf-unbranded-001',
+        txAdapter,
+      })
+    );
+    expect(r.ok).toBe(false);
+    expect(r.reasons).toContain('mock_runner_rejects_unbranded_tx_adapter');
+    expect(r.transactionCompleted).toBe(false);
+    expect(r.packageDir).toBeNull();
+    expect(r.failureReceiptPath).toBeNull();
+    expect(r.liveAccepted).toBe(false);
+    expect(r.approved).toBe(false);
+    expect(r.deployedPoolerProof).toBe(false);
+    expect(calls()).toBe(0);
+  }
+
+  it('refuses an enabled real adapter backed by an in-memory Prisma spy', async () => {
+    const spy = spyParent();
+    const adapter = createG4PoolerPreflightRealAdapter({
+      prisma: spy.parent,
+      enabled: true,
+    });
+    await expectUnbrandedRefusal(adapter, spy.calls);
+  });
+
+  it('refuses a wrapper around an enabled real adapter', async () => {
+    const spy = spyParent();
+    const real = createG4PoolerPreflightRealAdapter({
+      prisma: spy.parent,
+      enabled: true,
+    });
+    const wrapper = {
+      kind: real.kind,
+      async withRepeatableReadTransaction(
+        fn: Parameters<MlCal1G4PreflightRealAdapter['withRepeatableReadTransaction']>[0]
+      ) {
+        return real.withRepeatableReadTransaction(fn);
+      },
+    };
+    await expectUnbrandedRefusal(wrapper, spy.calls);
+  });
+
+  it('refuses a structural clone and a TypeScript-cast real adapter', async () => {
+    const spy = spyParent();
+    const real = createG4PoolerPreflightRealAdapter({
+      prisma: spy.parent,
+      enabled: true,
+    });
+    const clone = {
+      ...real,
+      withRepeatableReadTransaction:
+        real.withRepeatableReadTransaction.bind(real),
+    };
+    await expectUnbrandedRefusal(clone, spy.calls);
+    await expectUnbrandedRefusal(
+      real as unknown as { withRepeatableReadTransaction: () => Promise<void> },
+      spy.calls
+    );
+  });
+
+  it('refuses a wrapper that omits kind', async () => {
+    const spy = spyParent();
+    const real = createG4PoolerPreflightRealAdapter({
+      prisma: spy.parent,
+      enabled: true,
+    });
+    const wrapper = {
+      async withRepeatableReadTransaction(
+        fn: Parameters<MlCal1G4PreflightRealAdapter['withRepeatableReadTransaction']>[0]
+      ) {
+        return real.withRepeatableReadTransaction(fn);
+      },
+    };
+    await expectUnbrandedRefusal(wrapper, spy.calls);
+  });
+
+  it('refuses an object that copies private-symbol properties', async () => {
+    const genuine = createNonfixtureMockTxAdapter({
+      transactionTimestamp: DB_TS,
+    });
+    let calls = 0;
+    const forged: Record<PropertyKey, unknown> = {
+      async withRepeatableReadTransaction() {
+        calls += 1;
+      },
+    };
+    for (const symbol of Object.getOwnPropertySymbols(genuine)) {
+      const descriptor = Object.getOwnPropertyDescriptor(genuine, symbol);
+      if (descriptor) Object.defineProperty(forged, symbol, descriptor);
+    }
+    await expectUnbrandedRefusal(forged, () => calls);
+  });
+
+  it('refuses a proxy around a genuine mock adapter', async () => {
+    const genuine = createNonfixtureMockTxAdapter({
+      transactionTimestamp: DB_TS,
+    });
+    let reads = 0;
+    const proxy = new Proxy(genuine, {
+      get(target, property, receiver) {
+        if (property === 'withRepeatableReadTransaction') reads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    await expectUnbrandedRefusal(proxy, () => reads);
+  });
+
+  it('executes a genuine module-factory mock and keeps approval flags false', async () => {
+    const r = await runG4NonfixturePreflight(
+      baseInput({
+        preflightId: 'pf-factory-mock-001',
+        txAdapter: createNonfixtureMockTxAdapter({
+          transactionTimestamp: DB_TS,
+        }),
       })
     );
     expect(r.ok).toBe(true);
     expect(r.transactionCompleted).toBe(true);
+    expect(r.provenanceClass).toBe('mock');
+    expect(r.liveAccepted).toBe(false);
+    expect(r.approved).toBe(false);
+    expect(r.deployedPoolerProof).toBe(false);
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(r.packageDir!, 'PACKAGE_MANIFEST.json'), 'utf8')
+    );
+    expect(manifest.schemaVersion).toBe(
+      ML_CAL_1_G4_PREFLIGHT_PACKAGE_SCHEMA_MOCK
+    );
+    expect(manifest.mockProvenance).toBe(true);
+    expect(manifest.liveAccepted).toBe(false);
+    expect(manifest.approved).toBe(false);
+    expect(manifest.deployedPoolerProof).toBe(false);
+  });
+
+  it('refuses probe provenance before a transaction', async () => {
+    const r = await runG4NonfixturePreflight(
+      baseInput({
+        provenanceClass: 'probe',
+        preflightId: 'pf-probe-001',
+      })
+    );
+    expect(r.ok).toBe(false);
+    expect(r.reasons).toContain('probe_provenance_not_for_tx_runner');
+    expect(r.packageDir).toBeNull();
+    expect(r.failureReceiptPath).toBeNull();
+    expect(r.transactionCompleted).toBe(false);
   });
 });
 
@@ -323,7 +452,7 @@ describe('TX / metadata / clock failures', () => {
     const failMeta = await runG4NonfixturePreflight(
       baseInput({
         preflightId: 'pf-fail-meta',
-        txAdapter: createMockPreflightTxAdapter({ failOnMetadata: true }),
+        txAdapter: createNonfixtureMockTxAdapter({ failOnMetadata: true }),
       })
     );
     expect(failMeta.ok).toBe(false);
@@ -335,7 +464,7 @@ describe('TX / metadata / clock failures', () => {
     const lose = await runG4NonfixturePreflight(
       baseInput({
         preflightId: 'pf-fail-lose',
-        txAdapter: createMockPreflightTxAdapter({
+        txAdapter: createNonfixtureMockTxAdapter({
           transactionTimestamp: DB_TS,
           loseTransactionAfterMetadata: true,
         }),
@@ -349,7 +478,7 @@ describe('TX / metadata / clock failures', () => {
     const badIso = await runG4NonfixturePreflight(
       baseInput({
         preflightId: 'pf-bad-iso',
-        txAdapter: createMockPreflightTxAdapter({
+        txAdapter: createNonfixtureMockTxAdapter({
           isolation: 'read committed',
           transactionTimestamp: DB_TS,
         }),
@@ -360,7 +489,7 @@ describe('TX / metadata / clock failures', () => {
     const badRo = await runG4NonfixturePreflight(
       baseInput({
         preflightId: 'pf-bad-ro',
-        txAdapter: createMockPreflightTxAdapter({
+        txAdapter: createNonfixtureMockTxAdapter({
           readOnly: 'off',
           transactionTimestamp: DB_TS,
         }),
@@ -371,7 +500,7 @@ describe('TX / metadata / clock failures', () => {
     const oob = await runG4NonfixturePreflight(
       baseInput({
         preflightId: 'pf-oob',
-        txAdapter: createMockPreflightTxAdapter({
+        txAdapter: createNonfixtureMockTxAdapter({
           transactionTimestamp: '2026-10-13T17:00:00.000Z',
         }),
         now: clockSequence([START, END]),
@@ -385,7 +514,7 @@ describe('TX / metadata / clock failures', () => {
       baseInput({
         preflightId: 'pf-rev',
         now: clockSequence([END, START]),
-        txAdapter: createMockPreflightTxAdapter({
+        txAdapter: createNonfixtureMockTxAdapter({
           transactionTimestamp: DB_TS,
         }),
       })
@@ -458,24 +587,39 @@ describe('seal / FS safety', () => {
 
   it('failure receipt redacts secretish reasons', async () => {
     const syn = ['postgres', '://u:p@h/db'].join('');
-    const adapter = {
-      async withRepeatableReadTransaction() {
-        throw new Error(`boom ${syn}`);
-      },
-    };
+    let calls = 0;
     const root = tmpRoot('g4-nf-fail-');
-    const r = await runG4NonfixturePreflight(
+    const refused = await runG4NonfixturePreflight(
       baseInput({
-        preflightId: 'pf-redact',
+        preflightId: 'pf-redact-unbranded',
         retainRoot: root,
-        txAdapter: adapter,
+        txAdapter: {
+          async withRepeatableReadTransaction() {
+            calls += 1;
+            throw new Error(`boom ${syn}`);
+          },
+        },
       })
     );
-    expect(r.ok).toBe(false);
-    expect(r.failureReceiptPath).toBeTruthy();
-    const body = fs.readFileSync(r.failureReceiptPath!, 'utf8');
+    expect(refused.ok).toBe(false);
+    expect(refused.reasons).toContain(
+      'mock_runner_rejects_unbranded_tx_adapter'
+    );
+    expect(refused.failureReceiptPath).toBeNull();
+    expect(calls).toBe(0);
+
+    const written = writeFailureReceipt({
+      retainRoot: root,
+      preflightId: 'pf-redact',
+      reasons: [`transaction_failed:boom ${syn}`],
+      observedAt: END,
+      provenanceClass: 'mock',
+    });
+    expect(written.ok).toBe(true);
+    const body = fs.readFileSync(written.path!, 'utf8');
     expect(body).not.toMatch(/postgres:\/\//);
     expect(body).not.toMatch(/u:p@/);
+    expect(body).toContain('[redacted_reason]');
   });
 });
 
