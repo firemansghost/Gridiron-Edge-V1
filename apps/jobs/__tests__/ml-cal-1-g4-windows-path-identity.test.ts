@@ -1542,9 +1542,13 @@ describe('Operator W5-only always BLOCKED (library/CLI/JSON)', () => {
     const before = captureBaseline(root);
     const mut = mutationRecorder();
     let clockCalls = 0;
+    let w5Calls = 0;
     const r = runG4PhaseARetentionSetup(
       baseOperatorInput(root, {
-        testOnlyW5Inspect: () => w5PassStub(),
+        testOnlyW5Inspect: () => {
+          w5Calls += 1;
+          return w5PassStub();
+        },
         testOnlyRecordUserRootMutation: mut.record,
         now: () => {
           clockCalls += 1;
@@ -1553,7 +1557,9 @@ describe('Operator W5-only always BLOCKED (library/CLI/JSON)', () => {
       })
     );
     expect(r.ok).toBe(false);
-    expect(r.reasons).toContain('windows_gates_incomplete');
+    expect(r.reasons).toContain('operator_mode_refused_in_this_build');
+    expect(r.reasons).not.toContain('windows_gates_incomplete');
+    expect(w5Calls).toBe(0);
     expect(clockCalls).toBe(0);
     expect(mut.calls).toEqual([]);
     assertUnchanged(root, before);
@@ -1570,9 +1576,13 @@ describe('Operator W5-only always BLOCKED (library/CLI/JSON)', () => {
     const before = captureBaseline(root);
     const mut = mutationRecorder();
     let clockCalls = 0;
+    let w5Calls = 0;
     const r = runG4PhaseARetentionSetup(
       baseOperatorInput(root, {
-        testOnlyW5Inspect: () => w5RefuseStub('w5_identity_mismatch'),
+        testOnlyW5Inspect: () => {
+          w5Calls += 1;
+          return w5RefuseStub('w5_identity_mismatch');
+        },
         testOnlyRecordUserRootMutation: mut.record,
         now: () => {
           clockCalls += 1;
@@ -1580,8 +1590,11 @@ describe('Operator W5-only always BLOCKED (library/CLI/JSON)', () => {
         },
       })
     );
-    expect(r.reasons).toContain('w5_identity_mismatch');
-    expect(r.reasons).toContain('windows_gates_incomplete');
+    expect(r.ok).toBe(false);
+    expect(r.reasons).toContain('operator_mode_refused_in_this_build');
+    expect(r.reasons).not.toContain('w5_identity_mismatch');
+    expect(r.reasons).not.toContain('windows_gates_incomplete');
+    expect(w5Calls).toBe(0);
     expect(clockCalls).toBe(0);
     expect(mut.calls).toEqual([]);
     assertUnchanged(root, before);
@@ -1611,25 +1624,36 @@ describe('Operator W5-only always BLOCKED (library/CLI/JSON)', () => {
 
   it('W4 refusal: no W5 inspect', () => {
     coverage.mocked += 1;
-    const root = disposableRoot('w4block');
+    const root = tempModeDisposableRoot('w4block');
     const g4 = g4EvidenceBaseFromOperatorUserRoot(root);
     const probeId = 'phasea-w5-probe-001';
     const receipt = phaseASetupReceiptPath(g4, probeId);
     fs.mkdirSync(path.dirname(receipt), { recursive: true });
     fs.writeFileSync(receipt, 'conflict\n');
     const before = captureBaseline(root);
+    const mut = mutationRecorder();
     let w5Calls = 0;
+    let clockCalls = 0;
     const r = runG4PhaseARetentionSetup(
-      baseOperatorInput(root, {
+      baseTempInput(root, {
         probeId,
         testOnlyW5Inspect: () => {
           w5Calls += 1;
           return w5PassStub();
         },
+        testOnlyRecordUserRootMutation: mut.record,
+        now: () => {
+          clockCalls += 1;
+          return new Date('2026-10-15T18:00:00.000Z');
+        },
       })
     );
+    expect(r.ok).toBe(false);
     expect(r.reasons).toContain('w4_pre_mutation_conflict');
+    expect(r.reasons).not.toContain('operator_mode_refused_in_this_build');
     expect(w5Calls).toBe(0);
+    expect(clockCalls).toBe(0);
+    expect(mut.calls).toEqual([]);
     assertUnchanged(root, before);
   });
 
@@ -1653,6 +1677,8 @@ describe('Operator W5-only always BLOCKED (library/CLI/JSON)', () => {
   it('CLI/JSON operator BLOCKED', () => {
     coverage.mocked += 1;
     const root = disposableRoot('cli-op');
+    fs.writeFileSync(path.join(root, 'KEEP.txt'), 'keep\n');
+    const before = captureBaseline(root);
     const cli = runPhaseARetentionSetupCli({
       enabled: true,
       confirmSetup: true,
@@ -1663,12 +1689,15 @@ describe('Operator W5-only always BLOCKED (library/CLI/JSON)', () => {
       handoffId: 'phasea-w5-cli-h-001',
     });
     expect(cli.ok).toBe(false);
-    expect(cli.setup?.reasons).toEqual(
-      expect.arrayContaining([expect.stringMatching(/windows_/)])
-    );
+    expect(cli.reasons).toContain('operator_mode_refused_in_this_build');
+    expect(cli.setup).toBeUndefined();
+    expect(cli.filesystemMutations).toBe(false);
+    assertUnchanged(root, before);
 
     const captureParent = disposableRoot('json-cap');
     const captureFile = path.join(captureParent, 'w5-op-capture.json');
+    let w5Calls = 0;
+    let clockCalls = 0;
     installWindowsTransportIsolation();
     try {
     const result = runPhaseAJsonCommand(
@@ -1684,11 +1713,17 @@ describe('Operator W5-only always BLOCKED (library/CLI/JSON)', () => {
         output: { stdout: false, captureFile },
       },
       {
-        now: () => new Date('2026-10-15T18:00:00.000Z'),
+        now: () => {
+          clockCalls += 1;
+          return new Date('2026-10-15T18:00:00.000Z');
+        },
         runSetup: (input) =>
           runG4PhaseARetentionSetup({
             ...input,
-            testOnlyW5Inspect: () => w5PassStub(),
+            testOnlyW5Inspect: () => {
+              w5Calls += 1;
+              return w5PassStub();
+            },
           }),
       }
     );
@@ -1696,7 +1731,12 @@ describe('Operator W5-only always BLOCKED (library/CLI/JSON)', () => {
     const durable = JSON.parse(fs.readFileSync(captureFile, 'utf8')) as {
       reasons: string[];
     };
-    expect(durable.reasons).toContain('windows_gates_incomplete');
+    expect(durable.reasons).toContain('operator_mode_refused_in_this_build');
+    expect(durable.reasons).not.toContain('windows_gates_incomplete');
+    expect(durable.reasons).not.toContain('w5_identity_mismatch');
+    expect(w5Calls).toBe(0);
+    expect(clockCalls).toBe(0);
+    assertUnchanged(root, before);
     } finally {
       restoreWindowsTransportIsolation();
     }

@@ -17,9 +17,9 @@
  * W4: pre-mutation conflict scan of the five deterministic ID destinations
  *     after opt-in/path/ID/ancestor validation and BEFORE start clock / first
  *     user-root mutation. Mid/post exclusive protections remain; W4 is not a lock.
- * W5–W9: operator mode requires all PASS before start clock / user-root mutation.
- *     W5-only leaves operator BLOCKED (`windows_gates_incomplete`). Temp mode
- *     does not invoke the native helper.
+ * Operator mode is refused in this build before W4, W5, the clock, or any
+ *     filesystem call. Temp mode does not invoke the native helper. W5 helper
+ *     exports stay independently testable and are not reached from operator setup.
  *
  * Design pin (git/LF): 55d4a3d72877abcf154461a6504bb702791339b41721729116472187fab7c95f
  * base255Head is the historical development base from which this branch was cut:
@@ -40,10 +40,7 @@ import {
   ML_CAL_1_G4_PREFLIGHT_SUBTREES,
   redactError,
 } from './ml-cal-1-g4-pooler-preflight-fixture';
-import {
-  evaluateOperatorWindowsGatesAfterW4,
-  type MlCal1G4W5InspectResult,
-} from './ml-cal-1-g4-windows-path-identity';
+import type { MlCal1G4W5InspectResult } from './ml-cal-1-g4-windows-path-identity';
 
 export const ML_CAL_1_G4_PHASE_A_SETUP_KIND =
   'ml-cal-1-g4-phase-a-retention-setup-v1' as const;
@@ -1699,27 +1696,6 @@ export function runG4PhaseARetentionSetup(
       runnerRetainRoot: g4Base,
       leftovers: [],
       notes: w4.notes,
-      usabilityChecks: {},
-    });
-  }
-
-  // Operator Win32 bundle (W5–W9): after W4, before start clock / user-root
-  // mutation. Temp mode skips native inspection. W5-only → always BLOCKED.
-  if (input.mode === 'operator') {
-    const winGates = evaluateOperatorWindowsGatesAfterW4({
-      operatorUserRoot,
-      testOnlyW5Inspect: input.testOnlyW5Inspect,
-    });
-    return refuse(winGates.reasons, 'operator', {
-      operatorUserRoot,
-      g4EvidenceBase: g4Base,
-      runnerRetainRoot: g4Base,
-      leftovers: [],
-      notes: [
-        ...winGates.notes,
-        'w5_operator_gate_before_start_clock',
-        'w5_zero_user_root_mutation',
-      ],
       usabilityChecks: {},
     });
   }
