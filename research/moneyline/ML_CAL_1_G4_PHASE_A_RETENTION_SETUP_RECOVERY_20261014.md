@@ -5,7 +5,7 @@ Status: Draft PR packaging (setup NOT EXECUTED)
 
 ## Packaging / CI recovery
 
-- Isolated branch `feat/ml-cal-1-g4-phase-a-retention-setup-v1` bases exactly on #255 `af28c337…`.
+- Isolated branch `feat/ml-cal-1-g4-phase-a-retention-setup-v1` was cut from historical development base `af28c337…`. That SHA remains `base255Head`. It is not the later repaired #255 head `8c3a545…` merged to main. Current integration dependency is the accepted Git merge tree, not this field.
 - Linux workflow is secret-free, temp-directory tests only; does not run operator setup.
 - CI failure: preserve run evidence; repair only new-file test/workflow packaging within this task.
 - Do not amend #255, merge, operator-probe, or rewrite accepted dependency libraries.

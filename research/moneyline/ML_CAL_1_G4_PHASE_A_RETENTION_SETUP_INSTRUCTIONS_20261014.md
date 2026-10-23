@@ -9,10 +9,10 @@ Integrity: F1–F5; provisional receipt; digest-bound final evidence; hardened t
 | Item | Value |
 | --- | --- |
 | Draft PR branch | `feat/ml-cal-1-g4-phase-a-retention-setup-v1` |
-| Exact base (#255 tip) | `af28c337adb18b38a5a77a71d4f452ca74a1c994` |
+| Exact historical development base | `af28c337adb18b38a5a77a71d4f452ca74a1c994` |
 | PR target | `feat/ml-cal-1-g4-preflight-nonfixture-runner-v1` (not main) |
 | Linux CI workflow | `.github/workflows/test-ml-cal-1-g4-phase-a-retention-setup-v1.yml` |
-| Operator command | **NOT EXECUTED**; proposed root remains PROPOSED/UNVERIFIED |
+| Operator command | **Refused in this build** before any filesystem call. Proposed root remains PROPOSED/UNVERIFIED and is not accessed. |
 | Live research | BLOCKED; W6 chronology UNRESOLVED |
 
 Implementation/test bytes for lib/CLI/tests retain the independently matched Windows identities from local acceptance unless a disclosed CI portability repair is required. Documentation may add this packaging/recovery checkpoint only.
@@ -23,7 +23,8 @@ Implementation/test bytes for lib/CLI/tests retain the independently matched Win
 
 | Item | Value |
 | --- | --- |
-| Worktree HEAD (#255) | `af28c337adb18b38a5a77a71d4f452ca74a1c994` |
+| Historical development base (`base255Head`) | `af28c337adb18b38a5a77a71d4f452ca74a1c994` |
+| Later repaired #255 head merged to main | `8c3a545eec6d6ca6f97e04a15b7f97c965c3ee10` (not `base255Head`) |
 | Design Git/LF | `55d4a3d72877abcf154461a6504bb702791339b41721729116472187fab7c95f` |
 | Plan Git/LF | 36740 / `22230e3946bc0fdc7753842c6dea362619f96b9b552c5a622571479fdc6d0926` |
 
@@ -68,10 +69,13 @@ npx jest --runInBand --runTestsByPath \
   apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts
 ```
 
-## Future operator command — NOT EXECUTED
+## Future operator command — refused in this build
+
+`base255Head` records the historical development base above. It does not identify the repaired #255 commit. The dependency used at integration time is the accepted Git merge tree. A future receipt that needs an explicit current-dependency identity needs a separate schema review.
 
 ```text
-# NOT EXECUTED — review + separate authority required
+# NOT EXECUTED — this build returns operator_mode_refused_in_this_build
+# before filesystem activity. Do not run this command.
 npx ts-node --transpile-only apps/jobs/run-ml-cal-1-g4-phase-a-retention-setup.ts \
   --enabled=true \
   --confirm-setup=true \

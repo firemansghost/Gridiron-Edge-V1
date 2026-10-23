@@ -1082,3 +1082,51 @@ describe('existing negatives preserved', () => {
     expect(listTree(outside)).toEqual(beforeOutside);
   });
 });
+
+describe('operator mode refused in this build', () => {
+  it('library refuses operator mode before clock or filesystem activity', () => {
+    const root = tmpOperatorDouble();
+    const before = listTree(root);
+    let clocks = 0;
+    const r = runG4PhaseARetentionSetup(
+      baseInput(root, {
+        mode: 'operator',
+        now: () => {
+          clocks += 1;
+          return new Date('2026-10-14T18:00:00.000Z');
+        },
+      })
+    );
+    expect(r.ok).toBe(false);
+    expect(r.reasons).toContain('operator_mode_refused_in_this_build');
+    expect(r.setupCompleted).toBe(false);
+    expect(r.liveAccepted).toBe(false);
+    expect(r.approved).toBe(false);
+    expect(r.deployedPoolerProof).toBe(false);
+    expect(r.setupReceiptPath).toBeNull();
+    expect(r.probePackageDir).toBeNull();
+    expect(r.finalEvidencePath).toBeNull();
+    expect(clocks).toBe(0);
+    expect(listTree(root)).toEqual(before);
+  });
+
+  it('CLI refuses operator mode before library setup', () => {
+    const root = tmpOperatorDouble();
+    const before = listTree(root);
+    const result = runPhaseARetentionSetupCli({
+      enabled: true,
+      confirmSetup: true,
+      mode: 'operator',
+      destination: root,
+      expectedDestination: root,
+      probeId: 'phasea-probe-001',
+      handoffId: 'phasea-handoff-001',
+    });
+    expect(result.ok).toBe(false);
+    expect(result.reasons).toContain('operator_mode_refused_in_this_build');
+    expect(result.filesystemMutations).toBe(false);
+    expect(result.setup).toBeUndefined();
+    expect(result.reasons).not.toContain('phase_a_setup_disabled');
+    expect(listTree(root)).toEqual(before);
+  });
+});

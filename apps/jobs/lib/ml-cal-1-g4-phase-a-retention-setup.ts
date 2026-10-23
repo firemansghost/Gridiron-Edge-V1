@@ -16,7 +16,12 @@
  * F5: exclusive claims; injected write/copy/rename failures fail closed.
  *
  * Design pin (git/LF): 55d4a3d72877abcf154461a6504bb702791339b41721729116472187fab7c95f
- * Base #255 head: af28c337adb18b38a5a77a71d4f452ca74a1c994
+ * base255Head is the historical development base from which this branch was cut:
+ * af28c337adb18b38a5a77a71d4f452ca74a1c994.
+ * It is not the repaired #255 head later merged to main
+ * (8c3a545eec6d6ca6f97e04a15b7f97c965c3ee10). Current integration dependency
+ * is the accepted Git merge tree, not this field.
+ * Operator mode is refused in this build before any filesystem or clock use.
  */
 
 import { createHash, randomUUID } from 'crypto';
@@ -409,6 +414,7 @@ function usabilitySnapshotForSealedReceipt(
 export const ML_CAL_1_G4_PHASE_A_DESIGN_SHA256 =
   '55d4a3d72877abcf154461a6504bb702791339b41721729116472187fab7c95f' as const;
 
+/** Historical development base of this branch. Not the repaired #255 merge head. */
 export const ML_CAL_1_G4_PHASE_A_BASE255_HEAD =
   'af28c337adb18b38a5a77a71d4f452ca74a1c994' as const;
 
@@ -1214,7 +1220,13 @@ export function runG4PhaseARetentionSetup(
   if (input.confirmSetup !== true) {
     return refuse(['phase_a_confirm_setup_required']);
   }
-  if (input.mode !== 'temp' && input.mode !== 'operator') {
+  // This build has no operator authorization. Refuse before ids, clock,
+  // ancestor checks, hooks, or any filesystem call. refuse() only returns
+  // an object.
+  if (input.mode === 'operator') {
+    return refuse(['operator_mode_refused_in_this_build'], 'operator');
+  }
+  if (input.mode !== 'temp') {
     return refuse(['phase_a_mode_invalid']);
   }
   if (!isSafeG4PreflightId(input.probeId)) {
