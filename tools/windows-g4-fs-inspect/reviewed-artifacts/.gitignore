@@ -1,0 +1,2 @@
+# Unignore only this reviewed Route A executable. Parent *.exe still ignores every other executable.
+!WindowsG4FsInspect-9fc710026f177525994126673f084274e94d17615ec136a72b60d3e7a558c9b5.exe

@@ -1,0 +1,923 @@
+# Validation-only CI for ML-CAL-1 G4 Windows W5-1 path identity.
+# No DB, no secrets, no providers, no operator-root probes, no live pooler,
+# no production writes, no pull_request_target, no privileged jobs.
+# Temp directories only. Linux lane is mocks, regressions, and inherited tests.
+#
+# Targets stacked PR base: feat/ml-cal-1-g4-phase-a-w4-conflict-gate-ci-v1 (#258).
+# pull_request checkout is GitHub's synthetic merge of PR head into that base.
+# Direct workflow_dispatch checkout is the branch tip, not main and not a merge.
+#
+# Successor pin policy: W5 intentionally replaces the Phase A library blob.
+# Historical #258 library bytes are verified from immutable commit 9ce55f11…
+# (Git blob bytes + content SHA-256), not relabeled as the W5 successor.
+
+name: Test ML-CAL-1 G4 W5 Path Identity
+
+on:
+  pull_request:
+    branches:
+      - 'feat/ml-cal-1-g4-phase-a-w4-conflict-gate-ci-v1'
+    paths:
+      - 'apps/jobs/lib/ml-cal-1-g4-windows-path-identity.ts'
+      - 'apps/jobs/lib/ml-cal-1-g4-phase-a-retention-setup.ts'
+      - 'apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts'
+      - 'tools/windows-g4-fs-inspect/Program.cs'
+      - 'tools/windows-g4-fs-inspect/WindowsG4FsInspect.csproj'
+      - 'tools/windows-g4-fs-inspect/.gitignore'
+      - 'research/moneyline/ML_CAL_1_G4_WINDOWS_W5_1_USAGE_20261015.md'
+      - 'research/moneyline/ML_CAL_1_G4_WINDOWS_W5_1_RECOVERY_20261015.md'
+      - 'research/moneyline/ML_CAL_1_G4_WINDOWS_W5_1_CHECKPOINT_20261015.md'
+      - '.github/workflows/test-ml-cal-1-g4-w5-path-identity-v1.yml'
+      - '.github/workflows/test-ml-cal-1-g4-w5-native-route-a-v1.yml'
+      - 'tools/windows-g4-fs-inspect/reviewed-artifacts/.gitignore'
+      - 'tools/windows-g4-fs-inspect/reviewed-artifacts/WindowsG4FsInspect-9fc710026f177525994126673f084274e94d17615ec136a72b60d3e7a558c9b5.exe'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  targeted-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Report checkout identity
+        run: |
+          set -euo pipefail
+          echo "event_name=${GITHUB_EVENT_NAME}"
+          echo "runner_os=${RUNNER_OS}"
+          echo "uname=$(uname -a)"
+          echo "checkout_HEAD=$(git rev-parse HEAD)"
+          echo "checkout_parents=$(git rev-list --parents -n 1 HEAD)"
+          echo "github_sha=${GITHUB_SHA}"
+          echo "github_ref=${GITHUB_REF}"
+          echo "github_head_ref=${GITHUB_HEAD_REF:-}"
+          echo "github_base_ref=${GITHUB_BASE_REF:-}"
+          echo "node_pending=setup_node_not_yet"
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            echo "checkout_kind=synthetic_pr_merge_of_source_head_into_base"
+            echo "not_direct_source_checkout=true"
+            echo "not_main=true"
+          else
+            echo "checkout_kind=direct_branch_checkout"
+            echo "not_synthetic_pr_merge=true"
+            echo "not_main=true"
+          fi
+          if [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "${GITHUB_EVENT_PATH}" ]; then
+            python3 - <<'PY'
+          import json, os
+          ev = json.load(open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8"))
+          pr = ev.get("pull_request") or {}
+          head = pr.get("head") or {}
+          base = pr.get("base") or {}
+          print(f"pr_source_head={head.get('sha')}")
+          print(f"pr_source_ref={head.get('ref')}")
+          print(f"pr_base_sha={base.get('sha')}")
+          print(f"pr_base_ref={base.get('ref')}")
+          print(f"pr_number={pr.get('number')}")
+          print("note=pull_request_checkout_HEAD_is_synthetic_merge_bind_pins_to_pr_source_head")
+          PY
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Record Node toolchain
+        run: |
+          set -euo pipefail
+          echo "node=$(node -v)"
+          echo "npm=$(npm -v)"
+          echo "no_env_dump=true"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Secret-free pin check (historical #258 library + W5 successor + reviewed files)
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, re, subprocess
+
+          ACCEPTED_BASE = "9ce55f11f43156ba1ceb08dc57b88c48d9f9043a"
+          HISTORICAL_LIB = "apps/jobs/lib/ml-cal-1-g4-phase-a-retention-setup.ts"
+
+          def sha256_bytes(data: bytes) -> tuple[int, str]:
+              return len(data), hashlib.sha256(data).hexdigest()
+
+          def git_bytes(rev_path: str) -> bytes:
+              return subprocess.check_output(["git", "cat-file", "blob", rev_path])
+
+          def git_blob(rev_path: str) -> str:
+              return subprocess.check_output(
+                  ["git", "rev-parse", rev_path], text=True
+              ).strip()
+
+          event = os.environ.get("GITHUB_EVENT_NAME", "")
+          source_sha = subprocess.check_output(
+              ["git", "rev-parse", "HEAD"], text=True
+          ).strip()
+          base_sha = ""
+          if event == "pull_request":
+              ev = json.load(open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8"))
+              pr = ev["pull_request"]
+              source_sha = pr["head"]["sha"]
+              base_sha = pr["base"]["sha"]
+              print("checkout_kind=synthetic_pr_merge")
+              print(f"pr_source_head={source_sha}")
+              print(f"pr_base_sha={base_sha}")
+              assert base_sha == ACCEPTED_BASE, (
+                  f"PR base {base_sha} != accepted #258 {ACCEPTED_BASE}"
+              )
+          else:
+              print("checkout_kind=direct_branch_checkout")
+              print(f"source_head={source_sha}")
+              print("not_synthetic_merge=true")
+              print("not_main=true")
+          print(f"pin_source_head={source_sha}")
+          print(f"accepted_base={ACCEPTED_BASE}")
+          ancestor = subprocess.call(
+              ["git", "merge-base", "--is-ancestor", ACCEPTED_BASE, "HEAD"]
+          )
+          assert ancestor == 0, "accepted #258 base is not an ancestor of checkout HEAD"
+
+          reviewed = {
+              "tools/windows-g4-fs-inspect/Program.cs": (
+                  38655,
+                  "02fe0670408dcc375a62d025dfeeb1480fba2279cac6dadc5a2c8a4ba04e517b",
+              ),
+              "tools/windows-g4-fs-inspect/WindowsG4FsInspect.csproj": (
+                  696,
+                  "d692a968b994d710890375344aae0cb5ac85436c9ab91696376d15ecade756ca",
+              ),
+              "tools/windows-g4-fs-inspect/.gitignore": (
+                  28,
+                  "1535b8cac593b5401cf2ed8f6e366cc6f1038a0b90004bbc6ea6690165b38fc1",
+              ),
+              "apps/jobs/lib/ml-cal-1-g4-windows-path-identity.ts": (
+                  32738,
+                  "7b60952a47e958b5091bd8e511390ce8fe0db255dc45c4639b1dcc916f08cd4f",
+              ),
+              "apps/jobs/lib/ml-cal-1-g4-phase-a-retention-setup.ts": (
+                  91345,
+                  "40bdf5702607f912143136ddc950f3fe17c376c839521736dc23dbc96659542e",
+              ),
+              "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts": (
+                  68166,
+                  "c509e9f45b98c0ac9813b92f0ef04479afa03295f7e6b1a0338f039929d65413",
+              ),
+              "research/moneyline/ML_CAL_1_G4_WINDOWS_W5_1_USAGE_20261015.md": (
+                  2636,
+                  "639bb14ad8c7098506cb50af6023e01fb2d75c64a5f0ca5f5a4b1db3350d6b3a",
+              ),
+              "research/moneyline/ML_CAL_1_G4_WINDOWS_W5_1_RECOVERY_20261015.md": (
+                  1124,
+                  "900f7822b39fceba5cfa889cbeb6359223e1de244f3ffb631476d047de9172e5",
+              ),
+              "research/moneyline/ML_CAL_1_G4_WINDOWS_W5_1_CHECKPOINT_20261015.md": (
+                  1008,
+                  "3abe6ad01e0c1fd4a3415830a73b6162d35951e47602d40d586e9fead4794a6b",
+              ),
+              "tools/windows-g4-fs-inspect/reviewed-artifacts/.gitignore": (
+                  190,
+                  "48a9420b7d640ca3c7ed4ba7e633b3ef5f96d58c777bc37b8422b3fcc8e7acdc",
+              ),
+          }
+          for path, (exp_len, exp_sha) in reviewed.items():
+              executed = pathlib.Path(path).read_bytes()
+              source_blob = git_bytes(f"{source_sha}:{path}")
+              ex_len, ex_sha = sha256_bytes(executed)
+              src_len, src_sha = sha256_bytes(source_blob)
+              assert executed == source_blob, f"{path} executed bytes != source head blob"
+              assert ex_len == exp_len and ex_sha == exp_sha, (
+                  f"{path} executed {ex_len} {ex_sha} != {exp_len} {exp_sha}"
+              )
+              assert src_len == exp_len and src_sha == exp_sha
+              print(
+                  f"ok REVIEWED_EXECUTED {path} blob={git_blob(f'{source_sha}:{path}')} "
+                  f"bytes={ex_len} sha256={ex_sha} source_head={source_sha}"
+              )
+
+          hist = git_bytes(f"{ACCEPTED_BASE}:{HISTORICAL_LIB}")
+          hist_len, hist_sha = sha256_bytes(hist)
+          hist_blob = git_blob(f"{ACCEPTED_BASE}:{HISTORICAL_LIB}")
+          assert hist_blob == "a82ce78206236343d59bbeacc9db3e0b2041af90"
+          assert hist_len == 89980, f"HISTORICAL bytes {hist_len} != 89980"
+          assert hist_sha == "8c7b3fc99263d2f37332002ba0e46cd5f13fd24afb1693383ad427c552762d86"
+          print(
+              f"ok HISTORICAL_258_LIBRARY blob={hist_blob} bytes={hist_len} "
+              f"sha256={hist_sha} at {ACCEPTED_BASE}"
+          )
+
+          succ = pathlib.Path(HISTORICAL_LIB).read_bytes()
+          succ_len, succ_sha = sha256_bytes(succ)
+          succ_blob = git_blob(f"{source_sha}:{HISTORICAL_LIB}")
+          assert succ_len == 91345
+          assert succ_sha == "40bdf5702607f912143136ddc950f3fe17c376c839521736dc23dbc96659542e"
+          assert succ_blob != hist_blob
+          print(
+              f"ok W5_SUCCESSOR_LIBRARY blob={succ_blob} bytes={succ_len} "
+              f"sha256={succ_sha} (intentionally != historical {hist_blob})"
+          )
+
+          design = pathlib.Path(
+              "research/moneyline/ML_CAL_1_G4_NONFIXTURE_OBSERVER_POOLER_PREFLIGHT_PROCEDURE_DESIGN_20261013.md"
+          ).read_bytes()
+          plan = pathlib.Path(
+              "research/moneyline/ML_CAL_1_G4_RETENTION_PREFLIGHT_EXECUTION_PLAN_20261013.md"
+          ).read_bytes()
+          design_len, design_sha = sha256_bytes(design)
+          plan_len, plan_sha = sha256_bytes(plan)
+          assert design_sha == "55d4a3d72877abcf154461a6504bb702791339b41721729116472187fab7c95f"
+          assert plan_len == 36740
+          assert plan_sha == "22230e3946bc0fdc7753842c6dea362619f96b9b552c5a622571479fdc6d0926"
+          print(f"ok design bytes={design_len} sha256={design_sha}")
+          print(f"ok execution_plan bytes={plan_len} sha256={plan_sha}")
+
+          inherited = {
+              "apps/jobs/lib/ml-cal-1-g4-phase-a-json-command.ts":
+                  "8b9aac3ec3fb618a2f67aced4c3025f73fe5eadb",
+              "apps/jobs/run-ml-cal-1-g4-phase-a-json-command.ts":
+                  "6bea4c4fec4e4c77e3c02501ce431ac876267fef",
+              "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts":
+                  "64b435c5d9a8af7695d6800dba0fe6ba89b2405a",
+              "apps/jobs/run-ml-cal-1-g4-phase-a-retention-setup.ts":
+                  "b6d84ac5fc72b3e5a4d7a129d68f953446a6fb56",
+              "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts":
+                  "ed9ffad9c45bf714ffc9199ff8a16c7057b44fad",
+              "apps/jobs/lib/ml-cal-1-g4-pooler-preflight-live-runner.ts":
+                  "ea201d6e401d298f604cc06bb022e43c75782df6",
+              "apps/jobs/lib/ml-cal-1-g4-pooler-preflight-live-reader.ts":
+                  "94b2aac959840cbbd8178ea0f6bd5cd354295e37",
+              "apps/jobs/run-ml-cal-1-g4-pooler-preflight-live.ts":
+                  "25f495fc5d154be1a6faa8300b2462fc33dc95cb",
+              "apps/jobs/lib/ml-cal-1-g4-pooler-preflight-real-adapter.ts":
+                  "a61a046a8128012c58046062d20b514ea2fad85a",
+              "apps/jobs/lib/ml-cal-1-g4-pooler-preflight-fixture.ts":
+                  "14f726efd60e8c4b0b14924f4a19470c2b8cd1cf",
+              "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts":
+                  "39ff24dcec7d39c1fb5fc8b79a38d999979a4d84",
+              "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts":
+                  "08c07a3cf1f0d855a03af88a73965bcb81536fb3",
+              "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts":
+                  "a5d049808299d2cab651d3543c9a03632994bf7a",
+              "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts":
+                  "225dc3188f84065dd0c5b5fb4aeee8ebd7d4c75f",
+              "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts":
+                  "7aeee68eb90b5a2b052d11cd7a38f2da05fbed6d",
+              "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts":
+                  "129b349a6e09c1cea6bcf440622a966d75512a11",
+              "apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts":
+                  "472fe71eeb471ef1e4e52a57862a71ed5a1d3037",
+              "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts":
+                  "70e2d40f13742c8095e920ac01acb78d6f986eca",
+              "package.json": "9dd5f3e9c136c4c0df0f7f46cf03c3a548052e73",
+              "package-lock.json": "8c19ca0d028900a235d57b69f6802d2423b22af6",
+          }
+          for path, expected in inherited.items():
+              base_blob = git_blob(f"{ACCEPTED_BASE}:{path}")
+              head_blob = git_blob(f"HEAD:{path}")
+              source_blob = git_blob(f"{source_sha}:{path}")
+              assert base_blob == expected, f"{path} base {base_blob} != {expected}"
+              assert head_blob == expected, f"{path} HEAD {head_blob} != {expected}"
+              assert source_blob == expected, f"{path} source {source_blob} != {expected}"
+              print(f"ok inherited_unchanged {path} blob={head_blob}")
+
+          for rel in [
+              HISTORICAL_LIB,
+              "apps/jobs/lib/ml-cal-1-g4-windows-path-identity.ts",
+              "apps/jobs/run-ml-cal-1-g4-phase-a-retention-setup.ts",
+              "apps/jobs/lib/ml-cal-1-g4-phase-a-json-command.ts",
+              "apps/jobs/run-ml-cal-1-g4-phase-a-json-command.ts",
+          ]:
+              text = pathlib.Path(rel).read_text(encoding="utf-8")
+              assert "new PrismaClient" not in text, rel
+              assert "process.env.DATABASE_URL" not in text, rel
+              assert "process.env.DIRECT_URL" not in text, rel
+              print(f"ok passive/gated {rel}")
+
+          lib = pathlib.Path(HISTORICAL_LIB).read_text(encoding="utf-8")
+          assert "ML_CAL_1_G4_PHASE_A_DESIGN_SHA256" in lib
+          print("ok design_pin_present_in_w5_successor_library")
+
+          secretish = re.compile(
+              r"(?i)(api[_-]?key\s*[:=]\s*\S+|password\s*[:=]\s*\S+|bearer\s+[a-z0-9._-]{8,}|"
+              r"ghp_[A-Za-z0-9]+|(DATABASE_URL|DIRECT_URL)\s*[:=]\s*\S+)"
+          )
+          for rel in list(reviewed) + [
+              ".github/workflows/test-ml-cal-1-g4-w5-path-identity-v1.yml",
+              ".github/workflows/test-ml-cal-1-g4-w5-native-route-a-v1.yml",
+          ]:
+              text = pathlib.Path(rel).read_text(encoding="utf-8")
+              assert not secretish.search(text), rel
+          print("ok secret-free scan (scoped W5 files + workflow)")
+          print("ok dependencies_unchanged package.json package-lock.json")
+          ART = (
+              "tools/windows-g4-fs-inspect/reviewed-artifacts/"
+              "WindowsG4FsInspect-9fc710026f177525994126673f084274e94d17615ec136a72b60d3e7a558c9b5.exe"
+          )
+          ART_LEN = 20480
+          ART_SHA = "9fc710026f177525994126673f084274e94d17615ec136a72b60d3e7a558c9b5"
+          bin_rel = "tools/windows-g4-fs-inspect/bin/WindowsG4FsInspect.exe"
+          bin_present = subprocess.call(
+              ["git", "cat-file", "-e", f"{source_sha}:{bin_rel}"]
+          ) == 0
+          assert not bin_present, (
+              f"launcher bin exe must stay out of source head {source_sha}"
+          )
+          print(f"ok launcher_bin_exe_absent_from_source_head={source_sha}")
+          art_in_git = subprocess.call(
+              ["git", "cat-file", "-e", f"{source_sha}:{ART}"]
+          ) == 0
+          work_art = pathlib.Path(ART)
+          print(f"expected_artifact_bytes={ART_LEN}")
+          print(f"expected_artifact_sha256={ART_SHA}")
+          assert art_in_git, (
+              f"native_lane=BLOCKED missing_artifact source_head={source_sha} path={ART}"
+          )
+          assert work_art.is_file(), (
+              f"native_lane=BLOCKED working tree missing reviewed artifact {ART}"
+          )
+          blob = git_bytes(f"{source_sha}:{ART}")
+          disk = work_art.read_bytes()
+          b_len, b_sha = sha256_bytes(blob)
+          d_len, d_sha = sha256_bytes(disk)
+          print(f"source_artifact_bytes={b_len} source_artifact_sha256={b_sha}")
+          print(f"working_artifact_bytes={d_len} working_artifact_sha256={d_sha}")
+          assert disk == blob, (
+              f"reviewed artifact working bytes != source head blob {source_sha}"
+          )
+          assert (b_len, b_sha) == (ART_LEN, ART_SHA), (
+              f"artifact {b_len} {b_sha} != {ART_LEN} {ART_SHA}"
+          )
+          print(f"ok REVIEWED_ARTIFACT source_head={source_sha}")
+          print("ok no_env_dump no_secret_exfiltration")
+          print("ok HISTORICAL_258_vs_W5_SUCCESSOR pins labeled and distinct")
+          PY
+
+      - name: Run inherited W4 conflict-gate suite
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts \
+            --json --outputFile=jest-w4.json
+
+      - name: Run inherited Phase A JSON command suite
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts \
+            --json --outputFile=jest-json.json
+
+      - name: Run inherited Phase A retention setup suite
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts \
+            --json --outputFile=jest-phase-a.json
+
+      - name: Run inherited nonfixture runner suite
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts \
+            --json --outputFile=jest-runner.json
+
+      - name: Run inherited real-adapter suite
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts \
+            --json --outputFile=jest-adapter.json
+
+      - name: Run inherited fixture-preflight suite
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts \
+            --json --outputFile=jest-fixture.json
+
+      - name: Run inherited binding / G2 / G3 / G4 regressions
+        run: |
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts \
+            apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts \
+            apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts \
+            apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts \
+            --json --outputFile=jest-binding.json
+
+      - name: Run W5 focused suite
+        run: |
+          set -euo pipefail
+          # Redirect merges stdout and stderr. No pipe, so pipefail is retained
+          # for this step and Jest's own status is the step status.
+          npx jest --runInBand --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts \
+            --json --outputFile=jest-w5.json > w5-focused.log 2>&1
+
+      - name: Classify Jest counts and W5 coverage
+        if: always()
+        run: |
+          python3 - <<'PY'
+          # CLASSIFIER_IMPL_BEGIN
+          import json
+          import pathlib
+          import re
+          from collections import Counter
+
+          SUITE_EXPECTATIONS = (
+              ("w4", "jest-w4.json", 25),
+              ("json", "jest-json.json", 33),
+              ("phase_a", "jest-phase-a.json", 27),
+              ("runner", "jest-runner.json", 30),
+              ("adapter", "jest-adapter.json", 21),
+              ("fixture", "jest-fixture.json", 34),
+              ("binding_g2_g3_g4", "jest-binding.json", 136),
+              ("w5_focused", "jest-w5.json", 39),
+          )
+
+          # One Jest JSON file can cover several test paths. Each path must appear once.
+          SUITE_FILES = {
+              "w4": ("apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",),
+              "json": ("apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",),
+              "phase_a": ("apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",),
+              "runner": ("apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",),
+              "adapter": ("apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",),
+              "fixture": ("apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",),
+              "binding_g2_g3_g4": (
+                  "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+                  "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts",
+                  "apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts",
+                  "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+              ),
+              "w5_focused": ("apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",),
+          }
+
+          # Describe name, test title. Source order of the unchanged W5 test file.
+          W5_CASES = (
+              ("W5 helper pin + frozen caps", "records frozen caps and pin constants"),
+              ("W5 helper pin + frozen caps", "verifies disposable helper pin when binary present"),
+              ("PASS evidence gate", "rejects PASS with reasons / missing identity / malformed segments"),
+              ("PASS evidence gate", 'rejects impossible all-"x" PASS and REFUSE_ALIAS segment PASS'),
+              ("PASS evidence gate", "async+sync launchers refuse independently reproduced impossible PASS payloads"),
+              ("PASS evidence gate", "async launcher refuses incomplete PASS JSON"),
+              ("PASS evidence gate", "buildW5HelperEnv strips ambient G4_W5_TEST_* unless handshake enabled"),
+              ("PASS evidence gate", "strips lowercase, mixed-case, and duplicate-case G4_W5_TEST_* variants"),
+              ("PASS evidence gate", "async+sync launchers strip casing variants from spawn env"),
+              ("W5 async launcher refusal surfaces (mocked spawn)", "does not pass maxBuffer into spawn options"),
+              ("W5 async launcher refusal surfaces (mocked spawn)", "stdout/stderr overflow refuse"),
+              ("W5 async launcher refusal surfaces (mocked spawn)", "timeout settles even when kill does not close"),
+              ("W5 async launcher refusal surfaces (mocked spawn)", "stdin error settles"),
+              ("W5 async launcher refusal surfaces (mocked spawn)", "schema/binding/nonzero refuse"),
+              ("W5 async launcher refusal surfaces (mocked spawn)", "exact-cap complete PASS evidence accepted"),
+              ("W5 sync launcher path (actual sync contract)", "pin mismatch does not spawnSync"),
+              ("W5 sync launcher path (actual sync contract)", "schema mismatch / incomplete PASS refuse on sync path"),
+              ("W5 sync launcher path (actual sync contract)", "sync timeout refuse"),
+              ("W5 sync launcher path (actual sync contract)", "sync combined ceiling allows independent stream sizes under each cap"),
+              ("W5 sync launcher path (actual sync contract)", "sync ENOBUFS / maxBuffer overflow refuse"),
+              ("W5 sync launcher path (actual sync contract)", "sync stdout over dedicated cap refuse after collection"),
+              ("W5 sync launcher path (actual sync contract)", "sync uses maxBuffer = stdoutCap + stderrCap"),
+              ("Operator W5-only always BLOCKED (library/CLI/JSON)", "W5 PASS stub still leaves operator setup BLOCKED with zero mutation"),
+              ("Operator W5-only always BLOCKED (library/CLI/JSON)", "W5 non-PASS: no clock, no user-root mutation"),
+              ("Operator W5-only always BLOCKED (library/CLI/JSON)", "disabled: zero W5, clock, mutation"),
+              ("Operator W5-only always BLOCKED (library/CLI/JSON)", "W4 refusal: no W5 inspect"),
+              ("Operator W5-only always BLOCKED (library/CLI/JSON)", "temp mode skips W5 and can succeed"),
+              ("Operator W5-only always BLOCKED (library/CLI/JSON)", "CLI/JSON operator BLOCKED"),
+              ("unmocked non-Windows platform refusal", "refuses before spawn when the host platform is not win32"),
+              ("Native W5 disposable Windows readback", "ordinary existing path PASS"),
+              ("Native W5 disposable Windows readback", "missing leaf/ancestor BLOCKED"),
+              ("Native W5 disposable Windows readback", "long / Unicode names"),
+              ("Native W5 disposable Windows readback", "junction alias segment REFUSE (pre-existing)"),
+              ("Native W5 disposable Windows readback", "dir symlink UNVERIFIED without privilege"),
+              ("Native W5 disposable Windows readback", "controlled normal-directory parent swap via explicit handshake"),
+              ("Native W5 disposable Windows readback", "controlled junction replacement during inspection via explicit handshake"),
+              ("Native W5 disposable Windows readback", "ordinary inspection with ambient casing-variant G4_W5_TEST_* writes no handshake files"),
+              ("Native W5 disposable Windows readback", "case-sensitive parent UNVERIFIED without privileged fixture"),
+              ("Positive mutation recorder control", "temp success records mutations"),
+          )
+
+          # Derived from unchanged skipUnverified branches in
+          # apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts.
+          # Linux (!win32, helper not used): pin test, eight native-describe
+          # helper gates, and the always-unverified case-sensitive parent test.
+          LINUX_REASONS = {
+              "helper exe absent or non-Windows": 1,
+              "native helper unavailable": 8,
+              "case-sensitive directory fixture requires privileged fsutil; not elevated in this task": 1,
+          }
+          LINUX_COUNTERS = (0, 28, 10, 10)  # native, mocked, skipped, unverified
+
+          CASE_REASON = (
+              "case-sensitive directory fixture requires privileged fsutil; not elevated in this task"
+          )
+          NON_WINDOWS_REASON = (
+              "non-Windows platform refusal is not observable while process.platform is win32"
+          )
+          # Node's symlink exception text. Only EPERM and EACCES are privilege failures.
+          # EIO, ENOSPC, a bare prefix, and any other code are not this gap.
+          SYMLINK_PRIVILEGE_RE = re.compile(
+              r"^dir symlink create requires privilege: Error: (EPERM|EACCES): \S"
+          )
+          FORBIDDEN_EXACT = {
+              "native helper unavailable",
+              "helper exe absent or non-Windows",
+              "handshake ready not observed",
+          }
+          FORBIDDEN_PREFIXES = (
+              "junction create failed:",
+              "junction swap failed:",
+          )
+          COV_LINE = re.compile(
+              r"^\s*\[W5 coverage\] native=(\d+) mocked=(\d+) skipped=(\d+) unverified=(\d+)\s*$"
+          )
+          WARN_LINE = re.compile(r"^\s*\[W5\] SKIPPED/UNVERIFIED:\s*(.*?)\s*$")
+          ASSERTION_STATUSES = ("passed", "failed", "pending", "todo", "skipped")
+          JEST_FIELDS = (
+              "success",
+              "numFailedTestSuites",
+              "numFailedTests",
+              "numPassedTestSuites",
+              "numPassedTests",
+              "numPendingTestSuites",
+              "numPendingTests",
+              "numRuntimeErrorTestSuites",
+              "numTodoTests",
+              "numTotalTestSuites",
+              "numTotalTests",
+              "testResults",
+          )
+
+
+          def _norm_path(value):
+              return str(value).replace("\\", "/")
+
+
+          def _matches_file(result_name, rel):
+              norm = _norm_path(result_name)
+              return norm == rel or norm.endswith("/" + rel)
+
+
+          def check_inventory(name, expected_count, data, errors):
+              """Reconcile Jest aggregates with per-file assertionResults.
+
+              Custom W5 unverified/skipped counters are not Jest pending and are not
+              read here. This frozen inventory expects every assertion to have passed:
+              pending and todo are unexpected even when the custom counters are non-zero.
+              """
+              missing = [key for key in JEST_FIELDS if key not in data]
+              for key in missing:
+                  errors.append(f"jest_field_missing {name} {key}")
+              if missing:
+                  return
+              results = data["testResults"]
+              if not isinstance(results, list):
+                  errors.append(f"jest_test_results_not_list {name}")
+                  return
+              expected_files = SUITE_FILES[name]
+              if len(results) != len(expected_files):
+                  errors.append(
+                      f"jest_suite_file_count {name} expected={len(expected_files)} actual={len(results)}"
+                  )
+              matched = {rel: [] for rel in expected_files}
+              for result in results:
+                  if not isinstance(result, dict):
+                      errors.append(f"jest_suite_result_not_object {name}")
+                      continue
+                  result_name = result.get("name")
+                  hit = None
+                  if isinstance(result_name, str):
+                      for rel in expected_files:
+                          if _matches_file(result_name, rel):
+                              hit = rel
+                              break
+                  if hit is None:
+                      errors.append(f"jest_suite_file_unexpected {name} name={result_name}")
+                  else:
+                      matched[hit].append(result)
+                  if result.get("status") != "passed":
+                      errors.append(
+                          f"jest_suite_not_passed {name} status={result.get('status')} name={result_name}"
+                      )
+              for rel, hits in matched.items():
+                  if len(hits) == 0:
+                      errors.append(f"jest_suite_file_missing {name} {rel}")
+                  elif len(hits) > 1:
+                      errors.append(f"jest_suite_file_duplicate {name} {rel} count={len(hits)}")
+
+              assertions = []
+              for result in results:
+                  if not isinstance(result, dict):
+                      continue
+                  rows = result.get("assertionResults")
+                  if not isinstance(rows, list):
+                      errors.append(f"jest_assertions_missing {name} name={result.get('name')}")
+                      continue
+                  identities = []
+                  for row_index, row in enumerate(rows):
+                      if not isinstance(row, dict):
+                          errors.append(f"jest_assertion_not_object {name} index={row_index}")
+                          continue
+                      status = row.get("status")
+                      title = row.get("title")
+                      ancestors = row.get("ancestorTitles")
+                      if not isinstance(title, str) or title == "":
+                          errors.append(f"jest_assertion_title_missing {name} index={row_index}")
+                      if status not in ASSERTION_STATUSES:
+                          errors.append(
+                              f"jest_assertion_status_unexpected {name} status={status} title={title}"
+                          )
+                      if not isinstance(ancestors, list) or not ancestors:
+                          errors.append(f"jest_assertion_ancestors_missing {name} title={title}")
+                      else:
+                          identities.append((tuple(ancestors), title))
+                      assertions.append(row)
+                  identity_counts = Counter(identities)
+                  for identity, count in identity_counts.items():
+                      if count > 1:
+                          errors.append(f"jest_assertion_duplicate {name} title={identity[1]} count={count}")
+
+              counts = Counter(
+                  row.get("status") for row in assertions if isinstance(row, dict)
+              )
+              passed = counts["passed"]
+              failed = counts["failed"]
+              pending = counts["pending"] + counts["skipped"]
+              todo = counts["todo"]
+              total = passed + failed + pending + todo
+              if data["numPassedTests"] != passed:
+                  errors.append(
+                      f"jest_passed_mismatch {name} aggregate={data['numPassedTests']} assertions={passed}"
+                  )
+              if data["numFailedTests"] != failed:
+                  errors.append(
+                      f"jest_failed_mismatch {name} aggregate={data['numFailedTests']} assertions={failed}"
+                  )
+              if data["numPendingTests"] != pending:
+                  errors.append(
+                      f"jest_pending_mismatch {name} aggregate={data['numPendingTests']} assertions={pending}"
+                  )
+              if data["numTodoTests"] != todo:
+                  errors.append(
+                      f"jest_todo_mismatch {name} aggregate={data['numTodoTests']} assertions={todo}"
+                  )
+              if data["numTotalTests"] != total or len(assertions) != total:
+                  errors.append(
+                      f"jest_total_mismatch {name} aggregate={data['numTotalTests']} "
+                      f"status_sum={total} assertions={len(assertions)}"
+                  )
+              if (
+                  data["numPassedTests"]
+                  + data["numFailedTests"]
+                  + data["numPendingTests"]
+                  + data["numTodoTests"]
+                  != data["numTotalTests"]
+              ):
+                  errors.append(
+                      f"jest_aggregate_contradiction {name} "
+                      f"passed={data['numPassedTests']} failed={data['numFailedTests']} "
+                      f"pending={data['numPendingTests']} todo={data['numTodoTests']} "
+                      f"total={data['numTotalTests']}"
+                  )
+              if pending != 0:
+                  errors.append(f"jest_pending_unexpected {name} pending={pending}")
+              if todo != 0:
+                  errors.append(f"jest_todo_unexpected {name} todo={todo}")
+              if data["numPendingTestSuites"] != 0:
+                  errors.append(
+                      f"jest_pending_suites_unexpected {name} count={data['numPendingTestSuites']}"
+                  )
+              if data["numFailedTestSuites"] != 0:
+                  errors.append(f"jest_failed_suites {name} count={data['numFailedTestSuites']}")
+              if data["numRuntimeErrorTestSuites"] != 0:
+                  errors.append(
+                      f"jest_runtime_error_suites {name} count={data['numRuntimeErrorTestSuites']}"
+                  )
+              if data["numPassedTestSuites"] != len(expected_files):
+                  errors.append(
+                      f"jest_passed_suites {name} expected={len(expected_files)} "
+                      f"actual={data['numPassedTestSuites']}"
+                  )
+              if data["numTotalTestSuites"] != len(expected_files):
+                  errors.append(
+                      f"jest_total_suites {name} expected={len(expected_files)} "
+                      f"actual={data['numTotalTestSuites']}"
+                  )
+              if data["success"] is not True:
+                  errors.append(f"jest_unsuccessful {name} success={data['success']}")
+              if data["numFailedTests"] != 0:
+                  errors.append(f"jest_failed_tests {name} failed={data['numFailedTests']}")
+              if data["numPassedTests"] != expected_count or data["numTotalTests"] != expected_count:
+                  errors.append(
+                      f"jest_count {name} expected_passed_and_total={expected_count} "
+                      f"actual_passed={data['numPassedTests']} actual_total={data['numTotalTests']}"
+                  )
+              if name != "w5_focused":
+                  return
+              actual_cases = []
+              for result in results:
+                  if not isinstance(result, dict):
+                      continue
+                  rows = result.get("assertionResults")
+                  if not isinstance(rows, list):
+                      continue
+                  for row in rows:
+                      if not isinstance(row, dict):
+                          continue
+                      ancestors = row.get("ancestorTitles")
+                      describe = ancestors[0] if isinstance(ancestors, list) and len(ancestors) == 1 else None
+                      actual_cases.append((describe, row.get("title")))
+              if tuple(actual_cases) != W5_CASES:
+                  errors.append(
+                      f"w5_test_identity_mismatch expected={len(W5_CASES)} actual={len(actual_cases)}"
+                  )
+
+
+          def classify(lane, suites, log_text):
+              """Return error strings. Empty means the lane evidence is acceptable.
+
+              suites maps the suite name to parsed Jest JSON, None when the file is
+              missing, or {"_malformed": "..."} when JSON parsing failed.
+              Jest pending is an inventory field. It is not the custom unverified counter.
+              native+mocked+skipped is not a partition of Jest functions.
+              """
+              errors = []
+              if lane not in ("linux", "windows"):
+                  errors.append(f"unknown_lane {lane}")
+
+              inherited_passed = 0
+              for name, _filename, expected in SUITE_EXPECTATIONS:
+                  data = suites.get(name, None)
+                  if data is None:
+                      errors.append(f"jest_json_missing {name}")
+                      continue
+                  if isinstance(data, dict) and "_malformed" in data and len(data) == 1:
+                      errors.append(f"jest_json_malformed {name} {data['_malformed']}")
+                      continue
+                  if not isinstance(data, dict):
+                      errors.append(f"jest_json_malformed {name} not_an_object")
+                      continue
+                  check_inventory(name, expected, data, errors)
+                  passed = data.get("numPassedTests")
+                  if name != "w5_focused" and isinstance(passed, int):
+                      inherited_passed += passed
+              if inherited_passed != 306:
+                  errors.append(f"jest_inherited_passed_sum {inherited_passed} != 306")
+
+              cov_hits = []
+              for line in log_text.splitlines():
+                  # Jest call-site frames echo the template. Only message lines count.
+                  if not line.lstrip().startswith("[W5 coverage]"):
+                      continue
+                  match = COV_LINE.fullmatch(line)
+                  if match is None:
+                      errors.append(f"coverage_line_malformed {line.strip()}")
+                      continue
+                  cov_hits.append(tuple(int(part) for part in match.groups()))
+              if len(cov_hits) == 0:
+                  errors.append("coverage_line_missing")
+                  native = mocked = skipped = unverified = None
+              elif len(cov_hits) > 1:
+                  errors.append(f"coverage_line_duplicate count={len(cov_hits)}")
+                  native = mocked = skipped = unverified = None
+              else:
+                  native, mocked, skipped, unverified = cov_hits[0]
+                  if min(native, mocked, skipped, unverified) < 0:
+                      errors.append("coverage_counter_negative")
+
+              reasons = []
+              for line in log_text.splitlines():
+                  if not line.lstrip().startswith("[W5] SKIPPED/UNVERIFIED:"):
+                      continue
+                  match = WARN_LINE.fullmatch(line)
+                  if match is None:
+                      errors.append(f"unavailable_reason_malformed {line.strip()}")
+                      continue
+                  reasons.append(match.group(1))
+
+              if skipped is not None and unverified is not None:
+                  if skipped != unverified:
+                      errors.append(
+                          f"counter_inconsistent skipped={skipped} unverified={unverified}"
+                      )
+                  if len(reasons) != unverified:
+                      errors.append(
+                          f"reason_multiplicity warnings={len(reasons)} unverified={unverified}"
+                      )
+
+              counts = Counter(reasons)
+              if lane == "linux" and native is not None:
+                  if (native, mocked, skipped, unverified) != LINUX_COUNTERS:
+                      errors.append(
+                          "linux_counters expected native=0 mocked=28 skipped=10 unverified=10 "
+                          f"actual native={native} mocked={mocked} skipped={skipped} unverified={unverified}"
+                      )
+                  if counts != Counter(LINUX_REASONS):
+                      errors.append(
+                          f"linux_reasons expected={dict(LINUX_REASONS)} actual={dict(counts)}"
+                      )
+              if lane == "windows" and native is not None:
+                  priv_count = 0
+                  for reason, count in counts.items():
+                      if reason in (CASE_REASON, NON_WINDOWS_REASON):
+                          continue
+                      if SYMLINK_PRIVILEGE_RE.match(reason):
+                          priv_count += count
+                          if count != 1:
+                              errors.append(
+                                  f"symlink_privilege_reason_multiplicity {reason} x{count}"
+                              )
+                          continue
+                      if reason in FORBIDDEN_EXACT or reason.startswith(FORBIDDEN_PREFIXES):
+                          errors.append(f"forbidden_unavailable_reason {reason} x{count}")
+                          continue
+                      errors.append(f"unexpected_unavailable_reason {reason} x{count}")
+                  if counts[NON_WINDOWS_REASON] != 1:
+                      errors.append(
+                          f"non_windows_reason_count {counts[NON_WINDOWS_REASON]} != 1"
+                      )
+                  if counts[CASE_REASON] != 1:
+                      errors.append(f"case_sensitive_reason_count {counts[CASE_REASON]} != 1")
+                  if priv_count not in (0, 1):
+                      errors.append(f"symlink_privilege_reason_count {priv_count} not_in_0_1")
+                  expected = (9, 27, 2, 2) if priv_count == 0 else (8, 27, 3, 3)
+                  if priv_count in (0, 1) and (native, mocked, skipped, unverified) != expected:
+                      kind = "symlink_executed" if priv_count == 0 else "symlink_unverified"
+                      errors.append(
+                          f"windows_counters mode={kind} expected native,mocked,skipped,unverified="
+                          f"{expected} actual={(native, mocked, skipped, unverified)}"
+                      )
+              return errors
+
+
+          def load_suites():
+              loaded = {}
+              for name, filename, _expected in SUITE_EXPECTATIONS:
+                  path = pathlib.Path(filename)
+                  if not path.is_file():
+                      loaded[name] = None
+                      continue
+                  try:
+                      loaded[name] = json.loads(path.read_text(encoding="utf-8"))
+                  except json.JSONDecodeError as exc:
+                      loaded[name] = {"_malformed": str(exc)}
+              return loaded
+
+
+          def print_suite_pending(suites):
+              for name, _filename, _expected in SUITE_EXPECTATIONS:
+                  data = suites.get(name)
+                  if isinstance(data, dict) and "_malformed" not in data:
+                      print(
+                          f"jest_pending_independent {name} "
+                          f"skipped_pending={data.get('numPendingTests')} "
+                          f"todo={data.get('numTodoTests')} "
+                          f"custom_unverified_is_separate=true"
+                      )
+          # CLASSIFIER_IMPL_END
+
+
+          LANE = "linux"
+
+          def main():
+              print("coverage_classification_begin")
+              print(f"lane={LANE}")
+              print("helper_pin_bytes=20480")
+              print("helper_pin_sha256=9fc710026f177525994126673f084274e94d17615ec136a72b60d3e7a558c9b5")
+              print("production_signing=UNRESOLVED")
+              print("testOnlySkipPinCheck_not_used_to_green_native_ci=true")
+              print("jest_green_is_not_native_body_execution=true")
+              print("jest_pending_is_not_required_to_equal_unverified=true")
+              print("custom_counters_are_not_a_partition_of_jest_functions=true")
+              print("not_full_native_certification=true")
+              print("not_operator_ready=true")
+              print("historical_linux_run_38940275351_is_not_windows_evidence=true")
+              print("historical_failed_run_38935173033_unchanged=true")
+              suites = load_suites()
+              print_suite_pending(suites)
+              log_path = pathlib.Path("w5-focused.log")
+              log_text = log_path.read_text(encoding="utf-8", errors="replace") if log_path.is_file() else ""
+              if not log_path.is_file():
+                  print("w5_focused_log=MISSING")
+              errors = classify(LANE, suites, log_text)
+              if errors:
+                  print("classification=FAIL")
+                  for err in errors:
+                      print(f"classification_error {err}")
+                  print("coverage_classification_end")
+                  raise SystemExit(1)
+              print("classification=PASS")
+              print("coverage_classification_end")
+
+          main()
+          PY
+
+      - name: Linux lane scope
+        if: always()
+        run: |
+          echo "this_job=linux_mocked_and_inherited"
+          echo "windows_route_a_workflow=test-ml-cal-1-g4-w5-native-route-a-v1.yml"
+          echo "do_not_replace_helper_pin_from_ci_build=true"
+          echo "historical_run_38940275351_remains_linux_acceptance=true"
+          echo "historical_failed_run_38935173033_unchanged=true"
