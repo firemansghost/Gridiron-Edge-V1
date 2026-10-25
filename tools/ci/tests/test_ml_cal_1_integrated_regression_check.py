@@ -268,6 +268,41 @@ class CheckerAcceptanceTest(unittest.TestCase):
         self.assertIn("omitted_diagnostic_records=", text)
         self.assertLessEqual(len(text.encode("utf-8")), checker.OUTPUT_LIMIT + 64)
 
+    def test_leading_dot_paths_keep_documentation_scope(self):
+        self.assertEqual(
+            checker.normalize_rel("./.cursor/rules/example.md"),
+            ".cursor/rules/example.md",
+        )
+        self.assertEqual(
+            checker.normalize_rel(".\\.cursor\\rules\\example.md"),
+            ".cursor/rules/example.md",
+        )
+        self.assertEqual(checker.normalize_rel("../docs/example.md"), "../docs/example.md")
+        skips = [
+            ".cursor/rules/example.md",
+            "./.cursor/rules/example.md",
+            "docs/example.md",
+            "README.md",
+        ]
+        for sample in skips:
+            self.assertEqual(
+                checker.scope_decision([sample]),
+                ("skip", "documentation_only"),
+                sample,
+            )
+        runs = [
+            ".github/workflows/example.yml",
+            "apps/web/lib/core-v1-moneyline.ts",
+            "../docs/example.md",
+        ]
+        for sample in runs:
+            self.assertEqual(
+                checker.scope_decision([sample]),
+                ("run", "relevant_paths"),
+                sample,
+            )
+        self.assertEqual(checker.scope_decision(None), ("run", "diff_unavailable"))
+
     def test_relevant_paths_run_and_documentation_skips(self):
         samples = [
             "apps/web/lib/core-v1-moneyline.ts",

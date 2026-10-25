@@ -391,7 +391,17 @@ def verify_candidate(repo, contract, rev, head=""):
 
 
 def normalize_rel(path):
-    return str(path).replace("\\", "/").lstrip("./")
+    """Normalize a repository path without removing a legitimate leading dot.
+
+    Backslashes become slashes, and only a repeated ``./`` relative prefix is
+    removed. ``str.lstrip("./")`` is intentionally not used: it treats the
+    argument as a character set and would turn ``.cursor/rules/`` into
+    ``cursor/rules/``.
+    """
+    rel = str(path).replace("\\", "/")
+    while rel.startswith("./"):
+        rel = rel[2:]
+    return rel
 
 
 def is_documentation_only(path):
