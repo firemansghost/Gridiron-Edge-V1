@@ -1,0 +1,147 @@
+{
+  "contract_name": "ml-cal-1-integrated-regression-v1",
+  "inventory_contract_version": 1,
+  "identity_sha256": "570374d81a866127d8017d146e173555df5318854d5944e197680cd74e921edb",
+  "pins": {
+    "apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts": {
+      "oid": "472fe71eeb471ef1e4e52a57862a71ed5a1d3037",
+      "size": 54556,
+      "sha256": "822ef91041d44bbf7a24243cd37d22cb513232fefed0a3f78f73fe95aa4f74ef"
+    },
+    "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts": {
+      "oid": "129b349a6e09c1cea6bcf440622a966d75512a11",
+      "size": 32603,
+      "sha256": "fe4f4bb79916b085612be86885128d2c13aaf11257c2d4329dae48d74ce62154"
+    },
+    "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts": {
+      "oid": "64b435c5d9a8af7695d6800dba0fe6ba89b2405a",
+      "size": 45111,
+      "sha256": "aa81ed6587b607abe8dec99a13f1e511f5e3676e7927d59165d7538e73a96032"
+    },
+    "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts": {
+      "oid": "87d9fc88644753d8d473e3d7d8d7f9b5ac0f4481",
+      "size": 40076,
+      "sha256": "b71e17295915d14ed59e1cef9a4813fd0326aa118434ae36ab8a256596aa1520"
+    },
+    "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts": {
+      "oid": "39ff24dcec7d39c1fb5fc8b79a38d999979a4d84",
+      "size": 37218,
+      "sha256": "8c62409a6d0b5cdbbfe809839f54675f303d995a18beb2e38df72ae12bc15872"
+    },
+    "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts": {
+      "oid": "225dc3188f84065dd0c5b5fb4aeee8ebd7d4c75f",
+      "size": 31921,
+      "sha256": "4eac9dfdde3b108165c8f263768dd26dde5efa2348ebf73d1955d2164bf4b5b7"
+    },
+    "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts": {
+      "oid": "c02dec1767ad573577cc9b5f19920671ad8d3d9d",
+      "size": 40068,
+      "sha256": "69c6bba6d96997a59d90c4b8be92069313a6a64db6c043572a514bf0a620b402"
+    },
+    "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts": {
+      "oid": "a5d049808299d2cab651d3543c9a03632994bf7a",
+      "size": 21268,
+      "sha256": "63009eae48cf04ef7bc576a84a6b0dd1acaa5fb02cb9a2bc8e0a78727595801a"
+    },
+    "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts": {
+      "oid": "c070ad183b77ac09d83f5b426296ca1bc50a6470",
+      "size": 69563,
+      "sha256": "3cde3f45191ad08c9755270ccefc4be6bea76024f38669a6dc186b3f32c82232"
+    },
+    "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts": {
+      "oid": "70e2d40f13742c8095e920ac01acb78d6f986eca",
+      "size": 51198,
+      "sha256": "c738dba09ce9d373c6e71f80b31956b68acebac96c3f13e999a541dff1e11f7c"
+    },
+    "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts": {
+      "oid": "7aeee68eb90b5a2b052d11cd7a38f2da05fbed6d",
+      "size": 56831,
+      "sha256": "2552a28ed107fae04c5ab9856525ea20c628f619c174202bc6da52bb0593ec6c"
+    },
+    "apps/jobs/lib/ml-cal-1-g4-phase-a-json-command.ts": {
+      "oid": "8b9aac3ec3fb618a2f67aced4c3025f73fe5eadb",
+      "size": 50247,
+      "sha256": "af17f1c1bdc08386c31edd914cfb01f4aec5fb353af422593c4d85d17eb7efbd"
+    },
+    "apps/jobs/lib/ml-cal-1-g4-phase-a-retention-setup.ts": {
+      "oid": "6a10c2fe7425b1919f982ee3ce6b46ea990e79ce",
+      "size": 91331,
+      "sha256": "a3a86d5b181032c6dc7ad555ee0958c80d819b169af200162fd18f8da776568b"
+    },
+    "apps/jobs/lib/ml-cal-1-g4-pooler-preflight-fixture.ts": {
+      "oid": "14f726efd60e8c4b0b14924f4a19470c2b8cd1cf",
+      "size": 53985,
+      "sha256": "73922ce61d9a6f202934b3a4fcd093f78b046af3d5be28edbdb5e23ef22d6baa"
+    },
+    "apps/jobs/lib/ml-cal-1-g4-pooler-preflight-live-reader.ts": {
+      "oid": "94b2aac959840cbbd8178ea0f6bd5cd354295e37",
+      "size": 29021,
+      "sha256": "bfc5bc4558d5fdf2a704209519c77a39cddfe9a26d8dfd98850aa4d7da3614b2"
+    },
+    "apps/jobs/lib/ml-cal-1-g4-pooler-preflight-live-runner.ts": {
+      "oid": "d1ecb466864beda73dec32c4dddf2bde649ee826",
+      "size": 47576,
+      "sha256": "7d097688313c98124c0a5b98aa712e41d688397ef7ee5b8234bdad9bbfc2944b"
+    },
+    "apps/jobs/lib/ml-cal-1-g4-pooler-preflight-real-adapter.ts": {
+      "oid": "a61a046a8128012c58046062d20b514ea2fad85a",
+      "size": 13689,
+      "sha256": "a75bb1adb3c28ddb2c9547e5ffd8001fcdf91b25f03dadf2788c07234a24c59f"
+    },
+    "apps/jobs/lib/ml-cal-1-g4-windows-path-identity.ts": {
+      "oid": "a5ec4600db186687e5a1d5e82cbfaff40c9698e4",
+      "size": 32738,
+      "sha256": "7b60952a47e958b5091bd8e511390ce8fe0db255dc45c4639b1dcc916f08cd4f"
+    },
+    "apps/jobs/run-ml-cal-1-g4-phase-a-json-command.ts": {
+      "oid": "6bea4c4fec4e4c77e3c02501ce431ac876267fef",
+      "size": 1819,
+      "sha256": "229c4016c74d72508a283ffc5e5da203e6c3b99af2f316d801e893c7bdb19629"
+    },
+    "apps/jobs/run-ml-cal-1-g4-phase-a-retention-setup.ts": {
+      "oid": "35fd0efa463a18725ba9acbd5874e4046b7adbfa",
+      "size": 7551,
+      "sha256": "fbf9b3a2f1c24cab9fb0da326e0a54e77050694bcaed8f74077276c70f14fb73"
+    },
+    "apps/jobs/run-ml-cal-1-g4-pooler-preflight-live.ts": {
+      "oid": "25f495fc5d154be1a6faa8300b2462fc33dc95cb",
+      "size": 6807,
+      "sha256": "64ce9134214aa6a3b9e46f7cabd4a0a29ba0b43c645d1e5eee262871c070e7a0"
+    },
+    "package-lock.json": {
+      "oid": "8c19ca0d028900a235d57b69f6802d2423b22af6",
+      "size": 368087,
+      "sha256": "b0be35f77e0e32dbd632734d40feadf22780abb54cc5a7b73b52650a6259f0c7"
+    },
+    "package.json": {
+      "oid": "9dd5f3e9c136c4c0df0f7f46cf03c3a548052e73",
+      "size": 3782,
+      "sha256": "6a2226d9f2f4bfd1c5a6042d9e2832011bac760bdf9d5f9ef0b206253d0caff5"
+    },
+    "tools/windows-g4-fs-inspect/.gitignore": {
+      "oid": "6277ad16abeeadb75456588f29bcd21830a77d89",
+      "size": 28,
+      "sha256": "1535b8cac593b5401cf2ed8f6e366cc6f1038a0b90004bbc6ea6690165b38fc1"
+    },
+    "tools/windows-g4-fs-inspect/Program.cs": {
+      "oid": "79aee8e2801aa2af4876e2ecaf36ed01c006fdc5",
+      "size": 38655,
+      "sha256": "02fe0670408dcc375a62d025dfeeb1480fba2279cac6dadc5a2c8a4ba04e517b"
+    },
+    "tools/windows-g4-fs-inspect/WindowsG4FsInspect.csproj": {
+      "oid": "f8b7c19cd0ef1bbe65deb6d4ab8e9aaa6a6f3d9b",
+      "size": 696,
+      "sha256": "d692a968b994d710890375344aae0cb5ac85436c9ab91696376d15ecade756ca"
+    },
+    "tools/windows-g4-fs-inspect/reviewed-artifacts/.gitignore": {
+      "oid": "6c14e383c35ec40823f13126dd8e8743ea5dfcb1",
+      "size": 190,
+      "sha256": "48a9420b7d640ca3c7ed4ba7e633b3ef5f96d58c777bc37b8422b3fcc8e7acdc"
+    },
+    "tools/windows-g4-fs-inspect/reviewed-artifacts/WindowsG4FsInspect-9fc710026f177525994126673f084274e94d17615ec136a72b60d3e7a558c9b5.exe": {
+      "oid": "b261cb6edf25ce3b0fd37ea917332fccaeba3bf4",
+      "size": 20480,
+      "sha256": "9fc710026f177525994126673f084274e94d17615ec136a72b60d3e7a558c9b5"
+    }
+  }
+}

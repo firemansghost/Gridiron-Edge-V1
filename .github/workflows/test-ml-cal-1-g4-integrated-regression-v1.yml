@@ -1,0 +1,120 @@
+# Permanent Linux regression for the accepted ML-CAL-1 integrated inventory.
+# Version 1 identity digest and safety invariants are fixed in the checker.
+# This workflow does not use pull_request_target, workflow_dispatch, or a
+# workflow-level path filter. It does not run Route A or operator mode.
+
+name: Test ML-CAL-1 G4 Integrated Regression
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  integrated-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Decide regression scope
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset GITHUB_TOKEN GH_TOKEN NPM_TOKEN NODE_AUTH_TOKEN DATABASE_URL DIRECT_URL SUPABASE_DB_URL SHADOW_DATABASE_URL || true
+          python3 tools/ci/ml-cal-1-integrated-regression-check.py scope \
+            --repo "${GITHUB_WORKSPACE}" \
+            --base "${{ github.event.pull_request.base.sha }}" \
+            --head "${{ github.event.pull_request.head.sha }}"
+
+      - name: Verify historical provenance
+        if: steps.scope.outputs.decision == 'run'
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset GITHUB_TOKEN GH_TOKEN NPM_TOKEN NODE_AUTH_TOKEN DATABASE_URL DIRECT_URL SUPABASE_DB_URL SHADOW_DATABASE_URL || true
+          python3 tools/ci/ml-cal-1-integrated-regression-check.py provenance \
+            --repo "${GITHUB_WORKSPACE}"
+
+      - name: Verify current candidate
+        if: steps.scope.outputs.decision == 'run'
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset GITHUB_TOKEN GH_TOKEN NPM_TOKEN NODE_AUTH_TOKEN DATABASE_URL DIRECT_URL SUPABASE_DB_URL SHADOW_DATABASE_URL || true
+          python3 tools/ci/ml-cal-1-integrated-regression-check.py candidate \
+            --repo "${GITHUB_WORKSPACE}" \
+            --rev HEAD \
+            --head "${{ github.event.pull_request.head.sha }}"
+
+      - name: Setup Node
+        if: steps.scope.outputs.decision == 'run'
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        if: steps.scope.outputs.decision == 'run'
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset GITHUB_TOKEN GH_TOKEN NPM_TOKEN NODE_AUTH_TOKEN DATABASE_URL DIRECT_URL SUPABASE_DB_URL SHADOW_DATABASE_URL || true
+          export NEXT_TELEMETRY_DISABLED=1
+          npm ci
+
+      - name: Run integrated offline Jest inventory
+        if: steps.scope.outputs.decision == 'run'
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset GITHUB_TOKEN GH_TOKEN NPM_TOKEN NODE_AUTH_TOKEN DATABASE_URL DIRECT_URL SUPABASE_DB_URL SHADOW_DATABASE_URL || true
+          export NEXT_TELEMETRY_DISABLED=1
+          npx jest --runInBand --colors=false --json --outputFile=jest-integrated.json --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts \
+            apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts \
+            apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts \
+            apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts \
+            apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts \
+            apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts \
+            apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts \
+            apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts \
+            apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts \
+            apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts \
+            apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts \
+            apps/jobs/__tests__/ml-cal-1-capture.test.ts \
+            apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts \
+            apps/jobs/__tests__/betting-ticket-odds-refresh-v1.test.ts \
+            apps/jobs/__tests__/generic-shadow-t30-active-week-2026.test.ts \
+            apps/jobs/__tests__/generic-shadow-t30-automation-v1-scheduled-workflow.test.ts \
+            apps/jobs/__tests__/grade-bets-2026-workflow.test.ts \
+            apps/jobs/__tests__/live-odds-2026.test.ts \
+            > jest-integrated.log 2>&1
+
+      - name: Classify integrated Jest inventory
+        if: always() && steps.scope.outputs.decision == 'run'
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset GITHUB_TOKEN GH_TOKEN NPM_TOKEN NODE_AUTH_TOKEN DATABASE_URL DIRECT_URL SUPABASE_DB_URL SHADOW_DATABASE_URL || true
+          python3 tools/ci/ml-cal-1-integrated-regression-check.py classify \
+            --json jest-integrated.json \
+            --log jest-integrated.log
+
+      - name: Report integrated failure diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset GITHUB_TOKEN GH_TOKEN NPM_TOKEN NODE_AUTH_TOKEN DATABASE_URL DIRECT_URL SUPABASE_DB_URL SHADOW_DATABASE_URL || true
+          python3 tools/ci/ml-cal-1-integrated-regression-check.py diagnose \
+            --json jest-integrated.json \
+            --log jest-integrated.log
