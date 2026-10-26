@@ -1,0 +1,56 @@
+# Narrow offline intake classification for one retained lifecycle report.
+# This workflow does not run G5-PRE disposition, Route A, or operator mode.
+
+name: Test ML-CAL-1 G5 Producer Artifact Intake
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - apps/jobs/lib/ml-cal-1-g5-producer-artifact-intake.ts
+      - apps/jobs/__tests__/ml-cal-1-g5-producer-artifact-intake.test.ts
+      - .github/workflows/test-ml-cal-1-g5-producer-artifact-intake-v1.yml
+      - apps/jobs/lib/ml-cal-1-trusted-retrieval-lineage-g5-pre.ts
+      - .github/workflows/test-ml-cal-1-trusted-retrieval-lineage-g5-pre-v1.yml
+      - apps/jobs/__tests__/fixtures/packages/ml-cal-1-g4-observer/synthetic-w6/core-v1-lifecycle-2026-through-week-6-COMMIT.json
+      - jest.config.js
+      - package.json
+      - package-lock.json
+      - apps/jobs/tsconfig.test.json
+
+permissions:
+  contents: read
+
+jobs:
+  producer-artifact-intake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset GITHUB_TOKEN GH_TOKEN NPM_TOKEN NODE_AUTH_TOKEN DATABASE_URL DIRECT_URL SUPABASE_DB_URL SHADOW_DATABASE_URL || true
+          export NEXT_TELEMETRY_DISABLED=1
+          npm ci
+
+      - name: Run producer artifact intake tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset GITHUB_TOKEN GH_TOKEN NPM_TOKEN NODE_AUTH_TOKEN DATABASE_URL DIRECT_URL SUPABASE_DB_URL SHADOW_DATABASE_URL || true
+          export NEXT_TELEMETRY_DISABLED=1
+          npx jest --runInBand --colors=false --runTestsByPath \
+            apps/jobs/__tests__/ml-cal-1-g5-producer-artifact-intake.test.ts
