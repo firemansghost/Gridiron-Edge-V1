@@ -238,6 +238,20 @@ describe('ML-CAL-1 G5 producer artifact intake', () => {
     expect(result.reason).toBe('producer_artifact_mode_unsupported');
   });
 
+  test('a missing rows field stays insufficient', () => {
+    const result = classifyProducerArtifactIntake(
+      acceptedInput({
+        artifactBytes: editedFixture((value) => {
+          delete value.rows;
+        }),
+        expectedMemberSha256: null,
+      })
+    );
+    expectFrozen(result);
+    expect(result.status).toBe('insufficient');
+    expect(result.reason).toBe('producer_artifact_rows_missing');
+  });
+
   test('empty, malformed, and duplicate rows fail closed', () => {
     const empty = classifyProducerArtifactIntake(
       acceptedInput({
