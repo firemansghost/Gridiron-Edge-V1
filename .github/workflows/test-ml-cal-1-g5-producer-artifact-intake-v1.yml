@@ -11,6 +11,8 @@ on:
       - apps/jobs/lib/ml-cal-1-g5-producer-artifact-intake.ts
       - apps/jobs/__tests__/ml-cal-1-g5-producer-artifact-intake.test.ts
       - .github/workflows/test-ml-cal-1-g5-producer-artifact-intake-v1.yml
+      - apps/jobs/lib/ml-cal-1-trusted-retrieval-lineage-g5-pre.ts
+      - .github/workflows/test-ml-cal-1-trusted-retrieval-lineage-g5-pre-v1.yml
       - apps/jobs/__tests__/fixtures/packages/ml-cal-1-g4-observer/synthetic-w6/core-v1-lifecycle-2026-through-week-6-COMMIT.json
       - jest.config.js
       - package.json
