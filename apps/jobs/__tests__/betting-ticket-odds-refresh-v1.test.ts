@@ -157,7 +157,7 @@ describe('Betting Ticket Odds Refresh V1 workflow boundary', () => {
     expect(activeWeekConfig).toMatchObject({
       capability: 'generic_shadow_t30_active_week_2026',
       season: 2026,
-      week: 8,
+      week: 9,
       authority: 'version_controlled_active_week',
     });
     expect(load).toContain(

@@ -48,7 +48,7 @@ describe('Generic Shadow T-30 Automation V1 external-clock coordinator', () => {
     expect(Number.isInteger(activeWeekConfig.week)).toBe(true);
     expect(activeWeekConfig.week).toBeGreaterThanOrEqual(1);
     // Current authorized rollover fixture (see generic-shadow-t30-active-week-2026.test.ts).
-    expect(activeWeekConfig.week).toBe(8);
+    expect(activeWeekConfig.week).toBe(9);
     expect(load).toContain('GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json');
     expect(load).toContain('Active-week config is missing');
     expect(load).toContain('Active-week config week must be a positive integer');
