@@ -102,16 +102,16 @@ function writeTempConfig(payload: unknown): string {
 }
 
 describe('GENERIC_SHADOW_T30_ACTIVE_WEEK_2026 config contract', () => {
-  it('accepts the committed Week 8 fixture with required schema fields', () => {
+  it('accepts the committed Week 9 fixture with required schema fields', () => {
     const loaded = loadActiveWeekConfigFromFile(ACTIVE_WEEK_CONFIG);
     expect(loaded).toMatchObject({
       season: EXPECTED_SEASON,
-      week: 8,
+      week: 9,
       config: {
         capability: EXPECTED_CAPABILITY,
         season: EXPECTED_SEASON,
-        week: 8,
-        updatedDate: '2026-10-19',
+        week: 9,
+        updatedDate: '2026-10-27',
         authority: EXPECTED_AUTHORITY,
       },
     });
@@ -203,7 +203,7 @@ describe('Active-week consumers (scheduled T-30 + Betting Ticket)', () => {
       expect(load).toContain('echo "week=$ACTIVE_WEEK" >> "$GITHUB_OUTPUT"');
       expect(load).toContain('active_week_source=version_controlled_config');
     }
-    expect(committedWeek).toBe(8);
+    expect(committedWeek).toBe(9);
   });
 
   it('scheduled coordinator consumes INPUT_WEEK for Stage C/D and keeps ENABLE + Week-4 Hybrid gates', () => {
@@ -233,7 +233,7 @@ describe('Active-week consumers (scheduled T-30 + Betting Ticket)', () => {
     expect(hybrid).not.toContain("steps.active_week.outputs.week == '8'");
   });
 
-  it('Betting Ticket consumer consumes INPUT_WEEK from the same Week 8 config', () => {
+  it('Betting Ticket consumer consumes INPUT_WEEK from the same Week 9 config', () => {
     expect(betting).toContain('--week "$INPUT_WEEK"');
     expect(betting).toContain('WRITE_2026_WEEK_${INPUT_WEEK}_ODDS');
     expect(betting).toContain(
