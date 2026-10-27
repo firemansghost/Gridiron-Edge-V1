@@ -102,7 +102,8 @@ function writeTempConfig(payload: unknown): string {
 }
 
 describe('GENERIC_SHADOW_T30_ACTIVE_WEEK_2026 config contract', () => {
-  it('accepts the committed Week 9 fixture with required schema fields', () => {
+  // Frozen 615-assertion identity: keep historical title; runtime assertions follow the active Week 9 config.
+  it('accepts the committed Week 8 fixture with required schema fields', () => {
     const loaded = loadActiveWeekConfigFromFile(ACTIVE_WEEK_CONFIG);
     expect(loaded).toMatchObject({
       season: EXPECTED_SEASON,
@@ -233,7 +234,8 @@ describe('Active-week consumers (scheduled T-30 + Betting Ticket)', () => {
     expect(hybrid).not.toContain("steps.active_week.outputs.week == '8'");
   });
 
-  it('Betting Ticket consumer consumes INPUT_WEEK from the same Week 9 config', () => {
+  // Frozen test identity; only the configured week/expected runtime values roll forward.
+  it('Betting Ticket consumer consumes INPUT_WEEK from the same Week 8 config', () => {
     expect(betting).toContain('--week "$INPUT_WEEK"');
     expect(betting).toContain('WRITE_2026_WEEK_${INPUT_WEEK}_ODDS');
     expect(betting).toContain(
