@@ -301,6 +301,7 @@ export async function runGuardedScheduleRollover(
         plan,
         execution,
         verification: null,
+        meta: { providerScheduleRows: fetched.games },
       });
       writeJsonReport(reportPath, report);
       return {
@@ -435,6 +436,7 @@ export async function runGuardedScheduleRollover(
       meta: {
         isolationLevel: 'Serializable',
         transactionalVerification: true,
+        providerScheduleRows: fetched.games,
       },
     });
     writeJsonReport(reportPath, report);
@@ -539,3 +541,4 @@ if (invokedDirectly) {
     process.exit(1);
   });
 }
+

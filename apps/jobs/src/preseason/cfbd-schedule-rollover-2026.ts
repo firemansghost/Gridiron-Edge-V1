@@ -1045,8 +1045,16 @@ export function finalizeScheduleRolloverReport(options: {
   void _n;
   return {
     ...publicPlan,
+    // Preserve every proposed value for independent review of the exact plan.
+    // These are existing in-memory plan data; no extra reads or writes occur.
+    auditDetails: {
+      normalizedGames: options.plan.normalizedGames,
+      plannedCreates: options.plan.plannedCreates,
+      plannedUpdates: options.plan.plannedUpdates,
+    },
     execution: options.execution,
     verification: options.verification,
     ...options.meta,
   };
 }
+

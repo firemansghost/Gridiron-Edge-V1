@@ -671,6 +671,31 @@ describe('cfbd-schedule-rollover-2026 atomic COMMIT', () => {
 });
 
 describe('cfbd-schedule-rollover-2026 verification + artifact', () => {
+  it('serializes complete provider metadata and exact proposed updates without invoking mutations', () => {
+    const plan = basePlan({
+      existingGames: [dbRow({ venue: 'Old Stadium', date: new Date('2026-09-12T17:00:00Z') })],
+    });
+    const originalFingerprint = plan.planFingerprint;
+    const report = finalizeScheduleRolloverReport({
+      plan,
+      execution: buildPreviewExecution(2),
+      verification: null,
+      meta: { providerScheduleRows: [{ ...providerGame(), id: 42, startTimeTBD: true }] },
+    });
+    const serialized = JSON.parse(JSON.stringify(report));
+    expect(serialized.auditDetails.normalizedGames).toHaveLength(plan.normalizedFbsVsFbsCount);
+    expect(serialized.auditDetails.plannedUpdates).toHaveLength(1);
+    expect(serialized.auditDetails.plannedUpdates[0]).toEqual({
+      id: GAME_ID,
+      fields: { date: KICKOFF, venue: 'Sanford Stadium', city: 'Athens', neutralSite: false, conferenceGame: false },
+    });
+    expect(serialized.auditDetails.plannedCreates).toEqual([]);
+    expect(serialized.providerScheduleRows[0]).toMatchObject({ id: 42, startTimeTBD: true, startDate: KICKOFF });
+    expect(plan.planFingerprint).toBe(originalFingerprint);
+    expect(serialized.execution.mutationsInvoked).toBe(false);
+    expect(serialized.mutationsInvoked).toBe(false);
+  });
+
   it('post-write verification catches unexpected DB-only rows', () => {
     const plan = basePlan();
     const v = verifyScheduleRolloverPostWrite({
@@ -1050,3 +1075,4 @@ describe('cfbd-schedule-rollover-2026 CLI pre-plan failure reports', () => {
     expect(String(report.error)).not.toMatch(/secret@/);
   });
 });
+
