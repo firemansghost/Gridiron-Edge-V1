@@ -97,9 +97,11 @@ describe('Generic Shadow T-30 Automation V1 Stage A workflow', () => {
   });
 
   it('keeps discovery read-only and restricted to the existing supported model allowlist', () => {
-    expect(adapter).toContain('shadowModelCaptureRun.findMany');
+    // Approved additive integrity gate queries the complete catalog before eligibility.
+    expect(adapter).toContain('loadIntegrityScope');
+    expect(adapter).toContain('integrityAudit.eligibleCaptureRunIds');
     expect(adapter).toContain('GENERIC_SHADOW_T30_SUPPORTED_MODEL_IDS');
-    expect(adapter).toContain("String(row.status) === 'COMPLETE'");
+    expect(adapter).toContain("row.status !== 'COMPLETE'");
     expect(adapter).toContain('loadGenericShadowT30OperationalFrame');
     expect(adapter).not.toContain('.create(');
     expect(adapter).not.toContain('.createMany(');

@@ -1,0 +1,47 @@
+name: Check Core-only integrity disposition
+on:
+  pull_request:
+    paths:
+      - 'apps/jobs/src/generic-shadow*'
+      - 'apps/jobs/src/shadow-model-t30-closing-v1-adapter.ts'
+      - 'apps/jobs/*generic-shadow*'
+      - 'apps/jobs/capture-shadow-model-t30-closing-v1-2026.ts'
+      - 'apps/jobs/integration/core-only*'
+      - 'apps/jobs/integration/fixtures/week10-native-immutable-frames.json'
+      - 'research/generic-shadow/GENERIC_SHADOW_W10_INTEGRITY*'
+      - '.github/workflows/check-core-only-integrity-disposition.yml'
+      - '.gitattributes'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-three-cohort-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17.6
+        env:
+          POSTGRES_USER: fixture
+          POSTGRES_PASSWORD: local_fixture_only
+          POSTGRES_DB: gridiron_core_only_fixture
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fixture -d gridiron_core_only_fixture"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://fixture:local_fixture_only@127.0.0.1:5432/gridiron_core_only_fixture
+      DIRECT_URL: postgresql://fixture:local_fixture_only@127.0.0.1:5432/gridiron_core_only_fixture
+      CORE_ONLY_FIXTURE_URL: postgresql://fixture:local_fixture_only@127.0.0.1:5432/gridiron_core_only_fixture
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: Create isolated schema only
+        run: npx prisma db push --schema=prisma/schema.prisma --skip-generate
+      - name: Native evidence, actual adapters and manual CLI boundary tests
+        run: npx tsx apps/jobs/integration/core-only-disposition.integration.ts

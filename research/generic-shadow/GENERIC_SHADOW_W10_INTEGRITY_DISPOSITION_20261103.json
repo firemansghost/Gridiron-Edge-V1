@@ -1,0 +1,1223 @@
+{
+  "id": "generic_shadow_w10_integrity_disposition_20261103",
+  "version": 1,
+  "season": 2026,
+  "week": 10,
+  "approvalRecordedAt": "2026-11-03T15:51:07Z",
+  "approval": "User explicitly approved scoped Core-only proposal; no recapture or production-record mutation.",
+  "implementationBaseSha": "d0b08cf46b0e6399687d4a46445a999c7f66bf5c",
+  "captureSourceSha": "ace5bc3984fc9e16cc0d227ab114d6ab8fda9c10",
+  "counts": {
+    "originalPredictions": 186,
+    "eligiblePredictions": 62,
+    "heldPredictions": 124,
+    "directInputHashFailures": 122
+  },
+  "evidence": [
+    {
+      "file": "reviewer-shadow-final-hex-hash-audit.json",
+      "sha256": "064fba25b7b8cfddfa59862b5a08ebb8af19ee8bdfa5b4efe01ee346f52295e0"
+    },
+    {
+      "file": "reviewer-pr276-independent-hash-confirmation.json",
+      "sha256": "08f42b3436cc987669a5699ebe4be0219e93e7395075cdea1ccefd8cfbfcde59"
+    },
+    {
+      "file": "reviewer-shadow-final-hex-0.json",
+      "sha256": "72162cb7b2f619e125f985ad51597154d517e86ed47c7f1f94911fcae38c7a1a"
+    }
+  ],
+  "nativeFrameReceiptSha256": "8fa51ebf4d6f81d50cf6a9b4d4534206683d035c77a3ca23e0ed0f887b56659b",
+  "cohorts": [
+    {
+      "id": "072ee3c0-5483-4574-a032-3286166c535b",
+      "modelDefinitionId": "candidate_b_roster_prior_v1",
+      "captureContext": "week10_roster_20261102_before_first_kickoff",
+      "captureSourceSha": "ace5bc3984fc9e16cc0d227ab114d6ab8fda9c10",
+      "runRowSha256": "921af21f36429787201a94e223ac8bce9352c9990f26c18ce152ac1c85149fb2",
+      "decision": "HOLD",
+      "counts": {
+        "total": 62,
+        "available": 36,
+        "unavailable": 26,
+        "selections": 36,
+        "noSelection": 0
+      },
+      "expectedInputHashFailures": 62,
+      "expectedManifestHashFailures": [],
+      "predictions": [
+        {
+          "id": "9af8e2d4-f04b-4266-a55a-728279b3b6f1",
+          "gameId": "2026-wk10-air-force-army",
+          "rowSha256": "9629490fd520a067119f1ea8739d8302b894706a2f6c4346a152a463abee3755",
+          "inputHashFails": true
+        },
+        {
+          "id": "be124f2f-181e-401f-83e1-c77d82869bb9",
+          "gameId": "2026-wk10-alabama-lsu",
+          "rowSha256": "b317a621420e57701961bdfb85d883461db3716048d440b84575e08f2d4612a2",
+          "inputHashFails": true
+        },
+        {
+          "id": "2a622f4e-d516-498c-808e-1aed265ccdc9",
+          "gameId": "2026-wk10-arkansas-auburn",
+          "rowSha256": "fedc1e4d5ffd82818721a292f0d7baf8e5b8433979c1de14897aa8f79c3b7863",
+          "inputHashFails": true
+        },
+        {
+          "id": "8bcfba37-476f-48b0-981c-a5db4c984a09",
+          "gameId": "2026-wk10-ball-state-massachusetts",
+          "rowSha256": "830cc08c29d9f0c04e2fe50adc22f124c5c5d49677ac157daa41b8dd649ffe47",
+          "inputHashFails": true
+        },
+        {
+          "id": "a0516507-cc1a-4f6d-86c7-cbb8c2ed51cc",
+          "gameId": "2026-wk10-boise-state-colorado-state",
+          "rowSha256": "d97baad4715bf7401f09945a821534fe18864724eaa3c130028142ce81149e4b",
+          "inputHashFails": true
+        },
+        {
+          "id": "6f9dcd0a-b000-4910-9b47-6160e241178b",
+          "gameId": "2026-wk10-buffalo-miami-oh",
+          "rowSha256": "6969141045288ffe09cefe966ee4c2b34ef51555a61284989cdd83f6bc9519ca",
+          "inputHashFails": true
+        },
+        {
+          "id": "c6f02fd6-df07-45af-83cc-3905d73879e5",
+          "gameId": "2026-wk10-byu-utah",
+          "rowSha256": "1588faf4c7bdc2c3ab2caa1263deee2c8dd408d7e7559ef072c90a1ab3bf6d36",
+          "inputHashFails": true
+        },
+        {
+          "id": "7ba2478c-c126-4887-abb8-693e674965e3",
+          "gameId": "2026-wk10-central-michigan-eastern-michigan",
+          "rowSha256": "83cfed2788af94f0b4be7a2049d6e9a830f71df22bd343acba695ffdb794ae42",
+          "inputHashFails": true
+        },
+        {
+          "id": "501aa5af-d6ea-4bca-9cf1-78f6857d77ac",
+          "gameId": "2026-wk10-charlotte-uab",
+          "rowSha256": "ddda69084baf67735186e5066ede87db545dfff3c658da7be5d31eee0f6c1e75",
+          "inputHashFails": true
+        },
+        {
+          "id": "80f1c6ef-d852-44ba-8e16-11faebcd285e",
+          "gameId": "2026-wk10-cincinnati-houston",
+          "rowSha256": "2ad362df0b091a43d5ef7e436bffe2307888b601e1096211d961b49f1d535244",
+          "inputHashFails": true
+        },
+        {
+          "id": "90669555-c139-415b-94e9-73a5599e6426",
+          "gameId": "2026-wk10-clemson-syracuse",
+          "rowSha256": "f3e1ba146955c0d3f139b7da01d8bc67665b53f4b2b3f707db398af3f8f6cd2b",
+          "inputHashFails": true
+        },
+        {
+          "id": "35b20b37-09a5-41da-ad6c-966c33e2c1e0",
+          "gameId": "2026-wk10-colorado-arizona-state",
+          "rowSha256": "190119771c0cdabbcd18a80b7c9c991e4785c2f5e16c8ff3ad2fc7da3b63a713",
+          "inputHashFails": true
+        },
+        {
+          "id": "d8eaa1c1-462c-46a5-bbc0-0fb01058a477",
+          "gameId": "2026-wk10-delaware-kennesaw-state",
+          "rowSha256": "13450b2658de767ded7164009d1f430b11fbaea3951a513e7d4676097652a445",
+          "inputHashFails": true
+        },
+        {
+          "id": "757ff839-5e79-4b1e-a41e-d9c83a64f1b5",
+          "gameId": "2026-wk10-duke-nc-state",
+          "rowSha256": "b75a9d928b42331028a3de0f845347225ac1724f25d68e1302d3e8b88c7c0443",
+          "inputHashFails": true
+        },
+        {
+          "id": "33383948-9ff3-4e2f-bd1a-c085e05a683a",
+          "gameId": "2026-wk10-florida-state-boston-college",
+          "rowSha256": "302fb228230a652896d92d30e7a66c498f4aa616df1ba7dba1a35d3063910c93",
+          "inputHashFails": true
+        },
+        {
+          "id": "4bb02740-8bee-43f6-91a3-33255866ae1e",
+          "gameId": "2026-wk10-fresno-state-utah-state",
+          "rowSha256": "8862fe0d61c1c60246177ca2bfd94e3f6652ba8d56209177f6d8e5094fe2469d",
+          "inputHashFails": true
+        },
+        {
+          "id": "4d36ce2b-e147-4561-858a-0ca2fcbf0c9c",
+          "gameId": "2026-wk10-georgia-ole-miss",
+          "rowSha256": "a53397321e5e7fd74263aa7baab8bb9f891929bcaca6df2985d803bff4350902",
+          "inputHashFails": true
+        },
+        {
+          "id": "f5ec6f50-a120-4802-9977-211a4d34c461",
+          "gameId": "2026-wk10-georgia-state-app-state",
+          "rowSha256": "1fe4df7411b8484546dadd3e50a79a9eec0ea1d6ba26ad4c1eb2ba9455d6b6ea",
+          "inputHashFails": true
+        },
+        {
+          "id": "4897c839-aadd-4f13-9cd2-f7f4eab98484",
+          "gameId": "2026-wk10-hawai-i-utep",
+          "rowSha256": "80343a1f1833c9c7faf8d8418b5185c805e534c569fd289c7aab10d1a6b2cbb3",
+          "inputHashFails": true
+        },
+        {
+          "id": "c28a8e5e-2922-47eb-9607-050004e83183",
+          "gameId": "2026-wk10-iowa-northwestern",
+          "rowSha256": "edce6838362f1ac5aa0c21d53e5cfc3b4cd2039fa029d904a8e6405d71a2c514",
+          "inputHashFails": true
+        },
+        {
+          "id": "085f2886-4dea-4e4c-93fd-cae18e13ffea",
+          "gameId": "2026-wk10-iowa-state-baylor",
+          "rowSha256": "aa8deb268db3aeb6374b8572b3649b3c8f5bdcdf5b4e482b4ae48d7d5722e44b",
+          "inputHashFails": true
+        },
+        {
+          "id": "7bb8a1bf-0151-4bca-94d6-8ee98a8a3e7a",
+          "gameId": "2026-wk10-james-madison-southern-miss",
+          "rowSha256": "ca5da516de8e1d4d4f16b60809639346395dd34bbab0f82ad09cb10712a39951",
+          "inputHashFails": true
+        },
+        {
+          "id": "09227e52-03da-4fca-9db6-060836868528",
+          "gameId": "2026-wk10-kentucky-tennessee",
+          "rowSha256": "682181d3abdca82385bbc624f489c0f434b2e750411f3a6e0051a93d2b307881",
+          "inputHashFails": true
+        },
+        {
+          "id": "c7f83ac5-211f-42f8-9328-bf123cc731e9",
+          "gameId": "2026-wk10-liberty-new-mexico-state",
+          "rowSha256": "dea89dfe466c33dc033ef590dbc81cef2fe86f6304e051fbb831ed603edb4312",
+          "inputHashFails": true
+        },
+        {
+          "id": "7f318f30-fe30-4004-9521-403d4c04f238",
+          "gameId": "2026-wk10-louisiana-tech-troy",
+          "rowSha256": "8dc6f8d732b83818a32783ec375c5b7433d5c5c366ed8d229e971658970cfccc",
+          "inputHashFails": true
+        },
+        {
+          "id": "59d7dfe3-f2c9-456f-b5c2-91758e02cc9b",
+          "gameId": "2026-wk10-louisville-georgia-tech",
+          "rowSha256": "dc581a29df1c7ea20bf6d80910d38cf16db6af6bfdd8c43e6c7b737675a6d5b0",
+          "inputHashFails": true
+        },
+        {
+          "id": "e71763c2-c285-4c50-83a3-5fce54eab732",
+          "gameId": "2026-wk10-marshall-georgia-southern",
+          "rowSha256": "0976680ff930f8eba6cb5725b2b3cf22ed59a603b49546fe0e8b8653f342853b",
+          "inputHashFails": true
+        },
+        {
+          "id": "5a956e20-8f07-4c05-a95a-b59a406903f7",
+          "gameId": "2026-wk10-maryland-purdue",
+          "rowSha256": "a2a8b607cc3056021be4a0cf669cc4d1ed47ab287438978840077225aba52454",
+          "inputHashFails": true
+        },
+        {
+          "id": "d7fceb3c-37bd-4d13-b1d9-f5aeb8259547",
+          "gameId": "2026-wk10-miami-notre-dame",
+          "rowSha256": "bc86e46cfe529c916150a89f58d2d23d3d01441a44c40bd185bc4d4a0e77b8fc",
+          "inputHashFails": true
+        },
+        {
+          "id": "4457fd1b-a3e6-4017-be5d-0a95a365f21b",
+          "gameId": "2026-wk10-michigan-state-michigan",
+          "rowSha256": "eda4e80d337855458733a88fe85ae43955462ec917bd9690bbdc614217fb5250",
+          "inputHashFails": true
+        },
+        {
+          "id": "57c81fa4-258f-4352-9468-bbae74954892",
+          "gameId": "2026-wk10-missouri-state-florida-international",
+          "rowSha256": "abb43956258256f8356383b14db8357d099a2ccb25934e717db0def1dc2fcb8d",
+          "inputHashFails": true
+        },
+        {
+          "id": "728d9a41-bf35-4f7e-8008-bcfbb6fc898e",
+          "gameId": "2026-wk10-nebraska-illinois",
+          "rowSha256": "48b5c10b5e68833bb6048a06cdfa785bf80d041daa84f494e81d566dc9008071",
+          "inputHashFails": true
+        },
+        {
+          "id": "cfb2357f-8995-4287-aae1-4882e2069cca",
+          "gameId": "2026-wk10-new-mexico-nevada",
+          "rowSha256": "0dcffbec3a28f3e1475d424731875347e1d6b5e5753289ee4c12378c87dcfd01",
+          "inputHashFails": true
+        },
+        {
+          "id": "24c8123b-27d1-4421-9f8c-83cfe1ae17da",
+          "gameId": "2026-wk10-north-carolina-uconn",
+          "rowSha256": "33fdfd25f2e426f0cdca8194e4fbd61acd316d6faecca3165cc894fdab404305",
+          "inputHashFails": true
+        },
+        {
+          "id": "1c325677-8df2-433b-ad3f-b1e9fa24ce99",
+          "gameId": "2026-wk10-northern-illinois-san-jos-state",
+          "rowSha256": "3b220736b420151f573c46ea4c2fd43487acace28ad63f0798569df06c1cf182",
+          "inputHashFails": true
+        },
+        {
+          "id": "c51c52e7-48fa-489f-ad7c-e8cee02929d0",
+          "gameId": "2026-wk10-ohio-akron",
+          "rowSha256": "0d7aade362939f56f973e2b6d90979671ad9b555b1fd5e54d1cc3f42e8a1290e",
+          "inputHashFails": true
+        },
+        {
+          "id": "3211bf3c-ad99-4234-a1dc-d73195fda8a4",
+          "gameId": "2026-wk10-oklahoma-florida",
+          "rowSha256": "17c3f6ff03c1feb0cb4a964cb304a7452ef6ba6427a76304ed8e1fd0b2e2dfab",
+          "inputHashFails": true
+        },
+        {
+          "id": "0a816f22-48eb-4bc8-bf8b-a340e2d71d9a",
+          "gameId": "2026-wk10-oklahoma-state-kansas-state",
+          "rowSha256": "1669ae6f0a442d2744a3252611223b8301629694a4fc0f945962887850c0fa73",
+          "inputHashFails": true
+        },
+        {
+          "id": "beaa0a71-b950-48cb-93f2-0e24e6851271",
+          "gameId": "2026-wk10-old-dominion-coastal-carolina",
+          "rowSha256": "fdbe732e91211984c8b386637a551466b9c6808e3586c04755961e04dd518b98",
+          "inputHashFails": true
+        },
+        {
+          "id": "640447f6-4abf-45d7-bd7f-ff877f4b95aa",
+          "gameId": "2026-wk10-oregon-ohio-state",
+          "rowSha256": "2b06b56c88b127ac9a01ce617c0f27b597803ccfa738af5ca4f3ff056d85b718",
+          "inputHashFails": true
+        },
+        {
+          "id": "536bdece-416e-4f7a-8617-d4515b36a66d",
+          "gameId": "2026-wk10-penn-state-washington",
+          "rowSha256": "17fe148cab1be58a2383553931c8cc2f32618baef626c9267f30d3f936cf2027",
+          "inputHashFails": true
+        },
+        {
+          "id": "bab170c2-b984-4899-bb35-8429ca3fcb9c",
+          "gameId": "2026-wk10-rice-north-texas",
+          "rowSha256": "d02552f9edfe961468d3174f20e447689ea9714085dc3ae65e3404be2ea6df6e",
+          "inputHashFails": true
+        },
+        {
+          "id": "301cfcc9-ebf3-4d27-a9f3-6b07e85d783e",
+          "gameId": "2026-wk10-rutgers-wisconsin",
+          "rowSha256": "2bfc067fb2effeea1d410f1838e391e995e8ebd4e43c17f47460017d68c0ae1c",
+          "inputHashFails": true
+        },
+        {
+          "id": "0ab88581-dba2-4de7-b6be-bd811fd3b2b5",
+          "gameId": "2026-wk10-sam-houston-jacksonville-state",
+          "rowSha256": "fb525c0876e70245e2a0a833fedc417d41320575d066842a431028da328d191e",
+          "inputHashFails": true
+        },
+        {
+          "id": "d6e95bfb-60fa-44f7-9f72-8730a2e3e03d",
+          "gameId": "2026-wk10-south-alabama-louisiana",
+          "rowSha256": "9c3e4340ed766cbe9af4f131485133be07c169e48cbc17d314919a07e59edfdb",
+          "inputHashFails": true
+        },
+        {
+          "id": "1658fc81-62b0-4e7b-860d-5343eef8c28c",
+          "gameId": "2026-wk10-south-florida-east-carolina",
+          "rowSha256": "57336bebf62acd1afe144b2c9bcd4175e4524fb9c46c08df96dee9d27c0f9c71",
+          "inputHashFails": true
+        },
+        {
+          "id": "8249e476-3758-4bea-8fef-2c05cc3a477f",
+          "gameId": "2026-wk10-tcu-arizona",
+          "rowSha256": "e86614c471efeb7847c4bf5a2e0c60da4846855ea4c285207c6f56d572712d6b",
+          "inputHashFails": true
+        },
+        {
+          "id": "7fb37a10-8e61-46f6-a49f-eefdd26ac7c6",
+          "gameId": "2026-wk10-temple-navy",
+          "rowSha256": "4968a876db41a73210a826491d88de48170abc73db7002257a74ee9f78a2e25e",
+          "inputHashFails": true
+        },
+        {
+          "id": "6e64afd6-84dc-43cc-ac69-bad9dfc723fa",
+          "gameId": "2026-wk10-texas-a-m-south-carolina",
+          "rowSha256": "d775366acf087d957b319d901c613925212ccce2de98d249a7b3c3380b0b3838",
+          "inputHashFails": true
+        },
+        {
+          "id": "8145752c-3bbe-43cc-9537-0dca3add6a87",
+          "gameId": "2026-wk10-texas-missouri",
+          "rowSha256": "ab6bcc7550c3a0a2ae2f391d6c5c84863dfe81a04cfb725407c2f7a67b2ff89e",
+          "inputHashFails": true
+        },
+        {
+          "id": "6552915c-1505-4d89-ba09-c57a7ec7c742",
+          "gameId": "2026-wk10-texas-state-oregon-state",
+          "rowSha256": "5ca52823078bf74f0ef7102f932aacd453a8a5e5a57ce8c222c3147b43db0298",
+          "inputHashFails": true
+        },
+        {
+          "id": "ebcd68e4-d280-49c1-8023-5a0c8c0fa1ce",
+          "gameId": "2026-wk10-toledo-sacramento-state",
+          "rowSha256": "aebccfa5daacd08b078785fea1e71e85f5c85c7ea326d5c3ba134dc6f9e4a3bb",
+          "inputHashFails": true
+        },
+        {
+          "id": "9ee3f415-6880-4a40-bf3f-0032608ad064",
+          "gameId": "2026-wk10-tulsa-tulane",
+          "rowSha256": "74ea77390bbaf6e73c3e79c29d7c78cb733a969392638feef83427681334db3e",
+          "inputHashFails": true
+        },
+        {
+          "id": "6a5e20c4-69aa-4993-a78f-4c5c827b386b",
+          "gameId": "2026-wk10-ucf-kansas",
+          "rowSha256": "dacb115a82832eb36e6b5b8f6a3e261feafab488a3303ed3a0537c3c64ed0cf1",
+          "inputHashFails": true
+        },
+        {
+          "id": "12ee8a2f-29b2-429d-8d1f-91dd91f70651",
+          "gameId": "2026-wk10-ucla-minnesota",
+          "rowSha256": "634d262a863c5fb1966f440a6f5ac7ece35fc1eb3f1adf8a3c284af53766d898",
+          "inputHashFails": true
+        },
+        {
+          "id": "f39cbccc-5fd7-4c33-b85b-78bd647e6b5a",
+          "gameId": "2026-wk10-ul-monroe-arkansas-state",
+          "rowSha256": "204a31179ce7e899116d4e54ca529cdf82d8b2cf8622dfd33e51ac2b7ab17e6d",
+          "inputHashFails": true
+        },
+        {
+          "id": "397a0d15-489c-48b0-ba5e-570c2382aa4a",
+          "gameId": "2026-wk10-utsa-florida-atlantic",
+          "rowSha256": "6296fb406cbb1ef0d261ab8989a62c47285a050922c284b56c37ec92132f8802",
+          "inputHashFails": true
+        },
+        {
+          "id": "ca57052d-6a3e-463d-b2e2-300e28235024",
+          "gameId": "2026-wk10-vanderbilt-mississippi-state",
+          "rowSha256": "622df7062c4cc4ecf3cf9a0b37ae7c4fc41a93198448155286b6bf8f0b187285",
+          "inputHashFails": true
+        },
+        {
+          "id": "eb9cd1ed-1db1-4aeb-9ab0-ee87787a65b5",
+          "gameId": "2026-wk10-virginia-tech-smu",
+          "rowSha256": "a4ac8e805fdd9ce9462445132b4dc3258b4b95e623bf5acd2620d97d27293c92",
+          "inputHashFails": true
+        },
+        {
+          "id": "53f23645-d81b-4c15-b45d-7ea15e8953b0",
+          "gameId": "2026-wk10-west-virginia-texas-tech",
+          "rowSha256": "f89678acc6a30b56ec880f3384c724d5da5ad01ca623995ea1fa8ad6bd0eea97",
+          "inputHashFails": true
+        },
+        {
+          "id": "85bc2d23-e48d-4cbe-8178-9c6059677c88",
+          "gameId": "2026-wk10-western-kentucky-middle-tennessee",
+          "rowSha256": "b729d15b14150dc6aa40c126906d184c8f5f4aa8f91a1dd7997d7fc124395ae0",
+          "inputHashFails": true
+        },
+        {
+          "id": "25d1baa1-5e90-4c50-8a06-5540d0536b34",
+          "gameId": "2026-wk10-wyoming-unlv",
+          "rowSha256": "9bb013fac5b60bb4b6fa5cf40a08e5bb9f88aa34bd4772d3a60b7c397602f1dd",
+          "inputHashFails": true
+        }
+      ],
+      "originalCommit": {
+        "runId": 41506385787,
+        "artifactId": 13170479256,
+        "zipSha256": "92f21bbbd1b4d94fdce34601edb85cfef86e9074f75967d472ac4f257a798ef8"
+      }
+    },
+    {
+      "id": "781dff25-ff9a-46e5-a9e7-205c50e7f214",
+      "modelDefinitionId": "candidate_b_elo_prior_v1",
+      "captureContext": "week10_elo_20261102_before_first_kickoff",
+      "captureSourceSha": "ace5bc3984fc9e16cc0d227ab114d6ab8fda9c10",
+      "runRowSha256": "6a0db67c491e7b3990d4f63e665e94a3e0f580dfeabc4be7d98d046a195ca63c",
+      "decision": "HOLD",
+      "counts": {
+        "total": 62,
+        "available": 62,
+        "unavailable": 0,
+        "selections": 60,
+        "noSelection": 2
+      },
+      "expectedInputHashFailures": 60,
+      "expectedManifestHashFailures": [
+        "feature"
+      ],
+      "predictions": [
+        {
+          "id": "819cbe80-5c3a-479e-bcb4-4a90118d0717",
+          "gameId": "2026-wk10-air-force-army",
+          "rowSha256": "b53103abd9e84d8b0df777bf3756299e2ec7f76cbc96e5fcdf5ae04f2f55ba9d",
+          "inputHashFails": true
+        },
+        {
+          "id": "0704ad4a-5208-41e8-bd1c-ce4e07c5b663",
+          "gameId": "2026-wk10-alabama-lsu",
+          "rowSha256": "392db1a16a581642d9363792fcf70b9796f87ed0e8f603c67ddccc72641daa56",
+          "inputHashFails": true
+        },
+        {
+          "id": "c3f45a57-dbc7-42f0-b506-77dad9be54ed",
+          "gameId": "2026-wk10-arkansas-auburn",
+          "rowSha256": "07dc66f84a963b65cdfa181057b004ef09c011d585aac543369ad016f30468dc",
+          "inputHashFails": true
+        },
+        {
+          "id": "1a0a9b48-d5ef-4f07-b238-9bcaa5bcec3c",
+          "gameId": "2026-wk10-ball-state-massachusetts",
+          "rowSha256": "63254ffb5eb3e8024f23032fca19de0db8bb0ab97404f7462271a70ebf87e66a",
+          "inputHashFails": true
+        },
+        {
+          "id": "1f3beb42-0278-4fed-a88c-6cceaed2920b",
+          "gameId": "2026-wk10-boise-state-colorado-state",
+          "rowSha256": "6b3636a5a34300a6956ca1333f63e42e1cdc68fb4426b54e0daa4a2d9e2355dd",
+          "inputHashFails": true
+        },
+        {
+          "id": "ed482057-b013-4cd5-a073-0aee3af56f61",
+          "gameId": "2026-wk10-buffalo-miami-oh",
+          "rowSha256": "d669225c9f19244a399128f7b0c5e1aa06961b6e09c47a22fd47c7af4ca43272",
+          "inputHashFails": true
+        },
+        {
+          "id": "643c7197-04a5-4ccd-8dec-305b53391186",
+          "gameId": "2026-wk10-byu-utah",
+          "rowSha256": "fcb72cfefbe1abe43795d641e8de5ab44e25355880b872102c9acf1fea21cc41",
+          "inputHashFails": true
+        },
+        {
+          "id": "9fd56320-15cb-4392-b213-ccea78fc620a",
+          "gameId": "2026-wk10-central-michigan-eastern-michigan",
+          "rowSha256": "cc83160f1b9a8681315aea07714a4ed379fd5f122890722c97a4f05fb35844ed",
+          "inputHashFails": true
+        },
+        {
+          "id": "61131b70-4456-41cb-9f1f-422cdc291aba",
+          "gameId": "2026-wk10-charlotte-uab",
+          "rowSha256": "6ffb6ceb1fa828dbe2958c8c9f04f4e762818190b77921b2b453398ba8c432ad",
+          "inputHashFails": true
+        },
+        {
+          "id": "d8651c44-4d6c-4c4c-990d-da35c1c82aa1",
+          "gameId": "2026-wk10-cincinnati-houston",
+          "rowSha256": "534c658555f73ce9d33809346ee9104904c12e4375d183d7b469ea245b25a5af",
+          "inputHashFails": true
+        },
+        {
+          "id": "e327716c-3bf5-4b06-867a-944c38d2956a",
+          "gameId": "2026-wk10-clemson-syracuse",
+          "rowSha256": "bdd835036f70bd8dedc442cb8848c8bce9631bca60fb8c72097bcb4ff48cf7ac",
+          "inputHashFails": true
+        },
+        {
+          "id": "97295b96-8e38-44e6-8276-8121fca46930",
+          "gameId": "2026-wk10-colorado-arizona-state",
+          "rowSha256": "24f60ac30e627bf1a49a1d78c7092332b805747bc08a0b378db7b5bbefbb4539",
+          "inputHashFails": true
+        },
+        {
+          "id": "9631eab5-4766-4c8c-83ae-60b415b29b5e",
+          "gameId": "2026-wk10-delaware-kennesaw-state",
+          "rowSha256": "3157b8df21c2dfb1ecacf1df09007bd8407d9e5268bcb1387fb6469dcc260937",
+          "inputHashFails": true
+        },
+        {
+          "id": "da6b9b9e-ca04-4af9-9c3f-119677045a0d",
+          "gameId": "2026-wk10-duke-nc-state",
+          "rowSha256": "5f04d6d9996cc1232a6100d696ab98af40aad0a7c92c50a0e51eee0c4759f8d9",
+          "inputHashFails": true
+        },
+        {
+          "id": "e9fea6cd-1bdd-403d-8c80-9fa47d89b14e",
+          "gameId": "2026-wk10-florida-state-boston-college",
+          "rowSha256": "42a11d549579832bd227e90018ffa68d0c03d1732206c04936c556630dfcb883",
+          "inputHashFails": true
+        },
+        {
+          "id": "56785731-6066-4c67-855e-7efbc176af79",
+          "gameId": "2026-wk10-fresno-state-utah-state",
+          "rowSha256": "7101ed42e95afe3a2ac3c363fe02b768fc9fd314fc05bdef5db847364b2f1028",
+          "inputHashFails": true
+        },
+        {
+          "id": "04c09a30-580b-432e-9cdc-aacb79524cca",
+          "gameId": "2026-wk10-georgia-ole-miss",
+          "rowSha256": "4a344d0f7e073af4f6b3a46520b6c32dc1d634144d667c04cd179b82dfcd8817",
+          "inputHashFails": true
+        },
+        {
+          "id": "67d207f3-69ac-4a9e-82ac-222c06a7ef68",
+          "gameId": "2026-wk10-georgia-state-app-state",
+          "rowSha256": "c7a48dc0fbe8bfc1955cc18b16e96050b8565a2cbe3e321ee2bec481ede6706f",
+          "inputHashFails": true
+        },
+        {
+          "id": "d0a18405-0116-44b4-b989-e7a8d9941174",
+          "gameId": "2026-wk10-hawai-i-utep",
+          "rowSha256": "006b7adda9cc1cf17e6aafab7b2b3724806c1fa1fb3d5309abd3661ea7b8a504",
+          "inputHashFails": true
+        },
+        {
+          "id": "e3da6102-5540-460c-943f-e9bc5a1768d0",
+          "gameId": "2026-wk10-iowa-northwestern",
+          "rowSha256": "96bc27850674cd4f3c4adbd5032884ae2d7a06bba7ea82201c2de89c3a5f89a8",
+          "inputHashFails": true
+        },
+        {
+          "id": "d0ddaf5f-9bbe-4da5-97bb-92350bce4663",
+          "gameId": "2026-wk10-iowa-state-baylor",
+          "rowSha256": "dcc713f100caae4517ca4eb058fa2df6542f5b50d2e74abb0de06391e44bce37",
+          "inputHashFails": true
+        },
+        {
+          "id": "9932194c-6a69-4420-8e04-974525c497af",
+          "gameId": "2026-wk10-james-madison-southern-miss",
+          "rowSha256": "f063a714e3ebc5b65418d1fcd23be41f09b618edd1a46dd1f55c4c58e61f3847",
+          "inputHashFails": true
+        },
+        {
+          "id": "359530d3-3df8-4881-a722-0607b65c2beb",
+          "gameId": "2026-wk10-kentucky-tennessee",
+          "rowSha256": "0416a7c2b4c4838bbdef3d0e933a989944c2394e2ba6921231988577cce15fa0",
+          "inputHashFails": true
+        },
+        {
+          "id": "89052dd8-71ca-444d-a87e-7870b32b69ef",
+          "gameId": "2026-wk10-liberty-new-mexico-state",
+          "rowSha256": "0a6e134c86bba2b84a08ca57cfbeb6c04d5e5774aa36d5b315f02a09086cb14c",
+          "inputHashFails": true
+        },
+        {
+          "id": "d6d49c2d-05c2-4251-b363-ba7ebcc5b8ce",
+          "gameId": "2026-wk10-louisiana-tech-troy",
+          "rowSha256": "21294eb87b83df36ce7d1917f149044c598d233b1482883ecfe66b9b70710d35",
+          "inputHashFails": true
+        },
+        {
+          "id": "e6ce32ed-d659-4fa7-9dee-5c21b50be262",
+          "gameId": "2026-wk10-louisville-georgia-tech",
+          "rowSha256": "b9134f477504841e6003076bc87f6b1570d358481b1bbd6299f3c956027d2879",
+          "inputHashFails": true
+        },
+        {
+          "id": "af2defdb-ebac-47f0-8880-8a875e539678",
+          "gameId": "2026-wk10-marshall-georgia-southern",
+          "rowSha256": "2b6698f3d15bab79505b9b3a3cd0cb045149c1f74e099d6fa41d4d6020f9b831",
+          "inputHashFails": true
+        },
+        {
+          "id": "6c237534-90b8-4102-8661-faeaa8d90215",
+          "gameId": "2026-wk10-maryland-purdue",
+          "rowSha256": "b3b1dbfae2b9b567f93b8193bf22b48642e3eb720af0522c6aa06b81394a3af4",
+          "inputHashFails": true
+        },
+        {
+          "id": "e8cad69e-6b9e-4c7e-9c05-e2a42fac6066",
+          "gameId": "2026-wk10-miami-notre-dame",
+          "rowSha256": "30a93b28acee54b711efe08cabea3d79e52956d39b09269602bf779b3e729dbe",
+          "inputHashFails": true
+        },
+        {
+          "id": "4cdc0821-bd3c-44ab-aca7-dbab6f0b87fa",
+          "gameId": "2026-wk10-michigan-state-michigan",
+          "rowSha256": "f989fb0a97c278055a274fc48b0305868ed61c47f2401221b5ae818f8b3f9ecc",
+          "inputHashFails": true
+        },
+        {
+          "id": "1552466b-6ed1-42fd-90cf-584794d9191b",
+          "gameId": "2026-wk10-missouri-state-florida-international",
+          "rowSha256": "6beef7df5c3b7c05879d82ce077dce76f8a4039e1eee10350b97189045a49960",
+          "inputHashFails": false
+        },
+        {
+          "id": "eea4f1b7-9e11-427c-8c57-ce32f6cac346",
+          "gameId": "2026-wk10-nebraska-illinois",
+          "rowSha256": "5f656dda6e87434f27dd9cfb52cb61c23be548578f15c6d69ee1be5d48619e8a",
+          "inputHashFails": true
+        },
+        {
+          "id": "90b77bbc-2552-40e5-a782-0e88a641d14d",
+          "gameId": "2026-wk10-new-mexico-nevada",
+          "rowSha256": "3852bb0abe1b1072eb29fac24b030064b909d026c914b579be664b4306a4a2ee",
+          "inputHashFails": true
+        },
+        {
+          "id": "7ab8b25b-de43-4649-9ae4-49b06bbaf370",
+          "gameId": "2026-wk10-north-carolina-uconn",
+          "rowSha256": "29f2ba0354849442f2a025583f826ccc5817abcbfc0d53bd0bbaa43fa2edf9f9",
+          "inputHashFails": true
+        },
+        {
+          "id": "6c774db5-a914-421b-a3a0-04c100171029",
+          "gameId": "2026-wk10-northern-illinois-san-jos-state",
+          "rowSha256": "72b52a6ccb56c396983895a7e6b8a91b17ce1b98c05e10a88fc13d2a6090e2f5",
+          "inputHashFails": true
+        },
+        {
+          "id": "09a5820b-30d2-48ea-ac1e-1d23234bfa75",
+          "gameId": "2026-wk10-ohio-akron",
+          "rowSha256": "faca304c15934aae077fdad7842e3bd59e6470183df99d0455c2e5883c9fa212",
+          "inputHashFails": true
+        },
+        {
+          "id": "bff1c114-d6ec-41db-87d2-a17c82484f9f",
+          "gameId": "2026-wk10-oklahoma-florida",
+          "rowSha256": "52fc390093aa938830555c9c0a0ac7da342d4dfc27c7e2699045b4f83aca4804",
+          "inputHashFails": true
+        },
+        {
+          "id": "c89ed833-72ab-4b27-a26e-e97980c20ab6",
+          "gameId": "2026-wk10-oklahoma-state-kansas-state",
+          "rowSha256": "780e5ec53fb573b091e99c8ddf0e843fc4712b642708a105de2954415e2bd15d",
+          "inputHashFails": true
+        },
+        {
+          "id": "b6367074-314c-49ba-90a5-2288e31198bb",
+          "gameId": "2026-wk10-old-dominion-coastal-carolina",
+          "rowSha256": "9d573403946c84e5863b8edf52167212241b0646c814f50932eba4b8085c25fb",
+          "inputHashFails": true
+        },
+        {
+          "id": "23bbb85f-b75d-4054-8eb7-d0ddc5b2b7ca",
+          "gameId": "2026-wk10-oregon-ohio-state",
+          "rowSha256": "fd1f6f0aff37ce6e3c858cfb8252aec37378b6eac8dcf874b5087e27c6742fe5",
+          "inputHashFails": true
+        },
+        {
+          "id": "24b021d9-52d3-4d7f-8b29-e79ff2a83611",
+          "gameId": "2026-wk10-penn-state-washington",
+          "rowSha256": "1c7c6b8ef90a655ee682f23288d578a5ff27093a39f218faf5f3a97a57655be5",
+          "inputHashFails": true
+        },
+        {
+          "id": "fdec65a7-50a0-4568-9201-7051ba6adfb0",
+          "gameId": "2026-wk10-rice-north-texas",
+          "rowSha256": "1ae743c010f8cb478158b16b504218ceeea0a89cf0131f9660ed9bcc7f0ba3c4",
+          "inputHashFails": true
+        },
+        {
+          "id": "e011f9d0-4fb6-4edf-9730-032124a6356d",
+          "gameId": "2026-wk10-rutgers-wisconsin",
+          "rowSha256": "bba4d13416ae8a73f5e2edff20d7ee241b9d7cc752ef6e6ff13589020263b143",
+          "inputHashFails": true
+        },
+        {
+          "id": "942aab98-1599-4cbc-8b98-96cd91ecc171",
+          "gameId": "2026-wk10-sam-houston-jacksonville-state",
+          "rowSha256": "e8c0b6b2ed5c38b15a882874bdae9a706826ae2ddf1af3185260a58e1c500d77",
+          "inputHashFails": true
+        },
+        {
+          "id": "2584ba04-3cb2-4a40-8a9b-f83f822520b6",
+          "gameId": "2026-wk10-south-alabama-louisiana",
+          "rowSha256": "63f63b1ee553e4f82a8a8930853c78c8f963752cafb05578684013c98230f9e1",
+          "inputHashFails": true
+        },
+        {
+          "id": "b8f6a689-baa5-42ca-9a52-4b80d23e7cc7",
+          "gameId": "2026-wk10-south-florida-east-carolina",
+          "rowSha256": "1c82370b932d8b432b3ea0215cc5e6e659d9146ab156b51dbdeaadd56867fdb0",
+          "inputHashFails": true
+        },
+        {
+          "id": "fc8d1e0e-b083-4940-a78b-0ed9e4fb214b",
+          "gameId": "2026-wk10-tcu-arizona",
+          "rowSha256": "a7cba211007e6409814171cbc0549c598b7c051ce086de69c7cff613f59c92d0",
+          "inputHashFails": true
+        },
+        {
+          "id": "b59e87cc-85a0-4697-aa32-5b32bf5eb4e2",
+          "gameId": "2026-wk10-temple-navy",
+          "rowSha256": "3378b2b1be1e1f01f226c1b659fde8fd36f544b70a59dd6224c2b65b8c6ba4ba",
+          "inputHashFails": true
+        },
+        {
+          "id": "7fc17d56-49cd-463a-ad35-7716339373a6",
+          "gameId": "2026-wk10-texas-a-m-south-carolina",
+          "rowSha256": "15727a142b3835c9c63d8c1a98aa38c97e443b594183f5180f1e5c388abc1884",
+          "inputHashFails": true
+        },
+        {
+          "id": "082cf471-db98-4454-abba-d71df89e76be",
+          "gameId": "2026-wk10-texas-missouri",
+          "rowSha256": "02a3995deb408f795bcae0fbd591163ee180ad7826524e70ae28112008a56c20",
+          "inputHashFails": true
+        },
+        {
+          "id": "028420a4-add7-49e9-b6ea-c05ae6a1854d",
+          "gameId": "2026-wk10-texas-state-oregon-state",
+          "rowSha256": "c1a1dad43e3d6db984a25db9f4a41cc51d0a19600d52435e14b35364b9dcddc7",
+          "inputHashFails": true
+        },
+        {
+          "id": "7686e52d-3c7b-44fb-9a74-49ec11bfa817",
+          "gameId": "2026-wk10-toledo-sacramento-state",
+          "rowSha256": "c7fb435e21bb30dee7358c6319181d6039a0d24fa0d71d4e6b0f92c1a43512d4",
+          "inputHashFails": true
+        },
+        {
+          "id": "03042291-d3e5-4f17-aa13-50de67d2b8d6",
+          "gameId": "2026-wk10-tulsa-tulane",
+          "rowSha256": "4d153a84ce643bbf5d2cf44e5c7a4faef40a2ed92bb53be6478340e2435beaa4",
+          "inputHashFails": true
+        },
+        {
+          "id": "d4f1bb9e-88a2-4996-a2d8-33890c0740ab",
+          "gameId": "2026-wk10-ucf-kansas",
+          "rowSha256": "ec0e14e5fadc1a79cc4641f608b4e5560a6a2fac712c26c776c24c43ae0d369b",
+          "inputHashFails": true
+        },
+        {
+          "id": "e8887792-018d-458e-87bf-77892f047149",
+          "gameId": "2026-wk10-ucla-minnesota",
+          "rowSha256": "1ff8d579c52a8d7cc69a89381159122741431165e9f97c1c3431de133ac69f35",
+          "inputHashFails": true
+        },
+        {
+          "id": "12cd0aee-3739-4e06-8f56-48341f4c3178",
+          "gameId": "2026-wk10-ul-monroe-arkansas-state",
+          "rowSha256": "0b8f6ad5594c7d8d248adf92e0b4e3ae23d5593fb71768817ad5e8fb62b34f23",
+          "inputHashFails": true
+        },
+        {
+          "id": "032caddd-5d6e-4158-8885-93be9404a90f",
+          "gameId": "2026-wk10-utsa-florida-atlantic",
+          "rowSha256": "148469999829beed93d24d91a9e57a3feac7248a6a7174af1510e30bb01eaa42",
+          "inputHashFails": true
+        },
+        {
+          "id": "d84ba3fd-8404-4d49-b464-0cc5bb83e775",
+          "gameId": "2026-wk10-vanderbilt-mississippi-state",
+          "rowSha256": "42d6124d3a79e2717ae80ae09129494c5dbcfc2614c6e6ff20ba177967f4661b",
+          "inputHashFails": true
+        },
+        {
+          "id": "b40711fe-943d-42d9-9837-2cef7e43cce2",
+          "gameId": "2026-wk10-virginia-tech-smu",
+          "rowSha256": "e634b5c77434854e6d9759aa30a71e22f9fe7d4ca95398afc877965a2982a9bb",
+          "inputHashFails": true
+        },
+        {
+          "id": "ac1b1b93-2927-4c16-bcc1-f4301476af3b",
+          "gameId": "2026-wk10-west-virginia-texas-tech",
+          "rowSha256": "3c482fd19dbf7b3a49cbe36a15f330f88650565453f7d7d25db15097ac92ebeb",
+          "inputHashFails": false
+        },
+        {
+          "id": "116084a3-af09-4421-887c-cddd2d6138e2",
+          "gameId": "2026-wk10-western-kentucky-middle-tennessee",
+          "rowSha256": "7cd8ab2449fb94b915bd84dc419a56ce9bd525f811617cde60ebdffe9ea1c328",
+          "inputHashFails": true
+        },
+        {
+          "id": "73da97d8-e8ec-4f49-9a83-55b350f08463",
+          "gameId": "2026-wk10-wyoming-unlv",
+          "rowSha256": "4dfded3c7953e21973752859fe963577046044e96a114106547fde5dd4e3134f",
+          "inputHashFails": true
+        }
+      ],
+      "originalCommit": {
+        "runId": 41506177800,
+        "artifactId": 13169214951,
+        "zipSha256": "1529c7df13fe256ffbb0bd39b8392165a88c7c168c99ee80872b07eff22a35a2"
+      }
+    },
+    {
+      "id": "b9cc06d6-5ec2-43aa-9121-4987c169c541",
+      "modelDefinitionId": "core_v1_shadow_baseline_v1",
+      "captureContext": "week10_core_20261102_before_first_kickoff",
+      "captureSourceSha": "ace5bc3984fc9e16cc0d227ab114d6ab8fda9c10",
+      "runRowSha256": "2611d2d8b762e5ab6bac485a446a2be6aa57df11b50b421c468c053fd1e8ede0",
+      "decision": "ELIGIBLE",
+      "counts": {
+        "total": 62,
+        "available": 62,
+        "unavailable": 0,
+        "selections": 60,
+        "noSelection": 2
+      },
+      "expectedInputHashFailures": 0,
+      "expectedManifestHashFailures": [],
+      "predictions": [
+        {
+          "id": "e6fc0f23-1c61-43a3-9059-e0c51200ff1e",
+          "gameId": "2026-wk10-air-force-army",
+          "rowSha256": "c0f0a7b1c5374ee37d9bf2a536d67f47b0e56393b8bd51a883b522cd28fa6606",
+          "inputHashFails": false
+        },
+        {
+          "id": "fc3a71b9-e23a-4bcd-b099-ad309b021620",
+          "gameId": "2026-wk10-alabama-lsu",
+          "rowSha256": "7f8b2b3a136fd1b3f5920cd69a7ae613c6c0959129191c4a7619e54a30e21322",
+          "inputHashFails": false
+        },
+        {
+          "id": "8de8260e-8f5a-4a65-adb8-62d998817f1b",
+          "gameId": "2026-wk10-arkansas-auburn",
+          "rowSha256": "5ef1238225ce3162a7db9afe98b7ee31110eeb7882555e92e252f53b0d3470e9",
+          "inputHashFails": false
+        },
+        {
+          "id": "6f611be1-b26c-47c0-8446-c8855e3b0e06",
+          "gameId": "2026-wk10-ball-state-massachusetts",
+          "rowSha256": "01cf6671a6469edcb0d7e4f2405c7e3c73fb9c15c241755560bd51dde54ae50f",
+          "inputHashFails": false
+        },
+        {
+          "id": "e7047b99-067a-42aa-904c-7cc0b28ba74b",
+          "gameId": "2026-wk10-boise-state-colorado-state",
+          "rowSha256": "7a22e4419d173db87ccd2fc1f226d81fdfef399a899d28b8d011f3e902f6a44c",
+          "inputHashFails": false
+        },
+        {
+          "id": "ec27325d-82ee-48a1-b15e-efefc9f43972",
+          "gameId": "2026-wk10-buffalo-miami-oh",
+          "rowSha256": "1db3468d345355ad4e7c1bc7073c0c1f941074a63de8a655ed62ab4f26d8d9ee",
+          "inputHashFails": false
+        },
+        {
+          "id": "a399fc57-d9aa-4610-864b-105f7b19ae92",
+          "gameId": "2026-wk10-byu-utah",
+          "rowSha256": "bc217d407cd6d6cbf9164e927444ed9ce0c68f27e30c54a1710e30eb5642a84b",
+          "inputHashFails": false
+        },
+        {
+          "id": "3b7740c6-27d2-4d7d-9278-96f8e2654025",
+          "gameId": "2026-wk10-central-michigan-eastern-michigan",
+          "rowSha256": "db360f03b271e83036c953a3989360fe29a092ee5c1237540b7b3243941a9fb8",
+          "inputHashFails": false
+        },
+        {
+          "id": "accdb941-43af-4cb5-8254-1cdd3fc265e0",
+          "gameId": "2026-wk10-charlotte-uab",
+          "rowSha256": "ddecab159101e658a738d9bf82cae62640ecd70fdafb5aef1ac0b585f78d4cdb",
+          "inputHashFails": false
+        },
+        {
+          "id": "dd91a441-9d7a-4b1e-a887-ee037f53a641",
+          "gameId": "2026-wk10-cincinnati-houston",
+          "rowSha256": "0cd2fe2c3d617d2cf376abc67d1de766f4fd6e8f84120abb27183d3067b51544",
+          "inputHashFails": false
+        },
+        {
+          "id": "5628d9f3-663d-45de-865d-18b3ef2275cc",
+          "gameId": "2026-wk10-clemson-syracuse",
+          "rowSha256": "9d8181486b90df341a021b456f3ac4e4fd752cb5fb190f9a3bb2947cf5b82561",
+          "inputHashFails": false
+        },
+        {
+          "id": "702fc3b7-af18-4acd-8e04-7d2408a71863",
+          "gameId": "2026-wk10-colorado-arizona-state",
+          "rowSha256": "1e50d56975f46af082f279bba47b83966af463376f3309926a13f5af6ecbe24d",
+          "inputHashFails": false
+        },
+        {
+          "id": "56a5caf9-339c-48a9-ad80-aacca9977a15",
+          "gameId": "2026-wk10-delaware-kennesaw-state",
+          "rowSha256": "4145090431400fe3d61377112f7a3f20f66851dc20e538b2fbfe027bbb223a69",
+          "inputHashFails": false
+        },
+        {
+          "id": "4def2423-1856-4559-aea2-8403a1654941",
+          "gameId": "2026-wk10-duke-nc-state",
+          "rowSha256": "23e9abe97992b56875f497de5e215c685004d6624dcbfae9d602433e2fadb57e",
+          "inputHashFails": false
+        },
+        {
+          "id": "076efda0-6912-4674-aa44-2297a617db79",
+          "gameId": "2026-wk10-florida-state-boston-college",
+          "rowSha256": "98bbf600cdb369db8a86002e947292b14258a8f75ab6bff08409d941f7344345",
+          "inputHashFails": false
+        },
+        {
+          "id": "46cc4ff3-f512-4e4d-a227-1700e6254f3c",
+          "gameId": "2026-wk10-fresno-state-utah-state",
+          "rowSha256": "ba89b39b170c54e3a6c33e2c8190d03a27ab31809bfeb8124b23090d4fc5edca",
+          "inputHashFails": false
+        },
+        {
+          "id": "929d4112-32a5-49b3-aff4-2fa4400be538",
+          "gameId": "2026-wk10-georgia-ole-miss",
+          "rowSha256": "a9151180745afd86971aa9c26b8502c73962a8e17c50d97951b8379b29e5e2d0",
+          "inputHashFails": false
+        },
+        {
+          "id": "5ea33ee4-9574-41e2-9724-a6467b0963f9",
+          "gameId": "2026-wk10-georgia-state-app-state",
+          "rowSha256": "c642b3f93a948ca267fb33d1ffc16ad9eec9af99125f31894d839f167bb4bab2",
+          "inputHashFails": false
+        },
+        {
+          "id": "63bc202b-2edd-4f34-8a67-b21a5ac46d54",
+          "gameId": "2026-wk10-hawai-i-utep",
+          "rowSha256": "9826a5a0f7b54464871aee65d3195b274851462f3f81b92832b3ae2cb05f3a3f",
+          "inputHashFails": false
+        },
+        {
+          "id": "b5f6053d-b7a1-48c4-9b1c-1db49227cc35",
+          "gameId": "2026-wk10-iowa-northwestern",
+          "rowSha256": "b424e318d37f54d6eb92a248b530145e55f5bffe06ba29023eec6d03b7523569",
+          "inputHashFails": false
+        },
+        {
+          "id": "d2e99923-5e12-49fe-bf8c-d8ba13378bc3",
+          "gameId": "2026-wk10-iowa-state-baylor",
+          "rowSha256": "4b1016a8b1b134df5b217cc67fc68c1d010fc1178b4eef0339c2f670dc6eb3e9",
+          "inputHashFails": false
+        },
+        {
+          "id": "74f314cf-49e9-4396-8ee3-1f657b9f5dbd",
+          "gameId": "2026-wk10-james-madison-southern-miss",
+          "rowSha256": "84f52cfccdee333dd77e918869796cbdfd95eaae3927a3b705597ff3671b89a9",
+          "inputHashFails": false
+        },
+        {
+          "id": "6b71efba-1577-4728-8257-3d9f048dff8d",
+          "gameId": "2026-wk10-kentucky-tennessee",
+          "rowSha256": "a1e6e4403ebfc88409aaaccc0e5f6b6a0743c2d5149f355223275dd579318230",
+          "inputHashFails": false
+        },
+        {
+          "id": "4ea1a362-0167-4336-bfa1-b1df18b78ce9",
+          "gameId": "2026-wk10-liberty-new-mexico-state",
+          "rowSha256": "e6019afd64582da11dd7f4292fd8fe3a1e5f7657b35a719f50570932458bf017",
+          "inputHashFails": false
+        },
+        {
+          "id": "ff7051a5-277a-4f42-b917-00842c19ea9c",
+          "gameId": "2026-wk10-louisiana-tech-troy",
+          "rowSha256": "df5fc9df47864ed1f1a8a35e0274ed15c0746c83615b70af69ee58555892ba90",
+          "inputHashFails": false
+        },
+        {
+          "id": "3990efd5-3105-4a6c-ab6d-e6e546bb6a00",
+          "gameId": "2026-wk10-louisville-georgia-tech",
+          "rowSha256": "72bb9f5c1e106c5cc53f48c5b5c6c86fd5427d0cc1c273228493c54dd31fa4ab",
+          "inputHashFails": false
+        },
+        {
+          "id": "abfbc96b-fee4-4bf1-9afd-08dfc2c8222e",
+          "gameId": "2026-wk10-marshall-georgia-southern",
+          "rowSha256": "9ba4735bd72eefdea079c32fec9e6a55b327a2c6eda19c8de7ee1823b562fceb",
+          "inputHashFails": false
+        },
+        {
+          "id": "487cd1ec-dbae-4894-9174-399ca055ad98",
+          "gameId": "2026-wk10-maryland-purdue",
+          "rowSha256": "0c7757d948d5cf3a3091a818f59ca1eef5945bc8d19a7d6cf01caee469caff23",
+          "inputHashFails": false
+        },
+        {
+          "id": "057073d1-79c4-4b6e-a9ef-2af4112ea1f8",
+          "gameId": "2026-wk10-miami-notre-dame",
+          "rowSha256": "22e79253e63ee6f6f96ce34e915868c9d273001944acdc376031d1b04bedfaec",
+          "inputHashFails": false
+        },
+        {
+          "id": "d6ec9772-ea0e-446f-818a-bed6f318a9a3",
+          "gameId": "2026-wk10-michigan-state-michigan",
+          "rowSha256": "6c6802b56ab9544655654a37b04cf1f086f47ef02ae1ec658c49aa8b91da8df2",
+          "inputHashFails": false
+        },
+        {
+          "id": "b5ef6558-0cfa-42ad-89e0-8614fb745121",
+          "gameId": "2026-wk10-missouri-state-florida-international",
+          "rowSha256": "5a66e1abc229bc63fa59a65f7145f92dd08da17a46e85b4a261b4c6c86c27689",
+          "inputHashFails": false
+        },
+        {
+          "id": "3b51d738-3de2-4045-8d23-cd2db5cc7ce0",
+          "gameId": "2026-wk10-nebraska-illinois",
+          "rowSha256": "349e271fef220b02d8d1a3a4940d1736e55dde410bbeb57a185276ee8b0911a8",
+          "inputHashFails": false
+        },
+        {
+          "id": "d218a4cf-1bf8-4377-82f0-1c49e3dd2ad9",
+          "gameId": "2026-wk10-new-mexico-nevada",
+          "rowSha256": "fac953ef3c5bf688dd0ec670c5adcc19e16c44ef29af92b37d5aaec3ae9e70f3",
+          "inputHashFails": false
+        },
+        {
+          "id": "dad0a2af-bdad-403e-91da-ee3a12dc0984",
+          "gameId": "2026-wk10-north-carolina-uconn",
+          "rowSha256": "6457c8b8f125baa4cb6f60e375a1d64b538afeabcd99229acf444e982e6ba63e",
+          "inputHashFails": false
+        },
+        {
+          "id": "92b268bd-594b-49c5-bd39-1b88bc110d3b",
+          "gameId": "2026-wk10-northern-illinois-san-jos-state",
+          "rowSha256": "e3ddbf027441e251d18f72a4b62fccfaec8573869d0c426bc560c4f41c087a55",
+          "inputHashFails": false
+        },
+        {
+          "id": "c1fb92fe-bc4f-4947-86fc-32a2a416b06e",
+          "gameId": "2026-wk10-ohio-akron",
+          "rowSha256": "dc3116084ca6c2ac4ab76afb56d2b92a7bb96341796a2e2e9e552e8ff1519381",
+          "inputHashFails": false
+        },
+        {
+          "id": "9ef79e69-2d92-4c4e-9839-2dcc4f256c6b",
+          "gameId": "2026-wk10-oklahoma-florida",
+          "rowSha256": "d2ebba461a5fd332a5e980c3f7995e6f499bf7acb1cb1c1728f2d27b80f26ff8",
+          "inputHashFails": false
+        },
+        {
+          "id": "0a8689f3-844c-4a78-b8d3-56de00a0f7da",
+          "gameId": "2026-wk10-oklahoma-state-kansas-state",
+          "rowSha256": "83eaf5795aeca34163b23d148e3ca96b5b2cdeba64fcffa22932532585c96fe3",
+          "inputHashFails": false
+        },
+        {
+          "id": "e3a6d9bf-3ce6-4560-8879-7531a6766887",
+          "gameId": "2026-wk10-old-dominion-coastal-carolina",
+          "rowSha256": "6728330d98abd45f735fcf7e84a52124f255533b8fbfca00b2034b7c0f46f61d",
+          "inputHashFails": false
+        },
+        {
+          "id": "94f1aa93-79d3-4ab0-9a32-63d2f8698b9a",
+          "gameId": "2026-wk10-oregon-ohio-state",
+          "rowSha256": "e9fd3c7fb0297fbd803d685f8bea34e5b62a82218d6e7b80194e7c71a70ba35d",
+          "inputHashFails": false
+        },
+        {
+          "id": "b6d21ba9-5a57-4250-a3b6-feb985c10818",
+          "gameId": "2026-wk10-penn-state-washington",
+          "rowSha256": "90b2bf9396e45ad34798d1daaf6fa5f336218f13a9c870fdac636560495700a1",
+          "inputHashFails": false
+        },
+        {
+          "id": "3523b810-26e5-49a1-bae1-4d3457e44706",
+          "gameId": "2026-wk10-rice-north-texas",
+          "rowSha256": "7c4110d28230c0a90dde4b836fc28048a56c665ef1f63c847858a8cb3e2b4ed9",
+          "inputHashFails": false
+        },
+        {
+          "id": "60fe65f0-41da-4bf4-a485-70c9b28bfd42",
+          "gameId": "2026-wk10-rutgers-wisconsin",
+          "rowSha256": "fba602e22e2903a6733602e3085a94180e5f01b388ef13dcca72d03c63e317cb",
+          "inputHashFails": false
+        },
+        {
+          "id": "c991c622-d26a-429c-bae7-b953a40479a4",
+          "gameId": "2026-wk10-sam-houston-jacksonville-state",
+          "rowSha256": "bb6efdaacc595dc9eac222228bb38156681c6acdddd2eae524111f9213b69fea",
+          "inputHashFails": false
+        },
+        {
+          "id": "a465256a-ddc2-490c-bbfe-079f7158901b",
+          "gameId": "2026-wk10-south-alabama-louisiana",
+          "rowSha256": "0e957e9cb2a321e89cdff33271860ae9a1868d7d17d2889f77661f0ecadba070",
+          "inputHashFails": false
+        },
+        {
+          "id": "1c8ebdcf-982f-47a3-b340-c721f16a723e",
+          "gameId": "2026-wk10-south-florida-east-carolina",
+          "rowSha256": "5c2475aa43bf8e2207e7f431b1afc5249c8392bc56c4d36e444e4910fa4edc2e",
+          "inputHashFails": false
+        },
+        {
+          "id": "cbd2380a-7835-4f92-9580-cf8a76ceb739",
+          "gameId": "2026-wk10-tcu-arizona",
+          "rowSha256": "f21f38fe8dcff3a63125735b28ba40b644d68d20aee605e372e23f431f228e31",
+          "inputHashFails": false
+        },
+        {
+          "id": "fb66b4c3-c812-48f1-93f5-610b7112c5ec",
+          "gameId": "2026-wk10-temple-navy",
+          "rowSha256": "ce9868f872dfa9f858bbb6b3c220b4944c95b8242179c71e4a48aab2e274021a",
+          "inputHashFails": false
+        },
+        {
+          "id": "2e5d2845-2647-4f53-acdb-7cd65539a0c6",
+          "gameId": "2026-wk10-texas-a-m-south-carolina",
+          "rowSha256": "05c7dc8a1b451fa41145eb7266d46c91c42aefa55b6558bf9e94d25d5cd3ba21",
+          "inputHashFails": false
+        },
+        {
+          "id": "c7503a2f-a77a-4273-aa23-a71b5ec18165",
+          "gameId": "2026-wk10-texas-missouri",
+          "rowSha256": "2d08cd2394820222b8893580e81534fad2fc40a1c6b734a17a075916d4ed4df5",
+          "inputHashFails": false
+        },
+        {
+          "id": "4aa35e7f-c691-4ab7-9d6a-329fd36d3213",
+          "gameId": "2026-wk10-texas-state-oregon-state",
+          "rowSha256": "9a397f0fda369ddba7113196ed6fd34e1a988056d56b556ddcb3b60072f63b12",
+          "inputHashFails": false
+        },
+        {
+          "id": "7f670251-598e-4068-99e4-b44dad3b87f9",
+          "gameId": "2026-wk10-toledo-sacramento-state",
+          "rowSha256": "f5feff2f775946f32c1aff9d679e506c0b29f9b3315071fdeff926886e943c4a",
+          "inputHashFails": false
+        },
+        {
+          "id": "f2ed7a3d-8b70-4d90-a921-2da0a3a89268",
+          "gameId": "2026-wk10-tulsa-tulane",
+          "rowSha256": "b9f709ea46e0c66ec838a6046ed9ced77e23b2228fd455a6b56c466cc501b5fe",
+          "inputHashFails": false
+        },
+        {
+          "id": "5fe2caa4-5328-4b6c-a6bf-1bb315c382a6",
+          "gameId": "2026-wk10-ucf-kansas",
+          "rowSha256": "e65bf1e54bb07ca5bb62c5b98dd33e735e1c906849ede90c1fdfa42407bfd2b2",
+          "inputHashFails": false
+        },
+        {
+          "id": "c7ce5da8-0fa8-43af-922d-04658e55c94a",
+          "gameId": "2026-wk10-ucla-minnesota",
+          "rowSha256": "442e9bf3c1eada354600a90ffb24374a5bc45d9f51dc2c76d272542c9eeba52c",
+          "inputHashFails": false
+        },
+        {
+          "id": "902fde96-6807-4dc8-ba4a-6ffbad8b29d6",
+          "gameId": "2026-wk10-ul-monroe-arkansas-state",
+          "rowSha256": "dcfbee0028c4ac8994c41a4db0f8fb9f8d7a0b9497a0ded8cacae6e632a3a4c3",
+          "inputHashFails": false
+        },
+        {
+          "id": "d2b4d951-1aac-4e63-a58d-c6d7383cbfb5",
+          "gameId": "2026-wk10-utsa-florida-atlantic",
+          "rowSha256": "d2510cb1b15b371f0816b7c6fd1068f6e2757f3b03df3aa85fa922fb4f2a4ac0",
+          "inputHashFails": false
+        },
+        {
+          "id": "b495467d-9771-4a6a-8ba2-03d4b5708729",
+          "gameId": "2026-wk10-vanderbilt-mississippi-state",
+          "rowSha256": "b1e12e861a8294e86df388d72d03c9813a58c93c64bd526470e7cae92af974f4",
+          "inputHashFails": false
+        },
+        {
+          "id": "2691a442-0719-492f-a6e5-d4d64996a77a",
+          "gameId": "2026-wk10-virginia-tech-smu",
+          "rowSha256": "26c5789ab7879688d118776b2e041f7cfc33c6e1212d93546dfa93b004f8e01f",
+          "inputHashFails": false
+        },
+        {
+          "id": "78f5923b-df80-47f5-8088-7e16e2cd119c",
+          "gameId": "2026-wk10-west-virginia-texas-tech",
+          "rowSha256": "80ff6b7403cf2e29a8549548f4e760419de0d1f08ea7be64d71d1380d1e2695a",
+          "inputHashFails": false
+        },
+        {
+          "id": "ad0b0b48-1a08-4e12-b5c8-ae0a710eb22e",
+          "gameId": "2026-wk10-western-kentucky-middle-tennessee",
+          "rowSha256": "28cc0d0f535204015d7df9202354733792bfaea8064ab6ced5e6eebf41f648fe",
+          "inputHashFails": false
+        },
+        {
+          "id": "0939a55a-ebab-4278-bdca-1b6e5553274d",
+          "gameId": "2026-wk10-wyoming-unlv",
+          "rowSha256": "1b33a22818c5ddaef0a726c788ff1a43d99e537f8ce9c7d950c67e4805111e10",
+          "inputHashFails": false
+        }
+      ],
+      "originalCommit": {
+        "runId": 41505773951,
+        "artifactId": 13170823364,
+        "zipSha256": "fd2c0d8d249a6e635271c13bfb92ba1dd81c31b518c0dd411b7cac3b4a5ffd6d"
+      }
+    }
+  ]
+}
