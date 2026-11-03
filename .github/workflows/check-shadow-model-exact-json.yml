@@ -1,0 +1,42 @@
+name: Check Shadow Model exact JSON persistence
+on:
+  pull_request:
+    paths:
+      - 'apps/jobs/capture-shadow-model-predictions-2026.ts'
+      - 'apps/jobs/src/shadow-model-exact-json-persistence.ts'
+      - 'apps/jobs/integration/**'
+      - '.github/workflows/check-shadow-model-exact-json.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17.6
+        env:
+          POSTGRES_USER: fixture
+          POSTGRES_PASSWORD: local_fixture_only
+          POSTGRES_DB: gridiron_integrity_fixture
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fixture -d gridiron_integrity_fixture"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://fixture:local_fixture_only@127.0.0.1:5432/gridiron_integrity_fixture
+      DIRECT_URL: postgresql://fixture:local_fixture_only@127.0.0.1:5432/gridiron_integrity_fixture
+      SHADOW_INTEGRITY_FIXTURE_URL: postgresql://fixture:local_fixture_only@127.0.0.1:5432/gridiron_integrity_fixture
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: Create isolated fixture schema only
+        run: npx prisma db push --schema=prisma/schema.prisma --skip-generate
+      - name: Real JSON round trips and atomic rollback tests
+        run: npx tsx apps/jobs/integration/shadow-model-exact-json.integration.ts
