@@ -112,7 +112,7 @@ describe('GENERIC_SHADOW_T30_ACTIVE_WEEK_2026 config contract', () => {
         capability: EXPECTED_CAPABILITY,
         season: EXPECTED_SEASON,
         week: 10,
-        updatedDate: '2026-11-02',
+        updatedDate: '2026-11-03',
         authority: EXPECTED_AUTHORITY,
       },
     });
