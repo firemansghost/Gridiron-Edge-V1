@@ -7,6 +7,7 @@
  */
 
 import type { PrismaClient } from '@prisma/client';
+import {loadIntegrityScope, IntegrityBlockedError, type GenericShadowIntegrityAudit} from './generic-shadow-integrity-disposition';
 import {
   GENERIC_SHADOW_T30_SUPPORTED_MODEL_IDS,
   type GenericShadowT30OperationalFrame,
@@ -15,6 +16,7 @@ import { loadGenericShadowT30OperationalFrame } from './shadow-model-t30-closing
 
 export interface GenericShadowT30AutomationDiscovery {
   frames: GenericShadowT30OperationalFrame[];
+  integrityAudit?: GenericShadowIntegrityAudit;
   discoveredSupportedRunIds: string[];
   eligibleCaptureRunIds: string[];
   skippedIncompleteRunIds: string[];
@@ -31,40 +33,23 @@ export async function discoverGenericShadowT30AutomationFrames(
   prisma: PrismaClient,
   args: { season: number; week: number }
 ): Promise<GenericShadowT30AutomationDiscovery> {
-  const rows = await prisma.shadowModelCaptureRun.findMany({
-    where: {
-      season: args.season,
-      week: args.week,
-      modelDefinitionId: {
-        in: [...GENERIC_SHADOW_T30_SUPPORTED_MODEL_IDS],
-      },
-    },
-    select: {
-      id: true,
-      status: true,
-      modelDefinitionId: true,
-    },
-    orderBy: [{ modelDefinitionId: 'asc' }, { id: 'asc' }],
-  });
-
-  const discoveredSupportedRunIds = rows.map((row) => row.id);
-  const eligibleRows = rows.filter((row) => String(row.status) === 'COMPLETE');
-  const skippedIncompleteRunIds = rows
-    .filter((row) => String(row.status) !== 'COMPLETE')
-    .map((row) => row.id);
-  const blockers = skippedIncompleteRunIds.map(
-    (id) => `supported_capture_run_not_complete:${id}`
-  );
+  let integrityAudit = await loadIntegrityScope(prisma, args);
+  const discoveredSupportedRunIds = integrityAudit.discoveredRunIds;
+  const eligibleRows = integrityAudit.cohorts.filter(row => integrityAudit.eligibleCaptureRunIds.includes(row.id));
+  const skippedIncompleteRunIds = integrityAudit.cohorts.filter(row => row.status !== 'COMPLETE').map(row => row.id);
+  const blockers = [...integrityAudit.blockers];
 
   const frames: GenericShadowT30OperationalFrame[] = [];
   for (const row of eligibleRows) {
-    frames.push(await loadGenericShadowT30OperationalFrame(prisma, row.id));
+    try { frames.push(await loadGenericShadowT30OperationalFrame(prisma, row.id)); }
+    catch (error) { if(error instanceof IntegrityBlockedError) integrityAudit=error.audit; blockers.push(`integrity_frame_failed:${error instanceof Error ? error.message : String(error)}`); }
   }
 
   return {
-    frames,
+    frames: blockers.length ? [] : frames,
+    integrityAudit,
     discoveredSupportedRunIds: uniqueSorted(discoveredSupportedRunIds),
-    eligibleCaptureRunIds: uniqueSorted(eligibleRows.map((row) => row.id)),
+    eligibleCaptureRunIds: blockers.length ? [] : uniqueSorted(eligibleRows.map((row) => row.id)),
     skippedIncompleteRunIds: uniqueSorted(skippedIncompleteRunIds),
     blockers: uniqueSorted(blockers),
     providerCalls: 0,

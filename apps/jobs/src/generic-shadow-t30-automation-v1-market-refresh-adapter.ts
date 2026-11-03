@@ -1,3 +1,4 @@
+import {attachIntegrityAudit} from './generic-shadow-integrity-disposition';
 /**
  * Generic Shadow T-30 Automation V1 — schedule-disabled market-refresh cycle.
  *
@@ -280,18 +281,20 @@ export async function runGenericShadowT30MarketRefreshCycle(
   input: GenericShadowT30MarketRefreshCycleInput
 ): Promise<GenericShadowT30MarketRefreshCycleReport> {
   const initialObservedTimestamp = input.initialObservedTimestamp ?? input.now();
-  const initialDiscovery = input.initialPlan
-    ? { blockers: input.initialDiscoveryBlockers ?? [], frames: [] }
+  const initialDiscovery = input.initialPlan && input.week !== 10
+    ? { blockers: input.initialDiscoveryBlockers ?? [], frames: [], integrityAudit: undefined }
     : await input.discover();
+  let integrityAudit = initialDiscovery.integrityAudit;
+  const buildAuditedReport = (args: Parameters<typeof buildGenericShadowT30MarketRefreshCycleReport>[0]) => attachIntegrityAudit(buildGenericShadowT30MarketRefreshCycleReport(args), integrityAudit);
   const initialPlan = mergeDiscovery(
-    input.initialPlan ??
+    (input.week !== 10 ? input.initialPlan : undefined) ??
       planGenericShadowT30Automation({
         season: input.season,
         week: input.week,
         observedTimestamp: initialObservedTimestamp,
         frames: initialDiscovery.frames,
       }),
-    input.initialDiscoveryBlockers ?? initialDiscovery.blockers
+    uniqueSorted([...(input.initialDiscoveryBlockers ?? []), ...initialDiscovery.blockers])
   );
 
   const extraBlockers: string[] = [];
@@ -323,6 +326,7 @@ export async function runGenericShadowT30MarketRefreshCycle(
     if (mayRefresh) {
     const preRefreshObserved = input.now();
     const preDiscovery = await input.discover();
+    integrityAudit = preDiscovery.integrityAudit ?? integrityAudit;
     const prePlan = mergeDiscovery(
       planGenericShadowT30Automation({
         season: input.season,
@@ -363,6 +367,7 @@ export async function runGenericShadowT30MarketRefreshCycle(
         try {
           postRefreshObservedTimestamp = input.now();
           const finalDiscovery = await input.discover();
+          integrityAudit = finalDiscovery.integrityAudit ?? integrityAudit;
           finalPlan = mergeDiscovery(
             planGenericShadowT30Automation({
               season: input.season,
@@ -386,7 +391,7 @@ export async function runGenericShadowT30MarketRefreshCycle(
     }
     }
 
-    return buildGenericShadowT30MarketRefreshCycleReport({
+    return buildAuditedReport({
       season: input.season,
       week: input.week,
       mode: input.mode,
@@ -407,7 +412,7 @@ export async function runGenericShadowT30MarketRefreshCycle(
       extraBlockers.push(
         `coordinator_exception:${err instanceof Error ? err.message : String(err)}`
       );
-      return buildGenericShadowT30MarketRefreshCycleReport({
+      return buildAuditedReport({
         season: input.season,
         week: input.week,
         mode: input.mode,

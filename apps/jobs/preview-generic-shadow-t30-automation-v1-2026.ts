@@ -118,6 +118,7 @@ async function main(): Promise<void> {
 
     const report = {
       ...planned,
+      integrityAudit: discovery.integrityAudit ?? null,
       outcome,
       writeSafe,
       blockers,

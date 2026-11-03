@@ -8,6 +8,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import {requireRunEligibility, IntegrityBlockedError, attachIntegrityAudit, type GenericShadowIntegrityAudit} from './generic-shadow-integrity-disposition';
 import { Prisma, PrismaClient } from '@prisma/client';
 import {
   GENERIC_SHADOW_T30_AUTHORIZED_SOURCE,
@@ -206,6 +207,10 @@ export interface GenericShadowT30CaptureReport {
   verificationOk: boolean;
   verificationReasons: string[];
   isolationLevel: 'Serializable' | null;
+  integrityAudit?: GenericShadowIntegrityAudit;
+  blockedCaptureFrame?: GenericShadowIntegrityAudit['cohorts'][number];
+  expectedCaptureFrame?: NonNullable<GenericShadowIntegrityAudit['expectedCohorts']>[number];
+  countsMeaning?: string;
 }
 
 export function mapPrismaGenericShadowT30Closing(
@@ -312,6 +317,7 @@ export async function loadGenericShadowT30OperationalFrame(
   db: GenericShadowT30Db,
   captureRunId: string
 ): Promise<GenericShadowT30OperationalFrame> {
+  const integrityAudit = await requireRunEligibility(db, captureRunId);
   const run = await db.shadowModelCaptureRun.findUnique({
     where: { id: captureRunId },
     select: CAPTURE_RUN_SELECT,
@@ -408,7 +414,8 @@ export async function loadGenericShadowT30OperationalFrame(
     games,
     marketLines,
     existingClosings,
-  };
+    ...(integrityAudit ? {integrityAudit} : {}),
+  } as GenericShadowT30OperationalFrame & {integrityAudit: GenericShadowIntegrityAudit};
 }
 
 export function createPrismaGenericShadowT30Adapter(
@@ -437,6 +444,7 @@ export function createPrismaGenericShadowT30Adapter(
     runTransaction: (fn) =>
       prisma.$transaction((tx) => fn(bindTx(tx)), {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        timeout: 30_000,
       }),
     readClosingsByPredictionIds: (predictionIds) =>
       loadClosingsByPredictionIds(prisma, predictionIds),
@@ -596,7 +604,8 @@ function verifyInsertedSemantics(input: {
 
 function buildReport(
   plan: GenericShadowT30Plan,
-  execution: GenericShadowT30Execution
+  execution: GenericShadowT30Execution,
+  integrityAudit?: GenericShadowIntegrityAudit
 ): GenericShadowT30CaptureReport {
   return {
     season: plan.season,
@@ -629,6 +638,8 @@ function buildReport(
     verificationOk: execution.verificationOk,
     verificationReasons: execution.verificationReasons,
     isolationLevel: execution.isolationLevel,
+    ...(integrityAudit ? {integrityAudit, countsMeaning: plan.writeSafe ? 'QUALIFIED_CLOSING_PLAN' : 'BLOCKED_PLAN_NOT_ORIGINAL_POPULATION',
+      ...(!plan.writeSafe ? {blockedCaptureFrame: integrityAudit.cohorts.find(row => row.id === plan.captureRunId), expectedCaptureFrame: integrityAudit.expectedCohorts?.find(row => row.id === plan.captureRunId)} : {})} : {}),
   };
 }
 
@@ -685,6 +696,16 @@ export async function executeGenericShadowT30ClosingCapture(input: {
   confirmation: string;
   adapter: GenericShadowT30CaptureAdapter;
 }): Promise<GenericShadowT30ExecutionResult> {
+  let integrityAudit: GenericShadowIntegrityAudit | undefined;
+  const frameAudit = (frame: GenericShadowT30OperationalFrame) => (frame as GenericShadowT30OperationalFrame & {integrityAudit?: GenericShadowIntegrityAudit}).integrityAudit;
+  const blocked = (err: unknown): GenericShadowT30ExecutionResult => {
+    if (err instanceof IntegrityBlockedError) integrityAudit = err.audit;
+    const message = err instanceof Error ? err.message : String(err);
+    const plan = failClosedPlan({...input, observedTimestamp: input.adapter.now(), createId: input.adapter.createId});
+    plan.writeSafe = false; plan.writeBlockers = [...new Set([...plan.writeBlockers, message])];
+    const execution = emptyExecution(String(input.mode).toUpperCase(), {error: message, verificationReasons: [message]});
+    return {plan, execution, report: buildReport(plan, execution, integrityAudit)};
+  };
   const mode = String(input.mode).toUpperCase();
   if (mode !== 'PREVIEW' && mode !== 'COMMIT') {
     const plan = failClosedPlan({
@@ -701,11 +722,12 @@ export async function executeGenericShadowT30ClosingCapture(input: {
       verificationReasons: ['mode_invalid'],
       error: 'mode_invalid',
     });
-    return { plan, execution, report: buildReport(plan, execution) };
+    return { plan, execution, report: buildReport(plan, execution, integrityAudit) };
   }
 
   if (mode === 'PREVIEW') {
-    const frame = await input.adapter.loadFrame();
+    let frame: GenericShadowT30OperationalFrame;
+    try { frame = await input.adapter.loadFrame(); integrityAudit = frameAudit(frame); } catch (err) { return blocked(err); }
     const plan = planGenericShadowT30Closing({
       season: input.season,
       week: input.week,
@@ -720,7 +742,7 @@ export async function executeGenericShadowT30ClosingCapture(input: {
       verificationOk: true,
       error: plan.writeSafe ? null : plan.writeBlockers.join('; '),
     });
-    return { plan, execution, report: buildReport(plan, execution) };
+    return { plan, execution, report: buildReport(plan, execution, integrityAudit) };
   }
 
   const expected = expectedGenericShadowT30WriteConfirmation(input.week, input.captureRunId);
@@ -739,9 +761,11 @@ export async function executeGenericShadowT30ClosingCapture(input: {
       verificationReasons: ['confirmation_invalid'],
       error: 'confirmation_invalid',
     });
-    return { plan, execution, report: buildReport(plan, execution) };
+    return { plan, execution, report: buildReport(plan, execution, integrityAudit) };
   }
 
+  // Held cohorts stop before entering a write transaction. Core is revalidated inside it.
+  try { const frame = await input.adapter.loadFrame(); integrityAudit = frameAudit(frame); } catch (err) { return blocked(err); }
   let planned: GenericShadowT30Plan | null = null;
   let mutationsInvoked = false;
   let insertedCount = 0;
@@ -750,6 +774,7 @@ export async function executeGenericShadowT30ClosingCapture(input: {
   try {
     const txResult = await input.adapter.runTransaction(async (tx) => {
       const frame = await tx.loadFrame();
+      integrityAudit = frameAudit(frame);
       const plan = planGenericShadowT30Closing({
         season: input.season,
         week: input.week,
@@ -797,15 +822,16 @@ export async function executeGenericShadowT30ClosingCapture(input: {
       verificationOk: true,
       isolationLevel: 'Serializable',
     });
-    return { plan, execution, report: buildReport(plan, execution) };
+    return { plan, execution, report: buildReport(plan, execution, integrityAudit) };
   } catch (err) {
+    if (err instanceof IntegrityBlockedError) integrityAudit = err.audit;
     const message = err instanceof Error ? err.message : String(err);
     const verificationReasons = message.indexOf('in_transaction_verification_failed:') === 0
       ? message.replace('in_transaction_verification_failed: ', '').split('; ').filter(Boolean)
       : message === 'in_transaction_closing_count_mismatch'
         ? ['in_transaction_closing_count_mismatch']
         : message.indexOf('commit_plan_invalid:') === 0
-          ? (planned ? planned.writeBlockers : ['commit_plan_invalid'])
+          ? ((planned as GenericShadowT30Plan | null)?.writeBlockers ?? ['commit_plan_invalid'])
           : [message];
     const plan =
       planned ??
@@ -832,7 +858,7 @@ export async function executeGenericShadowT30ClosingCapture(input: {
       isolationLevel: 'Serializable',
       error: message,
     });
-    return { plan, execution, report: buildReport(plan, execution) };
+    return { plan, execution, report: buildReport(plan, execution, integrityAudit) };
   }
 }
 

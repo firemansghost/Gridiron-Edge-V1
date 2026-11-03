@@ -183,6 +183,7 @@ async function main(): Promise<void> {
       previewTimestampWillNotBecomeCommitTimestamp: true,
     });
 
+    if (report.integrityAudit) console.log(`originalPredictions=${report.integrityAudit.counts.originalPredictions} requestedOriginal=${report.blockedCaptureFrame?.counts.total ?? report.expectedCaptureFrame?.counts.total ?? plan.counts.totalPredictions} eligible=${report.integrityAudit.counts.eligiblePredictions} held=${report.integrityAudit.counts.heldPredictions} directInputHashFailures=${report.integrityAudit.counts.directInputHashFailures}`);
     console.log(
       `writeSafe=${plan.writeSafe} total=${plan.counts.totalPredictions} existing=${plan.counts.existingCount} future=${plan.counts.futureCount} due=${plan.counts.dueCount} missed=${plan.counts.missedCount} planned=${plan.counts.plannedInsertCount} mutationsInvoked=${execution.mutationsInvoked} providerCalls=0`
     );

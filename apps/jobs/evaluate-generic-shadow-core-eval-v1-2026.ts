@@ -81,6 +81,8 @@ async function main(): Promise<void> {
   try {
     const loaded = await loadGenericShadowCoreEvalFrame(prisma, args.captureRunId);
     if (!loaded.frame) {
+      const requested = loaded.integrityAudit?.cohorts.find(row => row.id === args.captureRunId);
+      const expected = loaded.integrityAudit?.expectedCohorts?.find(row => row.id === args.captureRunId);
       const failureReport = {
         evaluatorDefinitionId: GENERIC_SHADOW_CORE_EVAL_V1_DEFINITION_ID,
         evaluatorDefinitionHash: GENERIC_SHADOW_CORE_EVAL_V1_DEFINITION_HASH,
@@ -94,14 +96,16 @@ async function main(): Promise<void> {
         mutationsInvoked: false,
         reportValid: false,
         blockers: loaded.blockers,
-        captureRun: null,
-        counts: null,
+        captureRun: requested ?? null,
+        expectedCaptureFrame: expected ?? null,
+        counts: requested ? {totalPredictions: requested.counts.total, originalAvailability: requested.counts} : expected ? {expectedOriginalPredictions: expected.counts.total, receivedOriginalPredictions: 0} : null,
+        integrityAudit: loaded.integrityAudit ?? null,
         atsWinRate: null,
-        totalGradedStake: 0,
-        totalResearchPnl: 0,
+        totalGradedStake: null,
+        totalResearchPnl: null,
         researchRoi: null,
         averageClvPoints: null,
-        perPrediction: [],
+        perPrediction: requested?.predictions.map(row => ({...row, integrityDisposition: requested.disposition, metricsSuppressed: true})) ?? [],
         evaluationWrites: false,
         predictionWrites: false,
         closingWrites: false,
@@ -127,6 +131,7 @@ async function main(): Promise<void> {
       runtimeRepoCommitSha,
       githubRef: process.env.GITHUB_REF ?? null,
       adapterBlockers: loaded.blockers,
+      integrityAudit: loaded.integrityAudit ?? null,
       evaluationWrites: false,
       predictionWrites: false,
       closingWrites: false,

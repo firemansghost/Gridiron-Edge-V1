@@ -1,3 +1,10 @@
+// Mapping/selector unit tests isolate the shared guard. Its unmocked production paths
+// are exercised by core-only-disposition.integration.ts against real PostgreSQL.
+jest.mock('../src/generic-shadow-integrity-disposition', () => ({
+  ...jest.requireActual('../src/generic-shadow-integrity-disposition'),
+  requireRunEligibility: jest.fn().mockResolvedValue(undefined),
+}));
+
 /**
  * Generic Shadow T-30 Closing V1 — adapter / execution tests.
  * Synthetic fakes only. No real DB, DIRECT_URL, network, or providers.

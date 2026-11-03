@@ -7,6 +7,7 @@
  */
 
 import type { PrismaClient } from '@prisma/client';
+import {auditIntegrityForRun, type GenericShadowIntegrityAudit} from './generic-shadow-integrity-disposition';
 import type {
   GenericShadowCoreEvalFrame,
   GenericShadowEvalClosing,
@@ -17,6 +18,7 @@ import type {
 export interface GenericShadowCoreEvalLoadResult {
   frame: GenericShadowCoreEvalFrame | null;
   blockers: string[];
+  integrityAudit?: GenericShadowIntegrityAudit;
   providerCalls: 0;
   mutationsInvoked: false;
 }
@@ -25,6 +27,11 @@ export async function loadGenericShadowCoreEvalFrame(
   prisma: PrismaClient,
   captureRunId: string
 ): Promise<GenericShadowCoreEvalLoadResult> {
+  let integrityAudit: GenericShadowIntegrityAudit;
+  try { integrityAudit = await auditIntegrityForRun(prisma, captureRunId); }
+  catch (error) { return {frame: null, blockers: [`integrity_read_failed:${error instanceof Error ? error.message : String(error)}`], providerCalls: 0, mutationsInvoked: false}; }
+  if (integrityAudit.blockers.length || !integrityAudit.eligibleCaptureRunIds.includes(captureRunId))
+    return {frame: null, integrityAudit, blockers: integrityAudit.blockers.length ? integrityAudit.blockers : [`cohort_integrity_HOLD:${captureRunId}`], providerCalls: 0, mutationsInvoked: false};
   const run = await prisma.shadowModelCaptureRun.findUnique({
     where: { id: captureRunId },
     select: {
@@ -56,6 +63,7 @@ export async function loadGenericShadowCoreEvalFrame(
     return {
       frame: null,
       blockers: ['capture_run_not_found'],
+      integrityAudit,
       providerCalls: 0,
       mutationsInvoked: false,
     };
@@ -192,6 +200,7 @@ export async function loadGenericShadowCoreEvalFrame(
       games,
     },
     blockers: [],
+    integrityAudit,
     providerCalls: 0,
     mutationsInvoked: false,
   };
