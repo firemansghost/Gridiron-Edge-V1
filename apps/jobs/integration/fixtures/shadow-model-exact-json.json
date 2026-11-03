@@ -1,0 +1,1472 @@
+[
+  {
+    "model": "core",
+    "sourceRunId": "b9cc06d6-5ec2-43aa-9121-4987c169c541",
+    "plan": {
+      "season": 2026,
+      "week": 10,
+      "mode": "COMMIT",
+      "captureContext": "fixture_core",
+      "predictionTimestamp": "2026-11-02T19:02:40.252Z",
+      "repoCommitSha": "ace5bc3984fc9e16cc0d227ab114d6ab8fda9c10",
+      "modelDefinitionId": "core_v1_shadow_baseline_v1",
+      "modelDefinitionHash": "b1ccb4eaff89fea0e0f1dead32d53cc60bf693086e7a94b12704c1d6a35b93cb",
+      "featureDefinitionId": "core_v1_ratings_hfa_v1",
+      "featureDefinitionHash": "57e46d0883608c848f06e3814b53a5fd520778d5c60d9dd9e3e15a5cfcbf5302",
+      "policyDefinitionId": "core_v1_shadow_baseline_policy_v1",
+      "policyDefinitionHash": "742851db13b46fffb4cb5b1e7973d2e8dcdeabb562c52c56951425687619e7ee",
+      "confirmationValid": true,
+      "previewTimestampWillNotBecomeCommitTimestamp": true,
+      "ok": true,
+      "writeSafe": true,
+      "writeBlockers": [],
+      "expectedGameIds": [
+        "2026-wk10-air-force-army",
+        "2026-wk10-oklahoma-state-kansas-state"
+      ],
+      "counts": {
+        "totalGames": 2,
+        "availableCount": 2,
+        "unavailableCount": 0,
+        "selectionCount": 1,
+        "noSelectionCount": 1
+      },
+      "predictions": [
+        {
+          "id": "fixture-core-38",
+          "captureRunId": "fixture-core-0",
+          "gameId": "2026-wk10-oklahoma-state-kansas-state",
+          "season": 2026,
+          "week": 10,
+          "homeTeamId": "kansas-state",
+          "awayTeamId": "oklahoma-state",
+          "kickoffTimestamp": "2026-11-07T18:00:00.000Z",
+          "neutralSite": false,
+          "predictionTimestamp": "2026-11-02T19:02:40.252Z",
+          "predictionStatus": "AVAILABLE",
+          "unavailableReasons": [],
+          "inputPayload": {
+            "gameId": "2026-wk10-oklahoma-state-kansas-state",
+            "season": 2026,
+            "week": 10,
+            "homeTeamId": "kansas-state",
+            "awayTeamId": "oklahoma-state",
+            "neutralSite": false,
+            "kickoffTimestamp": "2026-11-07T18:00:00.000Z",
+            "predictionTimestamp": "2026-11-02T19:02:40.252Z",
+            "homeRating": 0.4306774225686806,
+            "awayRating": 4.914092928852916,
+            "market": {
+              "selectedMarketLineId": "cmvzma2ot010i0d0k7dsbmc3n",
+              "selectedMarketTeamId": null,
+              "selectedMarketLineValue": null,
+              "canonicalMarketValue": -3.5,
+              "marketTimestamp": "2026-11-02T18:53:03.000Z",
+              "marketAgeSeconds": 578,
+              "marketBook": "BetRivers",
+              "marketSource": "oddsapi",
+              "marketProvenance": {
+                "selector": "core_v1_coherent_spread_pair_v1",
+                "sourceFilter": "oddsapi",
+                "bookName": "BetRivers",
+                "marketTimestamp": "2026-11-02T18:53:03.000Z",
+                "marketSource": "oddsapi",
+                "homeTeamId": "kansas-state",
+                "awayTeamId": "oklahoma-state",
+                "homeRowId": "cmvzma2ot010i0d0k7dsbmc3n",
+                "awayRowId": "cmvzma2ot010j0d0k2z1f0yjv",
+                "homeLine": 3.5,
+                "awayLine": -3.5,
+                "marketSpreadHma": -3.5
+              },
+              "homeRowId": "cmvzma2ot010i0d0k7dsbmc3n",
+              "awayRowId": "cmvzma2ot010j0d0k2z1f0yjv",
+              "homeLine": 3.5,
+              "awayLine": -3.5
+            },
+            "modelDefinitionId": "core_v1_shadow_baseline_v1",
+            "featureDefinitionId": "core_v1_ratings_hfa_v1",
+            "policyDefinitionId": "core_v1_shadow_baseline_policy_v1"
+          },
+          "inputHash": "68edd90d3a21258cfc4e0ee2e808e57e555c4f59bf7e2d0defd4eee20fee5ce2",
+          "featureProvenance": {
+            "homeRating": {
+              "teamId": "kansas-state",
+              "season": 2026,
+              "modelVersion": "v1",
+              "powerRating": 0.4306774225686806,
+              "rating": 0.4306774225686806,
+              "usedValue": 0.4306774225686806,
+              "createdAt": "2026-08-27T23:29:47.995Z",
+              "updatedAt": "2026-11-02T08:45:13.736Z"
+            },
+            "awayRating": {
+              "teamId": "oklahoma-state",
+              "season": 2026,
+              "modelVersion": "v1",
+              "powerRating": 4.914092928852916,
+              "rating": 4.914092928852916,
+              "usedValue": 4.914092928852916,
+              "createdAt": "2026-08-27T23:29:49.060Z",
+              "updatedAt": "2026-11-02T08:45:13.736Z"
+            },
+            "hfa": {
+              "effectiveHfa": 1.0818492421600538,
+              "baseHfa": 2,
+              "teamAdjustment": -0.9181507578399462,
+              "rawHfa": 1.0818492421600538
+            }
+          },
+          "modelOutput": {
+            "modelValue": -3.401566264124181,
+            "edgeValue": 0.09843373587581894,
+            "absEdgeValue": 0.09843373587581894,
+            "selectedSide": "NO_SELECTION",
+            "selectedTeamId": null,
+            "predictionPickValue": null,
+            "edgeFloor": 0.1,
+            "selectionSource": "getATSPick"
+          },
+          "marketType": "SPREAD",
+          "selectedMarketLineId": "cmvzma2ot010i0d0k7dsbmc3n",
+          "selectedMarketTeamId": null,
+          "selectedMarketLineValue": null,
+          "canonicalMarketValue": -3.5,
+          "marketBook": "BetRivers",
+          "marketSource": "oddsapi",
+          "marketTimestamp": "2026-11-02T18:53:03.000Z",
+          "marketAgeSeconds": 578,
+          "marketProvenance": {
+            "selector": "core_v1_coherent_spread_pair_v1",
+            "sourceFilter": "oddsapi",
+            "bookName": "BetRivers",
+            "marketTimestamp": "2026-11-02T18:53:03.000Z",
+            "marketSource": "oddsapi",
+            "homeTeamId": "kansas-state",
+            "awayTeamId": "oklahoma-state",
+            "homeRowId": "cmvzma2ot010i0d0k7dsbmc3n",
+            "awayRowId": "cmvzma2ot010j0d0k2z1f0yjv",
+            "homeLine": 3.5,
+            "awayLine": -3.5,
+            "marketSpreadHma": -3.5
+          },
+          "modelValue": -3.401566264124181,
+          "edgeValue": 0.09843373587581894,
+          "absEdgeValue": 0.09843373587581894,
+          "selectedSide": "NO_SELECTION",
+          "selectedTeamId": null,
+          "predictionPickValue": null
+        },
+        {
+          "id": "fixture-core-1",
+          "captureRunId": "fixture-core-0",
+          "gameId": "2026-wk10-air-force-army",
+          "season": 2026,
+          "week": 10,
+          "homeTeamId": "army",
+          "awayTeamId": "air-force",
+          "kickoffTimestamp": "2026-11-08T00:30:00.000Z",
+          "neutralSite": false,
+          "predictionTimestamp": "2026-11-02T19:02:40.252Z",
+          "predictionStatus": "AVAILABLE",
+          "unavailableReasons": [],
+          "inputPayload": {
+            "gameId": "2026-wk10-air-force-army",
+            "season": 2026,
+            "week": 10,
+            "homeTeamId": "army",
+            "awayTeamId": "air-force",
+            "neutralSite": false,
+            "kickoffTimestamp": "2026-11-08T00:30:00.000Z",
+            "predictionTimestamp": "2026-11-02T19:02:40.252Z",
+            "homeRating": -8.582598559570414,
+            "awayRating": -4.773558486717648,
+            "market": {
+              "selectedMarketLineId": "cmvzma2pa01zw0d0kih2tzyjr",
+              "selectedMarketTeamId": null,
+              "selectedMarketLineValue": null,
+              "canonicalMarketValue": 3.5,
+              "marketTimestamp": "2026-11-02T18:53:03.000Z",
+              "marketAgeSeconds": 578,
+              "marketBook": "BetRivers",
+              "marketSource": "oddsapi",
+              "marketProvenance": {
+                "selector": "core_v1_coherent_spread_pair_v1",
+                "sourceFilter": "oddsapi",
+                "bookName": "BetRivers",
+                "marketTimestamp": "2026-11-02T18:53:03.000Z",
+                "marketSource": "oddsapi",
+                "homeTeamId": "army",
+                "awayTeamId": "air-force",
+                "homeRowId": "cmvzma2pa01zw0d0kih2tzyjr",
+                "awayRowId": "cmvzma2pa01zv0d0k49h7xz0y",
+                "homeLine": -3.5,
+                "awayLine": 3.5,
+                "marketSpreadHma": 3.5
+              },
+              "homeRowId": "cmvzma2pa01zw0d0kih2tzyjr",
+              "awayRowId": "cmvzma2pa01zv0d0k49h7xz0y",
+              "homeLine": -3.5,
+              "awayLine": 3.5
+            },
+            "modelDefinitionId": "core_v1_shadow_baseline_v1",
+            "featureDefinitionId": "core_v1_ratings_hfa_v1",
+            "policyDefinitionId": "core_v1_shadow_baseline_policy_v1"
+          },
+          "inputHash": "e87dbf3cb382ba9d1fb8e70e9eeba12e82f24184c0e7b4519517ee318bd33a2a",
+          "featureProvenance": {
+            "homeRating": {
+              "teamId": "army",
+              "season": 2026,
+              "modelVersion": "v1",
+              "powerRating": -8.582598559570414,
+              "rating": -8.582598559570414,
+              "usedValue": -8.582598559570414,
+              "createdAt": "2026-08-27T23:29:46.876Z",
+              "updatedAt": "2026-11-02T08:45:13.736Z"
+            },
+            "awayRating": {
+              "teamId": "air-force",
+              "season": 2026,
+              "modelVersion": "v1",
+              "powerRating": -4.773558486717648,
+              "rating": -4.773558486717648,
+              "usedValue": -4.773558486717648,
+              "createdAt": "2026-08-27T23:29:46.589Z",
+              "updatedAt": "2026-11-02T08:45:13.736Z"
+            },
+            "hfa": {
+              "effectiveHfa": 2.137673953459952,
+              "baseHfa": 2,
+              "teamAdjustment": 0.13767395345995187,
+              "rawHfa": 2.137673953459952
+            }
+          },
+          "modelOutput": {
+            "modelValue": -1.6713661193928142,
+            "edgeValue": -5.171366119392815,
+            "absEdgeValue": 5.171366119392815,
+            "selectedSide": "AWAY",
+            "selectedTeamId": "air-force",
+            "predictionPickValue": 3.5,
+            "edgeFloor": 0.1,
+            "selectionSource": "getATSPick"
+          },
+          "marketType": "SPREAD",
+          "selectedMarketLineId": "cmvzma2pa01zv0d0k49h7xz0y",
+          "selectedMarketTeamId": "air-force",
+          "selectedMarketLineValue": 3.5,
+          "canonicalMarketValue": 3.5,
+          "marketBook": "BetRivers",
+          "marketSource": "oddsapi",
+          "marketTimestamp": "2026-11-02T18:53:03.000Z",
+          "marketAgeSeconds": 578,
+          "marketProvenance": {
+            "selector": "core_v1_coherent_spread_pair_v1",
+            "sourceFilter": "oddsapi",
+            "bookName": "BetRivers",
+            "marketTimestamp": "2026-11-02T18:53:03.000Z",
+            "marketSource": "oddsapi",
+            "homeTeamId": "army",
+            "awayTeamId": "air-force",
+            "homeRowId": "cmvzma2pa01zw0d0kih2tzyjr",
+            "awayRowId": "cmvzma2pa01zv0d0k49h7xz0y",
+            "homeLine": -3.5,
+            "awayLine": 3.5,
+            "marketSpreadHma": 3.5
+          },
+          "modelValue": -1.6713661193928142,
+          "edgeValue": -5.171366119392815,
+          "absEdgeValue": 5.171366119392815,
+          "selectedSide": "AWAY",
+          "selectedTeamId": "air-force",
+          "predictionPickValue": 3.5
+        }
+      ],
+      "run": {
+        "id": "fixture-core-0",
+        "season": 2026,
+        "week": 10,
+        "captureContext": "fixture_core",
+        "evaluationProtocol": "CORE_EVAL_V1",
+        "modelFamily": "core_v1",
+        "modelDefinitionId": "core_v1_shadow_baseline_v1",
+        "modelDefinitionHash": "b1ccb4eaff89fea0e0f1dead32d53cc60bf693086e7a94b12704c1d6a35b93cb",
+        "modelDefinitionManifest": {
+          "id": "core_v1_shadow_baseline_v1",
+          "version": "shadow_model_capture_v1",
+          "family": "core_v1",
+          "official": false,
+          "productionHold": true,
+          "status": "SHADOW / RESEARCH ONLY — NOT OFFICIAL",
+          "marketType": "spread",
+          "formula": {
+            "identity": "production_core_v1_v1_ratings_path",
+            "expression": "homeV1Rating - awayV1Rating + computeEffectiveHfa(homeTeamId, neutralSite).effectiveHfa",
+            "sourceModule": "apps/web/lib/core-v1-spread.ts#computeEffectiveHfa",
+            "noSilentZeroFill": true,
+            "noHybridBlend": true,
+            "noUnitGrades": true
+          },
+          "hfa": {
+            "source": "apps/web/lib/data/core_v1_hfa_config.json",
+            "baseHfaPoints": 2,
+            "clipRange": [
+              0.5,
+              3.5
+            ],
+            "neutralSite": 0
+          }
+        },
+        "featureDefinitionId": "core_v1_ratings_hfa_v1",
+        "featureDefinitionVersion": "v1",
+        "featureDefinitionHash": "57e46d0883608c848f06e3814b53a5fd520778d5c60d9dd9e3e15a5cfcbf5302",
+        "featureDefinitionManifest": {
+          "id": "core_v1_ratings_hfa_v1",
+          "version": "v1",
+          "required": {
+            "ratings": {
+              "modelVersion": "v1",
+              "fields": [
+                "powerRating|rating",
+                "createdAt",
+                "updatedAt"
+              ],
+              "provenanceMustBeAtOrBeforePredictionTimestamp": true,
+              "missingFailsClosed": true,
+              "noSilentZeroFill": true
+            },
+            "market": {
+              "lineType": "spread",
+              "source": "persisted_MarketLine_only",
+              "noProviderFetch": true
+            }
+          }
+        },
+        "policyDefinitionId": "core_v1_shadow_baseline_policy_v1",
+        "policyDefinitionHash": "742851db13b46fffb4cb5b1e7973d2e8dcdeabb562c52c56951425687619e7ee",
+        "policyDefinitionManifest": {
+          "id": "core_v1_shadow_baseline_policy_v1",
+          "version": "shadow_model_capture_v1",
+          "evaluationProtocol": "CORE_EVAL_V1",
+          "predictionMarket": {
+            "marketType": "spread",
+            "selectorId": "core_v1_coherent_spread_pair_v1",
+            "authorizedSource": "oddsapi",
+            "coherentHomeAwayPairRequired": true,
+            "reuseModules": [
+              "apps/web/lib/market-line-snapshot.ts#selectBookSpreadSnapshots",
+              "apps/web/lib/market-line-snapshot.ts#pickDisplaySpread"
+            ],
+            "freshnessMaxSeconds": 1800,
+            "freshnessMaxMilliseconds": 1800000,
+            "eligibility": "marketTimestamp <= predictionTimestamp",
+            "ordering": [
+              "timestamp DESC",
+              "homeRowId DESC (via pickDisplaySpread)"
+            ],
+            "noFutureMarketFallback": true,
+            "loneTeamRowNotSufficient": true
+          },
+          "selection": {
+            "source": "apps/web/lib/core-v1-spread.ts#getATSPick",
+            "edgeFloor": 0.1,
+            "edgeFormula": "edgeValue = modelValue - canonicalMarketValue (HMA)",
+            "sides": {
+              "noSelection": "abs(edgeValue) < 0.1",
+              "home": "edgeValue >= +0.1 (via getATSPick edge > 0 after floor)",
+              "away": "edgeValue <= -0.1 (via getATSPick edge < 0 after floor)"
+            },
+            "noSelectionRemainsAvailable": true,
+            "teamSidedPickValue": {
+              "HOME": "-canonicalMarketValue",
+              "AWAY": "+canonicalMarketValue",
+              "NO_SELECTION": null
+            },
+            "officialCardParity": {
+              "planner": "apps/web/lib/core-v1-weekly-card.ts#planSpreadBet",
+              "edgeFloorConstant": "SPREAD_EDGE_FLOOR",
+              "note": "Shadow baseline freezes selection semantics; does not write Bet rows."
+            }
+          },
+          "postKickoff": "unavailable",
+          "noRetrospectiveBackfill": true,
+          "researchOnly": true
+        },
+        "repoCommitSha": "ace5bc3984fc9e16cc0d227ab114d6ab8fda9c10",
+        "captureTimestamp": "2026-11-02T19:02:40.252Z",
+        "expectedGameIds": [
+          "2026-wk10-air-force-army",
+          "2026-wk10-oklahoma-state-kansas-state"
+        ],
+        "totalGames": 2,
+        "availableCount": 2,
+        "unavailableCount": 0,
+        "selectionCount": 1,
+        "noSelectionCount": 1,
+        "status": "COMPLETE",
+        "failureReason": null
+      }
+    }
+  },
+  {
+    "model": "elo",
+    "sourceRunId": "781dff25-ff9a-46e5-a9e7-205c50e7f214",
+    "plan": {
+      "season": 2026,
+      "week": 10,
+      "mode": "COMMIT",
+      "captureContext": "fixture_elo",
+      "predictionTimestamp": "2026-11-02T19:03:35.877Z",
+      "repoCommitSha": "ace5bc3984fc9e16cc0d227ab114d6ab8fda9c10",
+      "modelDefinitionId": "candidate_b_elo_prior_v1",
+      "modelDefinitionHash": "d9f469f5c9ac252bd93de2c94653c8ec9a5c967231f2197af8fba60453751add",
+      "featureDefinitionId": "candidate_b_elo_prior_features_v1",
+      "featureDefinitionHash": "d056deba3e625deda6b95ffab04130294c4f47d28cd093a3f81d34c06a58888c",
+      "policyDefinitionId": "candidate_b_elo_prior_spread_policy_v1",
+      "policyDefinitionHash": "f82f24fdbeb56488f21c48051aad0093841ea21452fa6f6b88ebab0a999e5035",
+      "confirmationValid": true,
+      "previewTimestampWillNotBecomeCommitTimestamp": true,
+      "ok": true,
+      "writeSafe": true,
+      "writeBlockers": [],
+      "expectedGameIds": [
+        "2026-wk10-air-force-army",
+        "2026-wk10-penn-state-washington"
+      ],
+      "counts": {
+        "totalGames": 2,
+        "availableCount": 2,
+        "unavailableCount": 0,
+        "selectionCount": 1,
+        "noSelectionCount": 1
+      },
+      "predictions": [
+        {
+          "id": "fixture-elo-41",
+          "captureRunId": "fixture-elo-0",
+          "gameId": "2026-wk10-penn-state-washington",
+          "season": 2026,
+          "week": 10,
+          "homeTeamId": "washington",
+          "awayTeamId": "penn-state",
+          "kickoffTimestamp": "2026-11-07T20:30:00.000Z",
+          "neutralSite": false,
+          "predictionTimestamp": "2026-11-02T19:03:35.877Z",
+          "predictionStatus": "AVAILABLE",
+          "unavailableReasons": [],
+          "inputPayload": {
+            "gameId": "2026-wk10-penn-state-washington",
+            "season": 2026,
+            "week": 10,
+            "homeTeamId": "washington",
+            "awayTeamId": "penn-state",
+            "neutralSite": false,
+            "kickoffTimestamp": "2026-11-07T20:30:00.000Z",
+            "predictionTimestamp": "2026-11-02T19:03:35.877Z",
+            "featureArtifactId": "candidate_b_elo_prior_features_2026_v1",
+            "featureArtifactHash": "9c36fdcfd12ab95ffc24c8b5a3704a153d0b4ebcaf86c8309b1d200891b6fd20",
+            "sourceRawSha256": "97e40e9f8220f9e7bafd8c6cd68dbf9ecb4b94208fe5911b97b07891f9fa4e64",
+            "modelDefinitionId": "candidate_b_elo_prior_v1",
+            "featureDefinitionId": "candidate_b_elo_prior_features_v1",
+            "policyDefinitionId": "candidate_b_elo_prior_spread_policy_v1",
+            "home": {
+              "teamId": "washington",
+              "providerTeam": "Washington",
+              "conference": "Big Ten",
+              "rawElo": 1744,
+              "zElo": 1.2673831595257883,
+              "candidateBEloTeamRatingPoints": 4.435841058340259,
+              "resolutionMethod": "cfbd_alias",
+              "sourceRawRowIndex": 76,
+              "rowHash": "0068a4685ad25729fa5412227afad402482ff15599e7b2b557b6cb512e029d41"
+            },
+            "away": {
+              "teamId": "penn-state",
+              "providerTeam": "Penn State",
+              "conference": "Big Ten",
+              "rawElo": 1802,
+              "zElo": 1.5671241638352293,
+              "candidateBEloTeamRatingPoints": 5.484934573423303,
+              "resolutionMethod": "cfbd_alias",
+              "sourceRawRowIndex": 59,
+              "rowHash": "96f151bf39a929cd8083053d92a3820ff304c7e049cf06edd76a1e65ec148f56"
+            },
+            "hfa": {
+              "homeTeamId": "washington",
+              "neutralSite": false,
+              "effectiveHfa": 3.5,
+              "baseHfa": 2,
+              "teamAdjustment": 1.5,
+              "rawHfa": 3.5
+            },
+            "market": {
+              "selectedMarketLineId": "cmvzma2p101i30d0kn0qhfb0l",
+              "selectedMarketTeamId": null,
+              "selectedMarketLineValue": null,
+              "canonicalMarketValue": 2.5,
+              "marketTimestamp": "2026-11-02T18:53:03.000Z",
+              "marketAgeSeconds": 633,
+              "marketBook": "BetRivers",
+              "marketSource": "oddsapi",
+              "marketProvenance": {
+                "selector": "core_v1_coherent_spread_pair_v1",
+                "sourceFilter": "oddsapi",
+                "bookName": "BetRivers",
+                "marketTimestamp": "2026-11-02T18:53:03.000Z",
+                "marketSource": "oddsapi",
+                "homeTeamId": "washington",
+                "awayTeamId": "penn-state",
+                "homeRowId": "cmvzma2p101i30d0kn0qhfb0l",
+                "awayRowId": "cmvzma2p101i20d0kurasozko",
+                "homeLine": -2.5,
+                "awayLine": 2.5,
+                "marketSpreadHma": 2.5
+              },
+              "homeRowId": "cmvzma2p101i30d0kn0qhfb0l",
+              "awayRowId": "cmvzma2p101i20d0kurasozko",
+              "homeLine": -2.5,
+              "awayLine": 2.5
+            }
+          },
+          "inputHash": "96574342eff6f54cff076837e308dcf005d34d69f2d4ca15221668860bfc785a",
+          "featureProvenance": {
+            "featureArtifactId": "candidate_b_elo_prior_features_2026_v1",
+            "featureArtifactHash": "9c36fdcfd12ab95ffc24c8b5a3704a153d0b4ebcaf86c8309b1d200891b6fd20",
+            "sourceRawSha256": "97e40e9f8220f9e7bafd8c6cd68dbf9ecb4b94208fe5911b97b07891f9fa4e64",
+            "sourceAuditReportSha256": "94ff7e38c2f7f921ccaf4934537739d667542168c5a5ca0aef0dfb7280f512a0",
+            "discoveryRunId": 35740044682,
+            "firstProspectiveWeek": 5,
+            "home": {
+              "teamId": "washington",
+              "available": true,
+              "rawElo": 1744,
+              "zElo": 1.2673831595257883,
+              "candidateBEloTeamRatingPoints": 4.435841058340259,
+              "rowHash": "0068a4685ad25729fa5412227afad402482ff15599e7b2b557b6cb512e029d41"
+            },
+            "away": {
+              "teamId": "penn-state",
+              "available": true,
+              "rawElo": 1802,
+              "zElo": 1.5671241638352293,
+              "candidateBEloTeamRatingPoints": 5.484934573423303,
+              "rowHash": "96f151bf39a929cd8083053d92a3820ff304c7e049cf06edd76a1e65ec148f56"
+            },
+            "hfa": {
+              "effectiveHfa": 3.5,
+              "baseHfa": 2,
+              "teamAdjustment": 1.5,
+              "rawHfa": 3.5
+            }
+          },
+          "modelOutput": {
+            "modelValue": 2.450906484916956,
+            "edgeValue": -0.049093515083043826,
+            "absEdgeValue": 0.049093515083043826,
+            "selectedSide": "NO_SELECTION",
+            "selectedTeamId": null,
+            "predictionPickValue": null,
+            "edgeFloor": 0.1,
+            "selectionSource": "getATSPick"
+          },
+          "marketType": "SPREAD",
+          "selectedMarketLineId": "cmvzma2p101i30d0kn0qhfb0l",
+          "selectedMarketTeamId": null,
+          "selectedMarketLineValue": null,
+          "canonicalMarketValue": 2.5,
+          "marketBook": "BetRivers",
+          "marketSource": "oddsapi",
+          "marketTimestamp": "2026-11-02T18:53:03.000Z",
+          "marketAgeSeconds": 633,
+          "marketProvenance": {
+            "selector": "core_v1_coherent_spread_pair_v1",
+            "sourceFilter": "oddsapi",
+            "bookName": "BetRivers",
+            "marketTimestamp": "2026-11-02T18:53:03.000Z",
+            "marketSource": "oddsapi",
+            "homeTeamId": "washington",
+            "awayTeamId": "penn-state",
+            "homeRowId": "cmvzma2p101i30d0kn0qhfb0l",
+            "awayRowId": "cmvzma2p101i20d0kurasozko",
+            "homeLine": -2.5,
+            "awayLine": 2.5,
+            "marketSpreadHma": 2.5
+          },
+          "modelValue": 2.450906484916956,
+          "edgeValue": -0.049093515083043826,
+          "absEdgeValue": 0.049093515083043826,
+          "selectedSide": "NO_SELECTION",
+          "selectedTeamId": null,
+          "predictionPickValue": null
+        },
+        {
+          "id": "fixture-elo-1",
+          "captureRunId": "fixture-elo-0",
+          "gameId": "2026-wk10-air-force-army",
+          "season": 2026,
+          "week": 10,
+          "homeTeamId": "army",
+          "awayTeamId": "air-force",
+          "kickoffTimestamp": "2026-11-08T00:30:00.000Z",
+          "neutralSite": false,
+          "predictionTimestamp": "2026-11-02T19:03:35.877Z",
+          "predictionStatus": "AVAILABLE",
+          "unavailableReasons": [],
+          "inputPayload": {
+            "gameId": "2026-wk10-air-force-army",
+            "season": 2026,
+            "week": 10,
+            "homeTeamId": "army",
+            "awayTeamId": "air-force",
+            "neutralSite": false,
+            "kickoffTimestamp": "2026-11-08T00:30:00.000Z",
+            "predictionTimestamp": "2026-11-02T19:03:35.877Z",
+            "featureArtifactId": "candidate_b_elo_prior_features_2026_v1",
+            "featureArtifactHash": "9c36fdcfd12ab95ffc24c8b5a3704a153d0b4ebcaf86c8309b1d200891b6fd20",
+            "sourceRawSha256": "97e40e9f8220f9e7bafd8c6cd68dbf9ecb4b94208fe5911b97b07891f9fa4e64",
+            "modelDefinitionId": "candidate_b_elo_prior_v1",
+            "featureDefinitionId": "candidate_b_elo_prior_features_v1",
+            "policyDefinitionId": "candidate_b_elo_prior_spread_policy_v1",
+            "home": {
+              "teamId": "army",
+              "providerTeam": "Army",
+              "conference": "American Athletic",
+              "rawElo": 1527,
+              "zElo": 0.1459383675404657,
+              "candidateBEloTeamRatingPoints": 0.51078428639163,
+              "resolutionMethod": "cfbd_alias",
+              "sourceRawRowIndex": 91,
+              "rowHash": "6313f1196d46ece4b4304184c087bb90da33994288e9333d0ee74d2ec44a18d4"
+            },
+            "away": {
+              "teamId": "air-force",
+              "providerTeam": "Air Force",
+              "conference": "Mountain West",
+              "rawElo": 1424,
+              "zElo": -0.38636031252630026,
+              "candidateBEloTeamRatingPoints": -1.352261093842051,
+              "resolutionMethod": "cfbd_alias",
+              "sourceRawRowIndex": 93,
+              "rowHash": "7cc6e4dfe7a91861da926e64146019cf81f41c5eed2eee1e98b5fda9a738d3aa"
+            },
+            "hfa": {
+              "homeTeamId": "army",
+              "neutralSite": false,
+              "effectiveHfa": 2.137673953459952,
+              "baseHfa": 2,
+              "teamAdjustment": 0.13767395345995187,
+              "rawHfa": 2.137673953459952
+            },
+            "market": {
+              "selectedMarketLineId": "cmvzma2pa01zw0d0kih2tzyjr",
+              "selectedMarketTeamId": null,
+              "selectedMarketLineValue": null,
+              "canonicalMarketValue": 3.5,
+              "marketTimestamp": "2026-11-02T18:53:03.000Z",
+              "marketAgeSeconds": 633,
+              "marketBook": "BetRivers",
+              "marketSource": "oddsapi",
+              "marketProvenance": {
+                "selector": "core_v1_coherent_spread_pair_v1",
+                "sourceFilter": "oddsapi",
+                "bookName": "BetRivers",
+                "marketTimestamp": "2026-11-02T18:53:03.000Z",
+                "marketSource": "oddsapi",
+                "homeTeamId": "army",
+                "awayTeamId": "air-force",
+                "homeRowId": "cmvzma2pa01zw0d0kih2tzyjr",
+                "awayRowId": "cmvzma2pa01zv0d0k49h7xz0y",
+                "homeLine": -3.5,
+                "awayLine": 3.5,
+                "marketSpreadHma": 3.5
+              },
+              "homeRowId": "cmvzma2pa01zw0d0kih2tzyjr",
+              "awayRowId": "cmvzma2pa01zv0d0k49h7xz0y",
+              "homeLine": -3.5,
+              "awayLine": 3.5
+            }
+          },
+          "inputHash": "27b858be39fadded882d9548d89cc0f006b460c4db7038faa33463d8de8ef92d",
+          "featureProvenance": {
+            "featureArtifactId": "candidate_b_elo_prior_features_2026_v1",
+            "featureArtifactHash": "9c36fdcfd12ab95ffc24c8b5a3704a153d0b4ebcaf86c8309b1d200891b6fd20",
+            "sourceRawSha256": "97e40e9f8220f9e7bafd8c6cd68dbf9ecb4b94208fe5911b97b07891f9fa4e64",
+            "sourceAuditReportSha256": "94ff7e38c2f7f921ccaf4934537739d667542168c5a5ca0aef0dfb7280f512a0",
+            "discoveryRunId": 35740044682,
+            "firstProspectiveWeek": 5,
+            "home": {
+              "teamId": "army",
+              "available": true,
+              "rawElo": 1527,
+              "zElo": 0.1459383675404657,
+              "candidateBEloTeamRatingPoints": 0.51078428639163,
+              "rowHash": "6313f1196d46ece4b4304184c087bb90da33994288e9333d0ee74d2ec44a18d4"
+            },
+            "away": {
+              "teamId": "air-force",
+              "available": true,
+              "rawElo": 1424,
+              "zElo": -0.38636031252630026,
+              "candidateBEloTeamRatingPoints": -1.352261093842051,
+              "rowHash": "7cc6e4dfe7a91861da926e64146019cf81f41c5eed2eee1e98b5fda9a738d3aa"
+            },
+            "hfa": {
+              "effectiveHfa": 2.137673953459952,
+              "baseHfa": 2,
+              "teamAdjustment": 0.13767395345995187,
+              "rawHfa": 2.137673953459952
+            }
+          },
+          "modelOutput": {
+            "modelValue": 4.000719333693633,
+            "edgeValue": 0.5007193336936329,
+            "absEdgeValue": 0.5007193336936329,
+            "selectedSide": "HOME",
+            "selectedTeamId": "army",
+            "predictionPickValue": -3.5,
+            "edgeFloor": 0.1,
+            "selectionSource": "getATSPick"
+          },
+          "marketType": "SPREAD",
+          "selectedMarketLineId": "cmvzma2pa01zw0d0kih2tzyjr",
+          "selectedMarketTeamId": "army",
+          "selectedMarketLineValue": -3.5,
+          "canonicalMarketValue": 3.5,
+          "marketBook": "BetRivers",
+          "marketSource": "oddsapi",
+          "marketTimestamp": "2026-11-02T18:53:03.000Z",
+          "marketAgeSeconds": 633,
+          "marketProvenance": {
+            "selector": "core_v1_coherent_spread_pair_v1",
+            "sourceFilter": "oddsapi",
+            "bookName": "BetRivers",
+            "marketTimestamp": "2026-11-02T18:53:03.000Z",
+            "marketSource": "oddsapi",
+            "homeTeamId": "army",
+            "awayTeamId": "air-force",
+            "homeRowId": "cmvzma2pa01zw0d0kih2tzyjr",
+            "awayRowId": "cmvzma2pa01zv0d0k49h7xz0y",
+            "homeLine": -3.5,
+            "awayLine": 3.5,
+            "marketSpreadHma": 3.5
+          },
+          "modelValue": 4.000719333693633,
+          "edgeValue": 0.5007193336936329,
+          "absEdgeValue": 0.5007193336936329,
+          "selectedSide": "HOME",
+          "selectedTeamId": "army",
+          "predictionPickValue": -3.5
+        }
+      ],
+      "run": {
+        "id": "fixture-elo-0",
+        "season": 2026,
+        "week": 10,
+        "captureContext": "fixture_elo",
+        "evaluationProtocol": "CORE_EVAL_V1",
+        "modelFamily": "candidate_b_elo_prior",
+        "modelDefinitionId": "candidate_b_elo_prior_v1",
+        "modelDefinitionHash": "d9f469f5c9ac252bd93de2c94653c8ec9a5c967231f2197af8fba60453751add",
+        "modelDefinitionManifest": {
+          "id": "candidate_b_elo_prior_v1",
+          "version": "shadow_model_capture_v1",
+          "family": "candidate_b_elo_prior",
+          "official": false,
+          "productionHold": true,
+          "status": "SHADOW / RESEARCH ONLY — NOT OFFICIAL",
+          "marketType": "spread",
+          "formula": {
+            "identity": "candidate_b_elo_prior_v1_matchup",
+            "teamRatingPointsSource": "REPO_PINNED_HASH_VERIFIED_ELO_ARTIFACT_ONLY",
+            "artifactId": "candidate_b_elo_prior_features_2026_v1",
+            "artifactHash": "9c36fdcfd12ab95ffc24c8b5a3704a153d0b4ebcaf86c8309b1d200891b6fd20",
+            "expression": "homeCandidateBEloTeamRatingPoints - awayCandidateBEloTeamRatingPoints + computeEffectiveHfa(homeTeamId, neutralSite).effectiveHfa",
+            "hfaAppliedExactlyOnce": true,
+            "sourceModule": "apps/web/lib/core-v1-spread.ts#computeEffectiveHfa",
+            "noFallback": true,
+            "noSilentZeroFill": true,
+            "noTalentBlend": true,
+            "noRosterPriorBlend": true,
+            "noCoreRatingBlend": true,
+            "noHybridBlend": true,
+            "noLifecycleBlend": true,
+            "noOutcomeFit": true
+          },
+          "hfa": {
+            "source": "apps/web/lib/core-v1-spread.ts#computeEffectiveHfa",
+            "configSource": "apps/web/lib/data/core_v1_hfa_config.json",
+            "baseHfaPoints": 2,
+            "clipRange": [
+              0.5,
+              3.5
+            ],
+            "neutralSite": 0,
+            "candidateBSpecificTuning": false
+          },
+          "frozenFeatureArtifact": {
+            "season": 2026,
+            "artifactId": "candidate_b_elo_prior_features_2026_v1",
+            "artifactHash": "9c36fdcfd12ab95ffc24c8b5a3704a153d0b4ebcaf86c8309b1d200891b6fd20",
+            "sourceRawSha256": "97e40e9f8220f9e7bafd8c6cd68dbf9ecb4b94208fe5911b97b07891f9fa4e64",
+            "mappingHash": "f6465665aa20ffcc55d0be9b03e00d39a03d3a7a961fc8c5225552d0c180c527",
+            "expectedTeamCount": 138,
+            "completeVectorCount": 138,
+            "unavailableVectorCount": 0
+          },
+          "runtimeFeatureSource": "REPO_PINNED_HASH_VERIFIED_ELO_ARTIFACT_ONLY",
+          "firstProspectiveWeek": 5
+        },
+        "featureDefinitionId": "candidate_b_elo_prior_features_v1",
+        "featureDefinitionVersion": "v1",
+        "featureDefinitionHash": "d056deba3e625deda6b95ffab04130294c4f47d28cd093a3f81d34c06a58888c",
+        "featureDefinitionManifest": {
+          "id": "candidate_b_elo_prior_features_v1",
+          "version": "v1",
+          "required": {
+            "artifact": {
+              "artifactId": "candidate_b_elo_prior_features_2026_v1",
+              "artifactHash": "9c36fdcfd12ab95ffc24c8b5a3704a153d0b4ebcaf86c8309b1d200891b6fd20",
+              "rawPath": "research/candidate-b/snapshots/cfbd-preseason-elo/2026/2026-09-22-raw.json",
+              "rawSha256": "97e40e9f8220f9e7bafd8c6cd68dbf9ecb4b94208fe5911b97b07891f9fa4e64",
+              "mappingPath": "research/candidate-b/snapshots/cfbd-preseason-elo/2026/2026-09-22-team-mapping-v1.json",
+              "mappingHash": "f6465665aa20ffcc55d0be9b03e00d39a03d3a7a961fc8c5225552d0c180c527",
+              "expectedTeamCount": 138,
+              "hashVerifiedAtRuntime": true,
+              "noProviderFetch": true
+            },
+            "normalization": {
+              "populationCount": 138,
+              "populationMeanElo": 1498.7608695652175,
+              "populationStdDevElo": 193.5003858868873,
+              "scalePointsPerZ": 3.5,
+              "zFormula": "(rawElo - populationMeanElo) / populationStdDevElo",
+              "teamRatingFormula": "3.5 * zElo",
+              "populationSdDivisor": "N",
+              "noImputation": true,
+              "noOutcomeFit": true
+            },
+            "market": {
+              "lineType": "spread",
+              "source": "persisted_MarketLine_only",
+              "noProviderFetch": true
+            }
+          }
+        },
+        "policyDefinitionId": "candidate_b_elo_prior_spread_policy_v1",
+        "policyDefinitionHash": "f82f24fdbeb56488f21c48051aad0093841ea21452fa6f6b88ebab0a999e5035",
+        "policyDefinitionManifest": {
+          "id": "candidate_b_elo_prior_spread_policy_v1",
+          "version": "shadow_model_capture_v1",
+          "evaluationProtocol": "CORE_EVAL_V1",
+          "predictionMarket": {
+            "marketType": "spread",
+            "selectorId": "core_v1_coherent_spread_pair_v1",
+            "authorizedSource": "oddsapi",
+            "coherentHomeAwayPairRequired": true,
+            "reuseModules": [
+              "apps/web/lib/market-line-snapshot.ts#selectBookSpreadSnapshots",
+              "apps/web/lib/market-line-snapshot.ts#pickDisplaySpread"
+            ],
+            "freshnessMaxSeconds": 1800,
+            "freshnessMaxMilliseconds": 1800000,
+            "eligibility": "marketTimestamp <= predictionTimestamp",
+            "ordering": [
+              "timestamp DESC",
+              "homeRowId DESC (via pickDisplaySpread)"
+            ],
+            "noFutureMarketFallback": true,
+            "loneTeamRowNotSufficient": true
+          },
+          "selection": {
+            "source": "apps/web/lib/core-v1-spread.ts#getATSPick",
+            "edgeFloor": 0.1,
+            "edgeFormula": "edgeValue = modelValue - canonicalMarketValue (HMA)",
+            "sides": {
+              "noSelection": "abs(edgeValue) < 0.1",
+              "home": "edgeValue >= +0.1 (via getATSPick edge > 0 after floor)",
+              "away": "edgeValue <= -0.1 (via getATSPick edge < 0 after floor)"
+            },
+            "noSelectionRemainsAvailable": true,
+            "teamSidedPickValue": {
+              "HOME": "-canonicalMarketValue",
+              "AWAY": "+canonicalMarketValue",
+              "NO_SELECTION": null
+            },
+            "officialCardParity": {
+              "planner": "apps/web/lib/core-v1-weekly-card.ts#planSpreadBet",
+              "edgeFloorConstant": "SPREAD_EDGE_FLOOR",
+              "note": "Shadow challenger freezes selection semantics; does not write Bet rows."
+            }
+          },
+          "postKickoff": "unavailable",
+          "noRetrospectiveBackfill": true,
+          "researchOnly": true,
+          "firstProspectiveWeek": 5
+        },
+        "repoCommitSha": "ace5bc3984fc9e16cc0d227ab114d6ab8fda9c10",
+        "captureTimestamp": "2026-11-02T19:03:35.877Z",
+        "expectedGameIds": [
+          "2026-wk10-air-force-army",
+          "2026-wk10-penn-state-washington"
+        ],
+        "totalGames": 2,
+        "availableCount": 2,
+        "unavailableCount": 0,
+        "selectionCount": 1,
+        "noSelectionCount": 1,
+        "status": "COMPLETE",
+        "failureReason": null
+      }
+    }
+  },
+  {
+    "model": "roster",
+    "sourceRunId": "072ee3c0-5483-4574-a032-3286166c535b",
+    "plan": {
+      "season": 2026,
+      "week": 10,
+      "mode": "COMMIT",
+      "captureContext": "fixture_roster",
+      "predictionTimestamp": "2026-11-02T19:04:34.461Z",
+      "repoCommitSha": "ace5bc3984fc9e16cc0d227ab114d6ab8fda9c10",
+      "modelDefinitionId": "candidate_b_roster_prior_v1",
+      "modelDefinitionHash": "1e5bbf0119832caf10e7b769afe5e8c02dbcda1b358022ec31803df40bca3d8c",
+      "featureDefinitionId": "candidate_b_roster_prior_features_v1",
+      "featureDefinitionHash": "6f1f8ecc132cdd87650252d57597a657ece0dd908bdf5010897023cafe988972",
+      "policyDefinitionId": "candidate_b_roster_prior_spread_policy_v1",
+      "policyDefinitionHash": "b1b292c0ea01ed692dcbfdfd7f6adf28b951d20786f08dac0993444c8b1e1fba",
+      "confirmationValid": true,
+      "previewTimestampWillNotBecomeCommitTimestamp": true,
+      "ok": true,
+      "writeSafe": true,
+      "writeBlockers": [],
+      "expectedGameIds": [
+        "2026-wk10-air-force-army",
+        "2026-wk10-alabama-lsu"
+      ],
+      "counts": {
+        "totalGames": 2,
+        "availableCount": 1,
+        "unavailableCount": 1,
+        "selectionCount": 1,
+        "noSelectionCount": 0
+      },
+      "predictions": [
+        {
+          "id": "fixture-roster-2",
+          "captureRunId": "fixture-roster-0",
+          "gameId": "2026-wk10-alabama-lsu",
+          "season": 2026,
+          "week": 10,
+          "homeTeamId": "lsu",
+          "awayTeamId": "alabama",
+          "kickoffTimestamp": "2026-11-07T20:30:00.000Z",
+          "neutralSite": false,
+          "predictionTimestamp": "2026-11-02T19:04:34.461Z",
+          "predictionStatus": "AVAILABLE",
+          "unavailableReasons": [],
+          "inputPayload": {
+            "gameId": "2026-wk10-alabama-lsu",
+            "season": 2026,
+            "week": 10,
+            "homeTeamId": "lsu",
+            "awayTeamId": "alabama",
+            "neutralSite": false,
+            "kickoffTimestamp": "2026-11-07T20:30:00.000Z",
+            "predictionTimestamp": "2026-11-02T19:04:34.461Z",
+            "featureSnapshotHash": "0332e24f97c891fd6431280fa7939c467c614714abe207eeb3dc89d466eb1148",
+            "modelDefinitionId": "candidate_b_roster_prior_v1",
+            "featureDefinitionId": "candidate_b_roster_prior_features_v1",
+            "policyDefinitionId": "candidate_b_roster_prior_spread_policy_v1",
+            "home": {
+              "teamId": "lsu",
+              "rowHash": "8185b2c12092580cb422684b9e54630a5abf6b42d85572131c3d0cd08a5ac02f",
+              "priorCoreRaw": 3.55,
+              "talentRaw": 931.76,
+              "returningRaw": 0.212,
+              "portalRaw": 0.023292383292383367,
+              "zCore": 0.27900570818389914,
+              "zTalent": 1.91878595675306,
+              "zReturning": -0.741289928513041,
+              "zPortal": 1.6772253342632937,
+              "candidateBRawComposite": 0.783431767671803,
+              "candidateBCompositeZ": 1.0465099091671128,
+              "candidateBTeamRatingPoints": 3.662784682084895
+            },
+            "away": {
+              "teamId": "alabama",
+              "rowHash": "d36e9aea6c8c06b975694753d8fe8d0df4212a79a64aaf7f95152640bcfccbd4",
+              "priorCoreRaw": 16.11,
+              "talentRaw": 973.53,
+              "returningRaw": 0.264,
+              "portalRaw": -0.0005626598465476862,
+              "zCore": 1.2661153175362514,
+              "zTalent": 2.22733136978303,
+              "zReturning": -0.5544083380936686,
+              "zPortal": 0.07413186768800639,
+              "candidateBRawComposite": 0.7532925542284047,
+              "candidateBCompositeZ": 1.0015776766807574,
+              "candidateBTeamRatingPoints": 3.505521868382651
+            },
+            "hfa": {
+              "homeTeamId": "lsu",
+              "neutralSite": false,
+              "effectiveHfa": 2.611446904022631,
+              "baseHfa": 2,
+              "teamAdjustment": 0.6114469040226309,
+              "rawHfa": 2.611446904022631
+            },
+            "market": {
+              "selectedMarketLineId": "cmvzma2ow01830d0kd3ofm7zl",
+              "selectedMarketTeamId": null,
+              "selectedMarketLineValue": null,
+              "canonicalMarketValue": 6,
+              "marketTimestamp": "2026-11-02T18:53:03.000Z",
+              "marketAgeSeconds": 692,
+              "marketBook": "BetRivers",
+              "marketSource": "oddsapi",
+              "marketProvenance": {
+                "selector": "core_v1_coherent_spread_pair_v1",
+                "sourceFilter": "oddsapi",
+                "bookName": "BetRivers",
+                "marketTimestamp": "2026-11-02T18:53:03.000Z",
+                "marketSource": "oddsapi",
+                "homeTeamId": "lsu",
+                "awayTeamId": "alabama",
+                "homeRowId": "cmvzma2ow01830d0kd3ofm7zl",
+                "awayRowId": "cmvzma2ow01820d0k2fz5l0hn",
+                "homeLine": -6,
+                "awayLine": 6,
+                "marketSpreadHma": 6
+              },
+              "homeRowId": "cmvzma2ow01830d0kd3ofm7zl",
+              "awayRowId": "cmvzma2ow01820d0k2fz5l0hn",
+              "homeLine": -6,
+              "awayLine": 6
+            }
+          },
+          "inputHash": "7039d22200d83fc853acb3a6ce1110c6f9cbcaeb9d7e3c5ac9ee1c14bc2870a6",
+          "featureProvenance": {
+            "snapshotParentId": "cmu1uc6sz0000mdz47tdm2vxs",
+            "snapshotHash": "0332e24f97c891fd6431280fa7939c467c614714abe207eeb3dc89d466eb1148",
+            "featureDefinitionHash": "6f1f8ecc132cdd87650252d57597a657ece0dd908bdf5010897023cafe988972",
+            "derivationDefinitionHash": "6c04627787edbcc7d1d42549f3cb19c525a6c4c31de572549f01e3efa64a638c",
+            "sourceManifestHash": "183e07cec8ab146247f8b15eda93331a1dfe03f624b06fd8b0dae886d14b14d6",
+            "sourceProvenanceManifestHash": "89ea635c89898aa2de5fad66a43e6eca36ef917f6945cc82635536746347f8da",
+            "normalizationManifestHash": "9de2fdbf94581f05671349111ae36e458c94ac637b93e8db0eaea701abdeaa96",
+            "populationManifestHash": "ce7a633f3230864c785048047698a3ba55fef1e25339e87db2a090bd65c59f2c",
+            "home": {
+              "teamId": "lsu",
+              "availabilityStatus": "AVAILABLE",
+              "unavailableReasons": [],
+              "candidateBTeamRatingPoints": 3.662784682084895,
+              "rowHash": "8185b2c12092580cb422684b9e54630a5abf6b42d85572131c3d0cd08a5ac02f"
+            },
+            "away": {
+              "teamId": "alabama",
+              "availabilityStatus": "AVAILABLE",
+              "unavailableReasons": [],
+              "candidateBTeamRatingPoints": 3.505521868382651,
+              "rowHash": "d36e9aea6c8c06b975694753d8fe8d0df4212a79a64aaf7f95152640bcfccbd4"
+            },
+            "hfa": {
+              "effectiveHfa": 2.611446904022631,
+              "baseHfa": 2,
+              "teamAdjustment": 0.6114469040226309,
+              "rawHfa": 2.611446904022631
+            }
+          },
+          "modelOutput": {
+            "modelValue": 2.768709717724875,
+            "edgeValue": -3.231290282275125,
+            "absEdgeValue": 3.231290282275125,
+            "selectedSide": "AWAY",
+            "selectedTeamId": "alabama",
+            "predictionPickValue": 6,
+            "edgeFloor": 0.1,
+            "selectionSource": "getATSPick"
+          },
+          "marketType": "SPREAD",
+          "selectedMarketLineId": "cmvzma2ow01820d0k2fz5l0hn",
+          "selectedMarketTeamId": "alabama",
+          "selectedMarketLineValue": 6,
+          "canonicalMarketValue": 6,
+          "marketBook": "BetRivers",
+          "marketSource": "oddsapi",
+          "marketTimestamp": "2026-11-02T18:53:03.000Z",
+          "marketAgeSeconds": 692,
+          "marketProvenance": {
+            "selector": "core_v1_coherent_spread_pair_v1",
+            "sourceFilter": "oddsapi",
+            "bookName": "BetRivers",
+            "marketTimestamp": "2026-11-02T18:53:03.000Z",
+            "marketSource": "oddsapi",
+            "homeTeamId": "lsu",
+            "awayTeamId": "alabama",
+            "homeRowId": "cmvzma2ow01830d0kd3ofm7zl",
+            "awayRowId": "cmvzma2ow01820d0k2fz5l0hn",
+            "homeLine": -6,
+            "awayLine": 6,
+            "marketSpreadHma": 6
+          },
+          "modelValue": 2.768709717724875,
+          "edgeValue": -3.231290282275125,
+          "absEdgeValue": 3.231290282275125,
+          "selectedSide": "AWAY",
+          "selectedTeamId": "alabama",
+          "predictionPickValue": 6
+        },
+        {
+          "id": "fixture-roster-1",
+          "captureRunId": "fixture-roster-0",
+          "gameId": "2026-wk10-air-force-army",
+          "season": 2026,
+          "week": 10,
+          "homeTeamId": "army",
+          "awayTeamId": "air-force",
+          "kickoffTimestamp": "2026-11-08T00:30:00.000Z",
+          "neutralSite": false,
+          "predictionTimestamp": "2026-11-02T19:04:34.461Z",
+          "predictionStatus": "UNAVAILABLE",
+          "unavailableReasons": [
+            "team_feature_vector_unavailable"
+          ],
+          "inputPayload": {
+            "gameId": "2026-wk10-air-force-army",
+            "season": 2026,
+            "week": 10,
+            "homeTeamId": "army",
+            "awayTeamId": "air-force",
+            "neutralSite": false,
+            "kickoffTimestamp": "2026-11-08T00:30:00.000Z",
+            "predictionTimestamp": "2026-11-02T19:04:34.461Z",
+            "featureSnapshotHash": "0332e24f97c891fd6431280fa7939c467c614714abe207eeb3dc89d466eb1148",
+            "modelDefinitionId": "candidate_b_roster_prior_v1",
+            "featureDefinitionId": "candidate_b_roster_prior_features_v1",
+            "policyDefinitionId": "candidate_b_roster_prior_spread_policy_v1",
+            "home": {
+              "teamId": "army",
+              "rowHash": "4eb4b4c2527b028e080df39a18bbe129af0f030f83a6dae5e837a6fb4ea82f45",
+              "priorCoreRaw": -0.2,
+              "talentRaw": 303.83,
+              "returningRaw": 0.802,
+              "portalRaw": 0.06336903939184524,
+              "zCore": -0.01571252709247992,
+              "zTalent": -2.7195889822919233,
+              "zReturning": 1.3790973473990673,
+              "zPortal": 4.370434698046941,
+              "candidateBRawComposite": 0.7535576340154011,
+              "candidateBCompositeZ": 1.0019728637230179,
+              "candidateBTeamRatingPoints": 3.5069050230305625
+            },
+            "away": {
+              "teamId": "air-force",
+              "rowHash": "0b7ad3c29bc18550ae07f32638d7c6821608d03a0108ed5319cdd9cc8cdb95d2",
+              "priorCoreRaw": -12.24,
+              "talentRaw": 272.35,
+              "returningRaw": 0.574,
+              "portalRaw": null,
+              "zCore": -0.9619545411531744,
+              "zTalent": -2.9521245245994034,
+              "zReturning": 0.5596934509448964,
+              "zPortal": null,
+              "candidateBRawComposite": null,
+              "candidateBCompositeZ": null,
+              "candidateBTeamRatingPoints": null
+            },
+            "hfa": {
+              "homeTeamId": "army",
+              "neutralSite": false,
+              "effectiveHfa": 2.137673953459952,
+              "baseHfa": 2,
+              "teamAdjustment": 0.13767395345995187,
+              "rawHfa": 2.137673953459952
+            },
+            "market": {
+              "selectedMarketLineId": "cmvzma2pa01zw0d0kih2tzyjr",
+              "selectedMarketTeamId": null,
+              "selectedMarketLineValue": null,
+              "canonicalMarketValue": 3.5,
+              "marketTimestamp": "2026-11-02T18:53:03.000Z",
+              "marketAgeSeconds": 692,
+              "marketBook": "BetRivers",
+              "marketSource": "oddsapi",
+              "marketProvenance": {
+                "selector": "core_v1_coherent_spread_pair_v1",
+                "sourceFilter": "oddsapi",
+                "bookName": "BetRivers",
+                "marketTimestamp": "2026-11-02T18:53:03.000Z",
+                "marketSource": "oddsapi",
+                "homeTeamId": "army",
+                "awayTeamId": "air-force",
+                "homeRowId": "cmvzma2pa01zw0d0kih2tzyjr",
+                "awayRowId": "cmvzma2pa01zv0d0k49h7xz0y",
+                "homeLine": -3.5,
+                "awayLine": 3.5,
+                "marketSpreadHma": 3.5
+              },
+              "homeRowId": "cmvzma2pa01zw0d0kih2tzyjr",
+              "awayRowId": "cmvzma2pa01zv0d0k49h7xz0y",
+              "homeLine": -3.5,
+              "awayLine": 3.5
+            }
+          },
+          "inputHash": "59e06c854a5a290094f8f797f24fd87897bd086e34ba6992610f3d7d7a2c48aa",
+          "featureProvenance": {
+            "snapshotParentId": "cmu1uc6sz0000mdz47tdm2vxs",
+            "snapshotHash": "0332e24f97c891fd6431280fa7939c467c614714abe207eeb3dc89d466eb1148",
+            "featureDefinitionHash": "6f1f8ecc132cdd87650252d57597a657ece0dd908bdf5010897023cafe988972",
+            "derivationDefinitionHash": "6c04627787edbcc7d1d42549f3cb19c525a6c4c31de572549f01e3efa64a638c",
+            "sourceManifestHash": "183e07cec8ab146247f8b15eda93331a1dfe03f624b06fd8b0dae886d14b14d6",
+            "sourceProvenanceManifestHash": "89ea635c89898aa2de5fad66a43e6eca36ef917f6945cc82635536746347f8da",
+            "normalizationManifestHash": "9de2fdbf94581f05671349111ae36e458c94ac637b93e8db0eaea701abdeaa96",
+            "populationManifestHash": "ce7a633f3230864c785048047698a3ba55fef1e25339e87db2a090bd65c59f2c",
+            "home": {
+              "teamId": "army",
+              "availabilityStatus": "AVAILABLE",
+              "unavailableReasons": [],
+              "candidateBTeamRatingPoints": 3.5069050230305625,
+              "rowHash": "4eb4b4c2527b028e080df39a18bbe129af0f030f83a6dae5e837a6fb4ea82f45"
+            },
+            "away": {
+              "teamId": "air-force",
+              "availabilityStatus": "UNAVAILABLE",
+              "unavailableReasons": [
+                "PORTAL_FEATURE_UNAVAILABLE",
+                "TEAM_FEATURE_VECTOR_UNAVAILABLE"
+              ],
+              "candidateBTeamRatingPoints": null,
+              "rowHash": "0b7ad3c29bc18550ae07f32638d7c6821608d03a0108ed5319cdd9cc8cdb95d2"
+            },
+            "hfa": {
+              "effectiveHfa": 2.137673953459952,
+              "baseHfa": 2,
+              "teamAdjustment": 0.13767395345995187,
+              "rawHfa": 2.137673953459952
+            }
+          },
+          "modelOutput": {
+            "modelValue": null,
+            "edgeValue": null,
+            "absEdgeValue": null,
+            "selectedSide": null,
+            "selectedTeamId": null,
+            "predictionPickValue": null,
+            "edgeFloor": 0.1,
+            "selectionSource": "getATSPick"
+          },
+          "marketType": "SPREAD",
+          "selectedMarketLineId": "cmvzma2pa01zw0d0kih2tzyjr",
+          "selectedMarketTeamId": null,
+          "selectedMarketLineValue": null,
+          "canonicalMarketValue": 3.5,
+          "marketBook": "BetRivers",
+          "marketSource": "oddsapi",
+          "marketTimestamp": "2026-11-02T18:53:03.000Z",
+          "marketAgeSeconds": 692,
+          "marketProvenance": {
+            "selector": "core_v1_coherent_spread_pair_v1",
+            "sourceFilter": "oddsapi",
+            "bookName": "BetRivers",
+            "marketTimestamp": "2026-11-02T18:53:03.000Z",
+            "marketSource": "oddsapi",
+            "homeTeamId": "army",
+            "awayTeamId": "air-force",
+            "homeRowId": "cmvzma2pa01zw0d0kih2tzyjr",
+            "awayRowId": "cmvzma2pa01zv0d0k49h7xz0y",
+            "homeLine": -3.5,
+            "awayLine": 3.5,
+            "marketSpreadHma": 3.5
+          },
+          "modelValue": null,
+          "edgeValue": null,
+          "absEdgeValue": null,
+          "selectedSide": null,
+          "selectedTeamId": null,
+          "predictionPickValue": null
+        }
+      ],
+      "run": {
+        "id": "fixture-roster-0",
+        "season": 2026,
+        "week": 10,
+        "captureContext": "fixture_roster",
+        "evaluationProtocol": "CORE_EVAL_V1",
+        "modelFamily": "candidate_b_roster_prior",
+        "modelDefinitionId": "candidate_b_roster_prior_v1",
+        "modelDefinitionHash": "1e5bbf0119832caf10e7b769afe5e8c02dbcda1b358022ec31803df40bca3d8c",
+        "modelDefinitionManifest": {
+          "id": "candidate_b_roster_prior_v1",
+          "version": "shadow_model_capture_v1",
+          "family": "candidate_b_roster_prior",
+          "official": false,
+          "productionHold": true,
+          "status": "SHADOW / RESEARCH ONLY — NOT OFFICIAL",
+          "marketType": "spread",
+          "formula": {
+            "identity": "candidate_b_roster_prior_v1_matchup",
+            "candidateBTeamRatingPointsSource": "PERSISTED_CANDIDATE_B_FEATURE_SNAPSHOT_ONLY",
+            "expression": "homeCandidateBTeamRatingPoints - awayCandidateBTeamRatingPoints + computeEffectiveHfa(homeTeamId, neutralSite).effectiveHfa",
+            "hfaAppliedExactlyOnce": true,
+            "sourceModule": "apps/web/lib/core-v1-spread.ts#computeEffectiveHfa",
+            "noFallback": true,
+            "noSilentZeroFill": true,
+            "noCoreRatingBlend": true,
+            "noHybridBlend": true,
+            "noLifecycleBlend": true,
+            "noUnitGradeBlend": true,
+            "noMissingValueFallback": true
+          },
+          "hfa": {
+            "source": "apps/web/lib/core-v1-spread.ts#computeEffectiveHfa",
+            "configSource": "apps/web/lib/data/core_v1_hfa_config.json",
+            "baseHfaPoints": 2,
+            "clipRange": [
+              0.5,
+              3.5
+            ],
+            "neutralSite": 0,
+            "candidateBSpecificTuning": false
+          },
+          "frozenFeatureSnapshot": {
+            "season": 2026,
+            "snapshotHash": "0332e24f97c891fd6431280fa7939c467c614714abe207eeb3dc89d466eb1148",
+            "featureDefinitionId": "candidate_b_roster_prior_features_v1",
+            "featureDefinitionVersion": "v1",
+            "featureDefinitionHash": "6f1f8ecc132cdd87650252d57597a657ece0dd908bdf5010897023cafe988972",
+            "derivationDefinitionId": "candidate_b_roster_prior_derivation_v1",
+            "derivationDefinitionHash": "6c04627787edbcc7d1d42549f3cb19c525a6c4c31de572549f01e3efa64a638c",
+            "teamResolutionPolicyId": "candidate_b_v1_team_resolution_policy_v1",
+            "teamResolutionPolicyHash": "de627563f2c4c2b1e195182bcd6b66dd3226daf9800e209e5f55244f94ea0efe",
+            "sourceManifestHash": "183e07cec8ab146247f8b15eda93331a1dfe03f624b06fd8b0dae886d14b14d6",
+            "sourceProvenanceManifestHash": "89ea635c89898aa2de5fad66a43e6eca36ef917f6945cc82635536746347f8da",
+            "normalizationManifestHash": "9de2fdbf94581f05671349111ae36e458c94ac637b93e8db0eaea701abdeaa96",
+            "populationManifestHash": "ce7a633f3230864c785048047698a3ba55fef1e25339e87db2a090bd65c59f2c",
+            "expectedTeamCount": 138,
+            "completeVectorCount": 103,
+            "unavailableVectorCount": 35
+          },
+          "runtimeFeatureSource": "PERSISTED_CANDIDATE_B_FEATURE_SNAPSHOT_ONLY"
+        },
+        "featureDefinitionId": "candidate_b_roster_prior_features_v1",
+        "featureDefinitionVersion": "v1",
+        "featureDefinitionHash": "6f1f8ecc132cdd87650252d57597a657ece0dd908bdf5010897023cafe988972",
+        "featureDefinitionManifest": {
+          "featureDefinitionId": "candidate_b_roster_prior_features_v1",
+          "featureDefinitionVersion": "v1",
+          "completeVectorRequired": true,
+          "unavailableNumericEncoding": "json_null",
+          "neverZeroFillUnavailable": true,
+          "incompleteVectorReason": "TEAM_FEATURE_VECTOR_UNAVAILABLE",
+          "features": {
+            "priorCore": {
+              "concept": "prior_season_quality",
+              "source": "2025 CFBD CORE overall",
+              "field": "overall",
+              "year": 2025,
+              "unavailableIfMissing": true,
+              "neverZeroFill": true,
+              "unavailableReason": "PRIOR_SEASON_CORE_UNAVAILABLE"
+            },
+            "talent": {
+              "concept": "current_talent",
+              "source": "2026 TeamSeasonTalent talentComposite frozen at ingestion",
+              "field": "talentComposite",
+              "season": 2026,
+              "unavailableIfMissing": true,
+              "neverZeroFill": true,
+              "unavailableReason": "CURRENT_TALENT_UNAVAILABLE"
+            },
+            "returning": {
+              "concept": "returning_production",
+              "source": "Sep 1 percentPPA opening-week baseline",
+              "field": "percentPPA",
+              "designation": "ONE_TIME_OPENING_WEEK_BASELINE",
+              "unavailableIfMissing": true,
+              "neverZeroFill": true,
+              "unavailableReason": "RETURNING_PRODUCTION_UNAVAILABLE"
+            },
+            "portal": {
+              "concept": "portal_rated_mean_quality_delta",
+              "metric": "PORTAL_RATED_MEAN_QUALITY_DELTA_V1",
+              "source": "Sep 1 portal rated-mean quality delta",
+              "designation": "ONE_TIME_OPENING_WEEK_BASELINE",
+              "neverStarsFallback": true,
+              "neverZeroUnknownRatings": true,
+              "directionAvailabilitySemantics": [
+                "INSUFFICIENT_RATED_COVERAGE",
+                "NO_TRANSFERS",
+                "SUFFICIENT_RATED_COVERAGE"
+              ],
+              "unavailableReason": "PORTAL_FEATURE_UNAVAILABLE"
+            }
+          }
+        },
+        "policyDefinitionId": "candidate_b_roster_prior_spread_policy_v1",
+        "policyDefinitionHash": "b1b292c0ea01ed692dcbfdfd7f6adf28b951d20786f08dac0993444c8b1e1fba",
+        "policyDefinitionManifest": {
+          "id": "candidate_b_roster_prior_spread_policy_v1",
+          "version": "shadow_model_capture_v1",
+          "evaluationProtocol": "CORE_EVAL_V1",
+          "predictionMarket": {
+            "marketType": "spread",
+            "selectorId": "core_v1_coherent_spread_pair_v1",
+            "authorizedSource": "oddsapi",
+            "coherentHomeAwayPairRequired": true,
+            "reuseModules": [
+              "apps/web/lib/market-line-snapshot.ts#selectBookSpreadSnapshots",
+              "apps/web/lib/market-line-snapshot.ts#pickDisplaySpread"
+            ],
+            "freshnessMaxSeconds": 1800,
+            "freshnessMaxMilliseconds": 1800000,
+            "eligibility": "marketTimestamp <= predictionTimestamp",
+            "ordering": [
+              "timestamp DESC",
+              "homeRowId DESC (via pickDisplaySpread)"
+            ],
+            "noFutureMarketFallback": true,
+            "loneTeamRowNotSufficient": true
+          },
+          "selection": {
+            "source": "apps/web/lib/core-v1-spread.ts#getATSPick",
+            "edgeFloor": 0.1,
+            "edgeFormula": "edgeValue = modelValue - canonicalMarketValue (HMA)",
+            "sides": {
+              "noSelection": "abs(edgeValue) < 0.1",
+              "home": "edgeValue >= +0.1 (via getATSPick edge > 0 after floor)",
+              "away": "edgeValue <= -0.1 (via getATSPick edge < 0 after floor)"
+            },
+            "noSelectionRemainsAvailable": true,
+            "teamSidedPickValue": {
+              "HOME": "-canonicalMarketValue",
+              "AWAY": "+canonicalMarketValue",
+              "NO_SELECTION": null
+            },
+            "officialCardParity": {
+              "planner": "apps/web/lib/core-v1-weekly-card.ts#planSpreadBet",
+              "edgeFloorConstant": "SPREAD_EDGE_FLOOR",
+              "note": "Shadow baseline freezes selection semantics; does not write Bet rows."
+            }
+          },
+          "postKickoff": "unavailable",
+          "noRetrospectiveBackfill": true,
+          "researchOnly": true
+        },
+        "repoCommitSha": "ace5bc3984fc9e16cc0d227ab114d6ab8fda9c10",
+        "captureTimestamp": "2026-11-02T19:04:34.461Z",
+        "expectedGameIds": [
+          "2026-wk10-air-force-army",
+          "2026-wk10-alabama-lsu"
+        ],
+        "totalGames": 2,
+        "availableCount": 1,
+        "unavailableCount": 1,
+        "selectionCount": 1,
+        "noSelectionCount": 0,
+        "status": "COMPLETE",
+        "failureReason": null
+      }
+    }
+  }
+]

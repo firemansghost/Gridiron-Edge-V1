@@ -1,3 +1,4 @@
+import {attachIntegrityAudit} from './generic-shadow-integrity-disposition';
 /**
  * Generic Shadow T-30 Automation V1 — schedule-disabled closing COMMIT cycle.
  *
@@ -368,18 +369,20 @@ export async function runGenericShadowT30ClosingCommitCycle(
   input: GenericShadowT30ClosingCommitCycleInput
 ): Promise<GenericShadowT30ClosingCommitCycleReport> {
   const initialObservedTimestamp = input.initialObservedTimestamp ?? input.now();
-  const initialDiscovery = input.initialPlan
-    ? { blockers: input.initialDiscoveryBlockers ?? [], frames: [] }
+  const initialDiscovery = input.initialPlan && input.week !== 10
+    ? { blockers: input.initialDiscoveryBlockers ?? [], frames: [], integrityAudit: undefined }
     : await input.discover();
+  let integrityAudit = initialDiscovery.integrityAudit;
+  const buildAuditedReport = (args: Parameters<typeof buildGenericShadowT30ClosingCommitCycleReport>[0]) => attachIntegrityAudit(buildGenericShadowT30ClosingCommitCycleReport(args), integrityAudit);
   const initialPlan = mergeDiscovery(
-    input.initialPlan ??
+    (input.week !== 10 ? input.initialPlan : undefined) ??
       planGenericShadowT30Automation({
         season: input.season,
         week: input.week,
         observedTimestamp: initialObservedTimestamp,
         frames: initialDiscovery.frames,
       }),
-    input.initialDiscoveryBlockers ?? initialDiscovery.blockers
+    uniqueSorted([...(input.initialDiscoveryBlockers ?? []), ...initialDiscovery.blockers])
   );
 
   const extraBlockers: string[] = [];
@@ -399,6 +402,7 @@ export async function runGenericShadowT30ClosingCommitCycle(
   if (input.mode === 'COMMIT' && extraBlockers.length === 0) {
     preCommitObservedTimestamp = input.now();
     const preDiscovery = await input.discover();
+    integrityAudit = preDiscovery.integrityAudit ?? integrityAudit;
     const freshPreCommitPlan = mergeDiscovery(
       planGenericShadowT30Automation({
         season: input.season,
@@ -472,6 +476,7 @@ export async function runGenericShadowT30ClosingCommitCycle(
       try {
         finalObservedTimestamp = input.now();
         const finalDiscovery = await input.discover();
+          integrityAudit = finalDiscovery.integrityAudit ?? integrityAudit;
         finalPlan = mergeDiscovery(
           planGenericShadowT30Automation({
             season: input.season,
@@ -498,7 +503,7 @@ export async function runGenericShadowT30ClosingCommitCycle(
     }
   }
 
-  return buildGenericShadowT30ClosingCommitCycleReport({
+  return buildAuditedReport({
     season: input.season,
     week: input.week,
     mode: input.mode,

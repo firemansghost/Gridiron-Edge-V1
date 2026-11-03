@@ -1,3 +1,10 @@
+// Loader mapping unit tests isolate eligibility; the unmocked guard and manual CLI
+// are tested against all186native rows in core-only-disposition.integration.ts.
+jest.mock('../src/generic-shadow-integrity-disposition', () => ({
+  ...jest.requireActual('../src/generic-shadow-integrity-disposition'),
+  auditIntegrityForRun: jest.fn(async (_db: unknown, id: string) => ({blockers: [], eligibleCaptureRunIds: [id], cohorts: []})),
+}));
+
 import { loadGenericShadowCoreEvalFrame } from '../src/generic-shadow-core-eval-v1-adapter';
 
 function mockDb(overrides: Partial<any> = {}): any {

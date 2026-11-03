@@ -56,6 +56,7 @@ import {
 } from './src/research/v4-prospective/v4-prospective-v1-shadow-adapter';
 import { V4_PROSPECTIVE_TARGET_WEEK } from './src/research/v4-prospective/v4-prospective-v1-runtime-artifact';
 import { loadOperationalShadowModelFrame } from './src/shadow-model-operational-frame';
+import { insertExactShadowRun, insertExactShadowPredictions, verifyExactShadowWrite, assertStoredShadowHashes } from './src/shadow-model-exact-json-persistence';
 
 function resolveModelDefinition(modelId: string): ShadowModelDefinition {
   if (modelId === CORE_V1_SHADOW_BASELINE_MODEL_ID) {
@@ -187,43 +188,6 @@ function mapExisting(run: {
   };
 }
 
-function predictionCreateData(row: PlannedShadowModelPrediction) {
-  return {
-    id: row.id,
-    captureRunId: row.captureRunId,
-    gameId: row.gameId,
-    season: row.season,
-    week: row.week,
-    homeTeamId: row.homeTeamId,
-    awayTeamId: row.awayTeamId,
-    kickoffTimestamp: row.kickoffTimestamp,
-    neutralSite: row.neutralSite,
-    predictionTimestamp: row.predictionTimestamp,
-    predictionStatus: row.predictionStatus,
-    unavailableReasons: row.unavailableReasons,
-    inputPayload: row.inputPayload as Prisma.InputJsonValue,
-    inputHash: row.inputHash,
-    featureProvenance: row.featureProvenance as Prisma.InputJsonValue,
-    modelOutput: row.modelOutput as Prisma.InputJsonValue,
-    marketType: row.marketType,
-    selectedMarketLineId: row.selectedMarketLineId,
-    selectedMarketTeamId: row.selectedMarketTeamId,
-    selectedMarketLineValue: row.selectedMarketLineValue,
-    canonicalMarketValue: row.canonicalMarketValue,
-    marketBook: row.marketBook,
-    marketSource: row.marketSource,
-    marketTimestamp: row.marketTimestamp,
-    marketAgeSeconds: row.marketAgeSeconds,
-    marketProvenance: row.marketProvenance as Prisma.InputJsonValue,
-    modelValue: row.modelValue,
-    edgeValue: row.edgeValue,
-    absEdgeValue: row.absEdgeValue,
-    selectedSide: row.selectedSide,
-    selectedTeamId: row.selectedTeamId,
-    predictionPickValue: row.predictionPickValue,
-  };
-}
-
 async function loadOperationalFrame(
   db: PrismaClient | Prisma.TransactionClient,
   season: number,
@@ -264,10 +228,11 @@ async function findCohort(
     },
   });
   if (!run) return null;
+  await assertStoredShadowHashes(db, run.id);
   return mapExisting(run);
 }
 
-function createPrismaPersistence(
+export function createPrismaPersistence(
   prisma: PrismaClient,
   args: {
     season: number;
@@ -285,53 +250,27 @@ function createPrismaPersistence(
     model: args.model,
   };
 
-  const bindTx = (db: PrismaClient | Prisma.TransactionClient): ShadowModelMutationTx => ({
-    findCohort: () => findCohort(db, cohortArgs),
-    loadFrame: () =>
-      loadOperationalFrame(db, cohortArgs.season, cohortArgs.week, args.model.modelDefinitionId),
-    now: clock,
-    createRun: async (run: PlannedShadowModelCaptureRun) => {
-      await db.shadowModelCaptureRun.create({
-        data: {
-          id: run.id,
-          season: run.season,
-          week: run.week,
-          evaluationProtocol: run.evaluationProtocol,
-          captureContext: run.captureContext,
-          modelFamily: run.modelFamily,
-          modelDefinitionId: run.modelDefinitionId,
-          modelDefinitionHash: run.modelDefinitionHash,
-          modelDefinitionManifest: run.modelDefinitionManifest as Prisma.InputJsonValue,
-          featureDefinitionId: run.featureDefinitionId,
-          featureDefinitionVersion: run.featureDefinitionVersion,
-          featureDefinitionHash: run.featureDefinitionHash,
-          featureDefinitionManifest: run.featureDefinitionManifest as Prisma.InputJsonValue,
-          policyDefinitionId: run.policyDefinitionId,
-          policyDefinitionHash: run.policyDefinitionHash,
-          policyDefinitionManifest: run.policyDefinitionManifest as Prisma.InputJsonValue,
-          repoCommitSha: run.repoCommitSha,
-          captureTimestamp: run.captureTimestamp,
-          expectedGameIds: run.expectedGameIds as Prisma.InputJsonValue,
-          totalGames: run.totalGames,
-          availableCount: run.availableCount,
-          unavailableCount: run.unavailableCount,
-          selectionCount: run.selectionCount,
-          noSelectionCount: run.noSelectionCount,
-          status: run.status,
-          failureReason: run.failureReason,
-        },
-      });
-    },
-    createPredictions: async (rows: PlannedShadowModelPrediction[]) => {
-      if (rows.length === 0) return 0;
-      const result = await db.shadowModelPrediction.createMany({
-        data: rows.map(predictionCreateData),
-      });
-      return result.count;
-    },
-    countPredictions: (captureRunId: string) =>
-      db.shadowModelPrediction.count({ where: { captureRunId } }),
-  });
+  const bindTx = (db: PrismaClient | Prisma.TransactionClient): ShadowModelMutationTx => {
+    let expectedRun: PlannedShadowModelCaptureRun | null = null;
+    return {
+      findCohort: () => findCohort(db, cohortArgs),
+      loadFrame: () =>
+        loadOperationalFrame(db, cohortArgs.season, cohortArgs.week, args.model.modelDefinitionId),
+      now: clock,
+      createRun: async (run: PlannedShadowModelCaptureRun) => {
+        await insertExactShadowRun(db, run);
+        expectedRun = run;
+      },
+      createPredictions: async (rows: PlannedShadowModelPrediction[]) => {
+        if (!expectedRun) throw new Error('exact_prediction_run_missing');
+        const count = await insertExactShadowPredictions(db, rows);
+        await verifyExactShadowWrite(db, expectedRun, rows);
+        return count;
+      },
+      countPredictions: (captureRunId: string) =>
+        db.shadowModelPrediction.count({ where: { captureRunId } }),
+    };
+  };
 
   return {
     now: clock,
@@ -359,6 +298,7 @@ function createPrismaPersistence(
         },
       });
       if (!run) return null;
+      await assertStoredShadowHashes(prisma, run.id);
       return mapExisting(run);
     },
     fingerprintOfficialFlat100Bets: async () => {
@@ -562,7 +502,7 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
+if (require.main === module) main().catch((err) => {
   console.error(err instanceof Error ? err.stack ?? err.message : String(err));
   process.exit(1);
 });
