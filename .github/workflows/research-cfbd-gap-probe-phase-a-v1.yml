@@ -1,0 +1,74 @@
+name: CFBD Research Gap Probe Phase A V1 (Manual, Artifact Only)
+on:
+  workflow_dispatch:
+    inputs:
+      expected_main_sha:
+        description: Exact reviewed main SHA
+        required: true
+        type: string
+      mode:
+        description: PLAN makes no provider calls; FETCH runs exactly the approved seven queries
+        required: true
+        default: PLAN
+        type: choice
+        options: [PLAN, FETCH]
+      expected_plan_sha256:
+        description: Exact independently accepted PLAN digest (FETCH only)
+        required: false
+        type: string
+      confirmation:
+        description: FETCH_CFBD_RESEARCH_GAPS_PHASE_A_V1 (FETCH only)
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: research-cfbd-gap-probe-phase-a-v1
+  cancel-in-progress: false
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Source and dispatch guard
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = firemansghost/Gridiron-Edge-V1
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$(git rev-parse HEAD)" = "$EXPECTED_MAIN_SHA"
+          [[ "$MODE" = PLAN || "$MODE" = FETCH ]]
+      - name: Secret-free offline boundary tests
+        run: python -m unittest discover -s scripts/research -p test_cfbd_gap_probe_phase_a_v1.py -v
+      - name: PLAN (no provider credential)
+        if: ${{ inputs.mode == 'PLAN' }}
+        env:
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          python scripts/research/cfbd_gap_probe_phase_a_v1.py --mode PLAN --out "reports/research-cfbd-gap-probe-phase-a-v1/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --expected-source-sha "$EXPECTED_MAIN_SHA"
+      - name: FETCH approved predictors only
+        if: ${{ inputs.mode == 'FETCH' }}
+        env:
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          EXPECTED_PLAN_SHA256: ${{ inputs.expected_plan_sha256 }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          python scripts/research/cfbd_gap_probe_phase_a_v1.py --mode FETCH --out "reports/research-cfbd-gap-probe-phase-a-v1/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --expected-source-sha "$EXPECTED_MAIN_SHA" --expected-plan-sha "$EXPECTED_PLAN_SHA256" --confirm "$CONFIRMATION"
+      - name: Preserve original reports and partial journal
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-cfbd-gap-probe-phase-a-v1-${{ inputs.mode }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: reports/research-cfbd-gap-probe-phase-a-v1/**
+          if-no-files-found: warn
+          retention-days: 90
