@@ -1,0 +1,22 @@
+name: Check CFBD research gap probe Phase B V1
+on:
+  pull_request:
+    paths:
+      - scripts/research/cfbd_gap_probe_phase_b_v1.py
+      - scripts/research/test_cfbd_gap_probe_phase_b_v1.py
+      - .github/workflows/research-cfbd-gap-probe-phase-b-v1.yml
+      - .github/workflows/check-research-cfbd-gap-probe-phase-b-v1.yml
+      - research/historical/CFBD_RESEARCH_GAP_PROBE_PHASE_B_V1.md
+permissions:
+  contents: read
+jobs:
+  offline-boundary-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s scripts/research -p test_cfbd_gap_probe_phase_b_v1.py -v
