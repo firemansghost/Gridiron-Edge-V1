@@ -1,0 +1,44 @@
+{
+  "experimentId": "retrospective_margin_missingness_v1",
+  "version": "RMM1-design-freeze-20261105",
+  "effectiveStatus": "FROZEN_DESIGN",
+  "userAdoptionRecorded": true,
+  "independentFreezeAcceptance": "PASS",
+  "finalizedAtUtc": "2026-11-05T13:13:31.893131+00:00",
+  "operativeMembers": [
+    {
+      "path": "SOURCE_SPECIFICATION.md",
+      "bytes": 27586,
+      "sha256": "850a7371f1bb202d08fedaaa66569fd436c7dcee54b5726af600f6a0f559d7a0"
+    },
+    {
+      "path": "ADOPTION_RECORD.md",
+      "bytes": 6232,
+      "sha256": "4167ce0faa5afccfad32cde63a31f3b82e23acca263f03363cd2b2d564dc7a4e"
+    }
+  ],
+  "preparationManifest": {
+    "path": "FREEZE_MANIFEST.json",
+    "sha256": "69468a97539bcc97e60af0287d0732aa67139e41b964f00c8c764daeda2e27e1",
+    "pendingLabelsAreHistoricalPreparationStatus": true
+  },
+  "independentAcceptance": {
+    "path": "INDEPENDENT_FREEZE_ACCEPTANCE.md",
+    "sha256": "0622ad868b4be04cef3c5cc7ee4a5d41e7baaef67d9fe4cf465e3e7ac3d2465b"
+  },
+  "administrativePrecedence": "ADOPTION_RECORD.md adopts the exact source specification; this registry records completion of its independent freeze gate. No substantive rule is overridden.",
+  "stagedUserAuthorizationPersists": true,
+  "completedStep": 1,
+  "nextStep": "Artificial-data builder specification/implementation under the frozen gates; no real predictor or historical target processing.",
+  "researchFitsPerformed": 0,
+  "researchFitBudgetRemaining": 66,
+  "syntheticFitsPerformed": 0,
+  "globalSyntheticFitBudgetRemaining": 4,
+  "providerCallsPerformed": 0,
+  "outcomeReadsPerformed": 0,
+  "sourcePublicationPerformed": false,
+  "full2025InputStatus": "NOT_QUALIFIED",
+  "originalFinalHoldoutV1": "HISTORICAL_FINAL_HOLDOUT_INPUT_BLOCKED",
+  "implementationStatus": "NOT_STARTED",
+  "originalV3EvidenceChanged": false
+}

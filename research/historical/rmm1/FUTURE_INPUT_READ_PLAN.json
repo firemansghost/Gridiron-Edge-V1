@@ -1,0 +1,158 @@
+{
+  "status": "IDENTITY_PINNED_PLANNING_PROPOSAL_NOT_EXECUTABLE",
+  "currentRealFileMemberReadAllowlist": [],
+  "adapterImplemented": false,
+  "realPredictorProcessingAllowed": false,
+  "historicalTargetReadAllowed": false,
+  "modelFitAllowed": false,
+  "proposedPredictiveMembers": [
+    {
+      "artifactId": 10997010171,
+      "runId": 36479515332,
+      "zipSha256": "cea83762d2b6e492caec680a74a085ef5a5e283c36a402ef4b35acbe2ce22b7d",
+      "member": "36479515332/predictive/game_frames.json",
+      "bytes": 1086131,
+      "sha256": "3f13b5bfac463cf7f40d7aeee497305091e09f43a4ed69f30bfae0b0cd82549f",
+      "fieldProjectionStatus": "PENDING_EXACT_REAL_ADAPTER_REVIEW",
+      "executionAllowedNow": false
+    },
+    {
+      "artifactId": 10997010171,
+      "runId": 36479515332,
+      "zipSha256": "cea83762d2b6e492caec680a74a085ef5a5e283c36a402ef4b35acbe2ce22b7d",
+      "member": "36479515332/predictive/history_advanced.json",
+      "bytes": 9161794,
+      "sha256": "254e038334a5624b0cf099808b34b2d5aab967f0eec51810bcd646a023f57944",
+      "fieldProjectionStatus": "PENDING_EXACT_REAL_ADAPTER_REVIEW",
+      "executionAllowedNow": false
+    },
+    {
+      "artifactId": 10997010171,
+      "runId": 36479515332,
+      "zipSha256": "cea83762d2b6e492caec680a74a085ef5a5e283c36a402ef4b35acbe2ce22b7d",
+      "member": "36479515332/predictive/history_eligibility.json",
+      "bytes": 1856134,
+      "sha256": "fbaf7dd72e2fe4b90731c067da4afece33056e7736dbf859758eb6247d184509",
+      "fieldProjectionStatus": "PENDING_EXACT_REAL_ADAPTER_REVIEW",
+      "executionAllowedNow": false
+    },
+    {
+      "artifactId": 10997010171,
+      "runId": 36479515332,
+      "zipSha256": "cea83762d2b6e492caec680a74a085ef5a5e283c36a402ef4b35acbe2ce22b7d",
+      "member": "36479515332/predictive/static_priors.json",
+      "bytes": 419785,
+      "sha256": "ddebbdae0be39c9e417a627d95c4652e74b9753139aa527763880964c3f6660c",
+      "fieldProjectionStatus": "PENDING_EXACT_REAL_ADAPTER_REVIEW",
+      "executionAllowedNow": false
+    },
+    {
+      "artifactId": 11000651389,
+      "runId": 36489184409,
+      "zipSha256": "047220307750b755d1e6d626628802baf818dbd70ffde9252e63768e7a823ad2",
+      "member": "36489184409/features/game_features.json",
+      "bytes": 4942223,
+      "sha256": "9ab89dce2eee84fce0c69bae9bb5511d941a8bef1731adbfd36610703c86e74a",
+      "fieldProjectionStatus": "PENDING_EXACT_REAL_ADAPTER_REVIEW",
+      "executionAllowedNow": false
+    },
+    {
+      "artifactId": 11046410430,
+      "runId": 36595470751,
+      "zipSha256": "3d1ffdff9018c002f28526725101ee91f4250d9649879b3318567600e4dfe422",
+      "member": "36595470751/predictive/v3_game_inputs.json",
+      "bytes": 3947642,
+      "sha256": "cd708dfcadf7403aaf466e8c4b5f4206a7736b50e7f308bbacc720b28bdef726",
+      "fieldProjectionStatus": "RAW_FEATURES_AND_CONTEXT_ONLY_REQUIRES_ADAPTER_REVIEW",
+      "executionAllowedNow": false
+    },
+    {
+      "artifactId": 11008470975,
+      "runId": 36508377627,
+      "zipSha256": "b41e934b26952100e7e056a56114dc81df6bbe77f5c787f28b75b646ae7ea544",
+      "member": "2024-36508377627/raw/003-advanced-game-stats.json",
+      "bytes": 5757323,
+      "sha256": "87b50a31b309aba3523cfba57cc7db2508cee0863368236dd0fef1b57c741517",
+      "fieldProjectionStatus": "ONLY_IDENTITY_AND_FOUR_ADVANCED_COMPONENTS_AFTER_ADAPTER_REVIEW",
+      "executionAllowedNow": false
+    }
+  ],
+  "proposedFieldFamilies": {
+    "gameContext": [
+      "gameId",
+      "season",
+      "week",
+      "startDate",
+      "homeTeam",
+      "awayTeam",
+      "neutralSite"
+    ],
+    "v1Unstandardized": [
+      "eloRaw",
+      "talentRaw",
+      "returningPercentPPA",
+      "recruitingPointsY0",
+      "recruitingPointsY1",
+      "recruitingPointsY2",
+      "recruitingPointsY3",
+      "priorFbsGames",
+      "ppaOffMean",
+      "ppaDefMean",
+      "successOffMean",
+      "successDefMean",
+      "ppaNet",
+      "successNet"
+    ],
+    "v3UnstandardizedOnly": [
+      "elo",
+      "talent",
+      "returning",
+      "recruitY0",
+      "recruitY1",
+      "recruitY2",
+      "recruitY3",
+      "priorFbsGames",
+      "ppaNet",
+      "successNet"
+    ],
+    "advancedIdentityAndComponents": [
+      "gameId",
+      "season",
+      "seasonType",
+      "week",
+      "team",
+      "opponent",
+      "offense.ppa",
+      "defense.ppa",
+      "offense.successRate",
+      "defense.successRate"
+    ]
+  },
+  "projectionLimit": "Field families are planning templates from prior accepted schema reports. Exact nested projections, source-value provenance and history references require a reviewed adapter and schema validation before any member read. Never parse whole mixed archives or copy standardized/modelInputs/flags as new observed raw facts.",
+  "forbiddenMembersAndFamilies": [
+    "outcomes/*",
+    "evaluation/*",
+    "baselines/*",
+    "candidate/*",
+    "raw/*games*.json except the specifically named advanced-game-stats member",
+    "raw/*lines*",
+    "raw/*ppa-games*",
+    "raw/*portal*",
+    "any sealed2025snapshot or outcome",
+    "frozen V3standardized/modelInputs/performance/residual payloads"
+  ],
+  "requiresBeforeExecution": [
+    "exact real adapter implementation and synthetic identity/missingness tests",
+    "separate exact member/field/hash read-plan acceptance",
+    "source/time/complete-history and canonical1484/752identity reconciliation",
+    "append-only raw-null/reason and provenance/read ledgers",
+    "separate predictor matrix/fold artifact independent acceptance before historical target reads"
+  ],
+  "scientificLimits": {
+    "2024": "ALREADY_OBSERVED_EXPLORATORY",
+    "2025": "SEALED_NOT_QUALIFIED",
+    "originalFinalHoldoutV1": "HISTORICAL_FINAL_HOLDOUT_INPUT_BLOCKED",
+    "historicalPublicationTime": "NOT_ESTABLISHED"
+  },
+  "newDownloadsRequired": false
+}

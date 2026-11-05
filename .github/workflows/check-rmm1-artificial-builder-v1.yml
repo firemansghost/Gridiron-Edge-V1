@@ -1,0 +1,67 @@
+name: Check RMM1 artificial builder and locked environment
+on:
+  pull_request:
+    paths:
+      - scripts/research/rmm1/**
+      - research/historical/rmm1/**
+      - .github/workflows/check-rmm1-artificial-builder-v1.yml
+permissions:
+  contents: read
+jobs:
+  artificial-boundaries:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13.7'
+      - name: Exact-source artificial boundary checks (no estimators)
+        run: python -I -S -B scripts/research/rmm1/run_artificial_checks.py ci-boundaries
+      - name: Preserve artificial evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rmm1-artificial-boundaries-${{ github.run_id }}-${{ github.run_attempt }}
+          path: reports/research-rmm1/ci-boundaries/
+          if-no-files-found: warn
+          retention-days: 90
+  locked-environment-no-fit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+      BLIS_NUM_THREADS: '1'
+      VECLIB_MAXIMUM_THREADS: '1'
+      NUMEXPR_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13.7'
+      - name: Download exact hash-locked official binary wheels
+        run: |
+          python -I -m pip --isolated download --index-url https://pypi.org/simple --only-binary=:all: --no-deps --no-cache-dir --require-hashes -r scripts/research/rmm1/environment/requirements-linux.lock --dest reports/research-rmm1/wheels-linux
+      - name: Install offline into a new isolated environment
+        run: |
+          test ! -e .venv-rmm1
+          python -m venv .venv-rmm1
+          .venv-rmm1/bin/python -I -m pip --isolated install --no-index --find-links reports/research-rmm1/wheels-linux --require-hashes --only-binary=:all: --no-deps -r scripts/research/rmm1/environment/requirements-linux.lock
+          .venv-rmm1/bin/python -I -m pip check
+      - name: Import, validate parameters and marshal float64 (fit is blocked)
+        run: |
+          .venv-rmm1/bin/python -I -B scripts/research/rmm1/check_environment.py --wheel-dir reports/research-rmm1/wheels-linux --out reports/research-rmm1/environment-ci
+      - name: Preserve environment qualification evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rmm1-locked-environment-no-fit-${{ github.run_id }}-${{ github.run_attempt }}
+          path: reports/research-rmm1/environment-ci/
+          if-no-files-found: warn
+          retention-days: 90
