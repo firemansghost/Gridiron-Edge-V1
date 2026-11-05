@@ -1,0 +1,37 @@
+{
+  "experimentId": "retrospective_margin_missingness_v1",
+  "version": "RMM1-design-freeze-20261105",
+  "status": "USER_ACCEPTED_AWAITING_INDEPENDENT_FREEZE_VERIFICATION",
+  "recordedAtUtc": "2026-11-05T13:09:32.739408+00:00",
+  "repositoryMainRefreshed": "5a1daa96dbbd15c362f24c35c1abee27767fb225",
+  "sourceSpecificationSha256": "850a7371f1bb202d08fedaaa66569fd436c7dcee54b5726af600f6a0f559d7a0",
+  "operativeContractMembers": [
+    {
+      "path": "SOURCE_SPECIFICATION.md",
+      "bytes": 27586,
+      "sha256": "850a7371f1bb202d08fedaaa66569fd436c7dcee54b5726af600f6a0f559d7a0"
+    },
+    {
+      "path": "ADOPTION_RECORD.md",
+      "bytes": 6232,
+      "sha256": "4167ce0faa5afccfad32cde63a31f3b82e23acca263f03363cd2b2d564dc7a4e"
+    }
+  ],
+  "preservationEvidence": {
+    "path": "PRESERVATION_VERIFICATION.json",
+    "bytes": 18618,
+    "sha256": "8a6468118de89690b8b9fd85a768585e5fb8d28a5373e14be5ea7bdd0cfab55f"
+  },
+  "priorIndependentDesignReview": {
+    "path": "../research-experiment-draft-20261105/INDEPENDENT_DRAFT_DESIGN_REVIEW.md",
+    "sha256": "40714deb28d593b9d1f1b531416d8cdee22c9ae792421025f717568f8be8e07d"
+  },
+  "researchFitsPerformed": 0,
+  "syntheticFitsPerformed": 0,
+  "providerCallsPerformed": 0,
+  "outcomeReadsPerformed": 0,
+  "sourcePublicationPerformed": false,
+  "full2025InputStatus": "NOT_QUALIFIED",
+  "originalFinalHoldoutV1": "HISTORICAL_FINAL_HOLDOUT_INPUT_BLOCKED",
+  "executionScope": "Step1 adoption/freeze only; substantive staged gates remain."
+}
