@@ -1,0 +1,74 @@
+{
+  "version": "RMM1_ADAPTER_PUBLICATION_V1",
+  "baseMain": "5c84c4c5ab33198e10120653b606072d113e9429",
+  "acceptedLocalManifestSha256": "b9982f8be1a4942f5fb693ee34609700b53d17bc25821e59503f54348df880d6",
+  "members": [
+    {
+      "path": ".github/workflows/check-rmm1-predictor-adapter-v1.yml",
+      "bytes": 1137,
+      "sha256": "a23ee21dfb4103b4ad24f2925403c53fca20c36c1e6cab1f908b84937764c35d"
+    },
+    {
+      "path": "research/historical/rmm1/predictors/ACCEPTED_LOCAL_SOURCE_MANIFEST.json",
+      "bytes": 1676,
+      "sha256": "b9982f8be1a4942f5fb693ee34609700b53d17bc25821e59503f54348df880d6"
+    },
+    {
+      "path": "research/historical/rmm1/predictors/EXACT_PREDICTOR_READ_PLAN.json",
+      "bytes": 41481,
+      "sha256": "5cacbc3344946fe3f713354d69981012ce04941e56e4ba2b2db6a5835dbf84a5"
+    },
+    {
+      "path": "research/historical/rmm1/predictors/INDEPENDENT_PREPARATION_ACCEPTANCE.json",
+      "bytes": 1030,
+      "sha256": "b5c9fd9e86edd7ac773ffeb55d4e645d605e468a40a20a8431dee555531c1605"
+    },
+    {
+      "path": "research/historical/rmm1/predictors/INDEPENDENT_PREPARATION_ACCEPTANCE.md",
+      "bytes": 8593,
+      "sha256": "cfae4f3ed5a759a068f4dc2582a26e27dbc464b32e01f2c91dde5ff7d7bab08c"
+    },
+    {
+      "path": "research/historical/rmm1/predictors/README.md",
+      "bytes": 3696,
+      "sha256": "88e7c61a94aaea7824e0cc001ffa149e5d3aad5264396461f9bc0814fa107435"
+    },
+    {
+      "path": "scripts/research/rmm1/predictors/archive_reader.py",
+      "bytes": 3726,
+      "sha256": "bc7b924a438ccea6adeeda3e784d088e8a8f9e368b247e3585304552a36cf767"
+    },
+    {
+      "path": "scripts/research/rmm1/predictors/artificial_legacy.py",
+      "bytes": 4703,
+      "sha256": "efae49ff405f9d63da0bc581365edb3f8fae5d20b03b0a4323529505f475ceea"
+    },
+    {
+      "path": "scripts/research/rmm1/predictors/read_plan_spec.py",
+      "bytes": 5038,
+      "sha256": "411967c54484e7c294095ce52500be2be6d58a512639b9427663090d32a49f1f"
+    },
+    {
+      "path": "scripts/research/rmm1/predictors/real_adapter.py",
+      "bytes": 20441,
+      "sha256": "6d40260cb21b4c74041689aa3c8b6b46e8c3863fb53040b817fce82666c7bbd1"
+    },
+    {
+      "path": "scripts/research/rmm1/predictors/run_artificial_predictor_checks.py",
+      "bytes": 9205,
+      "sha256": "ba53f0904c2f0c0983abe629fbf07996a9df416abe3385db82e3e4a05f3bd50e"
+    },
+    {
+      "path": "scripts/research/rmm1/predictors/selective_json.py",
+      "bytes": 6183,
+      "sha256": "2695003649169ce8d93f92cc0ca2052bbbfe3e1f062780b80018a48e7746dfd1"
+    },
+    {
+      "path": "scripts/research/rmm1/predictors/test_adapter.py",
+      "bytes": 15328,
+      "sha256": "3237a1160041b722054f3bd4ee8a92acf993044dbe7f7e71a12b10584b78158f"
+    }
+  ],
+  "historicalExecutionAllowed": false,
+  "estimatorFits": 0
+}

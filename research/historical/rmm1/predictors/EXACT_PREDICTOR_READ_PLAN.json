@@ -1,0 +1,1347 @@
+{
+  "version": "RMM1_REAL_PREDICTOR_PROJECTION_V1",
+  "status": "REQUIRES_INDEPENDENT_EXECUTION_GATE",
+  "archives": {
+    "corpus": {
+      "sha256": "cea83762d2b6e492caec680a74a085ef5a5e283c36a402ef4b35acbe2ce22b7d",
+      "bytes": 1676040,
+      "artifactId": 10997010171,
+      "runId": 36479515332
+    },
+    "features": {
+      "sha256": "047220307750b755d1e6d626628802baf818dbd70ffde9252e63768e7a823ad2",
+      "bytes": 375745,
+      "artifactId": 11000651389,
+      "runId": 36489184409
+    },
+    "predictive2024": {
+      "sha256": "3d1ffdff9018c002f28526725101ee91f4250d9649879b3318567600e4dfe422",
+      "bytes": 403236,
+      "artifactId": 11046410430,
+      "runId": 36595470751
+    },
+    "advanced2024": {
+      "sha256": "b41e934b26952100e7e056a56114dc81df6bbe77f5c787f28b75b646ae7ea544",
+      "bytes": 1126348,
+      "artifactId": 11008470975,
+      "runId": 36508377627
+    }
+  },
+  "members": [
+    {
+      "alias": "development_frames",
+      "archive": "corpus",
+      "member": "36479515332/predictive/game_frames.json",
+      "bytes": 1086131,
+      "sha256": "3f13b5bfac463cf7f40d7aeee497305091e09f43a4ed69f30bfae0b0cd82549f",
+      "projection": {
+        "kind": "array",
+        "items": {
+          "kind": "object",
+          "fields": {
+            "season": {
+              "kind": "scalar"
+            },
+            "gameId": {
+              "kind": "scalar"
+            },
+            "week": {
+              "kind": "scalar"
+            },
+            "startDate": {
+              "kind": "scalar"
+            },
+            "homeTeam": {
+              "kind": "scalar"
+            },
+            "awayTeam": {
+              "kind": "scalar"
+            },
+            "neutralSite": {
+              "kind": "scalar"
+            },
+            "homeElo": {
+              "kind": "object",
+              "fields": {
+                "status": {
+                  "kind": "scalar"
+                },
+                "value": {
+                  "kind": "scalar"
+                },
+                "sourceRequestId": {
+                  "kind": "scalar"
+                },
+                "sourceWeek": {
+                  "kind": "scalar"
+                },
+                "row": {
+                  "kind": "object",
+                  "fields": {
+                    "year": {
+                      "kind": "scalar"
+                    },
+                    "team": {
+                      "kind": "scalar"
+                    },
+                    "elo": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": true
+                }
+              },
+              "nullable": false
+            },
+            "awayElo": {
+              "kind": "object",
+              "fields": {
+                "status": {
+                  "kind": "scalar"
+                },
+                "value": {
+                  "kind": "scalar"
+                },
+                "sourceRequestId": {
+                  "kind": "scalar"
+                },
+                "sourceWeek": {
+                  "kind": "scalar"
+                },
+                "row": {
+                  "kind": "object",
+                  "fields": {
+                    "year": {
+                      "kind": "scalar"
+                    },
+                    "team": {
+                      "kind": "scalar"
+                    },
+                    "elo": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": true
+                }
+              },
+              "nullable": false
+            }
+          },
+          "nullable": false
+        }
+      }
+    },
+    {
+      "alias": "development_advanced",
+      "archive": "corpus",
+      "member": "36479515332/predictive/history_advanced.json",
+      "bytes": 9161794,
+      "sha256": "254e038334a5624b0cf099808b34b2d5aab967f0eec51810bcd646a023f57944",
+      "projection": {
+        "kind": "array",
+        "items": {
+          "kind": "object",
+          "fields": {
+            "rowId": {
+              "kind": "scalar"
+            },
+            "season": {
+              "kind": "scalar"
+            },
+            "week": {
+              "kind": "scalar"
+            },
+            "gameId": {
+              "kind": "scalar"
+            },
+            "team": {
+              "kind": "scalar"
+            },
+            "row": {
+              "kind": "object",
+              "fields": {
+                "gameId": {
+                  "kind": "scalar"
+                },
+                "season": {
+                  "kind": "scalar"
+                },
+                "seasonType": {
+                  "kind": "scalar"
+                },
+                "week": {
+                  "kind": "scalar"
+                },
+                "team": {
+                  "kind": "scalar"
+                },
+                "opponent": {
+                  "kind": "scalar"
+                },
+                "offense": {
+                  "kind": "object",
+                  "fields": {
+                    "ppa": {
+                      "kind": "scalar"
+                    },
+                    "successRate": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": true
+                },
+                "defense": {
+                  "kind": "object",
+                  "fields": {
+                    "ppa": {
+                      "kind": "scalar"
+                    },
+                    "successRate": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": true
+                }
+              },
+              "nullable": true
+            }
+          },
+          "nullable": false
+        }
+      }
+    },
+    {
+      "alias": "development_eligibility",
+      "archive": "corpus",
+      "member": "36479515332/predictive/history_eligibility.json",
+      "bytes": 1856134,
+      "sha256": "fbaf7dd72e2fe4b90731c067da4afece33056e7736dbf859758eb6247d184509",
+      "projection": {
+        "kind": "array",
+        "items": {
+          "kind": "object",
+          "fields": {
+            "season": {
+              "kind": "scalar"
+            },
+            "gameId": {
+              "kind": "scalar"
+            },
+            "week": {
+              "kind": "scalar"
+            },
+            "historyCutoffWeekExclusive": {
+              "kind": "scalar"
+            },
+            "homeTeam": {
+              "kind": "scalar"
+            },
+            "awayTeam": {
+              "kind": "scalar"
+            },
+            "homeAdvancedRowIds": {
+              "kind": "array",
+              "items": {
+                "kind": "scalar"
+              }
+            },
+            "awayAdvancedRowIds": {
+              "kind": "array",
+              "items": {
+                "kind": "scalar"
+              }
+            }
+          },
+          "nullable": false
+        }
+      }
+    },
+    {
+      "alias": "development_static",
+      "archive": "corpus",
+      "member": "36479515332/predictive/static_priors.json",
+      "bytes": 419785,
+      "sha256": "ddebbdae0be39c9e417a627d95c4652e74b9753139aa527763880964c3f6660c",
+      "projection": {
+        "kind": "array",
+        "items": {
+          "kind": "object",
+          "fields": {
+            "season": {
+              "kind": "scalar"
+            },
+            "team": {
+              "kind": "scalar"
+            },
+            "talent": {
+              "kind": "object",
+              "fields": {
+                "status": {
+                  "kind": "scalar"
+                },
+                "row": {
+                  "kind": "object",
+                  "fields": {
+                    "year": {
+                      "kind": "scalar"
+                    },
+                    "team": {
+                      "kind": "scalar"
+                    },
+                    "talent": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": true
+                }
+              },
+              "nullable": false
+            },
+            "returningProduction": {
+              "kind": "object",
+              "fields": {
+                "status": {
+                  "kind": "scalar"
+                },
+                "row": {
+                  "kind": "object",
+                  "fields": {
+                    "season": {
+                      "kind": "scalar"
+                    },
+                    "team": {
+                      "kind": "scalar"
+                    },
+                    "percentPPA": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": true
+                }
+              },
+              "nullable": false
+            },
+            "recruiting": {
+              "kind": "array",
+              "items": {
+                "kind": "object",
+                "fields": {
+                  "year": {
+                    "kind": "scalar"
+                  },
+                  "status": {
+                    "kind": "scalar"
+                  },
+                  "row": {
+                    "kind": "object",
+                    "fields": {
+                      "year": {
+                        "kind": "scalar"
+                      },
+                      "team": {
+                        "kind": "scalar"
+                      },
+                      "points": {
+                        "kind": "scalar"
+                      }
+                    },
+                    "nullable": true
+                  }
+                },
+                "nullable": false
+              }
+            }
+          },
+          "nullable": false
+        }
+      }
+    },
+    {
+      "alias": "development_legacy_features",
+      "archive": "features",
+      "member": "36489184409/features/game_features.json",
+      "bytes": 4942223,
+      "sha256": "9ab89dce2eee84fce0c69bae9bb5511d941a8bef1731adbfd36610703c86e74a",
+      "projection": {
+        "kind": "array",
+        "items": {
+          "kind": "object",
+          "fields": {
+            "season": {
+              "kind": "scalar"
+            },
+            "gameId": {
+              "kind": "scalar"
+            },
+            "week": {
+              "kind": "scalar"
+            },
+            "startDate": {
+              "kind": "scalar"
+            },
+            "homeTeam": {
+              "kind": "scalar"
+            },
+            "awayTeam": {
+              "kind": "scalar"
+            },
+            "neutralSite": {
+              "kind": "scalar"
+            },
+            "home": {
+              "kind": "object",
+              "fields": {
+                "eloRaw": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "talentRaw": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "returningPercentPPA": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "recruitingPointsY0": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "recruitingPointsY1": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "recruitingPointsY2": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "recruitingPointsY3": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "priorFbsGames": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "ppaOffMean": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "ppaDefMean": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "successOffMean": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "successDefMean": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "ppaNet": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "successNet": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                }
+              },
+              "nullable": false
+            },
+            "away": {
+              "kind": "object",
+              "fields": {
+                "eloRaw": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "talentRaw": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "returningPercentPPA": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "recruitingPointsY0": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "recruitingPointsY1": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "recruitingPointsY2": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "recruitingPointsY3": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "priorFbsGames": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "ppaOffMean": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "ppaDefMean": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "successOffMean": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "successDefMean": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "ppaNet": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                },
+                "successNet": {
+                  "kind": "object",
+                  "fields": {
+                    "value": {
+                      "kind": "scalar"
+                    },
+                    "status": {
+                      "kind": "scalar"
+                    },
+                    "n": {
+                      "kind": "scalar"
+                    }
+                  },
+                  "nullable": false
+                }
+              },
+              "nullable": false
+            }
+          },
+          "nullable": false
+        }
+      }
+    },
+    {
+      "alias": "exploratory_legacy_predictive",
+      "archive": "predictive2024",
+      "member": "36595470751/predictive/v3_game_inputs.json",
+      "bytes": 3947642,
+      "sha256": "cd708dfcadf7403aaf466e8c4b5f4206a7736b50e7f308bbacc720b28bdef726",
+      "projection": {
+        "kind": "array",
+        "items": {
+          "kind": "object",
+          "fields": {
+            "season": {
+              "kind": "scalar"
+            },
+            "gameId": {
+              "kind": "scalar"
+            },
+            "week": {
+              "kind": "scalar"
+            },
+            "startDate": {
+              "kind": "scalar"
+            },
+            "homeTeam": {
+              "kind": "scalar"
+            },
+            "awayTeam": {
+              "kind": "scalar"
+            },
+            "neutralSite": {
+              "kind": "scalar"
+            },
+            "home": {
+              "kind": "object",
+              "fields": {
+                "team": {
+                  "kind": "scalar"
+                },
+                "features": {
+                  "kind": "object",
+                  "fields": {
+                    "elo": {
+                      "kind": "object",
+                      "fields": {
+                        "value": {
+                          "kind": "scalar"
+                        },
+                        "status": {
+                          "kind": "scalar"
+                        },
+                        "n": {
+                          "kind": "scalar"
+                        }
+                      },
+                      "nullable": false
+                    },
+                    "talent": {
+                      "kind": "object",
+                      "fields": {
+                        "value": {
+                          "kind": "scalar"
+                        },
+                        "status": {
+                          "kind": "scalar"
+                        },
+                        "n": {
+                          "kind": "scalar"
+                        }
+                      },
+                      "nullable": false
+                    },
+                    "returning": {
+                      "kind": "object",
+                      "fields": {
+                        "value": {
+                          "kind": "scalar"
+                        },
+                        "status": {
+                          "kind": "scalar"
+                        },
+                        "n": {
+                          "kind": "scalar"
+                        }
+                      },
+                      "nullable": false
+                    },
+                    "recruitY0": {
+                      "kind": "object",
+                      "fields": {
+                        "value": {
+                          "kind": "scalar"
+                        },
+                        "status": {
+                          "kind": "scalar"
+                        },
+                        "n": {
+                          "kind": "scalar"
+                        }
+                      },
+                      "nullable": false
+                    },
+                    "recruitY1": {
+                      "kind": "object",
+                      "fields": {
+                        "value": {
+                          "kind": "scalar"
+                        },
+                        "status": {
+                          "kind": "scalar"
+                        },
+                        "n": {
+                          "kind": "scalar"
+                        }
+                      },
+                      "nullable": false
+                    },
+                    "recruitY2": {
+                      "kind": "object",
+                      "fields": {
+                        "value": {
+                          "kind": "scalar"
+                        },
+                        "status": {
+                          "kind": "scalar"
+                        },
+                        "n": {
+                          "kind": "scalar"
+                        }
+                      },
+                      "nullable": false
+                    },
+                    "recruitY3": {
+                      "kind": "object",
+                      "fields": {
+                        "value": {
+                          "kind": "scalar"
+                        },
+                        "status": {
+                          "kind": "scalar"
+                        },
+                        "n": {
+                          "kind": "scalar"
+                        }
+                      },
+                      "nullable": false
+                    },
+                    "priorFbsGames": {
+                      "kind": "object",
+                      "fields": {
+                        "value": {
+                          "kind": "scalar"
+                        },
+                        "status": {
+                          "kind": "scalar"
+                        },
+                        "n": {
+                          "kind": "scalar"
+                        }
+                      },
+                      "nullable": false
+                    },
+                    "ppaNet": {
+                      "kind": "object",
+                      "fields": {
+                        "value": {
+                          "kind": "scalar"
+                        },
+                        "status": {
+                          "kind": "scalar"
+                        },
+                        "n": {
+                          "kind": "scalar"
+                        }
+                      },
+                      "nullable": false
+                    },
+                    "successNet": {
+                      "kind": "object",
+                      "fields": {
+                        "value": {
+                          "kind": "scalar"
+                        },
+                        "status": {
+                          "kind": "scalar"
+                        },
+                        "n": {
+                          "kind": "scalar"
+                        }
+                      },
+                      "nullable": false
+                    }
+                  },
+                  "nullable": false
+                },
+                "formAudit": {
+                  "kind": "object",
+                  "fields": {
+                    "priorFbsGames": {
+                      "kind": "scalar"
+                    },
+                    "observedAdvancedGames": {
+                      "kind": "scalar"
+                    },
+                    "missingAdvancedGames": {
+                      "kind": "scalar"
+                    },
+                    "missingPriorGameIds": {
+                      "kind": "array",
+                      "items": {
+                        "kind": "scalar"
+                      }
+                    },
+                    "sourceProvenanceCounts": {
+                      "kind": "object",
+                      "fields": {
+                        "BULK_ADVANCED_FULL_SEASON_PRIMARY": {
+                          "kind": "scalar"
+                        },
+                        "BULK_ADVANCED_WEEK_SCOPED_RECOVERY": {
+                          "kind": "scalar"
+                        }
+                      },
+                      "nullable": false
+                    }
+                  },
+                  "nullable": false
+                }
+              },
+              "nullable": false
+            },
+            "away": {
+              "kind": "object",
+              "fields": {
+                "team": {
+                  "kind": "scalar"
+                },
+                "features": {
+                  "kind": "object",
+                  "fields": {
+                    "elo": {
+                      "kind": "object",
+                      "fields": {
+                        "value": {
+                          "kind": "scalar"
+                        },
+                        "status": {
+                          "kind": "scalar"
+                        },
+                        "n": {
+                          "kind": "scalar"
+                        }
+                      },
+                      "nullable": false
+                    },
+                    "talent": {
+                      "kind": "object",
+                      "fields": {
+                        "value": {
+                          "kind": "scalar"
+                        },
+                        "status": {
+                          "kind": "scalar"
+                        },
+                        "n": {
+                          "kind": "scalar"
+                        }
+                      },
+                      "nullable": false
+                    },
+                    "returning": {
+                      "kind": "object",
+                      "fields": {
+                        "value": {
+                          "kind": "scalar"
+                        },
+                        "status": {
+                          "kind": "scalar"
+                        },
+                        "n": {
+                          "kind": "scalar"
+                        }
+                      },
+                      "nullable": false
+                    },
+                    "recruitY0": {
+                      "kind": "object",
+                      "fields": {
+                        "value": {
+                          "kind": "scalar"
+                        },
+                        "status": {
+                          "kind": "scalar"
+                        },
+                        "n": {
+                          "kind": "scalar"
+                        }
+                      },
+                      "nullable": false
+                    },
+                    "recruitY1": {
+                      "kind": "object",
+                      "fields": {
+                        "value": {
+                          "kind": "scalar"
+                        },
+                        "status": {
+                          "kind": "scalar"
+                        },
+                        "n": {
+                          "kind": "scalar"
+                        }
+                      },
+                      "nullable": false
+                    },
+                    "recruitY2": {
+                      "kind": "object",
+                      "fields": {
+                        "value": {
+                          "kind": "scalar"
+                        },
+                        "status": {
+                          "kind": "scalar"
+                        },
+                        "n": {
+                          "kind": "scalar"
+                        }
+                      },
+                      "nullable": false
+                    },
+                    "recruitY3": {
+                      "kind": "object",
+                      "fields": {
+                        "value": {
+                          "kind": "scalar"
+                        },
+                        "status": {
+                          "kind": "scalar"
+                        },
+                        "n": {
+                          "kind": "scalar"
+                        }
+                      },
+                      "nullable": false
+                    },
+                    "priorFbsGames": {
+                      "kind": "object",
+                      "fields": {
+                        "value": {
+                          "kind": "scalar"
+                        },
+                        "status": {
+                          "kind": "scalar"
+                        },
+                        "n": {
+                          "kind": "scalar"
+                        }
+                      },
+                      "nullable": false
+                    },
+                    "ppaNet": {
+                      "kind": "object",
+                      "fields": {
+                        "value": {
+                          "kind": "scalar"
+                        },
+                        "status": {
+                          "kind": "scalar"
+                        },
+                        "n": {
+                          "kind": "scalar"
+                        }
+                      },
+                      "nullable": false
+                    },
+                    "successNet": {
+                      "kind": "object",
+                      "fields": {
+                        "value": {
+                          "kind": "scalar"
+                        },
+                        "status": {
+                          "kind": "scalar"
+                        },
+                        "n": {
+                          "kind": "scalar"
+                        }
+                      },
+                      "nullable": false
+                    }
+                  },
+                  "nullable": false
+                },
+                "formAudit": {
+                  "kind": "object",
+                  "fields": {
+                    "priorFbsGames": {
+                      "kind": "scalar"
+                    },
+                    "observedAdvancedGames": {
+                      "kind": "scalar"
+                    },
+                    "missingAdvancedGames": {
+                      "kind": "scalar"
+                    },
+                    "missingPriorGameIds": {
+                      "kind": "array",
+                      "items": {
+                        "kind": "scalar"
+                      }
+                    },
+                    "sourceProvenanceCounts": {
+                      "kind": "object",
+                      "fields": {
+                        "BULK_ADVANCED_FULL_SEASON_PRIMARY": {
+                          "kind": "scalar"
+                        },
+                        "BULK_ADVANCED_WEEK_SCOPED_RECOVERY": {
+                          "kind": "scalar"
+                        }
+                      },
+                      "nullable": false
+                    }
+                  },
+                  "nullable": false
+                }
+              },
+              "nullable": false
+            }
+          },
+          "nullable": false
+        }
+      }
+    },
+    {
+      "alias": "exploratory_advanced",
+      "archive": "advanced2024",
+      "member": "2024-36508377627/raw/003-advanced-game-stats.json",
+      "bytes": 5757323,
+      "sha256": "87b50a31b309aba3523cfba57cc7db2508cee0863368236dd0fef1b57c741517",
+      "projection": {
+        "kind": "array",
+        "items": {
+          "kind": "object",
+          "fields": {
+            "gameId": {
+              "kind": "scalar"
+            },
+            "season": {
+              "kind": "scalar"
+            },
+            "seasonType": {
+              "kind": "scalar"
+            },
+            "week": {
+              "kind": "scalar"
+            },
+            "team": {
+              "kind": "scalar"
+            },
+            "opponent": {
+              "kind": "scalar"
+            },
+            "offense": {
+              "kind": "object",
+              "fields": {
+                "ppa": {
+                  "kind": "scalar"
+                },
+                "successRate": {
+                  "kind": "scalar"
+                }
+              },
+              "nullable": true
+            },
+            "defense": {
+              "kind": "object",
+              "fields": {
+                "ppa": {
+                  "kind": "scalar"
+                },
+                "successRate": {
+                  "kind": "scalar"
+                }
+              },
+              "nullable": true
+            }
+          },
+          "nullable": true
+        }
+      }
+    }
+  ],
+  "expectedGameCounts": {
+    "2022": 734,
+    "2023": 750,
+    "2024": 752
+  },
+  "expectedTeamCounts": {
+    "2022": 131,
+    "2023": 133,
+    "2024": 134
+  },
+  "allowedSeasons": [
+    2022,
+    2023,
+    2024
+  ],
+  "maxCatalogMembers": 128,
+  "maxTotalUncompressedBytes": 134217728,
+  "maxMemberBytes": 16777216,
+  "maxJsonDepth": 64,
+  "maxJsonNodes": 5000000,
+  "semanticReadPolicy": "Only exact projected fields; unknown/forbidden scalar values syntax-skipped without materializing. Duplicate keys/malformed/trailing JSON fail globally.",
+  "actualHistoricalReadPerformedByPreparation": false,
+  "historicalTargetsAllowed": false,
+  "estimatorFitsAllowed": false,
+  "providerQueriesAllowed": false,
+  "sealed2025Allowed": false,
+  "featureReadinessInherited": false
+}

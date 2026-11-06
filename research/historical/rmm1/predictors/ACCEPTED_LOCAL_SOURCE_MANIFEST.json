@@ -1,0 +1,53 @@
+{
+  "baseMain": "5c84c4c5ab33198e10120653b606072d113e9429",
+  "status": "CANDIDATE_REQUIRES_SEPARATE_REVIEW",
+  "members": [
+    {
+      "path": "proposed/archive_reader.py",
+      "bytes": 3726,
+      "sha256": "bc7b924a438ccea6adeeda3e784d088e8a8f9e368b247e3585304552a36cf767"
+    },
+    {
+      "path": "proposed/artificial_legacy.py",
+      "bytes": 4703,
+      "sha256": "efae49ff405f9d63da0bc581365edb3f8fae5d20b03b0a4323529505f475ceea"
+    },
+    {
+      "path": "proposed/read_plan_spec.py",
+      "bytes": 5038,
+      "sha256": "411967c54484e7c294095ce52500be2be6d58a512639b9427663090d32a49f1f"
+    },
+    {
+      "path": "proposed/real_adapter.py",
+      "bytes": 20441,
+      "sha256": "6d40260cb21b4c74041689aa3c8b6b46e8c3863fb53040b817fce82666c7bbd1"
+    },
+    {
+      "path": "proposed/selective_json.py",
+      "bytes": 6183,
+      "sha256": "2695003649169ce8d93f92cc0ca2052bbbfe3e1f062780b80018a48e7746dfd1"
+    },
+    {
+      "path": "proposed/test_adapter.py",
+      "bytes": 15328,
+      "sha256": "3237a1160041b722054f3bd4ee8a92acf993044dbe7f7e71a12b10584b78158f"
+    },
+    {
+      "path": "EXACT_PREDICTOR_READ_PLAN.json",
+      "bytes": 41481,
+      "sha256": "5cacbc3344946fe3f713354d69981012ce04941e56e4ba2b2db6a5835dbf84a5"
+    },
+    {
+      "path": "README.md",
+      "bytes": 4283,
+      "sha256": "f22b8265b2ae033a09ba5c20a24d3048d93cd1c1663985dd2ed86804341b9a44"
+    },
+    {
+      "path": "prepare_packet.py",
+      "bytes": 1725,
+      "sha256": "7411fca7410d96151879e8f65fd86e9f06799d89afa6e5179128d2de0d37dd54"
+    }
+  ],
+  "historicalExecutionAllowedByThisPacket": false,
+  "fits": 0
+}
