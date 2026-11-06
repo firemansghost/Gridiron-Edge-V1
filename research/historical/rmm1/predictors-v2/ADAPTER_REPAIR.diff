@@ -1,0 +1,18 @@
+--- published/real_adapter.py
++++ reviewed-overlay/real_adapter_v2.py
+@@ -175,13 +175,8 @@
+         require(gid in frames and games[gid] == g and gid not in legacy, 'DEVELOPMENT_CONTROL_IDENTITY_MISMATCH')
+         legacy[gid] = row
+     require(set(legacy) == set(games), 'LEGACY_CONTROL_POPULATION_MISMATCH')
+-    # Same-team/week ambiguity and impossible lower-week source timing block.
+-    team_weeks = set()
+-    for g in games.values():
+-        for name in (g['homeTeam'], g['awayTeam']):
+-            key = (g['season'], name, g['week'])
+-            require(key not in team_weeks, 'DUPLICATE_TEAM_WEEK')
+-            team_weeks.add(key)
++    # Distinct canonical games may share a provider week. Same-week history
++    # remains excluded below; duplicate IDs/conflicting identities still stop.
+     advanced, refs = {}, {}
+     excluded = 0
+     for alias in ('development_advanced', 'exploratory_advanced'):

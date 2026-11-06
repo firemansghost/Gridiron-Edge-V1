@@ -1,0 +1,66 @@
+{
+  "status": "PASS_RAW_PREDICTOR_INTEGRITY_ONLY",
+  "rawSha256": "8abe972f6213f64474cf4a9eec7562c4a2a0167307fc5ce637f0cc4766910598",
+  "rawBytes": 19168570,
+  "overlaySha256": "e7b6fbd4112db49c262d1ca24f8def6dd2c5e2902a00da33fdb210a3344db564",
+  "sourceManifestSha256": "e9eabba19e4b19531cb9593891c235a93630c34203cf79679ad007e5c3fb68e3",
+  "executionProposalSha256": "4e0c14a66fca4912cd249b930b62dde0ac522c1365b3450b93c006f84203bae7",
+  "reviewReceiptSha256": "dfcf4cfa980fc341496a8394f59cc23d6645287de56c60c4d6a65b93fc8bb170",
+  "sourceVerifierCompletionSha256": "719e2fba6e9a066517346800cc485517e663e941a80c84404938af501a443354",
+  "sourceVerifierReportSha256": "16e3199141958e7e22d94b1afebb13148a81ba0637df5389b8578d4b64ffb067",
+  "sourceVerifierScriptSha256": "961b09b0f567bcdd36be8b43b42ca99fd1e6701056ec8f34424ef0f712c5323f",
+  "sourceVerifierMathSha256": "676cc9a2afe9186af39f74f56f0f4e7ebb748eef587da5a3ee26b4f02746bb9d",
+  "rawQualification": true,
+  "qualificationScope": "RAW_PREDICTOR_SOURCE_IDENTITY_ARITHMETIC_MISSINGNESS_PROVENANCE_INTEGRITY_ONLY",
+  "games": 2236,
+  "uniqueGameIds": 2236,
+  "sideRows": 4472,
+  "featureCells": 62608,
+  "gamesBySeason": {
+    "2022": 734,
+    "2023": 750,
+    "2024": 752
+  },
+  "teamsBySeason": {
+    "2022": 131,
+    "2023": 133,
+    "2024": 134
+  },
+  "formAvailableSides": {
+    "2022": 1328,
+    "2023": 1362,
+    "2024": 1328
+  },
+  "naturalNoPriorSides": {
+    "2022": 140,
+    "2023": 138,
+    "2024": 137
+  },
+  "sourceIncompleteSides": {
+    "2022": 0,
+    "2023": 0,
+    "2024": 39
+  },
+  "sourceMissingCanonical2024GameIds": [
+    401641034,
+    401645328,
+    401644689,
+    401644780
+  ],
+  "sourceMissing2024TeamGameRows": 8,
+  "rawNullFeatureCells": 2811,
+  "sourceReconstructedCells": 52080,
+  "packaged2024SnapshotVerifiedCells": 10528,
+  "independentNumericComparisons": 59797,
+  "independentMaxAbsoluteDelta": 0.0,
+  "producerLegacyComparisons": 70625,
+  "producerLegacyMaxAbsoluteDelta": 2.220446049250313e-16,
+  "pointInTimePublicationEstablished": false,
+  "packaged2024StaticEloProviderReproduced": false,
+  "trainingMatrixQualified": false,
+  "targetsAllowed": false,
+  "fitsAllowed": false,
+  "estimatorFitsPerformed": 0,
+  "sealed2025Read": false,
+  "futureReadOrRunAuthorized": false
+}

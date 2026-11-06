@@ -1,0 +1,64 @@
+{
+  "version": "RMM1_V2_SHARED_PROVIDER_WEEK_PUBLICATION",
+  "baseMain": "5205a039b1d3ff9983b97e9649fc1e16e7adc85b",
+  "v2SourceSha256": "e7b6fbd4112db49c262d1ca24f8def6dd2c5e2902a00da33fdb210a3344db564",
+  "members": [
+    {
+      "path": ".github/workflows/check-rmm1-predictor-adapter-v2.yml",
+      "bytes": 1175,
+      "sha256": "b5c86179eb0be71ad74d8d97c170d578ff12ed39d3a75e984fb73abd5fefa805"
+    },
+    {
+      "path": "research/historical/rmm1/predictors-v2/ADAPTER_REPAIR.diff",
+      "bytes": 919,
+      "sha256": "1fab1f871763431a181ae8cca2419b33cc035f5d5d111df774ac43beb989756b"
+    },
+    {
+      "path": "research/historical/rmm1/predictors-v2/INDEPENDENT_REPAIR_REVIEW.json",
+      "bytes": 750,
+      "sha256": "e6f6b3cab128c7a1817985c3f3b16d028bc845800296e59a43d87442a9ff467f"
+    },
+    {
+      "path": "research/historical/rmm1/predictors-v2/INDEPENDENT_REPAIR_REVIEW.md",
+      "bytes": 5125,
+      "sha256": "a3f2caac8e5c1f1f92112fb26993f572355038011b56a4b40d6f7db0de6ceb34"
+    },
+    {
+      "path": "research/historical/rmm1/predictors-v2/RAW_ARTIFACT_ACCEPTANCE.json",
+      "bytes": 2331,
+      "sha256": "979c98fbf431ca0e0174711cd3f45e601ee9b6b789324b66d944860566d4f66d"
+    },
+    {
+      "path": "research/historical/rmm1/predictors-v2/RAW_ARTIFACT_ACCEPTANCE.md",
+      "bytes": 7372,
+      "sha256": "dfcf4cfa980fc341496a8394f59cc23d6645287de56c60c4d6a65b93fc8bb170"
+    },
+    {
+      "path": "research/historical/rmm1/predictors-v2/README.md",
+      "bytes": 3166,
+      "sha256": "fb84827d9faf0bc662374925d175b198d310c45fbc218307edc87158ea4f863d"
+    },
+    {
+      "path": "scripts/research/rmm1/predictors/real_adapter_v2.py",
+      "bytes": 20267,
+      "sha256": "e7b6fbd4112db49c262d1ca24f8def6dd2c5e2902a00da33fdb210a3344db564"
+    },
+    {
+      "path": "scripts/research/rmm1/predictors/run_artificial_adapter_v2_checks.py",
+      "bytes": 9921,
+      "sha256": "8ce3b1fdd826342581b671770671ff98113f705c0c79737e3f43ffe8a76427a7"
+    },
+    {
+      "path": "scripts/research/rmm1/predictors/shared_week_fixtures.py",
+      "bytes": 1394,
+      "sha256": "b4e25647d4204e64095c0acec0a1ebb643205cbf8c8bd08f5fdd62ce1fa13cda"
+    },
+    {
+      "path": "scripts/research/rmm1/predictors/test_real_adapter_v2.py",
+      "bytes": 4337,
+      "sha256": "d8db629bfb3889ccfd4d583e3e3efcf6879c0fa99c15e73a28fe9ea9d45d43c2"
+    }
+  ],
+  "historicalExecutionAllowed": false,
+  "fits": 0
+}
