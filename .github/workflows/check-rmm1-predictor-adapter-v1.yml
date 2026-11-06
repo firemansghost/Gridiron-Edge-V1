@@ -1,0 +1,31 @@
+name: Check RMM1 predictor adapter with fabricated archives
+on:
+  pull_request:
+    paths:
+      - scripts/research/rmm1/predictors/**
+      - research/historical/rmm1/predictors/**
+      - research/historical/rmm1/freeze/**
+      - .github/workflows/check-rmm1-predictor-adapter-v1.yml
+permissions:
+  contents: read
+jobs:
+  fabricated-predictor-boundaries:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13.7'
+      - name: Exact-source fabricated predictor checks (no historical access or fits)
+        run: python -I -S -B scripts/research/rmm1/predictors/run_artificial_predictor_checks.py ci-predictors
+      - name: Preserve fabricated evidence and read ledger
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rmm1-fabricated-predictors-${{ github.run_id }}-${{ github.run_attempt }}
+          path: reports/research-rmm1/ci-predictors/
+          if-no-files-found: error
+          retention-days: 90

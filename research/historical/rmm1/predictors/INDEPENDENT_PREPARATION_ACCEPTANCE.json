@@ -1,0 +1,35 @@
+{
+  "status": "PASS_LOCAL_PREPARATION_ONLY",
+  "sourceManifestSha256": "b9982f8be1a4942f5fb693ee34609700b53d17bc25821e59503f54348df880d6",
+  "exactReadPlanSha256": "5cacbc3344946fe3f713354d69981012ce04941e56e4ba2b2db6a5835dbf84a5",
+  "reviewReceiptSha256": "cfae4f3ed5a759a068f4dc2582a26e27dbc464b32e01f2c91dde5ff7d7bab08c",
+  "baseMain": "5c84c4c5ab33198e10120653b606072d113e9429",
+  "candidateMembers": 9,
+  "guardedSuite": {
+    "tests": 17,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "blockedOperations": []
+  },
+  "ownPipelineProbes": {
+    "passed": 11,
+    "total": 11
+  },
+  "preservedSeals": [
+    {
+      "folder": "research-rmm1-step3-20261105",
+      "verifiedEntries": 88
+    },
+    {
+      "folder": "research-experiment-freeze-20261105",
+      "verifiedEntries": 14
+    }
+  ],
+  "historicalPayloadReads": 0,
+  "estimatorFits": 0,
+  "providerQueries": 0,
+  "historicalExecutionAccepted": false,
+  "sourcePublicationAccepted": false,
+  "realMatrixQualified": false
+}
