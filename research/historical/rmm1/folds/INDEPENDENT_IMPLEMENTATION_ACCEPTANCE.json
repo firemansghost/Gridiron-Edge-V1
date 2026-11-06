@@ -1,0 +1,20 @@
+{
+  "status": "PASS_ARTIFICIAL_FIT_FREE_IMPLEMENTATION_ONLY",
+  "sourceManifestSha256": "ba59cf6e410c6d888e0e5971ff0eb0fc118513aa53c68ebe5fcbc1b300553686",
+  "reviewReceiptSha256": "12510dd2254c3b007aec0332aaf8584b2b56e45898bc063d1a00fec48c273646",
+  "kernelProbeAuditSha256": "3bb64fc1db801f93bca44373ac8bb7c1df0d5e9b56d88ea4e816bfaf175b2487",
+  "runnerAuditSha256": "5b61e78b90f0ae36e7cf3e180675d061daa304ce06c0fdc818c4743aec873913",
+  "preservationAuditSha256": "2339af2fc682f3616046b3955d3ebb002d1b0317ce82a96f33c608da611229d2",
+  "baseMain": "e07f64ecf02107ce73936a99ef9d1346a5b7ee9e",
+  "baseTree": "8e56e975125e6a3d2283da723efacb9905a235c9",
+  "finalIntegrationTests": 16,
+  "independentKernelProbes": 13,
+  "independentRunnerBoundaries": 14,
+  "sourcePublicationAccepted": false,
+  "historicalExecutionAccepted": false,
+  "realHistoricalPayloadReads": 0,
+  "trainingMatrixQualified": false,
+  "targetsAllowed": false,
+  "sealed2025Read": false,
+  "estimatorFits": 0
+}
