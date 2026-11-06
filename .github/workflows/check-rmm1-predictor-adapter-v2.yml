@@ -1,0 +1,32 @@
+name: Check RMM1 v2 shared-provider-week repair
+on:
+  pull_request:
+    paths:
+      - scripts/research/rmm1/predictors/**
+      - research/historical/rmm1/predictors-v2/**
+      - research/historical/rmm1/predictors/**
+      - research/historical/rmm1/freeze/**
+      - .github/workflows/check-rmm1-predictor-adapter-v2.yml
+permissions:
+  contents: read
+jobs:
+  v2-shared-week-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13.7'
+      - name: Exact-source fictional v2 regression (no historical inputs or fits)
+        run: python -I -S -B scripts/research/rmm1/predictors/run_artificial_adapter_v2_checks.py ci-predictors-v2
+      - name: Preserve fictional regression evidence and read ledger
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rmm1-v2-shared-week-${{ github.run_id }}-${{ github.run_attempt }}
+          path: reports/research-rmm1/ci-predictors-v2/
+          if-no-files-found: error
+          retention-days: 90

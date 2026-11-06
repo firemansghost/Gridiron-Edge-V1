@@ -1,0 +1,15 @@
+{
+  "status": "PASS_NARROW_IMPLEMENTATION_REPAIR_ONLY",
+  "reviewManifestSha256": "284a737b96d6121a1e21590c35df7b9dcd9cc32b2c999a19b5c59026e6ebf5d7",
+  "sourceManifestSha256": "e9eabba19e4b19531cb9593891c235a93630c34203cf79679ad007e5c3fb68e3",
+  "executionProposalSha256": "4e0c14a66fca4912cd249b930b62dde0ac522c1365b3450b93c006f84203bae7",
+  "overlaySha256": "e7b6fbd4112db49c262d1ca24f8def6dd2c5e2902a00da33fdb210a3344db564",
+  "reviewReceiptSha256": "a3f2caac8e5c1f1f92112fb26993f572355038011b56a4b40d6f7db0de6ceb34",
+  "suppliedIntegrationCases": 12,
+  "ownCallerProbes": 10,
+  "oldAdapterRegressionTests": 17,
+  "ownOverlayProbes": 7,
+  "historicalExecutionAccepted": false,
+  "originalArchiveReopensByReviewer": 0,
+  "fits": 0
+}
