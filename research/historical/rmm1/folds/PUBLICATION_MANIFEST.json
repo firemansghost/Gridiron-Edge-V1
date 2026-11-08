@@ -1,0 +1,121 @@
+{
+  "version": "RMM1_FITFREE_FOLD_PUBLICATION",
+  "baseMain": "e07f64ecf02107ce73936a99ef9d1346a5b7ee9e",
+  "sources": {
+    "rmm1_builder": {
+      "path": "scripts/research/rmm1/rmm1_builder.py",
+      "bytes": 23747,
+      "sha256": "80e415d38b2e5caf519e3a74a2c6327437d0e975a40fe3ce5c1aa24d09d85a68"
+    },
+    "synthetic_fixtures": {
+      "path": "scripts/research/rmm1/synthetic_fixtures.py",
+      "bytes": 4075,
+      "sha256": "751a05b9010c474e1026d4e2a3c36514135244db71782ba6295991573708deba"
+    },
+    "fold_kernel": {
+      "path": "scripts/research/rmm1/folds/fold_kernel.py",
+      "bytes": 17890,
+      "sha256": "b5ffa929d5d2b7aecd9516119ba43984044431dbf6acefe2b9b23789fb81826a"
+    },
+    "artificial_inputs": {
+      "path": "scripts/research/rmm1/folds/artificial_inputs.py",
+      "bytes": 1936,
+      "sha256": "4189965f0c67824d1c6fdeffcd6d9589e88f4547ce8aae4222ed30cd56832713"
+    },
+    "test_fold_kernel": {
+      "path": "scripts/research/rmm1/folds/test_fold_kernel.py",
+      "bytes": 10469,
+      "sha256": "ed7d3e84001c93f3e0681d033db052a280d469130fcbc282b3fd93b4bdf4a81f"
+    }
+  },
+  "members": [
+    {
+      "path": ".github/workflows/check-rmm1-fitfree-folds.yml",
+      "bytes": 1079,
+      "sha256": "78f62afcd8ecdeee62aaf992e3051d92de68a69cda5ad7a9918c0db57a03ecdc"
+    },
+    {
+      "path": "research/historical/rmm1/folds/ACCEPTED_LOCAL_SOURCE_MANIFEST.json",
+      "bytes": 1597,
+      "sha256": "ba59cf6e410c6d888e0e5971ff0eb0fc118513aa53c68ebe5fcbc1b300553686"
+    },
+    {
+      "path": "research/historical/rmm1/folds/IMPLEMENTATION_PLAN.md",
+      "bytes": 5057,
+      "sha256": "9d042cc1fd13f6953706869a53b57ca2a7071186f9a4b30e337049d07db2f6ef"
+    },
+    {
+      "path": "research/historical/rmm1/folds/INDEPENDENT_IMPLEMENTATION_ACCEPTANCE.json",
+      "bytes": 996,
+      "sha256": "9d7416eaf34bbb6e190033f902ef969406ef5eba513f04feccabf5caa0f937b5"
+    },
+    {
+      "path": "research/historical/rmm1/folds/INDEPENDENT_IMPLEMENTATION_ACCEPTANCE.md",
+      "bytes": 7506,
+      "sha256": "12510dd2254c3b007aec0332aaf8584b2b56e45898bc063d1a00fec48c273646"
+    },
+    {
+      "path": "research/historical/rmm1/folds/README.md",
+      "bytes": 2418,
+      "sha256": "2e3c86c010f876429cf22fc272aebc253dc276a8df1854aad46fc932d5dfe6e9"
+    },
+    {
+      "path": "research/historical/rmm1/freeze/ADOPTION_RECORD.md",
+      "bytes": 6232,
+      "sha256": "4167ce0faa5afccfad32cde63a31f3b82e23acca263f03363cd2b2d564dc7a4e"
+    },
+    {
+      "path": "research/historical/rmm1/freeze/FREEZE_MANIFEST.json",
+      "bytes": 1496,
+      "sha256": "69468a97539bcc97e60af0287d0732aa67139e41b964f00c8c764daeda2e27e1"
+    },
+    {
+      "path": "research/historical/rmm1/freeze/FROZEN_CONTRACT.json",
+      "bytes": 1811,
+      "sha256": "09159fd46bb49fb6f063cf0ecaa123cac893d730da00ac0e93ed3aeae4a6ba60"
+    },
+    {
+      "path": "research/historical/rmm1/freeze/INDEPENDENT_FREEZE_ACCEPTANCE.md",
+      "bytes": 4842,
+      "sha256": "0622ad868b4be04cef3c5cc7ee4a5d41e7baaef67d9fe4cf465e3e7ac3d2465b"
+    },
+    {
+      "path": "research/historical/rmm1/freeze/SOURCE_SPECIFICATION.md",
+      "bytes": 27586,
+      "sha256": "850a7371f1bb202d08fedaaa66569fd436c7dcee54b5726af600f6a0f559d7a0"
+    },
+    {
+      "path": "scripts/research/rmm1/folds/artificial_inputs.py",
+      "bytes": 1936,
+      "sha256": "4189965f0c67824d1c6fdeffcd6d9589e88f4547ce8aae4222ed30cd56832713"
+    },
+    {
+      "path": "scripts/research/rmm1/folds/fold_kernel.py",
+      "bytes": 17890,
+      "sha256": "b5ffa929d5d2b7aecd9516119ba43984044431dbf6acefe2b9b23789fb81826a"
+    },
+    {
+      "path": "scripts/research/rmm1/folds/run_artificial_folds.py",
+      "bytes": 9679,
+      "sha256": "4ecadd22ded4fd6349b26b094a5438c8d1a29447d0c8b1510ac543e23ae17165"
+    },
+    {
+      "path": "scripts/research/rmm1/folds/test_fold_kernel.py",
+      "bytes": 10469,
+      "sha256": "ed7d3e84001c93f3e0681d033db052a280d469130fcbc282b3fd93b4bdf4a81f"
+    },
+    {
+      "path": "scripts/research/rmm1/rmm1_builder.py",
+      "bytes": 23747,
+      "sha256": "80e415d38b2e5caf519e3a74a2c6327437d0e975a40fe3ce5c1aa24d09d85a68"
+    },
+    {
+      "path": "scripts/research/rmm1/synthetic_fixtures.py",
+      "bytes": 4075,
+      "sha256": "751a05b9010c474e1026d4e2a3c36514135244db71782ba6295991573708deba"
+    }
+  ],
+  "historicalExecutionAllowed": false,
+  "targetsAllowed": false,
+  "estimatorFitsAllowed": false
+}

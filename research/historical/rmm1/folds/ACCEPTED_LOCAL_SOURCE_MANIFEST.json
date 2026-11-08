@@ -1,0 +1,36 @@
+{
+  "stage": "FIT_FREE_ARTIFICIAL_IMPLEMENTATION_ONLY",
+  "baseMain": "e07f64ecf02107ce73936a99ef9d1346a5b7ee9e",
+  "sources": {
+    "rmm1_builder": {
+      "path": "research-rmm1-step3-20261105/proposed/scripts/research/rmm1/rmm1_builder.py",
+      "bytes": 23747,
+      "sha256": "80e415d38b2e5caf519e3a74a2c6327437d0e975a40fe3ce5c1aa24d09d85a68"
+    },
+    "synthetic_fixtures": {
+      "path": "research-rmm1-step3-20261105/proposed/scripts/research/rmm1/synthetic_fixtures.py",
+      "bytes": 4075,
+      "sha256": "751a05b9010c474e1026d4e2a3c36514135244db71782ba6295991573708deba"
+    },
+    "fold_kernel": {
+      "path": "research-rmm1-step11-fitfree-integration-20261106/proposed/fold_kernel.py",
+      "bytes": 17890,
+      "sha256": "b5ffa929d5d2b7aecd9516119ba43984044431dbf6acefe2b9b23789fb81826a"
+    },
+    "artificial_inputs": {
+      "path": "research-rmm1-step11-fitfree-integration-20261106/proposed/artificial_inputs.py",
+      "bytes": 1936,
+      "sha256": "4189965f0c67824d1c6fdeffcd6d9589e88f4547ce8aae4222ed30cd56832713"
+    },
+    "test_fold_kernel": {
+      "path": "research-rmm1-step11-fitfree-integration-20261106/proposed/test_fold_kernel.py",
+      "bytes": 10469,
+      "sha256": "ed7d3e84001c93f3e0681d033db052a280d469130fcbc282b3fd93b4bdf4a81f"
+    }
+  },
+  "runnerSha256": "240874597963c0e9b2607b80113778424c42ca15094f7ab45b375a03920f2586",
+  "planSha256": "9d042cc1fd13f6953706869a53b57ca2a7071186f9a4b30e337049d07db2f6ef",
+  "historicalExecutionAllowed": false,
+  "targetsAllowed": false,
+  "estimatorFitsAllowed": false
+}

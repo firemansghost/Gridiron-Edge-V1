@@ -1,0 +1,37 @@
+# Independent Step11 fit-free implementation review
+
+**PASS_ARTIFICIAL_FIT_FREE_IMPLEMENTATION_ONLY.** The final exact local implementation and artificial checks are accepted for this bounded preparation stage. This is not source-publication/precommit acceptance, historical execution approval, training-matrix qualification, permission to read targets/2025, or an estimator-fit gate.
+
+## Exact reviewed scope
+
+Final `SOURCE_MANIFEST.json` SHA256: `ba59cf6e410c6d888e0e5971ff0eb0fc118513aa53c68ebe5fcbc1b300553686`. The manifest binds the unchanged reference builder/fictional generator, additive `fold_kernel.py`, artificial schema factory/tests, final closed runner and implementation plan. Kernel SHA256: `b5ffa929d5d2b7aecd9516119ba43984044431dbf6acefe2b9b23789fb81826a`. All final source sizes/hashes, runner and plan pins were independently checked after the tests.
+
+I independently refreshed live main `e07f64ecf02107ce73936a99ef9d1346a5b7ee9e`, tree `8e56e975125e6a3d2283da723efacb9905a235c9`. There is no source commit or repository change in this stage. I independently byte-hashed all five prior sealed packets: Step10 publication149 files, Step8 repair/raw356, Step9 source verification33, earlier publication133 and frozen contract14. All original seals and member bytes remain exact. Those integrity hashes do not open or process original historical archive contents.
+
+## Frozen-rule and leakage assessment
+
+I read the actual kernel, artificial factory/tests, runner, plan and frozen rules. The new in-memory namespace accepts the v2 raw shape under an externally authenticated dataset identity, without pretending historical inputs are SYN data. Original SYN-only guards remain unchanged. The kernel opens no files, reads no targets, imports no estimator and provides no prediction, metric, model-selection or coefficient-fitting API. Retained legacy controls are opaque and excluded from predictors.
+
+The new schema ingress validates context/feature presence, finite numeric states, exact integer prior counts, joint form missingness/count/net coherence, canonical population/count/order, strict lower-provider-week history and earlier kickoffs. Distinct same-week games remain retained and excluded from each other's history. Raw nulls remain null; no complete-case deletion or zero substitution enters raw evidence. A future authenticated ingress still must bind actual artifact/context/count/order hashes before this API can process real rows; this stage creates no such caller or capability.
+
+I independently verified that the entire ColumnStats/preprocessor/encoder/fold implementation is exact previously reviewed reference arithmetic, with only the internal fixture_id field renamed dataset_id. It pools AVAILABLE training home/away values per feature, derives shared median/imputed population mean/std using training only, preserves fixed missing-reason indicators/venue, and produces141/101/11 columns. Unseen individual F14 feature/reason pairs trigger the same game fallback for both F14/F10 and learners, whereas B2 depends only on Elo support. Novel joint profiles remain diagnostic. Missing all training observations blocks rather than inventing a value.
+
+Seven fixed whole-provider-week folds retain at least100 unique training games and strict block kickoff ordering. Warmup/OOF/exploratory identities stay in the complete ledger. The all-development-to2024 artificial view is an unselected predictor preprocessing preview, not a selected final model/refit or frozen real-data transform. Support counts are route eligibility, explicitly not prediction coverage. No numeric HFA/B1 prediction is fabricated before a separately approved outcome stage. Future real integration must retain that distinction and separately qualify its complete matrices/ledgers before target access.
+
+## Findings corrected before acceptance
+
+I identified operational checks using removable Python assertions, missing output-redirection refusal, incomplete metadata/source binding and post-run verification, an incomplete process/scientific denylist, pre-hook metadata redirection exposure, and a possible PASS label after a caught blocked operation. The preparer corrected them before this exact gate. Final runtime/flag/source/metadata/scope checks use explicit non-assert refusals; fixed source/metadata/runner ancestors reject symlinks/junctions before opening; output containment/exclusive creation is checked; runner/plan/manifest/all source bytes are rechecked after execution; expanded deny lists and nonempty-blocked=>FAIL are enforced. Earlier producer artificial failure and intermediate reports remain historical evidence, not final acceptance evidence.
+
+## Actual independent artificial evidence
+
+I personally executed the final exact closed driver in a fresh reviewer-private equivalent namespace: **16/16 integration tests PASS**, no failures/errors/skips/blocked operations. This includes parity across all seven folds and five family/learner views, training-stat invariance to validation/exploratory extremes, support/fallback behavior, fixed column order/width, shared-week preservation, population/schema failures and opaque legacy controls. No estimator was constructed or fitted.
+
+I additionally ran **13 independent kernel probes**, all PASS: date-only kickoff refusal; float/boolean prior-count refusal; unknown state; omitted feature; zero-filled natural-null contradiction; invalid source-gap IDs; mixed dataset identities; overlapping views;99-game training; both-side validation extremes leaving training statistics exact; SOURCE_VALUE_INVALID triggering common F14/F10 fallback while B2 remains eligible; and exact reference-core comparison.
+
+I also executed **14 independent final-runner boundary cases**, all PASS: ordinary flags, optimized flags, traversal label, reused output, kernel/plan/runner corruption, network/scientific-import/undeclared-read/undeclared-write attempts, output-parent and plan-file junction-detection branches, and caught blocked access still causing FAIL/exit1. Junction branches used deterministic private Path.is_junction fault injection; no actual filesystem junction or redirected historical path was created. Corruption touched only private copies and was restored. Audit probes ran after the actual candidate installed its guard.
+
+Own evidence is in `reviewer-kernel-probes.json`, `reviewer-runner-checks.json`, `reviewer-preservation-audit.json` and their corresponding independent scripts. Final private actual report: `reviewer-private/artificial-runs/positive/report.json`; source/plan/runner manifest hashes and allowed read ledger are retained there. Parent reports are supplementary and were not the sole acceptance basis.
+
+## Boundary on the next stage
+
+No outstanding finding for artificial local implementation acceptance. Any byte change requires renewed review. A source commit/publication requires its own exact candidate/tree review and actual CI/merge gates. Processing even the accepted raw predictor artifact requires a separately reviewed bounded read/one-shot output proposal and capability; this receipt grants none. No historical source archive, real raw table, target,2025 payload, provider, database, prediction, price or model operation occurred. Training matrices remain unqualified; both global budgets remain unused (4 synthetic/66 research fits). PIT publication remains NOT_ESTABLISHED,2024 exploratory,2025 sealed/NOT_QUALIFIED, original Final Holdout V1 INPUT_BLOCKED and original V3 evidence unchanged.

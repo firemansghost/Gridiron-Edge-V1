@@ -1,0 +1,31 @@
+name: Check RMM1 fit-free fold integration
+on:
+  pull_request:
+    paths:
+      - scripts/research/rmm1/**
+      - research/historical/rmm1/folds/**
+      - research/historical/rmm1/freeze/**
+      - .github/workflows/check-rmm1-fitfree-folds.yml
+permissions:
+  contents: read
+jobs:
+  fitfree-fold-integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13.7'
+      - name: Closed artificial fold integration without historical inputs or fits
+        run: python -I -S -B scripts/research/rmm1/folds/run_artificial_folds.py ci-fitfree-folds
+      - name: Preserve artificial fold preview and read ledger
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: rmm1-fitfree-folds-${{ github.run_id }}-${{ github.run_attempt }}
+          path: reports/research-rmm1-folds/ci-fitfree-folds/
+          if-no-files-found: error
+          retention-days: 90
