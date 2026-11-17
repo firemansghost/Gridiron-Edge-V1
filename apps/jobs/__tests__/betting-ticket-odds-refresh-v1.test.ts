@@ -5,6 +5,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { execFileSync } from 'child_process';
+import * as os from 'os';
 import {
   planBettingTicketOddsRefresh,
   BETTING_TICKET_ODDS_REFRESH_STALE_MINUTES,
@@ -145,23 +147,23 @@ describe('Betting Ticket Odds Refresh V1 workflow boundary', () => {
   it('loads the version-controlled active week and refuses non-main execution', () => {
     const load = stepBlock(wf, 'Load version-controlled active week');
     const guard = stepBlock(wf, 'Source/ref guard');
-    const activeWeekConfig = JSON.parse(
-      fs.readFileSync(
-        path.join(
-          ROOT,
-          'research/generic-shadow/GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json'
-        ),
-        'utf8'
-      )
+    const officialWeek = JSON.parse(
+      fs.readFileSync(path.join(ROOT, 'ops/betting-ticket/ACTIVE_WEEK_2026.json'), 'utf8')
     );
-    expect(activeWeekConfig).toMatchObject({
-      capability: 'generic_shadow_t30_active_week_2026',
+    expect(officialWeek).toMatchObject({
+      capability: 'betting_ticket_active_week_2026',
       season: 2026,
-      week: 10,
-      authority: 'version_controlled_active_week',
+      week: 12,
+      commitAuthorized: false,
+      authority: 'official_betting_ticket_week',
     });
-    expect(load).toContain(
+    expect(load).toContain('ops/betting-ticket/ACTIVE_WEEK_2026.json');
+    expect(load).toContain('ops/betting-ticket/load_active_week.py');
+    expect(load).not.toContain(
       'research/generic-shadow/GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json'
+    );
+    expect(stepBlock(wf, 'Conditional guarded Live Odds refresh')).toContain(
+      "steps.active_week.outputs.commit_authorized == 'true'"
     );
     expect(load).toContain('Active-week config is missing');
     expect(load).toContain('Active-week config week must be a positive integer');
@@ -210,5 +212,40 @@ describe('Betting Ticket Odds Refresh V1 workflow boundary', () => {
     expect(wf).toContain('betting-ticket-odds-refresh-v1-2026-week-*.json');
     expect(wf).toContain('betting-ticket-live-odds-2026-week-*.json');
     expect(wf).toContain('provider call: conditional, at most 1');
+  });
+});
+
+describe('official betting-ticket week loader', () => {
+  const loader = path.join(ROOT, 'ops/betting-ticket/load_active_week.py');
+  const official = path.join(ROOT, 'ops/betting-ticket/ACTIVE_WEEK_2026.json');
+  const research = path.join(
+    ROOT,
+    'research/generic-shadow/GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json'
+  );
+  const python = process.platform === 'win32' ? 'python' : 'python3';
+
+  function run(configPath: string): string {
+    return execFileSync(python, [loader, configPath], { encoding: 'utf8' });
+  }
+
+  it('selects week 12 and keeps the commit gate closed', () => {
+    expect(run(official)).toBe('2026\n12\nfalse\n');
+  });
+
+  it('rejects the research week file and other invalid configs', () => {
+    expect(() => run(research)).toThrow();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'official-week-'));
+    const cases = [
+      {},
+      { capability: 'generic_shadow_t30_active_week_2026', season: 2026, week: 12, commitAuthorized: false },
+      { capability: 'betting_ticket_active_week_2026', season: 2025, week: 12, commitAuthorized: false },
+      { capability: 'betting_ticket_active_week_2026', season: 2026, week: 0, commitAuthorized: false },
+      { capability: 'betting_ticket_active_week_2026', season: 2026, week: 12, commitAuthorized: 'false' },
+    ];
+    for (const value of cases) {
+      const target = path.join(dir, 'bad.json');
+      fs.writeFileSync(target, JSON.stringify(value));
+      expect(() => run(target)).toThrow();
+    }
   });
 });

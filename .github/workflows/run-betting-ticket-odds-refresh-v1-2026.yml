@@ -52,14 +52,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          CONFIG="research/generic-shadow/GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json"
+          CONFIG="ops/betting-ticket/ACTIVE_WEEK_2026.json"
           if [ ! -f "$CONFIG" ]; then
             echo "::error::Active-week config is missing: $CONFIG"
             exit 1
           fi
 
-          CONFIG_SEASON="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["season"])' "$CONFIG")"
-          ACTIVE_WEEK="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["week"])' "$CONFIG")"
+          mapfile -t OFFICIAL_WEEK < <(python3 ops/betting-ticket/load_active_week.py "$CONFIG")
+          CONFIG_SEASON="${OFFICIAL_WEEK[0]}"
+          ACTIVE_WEEK="${OFFICIAL_WEEK[1]}"
+          COMMIT_AUTHORIZED="${OFFICIAL_WEEK[2]}"
+          if [ "$COMMIT_AUTHORIZED" != "true" ] && [ "$COMMIT_AUTHORIZED" != "false" ]; then
+            echo "::error::commitAuthorized must be true or false"
+            exit 1
+          fi
 
           if [ "$CONFIG_SEASON" != "$INPUT_SEASON" ]; then
             echo "::error::Active-week config season $CONFIG_SEASON does not match INPUT_SEASON=$INPUT_SEASON"
@@ -71,7 +77,9 @@ jobs:
           fi
 
           echo "INPUT_WEEK=$ACTIVE_WEEK" >> "$GITHUB_ENV"
+          echo "COMMIT_AUTHORIZED=$COMMIT_AUTHORIZED" >> "$GITHUB_ENV"
           echo "week=$ACTIVE_WEEK" >> "$GITHUB_OUTPUT"
+          echo "commit_authorized=$COMMIT_AUTHORIZED" >> "$GITHUB_OUTPUT"
           echo "active_week=$ACTIVE_WEEK"
           echo "active_week_source=version_controlled_config"
 
@@ -117,7 +125,7 @@ jobs:
           npx tsx apps/jobs/plan-betting-ticket-odds-refresh-v1.ts             --season "$INPUT_SEASON"             --week "$INPUT_WEEK"             --report "$REPORT"
 
       - name: Conditional guarded Live Odds refresh
-        if: ${{ steps.plan.outputs.should_refresh == 'true' }}
+        if: ${{ steps.plan.outputs.should_refresh == 'true' && steps.active_week.outputs.commit_authorized == 'true' }}
         env:
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
           DATABASE_URL: ${{ secrets.DIRECT_URL }}
@@ -236,6 +244,7 @@ jobs:
           echo "week=${INPUT_WEEK:-}"
           echo "stale guard: 150 minutes"
           echo "T-30 handoff: 60 minutes before any kickoff"
+          echo "commit gate: commitAuthorized must be true"
           echo "native GitHub schedule: disabled"
           echo "Bet/model/Game/T-30 closing writes: false"
           echo "provider call: conditional, at most 1"
