@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Permanent ML-CAL-1 integrated regression checker.
 
-Historical library pins are constants. Current source pins live in the
-versioned contract. Safety invariants are enforced in this file and cannot
-be switched off by a contract edit.
+Historical library pins are constants. Current source pins and the version 1
+identity reference live in the versioned contract. Current Jest classification
+uses the separate version 2 inventory. Safety invariants are enforced in this
+file and cannot be switched off by a contract or inventory edit.
 """
 
 from __future__ import annotations
@@ -22,6 +23,11 @@ from pathlib import Path
 VERSION_1_IDENTITY_SHA256 = (
     "570374d81a866127d8017d146e173555df5318854d5944e197680cd74e921edb"
 )
+VERSION_1_IDENTITY_COUNT = 615
+CURRENT_IDENTITY_SHA256 = (
+    "a3bf25d45727b454180d77bdb1df1b72e8d34fb64840b0ece8c181ad0cd2ff06"
+)
+CURRENT_IDENTITY_COUNT = 617
 FORBIDDEN_INTEGRATED_DIGEST = (
     "a3a86d5b181032c6dc7ad555ee0958c80d819b169af200162fd18f8da776568b"
 )
@@ -88,25 +94,25 @@ REQUIRED_PIN_PATHS = (
     "tools/windows-g4-fs-inspect/reviewed-artifacts/.gitignore",
     "tools/windows-g4-fs-inspect/reviewed-artifacts/WindowsG4FsInspect-9fc710026f177525994126673f084274e94d17615ec136a72b60d3e7a558c9b5.exe",
 )
-SUITES = (
-    ("apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts", 29),
-    ("apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts", 33),
-    ("apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts", 25),
-    ("apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts", 39),
-    ("apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts", 37),
-    ("apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts", 21),
-    ("apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts", 34),
-    ("apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts", 43),
-    ("apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts", 20),
-    ("apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts", 16),
-    ("apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts", 57),
-    ("apps/jobs/__tests__/ml-cal-1-capture.test.ts", 128),
-    ("apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts", 71),
-    ("apps/jobs/__tests__/betting-ticket-odds-refresh-v1.test.ts", 10),
-    ("apps/jobs/__tests__/generic-shadow-t30-active-week-2026.test.ts", 7),
-    ("apps/jobs/__tests__/generic-shadow-t30-automation-v1-scheduled-workflow.test.ts", 8),
-    ("apps/jobs/__tests__/grade-bets-2026-workflow.test.ts", 7),
-    ("apps/jobs/__tests__/live-odds-2026.test.ts", 30),
+SUITE_PATHS = (
+    "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+    "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+    "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+    "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+    "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+    "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",
+    "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+    "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+    "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts",
+    "apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts",
+    "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+    "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+    "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+    "apps/jobs/__tests__/betting-ticket-odds-refresh-v1.test.ts",
+    "apps/jobs/__tests__/generic-shadow-t30-active-week-2026.test.ts",
+    "apps/jobs/__tests__/generic-shadow-t30-automation-v1-scheduled-workflow.test.ts",
+    "apps/jobs/__tests__/grade-bets-2026-workflow.test.ts",
+    "apps/jobs/__tests__/live-odds-2026.test.ts",
 )
 W5_CASES = (
     ("W5 helper pin + frozen caps", "records frozen caps and pin constants"),
@@ -468,6 +474,60 @@ def identity_sha256(identities):
     return hashlib.sha256(canonical_identity_payload(identities)).hexdigest()
 
 
+def default_current_inventory_path():
+    return Path(__file__).with_name("ml-cal-1-integrated-regression-inventory-current.json")
+
+
+def load_current_inventory(path=None):
+    return json.loads(Path(path or default_current_inventory_path()).read_text(encoding="utf-8"))
+
+
+def identity_key(item):
+    return (item["suite_path"], tuple(item["ancestorTitles"]), item["title"])
+
+
+def current_inventory_errors(inventory):
+    errors = []
+    if not isinstance(inventory, dict):
+        return ["current_inventory_malformed"]
+    if inventory.get("inventory_version") != 2:
+        errors.append("current_inventory_version_unsupported")
+    if inventory.get("historical_identity_sha256") != VERSION_1_IDENTITY_SHA256:
+        errors.append("current_inventory_historical_reference_mismatch")
+    if inventory.get("historical_identity_count") != VERSION_1_IDENTITY_COUNT:
+        errors.append("current_inventory_historical_count_mismatch")
+    identities = inventory.get("identities")
+    if not isinstance(identities, list):
+        return errors + ["current_inventory_identities_missing"]
+    keys = [identity_key(item) for item in identities]
+    counts = Counter(keys)
+    for key, count in counts.items():
+        if count != 1:
+            errors.append(f"current_inventory_duplicate {key[0]} {key[2]} x{count}")
+    suite_counts = Counter(item["suite_path"] for item in identities)
+    for path in SUITE_PATHS:
+        if suite_counts[path] == 0:
+            errors.append(f"current_inventory_suite_missing {path}")
+    for path in sorted(set(suite_counts) - set(SUITE_PATHS)):
+        errors.append(f"current_inventory_suite_unexpected {path}")
+    digest = identity_sha256(identities)
+    if (
+        digest != inventory.get("identity_sha256")
+        or digest != CURRENT_IDENTITY_SHA256
+        or len(identities) != inventory.get("identity_count")
+        or len(identities) != CURRENT_IDENTITY_COUNT
+    ):
+        errors.append(
+            f"current_inventory_digest_mismatch observed={digest} count={len(identities)}"
+        )
+    return errors
+
+
+def suite_table(inventory):
+    counts = Counter(item["suite_path"] for item in inventory.get("identities", []))
+    return tuple((path, counts[path]) for path in SUITE_PATHS)
+
+
 def collect_identities(data):
     errors = []
     identities = []
@@ -544,16 +604,17 @@ def classify_data(data, log_text):
         errors.append("failed_tests_present")
     if data["numPendingTests"] != 0 or data["numPendingTestSuites"] != 0 or data["numTodoTests"] != 0:
         errors.append("pending_or_todo_present")
-    if data["numPassedTests"] != 615 or data["numTotalTests"] != 615:
+    if data["numPassedTests"] != CURRENT_IDENTITY_COUNT or data["numTotalTests"] != CURRENT_IDENTITY_COUNT:
         errors.append(
             f"assertion_count passed={data['numPassedTests']} total={data['numTotalTests']}"
         )
     identities, identity_errors = collect_identities(data)
     errors.extend(identity_errors)
+    errors.extend(current_inventory_errors(load_current_inventory()))
     if identities and not any(error.startswith("assertion_identity_duplicate") for error in identity_errors):
         digest = identity_sha256(identities)
         count = len(identities)
-        if digest != VERSION_1_IDENTITY_SHA256 or count != 615:
+        if digest != CURRENT_IDENTITY_SHA256 or count != CURRENT_IDENTITY_COUNT:
             errors.append(
                 f"identity_sha256_mismatch observed={digest} count={count}"
             )
@@ -839,6 +900,7 @@ def command_provenance(args):
 def command_candidate(args):
     contract = load_contract(args.contract)
     errors = verify_candidate(args.repo, contract, args.rev, args.head)
+    errors.extend(current_inventory_errors(load_current_inventory()))
     for error in errors:
         print(f"candidate_error {error}")
     if errors:
@@ -876,6 +938,7 @@ def command_classify(args):
         errors, digest, count = classify_data(data, log_text)
     print("classification=" + ("PASS" if not errors else "FAIL"))
     print("identity_contract_version=1")
+    print("current_inventory_version=2")
     print(f"identity_count={count if count is not None else 0}")
     print(f"identity_sha256={digest if digest is not None else 'UNAVAILABLE'}")
     for error in errors:
@@ -925,6 +988,9 @@ def main(argv):
     parser = build_parser()
     args = parser.parse_args(argv)
     return args.func(args)
+
+
+SUITES = suite_table(load_current_inventory())
 
 
 if __name__ == "__main__":

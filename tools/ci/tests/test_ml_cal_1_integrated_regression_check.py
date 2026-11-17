@@ -69,9 +69,22 @@ def accepted_log():
 class CheckerAcceptanceTest(unittest.TestCase):
     def test_version_1_digest_constant_is_the_frozen_reference(self):
         self.assertEqual(checker.VERSION_1_IDENTITY_SHA256, FROZEN_DIGEST)
+        self.assertEqual(checker.VERSION_1_IDENTITY_COUNT, 615)
+        self.assertEqual(checker.CURRENT_IDENTITY_COUNT, 617)
+        self.assertEqual(
+            checker.CURRENT_IDENTITY_SHA256,
+            "a3bf25d45727b454180d77bdb1df1b72e8d34fb64840b0ece8c181ad0cd2ff06",
+        )
         self.assertEqual(len(checker.W5_CASES), 39)
-        self.assertEqual(sum(count for _path, count in checker.SUITES), 615)
+        self.assertEqual(sum(count for _path, count in checker.SUITES), 617)
         self.assertEqual(len(checker.SUITES), 18)
+        self.assertEqual(
+            dict(checker.SUITES)["apps/jobs/__tests__/betting-ticket-odds-refresh-v1.test.ts"],
+            12,
+        )
+        contract = checker.load_contract(checker.default_contract_path())
+        self.assertEqual(contract["identity_sha256"], FROZEN_DIGEST)
+        self.assertEqual(contract["inventory_contract_version"], 1)
 
     def test_historical_provenance_passes_on_accepted_repository(self):
         errors = checker.verify_historical(ROOT)
@@ -152,6 +165,58 @@ class CheckerAcceptanceTest(unittest.TestCase):
         commit_file(directory.name, checker.LAUNCHER_BIN, b"not-a-real-helper")
         errors = checker.launcher_errors(directory.name, ["HEAD"])
         self.assertTrue(any(error.startswith("launcher_bin_present_in_source_head") for error in errors))
+
+    def test_contract_identity_reference_cannot_be_replaced_by_the_current_digest(self):
+        contract = checker.load_contract(checker.default_contract_path())
+        contract["identity_sha256"] = checker.CURRENT_IDENTITY_SHA256
+        errors = checker.contract_shape_errors(contract)
+        self.assertIn("contract_identity_reference_mismatch", errors)
+
+    def test_current_inventory_classifies_and_refuses_identity_mutations(self):
+        inventory = checker.load_current_inventory()
+        self.assertEqual(checker.current_inventory_errors(inventory), [])
+        report = passing_report(inventory["identities"])
+        errors, digest, count = checker.classify_data(report, accepted_log())
+        self.assertEqual(errors, [])
+        self.assertEqual(digest, checker.CURRENT_IDENTITY_SHA256)
+        self.assertEqual(count, 617)
+
+        omitted = json.loads(json.dumps(report))
+        omitted["testResults"][0]["assertionResults"].pop()
+        omitted["numPassedTests"] = 616
+        omitted["numTotalTests"] = 616
+        errors, _digest, _count = checker.classify_data(omitted, accepted_log())
+        self.assertTrue(any(error.startswith("identity_sha256_mismatch") for error in errors))
+        self.assertTrue(any(error.startswith("assertion_count") for error in errors))
+
+        extra = json.loads(json.dumps(report))
+        extra["testResults"][0]["assertionResults"].append(
+            {"status": "passed", "ancestorTitles": ["injected"], "title": "extra identity"}
+        )
+        extra["numPassedTests"] = 618
+        extra["numTotalTests"] = 618
+        errors, _digest, _count = checker.classify_data(extra, accepted_log())
+        self.assertTrue(any(error.startswith("identity_sha256_mismatch") for error in errors))
+
+        renamed = json.loads(json.dumps(report))
+        renamed["testResults"][0]["assertionResults"][0]["title"] += " renamed"
+        errors, _digest, _count = checker.classify_data(renamed, accepted_log())
+        self.assertTrue(any(error.startswith("identity_sha256_mismatch") for error in errors))
+
+        failed = json.loads(json.dumps(report))
+        failed["numFailedTests"] = 1
+        failed["numPassedTests"] = 616
+        failed["testResults"][0]["status"] = "failed"
+        failed["testResults"][0]["assertionResults"][0]["status"] = "failed"
+        errors, _digest, _count = checker.classify_data(failed, accepted_log())
+        self.assertTrue(any(error.startswith("failed_tests_present") for error in errors))
+
+        pending = json.loads(json.dumps(report))
+        pending["numPendingTests"] = 1
+        pending["numPendingTestSuites"] = 1
+        pending["numPassedTests"] = 616
+        errors, _digest, _count = checker.classify_data(pending, accepted_log())
+        self.assertTrue(any(error == "pending_or_todo_present" for error in errors))
 
     def test_renamed_assertion_changes_digest_without_changing_count(self):
         original = [
@@ -344,6 +409,47 @@ def empty_jest():
         "numTotalTestSuites": 0,
         "numTotalTests": 0,
         "testResults": [],
+    }
+
+
+def passing_report(identities):
+    grouped = {}
+    for item in identities:
+        grouped.setdefault(item["suite_path"], []).append(item)
+    w5_order = {pair: index for index, pair in enumerate(checker.W5_CASES)}
+    results = []
+    for suite, rows in grouped.items():
+        if suite.endswith("ml-cal-1-g4-windows-path-identity.test.ts"):
+            rows = sorted(
+                rows,
+                key=lambda row: w5_order.get((row["ancestorTitles"][-1], row["title"]), 10**6),
+            )
+        results.append(
+            {
+                "name": suite,
+                "status": "passed",
+                "assertionResults": [
+                    {
+                        "status": "passed",
+                        "ancestorTitles": row["ancestorTitles"],
+                        "title": row["title"],
+                    }
+                    for row in rows
+                ],
+            }
+        )
+    total = len(identities)
+    return {
+        "numFailedTestSuites": 0,
+        "numFailedTests": 0,
+        "numPassedTestSuites": len(results),
+        "numPassedTests": total,
+        "numPendingTestSuites": 0,
+        "numPendingTests": 0,
+        "numTodoTests": 0,
+        "numTotalTestSuites": len(results),
+        "numTotalTests": total,
+        "testResults": results,
     }
 
 
