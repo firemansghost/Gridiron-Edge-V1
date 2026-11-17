@@ -1,5 +1,7 @@
 # Permanent Linux regression for the accepted ML-CAL-1 integrated inventory.
-# Version 1 identity digest and safety invariants are fixed in the checker.
+# The version 1 identity digest remains the historical reference.
+# Current classification uses tools/ci/ml-cal-1-integrated-regression-inventory-current.json.
+# Safety invariants stay fixed in the checker.
 # This workflow does not use pull_request_target, workflow_dispatch, or a
 # workflow-level path filter. It does not run Route A or operator mode.
 

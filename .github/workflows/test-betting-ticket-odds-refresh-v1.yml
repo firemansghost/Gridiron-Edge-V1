@@ -10,6 +10,7 @@ on:
       - '.github/workflows/run-betting-ticket-odds-refresh-v1-2026.yml'
       - '.github/workflows/test-betting-ticket-odds-refresh-v1.yml'
       - 'research/generic-shadow/GENERIC_SHADOW_T30_ACTIVE_WEEK_2026.json'
+      - 'ops/betting-ticket/**'
 
 permissions:
   contents: read

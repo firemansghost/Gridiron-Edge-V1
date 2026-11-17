@@ -1,0 +1,4419 @@
+{
+  "inventory_name": "ml-cal-1-integrated-regression-current",
+  "inventory_version": 2,
+  "historical_contract": "ml-cal-1-integrated-regression-v1",
+  "historical_identity_sha256": "570374d81a866127d8017d146e173555df5318854d5944e197680cd74e921edb",
+  "historical_identity_count": 615,
+  "identity_count": 617,
+  "identity_sha256": "a3bf25d45727b454180d77bdb1df1b72e8d34fb64840b0ece8c181ad0cd2ff06",
+  "authenticated_run": 44166997915,
+  "authenticated_head": "635715054bed604bfe03b2ebb05d402251283afb",
+  "suite_counts": {
+    "apps/jobs/__tests__/betting-ticket-odds-refresh-v1.test.ts": 12,
+    "apps/jobs/__tests__/generic-shadow-t30-active-week-2026.test.ts": 7,
+    "apps/jobs/__tests__/generic-shadow-t30-automation-v1-scheduled-workflow.test.ts": 8,
+    "apps/jobs/__tests__/grade-bets-2026-workflow.test.ts": 7,
+    "apps/jobs/__tests__/live-odds-2026.test.ts": 30,
+    "apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts": 16,
+    "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts": 20,
+    "apps/jobs/__tests__/ml-cal-1-capture.test.ts": 128,
+    "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts": 33,
+    "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts": 29,
+    "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts": 25,
+    "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts": 34,
+    "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts": 37,
+    "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts": 21,
+    "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts": 39,
+    "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts": 57,
+    "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts": 43,
+    "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts": 71
+  },
+  "identities": [
+    {
+      "suite_path": "apps/jobs/__tests__/betting-ticket-odds-refresh-v1.test.ts",
+      "ancestorTitles": [
+        "Betting Ticket Odds Refresh V1 planner"
+      ],
+      "title": "does nothing when there are no future scheduled games"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/betting-ticket-odds-refresh-v1.test.ts",
+      "ancestorTitles": [
+        "Betting Ticket Odds Refresh V1 planner"
+      ],
+      "title": "hands off to T-30 when any scheduled kickoff is within 60 minutes"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/betting-ticket-odds-refresh-v1.test.ts",
+      "ancestorTitles": [
+        "Betting Ticket Odds Refresh V1 planner"
+      ],
+      "title": "keeps a complete <150-minute board fresh with zero provider calls"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/betting-ticket-odds-refresh-v1.test.ts",
+      "ancestorTitles": [
+        "Betting Ticket Odds Refresh V1 planner"
+      ],
+      "title": "requests one future board refresh if any required market is stale/missing"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/betting-ticket-odds-refresh-v1.test.ts",
+      "ancestorTitles": [
+        "Betting Ticket Odds Refresh V1 workflow boundary"
+      ],
+      "title": "does not invoke T-30 closing or unrelated writers"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/betting-ticket-odds-refresh-v1.test.ts",
+      "ancestorTitles": [
+        "Betting Ticket Odds Refresh V1 workflow boundary"
+      ],
+      "title": "keeps ODDS_API_KEY only on the conditional provider step"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/betting-ticket-odds-refresh-v1.test.ts",
+      "ancestorTitles": [
+        "Betting Ticket Odds Refresh V1 workflow boundary"
+      ],
+      "title": "loads the version-controlled active week and refuses non-main execution"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/betting-ticket-odds-refresh-v1.test.ts",
+      "ancestorTitles": [
+        "Betting Ticket Odds Refresh V1 workflow boundary"
+      ],
+      "title": "planner has no provider secret and no database mutation API"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/betting-ticket-odds-refresh-v1.test.ts",
+      "ancestorTitles": [
+        "Betting Ticket Odds Refresh V1 workflow boundary"
+      ],
+      "title": "uploads both planner and Live Odds evidence when a refresh occurs"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/betting-ticket-odds-refresh-v1.test.ts",
+      "ancestorTitles": [
+        "Betting Ticket Odds Refresh V1 workflow boundary"
+      ],
+      "title": "uses workflow_dispatch only; Supabase is the intended external clock"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/betting-ticket-odds-refresh-v1.test.ts",
+      "ancestorTitles": [
+        "official betting-ticket week loader"
+      ],
+      "title": "rejects the research week file and other invalid configs"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/betting-ticket-odds-refresh-v1.test.ts",
+      "ancestorTitles": [
+        "official betting-ticket week loader"
+      ],
+      "title": "selects week 12 and keeps the commit gate closed"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/generic-shadow-t30-active-week-2026.test.ts",
+      "ancestorTitles": [
+        "Active-week consumers (scheduled T-30 + Betting Ticket)"
+      ],
+      "title": "Betting Ticket consumes its own official week and still requires the odds confirmation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/generic-shadow-t30-active-week-2026.test.ts",
+      "ancestorTitles": [
+        "Active-week consumers (scheduled T-30 + Betting Ticket)"
+      ],
+      "title": "both consumers export the configured week into INPUT_WEEK / outputs"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/generic-shadow-t30-active-week-2026.test.ts",
+      "ancestorTitles": [
+        "Active-week consumers (scheduled T-30 + Betting Ticket)"
+      ],
+      "title": "research clock keeps its week file and the official ticket clock uses its own"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/generic-shadow-t30-active-week-2026.test.ts",
+      "ancestorTitles": [
+        "Active-week consumers (scheduled T-30 + Betting Ticket)"
+      ],
+      "title": "scheduled coordinator consumes INPUT_WEEK for Stage C/D and keeps ENABLE + Week-4 Hybrid gates"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/generic-shadow-t30-active-week-2026.test.ts",
+      "ancestorTitles": [
+        "GENERIC_SHADOW_T30_ACTIVE_WEEK_2026 config contract"
+      ],
+      "title": "accepts the committed Week 8 fixture with required schema fields"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/generic-shadow-t30-active-week-2026.test.ts",
+      "ancestorTitles": [
+        "GENERIC_SHADOW_T30_ACTIVE_WEEK_2026 config contract"
+      ],
+      "title": "rejects invalid configuration payloads"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/generic-shadow-t30-active-week-2026.test.ts",
+      "ancestorTitles": [
+        "GENERIC_SHADOW_T30_ACTIVE_WEEK_2026 config contract"
+      ],
+      "title": "rejects missing configuration file"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/generic-shadow-t30-automation-v1-scheduled-workflow.test.ts",
+      "ancestorTitles": [
+        "Generic Shadow T-30 Automation V1 external-clock coordinator"
+      ],
+      "title": "activates Hybrid closing only for Week 4 under the proven Generic gate and keeps it provider-free"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/generic-shadow-t30-automation-v1-scheduled-workflow.test.ts",
+      "ancestorTitles": [
+        "Generic Shadow T-30 Automation V1 external-clock coordinator"
+      ],
+      "title": "does not create predictions or invoke unrelated writers"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/generic-shadow-t30-automation-v1-scheduled-workflow.test.ts",
+      "ancestorTitles": [
+        "Generic Shadow T-30 Automation V1 external-clock coordinator"
+      ],
+      "title": "keeps Stage D provider-free and uses the frozen automated closing confirmation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/generic-shadow-t30-automation-v1-scheduled-workflow.test.ts",
+      "ancestorTitles": [
+        "Generic Shadow T-30 Automation V1 external-clock coordinator"
+      ],
+      "title": "keeps the provider secret only in the conditional Stage C refresh step"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/generic-shadow-t30-automation-v1-scheduled-workflow.test.ts",
+      "ancestorTitles": [
+        "Generic Shadow T-30 Automation V1 external-clock coordinator"
+      ],
+      "title": "loads the active week from version-controlled config with schema + positive integer week"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/generic-shadow-t30-automation-v1-scheduled-workflow.test.ts",
+      "ancestorTitles": [
+        "Generic Shadow T-30 Automation V1 external-clock coordinator"
+      ],
+      "title": "preserves main-only execution and one production concurrency group"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/generic-shadow-t30-automation-v1-scheduled-workflow.test.ts",
+      "ancestorTitles": [
+        "Generic Shadow T-30 Automation V1 external-clock coordinator"
+      ],
+      "title": "uses workflow_dispatch only and preserves the explicit activation gate"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/generic-shadow-t30-automation-v1-scheduled-workflow.test.ts",
+      "ancestorTitles": [
+        "Generic Shadow T-30 Automation V1 external-clock coordinator"
+      ],
+      "title": "writes and uploads a top-level machine-readable scheduled-cycle report"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/grade-bets-2026-workflow.test.ts",
+      "ancestorTitles": [
+        "2C-2J-6C-2 canonical official grading workflow"
+      ],
+      "title": "CLI is Serializable, official_flat_100 only, no closePrice mutation, no --force"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/grade-bets-2026-workflow.test.ts",
+      "ancestorTitles": [
+        "2C-2J-6C-2 canonical official grading workflow"
+      ],
+      "title": "CLI sets a 30-second Serializable grading transaction timeout"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/grade-bets-2026-workflow.test.ts",
+      "ancestorTitles": [
+        "2C-2J-6C-2 canonical official grading workflow"
+      ],
+      "title": "PREVIEW default; fresh concurrency; exact COMMIT confirmation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/grade-bets-2026-workflow.test.ts",
+      "ancestorTitles": [
+        "2C-2J-6C-2 canonical official grading workflow"
+      ],
+      "title": "guarded 2026 writer is the only grading workflow entrypoint"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/grade-bets-2026-workflow.test.ts",
+      "ancestorTitles": [
+        "2C-2J-6C-2 canonical official grading workflow"
+      ],
+      "title": "legacy Grade Bets workflow is absent"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/grade-bets-2026-workflow.test.ts",
+      "ancestorTitles": [
+        "2C-2J-6C-2 canonical official grading workflow"
+      ],
+      "title": "manual workflow exists; workflow_dispatch only; no schedule/cron"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/grade-bets-2026-workflow.test.ts",
+      "ancestorTitles": [
+        "2C-2J-6C-2 canonical official grading workflow"
+      ],
+      "title": "no provider secrets/calls; DIRECT_URL only on grading step; artifact upload"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "CLI transaction re-reads before createMany; exact createMany count"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "CLI/workflow/source guards: live endpoint, truthful summary, no wipe"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "COMMIT exact confirmation computed from week; blocked without it"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "FBS with Week1 opponent + unresolved provider opponent blocks; later week with other-week FBS game is nonblocking"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "FBS with no requested-week FBS opponent + unresolved side is out_of_scope_fbs_fcs"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "MAX_ABS_SPREAD is 100 (production 50.5\u201351 accepted)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "TeamResolver exposes fuzzy provenance via resolveTeamDetailed"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "authoritative FBS 138 + Week1 51 both-FBS required"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "buildLiveOddsPlan: PREVIEW planning; COMMIT gates; unresolved expected blocks"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "classifies FBS-FCS / later-week / unmatched / ambiguous / fuzzy / unresolved expected"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "coverage helper still lists games without odds"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "credits: providerCalls must be 1; overage blocks"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "dedupe identical collapses; conflicting fingerprints block; existing reconcile"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "deterministic alias resolution accepted as matched_requested_week"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "exact Week1 pair requires kickoff alignment; missing commence blocks"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "final audit report: PREVIEW vs successful COMMIT vs tx failure vs verify failure"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "fingerprint re-read where is scoped and timestamp-narrowed (collision-safe)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "invalid bookmaker timestamp rejected"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "legitimate later-week event remains out_of_requested_week nonblocking"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "live snapshot forces markets/region; no historical URL in snapshot method"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "production PREVIEW 33186871080 replay classifications"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "season exactly 2026; week validated; PREVIEW default confirmation phrase"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "spread/total/moneyline normalization + exact outcome counts"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "transaction timeout constant is exactly 30000; CLI wires timeout and narrowed re-read"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2 live-odds-2026 guards (repaired)"
+      ],
+      "title": "week_mismatch when commence is in Week1 window but pair only stored under other week"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "2C-2J-2A production Odds aliases from team_aliases.yml"
+      ],
+      "title": "every observed production FBS provider name resolves via exact alias (not fuzzy)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "Week 1 Maryland Terrapins alias repair (Hampton FCS nonblocking)"
+      ],
+      "title": "\"Maryland Terrapins\" and \"Maryland\" resolve to canonical FBS teamId maryland"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "Week 1 Maryland Terrapins alias repair (Hampton FCS nonblocking)"
+      ],
+      "title": "Maryland Terrapins vs Hampton Pirates with no nearby Maryland FBS-vs-FBS Game is out_of_scope_fbs_fcs"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "Week 3 East Texas A&M strict Odds identity repair"
+      ],
+      "title": "East Texas A&M Lions @ Tulsa Golden Hurricane is out_of_scope_fbs_fcs, not unmatched_both_fbs"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/live-odds-2026.test.ts",
+      "ancestorTitles": [
+        "Week 3 East Texas A&M strict Odds identity repair"
+      ],
+      "title": "legitimate current Odds exact strings remain resolvable under strict Odds mode"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts",
+      "ancestorTitles": [
+        "G3 fixture capture/binding wiring"
+      ],
+      "title": "Decimal zero remains usable in the wired planner map"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts",
+      "ancestorTitles": [
+        "G3 fixture capture/binding wiring"
+      ],
+      "title": "F1-A: full G2 replay rejects invalid ZIP, empty pin, wrong week, superseding lineage, stale rating, unknown integration schema"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts",
+      "ancestorTitles": [
+        "G3 fixture capture/binding wiring"
+      ],
+      "title": "F1-A: sealed capture scope and retained mirrors must correspond to authoritative replay"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts",
+      "ancestorTitles": [
+        "G3 fixture capture/binding wiring"
+      ],
+      "title": "F1-B: copy-away sealed package verifies without the original binding fixture directory"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts",
+      "ancestorTitles": [
+        "G3 fixture capture/binding wiring"
+      ],
+      "title": "authentic Week 5 stays full-weight-ineligible"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts",
+      "ancestorTitles": [
+        "G3 fixture capture/binding wiring"
+      ],
+      "title": "changed forecast rating and cohort mismatch fail closed"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts",
+      "ancestorTitles": [
+        "G3 fixture capture/binding wiring"
+      ],
+      "title": "does not qualify when the approved receipt digest differs"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts",
+      "ancestorTitles": [
+        "G3 fixture capture/binding wiring"
+      ],
+      "title": "fixture CLI seals inspectable binding evidence (success + reject + parallel + zero DB)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts",
+      "ancestorTitles": [
+        "G3 fixture capture/binding wiring"
+      ],
+      "title": "live binding invocation is rejected before a database client is used"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts",
+      "ancestorTitles": [
+        "G3 fixture capture/binding wiring"
+      ],
+      "title": "missing registry anchor cannot be bypassed by a qualifying receipt"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts",
+      "ancestorTitles": [
+        "G3 fixture capture/binding wiring"
+      ],
+      "title": "rejects unparseable capture time and short lineage"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts",
+      "ancestorTitles": [
+        "G3 fixture capture/binding wiring"
+      ],
+      "title": "rejects wrong trusted season and prospective week via capture week"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts",
+      "ancestorTitles": [
+        "G3 fixture capture/binding wiring"
+      ],
+      "title": "stale exported hash is rejected by the same helper the planner calls"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts",
+      "ancestorTitles": [
+        "G3 fixture capture/binding wiring"
+      ],
+      "title": "stale markets and late publication stay blocked"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts",
+      "ancestorTitles": [
+        "G3 fixture capture/binding wiring"
+      ],
+      "title": "synthetic parity qualifies through planner with liveAccepted false"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-g3.test.ts",
+      "ancestorTitles": [
+        "G3 fixture capture/binding wiring"
+      ],
+      "title": "tampered or mismatched binding evidence blocks binding acceptance"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-capture-binding-integration G2 (offline)",
+        "Decimal zero and export/fingerprint parity"
+      ],
+      "title": "Decimal-like zero remains usable in capture export path"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-capture-binding-integration G2 (offline)",
+        "Decimal zero and export/fingerprint parity"
+      ],
+      "title": "binding vs capture exportRatingInput/buildRatingFingerprint parity"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-capture-binding-integration G2 (offline)",
+        "F1\u2013F4 whole-orchestrator regressions"
+      ],
+      "title": "F1: unparseable capture time fails and does not inherit binding coverage"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-capture-binding-integration G2 (offline)",
+        "F1\u2013F4 whole-orchestrator regressions"
+      ],
+      "title": "F2: fixture evidence with lifecycleMode=live does not export nested liveAccepted"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-capture-binding-integration G2 (offline)",
+        "F1\u2013F4 whole-orchestrator regressions"
+      ],
+      "title": "F3: prospective week must match binding target and registry target"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-capture-binding-integration G2 (offline)",
+        "F1\u2013F4 whole-orchestrator regressions"
+      ],
+      "title": "F3: wrong trusted season and lifecycle source fail in fixture mode"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-capture-binding-integration G2 (offline)",
+        "F1\u2013F4 whole-orchestrator regressions"
+      ],
+      "title": "F4: stale rowContentHash after raw rating change is rejected"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-capture-binding-integration G2 (offline)",
+        "approval anchors and receipt trust"
+      ],
+      "title": "fails closed when approval anchors are missing"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-capture-binding-integration G2 (offline)",
+        "approval anchors and receipt trust"
+      ],
+      "title": "fails closed when registry evidence is tampered"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-capture-binding-integration G2 (offline)",
+        "approval anchors and receipt trust"
+      ],
+      "title": "fails when approvedReceiptDigest differs from computed adapted digest"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-capture-binding-integration G2 (offline)",
+        "authentic Week 5 package pins"
+      ],
+      "title": "integrity-positive / full-weight-negative through orchestration"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-capture-binding-integration G2 (offline)",
+        "authentic Week 5 package pins"
+      ],
+      "title": "preserves published ZIP and member digests"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-capture-binding-integration G2 (offline)",
+        "capture-as-of lineage"
+      ],
+      "title": "fails when lineage covers binding observation but not capture as-of"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-capture-binding-integration G2 (offline)",
+        "capture-as-of lineage"
+      ],
+      "title": "missing capture time retains fixture provenance and no live acceptance"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-capture-binding-integration G2 (offline)",
+        "fingerprint mismatches"
+      ],
+      "title": "detects forged bundle.inputs.ratingFingerprint field"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-capture-binding-integration G2 (offline)",
+        "provenance and producer identities"
+      ],
+      "title": "keeps lifecycle, observer, and capture producer SHAs distinct"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-capture-binding-integration G2 (offline)",
+        "provenance and producer identities"
+      ],
+      "title": "retains fixture provenance through orchestration outputs"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-capture-binding-integration G2 (offline)",
+        "synthetic full-weight integration"
+      ],
+      "title": "drives planMlCal1Capture fingerprint field (not sha256 of inputs.json)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-capture-binding-integration G2 (offline)",
+        "synthetic full-weight integration"
+      ],
+      "title": "qualifies through actual capture qualifier with liveAccepted=false"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture-binding-integration.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-capture-binding-integration G2 (offline)",
+        "synthetic package on disk"
+      ],
+      "title": "PACKAGE_INDEX is present and digests match committed synthetic bytes"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "CLI argument validation (before any DB access)"
+      ],
+      "title": "rejects --repository-sha without --fixture and allows it with a fixture"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "CLI argument validation (before any DB access)"
+      ],
+      "title": "rejects COMMIT / confirmation / unknown flags and missing values"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "CLI argument validation (before any DB access)"
+      ],
+      "title": "rejects fixture + live read, unsafe capture ids and malformed pinned digests"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "CLI argument validation (before any DB access)"
+      ],
+      "title": "requires explicit season=2026 and an integer week >= 1"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "F3 \u2014 live rejects dirty producer / lifecycle-weight before DB"
+      ],
+      "title": "CLI live route never calls the live loader when executable deps are dirty"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "F3 \u2014 live rejects dirty producer / lifecycle-weight before DB"
+      ],
+      "title": "fixture mode records dirty runner without throwing"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "F3 \u2014 live rejects dirty producer / lifecycle-weight before DB"
+      ],
+      "title": "live mode rejects dirty runner, dirty planner, dirty weight path, and missing producer"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R1 \u2014 rating inputs"
+      ],
+      "title": "Decimal(0)-like object is a valid usable zero (truthy before Number())"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R1 \u2014 rating inputs"
+      ],
+      "title": "F4: valid negative/positive decimal strings and Decimal(0) remain usable"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R1 \u2014 rating inputs"
+      ],
+      "title": "F4: whitespace-only / blank Decimal-like / boolean / array never become zero forecasts"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R1 \u2014 rating inputs"
+      ],
+      "title": "a missing rating row makes the forecast unavailable (never defaulted)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R1 \u2014 rating inputs"
+      ],
+      "title": "chosen rating value matches production Number(power || rating || 0) when usable"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R1 \u2014 rating inputs"
+      ],
+      "title": "duplicate V1 rating rows block eligibility"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R1 \u2014 rating inputs"
+      ],
+      "title": "duplicate rows of an unrelated season do not block this capture\u2019s identity"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R1 \u2014 rating inputs"
+      ],
+      "title": "forecast reproduces from exported inputs and probability clipping is unchanged"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R1 \u2014 rating inputs"
+      ],
+      "title": "non-finite rating values are unusable"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R1 \u2014 rating inputs"
+      ],
+      "title": "null/null on both teams still produces no forecast (no imputed zero spread)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R1 \u2014 rating inputs"
+      ],
+      "title": "null/null rating pair is never usable and never yields an available forecast"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R1 \u2014 rating inputs"
+      ],
+      "title": "numeric 0 is falsy like production: falls through to rating, else is not usable"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R1 \u2014 rating inputs"
+      ],
+      "title": "production HFA / margin parity: direct margin equals helper HFA + rating diff"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R1 \u2014 rating inputs"
+      ],
+      "title": "rating drift changes the row hash and the fingerprint"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R1 \u2014 rating inputs"
+      ],
+      "title": "wrong model version is unusable and ignored by the planner"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 finalizePublicationEligibility (pure downgrade)"
+      ],
+      "title": "boundary exactly at kickoff - 30m is retained; +1ms is downgraded"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 finalizePublicationEligibility (pure downgrade)"
+      ],
+      "title": "crossing kickoff itself downgrades; downgrade never re-upgrades"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 finalizePublicationEligibility (pure downgrade)"
+      ],
+      "title": "on-time publication leaves eligibility unchanged and does not mutate the input"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 finalizePublicationEligibility (pure downgrade)"
+      ],
+      "title": "publication before the snapshot blocks primary readiness"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 publication boundary via planMlCal1Capture options"
+      ],
+      "title": "1ms past kickoff - 30m downgrades with late-capture evidence retained"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 publication boundary via planMlCal1Capture options"
+      ],
+      "title": "market age is evaluated at snapshotReferenceTime, not publication time"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 publication boundary via planMlCal1Capture options"
+      ],
+      "title": "on-time publication leaves the forecast available and not late"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 publication boundary via planMlCal1Capture options"
+      ],
+      "title": "publication at or after kickoff carries both reasons"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 publication boundary via planMlCal1Capture options"
+      ],
+      "title": "publication before the snapshot reference blocks primary readiness"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 publication boundary via planMlCal1Capture options"
+      ],
+      "title": "publicationTime === kickoff - 30m is allowed"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 snapshot reference time and input aliasing"
+      ],
+      "title": "accepts snapshotReferenceTime, the captureEndTime alias, or both when equal"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 snapshot reference time and input aliasing"
+      ],
+      "title": "captureStartTime is diagnostic only: it never changes market evidence"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 snapshot reference time and input aliasing"
+      ],
+      "title": "computationTime follows the injected clock and does not move market as-of"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 snapshot reference time and input aliasing"
+      ],
+      "title": "rejects mismatched, missing, or pre-start reference times"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 writeCaptureArtifactsAtomic seal-time publication"
+      ],
+      "title": "F2 reproduction A: semantic terminal edit with unchanged manifestSha256 fails closed"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 writeCaptureArtifactsAtomic seal-time publication"
+      ],
+      "title": "F2 reproduction B: modified manifested member fails closed on digest"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 writeCaptureArtifactsAtomic seal-time publication"
+      ],
+      "title": "F2: committed fixture packages verify structurally and with package pins"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 writeCaptureArtifactsAtomic seal-time publication"
+      ],
+      "title": "F2: invalidation write failure leaves no terminal success path"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 writeCaptureArtifactsAtomic seal-time publication"
+      ],
+      "title": "F2: naked capture directory without terminal receipt fails closed"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 writeCaptureArtifactsAtomic seal-time publication"
+      ],
+      "title": "F2: partial invalidation keeps unaffected games eligible in effective counts"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 writeCaptureArtifactsAtomic seal-time publication"
+      ],
+      "title": "F2: tampered terminal receipt / missing invalidation fail closed"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 writeCaptureArtifactsAtomic seal-time publication"
+      ],
+      "title": "F2: terminal count/status/time lies and wrong invalidation fail closed"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 writeCaptureArtifactsAtomic seal-time publication"
+      ],
+      "title": "a clock already past kickoff-30 at seal downgrades the sealed members"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 writeCaptureArtifactsAtomic seal-time publication"
+      ],
+      "title": "beforeRename delay crossing kickoff itself also invalidates"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 writeCaptureArtifactsAtomic seal-time publication"
+      ],
+      "title": "beforeRename delay crossing kickoff-30 writes an external invalidation, sealed bytes unchanged"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 writeCaptureArtifactsAtomic seal-time publication"
+      ],
+      "title": "beforeRename delay landing exactly on kickoff - 30m is not invalidated"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 writeCaptureArtifactsAtomic seal-time publication"
+      ],
+      "title": "retakes publicationTime at seal and keeps on-time forecasts"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R2 \u2014 writeCaptureArtifactsAtomic seal-time publication"
+      ],
+      "title": "sealing before the snapshot reference blocks primary readiness and manifests the receipt"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R3 \u2014 lifecycle receipt verification"
+      ],
+      "title": "F1: liveAccepted requires an independently reviewed trust record matching the digest"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R3 \u2014 lifecycle receipt verification"
+      ],
+      "title": "F1: self-created bytes + matching pin in live mode verify integrity but are NOT liveAccepted"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R3 \u2014 lifecycle receipt verification"
+      ],
+      "title": "F1: wrong/changed trusted pin or missing season binding fail closed"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R3 \u2014 lifecycle receipt verification"
+      ],
+      "title": "a verified fixture receipt qualifies as fixtureHypothetical and never liveAccepted"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R3 \u2014 lifecycle receipt verification"
+      ],
+      "title": "an invalid lifecycle mode is rejected"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R3 \u2014 lifecycle receipt verification"
+      ],
+      "title": "bytes that agree with the pinned digest but are not JSON are unparseable"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R3 \u2014 lifecycle receipt verification"
+      ],
+      "title": "claims that disagree with the bytes are rejected even when the digests agree"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R3 \u2014 lifecycle receipt verification"
+      ],
+      "title": "completedThroughWeek 6 is valid for prospective week 7; the producer SHA need not equal the lifecycle SHA"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R3 \u2014 lifecycle receipt verification"
+      ],
+      "title": "mismatched rating fingerprint is rejected (and cannot be fixed by caller claims)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R3 \u2014 lifecycle receipt verification"
+      ],
+      "title": "missing receipt in a fixture blocks primary readiness but keeps the forecast evidence"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R3 \u2014 lifecycle receipt verification"
+      ],
+      "title": "partial weights, early weeks and non-prospective weeks fail"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R3 \u2014 lifecycle receipt verification"
+      ],
+      "title": "rejects altered receipt bytes (content and whitespace)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R3 \u2014 lifecycle receipt verification"
+      ],
+      "title": "rejects an invented digest (claims, pinned, or pinned with missing bytes)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R3 \u2014 lifecycle receipt verification"
+      ],
+      "title": "self-asserted acceptedImmutable without bytes never qualifies (live \u2192 verification unavailable)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R3 \u2014 lifecycle receipt verification"
+      ],
+      "title": "week 0 with weight 1 fails weight/week consistency"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R3 \u2014 lifecycle receipt verification"
+      ],
+      "title": "wrong season, policy, or source SHA are rejected"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R4 \u2014 canonical Git-byte dependency hashes"
+      ],
+      "title": "LF/CRLF reproducibility: normalizing a CRLF copy reproduces the Git-byte hash"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R4 \u2014 canonical Git-byte dependency hashes"
+      ],
+      "title": "a false live repository SHA is rejected by CLI parsing before any DB access"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R4 \u2014 canonical Git-byte dependency hashes"
+      ],
+      "title": "readGitShowBytes hashes match ML_CAL_1_CANONICAL_GIT_BYTE_HASHES for every pinned file"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R4 \u2014 canonical Git-byte dependency hashes"
+      ],
+      "title": "readGitShowBytes rejects unsafe refs and paths before running git"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R4 \u2014 canonical Git-byte dependency hashes"
+      ],
+      "title": "resolveCanonicalDependencyHashes reports Git-byte hashes equal to the canonical table"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R4 \u2014 canonical Git-byte dependency hashes"
+      ],
+      "title": "wrong content with LF line endings still fails against the canonical hash"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R4 \u2014 canonical Git-byte dependency hashes",
+        "against throwaway git repositories"
+      ],
+      "title": "a CRLF working-tree checkout keeps Git-byte hashes and is not dirty"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R4 \u2014 canonical Git-byte dependency hashes",
+        "against throwaway git repositories"
+      ],
+      "title": "a modified working tree is reported dirty without changing the Git-byte hash"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R4 \u2014 canonical Git-byte dependency hashes",
+        "against throwaway git repositories"
+      ],
+      "title": "accepts correct committed bytes (self paths absent are only reported dirty)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R4 \u2014 canonical Git-byte dependency hashes",
+        "against throwaway git repositories"
+      ],
+      "title": "rejects wrong committed content even when it is LF"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R5 \u2014 instrumented read client"
+      ],
+      "title": "blocks bet and teamGameStat reads"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R5 \u2014 instrumented read client"
+      ],
+      "title": "blocks every mutation method and records it"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R5 \u2014 instrumented read client"
+      ],
+      "title": "rejects 2025 and other seasons, including nested season filters and wrong weeks"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R5 \u2014 instrumented read client"
+      ],
+      "title": "rejects OR / NOT broadening, including nested"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R5 \u2014 instrumented read client"
+      ],
+      "title": "rejects any findMany without a select"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R5 \u2014 instrumented read client"
+      ],
+      "title": "rejects nested score select/include and forbidden keys"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R5 \u2014 instrumented read client"
+      ],
+      "title": "rejects reads with no season filter"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R5 \u2014 instrumented read client"
+      ],
+      "title": "the production selects contain no score/outcome fields"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R5 \u2014 runMlCal1LiveSnapshotReads with fake delegates"
+      ],
+      "title": "a client allowed only for another week/season cannot be used for this read"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R5 \u2014 runMlCal1LiveSnapshotReads with fake delegates"
+      ],
+      "title": "loadLiveSnapshot stamps snapshotReferenceTime after the reads inside a read-only transaction"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R5 \u2014 runMlCal1LiveSnapshotReads with fake delegates"
+      ],
+      "title": "reads through the instrumented client with exact selects and zero mutations"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R5 \u2014 runMlCal1LiveSnapshotReads with fake delegates"
+      ],
+      "title": "rejects invalid game identity returned by the read"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R5 \u2014 runMlCal1LiveSnapshotReads with fake delegates"
+      ],
+      "title": "skips the market read when the week has no games"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R6 \u2014 blocked receipt, no-overwrite and manifest integrity"
+      ],
+      "title": "does not emit a blocked receipt when readiness is not blocked"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R6 \u2014 blocked receipt, no-overwrite and manifest integrity"
+      ],
+      "title": "frozen fixture yields identical sealed bytes and manifest; tampering is detected"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R6 \u2014 blocked receipt, no-overwrite and manifest integrity"
+      ],
+      "title": "manifests the blocked receipt when primary readiness is blocked"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R6 \u2014 blocked receipt, no-overwrite and manifest integrity"
+      ],
+      "title": "never overwrites an existing capture and cleans up temporary directories"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R6 \u2014 blocked receipt, no-overwrite and manifest integrity"
+      ],
+      "title": "redacts secrets that leak into blocked reasons"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R6 \u2014 blocked receipt, no-overwrite and manifest integrity"
+      ],
+      "title": "writes null (never NaN) for unavailable numbers and no outcome fields"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R6 \u2014 redaction and capture id safety"
+      ],
+      "title": "redactSensitive removes connection strings and credentials"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R6 \u2014 redaction and capture id safety"
+      ],
+      "title": "rejects unsafe capture ids and path escapes"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R6 \u2014 redaction and capture id safety"
+      ],
+      "title": "writeBlockedReasonReceipt redacts reasons and never overwrites"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R6 \u2014 rejection ledger, spread known-at and market replay fields"
+      ],
+      "title": "age 1800s is inclusive and 1801s is stale (relative to snapshotReferenceTime)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R6 \u2014 rejection ledger, spread known-at and market replay fields"
+      ],
+      "title": "does not drop the Core forecast when the market is missing"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R6 \u2014 rejection ledger, spread known-at and market replay fields"
+      ],
+      "title": "independent market replay: stored evidence reproduces probabilities and the pick"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R6 \u2014 rejection ledger, spread known-at and market replay fields"
+      ],
+      "title": "rejection ledger carries lineValue, book, source, team and all timestamps"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R6 \u2014 rejection ledger, spread known-at and market replay fields"
+      ],
+      "title": "rejects future observation, future known-at, revisions, zero prices, wrong teams and source mismatch"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R6 \u2014 rejection ledger, spread known-at and market replay fields"
+      ],
+      "title": "spread evidence records known-at fields when available and ledger entries when rejected"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R6 \u2014 rejection ledger, spread known-at and market replay fields"
+      ],
+      "title": "spread pick\u2019em (0) lines are accepted and evidence is independent of the moneyline"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "R6 \u2014 rejection ledger, spread known-at and market replay fields"
+      ],
+      "title": "the ledger is part of the sealed markets member"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "demo fixture and CLI (offline, injected clock and dependency hashes)"
+      ],
+      "title": "F1: live route with bytes+pin but no trust record is integrity-only and primary-blocked"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "demo fixture and CLI (offline, injected clock and dependency hashes)"
+      ],
+      "title": "F1: live route with independently injected trust record can liveAccept"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "demo fixture and CLI (offline, injected clock and dependency hashes)"
+      ],
+      "title": "F2: publication delay exits non-zero with PUBLICATION_INVALIDATED and effective counts"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "demo fixture and CLI (offline, injected clock and dependency hashes)"
+      ],
+      "title": "a fixture can never claim live verification and --repository-sha overrides only the producer SHA"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "demo fixture and CLI (offline, injected clock and dependency hashes)"
+      ],
+      "title": "exits 1 and manifests the blocked receipt when the fixture has no lifecycle receipt"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "demo fixture and CLI (offline, injected clock and dependency hashes)"
+      ],
+      "title": "gates live DB reads unless explicitly enabled and never touches the DB when gated"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "demo fixture and CLI (offline, injected clock and dependency hashes)"
+      ],
+      "title": "live route without receipt bytes blocks primary readiness (lifecycle_verification_unavailable)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "demo fixture and CLI (offline, injected clock and dependency hashes)"
+      ],
+      "title": "rejects a second run into the same capture id without overwriting"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "demo fixture and CLI (offline, injected clock and dependency hashes)"
+      ],
+      "title": "runs the fixture route, writes sealed artifacts and exits 0"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "demo fixture and CLI (offline, injected clock and dependency hashes)"
+      ],
+      "title": "the demo fixture carries a self-consistent receipt, fingerprint and timing"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "demo fixture and CLI (offline, injected clock and dependency hashes)"
+      ],
+      "title": "unsafe fixture capture ids and secret-bearing errors never escape or leak"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "selection gates"
+      ],
+      "title": "abs(m) = 24 is in gate; just beyond is suppressed but the forecast is retained"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "selection gates"
+      ],
+      "title": "keeps the unchanged production value threshold and home tie preference"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "selection gates"
+      ],
+      "title": "retains no-selection forecasts in the full ledger"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "source hygiene"
+      ],
+      "title": "CLI imports only node built-ins, Prisma client, and the capture helper"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "source hygiene"
+      ],
+      "title": "does not import or call getCoreV1SpreadFromTeams and has no provider imports"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "source hygiene"
+      ],
+      "title": "helper imports only node built-ins and hashed web/jobs behavior dependencies"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "source hygiene"
+      ],
+      "title": "keeps current-mode snapshots, forbidden-field list, read-only transaction and zero provider calls"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "source hygiene"
+      ],
+      "title": "the capture workflow declares no secrets, live DB, or production triggers"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "universe ledger coverage"
+      ],
+      "title": "duplicate game ids, conflicting matchup frames and bad identities block primary readiness"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "universe ledger coverage"
+      ],
+      "title": "keeps missing ratings, non-FBS, late kickoff and pre-snapshot kickoff rows"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-capture.test.ts",
+      "ancestorTitles": [
+        "universe ledger coverage"
+      ],
+      "title": "rejects unsupported seasons and weeks at the planner"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "F1 alias / stdout partial / F5 diagnostic safety"
+      ],
+      "title": "F1 missing inputs (both missing): capture inside G4 tree never created; sentinel preserved"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "F1 alias / stdout partial / F5 diagnostic safety"
+      ],
+      "title": "F1 missing inputs (final evidence missing): capture inside G4 tree never created; sentinel preserved"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "F1 alias / stdout partial / F5 diagnostic safety"
+      ],
+      "title": "F1 missing inputs (receipt missing): capture inside G4 tree never created; sentinel preserved"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "F1 alias / stdout partial / F5 diagnostic safety"
+      ],
+      "title": "F1 physical alias: receipt via directory symlink refuses; zero evidence-tree writes"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "F1 alias / stdout partial / F5 diagnostic safety"
+      ],
+      "title": "F5: throwing stdout writer yields structured result without rethrow"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "F1 alias / stdout partial / F5 diagnostic safety"
+      ],
+      "title": "stdout: one-byte chunking eventually completes full payload"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "F1 alias / stdout partial / F5 diagnostic safety"
+      ],
+      "title": "stdout: partial then zero-progress write never reports output success"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "F1\u2013F5 repairs"
+      ],
+      "title": "F1: evaluate capture beside receipt inside evidence tree is refused"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "F1\u2013F5 repairs"
+      ],
+      "title": "F2: exported runner rejects enabled/confirm false before setup"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "F1\u2013F5 repairs"
+      ],
+      "title": "F3: close/readback failure keeps durable and stderr JSON at ok=false"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "F1\u2013F5 repairs"
+      ],
+      "title": "F3: dual-channel stdout failure does not leave success claim in durable payload"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "F1\u2013F5 repairs"
+      ],
+      "title": "F4: capture collision reaches entrypoint as structured stderr JSON"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "F1\u2013F5 repairs"
+      ],
+      "title": "F5: serialization failure after setup closes FD and reports residue"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "parsePhaseAJsonCommandArgv"
+      ],
+      "title": "rejects unknown, duplicate, and conflicting flags without implying FS"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "parsePhaseAJsonCommandArgv"
+      ],
+      "title": "requires exact booleans and output choice"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "passive import"
+      ],
+      "title": "module sources do not construct live clients or secret env reads"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "read-only anchored evaluate"
+      ],
+      "title": "changed evidence during readback fails stableAcrossReread"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "read-only anchored evaluate"
+      ],
+      "title": "evaluate never calls setup; existing capture untouched on collision"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "read-only anchored evaluate"
+      ],
+      "title": "missing final evidence fails; evidence tree unchanged"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "read-only anchored evaluate"
+      ],
+      "title": "valid external pins/counts pass evaluation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "read-only anchored evaluate"
+      ],
+      "title": "wrong final byte count fails closed with zero mutation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "read-only anchored evaluate"
+      ],
+      "title": "wrong final digest fails closed with zero mutation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "read-only anchored evaluate"
+      ],
+      "title": "wrong receipt byte count fails closed with zero mutation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "read-only anchored evaluate"
+      ],
+      "title": "wrong receipt digest fails closed with zero mutation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "setup JSON capture (temp only)"
+      ],
+      "title": "capture collision / missing parent / inside user root: setup never invoked; sentinel untouched"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "setup JSON capture (temp only)"
+      ],
+      "title": "disabled/malformed: no setup, no capture reservation, no destination mutation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "setup JSON capture (temp only)"
+      ],
+      "title": "distinguishes successful setup from failed capture without retry"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "setup JSON capture (temp only)"
+      ],
+      "title": "rejects proposed operator root label in temp mode via setup library"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "setup JSON capture (temp only)"
+      ],
+      "title": "setup refusal preserves reasons/leftovers in JSON; never success"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "setup JSON capture (temp only)"
+      ],
+      "title": "valid setup output matches retained receipt/final bytes; exactly one setup call"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "subprocess entrypoint"
+      ],
+      "title": "emits parseable JSON on stdout and nonzero exit on malformed argv"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "subprocess entrypoint"
+      ],
+      "title": "temp setup via subprocess writes exclusive capture and exits 0"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-json-command.test.ts",
+      "ancestorTitles": [
+        "validateCapturePath symlink parent"
+      ],
+      "title": "rejects symlinked capture parent when platform allows symlink create"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "F1 ancestor validation before mutation"
+      ],
+      "title": "rejects relative destination with zero FS"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "F1 ancestor validation before mutation"
+      ],
+      "title": "symlink ancestor rejected without creating layout"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "F2 exclusive receipt + retained bytes"
+      ],
+      "title": "receipt hash failure refuses without rewriting sealed content as verified"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "F2 exclusive receipt + retained bytes"
+      ],
+      "title": "receipt read failure removes failed receipt; no success claim"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "F2 exclusive receipt + retained bytes"
+      ],
+      "title": "refuses overwrite of existing receipt"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "F2 exclusive receipt + retained bytes"
+      ],
+      "title": "successful evidence correspondence: sealed receipt vs post-write verify"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "F2 exclusive receipt + retained bytes"
+      ],
+      "title": "verify read failure + removal failure: leftover provisional receipt not terminal"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "F3 manifest digest verify (not copy-equality alone)"
+      ],
+      "title": "verifyProbePackageMembers catches bytecount/digest mismatch"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "F4 completion / clocks / no contradictory success"
+      ],
+      "title": "after_publish failure invalidates retained probe (no success claim)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "F4 completion / clocks / no contradictory success"
+      ],
+      "title": "cleanup failure after completion invalidates survivors; leftovers accurate"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "F4 completion / clocks / no contradictory success"
+      ],
+      "title": "invalid completion clock fails closed (no start substitution)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "F4 completion / clocks / no contradictory success"
+      ],
+      "title": "invalidate containment rejection causes zero writes/removals"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "F4 completion / clocks / no contradictory success"
+      ],
+      "title": "retained failure readback is not independently interpretable as success"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "F4 completion / clocks / no contradictory success"
+      ],
+      "title": "reversed completion clock fails without timestamp substitution"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "F5 inject write/copy/rename + duplicate claim"
+      ],
+      "title": "duplicate claim refuses exclusive publish"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "F5 inject write/copy/rename + duplicate claim"
+      ],
+      "title": "inject stage/rename/copy failures fail closed"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "Phase A path binding"
+      ],
+      "title": "runner retainRoot is g4 base, not operator user root"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "existing negatives preserved"
+      ],
+      "title": "existing package id refuses overwrite; outside sentinel preserved"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "existing negatives preserved"
+      ],
+      "title": "refuses proposed operator root in temp mode"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "happy path"
+      ],
+      "title": "temp setup completes with exclusive verified receipt"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "operator mode refused in this build"
+      ],
+      "title": "CLI refuses operator mode before library setup"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "operator mode refused in this build"
+      ],
+      "title": "library refuses operator mode before clock or filesystem activity"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "opt-in zero effects"
+      ],
+      "title": "disabled/malformed: zero FS and zero clock"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "terminal-success evaluator schema hardening"
+      ],
+      "title": "combined read/removal failure leftover still fails schema terminal eval"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "terminal-success evaluator schema hardening"
+      ],
+      "title": "distinguishes internal consistency from external anchoring"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "terminal-success evaluator schema hardening"
+      ],
+      "title": "rejects digest binding mismatch and missing/failed final evidence"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "terminal-success evaluator schema hardening"
+      ],
+      "title": "rejects each contradictory final-evidence field independently"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "terminal-success evaluator schema hardening"
+      ],
+      "title": "rejects each contradictory receipt field independently"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-retention-setup.test.ts",
+      "ancestorTitles": [
+        "terminal-success evaluator schema hardening"
+      ],
+      "title": "rejects malformed receipt/final roots (null, array, non-object)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 callers: library, legacy CLI, JSON command"
+      ],
+      "title": "JSON setup path reports W4 refusal while preserving external capture"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 callers: library, legacy CLI, JSON command"
+      ],
+      "title": "disabled/malformed retain zero clock/FS"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 callers: library, legacy CLI, JSON command"
+      ],
+      "title": "legacy CLI surfaces W4 refusal with zero further layout when receipt conflicts"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 dangling ancestor refuses before clock/mutation"
+      ],
+      "title": "dangling preflight ancestor refuses before mutation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 dangling ancestor refuses before clock/mutation"
+      ],
+      "title": "dangling review-handoff ancestor: zero clock, zero mutations, other layout dirs absent"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 dangling ancestor refuses before clock/mutation"
+      ],
+      "title": "dangling staging ancestor refuses before mutation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 five conflict categories \u2014 zero user-root mutation"
+      ],
+      "title": "refuses claim dir before any user-root mutation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 five conflict categories \u2014 zero user-root mutation"
+      ],
+      "title": "refuses final evidence file before any user-root mutation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 five conflict categories \u2014 zero user-root mutation"
+      ],
+      "title": "refuses handoff package dir before any user-root mutation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 five conflict categories \u2014 zero user-root mutation"
+      ],
+      "title": "refuses preflight package dir before any user-root mutation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 five conflict categories \u2014 zero user-root mutation"
+      ],
+      "title": "refuses setup receipt file before any user-root mutation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 partial layout / missing root"
+      ],
+      "title": "no user root and no conflicts: successful temp setup still works"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 partial layout / missing root"
+      ],
+      "title": "receipt-only conflict refuses without creating missing layout dirs"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 path helpers"
+      ],
+      "title": "derives the five deterministic destinations"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 post-scan race: mid-flight exclusive still holds"
+      ],
+      "title": "claim planted after W4 scan is refused without overwrite/removal"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 read/inspection failures fail closed"
+      ],
+      "title": "ENOTDIR ancestor fails closed before mutation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 read/inspection failures fail closed"
+      ],
+      "title": "W4 scan fails closed on injected leaf lstat permission error before mutation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 read/inspection failures fail closed"
+      ],
+      "title": "distinguishes confirmed absence from permission and I/O errors"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 scan helper + happy evaluate still works"
+      ],
+      "title": "idempotent layout + unique IDs succeed; paired evidence evaluates"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 scan helper + happy evaluate still works"
+      ],
+      "title": "scan reports ok when all five absent"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 symlink / dangling / junction coverage"
+      ],
+      "title": "dangling symlink at claim path is a conflict (lstat, not existsSync)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 symlink / dangling / junction coverage"
+      ],
+      "title": "directory junction/symlink at preflight package refuses without mutating target"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "W4 symlink / dangling / junction coverage"
+      ],
+      "title": "symlink at receipt path is a conflict; outside target untouched"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "mutation recorder crosses helper boundaries"
+      ],
+      "title": "after_publish failure records invalidation writes (positive control)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-phase-a-w4-conflict-gate.test.ts",
+      "ancestorTitles": [
+        "mutation recorder crosses helper boundaries"
+      ],
+      "title": "successful setup records cleanup removals (positive control)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 F1 validator"
+      ],
+      "title": "hash-consistent semantic tampering fails closed"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 F1 validator"
+      ],
+      "title": "malformed JSON shapes return structured rejection"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 F1 validator"
+      ],
+      "title": "parses every required member and cross-checks tx evidence vs run metadata"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 F2 atomic publish"
+      ],
+      "title": "concurrent publication of same ID: exactly one winner"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 F2 atomic publish"
+      ],
+      "title": "failure after staging / after claim leaves no successful final package"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 F2 atomic publish"
+      ],
+      "title": "final path is absent until atomic rename; incomplete package never visible"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 F3 containment"
+      ],
+      "title": "rejects operator-style retain roots before mutation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 F3 containment"
+      ],
+      "title": "rejects path-escape components and handoff destination escapes"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 F3 containment"
+      ],
+      "title": "rejects retain roots outside tmpdir before writes"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 F3 containment"
+      ],
+      "title": "symlink/junction path escape: no writes outside test root"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 F4 adapter/clock"
+      ],
+      "title": "adapter failure/timeout fail closed"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 F4 adapter/clock"
+      ],
+      "title": "malformed metadata types and invalid injected clock fail structured"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 F4 adapter/clock"
+      ],
+      "title": "transaction-loss after metadata rejects with no success package"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 F5 redaction"
+      ],
+      "title": "adapter errors carrying synthetic bearer are redacted in run reasons"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 F5 redaction"
+      ],
+      "title": "redacts Authorization/Bearer and connection forms from errors"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 extras"
+      ],
+      "title": "failOnSetReadOnly aborts without success package"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 extras"
+      ],
+      "title": "fixture evidence cannot become deployed/live acceptance"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 extras"
+      ],
+      "title": "live mode refused by default"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 extras"
+      ],
+      "title": "missing/invalid terminal success cannot qualify a package"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 extras"
+      ],
+      "title": "tampered sealed metadata with regenerated self-hashes still fails validation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 negatives"
+      ],
+      "title": "PF-N10: seal into observations tree rejected"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 negatives"
+      ],
+      "title": "PF-N11: handoff copy digest mismatch \u2192 handoff invalid"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 negatives"
+      ],
+      "title": "PF-N1: wrong isolation aborts; no success package"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 negatives"
+      ],
+      "title": "PF-N2: READ ONLY not on aborts"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 negatives"
+      ],
+      "title": "PF-N3: missing/invalid transaction_timestamp aborts"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 negatives"
+      ],
+      "title": "PF-N4: dbTransactionTime outside host bounds aborts"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 negatives"
+      ],
+      "title": "PF-N5: business SELECT is not available on preflight client"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 negatives"
+      ],
+      "title": "PF-N6: secretish string in members fail closed"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 negatives"
+      ],
+      "title": "PF-N7: overwrite existing preflightId rejected"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 negatives"
+      ],
+      "title": "PF-N8: unsafe preflightId rejected before write"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 negatives"
+      ],
+      "title": "PF-N9: usability gate fail refuses before TX"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 positives"
+      ],
+      "title": "PF-P1: mock RepeatableRead \u2192 SET RO \u2192 metadata \u2192 success seal under R-LOCAL-FS layout"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 positives"
+      ],
+      "title": "PF-P2: manifest digests match re-hashed staged/published members (copy-away)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-fixture.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight fixture \u2014 positives"
+      ],
+      "title": "PF-P3: atomic publish leaves staging empty of package dir; package present"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "F-PROVENANCE mock adapter boundary"
+      ],
+      "title": "executes a genuine module-factory mock and keeps approval flags false"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "F-PROVENANCE mock adapter boundary"
+      ],
+      "title": "refuses a proxy around a genuine mock adapter"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "F-PROVENANCE mock adapter boundary"
+      ],
+      "title": "refuses a structural clone and a TypeScript-cast real adapter"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "F-PROVENANCE mock adapter boundary"
+      ],
+      "title": "refuses a wrapper around an enabled real adapter"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "F-PROVENANCE mock adapter boundary"
+      ],
+      "title": "refuses a wrapper that omits kind"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "F-PROVENANCE mock adapter boundary"
+      ],
+      "title": "refuses an enabled real adapter backed by an in-memory Prisma spy"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "F-PROVENANCE mock adapter boundary"
+      ],
+      "title": "refuses an object that copies private-symbol properties"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "F-PROVENANCE mock adapter boundary"
+      ],
+      "title": "refuses probe provenance before a transaction"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "F1\u2013F5 reviewer reproduction repairs"
+      ],
+      "title": "F1: runner refuses live provenance; injected mock cannot seal live label"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "F1\u2013F5 reviewer reproduction repairs"
+      ],
+      "title": "F3: recomputed-hash TX failure/diagnostic contradictions rejected"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "F1\u2013F5 reviewer reproduction repairs"
+      ],
+      "title": "F4: symlinked preflight/ refuses failure write outside retain root"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "F1\u2013F5 reviewer reproduction repairs"
+      ],
+      "title": "F4b/F5: ordinary failed publication still cannot read as success"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "F1\u2013F5 reviewer reproduction repairs"
+      ],
+      "title": "F4b: invalid paths trigger zero write/remove; retain root untouched"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "F1\u2013F5 reviewer reproduction repairs"
+      ],
+      "title": "F4b: symlink target gets no invalidation marker; outside sentinel untouched"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "F1\u2013F5 reviewer reproduction repairs"
+      ],
+      "title": "F5: post-publication failure invalidates; reader rejects leftover success"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "TX / metadata / clock failures"
+      ],
+      "title": "invalid isolation / read-only / out-of-bounds time rejected"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "TX / metadata / clock failures"
+      ],
+      "title": "metadata failure and post-callback rejection: no success package"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "TX / metadata / clock failures"
+      ],
+      "title": "reversed / invalid injected clocks fail closed"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "connection descriptor F3"
+      ],
+      "title": "derive strips secrets; percent-encoded user preserved as decoded username"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "connection descriptor F3"
+      ],
+      "title": "mismatch refuses before TX; profile label alone insufficient"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "connection descriptor F3"
+      ],
+      "title": "normalizes host case and default port"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "connection descriptor F3"
+      ],
+      "title": "parse failures sanitize without echoing URL"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "descriptor equality helper"
+      ],
+      "title": "compares only allowed nonsecret fields"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "gated CLI"
+      ],
+      "title": "CLI source has no PrismaClient / env credential startup at import"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "gated CLI"
+      ],
+      "title": "default / truthy coercion / help / plan: no credentials or client"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "happy mock path + reader"
+      ],
+      "title": "seals mock package, copy-away validates, flags stay false"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "passive import / opt-in gates"
+      ],
+      "title": "disabled / missing / malformed opt-in: zero TX and zero FS"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "passive import / opt-in gates"
+      ],
+      "title": "library import does not read env or construct PrismaClient"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "passive import / opt-in gates"
+      ],
+      "title": "option mutation after disable check path cannot enable via object truthiness alone"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "reader semantic rejects"
+      ],
+      "title": "approval flags / provenance contradiction / live schema no promotion"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "reader semantic rejects"
+      ],
+      "title": "handoff cannot mint externallyAnchored; mismatch rejects"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "reader semantic rejects"
+      ],
+      "title": "options / timing contradiction rejected even if hashes would be rebuilt by attacker incompletely"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "reader semantic rejects"
+      ],
+      "title": "tampered bytes / extra member / id contradiction reject"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "seal / FS safety"
+      ],
+      "title": "existing package / claim race: no overwrite"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "seal / FS safety"
+      ],
+      "title": "failure receipt redacts secretish reasons"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "seal / FS safety"
+      ],
+      "title": "staging inject failure leaves no final package"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-live-runner.test.ts",
+      "ancestorTitles": [
+        "seal / FS safety"
+      ],
+      "title": "unsafe id and retain root outside tmpdir refuse"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight real adapter \u2014 F1 sequence latches"
+      ],
+      "title": "rejects metadata query before successful READ ONLY"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight real adapter \u2014 F1 sequence latches"
+      ],
+      "title": "rejects when callback omits metadata query"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight real adapter \u2014 F1 sequence latches"
+      ],
+      "title": "swallowed SET READ ONLY failure cannot yield successful TX output"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight real adapter \u2014 F1 sequence latches"
+      ],
+      "title": "swallowed metadata failure cannot yield successful TX output"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight real adapter \u2014 F1 sequence latches"
+      ],
+      "title": "transaction rejection after callback still fails closed"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight real adapter \u2014 F2 immutable gate/options"
+      ],
+      "title": "mutating caller options after construction cannot disable an enabled adapter"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight real adapter \u2014 F2 immutable gate/options"
+      ],
+      "title": "mutating caller options after construction cannot re-enable a disabled adapter"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight real adapter \u2014 F2 immutable gate/options"
+      ],
+      "title": "pinned transaction options resist runtime mutation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight real adapter \u2014 failures"
+      ],
+      "title": "no automatic retries: single $transaction invocation on failure"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight real adapter \u2014 failures"
+      ],
+      "title": "open / set RO / metadata / post-callback reject leave no successful output"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight real adapter \u2014 failures"
+      ],
+      "title": "redacts synthetic bearer/connection-string from adapter errors"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight real adapter \u2014 fixture compatibility"
+      ],
+      "title": "enabled real adapter plugs into fixture runner timing (caller-owned)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight real adapter \u2014 fixture compatibility"
+      ],
+      "title": "existing fixture mock path unchanged; mock success is not deployed acceptance"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight real adapter \u2014 gate / passive"
+      ],
+      "title": "disabled/default gate: zero transaction, query, connection, or env activity"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight real adapter \u2014 gate / passive"
+      ],
+      "title": "missing/invalid enablement refuses without Prisma activity"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight real adapter \u2014 gate / passive"
+      ],
+      "title": "passive construction/import: no client startup or credential dependency"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight real adapter \u2014 metadata validation"
+      ],
+      "title": "missing row / extra rows / null / array / incorrect scalar / invalid timestamp"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight real adapter \u2014 metadata validation"
+      ],
+      "title": "wrong isolation / READ ONLY \u2192 structured rejection"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight real adapter \u2014 ordering / options"
+      ],
+      "title": "business/DDL/mutation SQL rejected by strict allowlist mocks"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight real adapter \u2014 ordering / options"
+      ],
+      "title": "exact ordering and same-client identity; parent query methods throw if touched"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-pooler-preflight-real-adapter.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 pooler preflight real adapter \u2014 ordering / options"
+      ],
+      "title": "transaction options pinned by explicit assertions"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "Native W5 disposable Windows readback"
+      ],
+      "title": "case-sensitive parent UNVERIFIED without privileged fixture"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "Native W5 disposable Windows readback"
+      ],
+      "title": "controlled junction replacement during inspection via explicit handshake"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "Native W5 disposable Windows readback"
+      ],
+      "title": "controlled normal-directory parent swap via explicit handshake"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "Native W5 disposable Windows readback"
+      ],
+      "title": "dir symlink UNVERIFIED without privilege"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "Native W5 disposable Windows readback"
+      ],
+      "title": "junction alias segment REFUSE (pre-existing)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "Native W5 disposable Windows readback"
+      ],
+      "title": "long / Unicode names"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "Native W5 disposable Windows readback"
+      ],
+      "title": "missing leaf/ancestor BLOCKED"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "Native W5 disposable Windows readback"
+      ],
+      "title": "ordinary existing path PASS"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "Native W5 disposable Windows readback"
+      ],
+      "title": "ordinary inspection with ambient casing-variant G4_W5_TEST_* writes no handshake files"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "Operator W5-only always BLOCKED (library/CLI/JSON)"
+      ],
+      "title": "CLI/JSON operator BLOCKED"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "Operator W5-only always BLOCKED (library/CLI/JSON)"
+      ],
+      "title": "W4 refusal: no W5 inspect"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "Operator W5-only always BLOCKED (library/CLI/JSON)"
+      ],
+      "title": "W5 PASS stub still leaves operator setup BLOCKED with zero mutation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "Operator W5-only always BLOCKED (library/CLI/JSON)"
+      ],
+      "title": "W5 non-PASS: no clock, no user-root mutation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "Operator W5-only always BLOCKED (library/CLI/JSON)"
+      ],
+      "title": "disabled: zero W5, clock, mutation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "Operator W5-only always BLOCKED (library/CLI/JSON)"
+      ],
+      "title": "temp mode skips W5 and can succeed"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "PASS evidence gate"
+      ],
+      "title": "async launcher refuses incomplete PASS JSON"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "PASS evidence gate"
+      ],
+      "title": "async+sync launchers refuse independently reproduced impossible PASS payloads"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "PASS evidence gate"
+      ],
+      "title": "async+sync launchers strip casing variants from spawn env"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "PASS evidence gate"
+      ],
+      "title": "buildW5HelperEnv strips ambient G4_W5_TEST_* unless handshake enabled"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "PASS evidence gate"
+      ],
+      "title": "rejects PASS with reasons / missing identity / malformed segments"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "PASS evidence gate"
+      ],
+      "title": "rejects impossible all-\"x\" PASS and REFUSE_ALIAS segment PASS"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "PASS evidence gate"
+      ],
+      "title": "strips lowercase, mixed-case, and duplicate-case G4_W5_TEST_* variants"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "Positive mutation recorder control"
+      ],
+      "title": "temp success records mutations"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "W5 async launcher refusal surfaces (mocked spawn)"
+      ],
+      "title": "does not pass maxBuffer into spawn options"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "W5 async launcher refusal surfaces (mocked spawn)"
+      ],
+      "title": "exact-cap complete PASS evidence accepted"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "W5 async launcher refusal surfaces (mocked spawn)"
+      ],
+      "title": "schema/binding/nonzero refuse"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "W5 async launcher refusal surfaces (mocked spawn)"
+      ],
+      "title": "stdin error settles"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "W5 async launcher refusal surfaces (mocked spawn)"
+      ],
+      "title": "stdout/stderr overflow refuse"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "W5 async launcher refusal surfaces (mocked spawn)"
+      ],
+      "title": "timeout settles even when kill does not close"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "W5 helper pin + frozen caps"
+      ],
+      "title": "records frozen caps and pin constants"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "W5 helper pin + frozen caps"
+      ],
+      "title": "verifies disposable helper pin when binary present"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "W5 sync launcher path (actual sync contract)"
+      ],
+      "title": "pin mismatch does not spawnSync"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "W5 sync launcher path (actual sync contract)"
+      ],
+      "title": "schema mismatch / incomplete PASS refuse on sync path"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "W5 sync launcher path (actual sync contract)"
+      ],
+      "title": "sync ENOBUFS / maxBuffer overflow refuse"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "W5 sync launcher path (actual sync contract)"
+      ],
+      "title": "sync combined ceiling allows independent stream sizes under each cap"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "W5 sync launcher path (actual sync contract)"
+      ],
+      "title": "sync stdout over dedicated cap refuse after collection"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "W5 sync launcher path (actual sync contract)"
+      ],
+      "title": "sync timeout refuse"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "W5 sync launcher path (actual sync contract)"
+      ],
+      "title": "sync uses maxBuffer = stdoutCap + stderrCap"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-g4-windows-path-identity.test.ts",
+      "ancestorTitles": [
+        "unmocked non-Windows platform refusal"
+      ],
+      "title": "refuses before spawn when the host platform is not win32"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 F1\u2013F5 repair regressions"
+      ],
+      "title": "F1: null/blank/whitespace ratingRaw rejected even when powerRating is Decimal zero"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 F1\u2013F5 repair regressions"
+      ],
+      "title": "F1: planned finalPowerRating null rejected"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 F1\u2013F5 repair regressions"
+      ],
+      "title": "F2: createdAt > updatedAt fails per-row validation"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 F1\u2013F5 repair regressions"
+      ],
+      "title": "F2: invalid timestamp yields structured failure not throw"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 F1\u2013F5 repair regressions"
+      ],
+      "title": "F2: offset timezone extrema use epoch ms not string sort"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 F1\u2013F5 repair regressions"
+      ],
+      "title": "F3: fixtureMode false/omitted cannot erase provenance"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 F1\u2013F5 repair regressions"
+      ],
+      "title": "F3: sealed package retains PROVENANCE.json bytes"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 F1\u2013F5 repair regressions"
+      ],
+      "title": "F4 helper: pre-adapter chronology matches accepted bounds"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 F1\u2013F5 repair regressions"
+      ],
+      "title": "F4 remaining: equal valid 40-hex observer/lifecycle SHAs still pass (role separation)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 F1\u2013F5 repair regressions"
+      ],
+      "title": "F4 remaining: malformed bindingObserverSha blocks with zero adapter invocations"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 F1\u2013F5 repair regressions"
+      ],
+      "title": "F4 remaining: matching malformed producer/pin SHAs rejected before adapter"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 F1\u2013F5 repair regressions"
+      ],
+      "title": "F4 remaining: unsafe observationId fails structured without adapter entry"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 F1\u2013F5 repair regressions"
+      ],
+      "title": "F4: archive after observation start fails with zero adapter enters"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 F1\u2013F5 repair regressions"
+      ],
+      "title": "F4: empty identity fields fail before adapter"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 F1\u2013F5 repair regressions"
+      ],
+      "title": "F5 negative: contradictory declaredEcho fingerprint is not asserted by emitter"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 F1\u2013F5 repair regressions"
+      ],
+      "title": "F5: sealed package omits fullWeightEligible echo and replays binding verifier"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 allowlist / Decimal / fingerprint"
+      ],
+      "title": "G4-N3: allowlist length/order violations fail"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 allowlist / Decimal / fingerprint"
+      ],
+      "title": "G4-N6 / G4-P2 / G4-P4: Decimal zero raw + fingerprint parity"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 allowlist / Decimal / fingerprint"
+      ],
+      "title": "G4-N7: blank power/rating not usable"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 archive prerequisites"
+      ],
+      "title": "G4-N1: Week 5 authentic pins are full-weight-ineligible"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 archive prerequisites"
+      ],
+      "title": "G4-N2: missing / wrong ZIP pin fails closed"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 archive prerequisites"
+      ],
+      "title": "G4-P10: Week 5 planned rows lack modelVersion; report.modelVersion is v1"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 archive prerequisites"
+      ],
+      "title": "synthetic Week 6 passes fullWeightByPolicy"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 design correspondence"
+      ],
+      "title": "pins on-disk design and acceptance upload digests without relabeling"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 end-to-end fixture attempts"
+      ],
+      "title": "G4-N1 e2e: Week 5 attempt aborts (diagnostic receipt, not success sidecar)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 end-to-end fixture attempts"
+      ],
+      "title": "G4-N10: declaredEcho fingerprint must equal recomputed (package echo)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 end-to-end fixture attempts"
+      ],
+      "title": "G4-N11: rating numeric mismatch fails"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 end-to-end fixture attempts"
+      ],
+      "title": "G4-N11b: games inequality fails exact integer check"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 end-to-end fixture attempts"
+      ],
+      "title": "G4-N12: fixture mode retains fixture_injected / hypothetical"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 end-to-end fixture attempts"
+      ],
+      "title": "G4-N16 / businessDataWrites: successful package records zero writes/providers"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 end-to-end fixture attempts"
+      ],
+      "title": "G4-N17: wrong isolation aborts"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 end-to-end fixture attempts"
+      ],
+      "title": "G4-N17b: read_only off aborts"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 end-to-end fixture attempts"
+      ],
+      "title": "G4-N18: lost TX mid-read aborts without package"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 end-to-end fixture attempts"
+      ],
+      "title": "G4-N25: emission succeeds without G5 lineage/registry anchors"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 end-to-end fixture attempts"
+      ],
+      "title": "G4-N26 e2e: DB time before start \u2192 diagnostic only"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 end-to-end fixture attempts"
+      ],
+      "title": "G4-N28: unparseable dbTransactionTime fails closed"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 end-to-end fixture attempts"
+      ],
+      "title": "G4-N3 e2e: forceSelectScalars expands allowlist \u2192 fail"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 end-to-end fixture attempts"
+      ],
+      "title": "G4-N4: observed modelVersion drift fails cohort/scope"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 end-to-end fixture attempts"
+      ],
+      "title": "G4-N5: cohort shrink fails"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 end-to-end fixture attempts"
+      ],
+      "title": "G4-N8: observation predates archive chronology on pins"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 end-to-end fixture attempts"
+      ],
+      "title": "G4-P1/P7/P9: synthetic W6 fixture emission seals unapproved package"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 end-to-end fixture attempts"
+      ],
+      "title": "G4-P3: role fields tracked separately (distinct SHA example)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 end-to-end fixture attempts"
+      ],
+      "title": "G4-P5 e2e: fixture prospective target 7 with week 6 \u2192 prospectiveOk true still not eligible claim"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 package seal invariants"
+      ],
+      "title": "refuses overwrite and omits credentials"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 prospective polarity (F1)"
+      ],
+      "title": "G4-N23: completed=7 target=7 \u2192 false"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 prospective polarity (F1)"
+      ],
+      "title": "G4-N24: completed=8 target=7 \u2192 false"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 prospective polarity (F1)"
+      ],
+      "title": "G4-P5: completed=6 target=7 \u2192 prospectiveOk true"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 prospective polarity (F1)"
+      ],
+      "title": "G4-P6 / G4-N22: missing target \u2192 null (no eligibility invent)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 timing"
+      ],
+      "title": "G4-N20: missing db time on live path"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 timing"
+      ],
+      "title": "G4-N26: dbTransactionTime before observationStart"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 timing"
+      ],
+      "title": "G4-N27: dbTransactionTime after observationEnd"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 timing"
+      ],
+      "title": "G4-N29: missing workflowRunCompletedAt"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 timing"
+      ],
+      "title": "G4-N30: missing artifactCreatedAt"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 timing"
+      ],
+      "title": "G4-N31: archive after observation start"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 timing"
+      ],
+      "title": "G4-N32: archive after nowCeiling"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 timing"
+      ],
+      "title": "G4-N9: row updated after binding snapshot"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding-observer-g4.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G4 observer \u2014 timing"
+      ],
+      "title": "accepts valid host/DB/archive ordering"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "Decimal reconstruction (\u00a73.4)"
+      ],
+      "title": "N8: valid Decimal zero string remains usable"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "Decimal reconstruction (\u00a73.4)"
+      ],
+      "title": "falls back to rating when powerRatingRaw is null"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "Decimal reconstruction (\u00a73.4)"
+      ],
+      "title": "null/null \u2192 default_zero / unusable"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "Decimal reconstruction (\u00a73.4)"
+      ],
+      "title": "rejects whitespace-only raw (no zero forecast)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "F1\u2013F5 whole-verifier regressions (synthetic full-weight)"
+      ],
+      "title": "F1: empty registry document {} with matching hash cannot pin"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "F1\u2013F5 whole-verifier regressions (synthetic full-weight)"
+      ],
+      "title": "F1: wrong-schema/scope lineage with null inventory cannot accept"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "F1\u2013F5 whole-verifier regressions (synthetic full-weight)"
+      ],
+      "title": "F2-A: acceptedArchive.declaredCanonicalWeight mismatch vetoes"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "F1\u2013F5 whole-verifier regressions (synthetic full-weight)"
+      ],
+      "title": "F2-A: acceptedArchive.declaredCompletedThroughWeek mismatch vetoes"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "F1\u2013F5 whole-verifier regressions (synthetic full-weight)"
+      ],
+      "title": "F2-A: acceptedArchive.declaredSeason mismatch vetoes"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "F1\u2013F5 whole-verifier regressions (synthetic full-weight)"
+      ],
+      "title": "F2-A: acceptedArchive.declaredSelectedPolicy mismatch vetoes"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "F1\u2013F5 whole-verifier regressions (synthetic full-weight)"
+      ],
+      "title": "F2-A: valid-mirror declarations remain qualifying (fixture liveAccepted=false)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "F1\u2013F5 whole-verifier regressions (synthetic full-weight)"
+      ],
+      "title": "F2-B: missing supersedingArtifacts fails closed"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "F1\u2013F5 whole-verifier regressions (synthetic full-weight)"
+      ],
+      "title": "F2-B: non-array supersedingArtifacts object fails closed (evidence not ignored)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "F1\u2013F5 whole-verifier regressions (synthetic full-weight)"
+      ],
+      "title": "F2: invalid sidecar schema/kind/mode vetoes structural and live"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "F1\u2013F5 whole-verifier regressions (synthetic full-weight)"
+      ],
+      "title": "F3: aggregate verification counts 0 with failure reasons reject"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "F1\u2013F5 whole-verifier regressions (synthetic full-weight)"
+      ],
+      "title": "F3: missing planned finalPowerRating rejects"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "F1\u2013F5 whole-verifier regressions (synthetic full-weight)"
+      ],
+      "title": "F3: observed power/rating raw NaN rejects numeric agreement"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "F1\u2013F5 whole-verifier regressions (synthetic full-weight)"
+      ],
+      "title": "F4: actual row updatedAt after snapshot with declared max earlier vetoes"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "F1\u2013F5 whole-verifier regressions (synthetic full-weight)"
+      ],
+      "title": "F4: declared max after snapshot vetoes"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "F1\u2013F5 whole-verifier regressions (synthetic full-weight)"
+      ],
+      "title": "F4: missing archive timestamps vetoes"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "F1\u2013F5 whole-verifier regressions (synthetic full-weight)"
+      ],
+      "title": "F5: invalid ZIP plus separately supplied valid report fails closed"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "N1 real Week 5 full-weight negative"
+      ],
+      "title": "archive integrity PASS; weight 0.75; fullWeightEligible=false"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "N10\u2013N13 lineage attestation"
+      ],
+      "title": "N10: numeric pass but lineage missing \u2192 liveQualifying=false"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "N10\u2013N13 lineage attestation"
+      ],
+      "title": "N11: searchOutcome=superseded blocks"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "N10\u2013N13 lineage attestation"
+      ],
+      "title": "N12: lineageEcho present without external attestation is ignored"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "N10\u2013N13 lineage attestation"
+      ],
+      "title": "N13: checkedThroughTime < bindingSnapshotReferenceTime"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "N14\u2013N16 derived receipt / adapter"
+      ],
+      "title": "N14: forbids self-referencing receiptDigest in captureClaim"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "N14\u2013N16 derived receipt / adapter"
+      ],
+      "title": "N15: envelope coreDigest must equal sha256(coreBytes)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "N14\u2013N16 derived receipt / adapter"
+      ],
+      "title": "N16: adapter hashes claim body then sets receiptDigest; tamper fails pin"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "N2 self-declared full-weight echo ignored"
+      ],
+      "title": "ignores declaredEcho.fullWeightEligible=true on Week 5"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "N3 prospective target week"
+      ],
+      "title": "week 6 archive with targetWeek=6 \u2192 prospectiveOk=false"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "N4 observation provenance / timing"
+      ],
+      "title": "N6a: missing observation provenance"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "N4 observation provenance / timing"
+      ],
+      "title": "fails when observation predates artifact"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "N5 / N6 registry pin negatives"
+      ],
+      "title": "N5: sidecar digest \u2260 registry approvedSidecarDigest"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "N5 / N6 registry pin negatives"
+      ],
+      "title": "N6d: fixture_hypothetical never liveAccepted"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "N5 / N6 registry pin negatives"
+      ],
+      "title": "N6e/N9: trusted-like pin without provenance cannot bootstrap"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "N7 metadata / fingerprint mismatch"
+      ],
+      "title": "changed dataSource \u2192 fingerprint mismatch vs registry"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "P1 / P2 positive offline hypothetical"
+      ],
+      "title": "P1: week6 fixture_hypothetical may be fullWeightEligible; liveAccepted=false"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "P1 / P2 positive offline hypothetical"
+      ],
+      "title": "P2: binding_observation + fixture registry retains provenance; never portable liveAccepted"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "fixture package digests"
+      ],
+      "title": "matches published Week 5 COMMIT pins"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "member tamper / wrong pins / cohort"
+      ],
+      "title": "duplicate team in observation fails numeric agreement"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "member tamper / wrong pins / cohort"
+      ],
+      "title": "forged ZIP digest fails closed"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-lifecycle-binding.test.ts",
+      "ancestorTitles": [
+        "ml-cal-1-lifecycle-binding (offline)",
+        "member tamper / wrong pins / cohort"
+      ],
+      "title": "missing team fails numeric agreement"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 F1\u2013F6 review repair regressions"
+      ],
+      "title": "F1: coverage/identity disagreement with retained sidecar fails closed"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 F1\u2013F6 review repair regressions"
+      ],
+      "title": "F2: broken pagination chain / sequence fails completeness"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 F1\u2013F6 review repair regressions"
+      ],
+      "title": "F3 contents schema: wrong contents bytes cannot prove not_invalidating"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 F1\u2013F6 review repair regressions"
+      ],
+      "title": "F3: arbitrary effect bytes / wrong candidate binding remain unresolved"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 F1\u2013F6 review repair regressions"
+      ],
+      "title": "F3: effect evidence for wrong candidateKey fails"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 F1\u2013F6 review repair regressions"
+      ],
+      "title": "F4: contradictory duplicate listing evidence fails"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 F1\u2013F6 review repair regressions"
+      ],
+      "title": "F4: uncertain timing candidate is retained (not silently dropped)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 F1\u2013F6 review repair regressions"
+      ],
+      "title": "F6: prospectiveTargetWeek mismatch stops before verifier"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 F1\u2013F6 review repair regressions"
+      ],
+      "title": "F6: verify zip/sidecar mismatch vs PRE bound evidence stops qualification"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 R1\u2013R5 review repair regressions"
+      ],
+      "title": "R1: coverage end after nowCeiling / beyond inventory assembly rejects"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 R1\u2013R5 review repair regressions"
+      ],
+      "title": "R1: reversed search window chronology rejects"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 R1\u2013R5 review repair regressions"
+      ],
+      "title": "R2: effect booleans alone without external approval remain unresolved"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 R1\u2013R5 review repair regressions"
+      ],
+      "title": "R2: write-effect summary plus reviewed effect still fails closed on contents quarantine"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 R1\u2013R5 review repair regressions"
+      ],
+      "title": "R3: inventory facts that disagree with retained listing reject"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 R1\u2013R5 review repair regressions"
+      ],
+      "title": "R4: substituted inventory/attestation/registry anchors stop before verifier"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 R1\u2013R5 review repair regressions"
+      ],
+      "title": "R5: missing lifecycle report / package required fields reject"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 R1\u2013R5 review repair regressions"
+      ],
+      "title": "R5: package schema / design identity mismatch rejects"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 R2-A / R5-A review repair regressions"
+      ],
+      "title": "R2-A: arbitrary unrelated approval digest rejects"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 R2-A / R5-A review repair regressions"
+      ],
+      "title": "R2-A: boolean-only contents envelope still rejects"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 R2-A / R5-A review repair regressions"
+      ],
+      "title": "R2-A: correct externally supplied evidence digest passes"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 R2-A / R5-A review repair regressions"
+      ],
+      "title": "R2-A: missing approval remains unresolved"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 R2-A / R5-A review repair regressions"
+      ],
+      "title": "R2-A: no-write write-effect declaration without producer proof rejects"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 R2-A / R5-A review repair regressions"
+      ],
+      "title": "R2-A: sidecar / fingerprint / interval mismatches still reject"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 R2-A / R5-A review repair regressions"
+      ],
+      "title": "R5-A: accepted G4 correspondence format (onDiskDesign + baseG3) remains valid"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 R2-A / R5-A review repair regressions"
+      ],
+      "title": "R5-A: contradictory metadata observationEndTime vs sidecar rejects"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 R2-A / R5-A review repair regressions"
+      ],
+      "title": "R5-A: correspondence with only a base SHA (no design pin) rejects"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 R2-A / R5-A review repair regressions"
+      ],
+      "title": "R5-A: empty observer metadata rejects (hash-consistent package)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 design pins"
+      ],
+      "title": "pins accepted design SHA and G4 tip without relabeling combined upload"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 inherited fixture digests"
+      ],
+      "title": "retains synthetic-w6 archive/member digests (copy-away identity)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N10: empty/missing sourcesSearched or missing catalog source"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N11: candidate missing retained evidence with unresolved disposition"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N12: invalidating candidate blocks none_found"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N13: higher week alone supersession inference forbidden"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N14 / N15: fixture provenance blocks portable live; relabel insufficient"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N16: ZIP sha256 must not equate to attestation/inventory digest class"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N17: cannot set approved receipt from just-computed adapted digest"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N18: byteCount lie / unsafe member path rejected"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N19: claim approved package integrity from self-hash alone \u2192 reject"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N1: missing approved registry digest on qualification claim path"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N20: inventing production target for verifier forbidden"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N21: omit prospectiveTargetWeek on verify path \u2192 forbidden"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N22: capture-as-of claim at G5 without capture \u2192 out of gate"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N23: declared noneFoundPermitted=true while recomputed false"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N24: deletion notice alone claimed not_invalidating \u2192 unresolved"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N25: listed candidate omitted from inventory"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N26: in-window write with late upload silently excluded \u2192 reject"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N27: overlapping pre-window run omitted \u2192 reject"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N28: ambiguous null commitOrWriteTime without non-effect proof \u2192 unresolved"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N2: inventory anchor mismatch fails"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N3: inventory digest \u2260 bytes (tamper)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N4: approvedSidecarDigest \u2260 sha256(sidecar)"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N5 / N5b: checkedThrough too early vs snap / obsEnd-1ms"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N6 / N6b: search window end \u2260 checkedThrough"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N7: declared searchComplete=true but incomplete \u2192 reject"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N8: failed/unavailable required source blocks none_found"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 negatives N1\u2013N28"
+      ],
+      "title": "G5-N9: unresolved pagination / missing page digests"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 positives P1\u2013P13"
+      ],
+      "title": "G5-P10: deleted candidate not_invalidating via pinned reviewed effect \u2192 none_found ok"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 positives P1\u2013P13"
+      ],
+      "title": "G5-P11: deleted candidate not_invalidating via approved independent effect evidence"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 positives P1\u2013P13"
+      ],
+      "title": "G5-P12: write before cutoff, artifact after cutoff, retained effect \u2192 kept candidate"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 positives P1\u2013P13"
+      ],
+      "title": "G5-P13: run started before window, still active, aborted with pinned reviewed non-effect"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 positives P1\u2013P13"
+      ],
+      "title": "G5-P1: complete inventory none_found + matching anchors \u2192 ok; fixture provenance; no live"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 positives P1\u2013P13"
+      ],
+      "title": "G5-P2: equal producer/observer SHA with distinct roles still ok"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 positives P1\u2013P13"
+      ],
+      "title": "G5-P3: inventory digest \u2260 sidecar digest; each matches own anchor"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 positives P1\u2013P13"
+      ],
+      "title": "G5-P4: package member byteCount + sha256 replay after copy-away"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 positives P1\u2013P13"
+      ],
+      "title": "G5-P5: checkedThroughTime === observationEndTime \u2192 coverage pass"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 positives P1\u2013P13"
+      ],
+      "title": "G5-P6: checkedThrough === snap === obsEnd when equal \u2192 pass"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 positives P1\u2013P13"
+      ],
+      "title": "G5-P7: retrieval/inventory-only with no production target \u2192 no eligibility"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 positives P1\u2013P13"
+      ],
+      "title": "G5-P8: higher completedThroughWeek not_invalidating with effect evidence \u2192 none_found ok"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 positives P1\u2013P13"
+      ],
+      "title": "G5-P9 / F5: whole-package approval remains disabled \u2014 matching self-hash claim rejected"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 retained listing adapter"
+      ],
+      "title": "parses retained listing pages and rejects malformed schema"
+    },
+    {
+      "suite_path": "apps/jobs/__tests__/ml-cal-1-trusted-retrieval-lineage-g5-pre.test.ts",
+      "ancestorTitles": [
+        "ML-CAL-1 G5-PRE \u2014 retained listing adapter"
+      ],
+      "title": "rejects unsafe package member names"
+    }
+  ]
+}

@@ -177,9 +177,12 @@ describe('Active-week consumers (scheduled T-30 + Betting Ticket)', () => {
   const bettingLoad = stepBlock(betting, 'Load version-controlled active week');
   const committedWeek = loadActiveWeekConfigFromFile(ACTIVE_WEEK_CONFIG).week;
 
-  it('both consumers read the same version-controlled config path', () => {
+  it('research clock keeps its week file and the official ticket clock uses its own', () => {
     expect(scheduledLoad).toContain(`CONFIG="${ACTIVE_WEEK_CONFIG_PATH}"`);
-    expect(bettingLoad).toContain(`CONFIG="${ACTIVE_WEEK_CONFIG_PATH}"`);
+    expect(bettingLoad).toContain('CONFIG="ops/betting-ticket/ACTIVE_WEEK_2026.json"');
+    expect(bettingLoad).not.toContain(`CONFIG="${ACTIVE_WEEK_CONFIG_PATH}"`);
+    expect(scheduled).toContain(ACTIVE_WEEK_CONFIG_PATH);
+    expect(scheduled).not.toContain('ops/betting-ticket/ACTIVE_WEEK_2026.json');
     expect(scheduledLoad).toContain('Active-week config is missing');
     expect(bettingLoad).toContain('Active-week config is missing');
     expect(scheduledLoad).toContain(
@@ -235,7 +238,7 @@ describe('Active-week consumers (scheduled T-30 + Betting Ticket)', () => {
   });
 
   // Frozen test identity; only the configured week/expected runtime values roll forward.
-  it('Betting Ticket consumer consumes INPUT_WEEK from the same Week 8 config', () => {
+  it('Betting Ticket consumes its own official week and still requires the odds confirmation', () => {
     expect(betting).toContain('--week "$INPUT_WEEK"');
     expect(betting).toContain('WRITE_2026_WEEK_${INPUT_WEEK}_ODDS');
     expect(betting).toContain(
@@ -247,5 +250,6 @@ describe('Active-week consumers (scheduled T-30 + Betting Ticket)', () => {
     // Betting Ticket has no ENABLE/Hybrid gates; ensure it does not invent them.
     expect(betting).not.toContain('GENERIC_SHADOW_T30_AUTOMATION_V1_ENABLED');
     expect(betting).not.toContain('vars.GENERIC_SHADOW_T30_AUTOMATION_V1_WEEK');
+    expect(betting).toContain("steps.active_week.outputs.commit_authorized == 'true'");
   });
 });
